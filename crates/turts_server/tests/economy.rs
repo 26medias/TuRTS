@@ -9,6 +9,10 @@ mod accounting;
 #[path = "../src/economylog.rs"]
 mod economylog;
 
+#[path = "../src/orders.rs"]
+#[allow(dead_code)]
+mod server_orders;
+
 // Unit tests cover typed JSONL replay; ignored process tests below exercise the live
 // server sink and the public Task 15 acceptance scenarios.
 fn package_files(
@@ -466,6 +470,285 @@ fn decoded_moving_gatherer_replays_frozen_command_and_automatic_effect() {
         .unwrap();
     tick_record.clear();
     assert!(economylog::validate_records(&missing_event).is_err());
+}
+
+/// E9 base gather trace, in process: the same package, the same protocol Gather envelope
+/// and the same independent replay as the conversion subcase of
+/// `e9_loss_and_small_buffer_converge`. Node 1 holds 200 ore (two full loads), so every run
+/// reaches node depletion after a fixed number of ticks, with no wall time. The last load
+/// empties the node; the harvester delivers it, then its order fails with `node_depleted`.
+#[test]
+fn e9_base_gather_trace_replays_node_depletion_in_process() {
+    use turts_sim::{AuditTrail, CommandQueue, SlotId, economy::views::audit_state};
+
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../mods/base");
+    let mut files = std::collections::BTreeMap::new();
+    package_files(&root, &root, &mut files);
+    let map = String::from_utf8(files["maps/flat.ron"].clone()).unwrap();
+    let node_one = "(node: \"base:ore_deposit\", pos: (x: 24.0, y: 8.0), remaining: 1000)";
+    assert_eq!(
+        map.matches(node_one).count(),
+        1,
+        "base node 1 is in the map"
+    );
+    files.insert(
+        "maps/flat.ron".into(),
+        map.replace(node_one, &node_one.replace("1000", "200"))
+            .into_bytes(),
+    );
+    let archive_bytes = turts_mod_runtime::pack::pack_files(&files).unwrap();
+    let (public_initial, catalog) = independent_public_model_from_archive(&archive_bytes, 20);
+    let archive = turts_mod_runtime::archive::PackageArchive::parse(&archive_bytes).unwrap();
+    let mut app = turts_sim::headless_app(20);
+    turts_pack::load_package(app.world_mut(), &archive).unwrap();
+    app.world_mut().resource_mut::<AuditTrail>().enable();
+
+    let gather = FrozenCommand {
+        slot: 0,
+        seq: 1,
+        kind: FrozenKind::Gather { unit: 2, node: 1 },
+    };
+    let mut commands = server_orders::to_sim(SlotId(0), &protocol_command(&gather), &catalog)
+        .expect("the server resolves the base Gather envelope");
+    assert_eq!(commands.len(), 1);
+    let command = commands.remove(0);
+
+    let dir = support::test_dir("e9-base-depletion-in-process");
+    let log = dir.join("economy.jsonl");
+    let mut writer = economylog::EconomyLogWriter::new(std::io::BufWriter::new(
+        std::fs::File::create(&log).unwrap(),
+    ));
+    {
+        let initial = audit_state(app.world_mut());
+        let trail = app.world_mut().resource_mut::<AuditTrail>();
+        writer.write_initial(&trail, initial).unwrap();
+    }
+    let mut depleted_at = None;
+    let mut failed_at = None;
+    let mut last_tick = 0;
+    for tick in 1..=2_000_u32 {
+        if tick == 1 {
+            app.world_mut()
+                .resource_mut::<CommandQueue>()
+                .0
+                .push_back(command.clone());
+        }
+        app.update();
+        let mut trail = app.world_mut().resource_mut::<AuditTrail>();
+        assert!(trail.valid);
+        for audit in trail.drain_commands() {
+            writer.write_command(&trail, audit).unwrap();
+        }
+        for operation in trail.drain_operations() {
+            if operation.phase == turts_sim::economy::transaction::AuditPhase::Orders {
+                failed_at.get_or_insert(tick);
+            }
+            writer.write_operation(&trail, operation).unwrap();
+        }
+        for audit in trail.drain_ticks() {
+            writer.write_tick(&trail, audit).unwrap();
+        }
+        last_tick = tick;
+        if depleted_at.is_none()
+            && turts_sim::node_view(app.world(), turts_sim::NodeId(1))
+                .unwrap()
+                .remaining
+                == 0
+        {
+            depleted_at = Some(tick);
+        }
+        if failed_at.is_some_and(|failed| tick >= failed + 5) {
+            break;
+        }
+    }
+    writer.flush().unwrap();
+    drop(writer);
+    let depleted_at = depleted_at.expect("node 1 empties inside 2,000 ticks");
+    let failed_at = failed_at.expect("the Gather order ends inside 2,000 ticks");
+    eprintln!(
+        "E9 in process: node 1 empty at tick {depleted_at}, order failed at tick {failed_at}, log of {last_tick} ticks"
+    );
+    let summary = replay_public_log_with_model(&log, public_initial, catalog, &[], &[gather], true);
+    assert_eq!(
+        summary.depletions, 1,
+        "the replay models one node_depleted failure"
+    );
+    assert_eq!(summary.extraction, 200, "the replay extracts all of node 1");
+    assert_eq!(
+        summary.delivery, 200,
+        "the replay delivers all extracted ore, the last load too"
+    );
+    assert_eq!(
+        summary.conversion, 200,
+        "the command center converts all of it"
+    );
+
+    assert!(
+        failed_at > depleted_at + 1,
+        "the harvester holds its last load when node 1 empties, so it delivers before it fails"
+    );
+
+    let state = audit_state_at(&log, last_tick);
+    let worker = state
+        .unit_orders
+        .iter()
+        .find(|entry| entry.unit_id == 2)
+        .expect("the harvester has its order record");
+    assert!(worker.orders.current.is_none());
+    assert_eq!(
+        worker
+            .orders
+            .last_failure
+            .as_ref()
+            .map(|failure| (failure.reason, failure.tick)),
+        Some((turts_sim::RejectReason::NodeDepleted, failed_at))
+    );
+    assert!(
+        state
+            .economy
+            .inventories
+            .iter()
+            .find(|inventory| inventory.unit == 2)
+            .is_some_and(|inventory| inventory.items.iter().all(|item| item.on_hand == 0)),
+        "the idle harvester holds no cargo"
+    );
+}
+
+/// The full ORD3 browser scene (every authored muster unit present): worker 42 stands near
+/// the depot approach of worker 41, so its last trip is blocked. The economy log validator
+/// must accept the blocked wait (Waiting(Blocked)), the retry, the delivery and the
+/// node_depleted failure.
+#[test]
+fn ord3_full_scene_blocked_gather_trip_validates() {
+    use economylog::EconomyLogRecord;
+    use turts_sim::{AuditTrail, CommandQueue, SlotId, economy::views::audit_state};
+
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../tests/browser/fixtures/order-rows/muster");
+    let mut files = std::collections::BTreeMap::new();
+    package_files(&root, &root, &mut files);
+    let archive_bytes = turts_mod_runtime::pack::pack_files(&files).unwrap();
+    let archive = turts_mod_runtime::archive::PackageArchive::parse(&archive_bytes).unwrap();
+    let mut app = turts_sim::headless_app(20);
+    turts_pack::load_package(app.world_mut(), &archive).unwrap();
+    let catalog = app
+        .world()
+        .resource::<turts_sim::bootstrap::InstalledCatalog>()
+        .0
+        .clone();
+    app.world_mut().resource_mut::<AuditTrail>().enable();
+    let envelope = turts_net_protocol::PlayerCommand {
+        seq: 1,
+        order: turts_net_protocol::OrderEnvelope {
+            order: "muster:order_gather".into(),
+            units: vec![turts_net_protocol::UnitId(41)],
+            target: turts_net_protocol::OrderTarget::Node(turts_net_protocol::NodeId(1)),
+            queue: turts_net_protocol::QueueMode::Replace,
+            group: 0,
+        },
+    };
+    let mut commands = server_orders::to_sim(SlotId(0), &envelope, &catalog).unwrap();
+    let command = commands.remove(0);
+    let mut records = vec![EconomyLogRecord::Initial(audit_state(app.world_mut()))];
+    let ore_balance = |app: &bevy_app::App| {
+        turts_sim::balance_view(
+            app.world(),
+            SlotId(0),
+            &turts_mod_api::ContentId::parse("muster:ore").unwrap(),
+        )
+        .unwrap()
+        .on_hand
+    };
+    let node_start = turts_sim::node_view(app.world(), turts_sim::NodeId(1))
+        .unwrap()
+        .remaining;
+    let balance_start = ore_balance(&app);
+    let blocked = turts_sim::GatherStage::Waiting {
+        reason: turts_sim::WaitReason::Blocked,
+    };
+    let mut saw_blocked = false;
+    let mut failure = None;
+    for tick in 1..=400_u32 {
+        if tick == 1 {
+            app.world_mut()
+                .resource_mut::<CommandQueue>()
+                .0
+                .push_back(command.clone());
+        }
+        app.update();
+        let mut trail = app.world_mut().resource_mut::<AuditTrail>();
+        assert!(trail.valid);
+        records.extend(
+            trail
+                .drain_commands()
+                .into_iter()
+                .map(EconomyLogRecord::CommandBoundary),
+        );
+        for operation in trail.drain_operations() {
+            saw_blocked |= operation
+                .after
+                .raw_orders
+                .iter()
+                .any(|order| order.unit == 41 && order.stage == blocked);
+            records.push(EconomyLogRecord::Operation(operation));
+        }
+        let ticks = trail.drain_ticks();
+        for audit in &ticks {
+            failure = failure.or_else(|| {
+                audit
+                    .after
+                    .unit_orders
+                    .iter()
+                    .find(|entry| entry.unit_id == 41 && entry.orders.current.is_none())
+                    .and_then(|entry| entry.orders.last_failure.clone())
+            });
+        }
+        records.extend(ticks.into_iter().map(|audit| EconomyLogRecord::Tick {
+            tick: audit.tick,
+            before: audit.before,
+            state: audit.after,
+            events: audit.events,
+        }));
+        if failure.is_some() {
+            break;
+        }
+    }
+    assert!(
+        saw_blocked,
+        "the full scene blocks the last trip of worker 41"
+    );
+    assert_eq!(
+        failure.map(|failure| failure.reason),
+        Some(turts_sim::RejectReason::NodeDepleted),
+        "the blocked trip waits, delivers, then the order fails with node_depleted"
+    );
+    // Conservation, read from the sim state and not through the validator: the depot converts
+    // each delivered item into one ore balance, so the whole node start amount must be in the
+    // balance, and the harvester must hold nothing.
+    assert_eq!(
+        turts_sim::node_view(app.world(), turts_sim::NodeId(1))
+            .unwrap()
+            .remaining,
+        0,
+        "the node is empty"
+    );
+    assert_eq!(
+        turts_sim::inventory_view(app.world(), SlotId(0), 41)
+            .unwrap()
+            .items
+            .iter()
+            .map(|item| item.on_hand)
+            .sum::<u64>(),
+        0,
+        "the harvester delivered all its cargo"
+    );
+    assert_eq!(
+        ore_balance(&app),
+        balance_start + node_start,
+        "no ore is created or destroyed: the balance gains the node start amount"
+    );
+    economylog::validate_records(&records)
+        .unwrap_or_else(|error| panic!("the validator rejects the blocked gather wait: {error}"));
 }
 
 #[test]
@@ -1132,6 +1415,8 @@ struct ReplaySummary {
     refunds: u128,
     outputs: u64,
     cancellations: u64,
+    /// Modeled Orders-phase `node_depleted` failures of Gather orders.
+    depletions: u64,
 }
 
 fn wait_for_owner_rifle_output(path: &std::path::Path) -> (u32, u32) {
@@ -1425,6 +1710,7 @@ fn owner_snapshot_from_audit(
                                 WaitReason::DestinationOverflow => {
                                     wire::GatherWaitReason::DestinationOverflow
                                 }
+                                WaitReason::Blocked => wire::GatherWaitReason::Blocked,
                             },
                         },
                     },
@@ -1976,6 +2262,7 @@ fn replay_public_log_with_model(
         .max()
         .unwrap_or(decoded_initial.economy.tick);
     let mut command_records = Vec::new();
+    let mut depletions = 0u64;
 
     for tick in first_tick..=last_tick {
         for (claim_tick, slot, player_id) in claim_records
@@ -2014,6 +2301,10 @@ fn replay_public_log_with_model(
         let mut expected_producers: Option<Vec<u32>> = None;
         let mut producer_index = 0;
         let mut pending_output: Option<(u32, u64)> = None;
+        // The Orders phase runs after commands and before Gather. The model, not the
+        // recorded phase, names the Gather orders that this phase must end.
+        let mut expected_depletions: Option<Vec<u32>> = None;
+        let mut depletion_index = 0;
 
         for operation in operations {
             if let Some(command_audit) = command_audits.get(&operation.operation_id) {
@@ -2120,6 +2411,40 @@ fn replay_public_log_with_model(
                 command_records.push(projected_audit);
                 continue;
             }
+
+            let depleted =
+                expected_depletions.get_or_insert_with(|| oracle.predicted_depletion_failures());
+            if let Some(unit) = depleted.get(depletion_index).copied() {
+                depletion_index += 1;
+                assert_eq!(
+                    (operation.phase, operation.unit_id),
+                    (
+                        turts_sim::economy::transaction::AuditPhase::Orders,
+                        Some(unit)
+                    ),
+                    "operation {}: the modeled node_depleted failure of unit {unit} is next",
+                    operation.operation_id
+                );
+                oracle
+                    .observe(
+                        &accounting::ExpectedOperation::GatherDepletion { tick, unit },
+                        &operation.before,
+                        &operation.after,
+                        &operation.events,
+                        None,
+                    )
+                    .unwrap_or_else(|error| {
+                        panic!("Orders operation {}: {error}", operation.operation_id)
+                    });
+                depletions += 1;
+                continue;
+            }
+            assert_ne!(
+                operation.phase,
+                turts_sim::economy::transaction::AuditPhase::Orders,
+                "operation {}: an Orders operation that the model does not predict",
+                operation.operation_id
+            );
 
             let gatherers = expected_gatherers.get_or_insert_with(|| {
                 oracle
@@ -2257,6 +2582,14 @@ fn replay_public_log_with_model(
             }
         }
 
+        assert_eq!(
+            depletion_index,
+            expected_depletions.map_or_else(
+                || oracle.predicted_depletion_failures().len(),
+                |units| units.len()
+            ),
+            "tick {tick}: every modeled node_depleted failure has its Orders operation"
+        );
         let (tick_before, published, state) = records
             .iter()
             .find_map(|record| match record {
@@ -2297,6 +2630,7 @@ fn replay_public_log_with_model(
         refunds: oracle.refunds,
         outputs: oracle.outputs,
         cancellations: oracle.cancellations,
+        depletions,
     };
     if require_positive {
         assert!(

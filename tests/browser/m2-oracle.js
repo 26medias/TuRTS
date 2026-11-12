@@ -34,6 +34,25 @@ const UNIT_NAMES = {
 const PRODUCER = { base: "base:command_center", haul: "haul:depot", cedar: "cedar:depot", acme: "acme:scout" };
 const WORKER = { base: "base:harvester", haul: "haul:worker", cedar: "cedar:worker" };
 const OFFSET = { base: 18, haul: 18, cedar: 18, acme: 0 };
+// Public convergence has two profiles. The gate profile is the default. It gives the judgement
+// that was gated before MC repair 82b08db: it waits 10 s, and it compares the two windows only
+// at a tick that both windows report in the same poll (compare mode "same_poll"). The wide
+// profile is opt-in: an environment value TURTS_M2_CONVERGENCE_LIMIT_MS (a whole number of ms)
+// sets a hard limit; the wait then goes on past 10 s while both windows still advance their tick
+// (no new tick for 15 s ends it), up to that limit, and it compares at any tick that both
+// windows showed at any poll (compare mode "cross_poll"). Only the hosted software-render legs of
+// .github/workflows/ci.yml set the value: there the windows show about 1 frame per second (runs
+// ci-run134-m2-sw-gl-1 and -2) and seldom show one tick at one poll. A poll reads both windows.
+// Both profiles keep the first projection of each tick.
+const CONVERGENCE_ENV = "TURTS_M2_CONVERGENCE_LIMIT_MS";
+const CONVERGENCE_GATE = Object.freeze({ name: "gate", min_ms: 10000, stall_ms: 15000, limit_ms: 10000, poll_ms: 100, cross_poll: false });
+
+function convergenceLimits(env = process.env) {
+    const value = env[CONVERGENCE_ENV];
+    if (value === undefined || value === "") return CONVERGENCE_GATE;
+    if (!/^[1-9][0-9]*$/.test(value)) throw new Error(`${CONVERGENCE_ENV} must be a whole number of ms above 0, saw ${JSON.stringify(value)}`);
+    return Object.freeze({ ...CONVERGENCE_GATE, name: "wide", limit_ms: Number(value), cross_poll: true });
+}
 
 function unitNear(debug, contentId, x, y) {
     return (debug.replicated_world?.units ?? []).find((unit) => unit.content_id === contentId && unit.owner_slot === 0 &&
@@ -152,19 +171,70 @@ async function judgeConvergence(view, at, joined, packageName) {
         const mesh = selected.scene.units.find((unit) => unit.unit_id === unitId);
         assertPickCircleClearOfHud(selected.scene, selected.debug, mesh);
     }
-    const deadline = Date.now() + 10000;
-    while (Date.now() < deadline) {
-        const debug0 = await view.bridge("turts_debug", 1);
-        const debug1 = await view.bridge("turts_debug", 2);
-        const world0 = debug0?.replicated_world;
-        const world1 = debug1?.replicated_world;
-        if (world0?.tick === world1?.tick && world0?.tick !== null && world0?.tick !== undefined &&
-            JSON.stringify(publicProjection({ debug: debug0 })) === JSON.stringify(publicProjection({ debug: debug1 }))) {
-            return { tick: world0.tick };
+    const result = await waitForSharedTick(view, convergenceLimits());
+    // The time to agreement of every profile goes to the harness log (one machine-readable line).
+    console.log(`M2_CONVERGENCE ${JSON.stringify({ package: packageName, ...result })}`);
+    return result;
+}
+
+// The judgement: at one tick that both windows show, the two public projections are equal.
+// The oracle keeps the first projection that each window shows at each tick. A window that shows
+// a wrong projection and then a right one at one tick stays wrong: only the first projection
+// counts, in every profile (the old loop compared the current projections, so it passed this).
+// limits.cross_poll false (gate): the windows are compared at a tick that both report in the
+// same poll. limits.cross_poll true (wide): at each tick that both showed, at any poll. The wait
+// ends at the limit of the profile (convergenceLimits). `unstable_ticks` counts the reads at
+// which a window showed, at a tick it had shown before, a projection other than the first one.
+// It is reported in the result and in the failure text, and it is not judged: it was 0 on the
+// one real GPU run that printed it (ci-run142-qaplant-conv-b, 1316 shared ticks), and a failure
+// rule needs data first.
+async function waitForSharedTick(view, limits = CONVERGENCE_GATE) {
+    const started = Date.now();
+    const crossPoll = limits.cross_poll === true;
+    const seen = [new Map(), new Map()];
+    const compared = new Set();
+    const changes = [[], []];
+    const progress = { polls: 0, shared_ticks: 0, shared_tick_differs: 0, unstable_ticks: 0, last_advance_ms: [started, started] };
+    const report = () => ({ profile: limits.name ?? "custom", compare: crossPoll ? "cross_poll" : "same_poll", limit_ms: limits.limit_ms,
+        agreed_after_ms: Date.now() - started, polls: progress.polls, shared_ticks: progress.shared_ticks,
+        shared_tick_differs: progress.shared_tick_differs, unstable_ticks: progress.unstable_ticks });
+    for (;;) {
+        const now = Date.now();
+        const stalled = progress.last_advance_ms.some((time) => now - time > limits.stall_ms);
+        if (now - started >= limits.min_ms && (stalled || now - started >= limits.limit_ms)) break;
+        const debugs = [await view.bridge("turts_debug", 1), await view.bridge("turts_debug", 2)];
+        progress.polls += 1;
+        const fresh = new Set();
+        for (const [index, debug] of debugs.entries()) {
+            const tick = debug?.replicated_world?.tick;
+            if (!Number.isInteger(tick)) continue;
+            const projection = JSON.stringify(publicProjection({ debug }));
+            if (seen[index].has(tick)) {
+                if (seen[index].get(tick) !== projection) progress.unstable_ticks += 1;
+                continue;
+            }
+            seen[index].set(tick, projection);
+            progress.last_advance_ms[index] = Date.now();
+            changes[index].push([Date.now() - started, tick]);
+            fresh.add(tick);
         }
-        await new Promise((resolve) => setTimeout(resolve, 50));
+        const tick0 = debugs[0]?.replicated_world?.tick;
+        const tick1 = debugs[1]?.replicated_world?.tick;
+        const candidates = crossPoll ? [...fresh] : (Number.isInteger(tick0) && tick0 === tick1 ? [tick0] : []);
+        for (const tick of candidates) {
+            if (compared.has(tick) || !seen[0].has(tick) || !seen[1].has(tick)) continue;
+            compared.add(tick);
+            progress.shared_ticks += 1;
+            if (seen[0].get(tick) === seen[1].get(tick)) return { tick, ...report() };
+            progress.shared_tick_differs += 1;
+        }
+        await new Promise((resolve) => setTimeout(resolve, limits.poll_ms));
     }
-    assert.fail("public world projections differ between owners at a shared coherent tick");
+    const tail = (list) => JSON.stringify(list.slice(-8));
+    assert.fail(`public world projections differ between owners at a shared coherent tick (profile ${limits.name ?? "custom"}, ` +
+        `compare ${crossPoll ? "cross_poll" : "same_poll"}, limit ${limits.limit_ms} ms, ${Date.now() - started} ms, ` +
+        `${progress.polls} polls, ${progress.shared_ticks} shared ticks, ${progress.shared_tick_differs} of them different, ` +
+        `${progress.unstable_ticks} unstable; [ms, tick] window 1 ${tail(changes[0])} window 2 ${tail(changes[1])})`);
 }
 
 function ingestOf(step) {
@@ -548,4 +618,4 @@ async function judge(view, params) {
     }
 }
 
-module.exports = { judge, appliedAfter, assertPickCircleClearOfHud, cancelRows, hudClick, produceRow, UNIT_NAMES };
+module.exports = { judge, appliedAfter, assertPickCircleClearOfHud, cancelRows, hudClick, produceRow, waitForSharedTick, convergenceLimits, UNIT_NAMES };

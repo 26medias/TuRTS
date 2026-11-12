@@ -217,8 +217,11 @@ MC is active on this desktop. Task15 code at52ecf3c is accepted for integration:
 
 ## Follow-up from the MC architecture audit (RUN126)
 
-- [ ] CEO: economy log validator scope, options a/b/c ([[2026-11-11 MC architecture audit]]).
-- [ ] CEO: one movement model and one re-freeze of the M2 stream, options a/b ([[2026-11-11 MC architecture audit]]).
+- [x] CEO: economy log validator scope, options a/b/c ([[2026-11-11 MC architecture audit]]). DECIDED by the CEO 2026-11-11 (see the note).
+- [x] CEO: one movement model and one re-freeze of the M2 stream, options a/b ([[2026-11-11 MC architecture audit]]). DECIDED by the CEO 2026-11-11 (see the note).
+- [ ] Before MP1: economy log validator checks ledger conservation only, and moves to a `turts_audit` crate with one file for each domain (CEO decision 2026-11-11, options b and c).
+- [ ] Before MP1 pins plain moves (at the latest before M4): one movement model (a plain move is a pool of one) and one re-freeze of the M2 stream (CEO decision 2026-11-11, option b). Not during MC.
+- [ ] Before gate 1 of MP1: the producer estimates MP1 and MP2 again at the MC rate (early estimate 95 to 150 runs; MC used about 176 against 60 to 100), and decides if the two items above are a pre-MP1 slice or part of the MP1 plan.
 - [ ] Before MP1 content: neighbour grid cell must not depend on the largest unit.
 - [ ] Next protocol change: `unit_orders` sends changes only.
 - [ ] MP2: UnitId-to-Entity index; target validation one time for each envelope.
@@ -230,3 +233,7 @@ MC is active on this desktop. Task15 code at52ecf3c is accepted for integration:
 - [ ] MP1: optional Button `font` field in the mod API with a version table row; "Unbound" for a BuildMenu or CommandCard row with no key.
 - [ ] MP1: Controls menu groups, search and keyboard navigation.
 - [ ] MP1 (bevy-rendering-engineer): marks above the first alert row; alert row pitch 62 px against 31 px in hud.ron:89.
+
+## Follow-up from the CEO play attempt (2026-11-11)
+
+- [ ] MP1: when the browser gives no GPU adapter (WebGPU off, as in Chrome on Linux by default), the client must show a plain page that says what is missing and how to turn it on. Today it panics at bevy_render `render/mod.rs:308` ("Unable to find a GPU") with a console message only. Owner: web-platform-engineer with ux-designer.

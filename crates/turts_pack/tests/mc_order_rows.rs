@@ -1077,12 +1077,30 @@ fn completed_move_starts_queued_move_in_the_next_orders_phase_without_an_idle_ti
 
 #[test]
 fn actual_worker_gather_exhausts_the_isolated_small_node_and_records_node_depleted() {
+    let (emptied_at, failed_at) = worker_gather_exhausts_the_small_node(Some(&[41, 43]));
+    eprintln!("pruned ORD3 scene: node empty at tick {emptied_at}, node_depleted at {failed_at}");
+}
+
+/// The ORD3 browser scene keeps every authored unit. Worker 42 stands near the depot
+/// approach of worker 41, so the last trip can be blocked. The blocked trip must wait and
+/// try again; the order still ends with node_depleted, and the depot converts the ore.
+#[test]
+fn actual_worker_gather_in_the_full_ord3_scene_delivers_then_records_node_depleted() {
+    let (emptied_at, failed_at) = worker_gather_exhausts_the_small_node(None);
+    eprintln!("full ORD3 scene: node empty at tick {emptied_at}, node_depleted at {failed_at}");
+}
+
+/// Return the tick the node empties and the tick the Gather order of worker 41 ends, both
+/// counted from the tick after the order.
+fn worker_gather_exhausts_the_small_node(keep: Option<&[u32]>) -> (u32, u32) {
     let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../tests/browser/fixtures/order-rows/muster");
     let archive = archive_at(&fixture);
     let mut app = app_with_archive(&archive);
     let worker = 41;
-    prune_units(&mut app, &[worker, 43]);
+    if let Some(keep) = keep {
+        prune_units(&mut app, keep);
+    }
     assert_eq!(
         turts_sim::node_view(app.world(), turts_sim::NodeId(1))
             .unwrap()
@@ -1103,17 +1121,61 @@ fn actual_worker_gather_exhausts_the_isolated_small_node_and_records_node_deplet
         ),
     );
     assert_eq!(result.units.accepted, vec![worker]);
-    for _ in 0..160 {
-        app.update();
-        if turts_sim::node_view(app.world(), turts_sim::NodeId(1))
+    let ore = ContentId::parse("muster:ore").unwrap();
+    let cargo = |app: &App| -> u64 {
+        turts_sim::inventory_view(app.world(), turts_sim::SlotId(0), worker)
             .unwrap()
-            .remaining
-            == 0
+            .items
+            .iter()
+            .map(|item| item.on_hand)
+            .sum()
+    };
+    let credits = |app: &App| {
+        turts_sim::balance_view(app.world(), turts_sim::SlotId(0), &ore)
+            .unwrap()
+            .on_hand
+    };
+    let credits_at_start = credits(&app);
+    let mut emptied_at = None;
+    let mut failed_at = None;
+    for tick in 1..=400_u32 {
+        app.update();
+        if emptied_at.is_none()
+            && turts_sim::node_view(app.world(), turts_sim::NodeId(1))
+                .unwrap()
+                .remaining
+                == 0
         {
-            app.update(); // the next Orders phase observes depletion and records the owner-facing failure
+            emptied_at = Some(tick);
+            assert_eq!(
+                cargo(&app),
+                2,
+                "the worker holds the last load when the node empties"
+            );
+        }
+        let current = app
+            .world()
+            .entity(entity_for(&app, worker))
+            .get::<UnitOrders>()
+            .unwrap()
+            .current
+            .is_some();
+        if emptied_at.is_some() && !current {
+            failed_at = Some(tick);
             break;
         }
     }
+    let (emptied_at, failed_at) = (emptied_at.unwrap(), failed_at.unwrap());
+    assert!(
+        failed_at > emptied_at + 1,
+        "the worker delivers its last load before its order fails"
+    );
+    assert_eq!(cargo(&app), 0, "the failed worker holds no cargo");
+    assert_eq!(
+        credits(&app),
+        credits_at_start + 2,
+        "the depot converts the last load"
+    );
     let depleted = turts_sim::node_view(app.world(), turts_sim::NodeId(1)).unwrap();
     assert_eq!(
         depleted.remaining, 0,
@@ -1134,6 +1196,7 @@ fn actual_worker_gather_exhausts_the_isolated_small_node_and_records_node_deplet
         ContentId::parse("muster:order_gather").unwrap()
     );
     assert_eq!(failure.reason, RejectReason::NodeDepleted);
+    (emptied_at, failed_at)
 }
 
 #[test]

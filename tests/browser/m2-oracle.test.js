@@ -3,7 +3,7 @@
 
 const assert = require("node:assert/strict");
 const { test } = require("node:test");
-const { appliedAfter, cancelRows, hudClick, produceRow } = require("./m2-oracle.js");
+const { appliedAfter, cancelRows, convergenceLimits, hudClick, produceRow, waitForSharedTick } = require("./m2-oracle.js");
 
 // Row shapes of a retained headed HUD2 run (target/mc-evidence/run94-hud2-headed-v3): list rows
 // are "<list>/<item>[<key>]" buttons with a typed widget_action; row children keep their ids.
@@ -87,4 +87,112 @@ test("a stopped M2 drive gives a semantic failure that names the case", async ()
     };
     await assert.rejects(judge(view, { m2: { case_id: "E9-browser-base-economy", package: "base" } }), (error) =>
         error instanceof assert.AssertionError && error.task16_semantic?.row === "M2" && error.task16_semantic.clause === "E9-browser-base-economy");
+});
+
+// A replicated world with the permitted keys only (m2-oracle-lib.js PUBLIC_WORLD_KEYS) and one unit.
+function world(tick, x) {
+    return { slot: 0, replicated_world: { belts: [], economy: { balances: [], inventories: [], orders: [], queues: [] }, extractors: [],
+        health_trace: [], healths: [], inserters: [], nodes: [], research: [], tick, unit_orders: [], weapons: [],
+        units: [{ content_id: "acme:scout", facing: 0, max_health: 10, owner_slot: 0, pos: [x, 4], unit_id: 1 }] } };
+}
+
+// A fake view: window `n` shows the next entry of `frames[n - 1]` at each read (the last entry stays).
+function fakeView(frames) {
+    const reads = [0, 0];
+    return { async bridge(name, n) {
+        assert.equal(name, "turts_debug");
+        const list = frames[n - 1];
+        const entry = list[Math.min(reads[n - 1], list.length - 1)];
+        reads[n - 1] += 1;
+        return entry;
+    } };
+}
+
+// Limits of the unit tests. cross_poll: true is the compare mode of the wide profile.
+const FAST = { min_ms: 0, stall_ms: 200, limit_ms: 2000, poll_ms: 1, cross_poll: true };
+
+test("the shared-tick wait compares the windows at a tick that each showed at a different poll", async () => {
+    // Window 1 shows tick 20 at the third read; window 2 showed tick 20 at the first read only.
+    const view = fakeView([[world(10, 4), world(15, 4), world(20, 5)], [world(20, 5), world(30, 6)]]);
+    const result = await waitForSharedTick(view, FAST);
+    assert.equal(result.tick, 20);
+    // The time to agreement and the counters are part of the result (the harness log prints them).
+    assert.equal(result.profile, "custom");
+    assert.equal(result.compare, "cross_poll");
+    assert.equal(result.limit_ms, FAST.limit_ms);
+    assert.ok(Number.isInteger(result.agreed_after_ms) && result.agreed_after_ms >= 0 && result.agreed_after_ms < FAST.limit_ms, JSON.stringify(result));
+    assert.equal(result.shared_ticks, 1);
+    assert.equal(result.unstable_ticks, 0);
+});
+
+test("the shared-tick wait stays red when the projections differ at each shared tick", async () => {
+    const view = fakeView([[world(10, 4), world(20, 5)], [world(10, 9), world(20, 9)]]);
+    await assert.rejects(waitForSharedTick(view, FAST), /differ between owners at a shared coherent tick .* 2 shared ticks, 2 of them different/);
+});
+
+test("the shared-tick wait stays red when the windows never show the same tick", async () => {
+    const view = fakeView([[world(10, 4), world(12, 4)], [world(11, 4), world(13, 4)]]);
+    await assert.rejects(waitForSharedTick(view, FAST), /0 shared ticks/);
+});
+
+// A view that never ends: each read of window n shows the next tick (the two windows share every
+// tick) and `project(n)` gives its x. It throws after `maxReads` reads, so a wait that ignores its
+// limit ends the test with an error and not with a hang.
+function endlessView(project, maxReads) {
+    const reads = [0, 0];
+    return { async bridge(name, n) {
+        assert.equal(name, "turts_debug");
+        reads[n - 1] += 1;
+        if (reads[0] + reads[1] > maxReads) throw new Error(`the wait ignored its limit: ${maxReads} reads`);
+        return world(reads[n - 1], project(n));
+    } };
+}
+
+test("the shared-tick wait ends at its limit, with the named failure, on a stream that differs for ever", { timeout: 20000 }, async () => {
+    // Both windows advance at each read, so the stall rule never ends the wait: only the limit can.
+    const limits = { name: "wide", min_ms: 0, stall_ms: 1000000, limit_ms: 300, poll_ms: 1, cross_poll: true };
+    const started = Date.now();
+    await assert.rejects(waitForSharedTick(endlessView((n) => (n === 1 ? 4 : 9), 5000), limits),
+        /differ between owners at a shared coherent tick \(profile wide, compare cross_poll, limit 300 ms, \d+ ms, \d+ polls, [1-9]\d* shared ticks, [1-9]\d* of them different/);
+    const elapsed = Date.now() - started;
+    assert.ok(elapsed >= 300 && elapsed < 5000, `the wait took ${elapsed} ms for a limit of 300 ms`);
+});
+
+test("the gate profile is the default and keeps the limit of 10 s; the wide profile needs the environment value", () => {
+    const gate = convergenceLimits({});
+    assert.deepEqual([gate.name, gate.min_ms, gate.limit_ms, gate.cross_poll], ["gate", 10000, 10000, false]);
+    assert.equal(convergenceLimits({ TURTS_M2_CONVERGENCE_LIMIT_MS: "" }), gate);
+    const wide = convergenceLimits({ TURTS_M2_CONVERGENCE_LIMIT_MS: "180000" });
+    assert.deepEqual([wide.name, wide.min_ms, wide.limit_ms, wide.cross_poll], ["wide", 10000, 180000, true]);
+    for (const bad of ["0", "-5", "abc", "1.5", "10s", " 10"]) {
+        assert.throws(() => convergenceLimits({ TURTS_M2_CONVERGENCE_LIMIT_MS: bad }), /TURTS_M2_CONVERGENCE_LIMIT_MS must be a whole number/, bad);
+    }
+});
+
+// The real profiles of convergenceLimits with short waits (the compare mode comes from the profile).
+const GATE_SHORT = { ...convergenceLimits({}), min_ms: 0, stall_ms: 200, limit_ms: 2000, poll_ms: 1 };
+const WIDE_SHORT = { ...convergenceLimits({ TURTS_M2_CONVERGENCE_LIMIT_MS: "2000" }), min_ms: 0, stall_ms: 200, poll_ms: 1 };
+
+test("the gate profile compares at one poll, the wide profile also across polls", async () => {
+    // Window 1 shows tick 20 (x 5) at the third read. Window 2 showed tick 20 (x 5) at the first
+    // read, and then tick 30. The windows never report one tick at the same poll.
+    const stream = () => fakeView([[world(10, 4), world(15, 4), world(20, 5)], [world(20, 5), world(30, 6)]]);
+    await assert.rejects(waitForSharedTick(stream(), GATE_SHORT), /profile gate, compare same_poll, .* 0 shared ticks, 0 of them different/);
+    const result = await waitForSharedTick(stream(), WIDE_SHORT);
+    assert.equal(result.tick, 20);
+    assert.equal(result.compare, "cross_poll");
+});
+
+test("the gate profile agrees at a tick that both windows report at the same poll, and it names its compare mode", async () => {
+    const result = await waitForSharedTick(fakeView([[world(10, 4), world(20, 5)], [world(11, 4), world(20, 5)]]), GATE_SHORT);
+    assert.equal(result.tick, 20);
+    assert.equal(result.compare, "same_poll");
+    assert.equal(result.profile, "gate");
+});
+
+test("in both profiles a window that shows a wrong projection and then a right one at one tick stays wrong", async () => {
+    for (const limits of [GATE_SHORT, WIDE_SHORT]) {
+        await assert.rejects(waitForSharedTick(fakeView([[world(10, 4), world(10, 5)], [world(10, 5)]]), limits),
+            /differ between owners at a shared coherent tick .* 1 shared ticks, 1 of them different, [1-9]\d* unstable/, limits.name);
+    }
 });

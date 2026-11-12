@@ -97,6 +97,15 @@ test("projects a complete owner-only audit world into the browser snapshot schem
     assert.equal(actual.economy.balances.some((balance) => balance.slot === 1), false, "foreign owner economy must be excluded");
 });
 
+test("maps the blocked gather wait of the audit to the wire stage and refuses an unknown reason", () => {
+    const stage = (reason) => ({ Waiting: { reason } });
+    const orders = (state) => projectAuditOwnerWorld(state, 0).economy.orders;
+    assert.deepEqual(orders(auditState(4, { orderStage: stage("Blocked") })), [
+        { unit: 2, node: 1, receiver: 1, stage: { Waiting: { reason: "blocked" } } },
+    ]);
+    assert.throws(() => orders(auditState(4, { orderStage: stage("Jammed") })), /unknown audit gather wait reason/);
+});
+
 test("validates completed audit tick continuity and selects an exact tick", () => {
     const initial = auditState(0);
     const tick1 = auditState(1);
