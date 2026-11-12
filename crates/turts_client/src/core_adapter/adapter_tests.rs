@@ -2710,3 +2710,28 @@ fn owner_effect_variants_carry_the_owner_types() {
     assert!(matches!(placement, Effect::Placement(_)));
     assert!(matches!(hint, Effect::Hint(_)));
 }
+
+/// The owner facts live in `CoreRuntime` from frame to frame (M-R1): the value that one frame's
+/// `build` leaves is the value that the next frame's `build` receives, so an owner keeps its
+/// cache in its own `Facts` type. The counter exists in test builds only: with facts that are new
+/// for each frame (the stateless first form) it stays at 1.
+#[test]
+fn owner_facts_are_kept_from_frame_to_frame() {
+    let _guard = test_lock();
+    let (mut app, window, _) = fixture_app();
+    app.world_mut().despawn(window);
+    app.update();
+    let after_one = app.world().resource::<CoreRuntime>().facts.builds;
+    app.update();
+    app.update();
+    let after_three = app.world().resource::<CoreRuntime>().facts.builds;
+    assert!(
+        after_one >= 1,
+        "the adapter builds the owner facts in a joined frame"
+    );
+    assert_eq!(
+        after_three,
+        after_one + 2,
+        "the owner facts must be kept: each frame builds the same value once"
+    );
+}
