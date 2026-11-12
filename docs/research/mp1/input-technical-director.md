@@ -35,9 +35,9 @@ The brief asks for five design parts, so this reply is longer than the 600-word 
 - `reservations.rs`: claim open and close, no leak, token match, endpoint exists (RES, DANGLING).
 - `production.rs`: refund = ratio x charged, paid once (the logic of `refund_amount` :6659).
 - `industry.rs`: belts, inserters, extractors, machines and nodes.
-- `combat.rs`: the ammo debit for each shot (SHOT). Damage is out, because health is not a ledger.
+- `combat.rs`: the ammo debit for each shot (SHOT). Damage is out, because health is not a ledger. (Amended by the A1d ruling, 2026-11-12: rule `DMG` stays in the source oracle `conservation.rs`, rows C14 and C15.)
 
-Seed the domains from conservation.rs. Then `turts_pack` imports `turts_audit`, so one oracle remains, not two.
+Seed the domains from conservation.rs. (Amended by the A1d ruling, 2026-11-12: conservation.rs then stays in the test tree as the independent source oracle. One ledger audit of the log lives in `turts_audit`; the source oracle reads the authored RON. `turts_pack` does not import `turts_audit` for it.)
 
 **What the slice keeps and what it drops.**
 - Keep: record shape, clock, slots and admission, conservation for each resource in each record, the reservation lifecycle, refund arithmetic, and the no-change rule for refusals.
@@ -78,7 +78,7 @@ Seed the domains from conservation.rs. Then `turts_pack` imports `turts_audit`, 
 1. Pure move. Create the crate with `format.rs` plus `replay.rs`, which holds the old validator unchanged (economylog.rs:345-8083, and the tests :8084-19082 into the crate's tests). Switch the three `#[path]` includes (economy.rs:9, el1.rs:6, mc_orders.rs:3) to `turts_audit::`. Add the boundary rows.
 2. Add `LedgerAudit` and the domain files. Run both validators in every caller. Add one planted fault for each domain. Re-pin E8.
 3. Switch the callers to the ledger validator. Delete `replay.rs`. Apply the fault list above. The sink writes `LedgerAudit`.
-4. Replace `common/conservation.rs` with `turts_audit`. Run `scripts/m3-refutations.sh`: C1 to C17 must stay red.
+4. (Amended by the A1d ruling, 2026-11-12.) Keep `common/conservation.rs` in the test tree. Close the A1c hand-over items. Run `scripts/m3-refutations.sh`: C1 to C17 must stay red.
 
 ## A2. One movement model
 

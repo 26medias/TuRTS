@@ -71,7 +71,12 @@ field that is reset; a -0.0; statics queried with reach `r` only; a merge that i
 - Files: `lib.rs`, `format.rs`, `clock.rs`, `slots.rs`, `balances.rs`, `inventories.rs`, `reservations.rs`,
   `production.rs`, `industry.rs`, `combat.rs`. The writer and the sink stay in `turts_server`.
 - The ledger oracle of the tests (`crates/turts_pack/tests/common/conservation.rs`) is the seed of the domain
-  files, and is then replaced by `turts_audit`, so one oracle remains.
+  files. It stays in the test tree as the independent source oracle: it reads the catalog from the source RON
+  of the package, and the ledger audit reads the catalog from the log, which the code under test writes. The
+  two rule sets stay apart on purpose: a fault that changes the installed catalog and the outcome together is
+  red only in the source oracle (row C6, `tests/m3/refutations.json:158`; A1d ruling
+  `docs/research/mp1/ruling-slice-a1d.md`). `turts_audit` holds one rule set, the ledger audit of a log. It
+  holds no source oracle and no package reader.
 - `AuditState` (`views.rs:374`) keeps all its fields in A1: the frozen stream compares the full `AuditState`
   before and after each operation (`m3_m2_stream.rs:119`). The log writes a new `LedgerAudit` view; a sim
   structure enters the log format only through an explicit edit of `LedgerAudit`.
@@ -291,3 +296,11 @@ before its builder starts; items 17 to 19 are that text.
     the format reads as kind and stage); the stage comes from the gather stage and the format names it;
     `pending_movement_orders` counts units, and Q1b names its source in `orders.rs:75-82`; `UnitOrders.queue`
     and `last_failure` are added to the unit record.
+25. The A1d ruling (technical-director, 2026-11-12, `docs/research/mp1/ruling-slice-a1d.md`) replaces D
+    `:73-74` and the A1d exit "one oracle". There are two oracles with different trust roots: the ledger
+    audit of the log (`turts_audit`) and the source oracle of the tests (`conservation.rs`). Rule `DMG` and the
+    tick checks stay in the source oracle (rows C14 and C15). The four run constants that the log does not
+    hold (`bounds`, `resources`, `compiled_durations`, `unit_types`) are held by `assert_run_constants` for
+    sim code and by a writer scan in `turts_checks` for the production code of `turts_sim`, `turts_server` and
+    `turts_pack`. The log format does not change for them in the slice. A digest in the log is an option for
+    the M11 replay format (Proposed).

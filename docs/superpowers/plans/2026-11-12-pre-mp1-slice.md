@@ -35,6 +35,14 @@ gate is passed for the tasks up to and including A2a. A2b1 gets a short re-check
 - The five test changes outside the A2b1 list (`plain_movement_tests.rs:187`, `:394`; `orders/tests.rs:2692`; `frame_hash.rs:211`; `probe_flags.rs:117`; `ledger_logs.rs:530`) are allowed observation changes or inversions under the D 9.21 conditions. The plan names them here.
 - From A2b2 on the 9.18 cut-off of `kernel_reference` is void: the live and reference fallback requests must be bit-equal and all ticks of all 128 chains are compared. The present harness fails at `kernel_reference.rs:904-917` when the reference is refreshed. `plain_movement_tests.rs:394` is a third port at A2b2.
 
+**From the A1d ruling (2026-11-12, technical-director; `docs/research/mp1/ruling-slice-a1d.md`; review `docs/research/mp1/review-slice-a1d.md`).** Binding for A1d and for the orchestrator's gates:
+- Ruling (ii). `crates/turts_pack/tests/common/conservation.rs` stays in the test tree as the independent source oracle. D `:73-74` is replaced by D section 9 item 25. The A1d exit "one oracle" is void.
+- A1d keeps from `a921096b`: `assert_run_constants` (`crates/turts_server/tests/economy.rs:138-156`) and its two call sites, the removal of the `bevy*` dependencies of `turts_audit`, the three `A1d-run-constants-*` rows (plants moved to real state), and their test in `tests/m2/test_refutations.py`.
+- A1d drops: `crates/turts_audit/src/source.rs`, `pub mod source`, `ron` in `turts_audit`, the `turts_audit` dev-dependency of `turts_pack`, and the import edits.
+- Review M1 is fixed in A1d by a writer scan in `turts_checks` for `MapBounds`, `ProductionDurations`, `UnitTypes` and the removal of the resources of `AuditResourcePresence`. The scan visitor gets a `ResMut<T>` / `Mut<T>` / `NonSendMut<T>` arm, and the movement writer scan gets the same arm. No log format change.
+- The no-content scan does not see compound names (`ore_items`): a recorded gap, owner `qa-lead`, before the first MP1 package with new content ids merges.
+- The `tests/m2/refutations.json` conflict with `pre-mp1/a2b1-fallback`: the task that merges second keeps both row sets.
+
 **From the A1c re-check (2026-11-12, qa-lead; A1c merged with 0 High; report `docs/research/mp1/rereview-slice-a1c.md`).** These bind A2b1 (its first steps) and A1d:
 - A2b1: the sweep test `movement::ecs::tests::the_movement_system_writes_only_movement_state` does not reach the physical-escape branch of the write loop (`crates/turts_sim/src/movement/ecs.rs:113-115`): the reviewer's plant S2 (a unit in a physical escape is given to slot 1) stays green there and is red only by chance in `group_movement.rs:2230`. Add a blocked plain move to the sweep scenario and a count that asserts that each branch of the write loop runs; show S2 red in the sweep.
 - A1d: read `docs/research/mp1/a1c-handover.md` on the slice branch (the log-based accounting oracle cannot see a change of `bounds`, `resources`, `compiled_durations`, `unit_types`; the E8 reorder; the unused `bevy*` dependencies of `turts_audit` with their three `Cargo.lock` lines).
@@ -765,13 +773,13 @@ Modes:
 
 **Branch / inputs:** `pre-mp1/a1d-conservation`; A1c. **Design:** D `:73-74`; TDI step 4.
 
-**Files:** `crates/turts_pack/tests/common/conservation.rs` (1,088 lines) is replaced by calls to `turts_audit`, which becomes a dev-dependency of `turts_pack`. `tests/m3/refutations.json` is not edited.
+**Files:** `crates/turts_pack/tests/common/conservation.rs` stays (A1d ruling). `crates/turts_server/tests/economy.rs` (`assert_run_constants`), `crates/turts_audit/Cargo.toml` (no `bevy*`), `tests/m2/refutations.json` and `tests/m2/test_refutations.py` (three `A1d-run-constants-*` rows), `crates/turts_checks/tests/` (the run-constant writer scan and the `ResMut` arm). `tests/m3/refutations.json` is not edited. `tests/m3/refutations.json` is not edited.
 
 - [ ] **Step 1: Text check first.** For each M3 case, `grep -F` its `expected_failure` in `conservation.rs`. Record the source line of each one. Each text must come out of `turts_audit` with the same bytes. If a text cannot keep its bytes, stop and report. A1d does not edit the registry (section 1a).
 - [ ] **Step 2: Replace.** `cargo test -p turts_pack --locked; echo exit=$?` gives `exit=0`.
 - [ ] **Step 3: Gate.** F-RUST, F-FROZEN, then `--set m3-all --workers 9 --alsa`. Expected: 17 of 17 red, `"failed": []`.
 
-**Exit:** one oracle, and the same 17 texts. **Runs: 2.**
+**Exit:** the same 17 M3 texts, `conservation.rs` byte-equal to `afb9c6de`, the A1c hand-over items closed, the run-constant writer scan red on its plants. **Runs: 2.**
 
 ### Task Q1b: trace emitter, probe API and allowed list
 
