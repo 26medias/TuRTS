@@ -1,0 +1,184 @@
+   Compiling turts_sim v0.2.0 (/home/julien/Projects/TuRTS-mp1/crates/turts_sim)
+    Finished `release` profile [optimized] target(s) in 3.63s
+     Running tests/zz_mp1_obstacle_probe.rs (target/mp1-probe/release/deps/zz_mp1_obstacle_probe-ac78acc44ba21ca8)
+
+running 6 tests
+ROW S5 1xr0.4 g7 centre | n=1 | done=1 | blocked=0 (dist to target -) | not_ended_by_limit=0 | legs_blocked=0 | last_arrival=9.75s vs its straight 9.73s | worst arrival/straight=1.00 | done max dist to point=3.12 | min gap to statics=0.218 | gap at end=0.218 | pools=1 (dist to point here = distance from the click point)
+ROW S5 1xr0.4 g0 centre | n=1 | done=1 | blocked=0 (dist to target -) | not_ended_by_limit=0 | legs_blocked=0 | last_arrival=9.75s vs its straight 9.73s | worst arrival/straight=1.00 | done max dist to point=3.12 | min gap to statics=0.218 | gap at end=0.218 | pools=0 (dist to point here = distance from the click point)
+ROW S5 1xr0.4 g7 inside +1.5 | n=1 | done=1 | blocked=0 (dist to target -) | not_ended_by_limit=0 | legs_blocked=0 | last_arrival=9.70s vs its straight 9.65s | worst arrival/straight=1.01 | done max dist to point=1.56 | min gap to statics=0.055 | gap at end=0.055 | pools=1 (dist to point here = distance from the click point)
+ROW S5 20xr0.4 g7 centre | n=20 | done=20 | blocked=0 (dist to target -) | not_ended_by_limit=0 | legs_blocked=0 | last_arrival=13.60s vs its straight 11.52s | worst arrival/straight=1.35 | done max dist to point=3.60 | min gap to statics=0.000 | gap at end=0.218 | pools=1 (dist to point here = distance from the click point)
+test s5_target_inside_static ... ok
+ROW S2 20xr0.4 offset +0.0 | n=20 | done=20 | blocked=0 (dist to target -) | not_ended_by_limit=0 | legs_blocked=0 | last_arrival=25.00s vs its straight 20.71s | worst arrival/straight=1.21 | done max dist to point=2.38 | min gap to statics=0.000 | gap at end=25.300 | pools=1
+ROW S2 20xr0.4 offset +1.5 | n=20 | done=20 | blocked=0 (dist to target -) | not_ended_by_limit=0 | legs_blocked=0 | last_arrival=24.00s vs its straight 20.35s | worst arrival/straight=1.18 | done max dist to point=2.38 | min gap to statics=0.000 | gap at end=24.943 | pools=1
+ROW S2 20xr0.4 offset -1.5 | n=20 | done=20 | blocked=0 (dist to target -) | not_ended_by_limit=0 | legs_blocked=0 | last_arrival=23.70s vs its straight 19.46s | worst arrival/straight=1.22 | done max dist to point=2.38 | min gap to statics=0.000 | gap at end=24.859 | pools=1
+ROW S2 20xr0.4 offset +3.0 | n=20 | done=20 | blocked=0 (dist to target -) | not_ended_by_limit=0 | legs_blocked=0 | last_arrival=22.00s vs its straight 20.90s | worst arrival/straight=1.05 | done max dist to point=2.38 | min gap to statics=0.000 | gap at end=25.106 | pools=1
+ROW S2 control | n=20 | done=20 | blocked=0 (dist to target -) | not_ended_by_limit=0 | legs_blocked=0 | last_arrival=21.25s vs its straight 20.63s | worst arrival/straight=1.03 | done max dist to point=2.38 | min gap to statics=inf | gap at end=inf | pools=1
+test s2_group_one_static ... ok
+ROW S1 g7 offset +0.0 | n=1 | done=1 | blocked=0 (dist to target -) | not_ended_by_limit=0 | legs_blocked=0 | last_arrival=22.10s vs its straight 20.83s | worst arrival/straight=1.06 | done max dist to point=0.00 | min gap to statics=0.000 | gap at end=27.100 | pools=1
+ROW S1 g7 offset +0.5 | n=1 | done=1 | blocked=0 (dist to target -) | not_ended_by_limit=0 | legs_blocked=0 | last_arrival=21.60s vs its straight 20.83s | worst arrival/straight=1.04 | done max dist to point=0.00 | min gap to statics=0.000 | gap at end=27.104 | pools=1
+ROW S1 g7 offset +1.5 | n=1 | done=1 | blocked=0 (dist to target -) | not_ended_by_limit=0 | legs_blocked=0 | last_arrival=21.10s vs its straight 20.83s | worst arrival/straight=1.01 | done max dist to point=0.00 | min gap to statics=0.000 | gap at end=27.137 | pools=1
+ROW S1 g7 offset +2.5 | n=1 | done=1 | blocked=0 (dist to target -) | not_ended_by_limit=0 | legs_blocked=0 | last_arrival=20.90s vs its straight 20.83s | worst arrival/straight=1.00 | done max dist to point=0.00 | min gap to statics=0.011 | gap at end=27.204 | pools=1
+ROW S1 g7 offset +3.0 | n=1 | done=1 | blocked=0 (dist to target -) | not_ended_by_limit=0 | legs_blocked=0 | last_arrival=20.85s vs its straight 20.83s | worst arrival/straight=1.00 | done max dist to point=0.00 | min gap to statics=0.100 | gap at end=27.250 | pools=1
+ROW S1 g7 offset -0.5 | n=1 | done=1 | blocked=0 (dist to target -) | not_ended_by_limit=0 | legs_blocked=0 | last_arrival=22.45s vs its straight 20.46s | worst arrival/straight=1.10 | done max dist to point=0.90 | min gap to statics=0.000 | gap at end=26.204 | pools=1
+ROW S1 g7 offset -1.5 | n=1 | done=1 | blocked=0 (dist to target -) | not_ended_by_limit=0 | legs_blocked=0 | last_arrival=22.35s vs its straight 20.83s | worst arrival/straight=1.07 | done max dist to point=0.00 | min gap to statics=0.000 | gap at end=27.137 | pools=1
+ROW S1 g7 offset -2.5 | n=1 | done=1 | blocked=0 (dist to target -) | not_ended_by_limit=0 | legs_blocked=0 | last_arrival=21.05s vs its straight 20.83s | worst arrival/straight=1.01 | done max dist to point=0.00 | min gap to statics=0.000 | gap at end=27.204 | pools=1
+ROW S1 g7 offset -3.0 | n=1 | done=1 | blocked=0 (dist to target -) | not_ended_by_limit=0 | legs_blocked=0 | last_arrival=20.85s vs its straight 20.83s | worst arrival/straight=1.00 | done max dist to point=0.00 | min gap to statics=0.100 | gap at end=27.250 | pools=1
+ROW S1 g7 control | n=1 | done=1 | blocked=0 (dist to target -) | not_ended_by_limit=0 | legs_blocked=0 | last_arrival=20.85s vs its straight 20.83s | worst arrival/straight=1.00 | done max dist to point=0.00 | min gap to statics=inf | gap at end=inf | pools=1
+ROW S1 g0 offset +0.0 | n=1 | done=1 | blocked=0 (dist to target -) | not_ended_by_limit=0 | legs_blocked=0 | last_arrival=22.10s vs its straight 20.83s | worst arrival/straight=1.06 | done max dist to point=0.00 | min gap to statics=0.000 | gap at end=27.100 | pools=0
+ROW S1 g0 offset +0.5 | n=1 | done=1 | blocked=0 (dist to target -) | not_ended_by_limit=0 | legs_blocked=0 | last_arrival=21.60s vs its straight 20.83s | worst arrival/straight=1.04 | done max dist to point=0.00 | min gap to statics=0.000 | gap at end=27.104 | pools=0
+ROW S1 g0 offset +1.5 | n=1 | done=1 | blocked=0 (dist to target -) | not_ended_by_limit=0 | legs_blocked=0 | last_arrival=21.10s vs its straight 20.83s | worst arrival/straight=1.01 | done max dist to point=0.00 | min gap to statics=0.000 | gap at end=27.137 | pools=0
+ROW S1 g0 offset +2.5 | n=1 | done=1 | blocked=0 (dist to target -) | not_ended_by_limit=0 | legs_blocked=0 | last_arrival=20.90s vs its straight 20.83s | worst arrival/straight=1.00 | done max dist to point=0.00 | min gap to statics=0.011 | gap at end=27.204 | pools=0
+ROW S1 g0 offset +3.0 | n=1 | done=1 | blocked=0 (dist to target -) | not_ended_by_limit=0 | legs_blocked=0 | last_arrival=20.85s vs its straight 20.83s | worst arrival/straight=1.00 | done max dist to point=0.00 | min gap to statics=0.100 | gap at end=27.250 | pools=0
+ROW S1 g0 offset -0.5 | n=1 | done=1 | blocked=0 (dist to target -) | not_ended_by_limit=0 | legs_blocked=0 | last_arrival=22.45s vs its straight 20.46s | worst arrival/straight=1.10 | done max dist to point=0.90 | min gap to statics=0.000 | gap at end=26.204 | pools=0
+ROW S1 g0 offset -1.5 | n=1 | done=1 | blocked=0 (dist to target -) | not_ended_by_limit=0 | legs_blocked=0 | last_arrival=22.35s vs its straight 20.83s | worst arrival/straight=1.07 | done max dist to point=0.00 | min gap to statics=0.000 | gap at end=27.137 | pools=0
+ROW S1 g0 offset -2.5 | n=1 | done=1 | blocked=0 (dist to target -) | not_ended_by_limit=0 | legs_blocked=0 | last_arrival=21.05s vs its straight 20.83s | worst arrival/straight=1.01 | done max dist to point=0.00 | min gap to statics=0.000 | gap at end=27.204 | pools=0
+ROW S1 g0 offset -3.0 | n=1 | done=1 | blocked=0 (dist to target -) | not_ended_by_limit=0 | legs_blocked=0 | last_arrival=20.85s vs its straight 20.83s | worst arrival/straight=1.00 | done max dist to point=0.00 | min gap to statics=0.100 | gap at end=27.250 | pools=0
+ROW S1 g0 control | n=1 | done=1 | blocked=0 (dist to target -) | not_ended_by_limit=0 | legs_blocked=0 | last_arrival=20.85s vs its straight 20.83s | worst arrival/straight=1.00 | done max dist to point=0.00 | min gap to statics=inf | gap at end=inf | pools=0
+test s1_single_unit_one_static ... ok
+ROW S6 1xr0.4 offset +0.0 via (36,31),(44,31) | n=1 | done=1 | blocked=0 (dist to target -) | not_ended_by_limit=0 | legs_blocked=0 | last_arrival=21.40s vs its straight 20.83s | worst arrival/straight=1.03 | done max dist to point=0.00 | min gap to statics=2.100 | gap at end=27.100 | pools=3
+ROW S6 20xr0.4 offset +0.0 via (34,28),(46,28) | n=20 | done=17 | blocked=3 (dist to target 0.91..2.20) | not_ended_by_limit=0 | legs_blocked=3 | last_arrival=34.80s vs its straight 21.57s | worst arrival/straight=1.66 | done max dist to point=2.38 | min gap to statics=3.497 | gap at end=24.861 | pools=34
+    DETAIL S6 20xr0.4 offset +0.0 via (34,28),(46,28) unit 5: end=Some(620) blocked=true final=(68.27,35.92) dist=1.74
+    DETAIL S6 20xr0.4 offset +0.0 via (34,28),(46,28) unit 12: end=Some(497) blocked=true final=(69.43,33.88) dist=2.20
+    DETAIL S6 20xr0.4 offset +0.0 via (34,28),(46,28) unit 18: end=Some(596) blocked=true final=(69.65,35.16) dist=0.91
+ROW S6 1xr0.4 offset -1.5 via (36,31),(44,31) | n=1 | done=1 | blocked=0 (dist to target -) | not_ended_by_limit=0 | legs_blocked=0 | last_arrival=21.40s vs its straight 20.83s | worst arrival/straight=1.03 | done max dist to point=0.00 | min gap to statics=0.600 | gap at end=27.137 | pools=3
+ROW S6 20xr0.4 offset -1.5 via (34,28),(46,28) | n=20 | done=17 | blocked=3 (dist to target 0.91..2.20) | not_ended_by_limit=0 | legs_blocked=3 | last_arrival=34.80s vs its straight 21.57s | worst arrival/straight=1.66 | done max dist to point=2.38 | min gap to statics=1.997 | gap at end=24.859 | pools=34
+    DETAIL S6 20xr0.4 offset -1.5 via (34,28),(46,28) unit 5: end=Some(620) blocked=true final=(68.27,35.92) dist=1.74
+    DETAIL S6 20xr0.4 offset -1.5 via (34,28),(46,28) unit 12: end=Some(497) blocked=true final=(69.43,33.88) dist=2.20
+    DETAIL S6 20xr0.4 offset -1.5 via (34,28),(46,28) unit 18: end=Some(596) blocked=true final=(69.65,35.16) dist=0.91
+ROW S6 1xr0.4 offset +1.5 via (36,31),(44,31) | n=1 | done=1 | blocked=0 (dist to target -) | not_ended_by_limit=0 | legs_blocked=0 | last_arrival=21.40s vs its straight 20.83s | worst arrival/straight=1.03 | done max dist to point=0.00 | min gap to statics=3.600 | gap at end=27.137 | pools=3
+ROW S6 20xr0.4 offset +1.5 via (34,28),(46,28) | n=20 | done=17 | blocked=3 (dist to target 0.91..2.20) | not_ended_by_limit=0 | legs_blocked=3 | last_arrival=34.80s vs its straight 21.57s | worst arrival/straight=1.66 | done max dist to point=2.38 | min gap to statics=4.997 | gap at end=24.943 | pools=34
+    DETAIL S6 20xr0.4 offset +1.5 via (34,28),(46,28) unit 5: end=Some(620) blocked=true final=(68.27,35.92) dist=1.74
+    DETAIL S6 20xr0.4 offset +1.5 via (34,28),(46,28) unit 12: end=Some(497) blocked=true final=(69.43,33.88) dist=2.20
+    DETAIL S6 20xr0.4 offset +1.5 via (34,28),(46,28) unit 18: end=Some(596) blocked=true final=(69.65,35.16) dist=0.91
+test s6_waypoints_single_static ... ok
+BASE gap 1/40: (56.00,36.00) r2.5; (55.13,40.92) r1.5; (52.55,38.89) r1; (51.00,36.00) r1.5; (52.55,33.11) r1; (55.13,31.08) r1.5; min gap 0.78; gaps below 3.0: [0-1: 1.00] [0-2: 1.00] [0-3: 1.00] [0-4: 1.00] [0-5: 1.00] [1-2: 0.78] [2-3: 0.78] [3-4: 0.78] [4-5: 0.78] 
+ROW S3 gap1/40 20xr0.4 | n=20 | done=20 | blocked=0 (dist to target -) | not_ended_by_limit=0 | legs_blocked=0 | last_arrival=28.80s vs its straight 21.18s | worst arrival/straight=1.36 | done max dist to point=2.38 | min gap to statics=-0.017 | gap at end=20.863 | pools=1
+ROW S6 base gap1 20xr0.4 via (46,24),(66,24) | n=20 | done=15 | blocked=5 (dist to target 1.46..2.58) | not_ended_by_limit=0 | legs_blocked=5 | last_arrival=32.90s vs its straight 22.88s | worst arrival/straight=1.52 | done max dist to point=2.38 | min gap to statics=3.905 | gap at end=21.063 | pools=31
+    DETAIL S6 base gap1 20xr0.4 via (46,24),(66,24) unit 4: end=Some(630) blocked=true final=(79.95,35.22) dist=2.19
+    DETAIL S6 base gap1 20xr0.4 via (46,24),(66,24) unit 7: end=Some(616) blocked=true final=(80.40,34.50) dist=2.19
+    DETAIL S6 base gap1 20xr0.4 via (46,24),(66,24) unit 12: end=Some(616) blocked=true final=(80.75,35.24) dist=1.46
+    DETAIL S6 base gap1 20xr0.4 via (46,24),(66,24) unit 14: end=Some(662) blocked=true final=(83.45,38.14) dist=2.58
+    DETAIL S6 base gap1 20xr0.4 via (46,24),(66,24) unit 16: end=Some(593) blocked=true final=(81.20,34.46) dist=1.73
+ROW S3 gap1/40 1xr0.9 | n=1 | done=1 | blocked=0 (dist to target -) | not_ended_by_limit=0 | legs_blocked=0 | last_arrival=26.00s vs its straight 21.28s | worst arrival/straight=1.22 | done max dist to point=1.90 | min gap to statics=0.000 | gap at end=21.704 | pools=1
+ROW S6 base gap1 1xr0.9 via (46,24),(66,24) | n=1 | done=1 | blocked=0 (dist to target -) | not_ended_by_limit=0 | legs_blocked=0 | last_arrival=25.05s vs its straight 21.67s | worst arrival/straight=1.16 | done max dist to point=0.00 | min gap to statics=4.676 | gap at end=22.600 | pools=3
+ROW S3 gap1/40 5xr0.9 | n=5 | done=4 | blocked=1 (dist to target 31.37..31.37) | not_ended_by_limit=0 | legs_blocked=1 | last_arrival=26.10s vs its straight 20.54s | worst arrival/straight=1.27 | done max dist to point=3.29 | min gap to statics=0.000 | gap at end=0.000 | pools=1
+    DETAIL S3 gap1/40 5xr0.9 unit 5: end=Some(258) blocked=true final=(50.72,38.38) dist=31.37
+ROW S6 base gap1 5xr0.9 via (46,24),(66,24) | n=5 | done=5 | blocked=0 (dist to target -) | not_ended_by_limit=0 | legs_blocked=0 | last_arrival=31.35s vs its straight 22.07s | worst arrival/straight=1.42 | done max dist to point=1.90 | min gap to statics=3.026 | gap at end=21.704 | pools=10
+ROW S3 gap1/40 20xr0.9 | n=20 | done=16 | blocked=4 (dist to target 29.65..32.97) | not_ended_by_limit=0 | legs_blocked=4 | last_arrival=31.80s vs its straight 22.44s | worst arrival/straight=1.43 | done max dist to point=5.03 | min gap to statics=-0.196 | gap at end=0.000 | pools=1
+    DETAIL S3 gap1/40 20xr0.9 unit 5: end=Some(467) blocked=true final=(52.74,40.78) dist=29.65
+    DETAIL S3 gap1/40 20xr0.9 unit 9: end=Some(435) blocked=true final=(51.84,42.34) dist=30.82
+    DEEP S3 gap1/40 20xr0.9 unit 13: tick 352 gap -0.196 escape=true activity=Some(Blocked)
+    DETAIL S3 gap1/40 20xr0.9 unit 13: end=Some(345) blocked=true final=(49.06,37.42) dist=32.97
+    DETAIL S3 gap1/40 20xr0.9 unit 19: end=Some(334) blocked=true final=(49.82,39.94) dist=32.42
+ROW S6 base gap1 20xr0.9 via (46,24),(66,24) | n=20 | done=11 | blocked=9 (dist to target 3.47..5.58) | not_ended_by_limit=0 | legs_blocked=9 | last_arrival=42.90s vs its straight 24.11s | worst arrival/straight=1.78 | done max dist to point=3.80 | min gap to statics=1.183 | gap at end=18.161 | pools=38
+    DETAIL S6 base gap1 20xr0.9 via (46,24),(66,24) unit 1: end=Some(805) blocked=true final=(84.98,32.56) dist=4.55
+    DETAIL S6 base gap1 20xr0.9 via (46,24),(66,24) unit 2: end=Some(959) blocked=true final=(82.30,31.00) dist=5.01
+    DETAIL S6 base gap1 20xr0.9 via (46,24),(66,24) unit 8: end=Some(828) blocked=true final=(81.38,32.59) dist=3.47
+    DETAIL S6 base gap1 20xr0.9 via (46,24),(66,24) unit 10: end=Some(686) blocked=true final=(78.42,35.34) dist=3.64
+    DETAIL S6 base gap1 20xr0.9 via (46,24),(66,24) unit 12: end=Some(696) blocked=true final=(77.45,33.77) dist=5.07
+    DETAIL S6 base gap1 20xr0.9 via (46,24),(66,24) unit 13: end=Some(838) blocked=true final=(83.18,32.57) dist=3.63
+    DETAIL S6 base gap1 20xr0.9 via (46,24),(66,24) unit 15: end=Some(866) blocked=true final=(79.68,31.99) dist=4.63
+    DETAIL S6 base gap1 20xr0.9 via (46,24),(66,24) unit 16: end=Some(643) blocked=true final=(79.25,33.73) dist=3.57
+    DETAIL S6 base gap1 20xr0.9 via (46,24),(66,24) unit 19: end=Some(887) blocked=true final=(84.27,30.91) dist=5.58
+BASE gap 2/40: (56.00,36.00) r2.5; (54.96,41.91) r1.5; (51.79,39.54) r1; (50.00,36.00) r1.5; (51.79,32.46) r1; (54.96,30.09) r1.5; min gap 1.46; gaps below 3.0: [0-1: 2.00] [0-2: 2.00] [0-3: 2.00] [0-4: 2.00] [0-5: 2.00] [1-2: 1.46] [2-3: 1.46] [3-4: 1.46] [4-5: 1.46] 
+ROW S3 gap2/40 20xr0.4 | n=20 | done=20 | blocked=0 (dist to target -) | not_ended_by_limit=0 | legs_blocked=0 | last_arrival=24.70s vs its straight 21.55s | worst arrival/straight=1.17 | done max dist to point=2.38 | min gap to statics=0.000 | gap at end=20.863 | pools=1
+ROW S3 gap2/40 1xr0.9 | n=1 | done=0 | blocked=1 (dist to target 31.81..31.81) | not_ended_by_limit=0 | legs_blocked=1 | last_arrival=0.00s vs its straight 0.00s | worst arrival/straight=0.00 | done max dist to point=0.00 | min gap to statics=0.000 | gap at end=0.000 | pools=1
+    DETAIL S3 gap2/40 1xr0.9 unit 1: end=Some(271) blocked=true final=(50.27,33.62) dist=31.81
+ROW S3 gap2/40 5xr0.9 | n=5 | done=1 | blocked=4 (dist to target 29.96..32.16) | not_ended_by_limit=0 | legs_blocked=4 | last_arrival=22.90s vs its straight 22.08s | worst arrival/straight=1.04 | done max dist to point=1.90 | min gap to statics=-0.016 | gap at end=0.000 | pools=1
+    DETAIL S3 gap2/40 5xr0.9 unit 2: end=Some(380) blocked=true final=(52.52,30.70) dist=29.96
+    DETAIL S3 gap2/40 5xr0.9 unit 3: end=Some(299) blocked=true final=(50.27,33.62) dist=31.81
+    DETAIL S3 gap2/40 5xr0.9 unit 4: end=Some(365) blocked=true final=(51.69,29.08) dist=31.09
+    DETAIL S3 gap2/40 5xr0.9 unit 5: end=Some(254) blocked=true final=(49.98,38.90) dist=32.16
+ROW S3 gap2/40 20xr0.9 | n=20 | done=10 | blocked=10 (dist to target 29.80..34.76) | not_ended_by_limit=0 | legs_blocked=10 | last_arrival=27.80s vs its straight 21.74s | worst arrival/straight=1.28 | done max dist to point=5.03 | min gap to statics=-0.473 | gap at end=0.000 | pools=1
+    DEEP S3 gap2/40 20xr0.9 unit 4: tick 428 gap -0.473 escape=true activity=Some(Blocked)
+    DETAIL S3 gap2/40 20xr0.9 unit 4: end=Some(417) blocked=true final=(47.47,36.76) dist=34.54
+    DETAIL S3 gap2/40 20xr0.9 unit 5: end=Some(460) blocked=true final=(52.60,41.33) dist=29.88
+    DETAIL S3 gap2/40 20xr0.9 unit 8: end=Some(404) blocked=true final=(48.47,33.60) dist=33.62
+    DETAIL S3 gap2/40 20xr0.9 unit 9: end=Some(443) blocked=true final=(53.17,43.53) dist=29.80
+    DETAIL S3 gap2/40 20xr0.9 unit 13: end=Some(421) blocked=true final=(47.47,32.00) dist=34.76
+    DETAIL S3 gap2/40 20xr0.9 unit 14: end=Some(383) blocked=true final=(49.48,40.06) dist=32.77
+    DETAIL S3 gap2/40 20xr0.9 unit 16: end=Some(343) blocked=true final=(52.56,30.21) dist=30.00
+    DETAIL S3 gap2/40 20xr0.9 unit 17: end=Some(292) blocked=true final=(50.10,31.59) dist=32.20
+    DETAIL S3 gap2/40 20xr0.9 unit 19: end=Some(308) blocked=true final=(48.38,38.38) dist=33.71
+    DETAIL S3 gap2/40 20xr0.9 unit 20: end=Some(338) blocked=true final=(50.79,42.30) dist=31.84
+BASE gap 0.5/35: (56.00,36.00) r2.5; (54.46,40.23) r1.5; (52.72,38.29) r1; (51.50,36.00) r1.5; (52.72,33.71) r1; (54.46,31.77) r1.5; min gap 0.10; gaps below 3.0: [0-1: 0.50] [0-2: 0.50] [0-3: 0.50] [0-4: 0.50] [0-5: 0.50] [1-2: 0.10] [1-3: 2.16] [2-3: 0.10] [2-4: 2.59] [3-4: 0.10] [3-5: 2.16] [4-5: 0.10] 
+ROW S3 gap0.5/35 20xr0.4 | n=20 | done=13 | blocked=7 (dist to target 29.59..31.97) | not_ended_by_limit=0 | legs_blocked=7 | last_arrival=30.05s vs its straight 20.86s | worst arrival/straight=1.44 | done max dist to point=2.38 | min gap to statics=-0.057 | gap at end=0.000 | pools=1
+    DETAIL S3 gap0.5/35 20xr0.4 unit 4: end=Some(416) blocked=true final=(51.38,37.90) dist=30.68
+    DETAIL S3 gap0.5/35 20xr0.4 unit 5: end=Some(395) blocked=true final=(50.13,38.62) dist=31.97
+    DETAIL S3 gap0.5/35 20xr0.4 unit 10: end=Some(374) blocked=true final=(52.64,39.69) dist=29.59
+    DEEP S3 gap0.5/35 20xr0.4 unit 14: tick 356 gap -0.057 escape=true activity=Some(Blocked)
+    DETAIL S3 gap0.5/35 20xr0.4 unit 14: end=Some(354) blocked=true final=(51.38,39.34) dist=30.80
+    DETAIL S3 gap0.5/35 20xr0.4 unit 15: end=Some(360) blocked=true final=(52.22,40.42) dist=30.11
+    DETAIL S3 gap0.5/35 20xr0.4 unit 19: end=Some(342) blocked=true final=(50.54,37.90) dist=31.52
+    DETAIL S3 gap0.5/35 20xr0.4 unit 20: end=Some(331) blocked=true final=(50.96,38.62) dist=31.15
+ROW S3 gap0.5/35 1xr0.9 | n=1 | done=1 | blocked=0 (dist to target -) | not_ended_by_limit=0 | legs_blocked=0 | last_arrival=25.15s vs its straight 21.67s | worst arrival/straight=1.16 | done max dist to point=0.00 | min gap to statics=0.000 | gap at end=22.600 | pools=1
+ROW S3 gap0.5/35 5xr0.9 | n=5 | done=4 | blocked=1 (dist to target 31.28..31.28) | not_ended_by_limit=0 | legs_blocked=1 | last_arrival=24.40s vs its straight 20.54s | worst arrival/straight=1.19 | done max dist to point=3.29 | min gap to statics=0.000 | gap at end=0.000 | pools=1
+    DETAIL S3 gap0.5/35 5xr0.9 unit 5: end=Some(260) blocked=true final=(50.81,38.30) dist=31.28
+ROW S3 gap0.5/35 20xr0.9 | n=20 | done=17 | blocked=3 (dist to target 31.36..33.14) | not_ended_by_limit=0 | legs_blocked=3 | last_arrival=31.20s vs its straight 23.71s | worst arrival/straight=1.32 | done max dist to point=5.03 | min gap to statics=0.000 | gap at end=0.179 | pools=1
+    DETAIL S3 gap0.5/35 20xr0.9 unit 13: end=Some(425) blocked=true final=(49.34,41.63) dist=33.14
+    DETAIL S3 gap0.5/35 20xr0.9 unit 19: end=Some(363) blocked=true final=(50.33,38.30) dist=31.75
+    DETAIL S3 gap0.5/35 20xr0.9 unit 20: end=Some(361) blocked=true final=(51.15,41.63) dist=31.36
+BASE gap 2/50: (56.00,36.00) r2.5; (57.04,41.91) r1.5; (52.46,40.21) r1; (50.00,36.00) r1.5; (52.46,31.79) r1; (57.04,30.09) r1.5; min gap 2.00; gaps below 3.0: [0-1: 2.00] [0-2: 2.00] [0-3: 2.00] [0-4: 2.00] [0-5: 2.00] [1-2: 2.38] [2-3: 2.38] [3-4: 2.38] [4-5: 2.38] 
+ROW S3 gap2/50 20xr0.4 | n=20 | done=20 | blocked=0 (dist to target -) | not_ended_by_limit=0 | legs_blocked=0 | last_arrival=24.55s vs its straight 21.55s | worst arrival/straight=1.14 | done max dist to point=2.38 | min gap to statics=0.000 | gap at end=20.863 | pools=1
+ROW S3 gap2/50 1xr0.9 | n=1 | done=1 | blocked=0 (dist to target -) | not_ended_by_limit=0 | legs_blocked=0 | last_arrival=22.90s vs its straight 21.67s | worst arrival/straight=1.06 | done max dist to point=0.00 | min gap to statics=0.000 | gap at end=22.600 | pools=1
+ROW S3 gap2/50 5xr0.9 | n=5 | done=5 | blocked=0 (dist to target -) | not_ended_by_limit=0 | legs_blocked=0 | last_arrival=26.10s vs its straight 21.67s | worst arrival/straight=1.20 | done max dist to point=3.29 | min gap to statics=0.000 | gap at end=19.808 | pools=1
+ROW S3 gap2/50 20xr0.9 | n=20 | done=20 | blocked=0 (dist to target -) | not_ended_by_limit=0 | legs_blocked=0 | last_arrival=30.35s vs its straight 23.67s | worst arrival/straight=1.40 | done max dist to point=5.03 | min gap to statics=0.000 | gap at end=17.914 | pools=1
+BASE gap 1/72: (56.00,36.00) r2.5; (60.05,38.94) r1.5; (54.61,40.28) r1; (51.00,36.00) r1.5; (54.61,31.72) r1; (60.05,33.06) r1.5; min gap 1.00; gaps below 3.0: [0-1: 1.00] [0-2: 1.00] [0-3: 1.00] [0-4: 1.00] [0-5: 1.00] [1-5: 2.88] 
+ROW S3 gap1/72 20xr0.4 | n=20 | done=20 | blocked=0 (dist to target -) | not_ended_by_limit=0 | legs_blocked=0 | last_arrival=27.35s vs its straight 22.50s | worst arrival/straight=1.26 | done max dist to point=2.38 | min gap to statics=0.000 | gap at end=17.923 | pools=1
+ROW S3 gap1/72 1xr0.9 | n=1 | done=0 | blocked=1 (dist to target 28.34..28.34) | not_ended_by_limit=0 | legs_blocked=1 | last_arrival=0.00s vs its straight 0.00s | worst arrival/straight=0.00 | done max dist to point=0.00 | min gap to statics=0.000 | gap at end=0.000 | pools=1
+    DETAIL S3 gap1/72 1xr0.9 unit 1: end=Some(300) blocked=true final=(53.78,33.43) dist=28.34
+ROW S3 gap1/72 5xr0.9 | n=5 | done=2 | blocked=3 (dist to target 28.34..30.23) | not_ended_by_limit=0 | legs_blocked=3 | last_arrival=24.10s vs its straight 22.47s | worst arrival/straight=1.07 | done max dist to point=1.90 | min gap to statics=0.000 | gap at end=0.000 | pools=1
+    DETAIL S3 gap1/72 5xr0.9 unit 3: end=Some(367) blocked=true final=(51.88,33.43) dist=30.23
+    DETAIL S3 gap1/72 5xr0.9 unit 4: end=Some(384) blocked=true final=(53.78,33.43) dist=28.34
+    DETAIL S3 gap1/72 5xr0.9 unit 5: end=Some(302) blocked=true final=(53.76,38.56) dist=28.36
+ROW S3 gap1/72 20xr0.9 | n=20 | done=11 | blocked=9 (dist to target 25.19..31.96) | not_ended_by_limit=0 | legs_blocked=9 | last_arrival=27.85s vs its straight 22.88s | worst arrival/straight=1.26 | done max dist to point=5.03 | min gap to statics=-1.154 | gap at end=0.000 | pools=1
+    DETAIL S3 gap1/72 20xr0.9 unit 3: end=Some(419) blocked=true final=(53.78,33.43) dist=28.34
+    DEEP S3 gap1/72 20xr0.9 unit 4: tick 482 gap -0.307 escape=true activity=Some(Blocked)
+    DETAIL S3 gap1/72 20xr0.9 unit 4: end=Some(474) blocked=true final=(50.46,41.16) dist=31.96
+    DEEP S3 gap1/72 20xr0.9 unit 5: tick 535 gap -1.154 escape=true activity=Some(Blocked)
+    DETAIL S3 gap1/72 20xr0.9 unit 5: end=Some(521) blocked=true final=(57.48,41.78) dist=25.19
+    DEEP S3 gap1/72 20xr0.9 unit 13: tick 475 gap -0.300 escape=true activity=Some(Blocked)
+    DETAIL S3 gap1/72 20xr0.9 unit 13: end=Some(467) blocked=true final=(52.74,41.99) dist=29.87
+    DETAIL S3 gap1/72 20xr0.9 unit 14: end=Some(541) blocked=true final=(53.75,38.55) dist=28.37
+    DETAIL S3 gap1/72 20xr0.9 unit 17: end=Some(337) blocked=true final=(51.88,33.43) dist=30.23
+    DETAIL S3 gap1/72 20xr0.9 unit 18: end=Some(388) blocked=true final=(50.97,31.81) dist=31.31
+    DETAIL S3 gap1/72 20xr0.9 unit 19: end=Some(393) blocked=true final=(51.10,39.40) dist=31.08
+    DEEP S3 gap1/72 20xr0.9 unit 20: tick 374 gap -0.831 escape=true activity=Some(Blocked)
+    DETAIL S3 gap1/72 20xr0.9 unit 20: end=Some(362) blocked=true final=(56.56,40.17) dist=25.78
+test s3_base ... ok
+ROW S4 free (no pylon) g5 | trips=20 of 20 within 1200s | first trip at 11.50s | mean cycle=14.50s | max cycle=14.50s | ratio to free=- | blocked=None | min gap to statics=0.500
+ROW S4 pylon r1.5 mid-path offset +0.0 g5 | trips=20 of 20 within 1070s | first trip at 12.90s | mean cycle=17.30s | max cycle=17.30s | ratio to free=1.19 | blocked=None | min gap to statics=0.000
+ROW S4 pylon r1.5 mid-path offset +1.0 g5 | trips=20 of 20 within 1070s | first trip at 14.95s | mean cycle=18.35s | max cycle=18.35s | ratio to free=1.27 | blocked=None | min gap to statics=0.000
+ROW S4 pylon r1.5 mid-path offset +2.0 g5 | trips=20 of 20 within 1070s | first trip at 11.70s | mean cycle=14.75s | max cycle=14.75s | ratio to free=1.02 | blocked=None | min gap to statics=0.000
+ROW S4 pylon r1.5 mid-path offset -1.0 g5 | trips=20 of 20 within 1070s | first trip at 11.90s | mean cycle=18.35s | max cycle=18.35s | ratio to free=1.27 | blocked=None | min gap to statics=0.000
+ROW S4 pylon r1.5 mid-path offset -2.0 g5 | trips=20 of 20 within 1070s | first trip at 11.55s | mean cycle=14.75s | max cycle=14.75s | ratio to free=1.02 | blocked=None | min gap to statics=0.000
+ROW S4 pylon r1.5 mid-path offset +2.5 g5 | trips=20 of 20 within 1070s | first trip at 11.50s | mean cycle=14.50s | max cycle=14.50s | ratio to free=1.00 | blocked=None | min gap to statics=0.100
+ROW S4 pylon r1.5 at gap 1 from CC, offset +0.0 g5 | trips=0 of 20 within 1070s | first trip at NaNs | mean cycle=- | max cycle=0.00s | ratio to free=- | blocked=Some((9.8, 23.9, 32.709103)) | min gap to statics=0.289
+ROW S4 pylon r1.5 at gap 1 from CC, offset +2.0 g5 | trips=0 of 20 within 1070s | first trip at NaNs | mean cycle=- | max cycle=0.00s | ratio to free=- | blocked=Some((9.25, 24.85, 34.354553)) | min gap to statics=1.135
+ROW S4 pylon r1.5 at gap 1 from CC, offset -2.0 g5 | trips=0 of 20 within 1070s | first trip at NaNs | mean cycle=- | max cycle=0.00s | ratio to free=- | blocked=Some((9.25, 24.85, 37.645447)) | min gap to statics=1.135
+ROW S4 pylon r1.5 at gap 1 from CC, offset +3.0 g5 | trips=20 of 20 within 1070s | first trip at 11.50s | mean cycle=14.50s | max cycle=14.50s | ratio to free=1.00 | blocked=None | min gap to statics=0.500
+ROW S4 pylon r1.5 at gap 2 from CC, offset +0.0 g5 | trips=0 of 20 within 1070s | first trip at NaNs | mean cycle=- | max cycle=0.00s | ratio to free=- | blocked=Some((9.85, 23.9, 32.709103)) | min gap to statics=0.000
+ROW S4 pylon r1.5 at gap 2.5 from CC, offset +0.0 g5 | trips=20 of 20 within 1070s | first trip at 13.20s | mean cycle=17.45s | max cycle=17.45s | ratio to free=1.20 | blocked=None | min gap to statics=0.000
+ROW S4 pylon r1.5 at gap 3 from CC, offset +0.0 g5 | trips=20 of 20 within 1070s | first trip at 13.10s | mean cycle=17.35s | max cycle=17.35s | ratio to free=1.20 | blocked=None | min gap to statics=0.000
+ROW S4 pylon r1.5 at gap 4 from CC, offset +0.0 g5 | trips=20 of 20 within 1070s | first trip at 12.90s | mean cycle=17.25s | max cycle=17.25s | ratio to free=1.19 | blocked=None | min gap to statics=0.000
+ROW S4 pylon r1.5 at gap 1 from CC, offset +6.0 g5 | trips=20 of 20 within 1070s | first trip at 11.50s | mean cycle=14.50s | max cycle=14.50s | ratio to free=1.00 | blocked=None | min gap to statics=0.500
+ROW S4 free (no pylon) g0 | trips=20 of 20 within 1200s | first trip at 11.50s | mean cycle=14.50s | max cycle=14.50s | ratio to free=- | blocked=None | min gap to statics=0.500
+ROW S4 pylon r1.5 mid-path offset +0.0 g0 | trips=20 of 20 within 1070s | first trip at 12.90s | mean cycle=17.30s | max cycle=17.30s | ratio to free=1.19 | blocked=None | min gap to statics=0.000
+ROW S4 pylon r1.5 mid-path offset +1.0 g0 | trips=20 of 20 within 1070s | first trip at 14.95s | mean cycle=18.35s | max cycle=18.35s | ratio to free=1.27 | blocked=None | min gap to statics=0.000
+ROW S4 pylon r1.5 mid-path offset +2.0 g0 | trips=20 of 20 within 1070s | first trip at 11.70s | mean cycle=14.75s | max cycle=14.75s | ratio to free=1.02 | blocked=None | min gap to statics=0.000
+ROW S4 pylon r1.5 mid-path offset -1.0 g0 | trips=20 of 20 within 1070s | first trip at 11.90s | mean cycle=18.35s | max cycle=18.35s | ratio to free=1.27 | blocked=None | min gap to statics=0.000
+ROW S4 pylon r1.5 mid-path offset -2.0 g0 | trips=20 of 20 within 1070s | first trip at 11.55s | mean cycle=14.75s | max cycle=14.75s | ratio to free=1.02 | blocked=None | min gap to statics=0.000
+ROW S4 pylon r1.5 mid-path offset +2.5 g0 | trips=20 of 20 within 1070s | first trip at 11.50s | mean cycle=14.50s | max cycle=14.50s | ratio to free=1.00 | blocked=None | min gap to statics=0.100
+ROW S4 pylon r1.5 at gap 1 from CC, offset +0.0 g0 | trips=0 of 20 within 1070s | first trip at NaNs | mean cycle=- | max cycle=0.00s | ratio to free=- | blocked=Some((9.8, 23.9, 32.709103)) | min gap to statics=0.289
+ROW S4 pylon r1.5 at gap 1 from CC, offset +2.0 g0 | trips=0 of 20 within 1070s | first trip at NaNs | mean cycle=- | max cycle=0.00s | ratio to free=- | blocked=Some((9.25, 24.85, 34.354553)) | min gap to statics=1.135
+ROW S4 pylon r1.5 at gap 1 from CC, offset -2.0 g0 | trips=0 of 20 within 1070s | first trip at NaNs | mean cycle=- | max cycle=0.00s | ratio to free=- | blocked=Some((9.25, 24.85, 37.645447)) | min gap to statics=1.135
+ROW S4 pylon r1.5 at gap 1 from CC, offset +3.0 g0 | trips=20 of 20 within 1070s | first trip at 11.50s | mean cycle=14.50s | max cycle=14.50s | ratio to free=1.00 | blocked=None | min gap to statics=0.500
+ROW S4 pylon r1.5 at gap 2 from CC, offset +0.0 g0 | trips=0 of 20 within 1070s | first trip at NaNs | mean cycle=- | max cycle=0.00s | ratio to free=- | blocked=Some((9.85, 23.9, 32.709103)) | min gap to statics=0.000
+ROW S4 pylon r1.5 at gap 2.5 from CC, offset +0.0 g0 | trips=20 of 20 within 1070s | first trip at 13.20s | mean cycle=17.45s | max cycle=17.45s | ratio to free=1.20 | blocked=None | min gap to statics=0.000
+ROW S4 pylon r1.5 at gap 3 from CC, offset +0.0 g0 | trips=20 of 20 within 1070s | first trip at 13.10s | mean cycle=17.35s | max cycle=17.35s | ratio to free=1.20 | blocked=None | min gap to statics=0.000
+ROW S4 pylon r1.5 at gap 4 from CC, offset +0.0 g0 | trips=20 of 20 within 1070s | first trip at 12.90s | mean cycle=17.25s | max cycle=17.25s | ratio to free=1.19 | blocked=None | min gap to statics=0.000
+ROW S4 pylon r1.5 at gap 1 from CC, offset +6.0 g0 | trips=20 of 20 within 1070s | first trip at 11.50s | mean cycle=14.50s | max cycle=14.50s | ratio to free=1.00 | blocked=None | min gap to statics=0.500
+test s4_harvester_trip ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 14.70s
+
