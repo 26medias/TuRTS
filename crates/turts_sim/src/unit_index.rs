@@ -5,6 +5,8 @@
 //! every spawn and despawn path, tests included. A lookup that used to scan all entities asks
 //! the index in one hash step.
 //!
+//! One id has one holder: a second spawn of a held id panics in the insert hook.
+//!
 //! The index is for lookup only. It has no iterator, so no system can take a tick order from
 //! the hash order, and the tick order does not depend on it.
 
@@ -45,6 +47,18 @@ pub fn unit_entity(world: &World, id: u32) -> Option<Entity> {
     world.get_resource::<UnitIndex>()?.get(id)
 }
 
+impl UnitIndex {
+    /// Record `entity` as the holder of `id`. One id has one holder: a second holder would make
+    /// the index lose the older one, so it is a fault, not a last-writer-wins.
+    fn claim(&mut self, id: u32, entity: Entity) {
+        if let Some(held) = self.entities.insert(id, entity)
+            && held != entity
+        {
+            panic!("second holder of UnitId {id}: {entity:?} while {held:?} holds it");
+        }
+    }
+}
+
 /// The `on_insert` hook of `UnitId`: a unit got its id (a spawn, or a replacement of the id).
 ///
 /// A world that `SimPlugin` did not build (a unit test of one transaction) has no index yet:
@@ -56,20 +70,19 @@ pub(crate) fn on_unit_id_insert(mut world: DeferredWorld, context: HookContext) 
     };
     let entity = context.entity;
     if let Some(mut index) = world.get_resource_mut::<UnitIndex>() {
-        index.entities.insert(id, entity);
+        index.claim(id, entity);
     } else {
         world.commands().queue(move |world: &mut World| {
             world
                 .get_resource_or_insert_with(UnitIndex::default)
-                .entities
-                .insert(id, entity);
+                .claim(id, entity);
         });
     }
 }
 
 /// The `on_discard` hook of `UnitId`: the unit loses its id (a despawn, a removal of the
 /// component, or a replacement of the id; the old value is still readable here). It removes the
-/// entry only when the entry is this entity, so a second holder of the same id keeps its entry.
+/// entry only when the entry is this entity (a test may point an entry at a bare entity).
 pub(crate) fn on_unit_id_discard(mut world: DeferredWorld, context: HookContext) {
     let Some(id) = world.get::<UnitId>(context.entity).map(|id| id.0) else {
         return;
@@ -207,17 +220,47 @@ mod tests {
     }
 
     #[test]
-    fn two_holders_of_one_id_keep_the_entry_of_the_survivor() {
-        // A test world may spawn one id twice. The newer holder owns the entry; the loss of the
-        // older holder leaves it alone.
+    #[should_panic(expected = "second holder of UnitId 4")]
+    fn a_second_holder_of_one_id_panics() {
+        // One id has one holder (design section 9). A second holder would make the index lose
+        // the older one, so the insert hook stops the world at the second spawn.
         let mut app = headless_app(20);
-        let older = app.world_mut().spawn(unit(4)).id();
-        let newer = app.world_mut().spawn(unit(4)).id();
-        assert_eq!(unit_entity(app.world(), 4), Some(newer));
-        assert!(app.world_mut().despawn(older));
-        assert_eq!(unit_entity(app.world(), 4), Some(newer));
-        assert!(app.world_mut().despawn(newer));
+        app.world_mut().spawn(unit(4));
+        app.world_mut().spawn(unit(4));
+    }
+
+    #[test]
+    #[should_panic(expected = "second holder of UnitId 4")]
+    fn a_second_holder_panics_in_a_world_that_simplugin_did_not_build() {
+        // The first unit makes the index in a queued command; the second spawn checks it.
+        let mut world = World::new();
+        world.spawn(unit(4));
+        world.spawn(unit(4));
+    }
+
+    #[test]
+    fn the_same_holder_may_insert_its_own_id_again() {
+        let mut app = headless_app(20);
+        let holder = app.world_mut().spawn(unit(4)).id();
+        app.world_mut().entity_mut(holder).insert(UnitId(4));
+        assert_eq!(unit_entity(app.world(), 4), Some(holder));
+        assert!(app.world_mut().despawn(holder));
         assert_eq!(unit_entity(app.world(), 4), None);
+        // The id is free again after the holder is gone.
+        let next = app.world_mut().spawn(unit(4)).id();
+        assert_eq!(unit_entity(app.world(), 4), Some(next));
+    }
+
+    #[test]
+    fn the_unit_id_component_is_immutable() {
+        // A `get_mut::<UnitId>` would change the id with no hook, and the index would keep the
+        // old id (review of L0-SIM, M2). An immutable component can only be replaced by an
+        // insert, which runs both hooks.
+        use bevy_ecs::component::{Component, Immutable};
+        assert_eq!(
+            std::any::TypeId::of::<<UnitId as Component>::Mutability>(),
+            std::any::TypeId::of::<Immutable>()
+        );
     }
 
     #[test]
