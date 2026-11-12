@@ -6,10 +6,12 @@ pub mod error;
 pub mod ids;
 pub mod input;
 pub mod interface;
+pub mod keys;
 pub mod lock;
 pub mod orders;
 pub mod registry;
 pub mod schema;
+mod shells_red;
 pub mod written;
 
 pub use assets::{AssetsDef, CursorAsset, FileAsset, ImageAsset};
@@ -49,6 +51,7 @@ pub use schema::{
     WeaponDef, WeaponStat, WorldPos,
 };
 
+pub use shells_red::{CombatDef, MatchDef, VisualEffectsDef};
 pub use written::Written;
 
 /// Version of the engine API that this crate defines.
@@ -70,6 +73,14 @@ mod tests {
             RELEASED_ENGINE_APIS.last().copied(),
             Some(ENGINE_API_VERSION)
         );
+    }
+
+    /// Design D:2280-2286: 0.2.4 is the one API step of MP1, released with its first row.
+    #[test]
+    fn the_api_step_of_mp1_is_0_2_4() {
+        assert_eq!(ENGINE_API_VERSION, "0.2.4");
+        assert_eq!(RELEASED_ENGINE_APIS.len(), 6);
+        assert_eq!(RELEASED_ENGINE_APIS[4], "0.2.3");
     }
 
     #[test]

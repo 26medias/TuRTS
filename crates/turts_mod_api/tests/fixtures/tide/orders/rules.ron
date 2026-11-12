@@ -1,0 +1,2 @@
+(queue_depth: 16, smart: [(target: ResourceNodeAccepted, needs: Gatherer, order: "tide:order_gather")],
+ rally: Some([(target: Ground, needs: Weapon, order: "tide:order_attack_move"), (target: ResourceNodeAccepted, needs: Gatherer, order: "tide:order_gather")]))

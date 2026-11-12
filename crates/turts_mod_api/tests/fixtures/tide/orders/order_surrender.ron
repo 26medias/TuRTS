@@ -1,0 +1,2 @@
+(id: "order_surrender", name: "Surrender", behaviour: Surrender, target: None, fire: None, engage: None, icon: "tide_icon_flag",
+ hotkey: "key_surrender", cursor: None, card: None, units: [], description: "End the match as a defeat.")

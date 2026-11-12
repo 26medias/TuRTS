@@ -1,0 +1,4 @@
+tide/ is a byte-exact copy of docs/research/mp1/probes/regate-tide/tide/ on the branch
+mp1-design (the gate-2 sample mod of the mod-builder, written from design revision 4).
+It is test input only: tests/api_0_2_4.rs parses each file with the 0.2.4 schema types.
+The expected parse result and the fields that no longer match revision 6.2 are in that test.

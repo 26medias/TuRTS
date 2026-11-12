@@ -1,0 +1,2 @@
+(id: "order_construct", name: "Build", behaviour: Construct, target: ContentAtPoint, fire: None, engage: None, icon: "tide_icon_build",
+ hotkey: "key_build", cursor: Some("tide_cursor_place"), card: None, units: ["tide:dock"], description: "Build a structure.")
