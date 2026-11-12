@@ -1,0 +1,159 @@
+=== exit: no camera
+--- after 3 updates
+state active=false hover=None hover_started=false generation=1 session=Some(VisualSession { match_id: 7, connection_epoch: 1, local_slot: 0 }) retained_markers=[] blocked_active=[] blocked_since=[] feed_intents=5 feed_sent=1
+=== exit: no welcome
+--- after 3 updates
+state active=false hover=None hover_started=false generation=0 session=None retained_markers=[] blocked_active=[] blocked_since=[] feed_intents=0 feed_sent=0
+=== exit: no replica
+--- after 3 updates
+state active=false hover=None hover_started=false generation=0 session=None retained_markers=[] blocked_active=[] blocked_since=[] feed_intents=0 feed_sent=0
+=== full scene
+--- update 1
+fill unit=1 mesh=bar material=bar_health t=[0.0000 0.0000 0.0800] s=[1.0000 1.0000 1.0000] parent=Some(VisualId { kind: HealthBackground, unit: 1, ordinal: 0, generation: 1, identity: 0 })
+fill unit=2 mesh=bar material=bar_health t=[-0.2250 0.0000 0.0800] s=[0.5000 1.0000 1.0000] parent=Some(VisualId { kind: HealthBackground, unit: 2, ordinal: 0, generation: 1, identity: 0 })
+fill unit=3 mesh=bar material=bar_health t=[-0.2700 0.0000 0.0800] s=[0.4000 1.0000 1.0000] parent=Some(VisualId { kind: HealthBackground, unit: 3, ordinal: 0, generation: 1, identity: 0 })
+gizmo default [10.0000 0.0400 10.0000] -> [12.0000 0.0400 12.0000] colour=[0.7874 0.7874 0.6921]
+gizmo default [12.0000 0.0400 12.0000] -> [16.0000 0.0400 12.0000] colour=[0.7874 0.7874 0.6921]
+gizmo default [16.0000 0.0400 12.0000] -> [16.0000 0.0400 16.0000] colour=[0.7874 0.7874 0.6921]
+gizmo order_marker [13.7000 1.5700 13.7000] -> [14.3000 1.5700 14.3000] colour=[0.7874 0.0134 0.0072]
+gizmo order_marker [13.7000 1.5700 14.3000] -> [14.3000 1.5700 13.7000] colour=[0.7874 0.0134 0.0072]
+gizmo order_marker [5.7000 0.0750 5.7000] -> [6.3000 0.0750 6.3000] colour=[0.9114 0.7484 0.0331]
+gizmo order_marker [5.7000 0.0750 6.3000] -> [6.3000 0.0750 5.7000] colour=[0.9114 0.7484 0.0331]
+visual VisualId { kind: Blocked, unit: 4, ordinal: 0, generation: 1, identity: 0 } mesh=bar material=blocked t=[14.0000 1.5000 14.0000] s=[0.7000 0.0800 0.0800] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+visual VisualId { kind: HealthBackground, unit: 1, ordinal: 0, generation: 1, identity: 0 } mesh=bar material=bar_background t=[10.0000 2.2000 10.0000] s=[1.0602 0.3925 0.1000] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+visual VisualId { kind: HealthBackground, unit: 2, ordinal: 0, generation: 1, identity: 0 } mesh=bar material=bar_background t=[14.0000 2.2000 10.0000] s=[1.0602 0.3925 0.1000] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+visual VisualId { kind: HealthBackground, unit: 3, ordinal: 0, generation: 1, identity: 0 } mesh=bar material=bar_background t=[10.0000 2.2000 14.0000] s=[0.9963 0.4301 0.1000] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+visual VisualId { kind: Hover, unit: 4, ordinal: 0, generation: 1, identity: 0 } mesh=foreign_ring material=ring_overlay[1] t=[14.0000 0.0320 14.0000] s=[0.4800 0.4800 0.4800] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+visual VisualId { kind: OrderMarker, unit: 0, ordinal: 0, generation: 1, identity: 1 } mesh=ring material=marker_overlay t=[5.0000 0.0350 5.0000] s=[0.3800 0.3800 0.3800] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+visual VisualId { kind: OrderMarker, unit: 0, ordinal: 0, generation: 1, identity: 3 } mesh=bar material=marker_overlay t=[7.0000 0.0350 7.0000] s=[0.1600 0.1600 0.1600] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+visual VisualId { kind: OrderMarker, unit: 0, ordinal: 0, generation: 1, identity: 4 } mesh=ring material=marker_overlay t=[8.0000 0.0350 8.0000] s=[0.3800 0.3800 0.3800] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+visual VisualId { kind: Range, unit: 1, ordinal: 0, generation: 1, identity: 0 } mesh=ring material=range t=[10.0000 0.0180 10.0000] s=[4.0000 4.0000 4.0000] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+visual VisualId { kind: Range, unit: 2, ordinal: 0, generation: 1, identity: 0 } mesh=ring material=range t=[14.0000 0.0180 10.0000] s=[4.0000 4.0000 4.0000] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+visual VisualId { kind: Range, unit: 3, ordinal: 0, generation: 1, identity: 0 } mesh=ring material=range t=[10.0000 0.0180 14.0000] s=[4.0000 4.0000 4.0000] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+visual VisualId { kind: RingUnderlay, unit: 2, ordinal: 0, generation: 1, identity: 0 } mesh=ring material=neutral_overlay[0] t=[14.0000 0.0210 10.0000] s=[0.5000 0.5000 0.5000] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+visual VisualId { kind: RingUnderlay, unit: 4, ordinal: 1, generation: 1, identity: 0 } mesh=ring material=neutral_overlay[0] t=[14.0000 0.0280 14.0000] s=[0.4800 0.4800 0.4800] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+visual VisualId { kind: Selected, unit: 1, ordinal: 0, generation: 1, identity: 0 } mesh=ring material=ring_overlay[0] t=[10.0000 0.0250 10.0000] s=[0.5000 0.5000 0.5000] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=Some(RingMetadata { unit: 1, slot: 0, own: true, radius: 0.5 })
+visual VisualId { kind: Selected, unit: 2, ordinal: 0, generation: 1, identity: 0 } mesh=foreign_ring material=ring_overlay[1] t=[14.0000 0.0250 10.0000] s=[0.5000 0.5000 0.5000] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=Some(RingMetadata { unit: 2, slot: 1, own: false, radius: 0.5 })
+visual VisualId { kind: Selected, unit: 3, ordinal: 0, generation: 1, identity: 0 } mesh=ring material=ring_overlay[0] t=[10.0000 0.0250 14.0000] s=[0.5000 0.5000 0.5000] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=Some(RingMetadata { unit: 3, slot: 0, own: true, radius: 0.5 })
+markers_shown {"intent_id":1,"kind":"move","order":"muster:order_move","units":[1],"x":5.0,"y":5.0}
+markers_shown {"intent_id":2,"kind":"attack","order":"muster:order_attack","units":[1],"x":6.0,"y":6.0}
+markers_shown {"intent_id":3,"kind":"gather","order":"muster:order_gather","units":[1],"x":7.0,"y":7.0}
+markers_shown {"intent_id":4,"kind":"move","order":"muster:order_rush","units":[1],"x":8.0,"y":8.0}
+markers_shown {"kind":"blocked","unit":4}
+state active=true hover=Some(4) hover_started=true generation=1 session=Some(VisualSession { match_id: 7, connection_epoch: 1, local_slot: 0 }) retained_markers=[1, 2, 3, 4] blocked_active=[4] blocked_since=[4] feed_intents=0 feed_sent=0
+--- update 2
+fill unit=1 mesh=bar material=bar_health t=[0.0000 0.0000 0.0800] s=[1.0000 1.0000 1.0000] parent=Some(VisualId { kind: HealthBackground, unit: 1, ordinal: 0, generation: 1, identity: 0 })
+fill unit=2 mesh=bar material=bar_health t=[-0.2250 0.0000 0.0800] s=[0.5000 1.0000 1.0000] parent=Some(VisualId { kind: HealthBackground, unit: 2, ordinal: 0, generation: 1, identity: 0 })
+fill unit=3 mesh=bar material=bar_health t=[-0.3600 0.0000 0.0800] s=[0.2000 1.0000 1.0000] parent=Some(VisualId { kind: HealthBackground, unit: 3, ordinal: 0, generation: 1, identity: 0 })
+gizmo default [10.0000 0.0400 10.0000] -> [12.0000 0.0400 12.0000] colour=[0.7874 0.7874 0.6921]
+gizmo default [12.0000 0.0400 12.0000] -> [16.0000 0.0400 12.0000] colour=[0.7874 0.7874 0.6921]
+gizmo default [16.0000 0.0400 12.0000] -> [16.0000 0.0400 16.0000] colour=[0.7874 0.7874 0.6921]
+gizmo order_marker [13.7000 1.5700 13.7000] -> [14.3000 1.5700 14.3000] colour=[0.7874 0.0134 0.0072]
+gizmo order_marker [13.7000 1.5700 14.3000] -> [14.3000 1.5700 13.7000] colour=[0.7874 0.0134 0.0072]
+gizmo order_marker [5.7000 0.0750 5.7000] -> [6.3000 0.0750 6.3000] colour=[0.9114 0.7484 0.0331]
+gizmo order_marker [5.7000 0.0750 6.3000] -> [6.3000 0.0750 5.7000] colour=[0.9114 0.7484 0.0331]
+tooltip unit=4 text="Trooper · Slot 2" left=747.8445px top=366.4917px
+visual VisualId { kind: Blocked, unit: 4, ordinal: 0, generation: 1, identity: 0 } mesh=bar material=blocked t=[14.0000 1.5000 14.0000] s=[0.7000 0.0800 0.0800] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+visual VisualId { kind: HealthBackground, unit: 1, ordinal: 0, generation: 1, identity: 0 } mesh=bar material=bar_background t=[10.0000 2.2000 10.0000] s=[1.0602 0.3925 0.1000] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+visual VisualId { kind: HealthBackground, unit: 2, ordinal: 0, generation: 1, identity: 0 } mesh=bar material=bar_background t=[14.0000 2.2000 10.0000] s=[1.0602 0.3925 0.1000] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+visual VisualId { kind: HealthBackground, unit: 3, ordinal: 0, generation: 1, identity: 0 } mesh=bar material=bar_background t=[10.0000 2.2000 14.0000] s=[0.9963 0.4301 0.1000] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+visual VisualId { kind: Hover, unit: 4, ordinal: 0, generation: 1, identity: 0 } mesh=foreign_ring material=ring_overlay[1] t=[14.0000 0.0320 14.0000] s=[0.4800 0.4800 0.4800] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+visual VisualId { kind: OrderMarker, unit: 0, ordinal: 0, generation: 1, identity: 1 } mesh=ring material=marker_overlay t=[5.0000 0.0350 5.0000] s=[0.3800 0.3800 0.3800] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+visual VisualId { kind: OrderMarker, unit: 0, ordinal: 0, generation: 1, identity: 3 } mesh=bar material=marker_overlay t=[7.0000 0.0350 7.0000] s=[0.1600 0.1600 0.1600] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+visual VisualId { kind: OrderMarker, unit: 0, ordinal: 0, generation: 1, identity: 4 } mesh=ring material=marker_overlay t=[8.0000 0.0350 8.0000] s=[0.3800 0.3800 0.3800] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+visual VisualId { kind: Range, unit: 1, ordinal: 0, generation: 1, identity: 0 } mesh=ring material=range t=[10.0000 0.0180 10.0000] s=[4.0000 4.0000 4.0000] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+visual VisualId { kind: Range, unit: 2, ordinal: 0, generation: 1, identity: 0 } mesh=ring material=range t=[14.0000 0.0180 10.0000] s=[4.0000 4.0000 4.0000] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+visual VisualId { kind: Range, unit: 3, ordinal: 0, generation: 1, identity: 0 } mesh=ring material=range t=[10.0000 0.0180 14.0000] s=[4.0000 4.0000 4.0000] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+visual VisualId { kind: RingUnderlay, unit: 2, ordinal: 0, generation: 1, identity: 0 } mesh=ring material=neutral_overlay[0] t=[14.0000 0.0210 10.0000] s=[0.5000 0.5000 0.5000] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+visual VisualId { kind: RingUnderlay, unit: 4, ordinal: 1, generation: 1, identity: 0 } mesh=ring material=neutral_overlay[0] t=[14.0000 0.0280 14.0000] s=[0.4800 0.4800 0.4800] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+visual VisualId { kind: Selected, unit: 1, ordinal: 0, generation: 1, identity: 0 } mesh=ring material=ring_overlay[0] t=[10.0000 0.0250 10.0000] s=[0.5000 0.5000 0.5000] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=Some(RingMetadata { unit: 1, slot: 0, own: true, radius: 0.5 })
+visual VisualId { kind: Selected, unit: 2, ordinal: 0, generation: 1, identity: 0 } mesh=foreign_ring material=ring_overlay[1] t=[14.0000 0.0250 10.0000] s=[0.5000 0.5000 0.5000] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=Some(RingMetadata { unit: 2, slot: 1, own: false, radius: 0.5 })
+visual VisualId { kind: Selected, unit: 3, ordinal: 0, generation: 1, identity: 0 } mesh=ring material=ring_overlay[0] t=[10.0000 0.0250 14.0000] s=[0.5000 0.5000 0.5000] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=Some(RingMetadata { unit: 3, slot: 0, own: true, radius: 0.5 })
+markers_shown {"intent_id":1,"kind":"move","order":"muster:order_move","units":[1],"x":5.0,"y":5.0}
+markers_shown {"intent_id":2,"kind":"attack","order":"muster:order_attack","units":[1],"x":6.0,"y":6.0}
+markers_shown {"intent_id":3,"kind":"gather","order":"muster:order_gather","units":[1],"x":7.0,"y":7.0}
+markers_shown {"intent_id":4,"kind":"move","order":"muster:order_rush","units":[1],"x":8.0,"y":8.0}
+markers_shown {"kind":"blocked","unit":4}
+state active=true hover=Some(4) hover_started=true generation=1 session=Some(VisualSession { match_id: 7, connection_epoch: 1, local_slot: 0 }) retained_markers=[1, 2, 3, 4] blocked_active=[4] blocked_since=[4] feed_intents=0 feed_sent=0
+--- update 3
+fill unit=1 mesh=bar material=bar_health t=[0.0000 0.0000 0.0800] s=[1.0000 1.0000 1.0000] parent=Some(VisualId { kind: HealthBackground, unit: 1, ordinal: 0, generation: 1, identity: 0 })
+fill unit=2 mesh=bar material=bar_health t=[-0.2250 0.0000 0.0800] s=[0.5000 1.0000 1.0000] parent=Some(VisualId { kind: HealthBackground, unit: 2, ordinal: 0, generation: 1, identity: 0 })
+fill unit=3 mesh=bar material=bar_health t=[-0.3600 0.0000 0.0800] s=[0.2000 1.0000 1.0000] parent=Some(VisualId { kind: HealthBackground, unit: 3, ordinal: 0, generation: 1, identity: 0 })
+gizmo default [11.0000 0.0400 10.0000] -> [12.0000 0.0400 12.0000] colour=[0.7874 0.7874 0.6921]
+gizmo default [12.0000 0.0400 12.0000] -> [16.0000 0.0400 12.0000] colour=[0.7874 0.7874 0.6921]
+gizmo default [16.0000 0.0400 12.0000] -> [16.0000 0.0400 16.0000] colour=[0.7874 0.7874 0.6921]
+gizmo order_marker [13.7000 1.5700 13.7000] -> [14.3000 1.5700 14.3000] colour=[0.7874 0.0134 0.0072]
+gizmo order_marker [13.7000 1.5700 14.3000] -> [14.3000 1.5700 13.7000] colour=[0.7874 0.0134 0.0072]
+gizmo order_marker [5.7000 0.0750 5.7000] -> [6.3000 0.0750 6.3000] colour=[0.9114 0.7484 0.0331]
+gizmo order_marker [5.7000 0.0750 6.3000] -> [6.3000 0.0750 5.7000] colour=[0.9114 0.7484 0.0331]
+tooltip unit=4 text="Trooper · Slot 2" left=747.8445px top=366.4917px
+visual VisualId { kind: Blocked, unit: 4, ordinal: 0, generation: 1, identity: 0 } mesh=bar material=blocked t=[14.0000 1.5000 14.0000] s=[0.7000 0.0800 0.0800] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+visual VisualId { kind: HealthBackground, unit: 1, ordinal: 0, generation: 1, identity: 0 } mesh=bar material=bar_background t=[11.0000 2.2000 10.0000] s=[1.0602 0.3958 0.1000] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+visual VisualId { kind: HealthBackground, unit: 2, ordinal: 0, generation: 1, identity: 0 } mesh=bar material=bar_background t=[14.0000 2.2000 10.0000] s=[1.0602 0.3925 0.1000] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+visual VisualId { kind: HealthBackground, unit: 3, ordinal: 0, generation: 1, identity: 0 } mesh=bar material=bar_background t=[10.0000 2.2000 14.0000] s=[0.9963 0.4301 0.1000] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+visual VisualId { kind: Hover, unit: 4, ordinal: 0, generation: 1, identity: 0 } mesh=foreign_ring material=ring_overlay[1] t=[14.0000 0.0320 14.0000] s=[0.4800 0.4800 0.4800] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+visual VisualId { kind: OrderMarker, unit: 0, ordinal: 0, generation: 1, identity: 1 } mesh=ring material=marker_overlay t=[5.0000 0.0350 5.0000] s=[0.3800 0.3800 0.3800] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+visual VisualId { kind: OrderMarker, unit: 0, ordinal: 0, generation: 1, identity: 3 } mesh=bar material=marker_overlay t=[7.0000 0.0350 7.0000] s=[0.1600 0.1600 0.1600] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+visual VisualId { kind: OrderMarker, unit: 0, ordinal: 0, generation: 1, identity: 4 } mesh=ring material=marker_overlay t=[8.0000 0.0350 8.0000] s=[0.3800 0.3800 0.3800] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+visual VisualId { kind: Range, unit: 1, ordinal: 0, generation: 1, identity: 0 } mesh=ring material=range t=[11.0000 0.0180 10.0000] s=[4.0000 4.0000 4.0000] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+visual VisualId { kind: Range, unit: 3, ordinal: 0, generation: 1, identity: 0 } mesh=ring material=range t=[10.0000 0.0180 14.0000] s=[4.0000 4.0000 4.0000] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+visual VisualId { kind: RingUnderlay, unit: 4, ordinal: 1, generation: 1, identity: 0 } mesh=ring material=neutral_overlay[0] t=[14.0000 0.0280 14.0000] s=[0.4800 0.4800 0.4800] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+visual VisualId { kind: Selected, unit: 1, ordinal: 0, generation: 1, identity: 0 } mesh=ring material=ring_overlay[0] t=[11.0000 0.0250 10.0000] s=[0.5000 0.5000 0.5000] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=Some(RingMetadata { unit: 1, slot: 0, own: true, radius: 0.5 })
+visual VisualId { kind: Selected, unit: 3, ordinal: 0, generation: 1, identity: 0 } mesh=ring material=ring_overlay[0] t=[10.0000 0.0250 14.0000] s=[0.5000 0.5000 0.5000] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=Some(RingMetadata { unit: 3, slot: 0, own: true, radius: 0.5 })
+markers_shown {"intent_id":1,"kind":"move","order":"muster:order_move","units":[1],"x":5.0,"y":5.0}
+markers_shown {"intent_id":2,"kind":"attack","order":"muster:order_attack","units":[1],"x":6.0,"y":6.0}
+markers_shown {"intent_id":3,"kind":"gather","order":"muster:order_gather","units":[1],"x":7.0,"y":7.0}
+markers_shown {"intent_id":4,"kind":"move","order":"muster:order_rush","units":[1],"x":8.0,"y":8.0}
+markers_shown {"kind":"blocked","unit":4}
+state active=true hover=Some(4) hover_started=true generation=1 session=Some(VisualSession { match_id: 7, connection_epoch: 1, local_slot: 0 }) retained_markers=[1, 2, 3, 4] blocked_active=[4] blocked_since=[4] feed_intents=0 feed_sent=0
+=== session change
+--- update 2 after the epoch change
+fill unit=1 mesh=bar material=bar_health t=[0.0000 0.0000 0.0800] s=[1.0000 1.0000 1.0000] parent=Some(VisualId { kind: HealthBackground, unit: 1, ordinal: 0, generation: 2, identity: 0 })
+fill unit=2 mesh=bar material=bar_health t=[-0.2250 0.0000 0.0800] s=[0.5000 1.0000 1.0000] parent=Some(VisualId { kind: HealthBackground, unit: 2, ordinal: 0, generation: 2, identity: 0 })
+fill unit=3 mesh=bar material=bar_health t=[-0.2700 0.0000 0.0800] s=[0.4000 1.0000 1.0000] parent=Some(VisualId { kind: HealthBackground, unit: 3, ordinal: 0, generation: 2, identity: 0 })
+gizmo default [10.0000 0.0400 10.0000] -> [12.0000 0.0400 12.0000] colour=[0.7874 0.7874 0.6921]
+gizmo default [12.0000 0.0400 12.0000] -> [16.0000 0.0400 12.0000] colour=[0.7874 0.7874 0.6921]
+gizmo default [16.0000 0.0400 12.0000] -> [16.0000 0.0400 16.0000] colour=[0.7874 0.7874 0.6921]
+gizmo order_marker [13.7000 1.5700 13.7000] -> [14.3000 1.5700 14.3000] colour=[0.7874 0.0134 0.0072]
+gizmo order_marker [13.7000 1.5700 14.3000] -> [14.3000 1.5700 13.7000] colour=[0.7874 0.0134 0.0072]
+visual VisualId { kind: Blocked, unit: 4, ordinal: 0, generation: 2, identity: 0 } mesh=bar material=blocked t=[14.0000 1.5000 14.0000] s=[0.7000 0.0800 0.0800] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+visual VisualId { kind: HealthBackground, unit: 1, ordinal: 0, generation: 2, identity: 0 } mesh=bar material=bar_background t=[10.0000 2.2000 10.0000] s=[1.0602 0.3925 0.1000] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+visual VisualId { kind: HealthBackground, unit: 2, ordinal: 0, generation: 2, identity: 0 } mesh=bar material=bar_background t=[14.0000 2.2000 10.0000] s=[1.0602 0.3925 0.1000] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+visual VisualId { kind: HealthBackground, unit: 3, ordinal: 0, generation: 2, identity: 0 } mesh=bar material=bar_background t=[10.0000 2.2000 14.0000] s=[0.9963 0.4301 0.1000] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+visual VisualId { kind: Hover, unit: 4, ordinal: 0, generation: 2, identity: 0 } mesh=foreign_ring material=ring_overlay[1] t=[14.0000 0.0320 14.0000] s=[0.4800 0.4800 0.4800] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+visual VisualId { kind: Range, unit: 1, ordinal: 0, generation: 2, identity: 0 } mesh=ring material=range t=[10.0000 0.0180 10.0000] s=[4.0000 4.0000 4.0000] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+visual VisualId { kind: Range, unit: 2, ordinal: 0, generation: 2, identity: 0 } mesh=ring material=range t=[14.0000 0.0180 10.0000] s=[4.0000 4.0000 4.0000] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+visual VisualId { kind: Range, unit: 3, ordinal: 0, generation: 2, identity: 0 } mesh=ring material=range t=[10.0000 0.0180 14.0000] s=[4.0000 4.0000 4.0000] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+visual VisualId { kind: RingUnderlay, unit: 2, ordinal: 0, generation: 2, identity: 0 } mesh=ring material=neutral_overlay[0] t=[14.0000 0.0210 10.0000] s=[0.5000 0.5000 0.5000] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+visual VisualId { kind: RingUnderlay, unit: 4, ordinal: 1, generation: 2, identity: 0 } mesh=ring material=neutral_overlay[0] t=[14.0000 0.0280 14.0000] s=[0.4800 0.4800 0.4800] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+visual VisualId { kind: Selected, unit: 1, ordinal: 0, generation: 2, identity: 0 } mesh=ring material=ring_overlay[0] t=[10.0000 0.0250 10.0000] s=[0.5000 0.5000 0.5000] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=Some(RingMetadata { unit: 1, slot: 0, own: true, radius: 0.5 })
+visual VisualId { kind: Selected, unit: 2, ordinal: 0, generation: 2, identity: 0 } mesh=foreign_ring material=ring_overlay[1] t=[14.0000 0.0250 10.0000] s=[0.5000 0.5000 0.5000] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=Some(RingMetadata { unit: 2, slot: 1, own: false, radius: 0.5 })
+visual VisualId { kind: Selected, unit: 3, ordinal: 0, generation: 2, identity: 0 } mesh=ring material=ring_overlay[0] t=[10.0000 0.0250 14.0000] s=[0.5000 0.5000 0.5000] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=Some(RingMetadata { unit: 3, slot: 0, own: true, radius: 0.5 })
+markers_shown {"kind":"blocked","unit":4}
+state active=true hover=Some(4) hover_started=true generation=2 session=Some(VisualSession { match_id: 7, connection_epoch: 2, local_slot: 0 }) retained_markers=[] blocked_active=[4] blocked_since=[4] feed_intents=0 feed_sent=0
+=== health mode always, nothing selected
+--- update 1
+fill unit=1 mesh=bar material=bar_health t=[0.0000 0.0000 0.0800] s=[1.0000 1.0000 1.0000] parent=Some(VisualId { kind: HealthBackground, unit: 1, ordinal: 0, generation: 1, identity: 0 })
+fill unit=2 mesh=bar material=bar_health t=[-0.2250 0.0000 0.0800] s=[0.5000 1.0000 1.0000] parent=Some(VisualId { kind: HealthBackground, unit: 2, ordinal: 0, generation: 1, identity: 0 })
+fill unit=3 mesh=bar material=bar_health t=[-0.2700 0.0000 0.0800] s=[0.4000 1.0000 1.0000] parent=Some(VisualId { kind: HealthBackground, unit: 3, ordinal: 0, generation: 1, identity: 0 })
+fill unit=4 mesh=bar material=bar_health t=[0.0000 0.0000 0.0800] s=[1.0000 1.0000 1.0000] parent=Some(VisualId { kind: HealthBackground, unit: 4, ordinal: 0, generation: 1, identity: 0 })
+gizmo order_marker [13.7000 1.5700 13.7000] -> [14.3000 1.5700 14.3000] colour=[0.7874 0.0134 0.0072]
+gizmo order_marker [13.7000 1.5700 14.3000] -> [14.3000 1.5700 13.7000] colour=[0.7874 0.0134 0.0072]
+gizmo order_marker [5.7000 0.0750 5.7000] -> [6.3000 0.0750 6.3000] colour=[0.9114 0.7484 0.0331]
+gizmo order_marker [5.7000 0.0750 6.3000] -> [6.3000 0.0750 5.7000] colour=[0.9114 0.7484 0.0331]
+visual VisualId { kind: Blocked, unit: 4, ordinal: 0, generation: 1, identity: 0 } mesh=bar material=blocked t=[14.0000 1.5000 14.0000] s=[0.7000 0.0800 0.0800] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+visual VisualId { kind: HealthBackground, unit: 1, ordinal: 0, generation: 1, identity: 0 } mesh=bar material=bar_background t=[10.0000 2.2000 10.0000] s=[1.0602 0.3925 0.1000] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+visual VisualId { kind: HealthBackground, unit: 2, ordinal: 0, generation: 1, identity: 0 } mesh=bar material=bar_background t=[14.0000 2.2000 10.0000] s=[1.0602 0.3925 0.1000] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+visual VisualId { kind: HealthBackground, unit: 3, ordinal: 0, generation: 1, identity: 0 } mesh=bar material=bar_background t=[10.0000 2.2000 14.0000] s=[0.9963 0.4301 0.1000] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+visual VisualId { kind: HealthBackground, unit: 4, ordinal: 0, generation: 1, identity: 0 } mesh=bar material=bar_background t=[14.0000 2.2000 14.0000] s=[0.9963 0.4301 0.1000] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+visual VisualId { kind: Hover, unit: 4, ordinal: 0, generation: 1, identity: 0 } mesh=foreign_ring material=ring_overlay[1] t=[14.0000 0.0320 14.0000] s=[0.4800 0.4800 0.4800] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+visual VisualId { kind: OrderMarker, unit: 0, ordinal: 0, generation: 1, identity: 1 } mesh=ring material=marker_overlay t=[5.0000 0.0350 5.0000] s=[0.3800 0.3800 0.3800] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+visual VisualId { kind: OrderMarker, unit: 0, ordinal: 0, generation: 1, identity: 3 } mesh=bar material=marker_overlay t=[7.0000 0.0350 7.0000] s=[0.1600 0.1600 0.1600] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+visual VisualId { kind: OrderMarker, unit: 0, ordinal: 0, generation: 1, identity: 4 } mesh=ring material=marker_overlay t=[8.0000 0.0350 8.0000] s=[0.3800 0.3800 0.3800] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+visual VisualId { kind: RingUnderlay, unit: 4, ordinal: 1, generation: 1, identity: 0 } mesh=ring material=neutral_overlay[0] t=[14.0000 0.0280 14.0000] s=[0.4800 0.4800 0.4800] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+markers_shown {"intent_id":1,"kind":"move","order":"muster:order_move","units":[1],"x":5.0,"y":5.0}
+markers_shown {"intent_id":2,"kind":"attack","order":"muster:order_attack","units":[1],"x":6.0,"y":6.0}
+markers_shown {"intent_id":3,"kind":"gather","order":"muster:order_gather","units":[1],"x":7.0,"y":7.0}
+markers_shown {"intent_id":4,"kind":"move","order":"muster:order_rush","units":[1],"x":8.0,"y":8.0}
+markers_shown {"kind":"blocked","unit":4}
+state active=true hover=Some(4) hover_started=true generation=1 session=Some(VisualSession { match_id: 7, connection_epoch: 1, local_slot: 0 }) retained_markers=[1, 2, 3, 4] blocked_active=[4] blocked_since=[4] feed_intents=0 feed_sent=0
