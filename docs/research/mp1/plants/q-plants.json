@@ -22,7 +22,7 @@
         "headed": false,
         "expected_red": "SELFTEST FAIL exit_only_wrong_text_is_a_failure",
         "exit": 1,
-        "commit": "d7d7e6d"
+        "commit": "244d69d"
     },
     {
         "row": "Q-PLANTS",
@@ -31,8 +31,8 @@
             {
                 "file": "scripts/qa/mp1_plants.py",
                 "edit": {
-                    "old": "        restore(root, originals, use_git)\n        problems = check_restored(root, originals, use_git, tree_before)\n",
-                    "new": "        problems = []\n"
+                    "old": "                restore(root, originals, use_git)\n                problems = check_restored(root, originals, use_git, tree_before)\n",
+                    "new": "                problems = []\n"
                 }
             }
         ],
@@ -45,8 +45,133 @@
         ],
         "env": {},
         "headed": false,
-        "expected_red": "SELFTEST FAIL sigint_restores_the_source: AssertionError: a.txt is not restored",
+        "expected_red": "SELFTEST FAIL sigint_restores_the_source",
         "exit": 1,
-        "commit": "d7d7e6d"
+        "commit": "244d69d"
+    },
+    {
+        "row": "Q-PLANTS",
+        "plant": "no-journal-write",
+        "files": [
+            {
+                "file": "scripts/qa/mp1_plants.py",
+                "edit": {
+                    "old": "            if use_git:\n                journal_write(",
+                    "new": "            if False:\n                journal_write("
+                }
+            }
+        ],
+        "command": [
+            "python3",
+            "-B",
+            "-I",
+            "scripts/qa/mp1_plants.py",
+            "--self-test"
+        ],
+        "env": {},
+        "headed": false,
+        "expected_red": "SELFTEST FAIL h3_sigkill_during_the_plant_run_is_recovered_by_the_next_run",
+        "exit": 1,
+        "commit": "244d69d"
+    },
+    {
+        "row": "Q-PLANTS",
+        "plant": "green-text-allowed",
+        "files": [
+            {
+                "file": "scripts/qa/mp1_plants.py",
+                "edit": {
+                    "old": "    if rec[\"expected_red\"] in baseline_output:",
+                    "new": "    if False:"
+                }
+            }
+        ],
+        "command": [
+            "python3",
+            "-B",
+            "-I",
+            "scripts/qa/mp1_plants.py",
+            "--self-test"
+        ],
+        "env": {},
+        "headed": false,
+        "expected_red": "SELFTEST FAIL h1_text_printed_by_the_green_run_is_no_red",
+        "exit": 1,
+        "commit": "244d69d"
+    },
+    {
+        "row": "Q-PLANTS",
+        "plant": "headed-runs",
+        "files": [
+            {
+                "file": "scripts/qa/mp1_plants.py",
+                "edit": {
+                    "old": "    native = [rec for rec in records if not rec[\"headed\"]]",
+                    "new": "    native = list(records)"
+                }
+            }
+        ],
+        "command": [
+            "python3",
+            "-B",
+            "-I",
+            "scripts/qa/mp1_plants.py",
+            "--self-test"
+        ],
+        "env": {},
+        "headed": false,
+        "expected_red": "SELFTEST FAIL m1_headed_record_never_runs_in_the_serial_runner",
+        "exit": 1,
+        "commit": "244d69d"
+    },
+    {
+        "row": "Q-PLANTS",
+        "plant": "no-lock",
+        "files": [
+            {
+                "file": "scripts/qa/mp1_plants.py",
+                "edit": {
+                    "old": "            fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)",
+                    "new": "            pass"
+                }
+            }
+        ],
+        "command": [
+            "python3",
+            "-B",
+            "-I",
+            "scripts/qa/mp1_plants.py",
+            "--self-test"
+        ],
+        "env": {},
+        "headed": false,
+        "expected_red": "SELFTEST FAIL m4_second_runner_in_one_tree_is_refused",
+        "exit": 1,
+        "commit": "244d69d"
+    },
+    {
+        "row": "Q-PLANTS",
+        "plant": "no-grouping",
+        "files": [
+            {
+                "file": "scripts/qa/mp1_plants.py",
+                "edit": {
+                    "old": "return json.dumps([rec[\"command\"], rec[\"env\"]], sort_keys=True)",
+                    "new": "return json.dumps([rec[\"command\"], rec[\"env\"], rec[\"plant\"]], sort_keys=True)"
+                }
+            }
+        ],
+        "command": [
+            "python3",
+            "-B",
+            "-I",
+            "scripts/qa/mp1_plants.py",
+            "--self-test"
+        ],
+        "env": {},
+        "headed": false,
+        "expected_red": "SELFTEST FAIL m5_one_baseline_for_each_command_group",
+        "exit": 1,
+        "commit": "244d69d"
     }
 ]

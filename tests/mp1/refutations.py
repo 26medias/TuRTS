@@ -2,21 +2,19 @@
 """The MP1 harness of the parallel refutation runner (task Q-PLANTS; set `mp1`).
 
 The cases come from the plant records in docs/research/mp1/plants/*.json, not from one registry
-file. The runner parallel_refutations_v2.py loads this module and calls `load_cases`,
-`select_cases`, `copy_source_tree`, `pre_commands`, `run_case` and `require_phase_result`, as it
-does for tests/m2/refutations.py and tests/m3/refutations.py.
+file. parallel_refutations_v2.py loads this module and calls `load_cases`, `select_cases`,
+`group_key`, `copy_source_tree` and `run_group`. A worker runs one command group: the plants that
+share a command run one after the other in one scratch copy with one cargo target folder, with one
+baseline and one final green run for the group (the engine is run_group of
+scripts/qa/mp1_plants.py, the same code as the serial runner, but in a scratch copy with no .git).
 
-Nothing here is a second style. The run of one case is `run_case` of tests/m2/refutations.py
-(scratch copy, baseline green, plant, red, restore with a source hash, restored green, evidence
-files). Two functions of that module are replaced, in this private copy only:
-    require_phase_result  by the judge of scripts/qa/mp1_plants.py (exit, text, no compile error);
-    apply_plant           by the anchor rule of scripts/qa/mp1_plants.py (also for patch hunks).
+From tests/m2/refutations.py this harness reuses `run` (cargo environment and source receipts),
+`copy_source_tree`, `create_run_workspace` and `write_case_evidence` (the case.json format).
 The record `env` becomes an `env K=V` prefix of the command. Python 3 standard library only.
 """
 import argparse
 import importlib.util
 import json
-import os
 from pathlib import Path
 import re
 import sys
@@ -45,22 +43,20 @@ digest = base.digest
 run = base.run
 
 
+def command_of(rec):
+    if not rec["env"]:
+        return list(rec["command"])
+    return ["env", *[f"{key}={value}" for key, value in rec["env"].items()], *rec["command"]]
+
+
 def case_of(rec):
-    command = list(rec["command"])
-    if rec["env"]:
-        command = ["env", *[f"{key}={value}" for key, value in rec["env"].items()], *command]
     return {
         "id": plants.label_of(rec),
         "kind": "mp1",
         "runtime": "headed" if rec["headed"] else "native",
-        "plants": [{
-            "path": entry["file"],
-            "replacements": [{"anchor": old, "replacement": new, "whole_lines": whole}
-                             for old, new, whole in plants.replacements_of(entry)],
-        } for entry in rec["files"]],
-        "command": command,
+        "record": rec,
+        "command": command_of(rec),
         "expected_failure": rec["expected_red"],
-        "expected_exit": rec["exit"],
         "plant_note": f"{rec['row']} pinned at {rec['commit']}",
     }
 
@@ -71,6 +67,10 @@ def load_cases():
 
 def registry_bytes():
     return json.dumps(load_cases(), sort_keys=True).encode()
+
+
+def group_key(case):
+    return plants.group_key(case["record"])
 
 
 def select_cases(cases, requested):
@@ -98,28 +98,36 @@ def select_cases(cases, requested):
     return selected
 
 
-def require_phase_result(case, phase, result):
+def run_group(cases, scratch, build_dir, evidence_dirs):
+    """Run the cases of one command group in the scratch copy. Write case.json in each evidence
+    folder. Return one (verdict, error, seconds) for each case; verdict is RED-RESTORED or FAIL."""
+    recs = [case["record"] for case in cases]
+
+    def execute(rec):
+        done = run(command_of(rec), scratch, build_dir)
+        return done.returncode, done.stdout
+
     try:
-        if phase in {"baseline.green", "restored.green"}:
-            plants.judge_green(phase, result.returncode, result.stdout)
-            return None
-        record = {"exit": case["expected_exit"], "expected_red": case["expected_failure"]}
-        return plants.judge_red(record, result.returncode, result.stdout)
-    except plants.PlantFail as exc:
-        raise RuntimeError(f'{case["id"]}: {exc}') from None
-
-
-# Replace the two functions that run_case of the base module calls through its globals.
-base.require_phase_result = require_phase_result
-base.apply_plant = plants.apply_plant_case
-
-
-def run_case(case, scratch, build_dir, evidence_dir):
-    return base.run_case(case, scratch, build_dir, evidence_dir)
+        results = plants.run_group(scratch, recs, execute=execute, use_git=False)
+    except plants.Refused as exc:
+        results = [{"reason": str(exc), "baseline_sha256": None, "restored_sha256": None,
+                    "baseline_output": "", "red_output": "", "restored_output": "", "red_line": None,
+                    "seconds": 0.0} for _ in cases]
+    outcomes = []
+    for case, result, evidence in zip(cases, results, evidence_dirs):
+        failed = bool(result["reason"])
+        logs = {"baseline.green.log": result["baseline_output"], "plant.red.log": result["red_output"],
+                "restored.green.log": result["restored_output"]}
+        detail = result["reason"] if failed else f"semantic assertion: {result['red_line']}"
+        base.write_case_evidence(evidence, case["id"], result["baseline_sha256"], result["restored_sha256"],
+                                 logs, "failed" if failed else "passed", None, detail, {}, case["plant_note"])
+        print(f'{case["id"]}: ' + (f"FAIL {detail.splitlines()[0]}" if failed else f"RED assertion={result['red_line']!r}"))
+        outcomes.append(("FAIL" if failed else "RED-RESTORED", detail if failed else None, result["seconds"]))
+    return outcomes
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Run MP1 plant records one after the other in a scratch copy.")
+    parser = argparse.ArgumentParser(description="Run MP1 plant records in a scratch copy, one command group at a time.")
     parser.add_argument("--case", default="all", help="all, or a comma list of row/plant ids")
     parser.add_argument("--list", action="store_true", help="print the selected case ids and run nothing")
     parser.add_argument("--evidence-root", type=Path, default=ROOT / "target/mp1-plants")
@@ -137,12 +145,19 @@ def main():
     build_dir = build_root / "cargo-target"
     copy_source_tree(ROOT, scratch)
     build_dir.mkdir(parents=True, exist_ok=False)
+    groups = {}
     for case in cases:
-        evidence_dir = run_root / "cases" / re.sub(r"[^A-Za-z0-9_.-]", "_", case["id"])
-        evidence_dir.mkdir(parents=True, exist_ok=False)
-        run_case(case, scratch, build_dir, evidence_dir)
+        groups.setdefault(group_key(case), []).append(case)
+    failed = 0
+    for group in groups.values():
+        dirs = []
+        for case in group:
+            evidence = run_root / "cases" / re.sub(r"[^A-Za-z0-9_.-]", "_", case["id"])
+            evidence.mkdir(parents=True, exist_ok=False)
+            dirs.append(evidence)
+        failed += sum(verdict != "RED-RESTORED" for verdict, _, _ in run_group(group, scratch, build_dir, dirs))
     print(f"evidence: {run_root}")
-    return 0
+    return 1 if failed else 0
 
 
 if __name__ == "__main__":

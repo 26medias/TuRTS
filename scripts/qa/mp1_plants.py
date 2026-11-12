@@ -25,6 +25,8 @@ Python 3 standard library only.
 """
 
 import argparse
+import contextlib
+import fcntl
 import hashlib
 import json
 import os
@@ -40,6 +42,10 @@ from pathlib import Path, PurePosixPath
 ROOT = Path(__file__).resolve().parents[2]
 PLANTS_DIR = Path("docs/research/mp1/plants")
 FIELDS = ("row", "plant", "files", "command", "env", "headed", "expected_red", "exit", "commit")
+OPTIONAL = ("expected_selected",)
+JOURNAL_NAME = "mp1-plants.journal"
+LOCK_NAME = "mp1-plants.lock"
+HEADED_WRAPPER = "mc_headed_v6.sh --mode pre-merge|table"
 # Lines that echo a test name or a harness heading are not a red (tests/m2/refutations.py:149-156).
 ECHO_PREFIXES = ("thread '", "failures:", "test ")
 COMPILE_ERROR = re.compile(r"could not compile|error\[E\d+\]")
@@ -99,7 +105,7 @@ def check_record(rec, where):
         return [f"{where}: the record is not an object"]
     errors = []
     missing = [name for name in FIELDS if name not in rec]
-    unknown = [name for name in rec if name not in FIELDS]
+    unknown = [name for name in rec if name not in FIELDS + OPTIONAL]
     if missing:
         errors.append(f"{where}: missing field(s) {', '.join(missing)}")
     if unknown:
@@ -121,6 +127,11 @@ def check_record(rec, where):
     code = rec.get("exit")
     if "exit" in rec and (isinstance(code, bool) or not isinstance(code, int) or code == 0):
         errors.append(f"{where}: exit must be an integer other than 0 (the exit of the red)")
+    selected = rec.get("expected_selected")
+    if "expected_selected" in rec and not (
+            (isinstance(selected, int) and not isinstance(selected, bool) and selected > 0)
+            or (isinstance(selected, str) and selected.strip())):
+        errors.append(f"{where}: expected_selected must be a count above 0 or a test name")
     if "commit" in rec and not (isinstance(rec["commit"], str) and COMMIT.match(rec["commit"])):
         errors.append(f"{where}: commit must be a lower-case hex commit id of 7 to 40 digits")
     files = rec.get("files")
@@ -177,7 +188,7 @@ def load_records(plants_dir):
                 errors.append(f"{where}: duplicate plant {label_of(rec)} (first at {seen[label_of(rec)]})")
                 continue
             seen[label_of(rec)] = where
-            records.append(rec)
+            records.append({**rec, "_where": where})
     if errors:
         raise Refused("\n".join(errors))
     return records
@@ -256,15 +267,15 @@ def replacements_of(entry):
     return [(item["old"], item["new"], False) for item in (edit if isinstance(edit, list) else [edit])]
 
 
-def apply_replacements(label, file, text, replacements):
+def apply_replacements(file, text, replacements):
     """The anchor rule of tests/m2/refutations.py:270-282: each old text occurs exactly once."""
     for old, new, whole_lines in replacements:
         count = text.count(old)
         if count != 1:
-            raise Refused(f"{label}: {file}: anchor occurs {count} times, expected exactly one")
+            raise Refused(f"{file}: anchor occurs {count} times, expected exactly one")
         at = text.find(old)
         if whole_lines and at > 0 and text[at - 1] != "\n":
-            raise Refused(f"{label}: {file}: the patch text does not start at a line start")
+            raise Refused(f"{file}: the patch text does not start at a line start")
         text = text[:at] + new + text[at + len(old):]
     return text
 
@@ -272,7 +283,10 @@ def apply_replacements(label, file, text, replacements):
 def apply_plant_case(original, case):
     """Same rule for a case of the parallel runner (tests/mp1/refutations.py)."""
     pairs = [(r["anchor"], r["replacement"], r.get("whole_lines", False)) for r in case["replacements"]]
-    return apply_replacements(case["id"], case.get("path", "?"), original, pairs)
+    try:
+        return apply_replacements(case.get("path", "?"), original, pairs)
+    except Refused as exc:
+        raise Refused(f"{case['id']}: {exc}") from None
 
 
 # ---------------------------------------------------------------------------- run one command
@@ -310,25 +324,62 @@ def tail(output, lines=12):
     return "\n".join(output.rstrip("\n").splitlines()[-lines:])[-1500:]
 
 
-def find_red_line(expected, output):
-    """The first line that prints the expected red text and is not an echo line."""
-    if "\n" in expected:
-        return expected.splitlines()[0] if expected in output else None
-    for line in output.splitlines():
-        if expected in line and not line.lstrip().startswith(ECHO_PREFIXES):
-            return line.strip()
+def changed_lines(original_text, planted_text):
+    """The stripped lines that the edit added to a file: a command that prints the file prints them."""
+    before = {line.strip() for line in original_text.splitlines()}
+    return {line.strip() for line in planted_text.splitlines() if line.strip() and line.strip() not in before}
+
+
+def is_edit_line(line, changed):
+    text = line.strip()
+    return bool(text) and (text in changed or any(len(c) >= 8 and c in text for c in changed))
+
+
+def find_red_line(expected, output, changed=()):
+    """The first line (or block of lines) that prints the expected text and is not an echo line
+    and not a line of the plant's own edit. Multi-line text gets the same filter, line by line."""
+    lines = output.splitlines()
+    span = expected.count("\n")
+    at = output.find(expected)
+    while at != -1:
+        first = output.count("\n", 0, at)
+        block = lines[first:first + span + 1]
+        if not any(line.lstrip().startswith(ECHO_PREFIXES) or is_edit_line(line, changed) for line in block):
+            return block[0].strip()
+        at = output.find(expected, at + 1)
     return None
 
 
-def judge_green(phase, code, output):
+def check_selected(rec, phase, output):
+    """The guard of tests/m3/refutations.py:143: a red of another test does not count.
+    expected_selected is a count (sum of the `running N tests` lines) or a full test name."""
+    wanted = rec.get("expected_selected")
+    if wanted is None:
+        return
+    if isinstance(wanted, int):
+        found = sum(int(n) for n in re.findall(r"^running (\d+) tests?", output, re.M))
+        if found != wanted:
+            raise PlantFail(f"{phase}: {wanted} selected test(s) expected, the output says {found}")
+        return
+    state = "FAILED" if phase == "red" else "ok"
+    if not re.search(rf"^test {re.escape(wanted)} \.\.\. {state}\b", output, re.M):
+        raise PlantFail(f"{phase}: test {wanted} did not report {state}")
+    others = [n for n in re.findall(r"^test (.+?) \.\.\. FAILED", output, re.M) if n != wanted]
+    if others:
+        raise PlantFail(f"{phase}: another test failed too: {', '.join(others)}")
+
+
+def judge_green(phase, code, output, rec=None):
     if code is None:
         raise PlantFail(f"{phase}: the command timed out")
     if code != 0:
         raise PlantFail(f"{phase} is not green: exit {code}\n{tail(output)}")
+    if rec is not None:
+        check_selected(rec, phase, output)
 
 
-def judge_red(rec, code, output):
-    """Return the red line, or raise PlantFail."""
+def judge_red(rec, code, output, baseline_output="", changed=()):
+    """Return the red line, or raise PlantFail. baseline_output is the output of the green run."""
     if code is None:
         raise PlantFail("red run: the command timed out")
     if COMPILE_ERROR.search(output):
@@ -337,53 +388,116 @@ def judge_red(rec, code, output):
         raise PlantFail("plant stayed green (exit 0)")
     if code != rec["exit"]:
         raise PlantFail(f"red exit {code}, the record says {rec['exit']}\n{tail(output)}")
-    line = find_red_line(rec["expected_red"], output)
+    check_selected(rec, "red", output)
+    if rec["expected_red"] in baseline_output:
+        raise PlantFail(f"red text {rec['expected_red']!r} is also printed by the green run: it proves nothing")
+    line = find_red_line(rec["expected_red"], output, changed)
     if line is None:
-        raise PlantFail(f"red text {rec['expected_red']!r} is not printed\n{tail(output)}")
+        raise PlantFail(f"red text {rec['expected_red']!r} is not printed on a line of the red run that is "
+                        f"not an echo line and not a line of the plant's edit\n{tail(output)}")
     return line
 
 
-# ---------------------------------------------------------------------------- run one record
+# ---------------------------------------------------------------------------- journal, lock, restore
+
+IN_FLIGHT = []  # files with a plant in them whose restore is not checked yet
+
 
 def git(root, *args):
     return subprocess.run(["git", "-C", str(root), *args], text=True, stdout=subprocess.PIPE,
                           stderr=subprocess.PIPE)
 
 
+def sha256_of(data):
+    return hashlib.sha256(data).hexdigest()
+
+
 def set_hash(blobs):
     """One file: its sha256. Several: sha256 of the sorted JSON map (tests/m2/refutations.py:284)."""
-    hashes = {name: hashlib.sha256(data).hexdigest() for name, data in blobs.items()}
+    hashes = {name: sha256_of(data) for name, data in blobs.items()}
     if len(hashes) == 1:
         return next(iter(hashes.values()))
-    return hashlib.sha256(json.dumps(hashes, sort_keys=True).encode()).hexdigest()
+    return sha256_of(json.dumps(hashes, sort_keys=True).encode())
 
 
-def prepare(root, rec, use_git):
-    """Read the files and compute the planted text. Raise Refused when the plant cannot apply.
-    A file must be tracked and clean, so that `git checkout` restores it exactly."""
-    label = label_of(rec)
-    originals, planted = {}, {}
-    for entry in rec["files"]:
-        name = entry["file"]
-        path = Path(root) / name
-        if not path.is_file():
-            raise Refused(f"{label}: {name} is not a file of {root}")
-        originals[name] = path.read_bytes()
+def git_dir(root):
+    done = git(root, "rev-parse", "--absolute-git-dir")
+    return Path(done.stdout.strip()) if done.returncode == 0 else None
+
+
+@contextlib.contextmanager
+def signals_blocked():
+    """The restore and its check run with SIGINT, SIGTERM and SIGHUP held; they arrive after it."""
+    held = {signal.SIGINT, signal.SIGTERM, signal.SIGHUP}
+    old = signal.pthread_sigmask(signal.SIG_BLOCK, held)
+    try:
+        yield
+    finally:
+        signal.pthread_sigmask(signal.SIG_SETMASK, old)
+
+
+@contextlib.contextmanager
+def run_lock(root, use_git):
+    """One runner in one tree: flock on <git-dir>/mp1-plants.lock (a second runner would see the
+    plant of the first one in its own red run)."""
+    directory = git_dir(root) if use_git else None
+    if directory is None:
+        yield
+        return
+    path = directory / LOCK_NAME
+    handle = os.open(path, os.O_CREAT | os.O_RDWR, 0o644)
+    try:
         try:
-            text = originals[name].decode("utf-8")
-        except UnicodeDecodeError:
-            raise Refused(f"{label}: {name} is not UTF-8 text") from None
-        try:
-            planted[name] = apply_replacements(label, name, text, replacements_of(entry))
-        except Refused as exc:
-            raise Refused(str(exc) if str(exc).startswith(label) else f"{label}: {name}: {exc}") from None
-        if use_git:
-            tracked = git(root, "ls-files", "--error-unmatch", "--", name)
-            if tracked.returncode != 0:
-                raise Refused(f"{label}: {name} is not tracked by git")
-            if git(root, "status", "--porcelain", "--", name).stdout.strip():
-                raise Refused(f"{label}: {name} is not clean (run `git checkout -- {name}` or commit it)")
-    return originals, planted
+            fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise Refused(f"another mp1_plants.py run holds {path}; wait for it, or stop it") from None
+        yield
+    finally:
+        os.close(handle)
+
+
+def journal_write(root, entries):
+    path = git_dir(root) / JOURNAL_NAME
+    tmp = path.with_suffix(".tmp")
+    with open(tmp, "w") as handle:
+        handle.write(json.dumps(entries))
+        handle.flush()
+        os.fsync(handle.fileno())
+    os.replace(tmp, path)
+
+
+def journal_clear(root):
+    (git_dir(root) / JOURNAL_NAME).unlink(missing_ok=True)
+
+
+def recover_journal(root):
+    """A run that died (SIGKILL) leaves its plant in the tree and its journal in the git folder.
+    Restore each file from HEAD, check the hash, and return one line for each restored plant."""
+    path = git_dir(root) / JOURNAL_NAME
+    if not path.exists():
+        return []
+    try:
+        entries = json.loads(path.read_text())
+    except ValueError:
+        raise Refused(f"{path} is damaged: restore the plant files with `git checkout HEAD -- <file>`, "
+                      "then delete the journal") from None
+    lines = []
+    for entry in entries:
+        target = Path(root) / entry["file"]
+        if target.is_file() and sha256_of(target.read_bytes()) == entry["sha256"]:
+            continue
+        git(root, "checkout", "HEAD", "--", entry["file"])
+        if not target.is_file() or sha256_of(target.read_bytes()) != entry["sha256"]:
+            raise Refused(f"cannot restore {entry['file']}, left by a plant of {entry['record']}: "
+                          "run `git checkout HEAD -- <file>` and check `git status`")
+        lines.append(f"a plant of {entry['record']} was left in {entry['file']} "
+                     "by an interrupted run; restored")
+    path.unlink()
+    return lines
+
+
+def tree_state(root):
+    return set(git(root, "status", "--porcelain", "-uall").stdout.splitlines())
 
 
 def default_restore(root, originals, use_git):
@@ -407,53 +521,177 @@ def check_restored(root, originals, use_git, tree_before):
         if dirty:
             problems.append(f"git status is not empty after the restore: {dirty}")
         if tree_before is not None:
-            after = git(root, "status", "--porcelain", "--untracked-files=no").stdout
-            if after != tree_before:
-                problems.append("the command changed tracked files outside the plant")
+            after = tree_state(root)
+            new, gone = sorted(after - tree_before), sorted(tree_before - after)
+            if new or gone:
+                problems.append("the command changed files outside the plant: "
+                                + ", ".join(line.strip() for line in new + gone))
     return problems
 
 
-def run_record(root, rec, *, restore=None, timeout=DEFAULT_TIMEOUT, extra_env=None, use_git=None):
-    """Run one plant. Return a result dict. Raise Refused when the plant cannot apply."""
+# ---------------------------------------------------------------------------- run records
+
+def where_of(rec):
+    return rec.get("_where") or "record"
+
+
+def refusal(rec, text):
+    return Refused(f"{label_of(rec)} [{where_of(rec)}]: {text}")
+
+
+def check_files_exist(root, records):
+    """Every record of every file, in every mode: a moved or deleted file is a stale record."""
+    errors = []
+    for rec in records:
+        for entry in rec["files"]:
+            if not (Path(root) / entry["file"]).is_file():
+                errors.append(str(refusal(rec, f"{entry['file']} is missing: the file was moved or "
+                                               "deleted; re-pin the record")))
+    if errors:
+        raise Refused("\n".join(errors))
+
+
+def normalize_files(root, files, records, use_git):
+    """Repository-relative names of the --files arguments. An absolute path under the root is made
+    relative. A path that is neither a tracked file nor in a record is a mistake: refuse it."""
+    in_records = {entry["file"] for rec in records for entry in rec["files"]}
+    chosen, bad = [], []
+    for name in files:
+        path = Path(name)
+        if path.is_absolute():
+            try:
+                path = path.resolve().relative_to(Path(root).resolve())
+            except ValueError:
+                bad.append(f"{name}: outside the repository {root}")
+                continue
+        relative = os.path.normpath(str(path))
+        if use_git:
+            known = relative in git(root, "ls-files", "--", relative).stdout.splitlines()
+        else:
+            known = (Path(root) / relative).is_file()
+        if relative in in_records or known:
+            chosen.append(relative)
+        else:
+            bad.append(f"{name}: not a tracked file and not in any record (a mistyped path?)")
+    if bad:
+        raise Refused("--files: " + "; ".join(bad))
+    return chosen
+
+
+def prepare(root, rec, use_git):
+    """Read the files and compute the planted text. Raise Refused when the plant cannot apply.
+    A file must be tracked and clean, so that `git checkout` restores it exactly; this check comes
+    before the anchor check."""
+    originals, planted = {}, {}
+    for entry in rec["files"]:
+        name = entry["file"]
+        path = Path(root) / name
+        if not path.is_file():
+            raise refusal(rec, f"{name} is missing: the file was moved or deleted; re-pin the record")
+        if use_git:
+            if git(root, "ls-files", "--error-unmatch", "--", name).returncode != 0:
+                raise refusal(rec, f"{name} is not tracked by git")
+            if git(root, "status", "--porcelain", "--", name).stdout.strip():
+                raise refusal(rec, f"{name} is not clean: git status shows a change in it")
+        originals[name] = path.read_bytes()
+        try:
+            text = originals[name].decode("utf-8")
+        except UnicodeDecodeError:
+            raise refusal(rec, f"{name} is not UTF-8 text") from None
+        try:
+            planted[name] = apply_replacements(name, text, replacements_of(entry))
+        except Refused as exc:
+            raise refusal(rec, f"{exc}; when the file changed, re-pin the record") from None
+    return originals, planted
+
+
+def group_key(rec):
+    """Plants with the same command and environment share one baseline and one final green run."""
+    return json.dumps([rec["command"], rec["env"]], sort_keys=True)
+
+
+def run_group(root, recs, *, execute=None, restore=None, timeout=DEFAULT_TIMEOUT, extra_env=None,
+              use_git=None):
+    """Run the plants of one command group: one baseline, then for each plant edit, red run and a
+    byte-checked restore, then one final green run (two green runs for the group). Return one
+    result for each record. Raise Refused when a plant cannot apply (no command ran)."""
     root = Path(root)
     use_git = (root / ".git").exists() if use_git is None else use_git
     restore = restore or default_restore
-    originals, planted = prepare(root, rec, use_git)
-    env = {**os.environ, **(extra_env or {}), **rec["env"]}
+    prepared = [prepare(root, rec, use_git) for rec in recs]
+    if execute is None:
+        def execute(rec):
+            env = {**os.environ, **(extra_env or {}), **rec["env"]}
+            return run_command(rec["command"], root, env, timeout)
+    tree_before = tree_state(root) if use_git else None
+    results = [{"row": rec["row"], "plant": rec["plant"], "verdict": "PLANT-FAIL", "reason": None,
+                "baseline_exit": None, "red_exit": None, "red_line": None, "red_output": "",
+                "baseline_output": "", "restored_exit": None, "restored_output": "",
+                "baseline_sha256": set_hash(originals), "restored_sha256": None, "seconds": 0.0}
+               for rec, (originals, _) in zip(recs, prepared)]
+
+    def finish(result, started):
+        result["seconds"] = round(time.monotonic() - started, 1)
+        result["verdict"] = "PLANT-FAIL" if result["reason"] else "RED-RESTORED"
+
     started = time.monotonic()
-    tree_before = git(root, "status", "--porcelain", "--untracked-files=no").stdout if use_git else None
-    result = {"row": rec["row"], "plant": rec["plant"], "verdict": "PLANT-FAIL", "reason": None,
-              "baseline_exit": None, "red_exit": None, "red_line": None, "red_output": "",
-              "restored_exit": None, "baseline_sha256": set_hash(originals), "restored_sha256": None}
-    failure = None
+    code, base_out = execute(recs[0])
     try:
-        code, out = run_command(rec["command"], root, env, timeout)
-        result["baseline_exit"] = code
-        judge_green("baseline", code, out)
-        for name, text in planted.items():
-            (root / name).write_bytes(text.encode("utf-8"))
-        code, out = run_command(rec["command"], root, env, timeout)
-        result["red_exit"], result["red_output"] = code, out
-        result["red_line"] = judge_red(rec, code, out)
+        judge_green("baseline", code, base_out)
     except PlantFail as exc:
-        failure = str(exc)
-    finally:
-        restore(root, originals, use_git)
-        problems = check_restored(root, originals, use_git, tree_before)
-        result["restored_sha256"] = set_hash({n: (root / n).read_bytes() for n in originals})
-    if problems:
-        failure = "; ".join(([failure] if failure else []) + problems)
-    if failure is None:
+        for result in results:
+            result.update(reason=str(exc), baseline_exit=code, baseline_output=base_out)
+            finish(result, started)
+        return results
+    for rec, (originals, planted), result in zip(recs, prepared, results):
+        cycle = time.monotonic()
+        result.update(baseline_exit=code, baseline_output=base_out)
+        failure = None
         try:
-            code, out = run_command(rec["command"], root, env, timeout)
-            result["restored_exit"] = code
-            judge_green("restored", code, out)
+            check_selected(rec, "baseline", base_out)
+            changed = set()
+            for name, text in planted.items():
+                changed |= changed_lines(originals[name].decode("utf-8"), text)
+            if use_git:
+                journal_write(root, [{"record": label_of(rec), "file": name, "sha256": sha256_of(data)}
+                                     for name, data in originals.items()])
+            IN_FLIGHT[:] = list(originals)
+            for name, text in planted.items():
+                (root / name).write_bytes(text.encode("utf-8"))
+            red_code, red_out = execute(rec)
+            result["red_exit"], result["red_output"] = red_code, red_out
+            result["red_line"] = judge_red(rec, red_code, red_out, base_out, changed)
         except PlantFail as exc:
             failure = str(exc)
-    result["reason"] = failure
-    result["verdict"] = "PLANT-FAIL" if failure else "RED-RESTORED"
-    result["seconds"] = round(time.monotonic() - started, 1)
-    return result
+        finally:
+            with signals_blocked():
+                restore(root, originals, use_git)
+                problems = check_restored(root, originals, use_git, tree_before)
+                if use_git and IN_FLIGHT:
+                    journal_clear(root)
+                IN_FLIGHT.clear()
+            result["restored_sha256"] = set_hash({n: (root / n).read_bytes() for n in originals})
+        if problems:
+            failure = "; ".join(([failure] if failure else []) + problems)
+        result["reason"] = failure
+        finish(result, cycle)
+    final = time.monotonic()
+    code, out = execute(recs[0])
+    for result in results:
+        result.update(restored_exit=code, restored_output=out)
+    try:
+        judge_green("restored", code, out)
+    except PlantFail as exc:
+        for result in results:
+            if result["reason"] is None:
+                result["reason"] = f"{exc} (the final green run of the group, after the restores)"
+                finish(result, final)
+    return results
+
+
+def run_record(root, rec, **kwargs):
+    """One plant: a group of one (baseline, red, restore, green). Return its result."""
+    return run_group(root, [rec], **kwargs)[0]
 
 
 def describe(result):
@@ -466,7 +704,7 @@ def describe(result):
 
 
 def public(result):
-    return {k: v for k, v in result.items() if k != "red_output"}
+    return {k: v for k, v in result.items() if not k.endswith("_output")}
 
 
 # ---------------------------------------------------------------------------- the command line
@@ -484,14 +722,22 @@ def run_selected(root, records, args):
             print(f"REFUSED {message}", flush=True)
         print(f"mp1_plants: {len(refused)} record(s) refused, no command ran", flush=True)
         return 2
-    results = []
+    native = [rec for rec in records if not rec["headed"]]
     for rec in records:
-        result = run_record(root, rec, timeout=args.timeout, use_git=use_git)
-        results.append(result)
-        print(describe(result), flush=True)
+        if rec["headed"]:
+            print(f"SKIPPED {label_of(rec)} (headed: it runs only through {HEADED_WRAPPER}, never here)",
+                  flush=True)
+    groups = {}
+    for rec in native:
+        groups.setdefault(group_key(rec), []).append(rec)
+    results = []
+    for group in groups.values():
+        for result in run_group(root, group, timeout=args.timeout, use_git=use_git):
+            results.append(result)
+            print(describe(result), flush=True)
     failed = [r for r in results if r["verdict"] != "RED-RESTORED"]
-    print(f"mp1_plants: {len(results)} plant(s), {len(results) - len(failed)} red-restored, "
-          f"{len(failed)} failed", flush=True)
+    print(f"mp1_plants: {len(results)} plant(s) in {len(groups)} command group(s), "
+          f"{len(results) - len(failed)} red-restored, {len(failed)} failed", flush=True)
     if args.out:
         Path(args.out).write_text(json.dumps([public(r) for r in results], indent=2) + "\n")
     return 1 if failed else 0
@@ -508,7 +754,8 @@ def parse(argv):
     parser.add_argument("--all", action="store_true", help="run every record")
     parser.add_argument("--files", nargs="*", metavar="FILE",
                         help="run the records that edit one of these repository paths")
-    parser.add_argument("--native-only", action="store_true", help="skip the records with headed: true")
+    parser.add_argument("--native-only", action="store_true",
+                        help="kept for old command lines: this runner never runs headed records")
     parser.add_argument("--list", action="store_true", help="print the selected records and run nothing")
     parser.add_argument("--root", type=Path, default=ROOT, help="the git worktree (default: this one)")
     parser.add_argument("--plants-dir", type=Path, help="default: <root>/" + str(PLANTS_DIR))
@@ -518,6 +765,20 @@ def parse(argv):
     if not args.self_test and (args.all == (args.files is not None)):
         parser.error("give exactly one of --all or --files")
     return args
+
+
+def select_from(root, plants_dir, args, use_git):
+    records = load_records(plants_dir)
+    check_files_exist(root, records)
+    files = None if args.all else normalize_files(root, args.files, records, use_git)
+    return records, select_records(records, files, args.native_only)
+
+
+def interrupted_text():
+    if IN_FLIGHT:
+        return ("interrupted while a plant was in " + ", ".join(IN_FLIGHT)
+                + "; the next run restores it from the journal")
+    return "interrupted; every plant file is restored and checked"
 
 
 def main(argv=None):
@@ -530,26 +791,31 @@ def main(argv=None):
         signal.signal(number, terminate)
     root = args.root.resolve()
     plants_dir = args.plants_dir or root / PLANTS_DIR
+    use_git = (root / ".git").exists()
     try:
-        records = load_records(plants_dir)
-        chosen = select_records(records, None if args.all else args.files, args.native_only)
         if args.list:
+            _, chosen = select_from(root, plants_dir, args, use_git)
             for rec in chosen:
                 print(f"{label_of(rec)} headed={rec['headed']} "
                       f"files={','.join(e['file'] for e in rec['files'])}")
             return 0
-        if not chosen:
-            print(f"mp1_plants: no plant selected ({len(records)} record(s) in {plants_dir})")
-            return 0
-        return run_selected(root, chosen, args)
+        with run_lock(root, use_git):
+            if use_git:
+                for line in recover_journal(root):
+                    print(line, flush=True)
+            records, chosen = select_from(root, plants_dir, args, use_git)
+            if not chosen:
+                print(f"mp1_plants: no plant selected ({len(records)} record(s) in {plants_dir})")
+                return 0
+            return run_selected(root, chosen, args)
     except Refused as exc:
         print(f"REFUSED {exc}", file=sys.stderr)
         return 2
     except KeyboardInterrupt:
-        print("mp1_plants: interrupted, the source is restored", file=sys.stderr)
+        print(f"mp1_plants: {interrupted_text()}", file=sys.stderr)
         return 130
     except Interrupted as exc:
-        print(f"mp1_plants: interrupted by {exc}, the source is restored", file=sys.stderr)
+        print(f"mp1_plants: {interrupted_text()} ({exc})", file=sys.stderr)
         return exc.code
 
 
@@ -612,10 +878,29 @@ class Fixture:
         self.plants.mkdir()
         for name, text in self.FILES.items():
             (self.root / name).write_text(text)
+        # Files that a command may write on purpose are ignored; any other new file is a finding.
+        (self.root / ".gitignore").write_text("count.txt\nchild.pid\nran.flag\nruns.log\nheaded.ran\nstarted.flag\n")
         self.git("init", "-q")
-        self.git("add", "a.txt", "b.txt")
+        self.git("add", ".gitignore", "a.txt", "b.txt")
+        self.commit("fixture")
+
+    def commit(self, message):
         self.git("-c", "user.name=t", "-c", "user.email=t@example.com", "-c", "commit.gpgsign=false",
-                 "commit", "-q", "-m", "fixture")
+                 "commit", "-q", "-m", message)
+
+    def install_git_shim(self):
+        """A git that sleeps before `checkout`, so a signal can land inside the restore."""
+        real = shutil.which("git")
+        shim = self.base / "bin" / "git"
+        shim.parent.mkdir()
+        shim.write_text("#!/bin/sh\nfor a in \"$@\"; do\n    if [ \"$a\" = checkout ]; then\n"
+                        "        : > \"$MP1_MARK\"; sleep 2\n    fi\ndone\nexec " + real + " \"$@\"\n")
+        shim.chmod(0o755)
+        mark = self.base / "checkout.mark"
+        return {**os.environ, "PATH": f"{shim.parent}:{os.environ['PATH']}", "MP1_MARK": str(mark)}, mark
+
+    def journal(self):
+        return Path(self.git("rev-parse", "--absolute-git-dir").strip()) / "mp1-plants.journal"
 
     def git(self, *args):
         done = git(self.root, *args)
@@ -714,7 +999,7 @@ def anchor_that_occurs_zero_or_two_times_is_refused(fx):
     zero = make_record(files=[{"file": "b.txt", "edit": {"old": "zzz", "new": "y"}}])
     two = make_record(files=[{"file": "b.txt", "edit": {"old": "o", "new": "y"}}])
     expect_refused(lambda: run_record(fx.root, zero), "occurs 0 times")
-    expect_refused(lambda: run_record(fx.root, two), "occurs 2 times")
+    expect_refused(lambda: run_record(fx.root, two), "expected exactly one; when the file changed, re-pin the record")
     fx.assert_restored()
 
 
@@ -762,7 +1047,7 @@ def files_with_no_record_selects_nothing(fx):
     records = load_records(fx.plants)
     expect(select_records(records, ["zzz.txt"]) == [], "a file with no record selected a plant")
     expect(select_records(records, []) == [], "an empty file list selected a plant")
-    code, out = fx.cli("--files", "zzz.txt")
+    code, out = fx.cli("--files", "b.txt")
     expect(code == 0 and "no plant selected" in out, f"exit {code}\n{out}")
     expect(not (fx.root / "ran.flag").exists(), "a command ran")
 
@@ -925,6 +1210,214 @@ def sigint_restores_the_source(fx):
 @case
 def sigterm_restores_the_source(fx):
     interrupted_run(fx, signal.SIGTERM)
+
+
+# --- review repairs (H1 to H3, M1 to M5): each case was red before its repair
+
+CHECK_NOTE = CHECK.replace("sys.exit(1 if bad else 0)", "print('note: RED a lost GOOD')\nsys.exit(1 if bad else 0)")
+CHECK_MULTI = ("import sys\nif 'GOOD' not in open('a.txt').read():\n"
+               "    print('test x::GOOD ... FAILED\\nfailures:')\n    sys.exit(1)\n")
+CHECK_FOUR = ("import sys\na = open('a.txt').read()\nb = open('b.txt').read()\nbad = []\n"
+              "if 'GOOD' not in a: bad.append('RED GOOD')\nif 'beta' not in a: bad.append('RED beta')\n"
+              "if 'one' not in b: bad.append('RED one')\nif 'two' not in b: bad.append('RED two')\n"
+              "print(*bad, sep='\\n')\nsys.exit(1 if bad else 0)\n")
+
+
+def check_cargo(count, name, red_count=None, red_name=None, extra=""):
+    """A command that prints cargo test lines: the green run and the red run may differ."""
+    return ("import sys\nbad = 'GOOD' not in open('a.txt').read()\n"
+            f"print('running {red_count or count} tests' if bad else 'running {count} tests')\n"
+            f"print('test {red_name or name} ... FAILED' if bad else 'test {name} ... ok')\n"
+            f"{extra}if bad: print('RED a lost GOOD')\nsys.exit(1 if bad else 0)\n")
+
+
+def expect_fail(result, text):
+    expect(result["verdict"] == "PLANT-FAIL", f"verdict {result['verdict']}, wanted PLANT-FAIL")
+    expect(text in result["reason"], f"reason lacks {text!r}: {result['reason']}")
+
+
+@case
+def h1_text_printed_by_the_green_run_is_no_red(fx):
+    expect_fail(run_record(fx.root, make_record(command=[sys.executable, "-c", CHECK_NOTE])), "green run")
+    fx.assert_restored()
+
+
+@case
+def h1_multi_line_text_of_echo_lines_is_no_red(fx):
+    rec = make_record(command=[sys.executable, "-c", CHECK_MULTI],
+                      expected_red="test x::GOOD ... FAILED\nfailures:")
+    expect_fail(run_record(fx.root, rec), "is not printed")
+    fx.assert_restored()
+
+
+@case
+def h1_shell_echo_of_the_command_is_no_red(fx):
+    rec = make_record(command=["bash", "-c", "set -x; grep -q GOOD a.txt"], expected_red="grep -q GOOD a.txt")
+    expect_fail(run_record(fx.root, rec), "green run")
+    fx.assert_restored()
+
+
+@case
+def h1_text_printed_by_the_edit_itself_is_no_red(fx):
+    rec = make_record(command=["bash", "-c", "cat a.txt; grep -q GOOD a.txt"], expected_red="alpha BAD")
+    expect_fail(run_record(fx.root, rec), "edit")
+    fx.assert_restored()
+
+
+@case
+def h2_moved_file_is_refused_loudly(fx):
+    other = make_record(row="T2", plant="b", files=[{"file": "b.txt", "edit": {"old": "two", "new": "2"}}],
+                        expected_red="RED b lost two")
+    fx.write_records([make_record(), other])
+    (fx.root / "sub").mkdir()
+    fx.git("mv", "a.txt", "sub/a.txt")
+    fx.commit("move")
+    for args in (["--files", "sub/a.txt"], ["--files", "b.txt"], ["--all"]):
+        code, out = fx.cli(*args)
+        expect(code == 2, f"{args}: exit {code}, wanted 2\n{out}")
+        expect("t.json[0]" in out and "re-pin" in out, f"{args}: no file, index and re-pin in\n{out}")
+
+
+@case
+def h2_unknown_path_is_refused_and_absolute_path_is_accepted(fx):
+    fx.write_records([make_record()])
+    for bad in ("a.tx", "/etc/passwd"):
+        code, out = fx.cli("--list", "--files", bad)
+        expect(code == 2, f"--files {bad}: exit {code}, wanted 2\n{out}")
+    code, out = fx.cli("--list", "--files", str(fx.root / "a.txt"))
+    expect(code == 0 and "T1/a" in out, f"absolute path: exit {code}\n{out}")
+
+
+@case
+def h3_sigkill_during_the_plant_run_is_recovered_by_the_next_run(fx):
+    fx.write_records([make_record(command=[sys.executable, "-c", CHECK_SLEEP])])
+    proc = subprocess.Popen([sys.executable, "-B", str(Path(__file__).resolve()), "--all", "--root",
+                             str(fx.root), "--plants-dir", str(fx.plants), "--timeout", "120"],
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    try:
+        pid_file = fx.root / "child.pid"
+        deadline = time.monotonic() + 30
+        while not (pid_file.is_file() and pid_file.read_text()):
+            expect(time.monotonic() < deadline and proc.poll() is None, "the plant was never applied")
+            time.sleep(0.05)
+        proc.kill()
+        proc.wait()
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+    os.kill(int(pid_file.read_text()), signal.SIGKILL)
+    expect((fx.root / "a.txt").read_text() != Fixture.FILES["a.txt"], "SIGKILL left no plant to recover")
+    expect(fx.journal().is_file(), "no journal after SIGKILL")
+    fx.write_records([make_record()])
+    code, out = fx.cli("--all")
+    expect("a plant of T1/a was left in a.txt by an interrupted run; restored" in out, f"no recovery line\n{out}")
+    expect(code == 0, f"exit {code} after the recovery\n{out}")
+    fx.assert_restored()
+    expect(not fx.journal().exists(), "the journal is still there")
+
+
+@case
+def h3_sigterm_inside_the_restore_does_not_leave_the_plant(fx):
+    env, mark = fx.install_git_shim()
+    fx.write_records([make_record()])
+    proc = subprocess.Popen([sys.executable, "-B", str(Path(__file__).resolve()), "--all", "--root",
+                             str(fx.root), "--plants-dir", str(fx.plants)], env=env,
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    deadline = time.monotonic() + 30
+    while not mark.exists():
+        expect(time.monotonic() < deadline and proc.poll() is None, "the restore never started")
+        time.sleep(0.02)
+    proc.send_signal(signal.SIGTERM)
+    out, _ = proc.communicate(timeout=60)
+    expect(proc.returncode == 143, f"exit {proc.returncode}, wanted 143\n{out}")
+    fx.assert_restored()
+    expect(not fx.journal().exists(), "the journal is still there")
+    expect("restored" in out, f"no restored line\n{out}")
+
+
+@case
+def m1_headed_record_never_runs_in_the_serial_runner(fx):
+    headed = make_record(plant="h", headed=True,
+                         command=[sys.executable, "-c", "open('headed.ran', 'w').write('x')\n" + CHECK])
+    fx.write_records([make_record(plant="n"), headed])
+    code, out = fx.cli("--all")
+    expect(code == 0, f"exit {code}\n{out}")
+    expect(not (fx.root / "headed.ran").exists(), "the serial runner ran a headed record")
+    expect("SKIPPED T1/h" in out, f"the skipped id is not listed\n{out}")
+
+
+@case
+def m2_expected_selected_count_and_name_are_checked(fx):
+    def run(selected, **kwargs):
+        cmd = [sys.executable, "-c", check_cargo(1, "m::t", **kwargs)]
+        return run_record(fx.root, make_record(command=cmd, expected_selected=selected))
+    expect_fail(run(2), "baseline: 2 selected")             # the green run selects 1 test
+    expect_fail(run(1, red_count=2), "red: 1 selected")    # only the red run selects 2
+    expect(run(1)["verdict"] == "RED-RESTORED", "the right count was refused")
+    expect_fail(run("m::t", red_name="m::other"), "m::t did not report FAILED")
+    expect_fail(run("m::t", extra="print('test m::zz ... FAILED') if bad else 0\n"), "another test failed")
+    expect(run("m::t")["verdict"] == "RED-RESTORED", "the right test name was refused")
+
+
+@case
+def m3_untracked_file_written_by_the_command_is_a_failure(fx):
+    cmd = [sys.executable, "-c", "open('stray.txt', 'a').write('x')\n" + CHECK]
+    expect_fail(run_record(fx.root, make_record(command=cmd)), "stray.txt")
+    expect((fx.root / "stray.txt").exists(), "the runner deleted a file that it does not own")
+
+
+@case
+def m4_second_runner_in_one_tree_is_refused(fx):
+    slow = [sys.executable, "-c", "open('started.flag', 'w').write('x')\nimport time\ntime.sleep(6)\n"]
+    fx.write_records([make_record(command=slow)])
+    other = fx.base / "plants2"
+    other.mkdir()
+    (other / "t.json").write_text(json.dumps([make_record(row="T2", plant="b",
+                                  files=[{"file": "b.txt", "edit": {"old": "two", "new": "2"}}],
+                                  expected_red="RED b lost two")]))
+    runner = [sys.executable, "-B", str(Path(__file__).resolve()), "--all", "--root", str(fx.root)]
+    first = subprocess.Popen(runner + ["--plants-dir", str(fx.plants)], stdout=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL)
+    try:
+        deadline = time.monotonic() + 30
+        while not (fx.root / "started.flag").exists():
+            expect(time.monotonic() < deadline and first.poll() is None, "the first runner never started")
+            time.sleep(0.05)
+        second = subprocess.run(runner + ["--plants-dir", str(other)], text=True, stdout=subprocess.PIPE,
+                                stderr=subprocess.STDOUT, timeout=60)
+        expect(second.returncode == 2 and "another" in second.stdout,
+               f"second runner: exit {second.returncode}\n{second.stdout}")
+    finally:
+        first.send_signal(signal.SIGINT)
+        first.wait(timeout=60)
+    fx.assert_restored()
+
+
+@case
+def m5_one_baseline_for_each_command_group(fx):
+    cmd = [sys.executable, "-c", "open('runs.log', 'a').write('x')\n" + CHECK_FOUR]
+    edits = [("p1", "a.txt", "GOOD", "RED GOOD"), ("p2", "a.txt", "beta", "RED beta"),
+             ("p3", "b.txt", "one", "RED one"), ("p4", "b.txt", "two", "RED two")]
+    fx.write_records([make_record(plant=p, command=cmd, expected_red=red,
+                                  files=[{"file": f, "edit": {"old": old, "new": "ZZ"}}])
+                      for p, f, old, red in edits])
+    code, out = fx.cli("--all")
+    expect(code == 0 and out.count("RED-RESTORED") == 4, f"exit {code}\n{out}")
+    runs = len((fx.root / "runs.log").read_text())
+    expect(runs == 6, f"{runs} runs of the command; a group of 4 needs 1 baseline + 4 red + 1 green = 6")
+    fx.assert_restored()
+
+
+@case
+def m5_final_green_failure_fails_every_plant_of_the_group(fx):
+    cmd = [sys.executable, "-c", CHECK_LINGER]
+    fx.write_records([make_record(plant="p1", command=cmd, expected_red="RED lingering"),
+                      make_record(plant="p2", command=cmd, expected_red="RED lingering",
+                                  files=[{"file": "b.txt", "edit": {"old": "two", "new": "2"}}])])
+    code, out = fx.cli("--all")
+    expect(code == 1, f"exit {code}\n{out}")
+    for plant in ("p1", "p2"):
+        expect(f"PLANT-FAIL T1/{plant}: restored is not green" in out, f"{plant}\n{out}")
 
 
 def self_test():
