@@ -230,8 +230,11 @@ async function drive(io, params) {
     await io.save("hud2-order-tooltip-targets.json", Buffer.from(JSON.stringify(tooltipEvidence, null, 2) + "\n"));
 }
 
-// The end is two wheel steps in a row that leave the list region unchanged (one late frame
-// cannot stop the scroll early).
+// The end is two wheel steps in a row that leave the list text unchanged (one late frame cannot stop
+// the scroll early). The guide is see-through: drones and belt items move behind the Controls list, and
+// a full-colour compare never settles once they move (RUN142 plants-B: 37 wheel steps, 24 s, and the
+// turret that the oracle needs empty had shells). The compare reads only the near-white text pixels:
+// the moving world is blue, brown or dark, and a scroll step moves thousands of text pixels.
 async function scrollToEnd(io) {
     let previous = Buffer.from(await io.screenshot());
     let still = 0;
@@ -246,16 +249,18 @@ async function scrollToEnd(io) {
     return { tail: previous, steps: MAX_WHEEL_STEPS };
 }
 
+const TEXT_MIN_CHANNEL = 200;
+const TEXT_PIXELS_ALLOWED_TO_DIFFER = 40;
 function sameRegion(left, right, rect) {
+    let different = 0;
     for (let y = rect.y; y < rect.y + rect.height; y += 1) {
         for (let x = rect.x; x < rect.x + rect.width; x += 1) {
             const offset = (y * left.width + x) * 4;
-            for (let channel = 0; channel < 3; channel += 1) {
-                if (Math.abs(left.rgba[offset + channel] - right.rgba[offset + channel]) > 24) return false;
-            }
+            const bright = (image) => Math.min(image.rgba[offset], image.rgba[offset + 1], image.rgba[offset + 2]) > TEXT_MIN_CHANNEL;
+            if (bright(left) !== bright(right)) different += 1;
         }
     }
-    return true;
+    return different <= TEXT_PIXELS_ALLOWED_TO_DIFFER;
 }
 
 async function saveScreenshot(io, label, screenshot) {

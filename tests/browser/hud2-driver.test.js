@@ -25,11 +25,21 @@ function chunk(type, data) {
 }
 
 // A 1280x720 PNG whose Controls region holds one bright line at a row that depends on the scroll.
-function screenshot(scroll) {
+function screenshot(scroll, frame = -1) {
     const width = 1280;
     const height = 720;
     const raw = Buffer.alloc((width * 4 + 1) * height);
     const line = 100 + (scroll % 500);
+    // A moving blue block behind the see-through guide (a drone or a belt item): not near-white.
+    if (frame >= 0) {
+        const left = 520 + ((frame * 37) % 400);
+        for (let y = 300; y < 340; y += 1) {
+            for (let x = left; x < left + 40; x += 1) {
+                const offset = y * (width * 4 + 1) + 1 + x * 4;
+                raw[offset] = 0; raw[offset + 1] = 114; raw[offset + 2] = 178; raw[offset + 3] = 255;
+            }
+        }
+    }
     for (let x = 500; x < 1100; x += 1) {
         const offset = line * (width * 4 + 1) + 1 + x * 4;
         raw[offset] = 255;
@@ -50,13 +60,14 @@ function screenshot(scroll) {
 
 // A fake page: the overlay eats input until the first click; then each wheel step scrolls the
 // list by its amount until the list end (maxScroll). The drive stops at the tail screenshot.
-function fakeIo(maxScroll) {
+function fakeIo(maxScroll, animated = false) {
     const calls = [];
     let overlay = true;
     let scroll = 0;
+    let frame = 0;
     const io = {
         calls,
-        async screenshot() { calls.push("screenshot"); return screenshot(scroll); },
+        async screenshot() { calls.push("screenshot"); frame += 1; return screenshot(scroll, animated ? frame : -1); },
         async save(name) { calls.push(`save:${name}`); if (name === "hud2-controls-bottom.png") throw new Error("STOP"); },
         async click() { calls.push("click"); overlay = false; },
         async move() { calls.push("move"); },
@@ -67,6 +78,14 @@ function fakeIo(maxScroll) {
     };
     return io;
 }
+
+test("HUD2 reaches the list end although the world moves behind the see-through guide (RUN142 plants-B)", async () => {
+    const io = fakeIo(840, true);
+    await assert.rejects(drive(io, { row: "HUD2", package: "mods/forge" }), /STOP/);
+    const wheels = io.calls.filter((call) => call.startsWith("wheel:")).length;
+    assert.equal(io.scroll(), 840, "the list reached its end");
+    assert.ok(wheels <= 8, `a moving background must not keep the scroll going to the step cap: ${wheels} wheel steps`);
+});
 
 test("HUD2 dismisses the play overlay, then scrolls the Controls list until it stops moving (RUN130)", async () => {
     for (const maxScroll of [840, 1500]) {
