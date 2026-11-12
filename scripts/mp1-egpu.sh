@@ -30,6 +30,9 @@ while (($#)); do
 done
 [[ "$SECS" =~ ^[0-9]+$ ]] || usage
 
+CHROME_BIN="${CHROME_BIN:-$(command -v google-chrome || command -v chromium || true)}"
+[[ -n "$CHROME_BIN" && -x "$CHROME_BIN" ]] || { echo "Chrome binary unavailable; set CHROME_BIN" >&2; exit 1; }
+export CHROME_BIN
 SERVE_LOG="$(mktemp "${TMPDIR:-/tmp}/mp1-egpu-serve.XXXXXX")"
 SERVE_PID="" SMI_PID=""
 cleanup() {

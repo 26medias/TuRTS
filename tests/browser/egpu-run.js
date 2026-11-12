@@ -253,10 +253,17 @@ async function run() {
             const due = t0 + second * 1000;
             const wait = due - Date.now();
             if (wait > 0) await sleep(wait);
-            if (second % SAMPLE_EVERY_S === 0) { await drain(); await sample(second); }
-            if (second % ATTACK_EVERY_S === 1) await attackNext(second);
-            if (second % DUMMY_MOVE_EVERY_S === 21) await moveDummy(second);
-            if (second % ZOOM_EVERY_S === 11) await zoom(second);
+            // An action that throws is recorded and the run goes on: the frame record must not stop for a combat step.
+            const guarded = async (name, action) => {
+                try { await action(second); } catch (error) { combat.push({ second, step: name, error: String(error?.message || error).slice(0, 200) }); }
+            };
+            if (second % SAMPLE_EVERY_S === 0) {
+                await drain(); await sample(second);
+                console.log(`EGPU_PROGRESS second=${second} frames=${windows.map((w) => w.frames.length).join(",")} foreign_alive=${windows[0].samples.at(-1)?.foreign_alive}`);
+            }
+            if (second % ATTACK_EVERY_S === 1) await guarded("attack", attackNext);
+            if (second % DUMMY_MOVE_EVERY_S === 21) await guarded("dummy_move", moveDummy);
+            if (second % ZOOM_EVERY_S === 11) await guarded("zoom", zoom);
         }
         const tEnd = Date.now();
         // Stop the clock first, so that the final reads do not count as frames of the period.
