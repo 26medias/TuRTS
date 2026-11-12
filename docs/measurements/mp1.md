@@ -128,6 +128,14 @@ Run 43195887161, branch `codex/mc-integration`, commit `214289106210` (`2142891`
 
 ### Not measured
 
+From the review (performance-architect, 2026-11-12, `docs/research/mp1/review-e-gpu.md` on branch `mp1-design`):
+
+- The instrument counts `requestAnimationFrame` callbacks. A callback is not proof of a presented frame.
+- No one-window control run at the same scene exists, so the cost of the second window is not known.
+- The run covers a scene of 515 units. `docs/measurements/mc.md` (VIS2) records p50 133 ms with 5,000 units in one window. A two-window pixel row on a scene of that size is not covered by this result.
+- Each window has 2 timestamps outside the 600 s period; the counts inside it are 17,318 and 16,105. No percentile changes.
+- `max` and `mean_fps` have no test that goes red on a wrong value. The verdict does not use them.
+
 A run on a second GPU or on the hosted runner; a run with a person in a window; a run with more than 2 windows; the frame cost of the instrument itself; the cause of the 30 frames each second; any frame figure with a browser that is not Chrome 157; fog, audio output (the null device took it); the 4-vCPU target.
 
 ### Commands
