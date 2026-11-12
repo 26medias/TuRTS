@@ -918,6 +918,11 @@ pub fn step_frame_preserving_resting(
                 outputs[index].plain_progress = Some(plain);
             }
         }
+        // An early arrival of a unit with no pool now updates `target_claims`; the old branch did
+        // not. The map is read only in the `Blocked` branch (`target_is_claimed_by_other`), and
+        // only together with `target_is_blocked_by_stationary` and `is_free(target)`. The arrived
+        // unit stands on its target with a radius above 0, so both of those are decided by it
+        // and the output of a later unit does not change. A pool unit already did this call.
         update_target_claims(&mut target_claims, unit.target, new_target);
         outputs[index].position = position;
         outputs[index].target = new_target;

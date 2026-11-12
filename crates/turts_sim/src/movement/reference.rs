@@ -8,8 +8,16 @@
 //! No suite test pins the bits of a pooled unit, so this copy is the proof of equality
 //! (design 9.9).
 //!
-//! The only edit against the original text is the name of the function and the
-//! `..Default::default()` of the `FrameFlags` literal (the probe gained the field `phases`).
+//! The edits against the original text are the name of the function, the
+//! `..Default::default()` of the `FrameFlags` literal (the probe gained the field `phases`), and
+//! the local copy of `step` below.
+//!
+//! The copy still calls the live helper files `plain.rs`, `pool_index.rs`, `search.rs`,
+//! `spread.rs` and `grid.rs`. The test `reference_helpers_are_unchanged` in
+//! `tests/kernel_reference.rs` pins the sha256 of each. A task that must edit one of them first
+//! puts a copy of the old text into the reference (for example `reference_plain.rs`), then
+//! updates the pin. The helpers `angle` and the types `MovementPool` and `MoveProgress` in
+//! `movement/mod.rs` are not pinned (NOT covered).
 //! Task A2b2 deletes the plain-progress model that this copy calls; the later tasks of the
 //! slice take a new reference copy from their own base (R9).
 //!
@@ -27,8 +35,28 @@ use super::pool_index::{
 use super::search::{MovementSearch, body_overlaps_position};
 use super::spread::{SpreadContext, nearest_angle_order, target_key, update_target_claims};
 use super::{
-    MovementActivity, MovementInput, PhysicalEscape, ReservedFootprint, StaticFootprint, step,
+    MovementActivity, MovementInput, MovementOutput, PhysicalEscape, ReservedFootprint,
+    StaticFootprint,
 };
+
+/// A copy of `movement::step` at the base of A2a (`movement/mod.rs`), so that an edit of the live
+/// `step` cannot change the reference.
+fn step(input: &MovementInput, dt: f32) -> MovementOutput {
+    let step = input.speed * dt;
+    let offset = input.target - input.position;
+    let distance = offset.length();
+    if distance <= step {
+        MovementOutput {
+            position: input.target,
+            reached: true,
+        }
+    } else {
+        MovementOutput {
+            position: input.position + offset * (step / distance),
+            reached: false,
+        }
+    }
+}
 
 /// The kernel of the base of A2a: move a frame while retaining resting slots for orders that
 /// still need their assigned destination after a temporary combat pause.

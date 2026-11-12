@@ -18,14 +18,27 @@
 //!   appears;
 //! - four units next to the map edge whose target holds a `0.0` or a `-0.0` coordinate, so that
 //!   the arrival (`position = target`) writes a zero of each sign;
-//! - a counter for each phase of the step (`probe::PhaseCalls`), each above 0 over the run.
+//! - a counter for each phase of the step (`probe::PhaseCalls`), each above 0 over the run;
+//! - five anchor frames that reach branches the random seeds do not (the QA review of A2a): the
+//!   late arrival (the step ends exactly on the target after the projection and the clamp), with
+//!   and without a pool; two units whose projection meets a separation of 0 (the unit ids decide
+//!   the direction); and an early arrival that only the clause `distance <= 0.025` decides, with
+//!   and without a pool. Each anchor must raise its own count, and each count must be above 0 over
+//!   the run.
 //!
 //! This file does not name the plain-progress type, which task A2b2 deletes (R11); it compares
 //! that field through its `Debug` text, which prints each f32 as the shortest text that reads
 //! back to the same bits (`-0.0` is distinct from `0.0`).
 //!
-//! Run it in release: `cargo test --release -p turts_sim --features test-probes --test
-//! kernel_reference`. A debug build runs the first 16 seeds with at most 30 movers.
+//! The exact release command that every later task of the slice (A2b1, A2b2, A4, A3) and the
+//! slice regression must run, until A3 has merged:
+//!
+//!     cargo test --release -p turts_sim --locked --features test-probes --test kernel_reference
+//!
+//! `cargo test -p turts_sim --locked` runs 0 tests of this file, because the feature is off. A
+//! debug build with the feature (the CI form `cargo test --workspace --locked`) runs the first 16
+//! seeds with at most 30 movers, and the five anchor frames. The test
+//! `reference_helpers_are_unchanged` pins the helper files that the reference copy calls.
 #![cfg(feature = "test-probes")]
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -34,7 +47,8 @@ use turts_sim::Vec2;
 use turts_sim::movement::reference::reference_step_frame_preserving_resting;
 use turts_sim::movement::{
     FollowMoveOrigin, MoveProgress, MovementActivity, MovementFrame, MovementFrameOutput,
-    MovementFrameUnit, MovementPool, PhysicalEscape, step_frame_preserving_resting,
+    MovementFrameUnit, MovementInput, MovementPool, PhysicalEscape, step,
+    step_frame_preserving_resting,
 };
 
 /// The seeds of a release run. A debug build runs the first 16 (see `seeds`).
@@ -480,6 +494,17 @@ struct Seen {
     escape: usize,
     plain: usize,
     zero_sign_arrivals: usize,
+    /// A step that ended exactly on the target after the projection and the clamp
+    /// (`frame.rs` "Late arrival"), for a unit with a pool and for a unit with no pool.
+    late_arrival_pooled: usize,
+    late_arrival_free: usize,
+    /// A projection whose position equals the position of another unit exactly (the degenerate
+    /// direction of the hard projection, decided by the unit ids).
+    same_point: usize,
+    /// An early arrival decided by the clause `distance <= 0.025` alone (the distance is above
+    /// one step), for a unit with a pool and for a unit with no pool.
+    slow_clause_pooled: usize,
+    slow_clause_free: usize,
     // The calls of each phase: arrival, steering, projection, stall, fallback.
     phases: [u64; 5],
 }
@@ -534,6 +559,47 @@ impl Seen {
                 self.zero_sign_arrivals += 1;
             }
             let p = output.probe.phases;
+            if let (Some(speed), Some(target)) = (unit.speed, unit.target) {
+                let pooled = unit.progress.is_some();
+                if p.steering == 1 && output.target.is_none() && !output.failed_blocked {
+                    if pooled {
+                        self.late_arrival_pooled += 1;
+                    } else {
+                        self.late_arrival_free += 1;
+                    }
+                }
+                let distance = unit.position.distance(target);
+                if p.arrival == 1
+                    && p.steering == 0
+                    && output.target.is_none()
+                    && distance > speed * DT
+                    && distance <= 0.025
+                {
+                    if pooled {
+                        self.slow_clause_pooled += 1;
+                    } else {
+                        self.slow_clause_free += 1;
+                    }
+                }
+                if p.projection == 1 && !pooled {
+                    let landing = step(
+                        &MovementInput {
+                            position: unit.position,
+                            target,
+                            speed,
+                        },
+                        DT,
+                    )
+                    .position;
+                    if frame
+                        .units
+                        .iter()
+                        .any(|other| other.unit_id != unit.unit_id && other.position == landing)
+                    {
+                        self.same_point += 1;
+                    }
+                }
+            }
             for (slot, n) in self.phases.iter_mut().zip([
                 p.arrival,
                 p.steering,
@@ -547,34 +613,260 @@ impl Seen {
     }
 }
 
+impl Seen {
+    /// Add the counts of another run.
+    fn merge(&mut self, other: &Seen) {
+        self.frames += other.frames;
+        self.unit_frames += other.unit_frames;
+        self.no_progress_moving += other.no_progress_moving;
+        self.pooled_moving += other.pooled_moving;
+        self.resting_kept += other.resting_kept;
+        self.follow += other.follow;
+        self.blocked += other.blocked;
+        self.escape += other.escape;
+        self.plain += other.plain;
+        self.zero_sign_arrivals += other.zero_sign_arrivals;
+        self.late_arrival_pooled += other.late_arrival_pooled;
+        self.late_arrival_free += other.late_arrival_free;
+        self.same_point += other.same_point;
+        self.slow_clause_pooled += other.slow_clause_pooled;
+        self.slow_clause_free += other.slow_clause_free;
+        for (slot, n) in self.phases.iter_mut().zip(other.phases) {
+            *slot += n;
+        }
+    }
+}
+
+/// The ticks of each anchor frame.
+const ANCHOR_TICKS: usize = 20;
+
+fn anchor_unit(
+    unit_id: u32,
+    owner_slot: u8,
+    position: Vec2,
+    radius: f32,
+    speed: Option<f32>,
+    target: Option<Vec2>,
+) -> MovementFrameUnit {
+    MovementFrameUnit {
+        unit_id,
+        owner_slot,
+        unit_type: 1,
+        position,
+        radius,
+        speed,
+        target,
+        progress: None,
+        plain_progress: None,
+        physical_escape: None,
+    }
+}
+
+/// Give a unit a pool of one slot at its target.
+fn with_pool(unit: &mut MovementFrameUnit, pools: &mut BTreeMap<u64, MovementPool>) {
+    let slot = unit.target.expect("a pooled anchor unit has a target");
+    unit.progress = Some(MoveProgress {
+        pool_id: 1,
+        slot,
+        activity: MovementActivity::Moving,
+        pass_mode: false,
+        stalling_on_group: false,
+        stalled_ticks: 0,
+        best_distance: unit.position.distance(slot),
+        claim_count: 0,
+        follow_origin: None,
+    });
+    pools.insert(
+        1,
+        MovementPool {
+            pool_id: 1,
+            point: slot,
+            spacing: 1.1,
+            primary_count: 1,
+            slots: vec![slot],
+        },
+    );
+}
+
+fn anchor_frame(
+    units: Vec<MovementFrameUnit>,
+    pools: BTreeMap<u64, MovementPool>,
+) -> MovementFrame {
+    MovementFrame {
+        bounds: Vec2::new(40.0, 40.0),
+        tick_hz: TICK_HZ,
+        units,
+        pools,
+    }
+}
+
+/// A mover (radius 0.5, speed 4) at (0.5, 0.9) with the target (0.5, 0.5) in the corner, and a
+/// static unit (radius 2) at (0.5, 3.0). The projection pushes the mover past the corner and
+/// the clamp puts it exactly on the target: the late arrival of the step (found by the
+/// qa-lead review of A2a, finding 1).
+fn late_arrival_frame(pooled: bool) -> MovementFrame {
+    let target = Vec2::new(0.5, 0.5);
+    let mut mover = anchor_unit(1, 0, Vec2::new(0.5, 0.9), 0.5, Some(4.0), Some(target));
+    let wall = anchor_unit(2, 1, Vec2::new(0.5, 3.0), 2.0, None, None);
+    let mut pools = BTreeMap::new();
+    if pooled {
+        with_pool(&mut mover, &mut pools);
+    }
+    anchor_frame(vec![mover, wall], pools)
+}
+
+/// A mover with a speed below 0.5 and a target between one step and 0.025 away: only the clause
+/// `distance <= 0.025` of the early arrival decides (review finding 4).
+fn slow_clause_frame(pooled: bool) -> MovementFrame {
+    let mut mover = anchor_unit(
+        1,
+        0,
+        Vec2::new(10.0, 10.0),
+        0.5,
+        Some(0.4),
+        Some(Vec2::new(10.024, 10.0)),
+    );
+    let mut pools = BTreeMap::new();
+    if pooled {
+        with_pool(&mut mover, &mut pools);
+    }
+    anchor_frame(vec![mover], pools)
+}
+
+/// Two movers whose step lands exactly on a static unit, so that the projection meets a
+/// separation of 0 and takes its direction from the unit ids: mover 1 below static 2 (+X) and
+/// static 3 below mover 4 (-X). The speed is 100, so a step is 5 and the neighbour is not
+/// within the separation limit at the start (review finding 2).
+fn same_point_frame() -> MovementFrame {
+    let lane = |id: u32, y: f32| {
+        let position = Vec2::new(10.0, y);
+        let target = Vec2::new(20.0, y);
+        let mover = anchor_unit(id, 0, position, 0.5, Some(100.0), Some(target));
+        let landing = step(
+            &MovementInput {
+                position,
+                target,
+                speed: 100.0,
+            },
+            DT,
+        )
+        .position;
+        (mover, landing)
+    };
+    let (mover_a, landing_a) = lane(1, 10.0);
+    let (mover_b, landing_b) = lane(4, 30.0);
+    anchor_frame(
+        vec![
+            mover_a,
+            anchor_unit(2, 1, landing_a, 0.5, None, None),
+            anchor_unit(3, 1, landing_b, 0.5, None, None),
+            mover_b,
+        ],
+        BTreeMap::new(),
+    )
+}
+
+/// The anchor frames, each with the count that it must raise.
+#[allow(clippy::type_complexity)]
+fn anchors() -> Vec<(&'static str, MovementFrame, fn(&Seen) -> usize)> {
+    vec![
+        ("late arrival, no pool", late_arrival_frame(false), |s| {
+            s.late_arrival_free
+        }),
+        ("late arrival, pool", late_arrival_frame(true), |s| {
+            s.late_arrival_pooled
+        }),
+        ("same point", same_point_frame(), |s| s.same_point),
+        ("slow clause, no pool", slow_clause_frame(false), |s| {
+            s.slow_clause_free
+        }),
+        ("slow clause, pool", slow_clause_frame(true), |s| {
+            s.slow_clause_pooled
+        }),
+    ]
+}
+
+/// Run one frame chain through both kernels and compare. Returns the unit frames compared.
+fn run_chain(
+    label: &str,
+    mut frame: MovementFrame,
+    keep: &BTreeSet<u32>,
+    ticks: usize,
+    rng: &mut Rng,
+    seen: &mut Seen,
+) -> usize {
+    let mut compared = 0;
+    for tick in 0..ticks {
+        let live = step_frame_preserving_resting(&frame, DT, keep);
+        let reference = reference_step_frame_preserving_resting(&frame, DT, keep);
+        assert_eq!(
+            live.len(),
+            reference.len(),
+            "{label} tick {tick}: the output count differs"
+        );
+        for (new, old) in live.iter().zip(&reference) {
+            compared += 1;
+            if let Some(text) = difference(new, old) {
+                panic!("{label} tick {tick} unit {}: {text}", new.unit_id);
+            }
+        }
+        seen.count(&frame, &live, keep);
+        frame = next_frame(&frame, &live, rng);
+    }
+    compared
+}
+
+/// The run that later tasks (A2b1, A2b2, A4, A3 and the slice regression) must run, in release:
+///
+///     cargo test --release -p turts_sim --locked --features test-probes --test kernel_reference
+///
+/// `cargo test -p turts_sim --locked` runs 0 tests of this file (the feature is off). The CI
+/// form `cargo test --workspace --locked` turns the feature on and runs the debug form: 16 seeds,
+/// at most 30 movers, and the five anchor frames. The seeds with 800 to 5,000 movers run only in
+/// release.
 #[test]
 fn kernel_matches_reference_bit_for_bit() {
     let mut seen = Seen::default();
     let mut compared = 0usize;
     for seed in 1..=seeds() {
-        let (mut frame, keep) = start_frame(seed);
+        let (frame, keep) = start_frame(seed);
         let mut rng = Rng::new(seed ^ 0xa5a5_5a5a);
-        for tick in 0..TICKS {
-            let live = step_frame_preserving_resting(&frame, DT, &keep);
-            let reference = reference_step_frame_preserving_resting(&frame, DT, &keep);
-            assert_eq!(
-                live.len(),
-                reference.len(),
-                "seed {seed} tick {tick}: the output count differs"
-            );
-            for (new, old) in live.iter().zip(&reference) {
-                compared += 1;
-                if let Some(text) = difference(new, old) {
-                    panic!("seed {seed} tick {tick} unit {}: {text}", new.unit_id);
-                }
-            }
-            seen.count(&frame, &live, &keep);
-            frame = next_frame(&frame, &live, &mut rng);
-        }
+        compared += run_chain(
+            &format!("seed {seed}"),
+            frame,
+            &keep,
+            TICKS,
+            &mut rng,
+            &mut seen,
+        );
+    }
+    // The anchor frames reach the branches that the random seeds do not. Each raises its own
+    // count in its own run, so that a random seed cannot stand in for it.
+    let anchors = anchors();
+    let anchor_count = anchors.len();
+    for (name, frame, raised) in anchors {
+        let mut own = Seen::default();
+        let mut rng = Rng::new(0x5eed);
+        compared += run_chain(
+            &format!("anchor {name}"),
+            frame,
+            &BTreeSet::new(),
+            ANCHOR_TICKS,
+            &mut rng,
+            &mut own,
+        );
+        assert!(
+            raised(&own) > 0,
+            "the anchor frame {name:?} did not reach its branch: {own:?}"
+        );
+        seen.merge(&own);
     }
     println!("\nkernel_reference compared {compared} unit frames: {seen:?}");
     // Each kind of unit and each phase must be reached, else the comparison proves nothing.
-    assert_eq!(seen.frames, seeds() as usize * TICKS);
+    assert_eq!(
+        seen.frames,
+        seeds() as usize * TICKS + anchor_count * ANCHOR_TICKS
+    );
     for (name, n) in [
         ("no-progress moving", seen.no_progress_moving),
         ("pooled moving", seen.pooled_moving),
@@ -584,6 +876,11 @@ fn kernel_matches_reference_bit_for_bit() {
         ("physical escape", seen.escape),
         ("plain progress", seen.plain),
         ("zero-sign arrival", seen.zero_sign_arrivals),
+        ("late arrival, pool", seen.late_arrival_pooled),
+        ("late arrival, no pool", seen.late_arrival_free),
+        ("same point", seen.same_point),
+        ("slow clause, pool", seen.slow_clause_pooled),
+        ("slow clause, no pool", seen.slow_clause_free),
     ] {
         assert!(n > 0, "no {name} unit frame in the run: {seen:?}");
     }
@@ -592,5 +889,50 @@ fn kernel_matches_reference_bit_for_bit() {
         .zip(seen.phases)
     {
         assert!(n > 0, "phase {name} never ran in the run: {seen:?}");
+    }
+}
+
+/// The reference copy calls these helper files of the live crate. A change of one of them would
+/// make the harness compare new code with new code. Each pin is the sha256 of the file at the
+/// base of A2a. A task that must edit a helper first puts a copy of the old text into the
+/// reference (`movement/reference.rs` or a sibling file), then updates the pin here. I chose the
+/// pin and not a copy of the helpers: the helpers are 1,300 lines of private types (`pool_index`,
+/// `search`, `spread`, `plain`) and `grid.rs`, and a pin costs one line and still stops the
+/// silent case. `angle` and the types in `movement/mod.rs` are not pinned (NOT covered).
+const REFERENCE_HELPERS: [(&str, &str); 5] = [
+    (
+        "src/movement/plain.rs",
+        "024dccea7b92bd4de8820dcbba5a02a8760e63459f7ed0cc18913690456cfd36",
+    ),
+    (
+        "src/movement/pool_index.rs",
+        "e6f5e9b5368cd6d861d03bd7554eeabfa5d88fbd55957128af721230fa7e6fb4",
+    ),
+    (
+        "src/movement/search.rs",
+        "b5d11b68e4550b592aecc79cf2941dca981f2df33ec4965e455f74234de57e3b",
+    ),
+    (
+        "src/movement/spread.rs",
+        "f6123d1c4090607ba9c8b3f57982be993e869cc5dd51afe115eb81062127cdb6",
+    ),
+    (
+        "src/grid.rs",
+        "700abffed1f53610ac2c28bd72c28bf69a3d519b3e1d41ffcf3dc97539ae0291",
+    ),
+];
+
+#[test]
+fn reference_helpers_are_unchanged() {
+    for (file, pinned) in REFERENCE_HELPERS {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(file);
+        let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("read {file}: {e}"));
+        let digest = turts_mod_runtime::hash::sha256_hex(&bytes);
+        let actual = digest.strip_prefix("sha256:").unwrap_or(&digest);
+        assert_eq!(
+            actual, pinned,
+            "{file} changed, and the reference copy calls it. Copy the old text into \
+             movement/reference.rs first, then update the pin in tests/kernel_reference.rs"
+        );
     }
 }
