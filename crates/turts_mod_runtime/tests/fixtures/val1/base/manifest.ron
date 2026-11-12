@@ -1,0 +1,29 @@
+(
+    id: "val1", version: "0.1.0", kind: Game, engine_api: "^0.2.4",
+    dependencies: {},
+    exports: (
+        units: [
+            "units/tank.ron", "units/hauler.ron", "units/engineer.ron",
+            "units/power_station.ron", "units/guard_turret.ron", "units/command_center.ron",
+        ],
+        maps: ["maps/field.ron"],
+        visuals: [],
+        resources: ["resources/credits.ron", "resources/ore.ron", "resources/power.ron"],
+        nodes: ["nodes/field.ron"],
+        production: [
+            "production/train_hauler.ron", "production/build_power_station.ron",
+            "production/build_guard_turret.ron",
+        ],
+        orders: [
+            "orders/order_move.ron", "orders/order_gather.ron", "orders/order_construct.ron",
+            "orders/order_cancel_construction.ron", "orders/order_rally.ron",
+            "orders/order_repair.ron", "orders/order_surrender.ron", "orders/rules.ron",
+        ],
+        input: ["input/bindings.ron"],
+        assets: ["assets/assets.ron"],
+        interface: ["interface/hud.ron"],
+        combat: ["combat/damage.ron"],
+        match: ["match/match.ron"],
+    ),
+    context: Shared, capabilities: [], license: "LicenseRef-TBD",
+)

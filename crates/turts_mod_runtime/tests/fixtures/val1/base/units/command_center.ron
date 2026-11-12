@@ -1,0 +1,10 @@
+(
+    id: "command_center", name: "Command Center", footprint: Circle(radius: 2.0),
+    movement: None, inventory: None, gatherer: None, drop_off: None,
+    producer: Some((recipes: ["val1:train_hauler"], queue_capacity: 5, spawn_offsets: [(x: 0.0, y: 4.0)], when_short: [(resource: "val1:power", effect: Rate((numerator: 1, denominator: 2)))])),
+    health: Some((max: 500)), removal: Some((by_command: false, contents: Destroy)),
+    armour: Some((class: "val1:structure")),
+    income: Some((resource: "val1:credits", amount: 3, period_ms: 1000)),
+    constructor: Some((buildings: ["val1:build_power_station", "val1:build_guard_turret"], concurrent_sites: 2, queue_capacity: 4)),
+    build_area: Some(12.0),
+)

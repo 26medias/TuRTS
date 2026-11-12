@@ -203,10 +203,6 @@ pub fn read_value_for_item(
         // `UI2-RESULT` (plan 5.3). Stubs: a widget that binds one shows nothing (null) until
         // its owner builds it.
         Value::Supply(resource, side) => hud::value_supply(resource, *side, context),
-        Value::ConstructionQueue => hud::value_construction_queue(context),
-        Value::Sites => hud::value_sites(context),
-        Value::Notices => hud::value_notices(context),
-        Value::SelectionTypes => hud::value_selection_types(context),
         Value::Connection => connection::value_connection(context),
         Value::Outcome => result::value_outcome(context),
         Value::OutcomeReason => result::value_outcome_reason(context),

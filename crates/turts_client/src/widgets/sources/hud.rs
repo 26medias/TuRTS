@@ -40,24 +40,6 @@ pub(in crate::widgets) fn value_supply(
     serde_json::Value::Null
 }
 
-pub(in crate::widgets) fn value_construction_queue(
-    _context: SourceContext<'_>,
-) -> serde_json::Value {
-    serde_json::Value::Null
-}
-
-pub(in crate::widgets) fn value_sites(_context: SourceContext<'_>) -> serde_json::Value {
-    serde_json::Value::Null
-}
-
-pub(in crate::widgets) fn value_notices(_context: SourceContext<'_>) -> serde_json::Value {
-    serde_json::Value::Null
-}
-
-pub(in crate::widgets) fn value_selection_types(_context: SourceContext<'_>) -> serde_json::Value {
-    serde_json::Value::Null
-}
-
 pub(in crate::widgets) fn predicate_supply_short(
     _resource: &ContentRef,
     _context: &SourceContext<'_>,

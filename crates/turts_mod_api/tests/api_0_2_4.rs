@@ -418,10 +418,6 @@ fn h7_h10_new_widget_variants() {
     for value in [
         r#"Bind(Supply("a:b", Provided))"#,
         r#"Bind(Supply("a:b", Consumed))"#,
-        "Bind(ConstructionQueue)",
-        "Bind(Sites)",
-        "Bind(Notices)",
-        "Bind(SelectionTypes)",
         "Bind(Connection)",
         "Bind(Outcome)",
         "Bind(OutcomeReason)",
@@ -468,6 +464,136 @@ fn h7_h10_new_widget_variants() {
             root: &list,
             ..Parts::default()
         });
+    }
+}
+
+/// H7 (orchestrator ruling M3 on the review of `L0-API1`, option (a)): `ConstructionQueue`,
+/// `Sites`, `Notices` and `SelectionTypes` are list sources. They are in `Source` only, so a `Value`
+/// binding of one of them is refused with the unknown-variant text and the list of the names that
+/// `Value` has. A tooltip and a `Format` argument are `Value` places too.
+#[test]
+fn h7_the_four_list_names_are_not_values() {
+    for name in ["ConstructionQueue", "Sites", "Notices", "SelectionTypes"] {
+        let places = [
+            ("a Bind in a text", text_widget(&format!("Bind({name})"))),
+            (
+                "a Format argument",
+                text_widget(&format!(r#"Format("{{0}}", [{name}])"#)),
+            ),
+            (
+                "a tooltip",
+                format!(
+                    r#"(id: "w", tooltip: Some({name}), widget: Box(fill: None, border: None, children: []))"#
+                ),
+            ),
+        ];
+        for (place, root) in places {
+            let text = INTERFACE
+                .replace("@ROOT@", &root)
+                .replace("@TOP@", "")
+                .replace("@ALERTS@", "alerts: [],")
+                .replace("@WORLD@", "")
+                .replace("@HEALTH_BAR@", "")
+                .replace("@UNITS@", "");
+            let error = ron::from_str::<InterfaceDef>(&text)
+                .err()
+                .unwrap_or_else(|| {
+                    panic!("{name} in {place}: the file parses, a refusal was expected")
+                });
+            let text = error.to_string();
+            assert!(
+                text.contains(&format!(
+                    "Unexpected variant named `{name}` in enum `Value`"
+                )),
+                "{name} in {place}: {text}"
+            );
+        }
+    }
+}
+
+/// H11 (review of `L0-API1`, M2): the `Some` form of each world style, with its exact field list.
+/// The example of each style is in `docs/research/mp1/errata-l0-api.md` (the text for design
+/// revision 6.3). A field that the list does not hold is refused, and a field with a default may
+/// be left out.
+#[test]
+fn h11_world_styles_in_the_some_form() {
+    let world = r##", placement: Some((valid: "#56B4E9", invalid: "#D55E00", stripes: true)), build_area_ring: Some((colour: "#FFFFFF", width: 2.0)), gap_ring: Some((colour: "#FFFFFF", width: 1.0)), progress_bar: Some((width: 40, height: 5, background: "#000000", fill: "#56B4E9")), cargo_bar: Some((width: 32, height: 3, background: "#000000", fill: "#E69F00")), rally: Some((colour: "#56B4E9", width: 2.0)), float_text: Some((colour: "#FFFFFF", font: None, size: 14, sound: None))"##;
+    let parsed = interface(Parts {
+        world,
+        ..Parts::default()
+    });
+    let style = parsed.world;
+    assert_eq!(
+        style.build_area_ring,
+        Some(turts_mod_api::interface::LineStyle {
+            colour: "#FFFFFF".into(),
+            width: 2.0
+        })
+    );
+    assert_eq!(style.gap_ring.as_ref().map(|line| line.width), Some(1.0));
+    assert_eq!(
+        style.rally.as_ref().map(|line| line.colour.as_str()),
+        Some("#56B4E9")
+    );
+    let bar = style.progress_bar.expect("progress_bar");
+    assert_eq!((bar.width, bar.height), (40, 5));
+    assert_eq!(
+        (bar.background.as_str(), bar.fill.as_str()),
+        ("#000000", "#56B4E9")
+    );
+    let cargo = style.cargo_bar.expect("cargo_bar");
+    assert_eq!(
+        (cargo.width, cargo.height, cargo.fill.as_str()),
+        (32, 3, "#E69F00")
+    );
+    let float = style.float_text.expect("float_text");
+    assert_eq!((float.colour.as_str(), float.size), ("#FFFFFF", 14));
+    assert_eq!((float.font, float.sound), (None, None));
+    // `font` and `sound` default to `None`: the short form parses to the same value.
+    let short = interface(Parts {
+        world: r##", float_text: Some((colour: "#FFFFFF", size: 14))"##,
+        ..Parts::default()
+    });
+    assert_eq!(short.world.float_text.map(|float| float.size), Some(14));
+    // The sound form.
+    let sound = interface(Parts {
+        world: r##", float_text: Some((colour: "#FFFFFF", font: Some("mono"), size: 14, sound: Some("fx_delivery")))"##,
+        ..Parts::default()
+    });
+    assert_eq!(
+        sound.world.float_text.and_then(|float| float.sound),
+        Some("fx_delivery".to_string())
+    );
+    // A line style has `width`, not `size`; a bar has no `colour`; a float has no `width`.
+    for (name, bad) in [
+        (
+            "a ring with `size`",
+            r##", build_area_ring: Some((colour: "#ffffff", size: 2))"##,
+        ),
+        (
+            "a bar with `colour`",
+            r##", progress_bar: Some((colour: "#ffffff", width: 40, height: 5, background: "#000000", fill: "#ffffff"))"##,
+        ),
+        (
+            "a float with `width`",
+            r##", float_text: Some((colour: "#ffffff", size: 14, width: 2.0))"##,
+        ),
+        (
+            "a ring with no `colour`",
+            r##", rally: Some((width: 2.0))"##,
+        ),
+    ] {
+        let text = INTERFACE
+            .replace("@ROOT@", "")
+            .replace("@TOP@", "")
+            .replace("@ALERTS@", "alerts: [],")
+            .replace("@WORLD@", bad)
+            .replace("@HEALTH_BAR@", "")
+            .replace("@UNITS@", "");
+        assert!(
+            ron::from_str::<InterfaceDef>(&text).is_err(),
+            "{name}: the file parses, a refusal was expected"
+        );
     }
 }
 

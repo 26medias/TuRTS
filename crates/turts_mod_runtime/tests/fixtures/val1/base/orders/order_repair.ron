@@ -1,0 +1,1 @@
+(id: "order_repair", name: "repair", behaviour: Repair, target: Unit, fire: None, engage: None, icon: "icon_order_move", hotkey: "key_repair", cursor: None, card: None, units: ["val1:engineer"], description: "d")

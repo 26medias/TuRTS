@@ -1,0 +1,8 @@
+(queue_depth: 16,
+    smart: [
+        (target: Ground, needs: Movement, order: "val1:order_move"),
+        (target: ResourceNodeAccepted, needs: Gatherer, order: "val1:order_gather"),
+        (target: Ground, needs: Constructor, order: "val1:order_construct"),
+        (target: OwnDamaged, needs: Repairer, order: "val1:order_repair"),
+    ],
+    rally: Some([(target: Ground, needs: Producer, order: "val1:order_rally")]))

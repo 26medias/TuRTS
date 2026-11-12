@@ -390,11 +390,11 @@ pub(crate) const VERSION_TABLE: &[VersionTableRow] = &[
     // COMBO rows K1, K4.
     variant_0_2_4("constructor beside producer"),
     variant_0_2_4("production with a static output"),
-    // K7 and K8 (`health without removal`, `removal with a queue`) have no row yet: the two M3
-    // rules are in force for every edition until `L0-API2` lifts them (`content_m3_validation.rs`
-    // checks them after this table), so a row would refuse with the false advice "use 0.2.4".
-    // `L0-API2` adds both rows with the lift. The uses are listed (`variants.rs`) and have lines
-    // in `unbuilt.rs`.
+    // K7 and K8: the two M3 rules that `L0-API2` lifted (`content_m3_validation.rs`). The rows
+    // refuse the combination for an older edition, with the advice to use 0.2.4; the lines in
+    // `unbuilt.rs` hold it back for the edition 0.2.4 until `L-DES` builds it.
+    variant_0_2_4("health without removal"),
+    variant_0_2_4("removal with a queue"),
     // H4: the new alert triggers.
     variant_0_2_4("AlertTrigger::ConstructionComplete"),
     variant_0_2_4("AlertTrigger::SupplyShort"),
@@ -405,10 +405,6 @@ pub(crate) const VERSION_TABLE: &[VersionTableRow] = &[
     variant_0_2_4("AlertTrigger::GathererIdle"),
     // H7: the new values and sources.
     variant_0_2_4("Value::Supply"),
-    variant_0_2_4("Value::ConstructionQueue"),
-    variant_0_2_4("Value::Sites"),
-    variant_0_2_4("Value::Notices"),
-    variant_0_2_4("Value::SelectionTypes"),
     variant_0_2_4("Value::Connection"),
     variant_0_2_4("Value::Outcome"),
     variant_0_2_4("Value::OutcomeReason"),
@@ -773,7 +769,7 @@ mod tests {
                 assert_eq!(row.since_api, "0.2.4");
             }
         }
-        assert_eq!(tested, 59, "the number of VAR and COMBO rows of 0.2.4");
+        assert_eq!(tested, 57, "the number of VAR and COMBO rows of 0.2.4");
     }
 
     /// With no parsed value yet, a parsed row is skipped and a RAW row still fires. With the

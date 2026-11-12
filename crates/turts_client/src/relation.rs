@@ -26,8 +26,9 @@ pub(crate) fn holds_own_team(filter: SlotRelation, own: u8, other: u8) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::holds_own_team;
+    use super::{holds_own_team, relation_of};
     use turts_mod_api::SlotRelation::{Ally, Any, Enemy, Other, Same};
+    use turts_rules::relation::{self, Teams};
 
     #[test]
     fn the_five_filters_between_two_slots_of_their_own_teams() {
@@ -41,6 +42,39 @@ mod tests {
         ] {
             assert_eq!(holds_own_team(filter, 2, 2), same_slot, "{filter:?} same");
             assert_eq!(holds_own_team(filter, 2, 5), two_slots, "{filter:?} other");
+        }
+    }
+
+    /// With the own-team table `Ally` equals `Same` and `Enemy` equals `Other`, so the test above
+    /// cannot tell a swapped mapping (`Ally => Same`, `Enemy => Other`) from the right one. Slots 2
+    /// and 5 are one team and slot 3 is the other: here `Ally` differs from `Same`, and `Enemy`
+    /// differs from `Other` (L0-API1 review L1).
+    #[test]
+    fn the_mapping_tells_ally_from_same_and_enemy_from_other_in_a_team_table() {
+        let teams = Teams::new(&[0, 0, 1, 0, 0, 1]);
+        // (filter, own 2 / other 2, own 2 / other 5 (an ally), own 2 / other 3 (a foe))
+        for (filter, itself, ally, foe) in [
+            (Other, false, true, true),
+            (Same, true, false, false),
+            (Any, true, true, true),
+            (Ally, true, true, false),
+            (Enemy, false, false, true),
+        ] {
+            assert_eq!(
+                relation::matches(relation_of(filter), 2, 2, teams),
+                itself,
+                "{filter:?} the own slot"
+            );
+            assert_eq!(
+                relation::matches(relation_of(filter), 2, 5, teams),
+                ally,
+                "{filter:?} an ally"
+            );
+            assert_eq!(
+                relation::matches(relation_of(filter), 2, 3, teams),
+                foe,
+                "{filter:?} a foe"
+            );
         }
     }
 }

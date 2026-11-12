@@ -1,0 +1,7 @@
+(
+    id: "build_guard_turret", name: "Build Guard Turret", output_unit: "val1:guard_turret", duration_ms: 8000,
+    costs: [(resource: "val1:credits", amount: 80, source: SlotBalance)],
+    payment: ChargeOverTime,
+    cancel_refunds: (queued: (numerator: 1, denominator: 1), running: (numerator: 1, denominator: 2), output_blocked: (numerator: 1, denominator: 1)),
+    hotkey: Some("key_build_turret"), card: Some((row: 0, column: 2)),
+)

@@ -14,6 +14,7 @@ pub mod resolve;
 pub mod visuals;
 
 mod edition;
+mod mp1_validation;
 mod raw_presence;
 mod unbuilt;
 mod variants;

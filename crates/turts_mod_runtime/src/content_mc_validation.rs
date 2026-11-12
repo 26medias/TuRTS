@@ -1532,6 +1532,8 @@ fn is_engine_action(name: &str) -> bool {
             | "cancel"
             | "menu"
             | "toggle_guide"
+            // API 0.2.4, row H23: sends `LeaveMatch`; enabled only when the match is over.
+            | "leave_match"
     ) || name
         .strip_prefix("group_recall_")
         .or_else(|| name.strip_prefix("group_assign_"))
