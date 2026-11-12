@@ -1,0 +1,457 @@
+[
+  {
+    "row": "SOUND-OFF",
+    "plant": "1a-default-on",
+    "files": [
+      {
+        "file": "crates/turts_client/src/volume_settings.rs",
+        "edit": {
+          "old": "        Self {\n            sound_on: false,\n",
+          "new": "        Self {\n            sound_on: true,\n"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_client",
+      "--locked",
+      "--test",
+      "volume_settings",
+      "the_sound_is_off_by_default_and_a_stored_profile_with_no_flag_reads_as_off"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "the default settings make no sound",
+    "exit": 101,
+    "commit": "67a0bae5",
+    "expected_selected": "the_sound_is_off_by_default_and_a_stored_profile_with_no_flag_reads_as_off"
+  },
+  {
+    "row": "SOUND-OFF",
+    "plant": "1b-stored-flag-ignored",
+    "files": [
+      {
+        "file": "crates/turts_client/src/volume_settings.rs",
+        "edit": {
+          "old": "sound_on: parse_flag(audio.get(\"sound_on\"), defaults.sound_on)?,",
+          "new": "sound_on: defaults.sound_on,"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_client",
+      "--locked",
+      "--test",
+      "volume_settings",
+      "a_stored_sound_on_flag_gives_sound_and_keeps_the_levels"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "the stored flag turns the sound on",
+    "exit": 101,
+    "commit": "67a0bae5",
+    "expected_selected": "a_stored_sound_on_flag_gives_sound_and_keeps_the_levels"
+  },
+  {
+    "row": "SOUND-OFF",
+    "plant": "1c-invalid-flag-accepted",
+    "files": [
+      {
+        "file": "crates/turts_client/src/volume_settings.rs",
+        "edit": {
+          "old": "        Some(serde_json::Value::Bool(flag)) => Ok(*flag),\n        Some(_) => Err(()),",
+          "new": "        Some(serde_json::Value::Bool(flag)) => Ok(*flag),\n        Some(_) => Ok(fallback),"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_client",
+      "--locked",
+      "--test",
+      "volume_settings",
+      "an_invalid_stored_sound_flag_falls_back_like_an_invalid_level"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "resets the audio settings to the defaults, as a bad level does",
+    "exit": 101,
+    "commit": "67a0bae5",
+    "expected_selected": "an_invalid_stored_sound_flag_falls_back_like_an_invalid_level"
+  },
+  {
+    "row": "SOUND-OFF",
+    "plant": "1d-flag-not-written",
+    "files": [
+      {
+        "file": "crates/turts_client/src/volume_settings.rs",
+        "edit": {
+          "old": "set_audio_field_in_json(json, \"sound_on\", serde_json::json!(on))",
+          "new": "set_audio_field_in_json(json, \"sound_on\", serde_json::json!(false))"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_client",
+      "--locked",
+      "--test",
+      "volume_settings",
+      "the_flag_is_written_into_the_audio_object_and_the_levels_and_other_fields_stay"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "left: Bool(false)",
+    "exit": 101,
+    "commit": "67a0bae5",
+    "expected_selected": "the_flag_is_written_into_the_audio_object_and_the_levels_and_other_fields_stay"
+  },
+  {
+    "row": "SOUND-OFF",
+    "plant": "2a-no-sound-gate",
+    "files": [
+      {
+        "file": "crates/turts_client/src/audio.rs",
+        "edit": {
+          "old": "    if !settings.sound_on {\n        return;\n    }\n    #[cfg(target_family = \"wasm\")]",
+          "new": "    #[cfg(target_family = \"wasm\")]"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_client",
+      "--locked",
+      "--lib",
+      "with_the_sound_off_no_player_starts_and_a_request_is_not_queued_for_later"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "no sink starts while the sound is off",
+    "exit": 101,
+    "commit": "67a0bae5",
+    "expected_selected": "with_the_sound_off_no_player_starts_and_a_request_is_not_queued_for_later"
+  },
+  {
+    "row": "SOUND-OFF",
+    "plant": "2b-live-sound-kept",
+    "files": [
+      {
+        "file": "crates/turts_client/src/audio.rs",
+        "edit": {
+          "old": "    if settings.sound_on {\n        return;\n    }\n    for entity in &players {",
+          "new": "    if true {\n        return;\n    }\n    for entity in &players {"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_client",
+      "--locked",
+      "--lib",
+      "turning_the_sound_off_stops_a_sound_that_is_playing"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "off removes the live player",
+    "exit": 101,
+    "commit": "67a0bae5",
+    "expected_selected": "turning_the_sound_off_stops_a_sound_that_is_playing"
+  },
+  {
+    "row": "SOUND-OFF",
+    "plant": "2c-debug-flag-fixed",
+    "files": [
+      {
+        "file": "crates/turts_client/src/audio.rs",
+        "edit": {
+          "old": "    feed.sound_on = settings.sound_on;",
+          "new": "    feed.sound_on = true;"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_client",
+      "--locked",
+      "--lib",
+      "the_debug_audio_state_shows_the_sound_flag"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "assertion failed: !app.world().resource::<AudioFeed>().sound_on",
+    "exit": 101,
+    "commit": "67a0bae5",
+    "expected_selected": "the_debug_audio_state_shows_the_sound_flag"
+  },
+  {
+    "row": "SOUND-OFF",
+    "plant": "2d-flag-not-saved",
+    "files": [
+      {
+        "file": "crates/turts_client/src/audio.rs",
+        "edit": {
+          "old": "        store.set_sound_on(settings.sound_on)?;\n",
+          "new": ""
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_client",
+      "--locked",
+      "--lib",
+      "the_switch_is_saved_with_the_levels_and_survives_a_new_session"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "the switch is saved",
+    "exit": 101,
+    "commit": "67a0bae5",
+    "expected_selected": "the_switch_is_saved_with_the_levels_and_survives_a_new_session"
+  },
+  {
+    "row": "SOUND-OFF",
+    "plant": "3a-notice-with-switch-off",
+    "files": [
+      {
+        "file": "crates/turts_client/src/client_shell/notices.rs",
+        "edit": {
+          "old": "    let locked = volumes.as_deref().is_some_and(|volumes| volumes.sound_on)\n        && audio.as_deref().is_some_and(|feed| {",
+          "new": "    let locked = volumes.is_some()\n        && audio.as_deref().is_some_and(|feed| {"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_client",
+      "--locked",
+      "--lib",
+      "no_sound_notice_shows_while_the_player_keeps_the_sound_off"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "the sound is off on purpose",
+    "exit": 101,
+    "commit": "67a0bae5",
+    "expected_selected": "no_sound_notice_shows_while_the_player_keeps_the_sound_off"
+  },
+  {
+    "row": "SOUND-OFF",
+    "plant": "3b-label-ignores-switch",
+    "files": [
+      {
+        "file": "crates/turts_client/src/client_shell/notices.rs",
+        "edit": {
+          "old": "    volumes.sound_on\n        && audio\n            .map_or(",
+          "new": "    audio\n            .map_or("
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_client",
+      "--locked",
+      "--lib",
+      "the_play_screen_has_one_sound_switch_that_says_off_by_default_and_one_click_turns_it_on"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "the default says off, in words",
+    "exit": 101,
+    "commit": "67a0bae5",
+    "expected_selected": "the_play_screen_has_one_sound_switch_that_says_off_by_default_and_one_click_turns_it_on"
+  },
+  {
+    "row": "SOUND-OFF",
+    "plant": "3c-switch-before-join",
+    "files": [
+      {
+        "file": "crates/turts_client/src/client_shell/notices.rs",
+        "edit": {
+          "old": "    if !joined {\n        for entity in &existing {",
+          "new": "    if false {\n        for entity in &existing {"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_client",
+      "--locked",
+      "--lib",
+      "the_play_screen_switch_waits_for_the_join"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "no switch before the join",
+    "exit": 101,
+    "commit": "67a0bae5",
+    "expected_selected": "the_play_screen_switch_waits_for_the_join"
+  },
+  {
+    "row": "SOUND-OFF",
+    "plant": "4a-off-is-master-zero",
+    "files": [
+      {
+        "file": "crates/turts_client/src/volume_settings.rs",
+        "edit": {
+          "old": "        settings.sound_on = !settings.sound_on;\n",
+          "new": "        settings.sound_on = !settings.sound_on;\n        if !settings.sound_on {\n            settings.master = 0.0;\n        }\n"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_client",
+      "--locked",
+      "--lib",
+      "the_switch_keeps_the_four_levels_across_off_and_on"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "the sound switch never writes a level",
+    "exit": 101,
+    "commit": "67a0bae5",
+    "expected_selected": "the_switch_keeps_the_four_levels_across_off_and_on"
+  },
+  {
+    "row": "SOUND-OFF",
+    "plant": "5a-pixel-fill-drift",
+    "files": [
+      {
+        "file": "tests/browser/harness/sound-switch-pixels.js",
+        "edit": {
+          "old": "    on: Object.freeze([31, 97, 56]),",
+          "new": "    on: Object.freeze([31, 110, 56]),"
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "tests/browser/harness/sound-switch-pixels.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "on fill channel 1",
+    "exit": 1,
+    "commit": "67a0bae5"
+  },
+  {
+    "row": "SOUND-OFF",
+    "plant": "5b-hollow-outline-accepted",
+    "files": [
+      {
+        "file": "tests/browser/harness/sound-switch-pixels.js",
+        "edit": {
+          "old": "    minimumFill: 0.55,",
+          "new": "    minimumFill: 0,"
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "tests/browser/harness/sound-switch-pixels.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "the corner pixels of a hollow outline are not a button",
+    "exit": 1,
+    "commit": "67a0bae5"
+  },
+  {
+    "row": "SOUND-OFF",
+    "plant": "5c-click-outside-accepted",
+    "files": [
+      {
+        "file": "tests/browser/harness/sound-switch-proof.js",
+        "edit": {
+          "old": "    assert(release.client_x * scale >= left && release.client_x * scale <= left + width &&",
+          "new": "    assert(true || release.client_x * scale >= left && release.client_x * scale <= left + width &&"
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "tests/browser/harness/sound-switch-pixels.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "the physical release lands inside the rectangle of the switch",
+    "exit": 1,
+    "commit": "67a0bae5"
+  },
+  {
+    "row": "SOUND-OFF",
+    "plant": "6a-headed-sound-gate-removed",
+    "files": [
+      {
+        "file": "crates/turts_client/src/audio.rs",
+        "edit": {
+          "old": "    if !settings.sound_on {\n        return;\n    }\n    #[cfg(target_family = \"wasm\")]",
+          "new": "    #[cfg(target_family = \"wasm\")]"
+        }
+      }
+    ],
+    "command": [
+      "bash",
+      "scripts/mc-pixels.sh",
+      "tests/browser/rows/SND1.json"
+    ],
+    "env": {},
+    "headed": true,
+    "expected_red": "SND1 no sink started while the switch was off",
+    "exit": 1,
+    "commit": "67a0bae5"
+  },
+  {
+    "row": "SOUND-OFF",
+    "plant": "6b-headed-always-silent",
+    "files": [
+      {
+        "file": "crates/turts_client/src/audio.rs",
+        "edit": {
+          "old": "    if !settings.sound_on {\n        return;\n    }\n    #[cfg(target_family = \"wasm\")]",
+          "new": "    if true {\n        return;\n    }\n    #[cfg(target_family = \"wasm\")]"
+        }
+      }
+    ],
+    "command": [
+      "bash",
+      "scripts/mc-pixels.sh",
+      "tests/browser/rows/ORD7.json"
+    ],
+    "env": {},
+    "headed": true,
+    "expected_red": "ORD7 observes the matching real response sink",
+    "exit": 1,
+    "commit": "67a0bae5"
+  }
+]
