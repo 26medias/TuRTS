@@ -48,6 +48,9 @@ pub struct MovementFrameOutput {
     pub plain_progress: Option<PlainMoveProgress>,
     pub physical_escape: Option<PhysicalEscape>,
     pub failed_blocked: bool,
+    /// The flags of the last step of this unit. Tests read them through `probe`.
+    #[cfg(feature = "test-probes")]
+    pub probe: super::probe::FrameFlags,
 }
 
 /// Deterministic movement kernel shared by the ECS adapter and economy-log replay.
@@ -116,6 +119,8 @@ pub fn step_frame_preserving_resting(
             plain_progress: unit.plain_progress.clone(),
             physical_escape: unit.physical_escape.clone(),
             failed_blocked: false,
+            #[cfg(feature = "test-probes")]
+            probe: super::probe::FrameFlags::default(),
         })
         .collect();
     let mut slot_claim_counts: std::collections::HashMap<(u64, u32, u32), usize> = units
@@ -713,6 +718,13 @@ pub fn step_frame_preserving_resting(
             position.y = position
                 .y
                 .clamp(unit.radius, (frame.bounds.y - unit.radius).max(unit.radius));
+            #[cfg(feature = "test-probes")]
+            {
+                outputs[index].probe = super::probe::FrameFlags {
+                    separated,
+                    was_projected,
+                };
+            }
             // Arrival eligibility was checked before movement, so this step
             // may end early only if it reaches the destination exactly.
             let reached = position == destination;
@@ -1013,6 +1025,10 @@ pub fn step_frame_preserving_resting(
                 progress.activity = MovementActivity::Blocked;
                 failed_blocked = true;
             }
+        }
+        #[cfg(feature = "test-probes")]
+        {
+            outputs[index].probe.separated = separated;
         }
         outputs[index].position = position;
         outputs[index].target = (!failed_blocked).then_some(movement_target);

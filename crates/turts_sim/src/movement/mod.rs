@@ -12,6 +12,8 @@ mod plain;
 #[path = "tests/plain_movement_tests.rs"]
 mod plain_movement_tests;
 mod pool_index;
+#[cfg(feature = "test-probes")]
+pub mod probe;
 mod search;
 mod spread;
 #[cfg(test)]

@@ -50,6 +50,8 @@ pub(super) fn step_plain_progress(
         plain_progress: Some(progress.clone()),
         physical_escape: unit.physical_escape.clone(),
         failed_blocked: false,
+        #[cfg(feature = "test-probes")]
+        probe: super::probe::FrameFlags::default(),
     };
     let Some(speed) = unit.speed else {
         output.target = None;
@@ -149,6 +151,10 @@ pub(super) fn step_plain_progress(
                 velocity += Vec2::new(along.y, -along.x) * (limit - separation);
             }
         }
+    }
+    #[cfg(feature = "test-probes")]
+    {
+        output.probe.separated = separated;
     }
     if !separated && distance > step_limit {
         velocity = step(

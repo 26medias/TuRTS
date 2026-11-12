@@ -74,6 +74,8 @@ pub(crate) fn integrate_movement(world: &mut World) {
         })
         .collect();
     let outputs = step_frame_preserving_resting(&frame, delta, &preserve_resting_units);
+    #[cfg(feature = "test-probes")]
+    super::probe::store_frame_flags(world, &outputs);
     for ((_, entity, _), output) in units.into_iter().zip(outputs) {
         let mut entity_mut = world.entity_mut(entity);
         if let Some(target) = output.target {

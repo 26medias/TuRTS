@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Re-freeze classifier for the one change of the M2 operation stream.
 
-Pre-MP1 slice, task Q1a. Design: docs/superpowers/specs/
-2026-11-12-pre-mp1-slice-design.md, section 5 and section 9 items 6, 7
-and 14 (revision 5). Python 3 standard library only.
+Pre-MP1 slice, tasks Q1a and Q1b. Design: docs/superpowers/specs/
+2026-11-12-pre-mp1-slice-design.md, section 5 and section 9 items 6, 7, 14
+and 24 (revision 6). Python 3 standard library only.
 
 The classifier reads two runs: "old" (the build before the change) and
 "new" (the build after the change). For each run it reads one trace for each
@@ -29,6 +29,12 @@ Modes:
         In both stages the fixture and the new stream must be two
         different files. The new stream is the stream that the new run
         wrote; keep it outside the repository tree.
+    --counts TRACE_DIR
+        Task Q1b step 2 and task A2b2. The counts of one run: (a) the
+        unit-ticks for each movement state, (b) the unit-ticks with state
+        none and separated true, (c) the unit-ticks with was_projected true,
+        (d) the move_to_route of each MoveTo. Gives FAIL (the stop rule of
+        the plan) when a unit has state plain, or (b) or (c) is above 0.
     --self-test
         Run the plants of tests/m3/test_refreeze_classify.py.
     Option --g1-in-a2c: G1 lands in A2c (design section 5 item 0, 9.16).
@@ -38,8 +44,8 @@ EMITTER: the emitter sha256 is the sha256 of the bytes of the --emitter
 files, joined in the order of the command line. The classifier calculates
 it and compares it with the header of each trace.
 
-TRACE FORMAT "turts-refreeze-trace/2" (task Q1b writes the emitter)
--------------------------------------------------------------------
+TRACE FORMAT "turts-refreeze-trace/3" (emitter: crates/turts_pack/tests/m2_trace.rs)
+-----------------------------------------------------------------------------------
 One file for each package: <dir>/<package>.jsonl, for base, haul, acme and
 cedar. UTF-8. One JSON object on each line. Each line ends with "\\n". No
 blank line. Integers are JSON integers, flags are JSON true or false. The
@@ -67,7 +73,9 @@ Then for each tick T = 1 to 400, in this order:
        {"record": "unit", "package": P, "tick": T, "unit": U,
         "x_bits": X, "y_bits": Y, "target": null | {"x_bits": X,
         "y_bits": Y}, "activity": A, "state": S, "order": O,
-        "separated": B, "was_projected": B [, "edge_hit": B]}
+        "queue": [K, ...], "last_failure": null | {"order": C,
+        "reason": R, "tick": N}, "separated": B,
+        "was_projected": B | null [, "edge_hit": B]}
        - x_bits, y_bits: f32::to_bits of the position, 8 lowercase hex.
        - target: the MoveTarget point as bits, or null when there is none.
        - activity: the MovementActivity of the MoveProgress of the unit
@@ -75,15 +83,30 @@ Then for each tick T = 1 to 400, in this order:
          unit has no MoveProgress. Not the order or the gather stage
          (design section 9 item 7).
        - state: "plain" when the unit has a PlainMoveProgress
-         (crates/turts_sim/src/movement.rs:58 at 94a50d3), "pool" when it
-         is in a movement pool, else "none".
-       - order: the current order of the unit as "<Kind>:<stage>", with
-         "-" for an order that has no stage, or "none".
-       - separated, was_projected: the two flags of the movement step
-         (movement.rs:770, :1973, :2134 and :2008 at 94a50d3). The fallback
-         of an engine trip starts on "separated || was_projected" (:2052).
-         Both are false for a unit that does not step and on the snap
-         paths. Design revision 5, section 9 item 14.
+         (crates/turts_sim/src/movement/plain.rs), "pool" when it is in a
+         movement pool, else "none". Read through turts_sim::movement::probe.
+       - order: "none" when UnitOrders.current is empty; else
+         "<Behaviour>:<stage>". The kind is the name of the Behaviour (Move,
+         Stop, Hold, Attack, Gather, Produce, CancelProduction, Remove,
+         SetEnabled), never the content id (a content id holds a colon).
+         The stage is the gather stage of the unit (Idle, MovingToNode,
+         Gathering, MovingToReceiver, Unloading, Waiting-NoDeposit,
+         Waiting-NoReceiver, Waiting-DestinationFull,
+         Waiting-DestinationOverflow), or "-" when the unit has no gather
+         order. A legacy Gather command leaves UnitOrders empty, so a gather
+         unit reads "none" (the economy events of P2 show its stages).
+       - queue: the behaviour names of UnitOrders.queue, in order.
+       - last_failure: UnitOrders.last_failure: the order content id, the
+         reject reason (RejectReason::as_str) and the tick; or null.
+       - separated: the flag of the movement step of the last frame (a
+         local of each of the three branches, movement/frame.rs and
+         plain.rs); false for a unit that does not step.
+       - was_projected: the local of the branch of a unit with no pool
+         (movement/frame.rs). null when the unit has a pool after the frame:
+         the pool branch has no such local, so a P0 pair across the merge
+         of the branches compares the same field (plan task Q1b). false for
+         a unit that does not step and on the snap paths. The fallback of an
+         engine trip starts on "separated || was_projected" (design 9.14).
        - edge_hit: only with --g1-in-a2c; then in every unit record.
     3. One operation record for each operation that the stream puts at
        tick T, in capture order (the rule of
@@ -99,13 +122,18 @@ Then for each tick T = 1 to 400, in this order:
        - events: each EconomyEvent as serde JSON (tick, ordinal,
          owner_slot, kind), with the full payload.
        - before_equals_after: OperationAudit.before == after.
+       - move_to_route: only on the operation of a MoveTo command. How the
+         command reached the movement code, read from the world right
+         after the command: "direct" (the unit has its MoveTarget at once),
+         "per_unit" (a pending envelope, more than one unit), "envelope" (a
+         pending envelope, one unit), "none".
 
 ALLOWED LIST FORMAT "turts-refreeze-allowed/2" (tests/m3/refreeze_allowed.json)
 --------------------------------------------------------------------------------
 Task Q1b writes the list before the A2c commit (plan refinement R6). It
 names each acme trace difference that the design predicts. Every entry must
 occur; a stale entry is a FAIL.
-    {"schema": "turts-refreeze-allowed/2", "package": "acme",
+    {"schema": "turts-refreeze-allowed/3", "package": "acme",
      "note": "free text (optional)",
      "unit_fields": [
         {"unit": U, "field": F, "ticks": [FIRST, LAST], "old": V,
@@ -114,26 +142,41 @@ occur; a stale entry is a FAIL.
         {"field": W, "ticks": [FIRST, LAST], "old": V, "new": V}],
      "operations": [
         {"change": "added", "tick": T, "index": I, "unit": U | null,
-         "phase": P, "events": [...], "before_equals_after": B}]}
-    - F is one of target, activity, state, order, separated,
-      was_projected, and edge_hit (only with --g1-in-a2c). W is pools or
-      pending_movement_orders. A position field (x_bits, y_bits) cannot be
-      allowed: the ruling P1 is "every position is bitwise equal over 400
-      ticks" (docs/research/mp1/ruling-td-one-step-function.md, section 5).
-    - LAST must be before the calculated arrival tick. From the arrival
-      tick on, the acme trace must be equal to the old trace: the scout
-      has no pool, no target and no leaked order.
+         "phase": P, "events": [...], "before_equals_after": B}],
+     "operation_fields": [
+        {"tick": T, "index": I, "field": "move_to_route", "old": R,
+         "new": R}]}
+    - F is one of target, activity, state, order, queue, last_failure,
+      separated, was_projected, and edge_hit (only with --g1-in-a2c). W is
+      pools or pending_movement_orders. A position field (x_bits, y_bits)
+      cannot be allowed: the ruling P1 is "every position is bitwise equal
+      over 400 ticks" (docs/research/mp1/ruling-td-one-step-function.md,
+      section 5).
+    - LAST must be before the calculated arrival tick, except for order,
+      queue and last_failure: LAST can be the arrival tick (design 9.24a).
+      The old single MoveTo resets UnitOrders (orders.rs:633-638), so the
+      old trace has order none on every tick. The new order is cleared by
+      the Orders phase of the tick after arrival, and Orders runs before
+      Movement (plugin.rs:121-128), so the new trace still has the order
+      at the arrival tick. The check reads the LAST tick of the span, not
+      the first. From the next tick on, the acme trace must be equal to the
+      old trace: the scout has no pool, no target and no leaked order.
+    - "operation_fields": the one field of an old operation that may
+      change is move_to_route. Index I is the place of the old operation in
+      the old list of tick T; "old" must be its value there.
     - An entry covers each tick from FIRST to LAST. At each of these ticks
       the old value must be "old" and the new value "new".
     - "added": the new operation at position I (0-based) in the list of
       tick T of the new trace.
-    - There is no "changed" entry. Design section 5 item 3 (P3) admits an
-      added or changed operation. In the stream, a changed operation can
-      differ only in before_equals_after, because its event kinds must be
-      empty; and the design requires that a flipped before_equals_after on
-      the tick-1 operation is red (design lines 143-144). So every change
-      of an old operation is a FAIL here. If A2c changes an old operation,
-      the stop rule of design line 146 applies (needs a new ruling).
+    - There is no "changed" entry for the stream fields. Design section 5
+      item 3 (P3) admits an added or changed operation. In the stream, a
+      changed operation can differ only in before_equals_after, because its
+      event kinds must be empty; and the design requires that a flipped
+      before_equals_after on the tick-1 operation is red (design lines
+      143-144). So every change of an old operation, except its
+      move_to_route (a trace field that the stream does not hold), is a
+      FAIL here. If A2c changes an old operation, the stop rule of design
+      line 146 applies (needs a new ruling).
 """
 import argparse
 import hashlib
@@ -150,8 +193,8 @@ PACKAGES = ("base", "haul", "acme", "cedar")
 UNCHANGED_PACKAGES = ("base", "haul", "cedar")
 CHANGED_PACKAGE = "acme"
 TICKS = 400
-TRACE_FORMAT = "turts-refreeze-trace/2"
-ALLOWED_SCHEMA = "turts-refreeze-allowed/2"
+TRACE_FORMAT = "turts-refreeze-trace/3"
+ALLOWED_SCHEMA = "turts-refreeze-allowed/3"
 STAGES = ("before-fixture-commit", "after-fixture-commit")
 # The frozen stream before the one re-freeze (tests/m3/refutations.py:18).
 FROZEN_SHA256 = "bcbf72c2206251f635a7c7f5b6c8f573d69a5fc05a5bd77716e98ebfb08e370b"
@@ -162,22 +205,40 @@ SCOUT_CONTENT_ID = "acme:scout"
 ACTIVITIES = {"Pending", "Moving", "Resting", "Blocked", "none"}
 STATES = {"none", "plain", "pool"}
 PHASES = {"Command", "Orders", "PostMovementOrders", "Other"}
-ALLOWED_UNIT_FIELDS = {"target", "activity", "state", "order", "separated",
-                       "was_projected"}
+ALLOWED_UNIT_FIELDS = {"target", "activity", "state", "order", "queue",
+                       "last_failure", "separated", "was_projected"}
+# The fields of the unit record that follow the order of the unit. The
+# MoveTo order is cleared by the Orders phase of the tick after arrival, and
+# Orders runs before Movement (plugin.rs:121-128), so the new trace still has
+# the order at the arrival tick. An allowed entry for these fields may end ON
+# the arrival tick; for every other field it must end before it (design 9.24a).
+ORDER_FOLLOWER_FIELDS = {"order", "queue", "last_failure"}
 WORLD_FIELDS = ("pools", "pending_movement_orders")
 UNIT_KEYS = {"record", "package", "tick", "unit", "x_bits", "y_bits",
-             "target", "activity", "state", "order", "separated",
-             "was_projected"}
+             "target", "activity", "state", "order", "queue", "last_failure",
+             "separated", "was_projected"}
 OP_KEYS = {"record", "package", "tick", "op_id", "unit", "phase", "events",
            "before_equals_after"}
+# Only the operation that a MoveTo command made has move_to_route.
+OP_OPTIONAL_KEYS = {"move_to_route"}
+MOVE_TO_ROUTES = {"direct", "per_unit", "envelope", "none"}
+# The kind of an order is the name of its behaviour (never the content id: a
+# content id holds a colon, and the format reads the colon as the separator of
+# kind and stage). The stage is the gather stage of the unit, or "-".
+BEHAVIOURS = {"Move", "Stop", "Hold", "Attack", "Gather", "Produce",
+              "CancelProduction", "Remove", "SetEnabled"}
+GATHER_STAGES = {"-", "Idle", "MovingToNode", "Gathering", "MovingToReceiver",
+                 "Unloading", "Waiting-NoDeposit", "Waiting-NoReceiver",
+                 "Waiting-DestinationFull", "Waiting-DestinationOverflow"}
 WORLD_KEYS = {"record", "package", "tick"} | set(WORLD_FIELDS)
 HEADER_KEYS = {"record", "format", "package", "emitter_sha256", "ticks",
                "unit_count", "units"}
 COMPARED_UNIT_FIELDS = ("x_bits", "y_bits", "target", "activity", "state",
-                        "order", "separated", "was_projected", "edge_hit")
+                        "order", "queue", "last_failure", "separated",
+                        "was_projected", "edge_hit")
 HEX8 = re.compile(r"[0-9a-f]{8}\Z")
 HEX64 = re.compile(r"[0-9a-f]{64}\Z")
-ORDER = re.compile(r"(none|[A-Za-z][A-Za-z0-9_]*:[A-Za-z0-9_-]+)\Z")
+NAME = re.compile(r"[A-Za-z][A-Za-z0-9_]*\Z")
 
 
 class Report:
@@ -309,18 +370,53 @@ def check_unit_record(where, record, g1_in_a2c):
         return "%s: activity %r" % (where, record["activity"])
     if record["state"] not in STATES:
         return "%s: state %r" % (where, record["state"])
-    if not (isinstance(record["order"], str) and ORDER.match(record["order"])):
-        return "%s: order %r is not \"none\" or \"<Kind>:<stage>\"" % (
-            where, record["order"])
-    for field in ("separated", "was_projected"):
-        if not isinstance(record[field], bool):
-            return "%s: %s is not a bool" % (where, field)
+    error = check_order_text(where, record["order"])
+    if error:
+        return error
+    queue = record["queue"]
+    if not (isinstance(queue, list) and all(
+            isinstance(kind, str) and kind in BEHAVIOURS for kind in queue)):
+        return "%s: queue %r is not a list of behaviour names (%s)" % (
+            where, queue, ", ".join(sorted(BEHAVIOURS)))
+    failure = record["last_failure"]
+    if failure is not None and not (
+            isinstance(failure, dict)
+            and set(failure) == {"order", "reason", "tick"}
+            and isinstance(failure["order"], str)
+            and isinstance(failure["reason"], str)
+            and NAME.match(failure["reason"])
+            and is_count(failure["tick"])):
+        return "%s: last_failure %r is not null or {order, reason, tick}" % (
+            where, failure)
+    if not isinstance(record["separated"], bool):
+        return "%s: separated is not a bool" % where
+    # null: the unit has a pool, and the pool branch has no such local.
+    if not (record["was_projected"] is None
+            or isinstance(record["was_projected"], bool)):
+        return "%s: was_projected is not a bool or null" % where
+    return None
+
+
+def check_order_text(where, text):
+    """"none", or "<Behaviour>:<gather stage>"."""
+    if text == "none":
+        return None
+    kind, _, stage = text.partition(":") if isinstance(text, str) else (
+        None, None, None)
+    if kind not in BEHAVIOURS or stage not in GATHER_STAGES:
+        return "%s: order %r is not \"none\" or \"<Behaviour>:<stage>\" " \
+               "(behaviours %s; stages %s)" % (
+                   where, text, ", ".join(sorted(BEHAVIOURS)),
+                   ", ".join(sorted(GATHER_STAGES)))
     return None
 
 
 def check_op_record(where, record, expected_id):
-    if set(record) != OP_KEYS:
+    if not OP_KEYS <= set(record) <= OP_KEYS | OP_OPTIONAL_KEYS:
         return "%s: op keys %s" % (where, sorted(record))
+    if "move_to_route" in record and record["move_to_route"] not in MOVE_TO_ROUTES:
+        return "%s: move_to_route %r, expected one of %s" % (
+            where, record["move_to_route"], sorted(MOVE_TO_ROUTES))
     if not is_int(record["op_id"]) or record["op_id"] != expected_id:
         return "%s: op_id %r, expected %d (ids 1, 2, 3, ...)" % (
             where, record["op_id"], expected_id)
@@ -545,7 +641,16 @@ def check_span(problems, where, entry, spans, key, arrival):
             and 1 <= ticks[0] <= ticks[1] <= TICKS):
         problems.append("%s: ticks must be [first, last] in 1..400" % where)
         return
-    if ticks[1] >= arrival:
+    if key[-1] in ORDER_FOLLOWER_FIELDS:
+        # The LAST tick decides, not the first (a span that begins before
+        # arrival and ends after it must be refused).
+        if ticks[1] > arrival:
+            problems.append(
+                "%s: last tick %d is after the arrival tick %d; the order is "
+                "still there on the arrival tick (Orders runs before "
+                "Movement) and gone from the next tick on" % (
+                    where, ticks[1], arrival))
+    elif ticks[1] >= arrival:
         problems.append("%s: last tick %d is at or after the arrival tick %d; "
                         "from arrival on, acme must equal the old trace" % (
                             where, ticks[1], arrival))
@@ -573,7 +678,7 @@ def load_allowed(report, path, arrival, g1_in_a2c):
         return None
     problems = []
     extra = set(data) - {"schema", "package", "note", "unit_fields",
-                         "world_fields", "operations"}
+                         "world_fields", "operations", "operation_fields"}
     if extra:
         problems.append("unknown keys %s" % sorted(extra))
     if data.get("schema") != ALLOWED_SCHEMA:
@@ -586,9 +691,11 @@ def load_allowed(report, path, arrival, g1_in_a2c):
     fields = data.get("unit_fields")
     world = data.get("world_fields")
     ops = data.get("operations")
-    if not all(isinstance(x, list) for x in (fields, world, ops)):
-        problems.append("unit_fields, world_fields and operations must be lists")
-        fields, world, ops = [], [], []
+    op_fields = data.get("operation_fields")
+    if not all(isinstance(x, list) for x in (fields, world, ops, op_fields)):
+        problems.append("unit_fields, world_fields, operations and "
+                        "operation_fields must be lists")
+        fields, world, ops, op_fields = [], [], [], []
     allowed_fields = ALLOWED_UNIT_FIELDS | ({"edge_hit"} if g1_in_a2c else set())
     spans = {}
     for index, entry in enumerate(fields):
@@ -646,18 +753,47 @@ def load_allowed(report, path, arrival, g1_in_a2c):
             problems.append("%s: events is not a list" % where)
         if not isinstance(entry["before_equals_after"], bool):
             problems.append("%s: before_equals_after is not a bool" % where)
+    changed = set()
+    for index, entry in enumerate(op_fields):
+        where = "operation_fields[%d]" % index
+        if not isinstance(entry, dict) or set(entry) != {
+                "tick", "index", "field", "old", "new"}:
+            problems.append("%s: keys must be tick, index, field, old, new" % where)
+            continue
+        if entry["field"] != "move_to_route":
+            problems.append("%s: field %r cannot be allowed; only move_to_route "
+                            "of an old operation can change (every other change "
+                            "of an old operation is a FAIL)" % (
+                                where, entry["field"]))
+        if not (is_int(entry["tick"]) and 1 <= entry["tick"] <= TICKS
+                and is_int(entry["index"]) and entry["index"] >= 0):
+            problems.append("%s: bad tick or index" % where)
+            continue
+        if (entry["tick"], entry["index"]) in changed:
+            problems.append("%s: two entries for one operation" % where)
+        changed.add((entry["tick"], entry["index"]))
+        for side in ("old", "new"):
+            if entry[side] not in MOVE_TO_ROUTES:
+                problems.append("%s: %s %r is not one of %s" % (
+                    where, side, entry[side], sorted(MOVE_TO_ROUTES)))
+        if entry["old"] == entry["new"]:
+            problems.append("%s: old equals new" % where)
     if problems:
         report.add("ALLOWED", False, "; ".join(problems))
         return None
     report.add("ALLOWED", True, "%d unit field entries, %d world field "
-               "entries, %d operation entries; all end before arrival %d" % (
-                   len(fields), len(world), len(ops), arrival))
+               "entries, %d added operations, %d operation field entries; "
+               "each ends before arrival %d (order, queue and last_failure: "
+               "at or before it)" % (len(fields), len(world), len(ops),
+                                     len(op_fields), arrival))
     return data
 
 
 def op_body(record):
-    return {k: record[k] for k in ("tick", "unit", "phase", "events",
+    body = {k: record[k] for k in ("tick", "unit", "phase", "events",
                                    "before_equals_after")}
+    body["move_to_route"] = record.get("move_to_route")
+    return body
 
 
 def apply_spans(problems, entries, differences, key_of, label):
@@ -726,6 +862,20 @@ def check_p1(report, old, new, allowed):
     # then the ids 1, 2, 3, ... in order.
     expected = {tick: [op_body(r) for r in a.ops_by_tick[tick]]
                 for tick in range(1, TICKS + 1)}
+    for index, entry in enumerate(allowed["operation_fields"]):
+        ops = expected[entry["tick"]]
+        if entry["index"] >= len(ops):
+            problems.append("allowed operation_fields[%d] does not occur: no "
+                            "old operation %d in tick %d" % (
+                                index, entry["index"], entry["tick"]))
+        elif ops[entry["index"]]["move_to_route"] != entry["old"]:
+            problems.append("allowed operation_fields[%d] does not occur: the "
+                            "old operation %d of tick %d has move_to_route %r, "
+                            "not %r" % (index, entry["index"], entry["tick"],
+                                        ops[entry["index"]]["move_to_route"],
+                                        entry["old"]))
+        else:
+            ops[entry["index"]]["move_to_route"] = entry["new"]
     added = sorted((e["tick"], e["index"], i)
                    for i, e in enumerate(allowed["operations"]))
     for tick, place, index in added:
@@ -737,7 +887,8 @@ def check_p1(report, old, new, allowed):
             continue
         ops.insert(place, {"tick": tick, "unit": entry["unit"],
                            "phase": entry["phase"], "events": entry["events"],
-                           "before_equals_after": entry["before_equals_after"]})
+                           "before_equals_after": entry["before_equals_after"],
+                           "move_to_route": None})
     flat = [body for tick in range(1, TICKS + 1) for body in expected[tick]]
     for op_id, body in enumerate(flat, 1):
         body["op_id"] = op_id
@@ -1174,6 +1325,55 @@ def run_a2c(old_dir, new_dir, old_stream, new_stream, allowed, fixture,
     return report
 
 
+def count_trace(trace):
+    """The counts of design 9.6 and 9.8 for one trace (plan task Q1b, step 2)."""
+    states = {"none": 0, "pool": 0, "plain": 0}
+    separated_none = 0
+    projected = 0
+    for record in trace.units.values():
+        states[record["state"]] += 1
+        if record["state"] == "none" and record["separated"]:
+            separated_none += 1
+        if record["was_projected"] is True:
+            projected += 1
+    routes = [(r["tick"], r["op_id"], r["move_to_route"]) for r in trace.ops
+              if "move_to_route" in r]
+    return states, separated_none, projected, routes
+
+
+def run_counts(directory, g1_in_a2c=False):
+    """The counts of one run, and the stop rule of the plan: a stream unit with
+    state plain, or count (b) or (c) above 0, is a FAIL (P0 at A2b2 would not
+    be equal, design 9.8)."""
+    report = Report()
+    traces = load_traces(directory, report, "COUNTS", g1_in_a2c)
+    stops = []
+    for package in PACKAGES:
+        trace = traces.get(package)
+        if trace is None:
+            continue
+        states, separated_none, projected, routes = count_trace(trace)
+        report.add("COUNT-" + package.upper(), True, (
+            "(a) unit-ticks none %d, pool %d, plain %d; (b) state none and "
+            "separated %d; (c) was_projected true %d; (d) move_to_route %s" % (
+                states["none"], states["pool"], states["plain"],
+                separated_none, projected,
+                ", ".join("tick %d op %d %s" % row for row in routes)
+                or "no MoveTo")))
+        if states["plain"] or separated_none or projected:
+            stops.append("%s: plain %d, (b) %d, (c) %d" % (
+                package, states["plain"], separated_none, projected))
+    if len(traces) == len(PACKAGES):
+        report.add("STOP", not stops, (
+            "no unit-tick with state plain, and (b) and (c) are 0 in all four "
+            "packages" if not stops else
+            "STOP: " + "; ".join(stops) + "; P0 at A2b2 would not be equal "
+            "(design 9.8). Report to Root."))
+    else:
+        report.add("STOP", False, "no valid trace for every package")
+    return report
+
+
 def self_test():
     spec = importlib.util.spec_from_file_location(
         "test_refreeze_classify",
@@ -1200,6 +1400,7 @@ def main(argv):
     mode.add_argument("--self-test", action="store_true")
     mode.add_argument("--p0", nargs=2, metavar=("OLD_DIR", "NEW_DIR"))
     mode.add_argument("--a2c", action="store_true")
+    mode.add_argument("--counts", metavar="TRACE_DIR")
     parser.add_argument("--stage", choices=STAGES)
     parser.add_argument("--stream", help="--p0: the frozen stream")
     parser.add_argument("--old-trace")
@@ -1214,7 +1415,9 @@ def main(argv):
     args = parser.parse_args(argv)
     if args.self_test:
         return self_test()
-    if args.p0:
+    if args.counts:
+        report = run_counts(args.counts, g1_in_a2c=args.g1_in_a2c)
+    elif args.p0:
         report = run_p0(args.p0[0], args.p0[1], args.stream, args.emitter,
                         old_sha256=args.old_sha256, g1_in_a2c=args.g1_in_a2c)
     else:
