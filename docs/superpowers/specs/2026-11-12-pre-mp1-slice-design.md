@@ -276,3 +276,18 @@ A difference outside P3 stops A2c. A new ruling and a new run of the self-test a
 Gate status after revision 6 (Root): the plan gate is passed for the tasks up to and including A2a (G1, S2,
 S3, A1a to A1d, Q1a, Q1b, A2a). Task A2b1 gets a short re-check of its final text by the simulation lens
 before its builder starts; items 17 to 19 are that text.
+
+24. Classifier items for task Q1b (from the second review round of Q1a; the classifier is merged with these
+    open). (a) The rule "an allowed entry ends before the arrival tick" will very probably refuse the correct
+    A2c run through the `order` field: the old single `MoveTo` resets `UnitOrders` to the default
+    (`orders.rs:633-638`), so the old trace has `order` none on every tick; the operation at arrival + 1 is an
+    Orders operation (only `combat.rs:210` captures the post-movement phase), and Orders runs before Movement
+    (`plugin.rs:121-128`), so the new trace has an order at the arrival tick. Q1b probes a pooled single move
+    and reads `UnitOrders` at ticks 123 and 124. From that fact the rule becomes: last tick at or before
+    arrival for `order` (and for `pending_movement_orders` if the probe shows it), and before arrival for the
+    target, activity, state, pools and the two flags. The synthetic old trace uses `order` none. (b) One mutant
+    survives the self-test: the span check on the first tick, not the last. Q1b adds the plant that straddles
+    the arrival tick. (c) Format: the kind of `order` is the behaviour name (a content id holds a colon, which
+    the format reads as kind and stage); the stage comes from the gather stage and the format names it;
+    `pending_movement_orders` counts units, and Q1b names its source in `orders.rs:75-82`; `UnitOrders.queue`
+    and `last_failure` are added to the unit record.
