@@ -33,11 +33,10 @@ Status: the design left the field lists out (needs the orchestrator to apply the
 `#RRGGBB`, a font and a sound that exist, `width` above 0, a bar of a size above 0
 (`crates/turts_mod_runtime/src/mp1_validation.rs`, `world_styles`).
 
-Plan 5.3 note (review L3): no plan task reads the `float_text` style. Plan 5.3 gives only its `sound` to
-`FX2`, and the block of `L-FX-PRES` renders the "+N" float (X14, R14) and names no style. `L0-API2` gave the
-field its own `UNBUILT_FEATURES` line, owner `L-FX-PRES` (`crates/turts_mod_runtime/src/unbuilt.rs`). Needs
-decision: which task reads the colour, font and size of `world.float_text`. Until then the line holds the
-field back, so a modder never writes a field with no effect.
+Plan 5.3 note (review L3; decided in the review of `L0-API2`, question 4): the style of `world.float_text` (the
+colour, font and size of the "+N" float) is owned by `L-FX-PRES`; its `sound` stays with `FX2` (plan:509). Plan 5.3
+needs the line "`world.float_text` | `L-FX-PRES`". Before this, no plan task named the style. The line is in
+`crates/turts_mod_runtime/src/unbuilt.rs`, owner `L-FX-PRES`, so a modder never writes a field with no effect.
 
 ## E-API-2. Row H7: `Value` and `Source` (review M3; ruling option (a))
 
@@ -120,32 +119,70 @@ and the edition rule (test `pack_cli_help_lists_the_unbuilt_refusal_and_the_edit
   producer" for the production ids that a constructor lists as buildings (the plan lists no file for it; the
   design says "it lifts `content.rs:557` for these ids only").
 
-## E-API-7. Texts that the design does not give (needs decision)
+## E-API-7. Texts that the design does not give (judged by the review of `L0-API2`)
 
 The design gives an error text for some rows only. `L0-API2` wrote these texts in the form of 6.10
-(`<package>/<file>: <field path>: <message>`). Each is a test in `crates/turts_mod_runtime/tests/val1.rs`.
-The orchestrator or `game-designer` confirms them or gives the design text.
+(`<package>/<file>: <field path>: <message>`). Each is a test in `crates/turts_mod_runtime/tests/val1.rs`. The
+review of `L0-API2` accepted them, with the changes below (applied in the code).
 
-- Row O9: the design text `units: a `Surrender` order lists no units` is used as written. The validation
-  column says `units: []`, so the text reads as an error for a LIST THAT IS EMPTY, while the check refuses a
-  list that is NOT empty. Needs decision: change the text to `units: a `Surrender` order must list no units`
-  (the code and the test use the design text).
-- Row K1, a production in both `producer.recipes` and `constructor.buildings`:
-  `` constructor.buildings[1]: `val1:train_hauler` is also in `producer.recipes` of this unit `` (and `of
-  `<unit>` (<file>)` for another unit).
+- Row O9: replace the design text `units: a `Surrender` order lists no units` with ``units: a `Surrender` order
+  must list no units; write `units: []` ``. The check refuses a list that is NOT empty; the old text read as an
+  error for an empty list.
+- Row K1, a production in both lists: ``constructor.buildings[1]: `val1:train_hauler` is also in
+  `producer.recipes` of this unit; a production is a recipe or a building, not both`` (and `of `<unit>`
+  (<file>)` for another unit).
 - Row K6, no match file: `exports.match: a package with a constructor needs a match file that sets
   `open_sites_per_slot``; `open_sites_per_slot: must be at least 1`.
-- Row U8 and M3, target kind: `` spawn_order.target: `val1:order_move` takes a Point target, not a Node target ``.
+- Rows U8 and M3, the target kind: ``spawn_order.target: `val1:order_move` takes a `Point` target, not a `Node`
+  target`` (the kinds are in backticks, as the convention of 6.10 says).
+- Row KEY1 (b): ``input/bindings.ron: actions[7].default[0]: `KeyM` is also the default key of `key_move`; each
+  default key must be unique`` (the index of the second action and of its binding is in the field path; a chord
+  is written `Ctrl+KeyP`).
 - Rows U4 to U7, R1, H4 to H6, H16, H20, K2, K3, M1, H14: the "must be finite and at least 0, found <x>" and
   "must be positive" forms follow the example of row H20; the exact wording of each is in the tests.
-- Row H15: "one different colour for each player slot" counts the distinct `owner_slot` values of the map
-  placements. Needs decision: the design does not say where the number of player slots comes from.
+- Every name lookup gives the hint and the allowed list, a font lookup included (`unknown font asset `ui_fnt`;
+  did you mean `ui_font`? (allowed: mono, ui_font)`; test `h11_h13_h24_an_unknown_font_gets_the_hint_and_the_allowed_list`).
+  Row H11, H13 and H24 say "font exists"; add "font asset" to the list of lookups in the conventions of 6.10.
+
+## E-API-9. Row H15: the number of colours is the number of seats (orchestrator ruling on the review of `L0-API2`, M3)
+
+Design 6.10 row H15 (D:1595) and 6.7.4 (D:893-895) say "one different colour for each player slot" and do not
+say where the number comes from. Replace with: "the number of player slots is the number of seats that the
+lobby offers, the engine constant `SLOT_COUNT` (2 in MP1; design 6.7.5, D:998: "The seat count is the player-slot
+count"). A match file or a map file does not declare it. The packer counts `SLOT_COUNT`, not the slots that the map
+places units for: a map with units for slot 0 only, with one colour, is refused with `start: `AllSeated` needs 2
+different slot colours in the interface, found 1`."
+
+Where the count comes from, in the code: the design does not put a seat count in `MatchDef` (6.7.4 lists three
+fields) or in the map. The constant was `pub(crate) const SLOT_COUNT: u8 = 2` in `crates/turts_sim/src/slots.rs:7`.
+It is now `pub const SLOT_COUNT` in `crates/turts_mod_api/src/lib.rs`, and `turts_sim::slots` re-exports it (no
+behaviour change; `crates/turts_sim/src/plugin.rs` reads it as before). `turts_mod_runtime` cannot depend on
+`turts_sim`, and both depend on `turts_mod_api`. Test `m1_m2_h15_the_match_file`, case "H15 the seats of the lobby,
+not the slots of the placements". Status: ruled by the orchestrator. Row LOB2 ("two seats get one default
+colour") is the row that this closes.
+
+## E-API-10. Four rules that the code has and the design does not say (review of `L0-API2`, L4; accepted)
+
+Add to the validation column of 6.10:
+
+- Row R1: each `repairer.cost[].resource` is a `Balance` resource (``repairer.cost[0].resource: `val1:ore` is not
+  a `Balance` resource``).
+- Row U2: a `weapon.damage_type` in a package that has no damage table is refused (`weapon.damage_type: the
+  package declares no damage table`).
+- Rows C1 and C2: each entry of `damage_types` and `armour_classes` is a nonempty local id without `:` (`must be a
+  nonempty local id without `:``).
+- Row M1: `KeyUnitsLost` with an empty list is refused (``victory.defeat[0]: `KeyUnitsLost` needs at least one
+  unit``; the design has this text in 6.7.4, D:900; add it to the validation column of row M1).
 
 ## E-API-8. Not done in `L0-API2`, with the reason (NOT TRACED items)
 
-- Row A1, "one damage table in the resolved package set": the packer sees one package, so only the files of
-  that package are counted. The resolved-set check needs the resolver (`resolve::resolve`) and belongs to the
-  server path (`L-DMG`).
+- **Open plan item, no owner task:** rows A1 ("one damage table in the resolved package set") and A2 ("the root
+  Game package owns the match file") on the resolved set, and the u64 overflow of the job `total` (design 6.4).
+  The packer sees one package, so only the files of that package are counted (A1, A2), and it does not know the
+  `tick_hz` of `server.ron` (the `total`). A grep of the plan for "resolved package set", "one damage table" and
+  "root Game" finds nothing. In MP1 a Game cannot have a dependency (rule LR3), so the result is the same today.
+  The orchestrator gives these three checks an owner before MP2 (the server serves libraries then).
+- Row A1 (detail): the check on the resolved set needs the resolver (`resolve::resolve`).
 - Row A2, "the root Game package owns the match file": a Library that exports a match file is not refused
   (needs the resolved set).
 - Row P1 / design 6.4, "a `total` that overflows u64": the packer does not know the `tick_hz` of `server.ron`

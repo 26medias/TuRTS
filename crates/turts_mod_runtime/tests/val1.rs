@@ -547,7 +547,7 @@ fn u8_m3_start_orders() {
                 r#"order: "val1:order_gather""#,
                 r#"order: "val1:order_move""#,
             )],
-            "val1/units/hauler.ron: spawn_order.target: `val1:order_move` takes a Point target, not a Node target",
+            "val1/units/hauler.ron: spawn_order.target: `val1:order_move` takes a `Point` target, not a `Node` target",
         ),
         (
             "M3 node index outside the map nodes",
@@ -588,7 +588,7 @@ fn k1_constructor() {
                 buildings,
                 r#"buildings: ["val1:build_power_station", "val1:train_hauler"]"#,
             )],
-            "val1/units/command_center.ron: constructor.buildings[1]: `val1:train_hauler` is also in `producer.recipes` of this unit",
+            "val1/units/command_center.ron: constructor.buildings[1]: `val1:train_hauler` is also in `producer.recipes` of this unit; a production is a recipe or a building, not both",
         ),
         (
             "K1 concurrent_sites 0",
@@ -846,7 +846,7 @@ fn o1_to_o10_orders_and_rules() {
                 "units: []",
                 r#"units: ["val1:tank"]"#,
             )],
-            "val1/orders/order_surrender.ron: units: a `Surrender` order lists no units",
+            "val1/orders/order_surrender.ron: units: a `Surrender` order must list no units; write `units: []`",
         ),
         (
             "O10 two entries in one card cell",
@@ -935,6 +935,35 @@ fn m1_m2_h15_the_match_file() {
                 r##"slot_colours: ["#56B4E9", "#D55E00"],"##,
                 r##"slot_colours: ["#56B4E9"],"##,
             )],
+            "val1/match/match.ron: start: `AllSeated` needs 2 different slot colours in the interface, found 1",
+        ),
+        (
+            // LOB2 (orchestrator ruling on the review of `L0-API2`, M3): the number is the number of
+            // seats that the lobby offers (`SLOT_COUNT`), not the number of slots that the map places
+            // units for. A map for slot 0 only, with one colour, is refused.
+            "H15 the seats of the lobby, not the slots of the placements",
+            &[
+                (
+                    "interface/hud.ron",
+                    r##"slot_colours: ["#56B4E9", "#D55E00"],"##,
+                    r##"slot_colours: ["#56B4E9"],"##,
+                ),
+                (
+                    "maps/field.ron",
+                    "        (unit: \"val1:command_center\", owner_slot: 1, pos: (x: 56.0, y: 56.0), contents: []),\n",
+                    "",
+                ),
+                (
+                    "maps/field.ron",
+                    "        (unit: \"val1:hauler\", owner_slot: 1, pos: (x: 52.0, y: 56.0), contents: []),\n",
+                    "",
+                ),
+                (
+                    "maps/field.ron",
+                    "        (slot: 1, balances: [(balance: \"val1:credits\", amount: 300)]),\n",
+                    "",
+                ),
+            ],
             "val1/match/match.ron: start: `AllSeated` needs 2 different slot colours in the interface, found 1",
         ),
         (
@@ -1528,7 +1557,7 @@ fn key1_b_unique_default_keys() {
             .content()
             .unwrap_err()
             .to_string(),
-        "cedar/input/bindings.ron: actions: KeyP is the default of key_produce and key_cancel; each default key must be unique"
+        "cedar/input/bindings.ron: actions[4].default[0]: `KeyP` is also the default key of `key_produce`; each default key must be unique"
     );
 }
 
@@ -1643,4 +1672,127 @@ fn sources<T>(files: Vec<(String, T)>) -> Vec<turts_mod_api::SourceDef<T>> {
         .into_iter()
         .map(|(file, value)| turts_mod_api::SourceDef { file, value })
         .collect()
+}
+
+/// Row K8 at `^0.2.3` (review of `L0-API2`, M2): the old M3 rule is gone, so the version row
+/// `removal with a queue` is the only guard of an older edition. One package for each queue
+/// capability that a `^0.2.3` package can write: a producer (`cedar`), a machine and a research
+/// station (`forge`). The `constructor` arm needs a field that a `^0.2.3` package cannot write; the
+/// unit test `removal_with_a_queue_is_found_for_each_queue_capability` in `variants.rs` covers it.
+#[test]
+fn k8_removal_with_a_queue_is_refused_at_0_2_3_for_each_queue() {
+    let removal = "removal: Some((by_command: true, contents: Destroy)),";
+    let with_removal = |package: &str, file: &str, anchor: &str| {
+        let mut files = read_files(&package_dir(package));
+        apply(
+            &mut files,
+            &[(file, anchor, &format!("{removal} {anchor}"))],
+        );
+        archive(&files)
+    };
+    let cases = [
+        (
+            "producer",
+            with_removal("cedar", "units/depot.ron", "producer: Some("),
+            "cedar/manifest.ron: engine_api: `removal with a queue` needs engine api 0.2.4; `^0.2.3` admits 0.2.3 (written in units/depot.ron: removal)",
+        ),
+        (
+            "machine",
+            with_removal("forge", "units/press.ron", "machine: Some("),
+            "forge/manifest.ron: engine_api: `removal with a queue` needs engine api 0.2.4; `^0.2.3` admits 0.2.3 (written in units/press.ron: removal)",
+        ),
+        (
+            "research",
+            with_removal("forge", "units/lab.ron", "research: Some("),
+            "forge/manifest.ron: engine_api: `removal with a queue` needs engine api 0.2.4; `^0.2.3` admits 0.2.3 (written in units/lab.ron: removal)",
+        ),
+    ];
+    for (queue, package, expected) in &cases {
+        assert_eq!(
+            package.content().unwrap_err().to_string(),
+            *expected,
+            "queue {queue}"
+        );
+    }
+}
+
+/// Row K2 at the limit (review of `L0-API2`, L3): the design example makes 2.0 the limit for a tank of
+/// diameter 1.8 (`gap` at least the largest mobile diameter plus 0.2). A gap of exactly 2.0 passes,
+/// and 1.99 is refused.
+#[test]
+fn k2_the_gap_limit_is_inclusive() {
+    val1(&[("units/power_station.ron", "gap: 2.2", "gap: 2.0")], &[])
+        .check_api_0_2_4()
+        .unwrap_or_else(|error| panic!("gap 2.0: {error}"));
+    assert_eq!(
+        refusal(
+            "K2 gap 1.99",
+            &[("units/power_station.ron", "gap: 2.2", "gap: 1.99")],
+            &[]
+        ),
+        "val1/units/power_station.ron: placement.gap: 1.99 is below 2.0, the largest mobile diameter (`val1:tank`, 1.8) plus 0.2"
+    );
+}
+
+/// The font lookup gives the hint and the allowed list, as the sound lookup does (review of
+/// `L0-API2`, L1). The font is an asset of the package; the file of the asset is not read here.
+#[test]
+fn h11_h13_h24_an_unknown_font_gets_the_hint_and_the_allowed_list() {
+    let fonts = (
+        "assets/assets.ron",
+        "fonts: []",
+        r#"fonts: [(id: "ui_font", path: "assets/ui.ttf"), (id: "mono", path: "assets/mono.ttf")]"#,
+    );
+    let labels = r##"unit_labels: Some((show: Always, own_only: false, colour: "#ffffff", font: None, size: 14))"##;
+    let expected = "(allowed: mono, ui_font)";
+    let label = refusal(
+        "H24 font",
+        &[
+            fonts,
+            (
+                "interface/hud.ron",
+                labels,
+                r##"unit_labels: Some((show: Always, own_only: false, colour: "#ffffff", font: Some("ui_fnt"), size: 14))"##,
+            ),
+        ],
+        &[],
+    );
+    assert_eq!(
+        label,
+        format!(
+            "val1/interface/hud.ron: world.unit_labels.font: unknown font asset `ui_fnt`; did you mean `ui_font`? {expected}"
+        )
+    );
+    let button = refusal(
+        "H13 font",
+        &[
+            fonts,
+            (
+                "interface/hud.ron",
+                r##"widget: Text(text: Literal("Val1"), font: None, size: 14, colour: "#ffffff", align: Left, wrap: false)"##,
+                r#"widget: Button(icon: None, label: Some(Literal("x")), action: Input("menu"), hotkey_label: false, font: Some("mon"))"#,
+            ),
+        ],
+        &[],
+    );
+    assert_eq!(
+        button,
+        format!(
+            "val1/interface/hud.ron: root[title].widget.font: unknown font asset `mon`; did you mean `mono`? {expected}"
+        )
+    );
+    // A font that exists passes.
+    val1(
+        &[
+            fonts,
+            (
+                "interface/hud.ron",
+                labels,
+                r##"unit_labels: Some((show: Always, own_only: false, colour: "#ffffff", font: Some("mono"), size: 14))"##,
+            ),
+        ],
+        &[],
+    )
+    .check_api_0_2_4()
+    .expect("a font that the package declares passes");
 }

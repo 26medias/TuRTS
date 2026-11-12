@@ -481,6 +481,65 @@ mod tests {
         assert!(found(&ParsedMcContent::default()).is_empty());
     }
 
+    /// Row K8 (`removal with a queue`): each of the four queue capabilities makes the combination
+    /// on its own (review of `L0-API2`, M2). The old M3 rule is gone, so this list is the only guard
+    /// for an older edition: an arm that is missing is a refusal that is lost.
+    #[test]
+    fn removal_with_a_queue_is_found_for_each_queue_capability() {
+        let removal = "removal: Some((by_command: true, contents: Destroy))";
+        let queues = [
+            (
+                "producer",
+                format!(
+                    "({}, producer: Some((recipes: [], queue_capacity: 1, spawn_offsets: [])), {removal})",
+                    UNIT.replace(", producer: None", "")
+                ),
+            ),
+            (
+                "machine",
+                format!("({UNIT}, {removal}, machine: Some((recipe: \"a:r\")))"),
+            ),
+            (
+                "research",
+                format!(
+                    "({UNIT}, {removal}, research: Some((technologies: [], queue_capacity: 1)))"
+                ),
+            ),
+            (
+                "constructor",
+                format!(
+                    "({UNIT}, {removal}, constructor: Some((buildings: [], concurrent_sites: 1, queue_capacity: 1)))"
+                ),
+            ),
+        ];
+        for (queue, text) in queues {
+            let unit: UnitDef =
+                ron::from_str(&text).unwrap_or_else(|error| panic!("{queue}: {error}"));
+            let content = ParsedMcContent {
+                units: vec![("units/u.ron".into(), unit)],
+                ..ParsedMcContent::default()
+            };
+            let uses = found(&content);
+            assert!(
+                uses.iter()
+                    .any(|(name, file, path)| *name == "removal with a queue"
+                        && file == "units/u.ron"
+                        && path == "removal"),
+                "{queue}: {uses:?}"
+            );
+        }
+        // No queue, no combination.
+        let content = ParsedMcContent {
+            units: vec![("units/u.ron".into(), unit(removal))],
+            ..ParsedMcContent::default()
+        };
+        assert!(
+            found(&content)
+                .iter()
+                .all(|(name, _, _)| *name != "removal with a queue")
+        );
+    }
+
     #[test]
     fn unit_variants_and_combinations() {
         let units = [

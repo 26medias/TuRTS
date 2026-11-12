@@ -102,7 +102,7 @@ fn pack_cli_refuses_a_value_of_the_validation_column_with_exit_2() {
             "input/bindings.ron",
             r#"(name: "key_cancel", default: [Key(code: "KeyC", mods: [])])"#,
             r#"(name: "key_cancel", default: [Key(code: "KeyP", mods: [])])"#,
-            "cedar/input/bindings.ron: actions: KeyP is the default of key_produce and key_cancel; each default key must be unique",
+            "cedar/input/bindings.ron: actions[4].default[0]: `KeyP` is also the default key of `key_produce`; each default key must be unique",
         ),
     ];
     for (index, (file, old, new, expected)) in cases.iter().enumerate() {

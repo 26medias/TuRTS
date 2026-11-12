@@ -20,6 +20,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use turts_mod_api::SLOT_COUNT;
 use turts_mod_api::keys::{CURSOR_CONTEXTS, REASON_KEYS, STATE_KEYS};
 use turts_mod_api::{
     AlertDef, AlertKind, AlertTrigger, AssetsDef, Behaviour, Binding, ButtonIcon, Capability,
@@ -799,7 +800,9 @@ impl Pack {
                 return Err(self.fail(
                     file,
                     &path,
-                    format!("`{building}` is also in `producer.recipes` of this unit"),
+                    format!(
+                        "`{building}` is also in `producer.recipes` of this unit; a production is a recipe or a building, not both"
+                    ),
                 ));
             }
             for (other_file, other) in &self.units {
@@ -815,7 +818,7 @@ impl Pack {
                         file,
                         &path,
                         format!(
-                            "`{building}` is also in `producer.recipes` of `{}` ({other_file})",
+                            "`{building}` is also in `producer.recipes` of `{}` ({other_file}); a production is a recipe or a building, not both",
                             self.qualified(&other.id)
                         ),
                     ));
@@ -977,7 +980,7 @@ impl Pack {
                     file,
                     &target_path,
                     format!(
-                        "`{}` takes a {:?} target, not a {takes} target",
+                        "`{}` takes a `{:?}` target, not a `{takes}` target",
                         start.order, order.target
                     ),
                 ));
@@ -1142,8 +1145,13 @@ impl Pack {
             }
         }
         if order.behaviour == Behaviour::Surrender && !order.units.is_empty() {
-            // The text of design row O9 (the order is for the slot, not for units).
-            return Err(self.fail(file, "units", "a `Surrender` order lists no units"));
+            // Row O9. The text is the reviewer's (review of `L0-API2`, question 3): the design text
+            // "lists no units" reads as an error for an empty list.
+            return Err(self.fail(
+                file,
+                "units",
+                "a `Surrender` order must list no units; write `units: []`",
+            ));
         }
         Ok(())
     }
@@ -1278,25 +1286,22 @@ impl Pack {
             ));
         }
         if !name.is_empty() {
-            // H15: one different colour for each player slot (the slots of the match map).
-            let slots: BTreeSet<u8> = self
-                .maps
-                .iter()
-                .flat_map(|(_, map)| map.placements.iter().map(|placement| placement.owner_slot))
-                .collect();
+            // H15: one different colour for each seat that the lobby offers (`SLOT_COUNT`, the
+            // engine slot count of a match), not for each slot that the map places units for.
+            let seats = usize::from(SLOT_COUNT);
             let colours: BTreeSet<String> = self
                 .interfaces
                 .iter()
                 .flat_map(|(_, interface)| interface.slot_colours.iter())
                 .map(|colour| colour.to_ascii_lowercase())
                 .collect();
-            if colours.len() < slots.len() {
+            if colours.len() < seats {
                 return Err(self.fail(
                     file,
                     "start",
                     format!(
                         "`{name}` needs {} different slot colours in the interface, found {}",
-                        slots.len(),
+                        seats,
                         colours.len()
                     ),
                 ));
@@ -1367,8 +1372,8 @@ impl Pack {
     fn input_group(&self) -> Result<(), ModError> {
         let mut seen: BTreeMap<String, &str> = BTreeMap::new();
         for (file, input) in &self.inputs {
-            for action in &input.actions {
-                for binding in &action.default {
+            for (action_index, action) in input.actions.iter().enumerate() {
+                for (binding_index, binding) in action.default.iter().enumerate() {
                     let Binding::Key { code, mods } = binding else {
                         continue;
                     };
@@ -1388,10 +1393,9 @@ impl Pack {
                     {
                         return Err(self.fail(
                             file,
-                            "actions",
+                            &format!("actions[{action_index}].default[{binding_index}]"),
                             format!(
-                                "{chord} is the default of {other} and {}; each default key must be unique",
-                                action.name
+                                "`{chord}` is also the default key of `{other}`; each default key must be unique"
                             ),
                         ));
                     }
@@ -1578,9 +1582,13 @@ impl Pack {
         fonts: &BTreeSet<&str>,
     ) -> Result<(), ModError> {
         match font {
-            Some(font) if !fonts.contains(font) => {
-                Err(self.fail(file, path, format!("unknown font asset `{font}`")))
-            }
+            Some(font) if !fonts.contains(font) => Err(self.unknown(
+                file,
+                path,
+                "font asset",
+                font,
+                fonts.iter().map(|name| name.to_string()).collect(),
+            )),
             _ => Ok(()),
         }
     }
