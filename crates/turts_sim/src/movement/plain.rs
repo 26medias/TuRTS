@@ -171,6 +171,8 @@ pub(super) fn step_plain_progress(
         velocity = velocity.normalize() * step_limit;
     }
     let mut position = unit.position + velocity;
+    #[cfg(feature = "test-probes")]
+    let mut was_projected = false;
     for _ in 0..8 {
         let mut projected = false;
         for other_index in grid.within(
@@ -200,6 +202,10 @@ pub(super) fn step_plain_progress(
         if !projected {
             break;
         }
+        #[cfg(feature = "test-probes")]
+        {
+            was_projected = true;
+        }
     }
     position.x = position
         .x
@@ -207,6 +213,10 @@ pub(super) fn step_plain_progress(
     position.y = position
         .y
         .clamp(unit.radius, (bounds.y - unit.radius).max(unit.radius));
+    #[cfg(feature = "test-probes")]
+    {
+        output.probe.was_projected = Some(was_projected);
+    }
 
     let next_distance = position.distance(movement_target);
     if position == movement_target && !occupied(movement_target) {

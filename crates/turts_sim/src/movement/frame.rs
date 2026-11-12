@@ -722,7 +722,7 @@ pub fn step_frame_preserving_resting(
             {
                 outputs[index].probe = super::probe::FrameFlags {
                     separated,
-                    was_projected,
+                    was_projected: Some(was_projected),
                 };
             }
             // Arrival eligibility was checked before movement, so this step
@@ -873,6 +873,8 @@ pub fn step_frame_preserving_resting(
 
         // Hard projection prevents footprint overlap. Units resolve in id order.
         let broad_reach = unit.radius + max_radius + max_step;
+        #[cfg(feature = "test-probes")]
+        let mut was_projected = false;
         for _ in 0..8 {
             let mut projected = false;
             for other_index in grid.within(&points, position, broad_reach) {
@@ -906,6 +908,10 @@ pub fn step_frame_preserving_resting(
             if !projected {
                 break;
             }
+            #[cfg(feature = "test-probes")]
+            {
+                was_projected = true;
+            }
         }
         position.x = position
             .x
@@ -913,6 +919,10 @@ pub fn step_frame_preserving_resting(
         position.y = position
             .y
             .clamp(unit.radius, (frame.bounds.y - unit.radius).max(unit.radius));
+        #[cfg(feature = "test-probes")]
+        {
+            outputs[index].probe.was_projected = Some(was_projected);
+        }
 
         let next_distance = position.distance(movement_target);
         if position == movement_target {

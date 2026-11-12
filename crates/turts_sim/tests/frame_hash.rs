@@ -3,13 +3,19 @@
 //!
 //! The feature must change no result. Each test prints one line `<name>=<hash>`. The
 //! proof is that the output of a run with the feature and the output of a run without
-//! it are byte-equal (`cmp`, exit 0; the commands are in the commit message of Q1b):
+//! it are equal. `scripts/qa/probe_neutral.sh` runs both, compares the hash lines and
+//! exits 1 on a difference (CI: the step "Probe neutrality" of the `check` job). The two
+//! commands that it runs:
 //!
 //!     cargo test -p turts_sim --locked --test frame_hash -- --nocapture --test-threads=1
 //!     cargo test -p turts_sim --locked --features test-probes --test frame_hash -- --nocapture --test-threads=1
 //!
-//! The hash is FNV-1a over the bits of each output. There is no pinned value: a later task
-//! that changes movement on purpose changes the hash. This file never names the feature.
+//! The hash is FNV-1a over the bits of each output. There is no pinned value, on purpose:
+//! the fixture uses `cos` and `sin` of the platform libm, the movement code uses `atan2`
+//! (`movement/mod.rs`, `spread.rs`), and only one machine was run, so a pinned value can
+//! differ on another platform. A later task that changes movement on purpose changes the
+//! hash. The comparison of the script needs no pin (both runs are on one machine). This file
+//! never names the feature.
 
 use std::collections::BTreeMap;
 

@@ -1,9 +1,11 @@
 //! The movement probe (feature `test-probes`, pre-MP1 task Q1b) on a crowd.
 //!
-//! The four packages of the frozen M2 stream never set `separated` or `was_projected` and
+//! The four packages of the frozen M2 stream never set `separated` or `was_projected` to true and
 //! never use a pool or a plain progress (the counts of `refreeze_classify.py --counts`), so
 //! the stream cannot show that the probe works. These cases do: each probe value that the
-//! trace emitter reads is made non-trivial here, on the authored `muster` package.
+//! trace emitter reads is made non-trivial here, on the authored `muster` package. The three
+//! movement branches (no pool, pool, plain) each store their own `was_projected`; each branch
+//! has an assertion that reads both values.
 #![cfg(feature = "test-probes")]
 
 use turts_mod_api::{ContentId, OrderDef, PackageId, SourceDef};
@@ -95,7 +97,10 @@ fn has_move_target(app: &mut bevy_app::App, unit: u32) -> bool {
 /// Trooper 1 stands at (25, 18) with trooper 2 at (26.1, 18): a gap of 1.1, which is more than
 /// the separation limit 1.05, so the unit is not `separated` on its first step. The step of 0.15
 /// puts it at 0.95 from trooper 2, inside the footprint limit 1.0001, so the hard projection
-/// moves it back: `was_projected`. A moved and projected unit gets a plain progress.
+/// moves it back: `was_projected` (no-pool branch). A moved and projected unit gets a plain
+/// progress. The plain branch then runs its own projection loop: the unit is projected on each
+/// of the ticks 2 to 11 (the loop in `plain.rs` stores its real value) and no longer from tick
+/// 12 on, so a plain branch that stores a constant reads wrong on one of the two spans.
 #[test]
 fn a_unit_stepped_into_a_neighbour_reads_projected_then_plain_and_separated() {
     let mut fixture = muster();
@@ -106,7 +111,7 @@ fn a_unit_stepped_into_a_neighbour_reads_projected_then_plain_and_separated() {
     assert_eq!(
         probe::was_projected(world, 1),
         Some(true),
-        "tick 1: projected"
+        "tick 1: projected (no-pool branch)"
     );
     assert!(!probe::separated(world, 1), "tick 1: not separated");
     assert_eq!(
@@ -127,21 +132,44 @@ fn a_unit_stepped_into_a_neighbour_reads_projected_then_plain_and_separated() {
     );
     assert_eq!(
         probe::was_projected(world, 1),
-        Some(false),
-        "tick 2: not projected"
+        Some(true),
+        "tick 2: projected (plain branch)"
     );
     assert_eq!(
         probe::unit_state(world, 1),
         "plain",
         "tick 2: plain progress"
     );
+    for tick in 3..=11 {
+        app.update();
+        assert_eq!(
+            probe::was_projected(app.world(), 1),
+            Some(true),
+            "tick {tick}: projected (plain branch)"
+        );
+    }
+    app.update();
+    let world = app.world();
+    assert_eq!(
+        probe::unit_state(world, 1),
+        "plain",
+        "tick 12: still a plain progress"
+    );
+    assert_eq!(
+        probe::was_projected(world, 1),
+        Some(false),
+        "tick 12: the plain branch ran and the hard projection did not move the unit"
+    );
 }
 
 /// A group order gives a pool of one group. Each pooled unit reads `pool`, its pool activity,
-/// and a null `was_projected` (the pool branch has no such local). `separated` comes from the
-/// pool branch.
+/// and a real `was_projected` (the pool branch stores its own projection value): on tick 1 no
+/// unit is projected, on tick 2 the units 6 to 8 are projected (a neighbour outside the group
+/// is inside the footprint limit) and the units 1 to 5 are not. A pool branch that stores a
+/// constant, or the wrong value, reads wrong on one of the two ticks. `separated` comes from
+/// the pool branch.
 #[test]
-fn a_pooled_group_reads_pool_activity_null_flag_separated_and_pool_count() {
+fn a_pooled_group_reads_pool_activity_real_flag_separated_and_pool_count() {
     let mut fixture = muster();
     let ids: Vec<u32> = (1..=8).collect();
     let command = group_move(&fixture.catalog, ids.clone(), Vec2::new(40.0, 30.0));
@@ -153,7 +181,11 @@ fn a_pooled_group_reads_pool_activity_null_flag_separated_and_pool_count() {
     for &id in &ids {
         assert_eq!(probe::unit_state(world, id), "pool", "unit {id}");
         assert_eq!(probe::activity(world, id), "Moving", "unit {id}");
-        assert_eq!(probe::was_projected(world, id), None, "unit {id}");
+        assert_eq!(
+            probe::was_projected(world, id),
+            Some(false),
+            "tick 1, unit {id}: the pool branch ran, no projection"
+        );
     }
     assert!(
         ids.iter().any(|&id| probe::separated(world, id)),
@@ -164,9 +196,20 @@ fn a_pooled_group_reads_pool_activity_null_flag_separated_and_pool_count() {
         "none",
         "a unit outside the order has no movement state"
     );
+    app.update();
+    let world = app.world();
+    for &id in &ids {
+        assert_eq!(probe::unit_state(world, id), "pool", "tick 2, unit {id}");
+        assert_eq!(
+            probe::was_projected(world, id),
+            Some(id >= 6),
+            "tick 2, unit {id}: projected only for the units 6 to 8"
+        );
+    }
 }
 
-/// A unit that does not step reads the defaults, and a unit that does not exist reads `none`.
+/// A unit that does not step reads the defaults (`was_projected` is null: no projection loop
+/// ran for it), and a unit that does not exist reads `none`.
 #[test]
 fn a_unit_that_does_not_step_reads_the_defaults() {
     let mut fixture = muster();
@@ -176,7 +219,7 @@ fn a_unit_that_does_not_step_reads_the_defaults() {
     assert_eq!(probe::unit_state(world, 1), "none");
     assert_eq!(probe::activity(world, 1), "none");
     assert!(!probe::separated(world, 1));
-    assert_eq!(probe::was_projected(world, 1), Some(false));
+    assert_eq!(probe::was_projected(world, 1), None);
     assert_eq!(probe::pool_count(world), 0);
     assert_eq!(probe::pending_movement_orders(world), 0);
     assert_eq!(probe::unit_state(world, 999_999), "none");

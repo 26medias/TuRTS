@@ -393,6 +393,41 @@ fn t1_rule_client_sim_is_red_on_server() {
 }
 
 #[test]
+fn t1_rule_no_probes_is_green_on_the_shipped_server_and_client() {
+    // The feature `test-probes` of `turts_sim` is off in the server build (normal and build
+    // edges). The client crates have no edge to `turts_sim` at all: that is also green.
+    for krate in ["turts_server", "turts_client", "turts_client_web"] {
+        let output = run(&["--rule", "no-probes", "--crate", krate]);
+        assert_eq!(
+            output.status.code(),
+            Some(0),
+            "{krate}: stdout: {:?} stderr: {:?}",
+            out_of(&output),
+            err_of(&output)
+        );
+        assert_eq!(out_of(&output).trim_end(), "rule ok", "{krate}");
+    }
+}
+
+#[test]
+fn t1_rule_no_probes_is_red_where_the_feature_is_on() {
+    // `turts_pack` turns the feature on in its dev-dependencies (the trace emitter). With the
+    // dev edge in the check, the rule that the full run applies to the server must go red.
+    let output = run(&[
+        "--rule",
+        "no-probes",
+        "--crate",
+        "turts_pack",
+        "--edges",
+        "normal,build,dev",
+    ]);
+    assert_red(
+        &output,
+        "forbidden feature: test-probes in turts_pack (edges normal,build,dev)\n",
+    );
+}
+
+#[test]
 fn t1_rule_workspace_is_red_on_present_crate() {
     let output = run(&["--rule", "workspace", "--names", "bevy_app"]);
     assert_red(&output, "forbidden edge: workspace -> bevy_app\n");

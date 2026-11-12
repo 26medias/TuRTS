@@ -33,7 +33,8 @@ Modes:
         Task Q1b step 2 and task A2b2. The counts of one run: (a) the
         unit-ticks for each movement state, (b) the unit-ticks with state
         none and separated true, (c) the unit-ticks with was_projected true,
-        (d) the move_to_route of each MoveTo. Gives FAIL (the stop rule of
+        (d) the move_to_route of each MoveTo, (e) the unit-ticks of each
+        gather_stage other than none. Gives FAIL (the stop rule of
         the plan) when a unit has state plain, or (b) or (c) is above 0.
     --self-test
         Run the plants of tests/m3/test_refreeze_classify.py.
@@ -44,7 +45,7 @@ EMITTER: the emitter sha256 is the sha256 of the bytes of the --emitter
 files, joined in the order of the command line. The classifier calculates
 it and compares it with the header of each trace.
 
-TRACE FORMAT "turts-refreeze-trace/3" (emitter: crates/turts_pack/tests/m2_trace.rs)
+TRACE FORMAT "turts-refreeze-trace/4" (emitter: crates/turts_pack/tests/m2_trace.rs)
 -----------------------------------------------------------------------------------
 One file for each package: <dir>/<package>.jsonl, for base, haul, acme and
 cedar. UTF-8. One JSON object on each line. Each line ends with "\\n". No
@@ -53,7 +54,7 @@ order of keys in an object is free; the emitter must give the same bytes
 for the same state (P0 compares bytes).
 
 Line 1, the header:
-    {"record": "header", "format": "turts-refreeze-trace/2",
+    {"record": "header", "format": "turts-refreeze-trace/4",
      "package": P, "emitter_sha256": H, "ticks": 400, "unit_count": N,
      "units": [{"unit": U, "content_id": C, "owner_slot": S}, ...]}
     - units: the units that exist after load_package and before the first
@@ -74,7 +75,7 @@ Then for each tick T = 1 to 400, in this order:
         "x_bits": X, "y_bits": Y, "target": null | {"x_bits": X,
         "y_bits": Y}, "activity": A, "state": S, "order": O,
         "queue": [K, ...], "last_failure": null | {"order": C,
-        "reason": R, "tick": N}, "separated": B,
+        "reason": R, "tick": N}, "gather_stage": G, "separated": B,
         "was_projected": B | null [, "edge_hit": B]}
        - x_bits, y_bits: f32::to_bits of the position, 8 lowercase hex.
        - target: the MoveTarget point as bits, or null when there is none.
@@ -95,18 +96,30 @@ Then for each tick T = 1 to 400, in this order:
          Waiting-DestinationOverflow), or "-" when the unit has no gather
          order. A legacy Gather command leaves UnitOrders empty, so a gather
          unit reads "none" (the economy events of P2 show its stages).
+       - gather_stage: the stage of the gather cycle of the unit, read through
+         turts_sim::order_view (the economy view of the gather order): Idle,
+         MovingToNode, Gathering, MovingToReceiver, Unloading,
+         Waiting-NoDeposit, Waiting-NoReceiver, Waiting-DestinationFull,
+         Waiting-DestinationOverflow; or "none" when the unit has no gather
+         cycle. A legacy Gather command leaves UnitOrders empty (order is
+         "none") but the unit has a stage here. Task A2b1 changes the gather
+         protocol, so the stage is a P0 field: a difference is red unless the
+         allowed list names it. Added in format /4 (Q1b review follow-up).
        - queue: the behaviour names of UnitOrders.queue, in order.
        - last_failure: UnitOrders.last_failure: the order content id, the
          reject reason (RejectReason::as_str) and the tick; or null.
        - separated: the flag of the movement step of the last frame (a
          local of each of the three branches, movement/frame.rs and
          plain.rs); false for a unit that does not step.
-       - was_projected: the local of the branch of a unit with no pool
-         (movement/frame.rs). null when the unit has a pool after the frame:
-         the pool branch has no such local, so a P0 pair across the merge
-         of the branches compares the same field (plan task Q1b). false for
-         a unit that does not step and on the snap paths. The fallback of an
-         engine trip starts on "separated || was_projected" (design 9.14).
+       - was_projected: true when the hard projection moved the unit in at
+         least one of its passes in the last frame; false when the unit ran
+         the projection loop and no pass moved it. Each of the three branches
+         (no pool, pool, plain) stores its real value after its projection
+         loop (format /4; it was null for a pool unit and false for a plain
+         unit before). null when the unit did not reach a projection loop in
+         the frame: no movement, a snap to the target before the loop, an
+         escape step. The fallback of an engine trip starts on
+         "separated || was_projected" (design 9.14).
        - edge_hit: only with --g1-in-a2c; then in every unit record.
     3. One operation record for each operation that the stream puts at
        tick T, in capture order (the rule of
@@ -128,12 +141,12 @@ Then for each tick T = 1 to 400, in this order:
          "per_unit" (a pending envelope, more than one unit), "envelope" (a
          pending envelope, one unit), "none".
 
-ALLOWED LIST FORMAT "turts-refreeze-allowed/2" (tests/m3/refreeze_allowed.json)
+ALLOWED LIST FORMAT "turts-refreeze-allowed/4" (tests/m3/refreeze_allowed.json)
 --------------------------------------------------------------------------------
 Task Q1b writes the list before the A2c commit (plan refinement R6). It
 names each acme trace difference that the design predicts. Every entry must
 occur; a stale entry is a FAIL.
-    {"schema": "turts-refreeze-allowed/3", "package": "acme",
+    {"schema": "turts-refreeze-allowed/4", "package": "acme",
      "note": "free text (optional)",
      "unit_fields": [
         {"unit": U, "field": F, "ticks": [FIRST, LAST], "old": V,
@@ -146,8 +159,9 @@ occur; a stale entry is a FAIL.
      "operation_fields": [
         {"tick": T, "index": I, "field": "move_to_route", "old": R,
          "new": R}]}
-    - F is one of target, activity, state, order, queue, last_failure,
-      separated, was_projected, and edge_hit (only with --g1-in-a2c). W is
+    - F is one of target, activity, state, order, gather_stage, queue,
+      last_failure, separated, was_projected, and edge_hit (only with
+      --g1-in-a2c). W is
       pools or pending_movement_orders. A position field (x_bits, y_bits)
       cannot be allowed: the ruling P1 is "every position is bitwise equal
       over 400 ticks" (docs/research/mp1/ruling-td-one-step-function.md,
@@ -193,8 +207,8 @@ PACKAGES = ("base", "haul", "acme", "cedar")
 UNCHANGED_PACKAGES = ("base", "haul", "cedar")
 CHANGED_PACKAGE = "acme"
 TICKS = 400
-TRACE_FORMAT = "turts-refreeze-trace/3"
-ALLOWED_SCHEMA = "turts-refreeze-allowed/3"
+TRACE_FORMAT = "turts-refreeze-trace/4"
+ALLOWED_SCHEMA = "turts-refreeze-allowed/4"
 STAGES = ("before-fixture-commit", "after-fixture-commit")
 # The frozen stream before the one re-freeze (tests/m3/refutations.py:18).
 FROZEN_SHA256 = "bcbf72c2206251f635a7c7f5b6c8f573d69a5fc05a5bd77716e98ebfb08e370b"
@@ -205,8 +219,8 @@ SCOUT_CONTENT_ID = "acme:scout"
 ACTIVITIES = {"Pending", "Moving", "Resting", "Blocked", "none"}
 STATES = {"none", "plain", "pool"}
 PHASES = {"Command", "Orders", "PostMovementOrders", "Other"}
-ALLOWED_UNIT_FIELDS = {"target", "activity", "state", "order", "queue",
-                       "last_failure", "separated", "was_projected"}
+ALLOWED_UNIT_FIELDS = {"target", "activity", "state", "order", "gather_stage",
+                       "queue", "last_failure", "separated", "was_projected"}
 # The fields of the unit record that follow the order of the unit. The
 # MoveTo order is cleared by the Orders phase of the tick after arrival, and
 # Orders runs before Movement (plugin.rs:121-128), so the new trace still has
@@ -215,8 +229,8 @@ ALLOWED_UNIT_FIELDS = {"target", "activity", "state", "order", "queue",
 ORDER_FOLLOWER_FIELDS = {"order", "queue", "last_failure"}
 WORLD_FIELDS = ("pools", "pending_movement_orders")
 UNIT_KEYS = {"record", "package", "tick", "unit", "x_bits", "y_bits",
-             "target", "activity", "state", "order", "queue", "last_failure",
-             "separated", "was_projected"}
+             "target", "activity", "state", "order", "gather_stage", "queue",
+             "last_failure", "separated", "was_projected"}
 OP_KEYS = {"record", "package", "tick", "op_id", "unit", "phase", "events",
            "before_equals_after"}
 # Only the operation that a MoveTo command made has move_to_route.
@@ -230,12 +244,15 @@ BEHAVIOURS = {"Move", "Stop", "Hold", "Attack", "Gather", "Produce",
 GATHER_STAGES = {"-", "Idle", "MovingToNode", "Gathering", "MovingToReceiver",
                  "Unloading", "Waiting-NoDeposit", "Waiting-NoReceiver",
                  "Waiting-DestinationFull", "Waiting-DestinationOverflow"}
+# The gather stage of the unit (the gather cycle, not the order): a stage name,
+# or "none" when the unit has no gather cycle.
+GATHER_STAGE_VALUES = (GATHER_STAGES - {"-"}) | {"none"}
 WORLD_KEYS = {"record", "package", "tick"} | set(WORLD_FIELDS)
 HEADER_KEYS = {"record", "format", "package", "emitter_sha256", "ticks",
                "unit_count", "units"}
 COMPARED_UNIT_FIELDS = ("x_bits", "y_bits", "target", "activity", "state",
-                        "order", "queue", "last_failure", "separated",
-                        "was_projected", "edge_hit")
+                        "order", "gather_stage", "queue", "last_failure",
+                        "separated", "was_projected", "edge_hit")
 HEX8 = re.compile(r"[0-9a-f]{8}\Z")
 HEX64 = re.compile(r"[0-9a-f]{64}\Z")
 NAME = re.compile(r"[A-Za-z][A-Za-z0-9_]*\Z")
@@ -373,6 +390,10 @@ def check_unit_record(where, record, g1_in_a2c):
     error = check_order_text(where, record["order"])
     if error:
         return error
+    if record["gather_stage"] not in GATHER_STAGE_VALUES:
+        return "%s: gather_stage %r is not one of %s" % (
+            where, record["gather_stage"], ", ".join(sorted(
+                GATHER_STAGE_VALUES)))
     queue = record["queue"]
     if not (isinstance(queue, list) and all(
             isinstance(kind, str) and kind in BEHAVIOURS for kind in queue)):
@@ -390,7 +411,7 @@ def check_unit_record(where, record, g1_in_a2c):
             where, failure)
     if not isinstance(record["separated"], bool):
         return "%s: separated is not a bool" % where
-    # null: the unit has a pool, and the pool branch has no such local.
+    # null: the unit did not reach a projection loop in the frame.
     if not (record["was_projected"] is None
             or isinstance(record["was_projected"], bool)):
         return "%s: was_projected is not a bool or null" % where
@@ -606,6 +627,48 @@ def first_line_difference(old, new):
     return min(len(a), len(b)) + 1
 
 
+def describe_difference(old_raw, new_raw):
+    """Decode the first differing line of two traces: the tick, the unit and
+    the field (Q1b review follow-up, finding 4)."""
+    a = old_raw.split(b"\n")
+    b = new_raw.split(b"\n")
+    number = first_line_difference(old_raw, new_raw)
+    if number > len(a) - 1 or number > len(b) - 1:
+        return "one trace ends at line %d (old %d lines, new %d lines)" % (
+            number, len(a) - 1, len(b) - 1)
+    try:
+        x, y = json.loads(a[number - 1]), json.loads(b[number - 1])
+    except ValueError:
+        return "line %d is not JSON in one trace" % number
+    if not isinstance(x, dict) or not isinstance(y, dict):
+        return "line %d is not an object in one trace" % number
+
+    def place(record):
+        kind = record.get("record")
+        if kind == "unit":
+            return "unit record, tick %s, unit %s" % (record.get("tick"),
+                                                      record.get("unit"))
+        if kind == "world":
+            return "world record, tick %s" % record.get("tick")
+        if kind == "op":
+            return "op record, tick %s, op_id %s" % (record.get("tick"),
+                                                     record.get("op_id"))
+        return "%s record" % kind
+
+    if place(x) != place(y):
+        return "the record sequence differs: old has a %s, new has a %s" % (
+            place(x), place(y))
+    order = list(COMPARED_UNIT_FIELDS) + sorted(set(x) | set(y))
+    for field in order:
+        if x.get(field, "<absent>") != y.get(field, "<absent>"):
+            return "%s, field %s: %s -> %s" % (
+                place(x), field,
+                json.dumps(x.get(field, "<absent>"), sort_keys=True),
+                json.dumps(y.get(field, "<absent>"), sort_keys=True))
+    return "%s: the lines differ in the bytes only (key order or spacing)" % (
+        place(x))
+
+
 def check_p0(report, old, new, packages):
     problems = []
     for package in packages:
@@ -613,9 +676,10 @@ def check_p0(report, old, new, packages):
             problems.append("%s: no valid trace on both sides" % package)
             continue
         if old[package].raw != new[package].raw:
-            problems.append("%s: bytes differ (first at line %d)" % (
+            problems.append("%s: bytes differ (first at line %d: %s)" % (
                 package, first_line_difference(old[package].raw,
-                                               new[package].raw)))
+                                               new[package].raw),
+                describe_difference(old[package].raw, new[package].raw)))
     if problems:
         report.add("P0", False, "; ".join(problems))
     else:
@@ -1338,7 +1402,17 @@ def count_trace(trace):
             projected += 1
     routes = [(r["tick"], r["op_id"], r["move_to_route"]) for r in trace.ops
               if "move_to_route" in r]
-    return states, separated_none, projected, routes
+    return states, separated_none, projected, routes, gather_stage_counts(trace)
+
+
+def gather_stage_counts(trace):
+    """(e) The unit-ticks of each gather_stage other than none."""
+    stages = {}
+    for record in trace.units.values():
+        if record["gather_stage"] != "none":
+            stages[record["gather_stage"]] = stages.get(
+                record["gather_stage"], 0) + 1
+    return stages
 
 
 def run_counts(directory, g1_in_a2c=False):
@@ -1352,14 +1426,17 @@ def run_counts(directory, g1_in_a2c=False):
         trace = traces.get(package)
         if trace is None:
             continue
-        states, separated_none, projected, routes = count_trace(trace)
+        states, separated_none, projected, routes, stages = count_trace(trace)
         report.add("COUNT-" + package.upper(), True, (
             "(a) unit-ticks none %d, pool %d, plain %d; (b) state none and "
-            "separated %d; (c) was_projected true %d; (d) move_to_route %s" % (
+            "separated %d; (c) was_projected true %d; (d) move_to_route %s; "
+            "(e) gather_stage unit-ticks %s" % (
                 states["none"], states["pool"], states["plain"],
                 separated_none, projected,
                 ", ".join("tick %d op %d %s" % row for row in routes)
-                or "no MoveTo")))
+                or "no MoveTo",
+                ", ".join("%s %d" % item for item in sorted(stages.items()))
+                or "none")))
         if states["plain"] or separated_none or projected:
             stops.append("%s: plain %d, (b) %d, (c) %d" % (
                 package, states["plain"], separated_none, projected))

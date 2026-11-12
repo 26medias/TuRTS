@@ -5,7 +5,7 @@
 //! the same drain points. It writes, to the directory `TURTS_M2_TRACE_OUT`:
 //!
 //! - `<package>.jsonl`: one trace for each package, in the format
-//!   `turts-refreeze-trace/3` (the reference text is the docstring at the top of
+//!   `turts-refreeze-trace/4` (the reference text is the docstring at the top of
 //!   `tests/m3/refreeze_classify.py`);
 //! - `m2_operation_stream.json`: the operation stream of the same run, with the
 //!   bytes that `UPDATE_M3_BASELINE=1` makes `m3_m2_stream.rs` write.
@@ -20,9 +20,12 @@
 //! - It needs the cargo feature `test-probes` of `turts_sim`. The dev-dependency
 //!   of `turts_pack` turns it on.
 //! - Units are sorted by unit id. Floats are written with `to_bits`.
-//! - The stream never sets `separated` or `was_projected` and never has a pool or
-//!   a plain progress. The cases of `crates/turts_sim/tests/probe_flags.rs` show
+//! - The stream never sets `separated` or `was_projected` to true and never has a pool
+//!   or a plain progress. The cases of `crates/turts_sim/tests/probe_flags.rs` show
 //!   that the probe values work.
+//! - `TURTS_M2_TRACE_OUT` must be an absolute path. A relative path would resolve
+//!   under the crate folder and write untracked files into the tree, so the test
+//!   refuses it.
 
 use bevy_app::App;
 use bevy_ecs::world::World;
@@ -42,7 +45,7 @@ use turts_sim::{
 
 const TICKS: u32 = 400;
 const PACKAGES: [&str; 4] = ["base", "haul", "acme", "cedar"];
-const FORMAT: &str = "turts-refreeze-trace/3";
+const FORMAT: &str = "turts-refreeze-trace/4";
 const EMITTER_SOURCE: &[u8] = include_bytes!("m2_trace.rs");
 
 fn root() -> PathBuf {
@@ -52,7 +55,13 @@ fn root() -> PathBuf {
 fn out_dir() -> PathBuf {
     let value = std::env::var("TURTS_M2_TRACE_OUT")
         .expect("TURTS_M2_TRACE_OUT names the directory that receives the traces");
-    PathBuf::from(value)
+    let path = PathBuf::from(&value);
+    assert!(
+        path.is_absolute(),
+        "TURTS_M2_TRACE_OUT must be an absolute path (got {value:?}): a relative path would \
+         resolve under crates/turts_pack/ and write untracked files into the tree"
+    );
+    path
 }
 
 fn emitter_sha256() -> String {
@@ -203,6 +212,17 @@ fn order_text(world: &World, row: &UnitRow) -> String {
     format!("{}:{stage}", behaviour_name(order.behaviour))
 }
 
+/// The stage of the gather cycle of a unit: `GatherStage::as_str` (brackets as a
+/// hyphen), or `none` when the unit has no gather cycle. It is read through
+/// `order_view`, the economy view of the gather order, so a legacy Gather (which
+/// leaves `UnitOrders` empty and `order` at `none`) shows its stage too.
+fn gather_stage(world: &World, row: &UnitRow) -> String {
+    order_view(world, row.owner, row.id).map_or_else(
+        |_| "none".to_owned(),
+        |view| stage_name(view.stage.as_str()),
+    )
+}
+
 fn unit_record(world: &World, package: &str, tick: u32, row: &UnitRow) -> Value {
     let queue: Vec<&str> = row
         .orders
@@ -237,6 +257,7 @@ fn unit_record(world: &World, package: &str, tick: u32, row: &UnitRow) -> Value 
         "activity": probe::activity(world, row.id),
         "state": probe::unit_state(world, row.id),
         "order": order_text(world, row),
+        "gather_stage": gather_stage(world, row),
         "queue": queue,
         "last_failure": last_failure,
         "separated": probe::separated(world, row.id),

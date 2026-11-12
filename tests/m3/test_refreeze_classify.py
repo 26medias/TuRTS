@@ -54,7 +54,7 @@ def flip_low_bit(bits):
 def header(package, units):
     return {
         "record": "header",
-        "format": "turts-refreeze-trace/3",
+        "format": "turts-refreeze-trace/4",
         "package": package,
         "emitter_sha256": EMITTER,
         "ticks": TICKS,
@@ -70,7 +70,8 @@ def world_record(package, tick, pools=0, pending=0):
 
 def unit_record(package, tick, unit, x, y, target=None, activity="none",
                 state="none", order="none", separated=False,
-                was_projected=False, queue=None, last_failure=None):
+                was_projected=False, queue=None, last_failure=None,
+                gather_stage="none"):
     return {
         "record": "unit",
         "package": package,
@@ -83,6 +84,7 @@ def unit_record(package, tick, unit, x, y, target=None, activity="none",
         "activity": activity,
         "state": state,
         "order": order,
+        "gather_stage": gather_stage,
         "queue": [] if queue is None else queue,
         "last_failure": last_failure,
         "separated": separated,
@@ -131,7 +133,8 @@ def economy_trace(package):
             package, tick, 1, x, 12.0,
             target=(30.0, 12.0) if moving else None,
             state="plain" if moving else "none",
-            order="Gather:MovingToNode" if moving else "Gather:Gathering"))
+            order="Gather:MovingToNode" if moving else "Gather:Gathering",
+            gather_stage="MovingToNode" if moving else "Gathering"))
         records.append(unit_record(package, tick, 2, 40.0, 40.0))
         if package == "haul" and tick >= 100:
             records.append(unit_record(package, tick, 3, 41.0, 40.0))
@@ -187,7 +190,10 @@ def acme_trace(new):
             activity="Moving" if new and moving else "none",
             state="pool" if new and moving else "none",
             order="Move:-" if new and tick <= ARRIVAL else "none",
-            was_projected=None if new and moving else False))
+            # Format /4: both branches store the real value, so the old and the
+            # new run read false while the scout moves and null from the
+            # arrival tick (a snap to the target runs no projection loop).
+            was_projected=False if moving else None))
         ops = []
         if tick == 1:
             ops.append((SCOUT, "Command", [], False,
@@ -205,7 +211,7 @@ def acme_trace(new):
 
 def clean_allowed():
     return {
-        "schema": "turts-refreeze-allowed/3",
+        "schema": "turts-refreeze-allowed/4",
         "package": "acme",
         "note": "synthetic list of the self-test",
         "unit_fields": [
@@ -213,8 +219,6 @@ def clean_allowed():
              "old": "none", "new": "Moving"},
             {"unit": SCOUT, "field": "state", "ticks": [1, ARRIVAL - 1],
              "old": "none", "new": "pool"},
-            {"unit": SCOUT, "field": "was_projected", "ticks": [1, ARRIVAL - 1],
-             "old": False, "new": None},
             {"unit": SCOUT, "field": "order", "ticks": [1, ARRIVAL],
              "old": "none", "new": "Move:-"},
         ],
@@ -708,11 +712,14 @@ def plant_state_entry_straddles_arrival_listed(case):
 
 
 def plant_flag_entry_straddles_arrival_listed(case):
-    record = find(case.new["acme"], record="unit", tick=ARRIVAL, unit=SCOUT)
-    record["was_projected"] = None
-    spans = [e for e in case.allowed["unit_fields"]
-             if e["field"] == "was_projected"]
-    spans[0]["ticks"] = [1, ARRIVAL]
+    # The new run projects the scout on ticks 1 to ARRIVAL, and the list names
+    # the span [1, ARRIVAL]: it ends ON the arrival tick, which only the order
+    # followers may do.
+    for record in scout_units(case, 1, ARRIVAL):
+        record["was_projected"] = True
+    case.allowed["unit_fields"].append({
+        "unit": SCOUT, "field": "was_projected", "ticks": [1, ARRIVAL],
+        "old": False, "new": True})
 
 
 def plant_acme_last_failure_not_allowed(case):
@@ -796,6 +803,32 @@ def plant_last_failure_as_text(case):
         "last_failure"] = "blocked"
 
 
+def plant_flip_gather_stage_haul(case):
+    # The legacy Gather leaves order at "none", so the stage is the only place
+    # where a change of the gather protocol (task A2b1) shows in the trace.
+    record = find(case.new["haul"], record="unit", tick=40, unit=1)
+    record["gather_stage"] = "Unloading"
+
+
+def plant_gather_stage_in_acme_not_allowed(case):
+    find(case.new["acme"], record="unit", tick=60, unit=SCOUT)[
+        "gather_stage"] = "Idle"
+
+
+def plant_gather_stage_with_brackets(case):
+    find(case.new["base"], record="unit", tick=10, unit=1)[
+        "gather_stage"] = "Waiting(NoDeposit)"
+
+
+def plant_gather_stage_is_a_behaviour_text(case):
+    find(case.new["base"], record="unit", tick=10, unit=1)[
+        "gather_stage"] = "Gather:Idle"
+
+
+def plant_unit_record_without_gather_stage(case):
+    del find(case.new["base"], record="unit", tick=10, unit=1)["gather_stage"]
+
+
 def plant_counts_plain_unit_tick(case):
     case.to_counts()
     find(case.new["cedar"], record="unit", tick=77, unit=1)["state"] = "plain"
@@ -824,8 +857,8 @@ def plant_counts_missing_trace(case):
 
 PLANTS = [
     # (name, expected failed check, text that the detail must hold, plant)
-    ("flipped position bit in base", "P0", "base: bytes differ",
-     plant_flip_position_bit_base),
+    ("flipped position bit in base", "P0",
+     "tick 200, unit 1, field x_bits", plant_flip_position_bit_base),
     ("flipped position bit in acme", "P1", "field y_bits",
      plant_flip_position_bit_acme),
     ("added Stored event", "P2", "haul tick 30",
@@ -864,12 +897,14 @@ PLANTS = [
      "field separated", plant_acme_field_not_allowed),
     ("flipped was_projected in acme", "P1", "field was_projected",
      plant_flip_was_projected_acme),
-    ("flipped was_projected in haul", "P0", "haul: bytes differ",
+    ("flipped was_projected in haul", "P0",
+     "tick 60, unit 1, field was_projected",
      plant_flip_was_projected_haul),
     ("base PlainMoveProgress ends one tick early", "P0",
-     "base: bytes differ", plant_base_state_plain_to_none),
+     "tick 79, unit 1, field state", plant_base_state_plain_to_none),
     ("base pending movement order count changed", "P0",
-     "base: bytes differ", plant_base_pending_orders),
+     "world record, tick 150, field pending_movement_orders",
+     plant_base_pending_orders),
     ("pool kept to tick 400, listed (c2)", "ALLOWED",
      "at or after the arrival tick", plant_pool_kept_to_400_listed),
     ("MoveTarget kept after arrival, listed (c3)", "ALLOWED",
@@ -925,11 +960,12 @@ PLANTS = [
      "field last_failure", plant_acme_last_failure_not_allowed),
     ("acme queue not in the allowed list", "P1", "field queue",
      plant_acme_queue_not_allowed),
-    ("last_failure in base", "P0", "base: bytes differ",
+    ("last_failure in base", "P0", "tick 70, unit 1, field last_failure",
      plant_base_last_failure),
     ("was_projected null instead of false in haul", "P0",
-     "haul: bytes differ", plant_haul_was_projected_null),
-    ("move_to_route on a haul operation", "P0", "haul: bytes differ",
+     "tick 60, unit 1, field was_projected", plant_haul_was_projected_null),
+    ("move_to_route on a haul operation", "P0",
+     "op record, tick 1, op_id 1, field move_to_route",
      plant_haul_move_to_route),
     ("move_to_route still direct in the new run, list says envelope", "P1",
      "operation difference", plant_route_unchanged_in_new),
@@ -955,6 +991,17 @@ PLANTS = [
      plant_was_projected_as_number),
     ("last_failure written as text", "COUNTS-NEW", "last_failure",
      plant_last_failure_as_text),
+    # Q1b review follow-up: gather_stage (format /4) and the decoded P0 detail.
+    ("flipped gather_stage in haul (order stays none)", "P0",
+     "tick 40, unit 1, field gather_stage", plant_flip_gather_stage_haul),
+    ("gather_stage difference in acme not in the allowed list", "P1",
+     "field gather_stage", plant_gather_stage_in_acme_not_allowed),
+    ("gather_stage written with brackets", "COUNTS-NEW", "gather_stage",
+     plant_gather_stage_with_brackets),
+    ("gather_stage written as a behaviour text", "COUNTS-NEW",
+     "gather_stage", plant_gather_stage_is_a_behaviour_text),
+    ("unit record without gather_stage", "COUNTS-NEW", "unit keys",
+     plant_unit_record_without_gather_stage),
     ("--counts: one unit-tick on a plain progress", "STOP", "plain 1",
      plant_counts_plain_unit_tick),
     ("--counts: separated with no movement state (b)", "STOP", "(b) 1",
@@ -1032,6 +1079,55 @@ class RefreezeClassifierSelfTest(unittest.TestCase):
             with self.subTest(name):
                 report = classify(self.classifier, case)
                 self.assertTrue(report.passed, "\n".join(report.lines()))
+
+    def test_counts_report_gather_stage_counts(self):
+        # (e): the synthetic gather worker is in MovingToNode on 79 ticks and
+        # in Gathering on 321 ticks of each of the three gather packages.
+        case = Case()
+        case.to_counts()
+        report = classify(self.classifier, case)
+        details = {name: detail for name, _, detail in report.checks}
+        for package in ("BASE", "HAUL", "CEDAR"):
+            self.assertIn("(e) gather_stage unit-ticks Gathering 321, "
+                          "MovingToNode 79", details["COUNT-" + package])
+        self.assertIn("(e) gather_stage unit-ticks none",
+                      details["COUNT-ACME"])
+
+    def test_p0_detail_decodes_tick_unit_and_field(self):
+        case = Case()
+        case.to_p0()
+        find(case.new["cedar"], record="unit", tick=321, unit=2)[
+            "was_projected"] = True
+        report = classify(self.classifier, case)
+        self.assertIn("cedar: bytes differ (first at line ",
+                      report.failed()["P0"])
+        self.assertIn("unit record, tick 321, unit 2, field was_projected: "
+                      "false -> true", report.failed()["P0"])
+
+    def test_p0_detail_names_the_first_field_in_format_order(self):
+        # Two fields of one record differ: the detail names the first in the
+        # order of the format (position before gather_stage).
+        case = Case()
+        case.to_p0()
+        record = find(case.new["haul"], record="unit", tick=40, unit=1)
+        record["gather_stage"] = "Unloading"
+        record["x_bits"] = flip_low_bit(record["x_bits"])
+        report = classify(self.classifier, case)
+        self.assertIn("unit record, tick 40, unit 1, field x_bits",
+                      report.failed()["P0"])
+
+    def test_a_listed_gather_stage_difference_passes(self):
+        # gather_stage can be named in the allowed list (it is a P0 field, so a
+        # difference is red unless listed).
+        case = Case()
+        for tick in range(10, 21):
+            find(case.new["acme"], record="unit", tick=tick, unit=SCOUT)[
+                "gather_stage"] = "Idle"
+        case.allowed["unit_fields"].append({
+            "unit": SCOUT, "field": "gather_stage", "ticks": [10, 20],
+            "old": "none", "new": "Idle"})
+        report = classify(self.classifier, case)
+        self.assertTrue(report.passed, "\n".join(report.lines()))
 
     def test_synthetic_stream_bytes_match_fixture_format(self):
         fixture = REPO / "tests/m3/m2_operation_stream.json"

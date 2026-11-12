@@ -26,15 +26,18 @@ use crate::world::UnitId;
 
 /// The flags of the last step of one unit.
 ///
-/// Each flag is a local variable of one branch of the movement step. A branch that
-/// has no such local, and a unit that does not step, leave the flag `false`.
+/// Each flag is a value of one branch of the movement step. A unit that does not step
+/// leaves `separated` `false`.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct FrameFlags {
     /// `separated`: a neighbour was closer than the separation limit.
     pub separated: bool,
-    /// `was_projected`: the hard projection moved the unit. Only the branch of a unit
-    /// with no pool has this local (`frame.rs`, the no-progress branch).
-    pub was_projected: bool,
+    /// `was_projected`: the hard projection moved the unit in at least one of its
+    /// passes. Each of the three branches (no pool, pool, plain) stores its real
+    /// value after its projection loop. `None` when the unit did not reach a
+    /// projection loop in the frame (no movement, a snap to the target before the
+    /// loop, an escape step).
+    pub was_projected: Option<bool>,
 }
 
 /// The flags of the last movement frame, by unit id. One entry for each unit of
@@ -102,20 +105,15 @@ pub fn separated(world: &World, unit: u32) -> bool {
         .is_some_and(|flags| flags.separated)
 }
 
-/// `was_projected` of the last frame of a unit. `None` for a unit that has a pool
-/// after the frame: the pool branch has no such local, so a P0 pair across the
-/// merge of the two branches (task A2a) compares the same field. `Some(false)`
-/// when the unit did not step.
+/// `was_projected` of the last frame of a unit: `Some(value)` for a unit that reached
+/// a projection loop in the frame (any of the three branches stores its real value);
+/// `None` for a unit that did not (no movement in the frame, a snap before the loop,
+/// an escape step) and for a unit that is not in the last frame.
 pub fn was_projected(world: &World, unit: u32) -> Option<bool> {
-    if unit_entity(world, unit).is_some_and(|entity| entity.contains::<MoveProgress>()) {
-        return None;
-    }
-    Some(
-        world
-            .get_resource::<LastFrameFlags>()
-            .and_then(|flags| flags.0.get(&unit))
-            .is_some_and(|flags| flags.was_projected),
-    )
+    world
+        .get_resource::<LastFrameFlags>()
+        .and_then(|flags| flags.0.get(&unit))
+        .and_then(|flags| flags.was_projected)
 }
 
 /// The number of pools in the `MovementPools` resource.

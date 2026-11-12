@@ -24,13 +24,15 @@ and section 9 items 6, 7, 14 and 24 (revision 6).
 
     # Write the traces of one build (the emitter, task Q1b). The test needs the
     # cargo feature test-probes of turts_sim; the dev-dependency of turts_pack
-    # turns it on. DIR receives base.jsonl, haul.jsonl, acme.jsonl,
+    # turns it on. DIR must be an absolute path (the test refuses a relative
+    # one) and receives base.jsonl, haul.jsonl, acme.jsonl,
     # cedar.jsonl and m2_operation_stream.json (the stream of the same run).
     TURTS_M2_TRACE_OUT=DIR cargo test -p turts_pack --locked --test m2_trace \
         -- --ignored --exact m2_trace_writes_four_packages
 
-    # The counts of design 9.6 and 9.8 for one run. FAIL when a unit has
-    # state plain, or (b) or (c) is above 0.
+    # The counts of design 9.6 and 9.8 for one run, and (e) the unit-ticks of
+    # each gather_stage. FAIL when a unit has state plain, or (b) or (c) is
+    # above 0.
     python3 tests/m3/refreeze_classify.py --counts DIR
 
     # A2a and A2b: the stream does not change; it must be the stream of
@@ -72,7 +74,7 @@ On one file, FIXTURE cannot fail, so the classifier gives FAIL.
 
 | Check | What it checks |
 | --- | --- |
-| `ALLOWED` | The allowed list follows schema `turts-refreeze-allowed/3`. A position field cannot be allowed. Each entry ends before the calculated arrival tick; for `order`, `queue` and `last_failure` it can end on the arrival tick (design 9.24a). Of an old operation, only `move_to_route` can change. `edge_hit` only with `--g1-in-a2c`. |
+| `ALLOWED` | The allowed list follows schema `turts-refreeze-allowed/4`. A position field cannot be allowed. Each entry ends before the calculated arrival tick; for `order`, `queue` and `last_failure` it can end on the arrival tick (design 9.24a). Of an old operation, only `move_to_route` can change. `edge_hit` only with `--g1-in-a2c`. |
 | `COUNTS-OLD`, `COUNTS-NEW` | Each trace follows the format below: 400 ticks, one world record at each tick, a record for each initial unit at each tick (400 x the initial unit count), op ids 1, 2, 3, ... as JSON integers. An absent, empty or short trace is a FAIL. |
 | `EMITTER` | The classifier calculates the sha256 of the `--emitter` files (their bytes, joined in the command-line order). Each of the 8 headers must hold that value. |
 | `OLD-HASH` | The old stream has the frozen sha256 (default `bcbf72c2...e370b`). |
@@ -84,14 +86,14 @@ On one file, FIXTURE cannot fail, so the classifier gives FAIL.
 | `P3` | The streams of base, haul and cedar are equal. In acme, each old operation is in the new tick, in order, unchanged, with its old operation_id. Each new operation belongs to the scout, has no event kind, and is on tick 1 or on the tick after arrival. Exactly one is added on each of these two ticks. Operation ids increase. |
 | `FIXTURE` | See "When FIXTURE runs". |
 
-## Trace format `turts-refreeze-trace/3`
+## Trace format `turts-refreeze-trace/4`
 
 The reference text is the docstring at the top of `refreeze_classify.py`. In
 short:
 
 - One JSONL file for each package: `<dir>/base.jsonl`, `haul.jsonl`,
   `acme.jsonl`, `cedar.jsonl`. Each line ends with `\n`.
-- Line 1: `{"record":"header","format":"turts-refreeze-trace/3","package":P,
+- Line 1: `{"record":"header","format":"turts-refreeze-trace/4","package":P,
   "emitter_sha256":H,"ticks":400,"unit_count":N,"units":[{"unit":U,
   "content_id":C,"owner_slot":S},...]}`.
 - For each tick 1 to 400: one world record, then the unit records in
@@ -103,7 +105,8 @@ short:
 - Unit record: `{"record":"unit","package":P,"tick":T,"unit":U,
   "x_bits":"8 hex","y_bits":"8 hex","target":null|{"x_bits":..,"y_bits":..},
   "activity":"Pending|Moving|Resting|Blocked|none","state":"none|plain|pool",
-  "order":"none|<Behaviour>:<stage>","queue":[<Behaviour>,...],
+  "order":"none|<Behaviour>:<stage>","gather_stage":"none|<stage>",
+  "queue":[<Behaviour>,...],
   "last_failure":null|{"order":C,"reason":R,"tick":N},"separated":bool,
   "was_projected":bool|null}`, plus `"edge_hit":bool` in every unit record
   only with `--g1-in-a2c`.
@@ -113,8 +116,33 @@ short:
     id) and the gather stage of the unit (`-` when it has none). The stage
     names are in the docstring. A legacy Gather command leaves `current`
     empty, so a gather unit reads `none`.
-  - `was_projected` is `null` when the unit has a pool after the frame (the
-    pool branch has no such local).
+  - `gather_stage` (format /4) is the stage of the gather cycle, read through
+    `turts_sim::order_view` (the economy view), or `none` when the unit has
+    no gather cycle. It shows the stage of a legacy Gather, which `order`
+    cannot. Task A2b1 changes the gather protocol, so the stage is a P0 field:
+    a difference is red unless the list names it. The base, haul and cedar
+    traces hold the stages Idle, MovingToNode, Gathering, MovingToReceiver and
+    Unloading; the acme trace holds `none` only.
+  - `was_projected` (format /4) is the real value of the hard projection in
+    the last frame: `true` when at least one of its passes moved the unit,
+    `false` when the unit ran the projection loop and no pass moved it. Each
+    of the three branches (no pool, pool, plain) stores its own value after
+    its loop. It is `null` when the unit did not reach a projection loop in
+    that frame: no movement, a snap to the target before the loop, an
+    escape step. In formats /1 to /3 it was `null` for a pool unit and `false`
+    for a plain unit, which hid two real projections.
+  - `move_to_route` (on the operation record of a `MoveTo`) is read as
+    follows (`observe_move_to_route` in the emitter). Direct against pending
+    comes from the world: `direct` when nothing is pending and the unit has its
+    `MoveTarget` right after the command; `none` when nothing is pending and it
+    has no `MoveTarget`; a pending count above 0 means a pending envelope.
+    `per_unit` against `envelope` comes from the shape of the command, not from
+    the world: more than one unit in `unit_ids` reads `per_unit`, one unit reads
+    `envelope`. The pending count is global: it is the sum of
+    `PendingMovementOrders.pending_units` over all slots, so a pending envelope
+    of another slot or of another command would make a `direct` command read
+    `per_unit` or `envelope`. The streams hold one `MoveTo` (acme), so the
+    count is not mixed there.
 - Operation record: `{"record":"op","package":P,"tick":T,"op_id":N,
   "unit":U|null,"phase":"Command|Orders|PostMovementOrders|Other",
   "events":[EconomyEvent as serde JSON],"before_equals_after":bool}`, plus
@@ -139,9 +167,24 @@ short:
   never uses a pool or a plain progress. A plant in the probe is therefore not
   seen by `--p0` on the stream. The crowd cases of
   `crates/turts_sim/tests/probe_flags.rs` (feature `test-probes`) are the
-  instrument for the probe values. `crates/turts_sim/tests/frame_hash.rs`
-  prints one hash for each of two runs; the outputs with and without the
-  feature must be byte-equal (design 9.20).
+  instrument for the probe values: each of the three branches (no pool, pool,
+  plain) has an assertion that reads both `true` and `false`.
+- `crates/turts_sim/tests/frame_hash.rs` prints two hash lines.
+  `scripts/qa/probe_neutral.sh` runs it with the feature off and with
+  `--features test-probes`, compares the lines, and exits 1 on a difference
+  (design 9.20). It is a step of the `check` job of `.github/workflows/ci.yml`.
+  The hashes are not pinned: they use the libm of the platform. Since Q1b every
+  workspace test builds `turts_sim` with the feature on, so this script is the
+  only check of the build without it.
+- `scripts/boundary.sh` checks that the shipped server and client builds do not
+  turn the feature on (`cargo tree -p CRATE -e normal,build,features -i
+  turts_sim`), and that the same grep finds the feature on the dev edge of
+  `turts_pack` (the self-check that the grep can go red).
+- `TURTS_M2_TRACE_OUT` must be an absolute path. The test refuses a relative
+  path: it would resolve under `crates/turts_pack/` and write untracked files
+  into the tree. Write the traces under `target/`.
+- A failure of `--p0` names the first differing record: tick, unit (or world
+  or operation) and field, with the old and the new value.
 
 ## Phases and routes found by the probe (Q1b)
 
