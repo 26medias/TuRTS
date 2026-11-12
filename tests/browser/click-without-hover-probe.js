@@ -88,6 +88,10 @@ async function run(url, wantGuide, mapPressFirst) {
             // frame and turns the sound on (plant 7i of `sound-off.json`).
             const mx = 640, my = 400;
             let acted = false;
+            // A slow page (CPU throttle 20) has frames of about 300 ms: the batch of a few milliseconds
+            // is then in one frame, as at a low frame rate (review M1).
+            const cdp = await page.context().newCDPSession(page);
+            await cdp.send("Emulation.setCPUThrottlingRate", { rate: 20 });
             for (let attempt = 0; attempt < 12 && !acted; attempt += 1) {
                 await page.mouse.move(2, 2);
                 await page.waitForTimeout(300);
@@ -95,6 +99,7 @@ async function run(url, wantGuide, mapPressFirst) {
                 await page.waitForTimeout(300);
                 acted = (await record(page)).audio?.sound_on === true;
             }
+            await cdp.send("Emulation.setCPUThrottlingRate", { rate: 1 });
             result.checks.push({ name: "press on the map, release over the sound switch, one frame (12 tries)", kind: sound.kind, expected: false, acted, within_ms: WAIT_MS });
         }
         await quickClick(page, sx, sy);
