@@ -375,7 +375,8 @@ fn stand_off_steps(
 /// is within one quantum. The quantum is the spacing of `f32` at the larger magnitude of the two
 /// coordinates, not at the magnitude of `coordinate`. Near 0 the spacing of `coordinate` is
 /// finer than the rounding of the ring point that came from the (large) target coordinate, and
-/// steps of that spacing would take thousands of steps. A coordinate that is already `target`
+/// steps of that spacing take many more steps (36 in the case classes of the test, 3 with this
+/// quantum). A coordinate that is already `target`
 /// stays.
 fn step_toward(coordinate: f32, target: f32) -> f32 {
     let magnitude = coordinate.abs().max(target.abs());
@@ -1110,7 +1111,7 @@ mod tests {
         );
         let direction = (from - target).normalize_or_zero();
         assert!(
-            (point - target).dot(direction) >= 0.0,
+            (point.x - target.x) * direction.x >= 0.0 && (point.y - target.y) * direction.y >= 0.0,
             "stand-off {point:?} is past the target {target:?} (range {range}, from {from:?})"
         );
         let ring = target + direction * range;
@@ -1120,7 +1121,7 @@ mod tests {
         } else {
             assert!(
                 steps > 0 && steps < super::STAND_OFF_MAX_STEPS,
-                "{steps} steps"
+                "the stand-off took {steps} steps"
             );
         }
         steps
