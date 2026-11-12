@@ -52,9 +52,10 @@ fn advanced_clock(state: &turts_sim::AuditState, tick: u32) -> turts_sim::AuditS
 
 #[test]
 fn live_audit_reader_ignores_only_unterminated_tail_and_waits_for_tick() {
-    use economylog::{EconomyLogRecord, EconomyLogWriter};
+    use economylog::EconomyLogWriter;
     use std::io::Write;
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
+    use turts_audit::EconomyLogRecord;
     use turts_sim::{AuditTrail, economy::views::audit_state};
 
     let mut app = economy_fixture_app_at(5);
@@ -298,17 +299,17 @@ fn decoded_moving_gatherer_replays_frozen_command_and_automatic_effect() {
 
     // Replay only decoded JSONL. The expected command and automatic subjects are
     // frozen from the fixture inputs; observed audit fields are only evidence.
-    let decoded = economylog::read_jsonl(Cursor::new(writer.into_inner())).unwrap();
-    economylog::validate_records(&decoded).unwrap();
+    let decoded = turts_audit::read_jsonl(Cursor::new(writer.into_inner())).unwrap();
+    turts_audit::validate_records(&decoded).unwrap();
     let decoded_initial = match &decoded[0] {
-        economylog::EconomyLogRecord::Initial(state) => state.clone(),
+        turts_audit::EconomyLogRecord::Initial(state) => state.clone(),
         _ => panic!("first record must be Initial"),
     };
     assert_eq!(decoded_initial, initial);
     let decoded_command = decoded
         .iter()
         .find_map(|record| match record {
-            economylog::EconomyLogRecord::CommandBoundary(command) => Some(command.clone()),
+            turts_audit::EconomyLogRecord::CommandBoundary(command) => Some(command.clone()),
             _ => None,
         })
         .expect("decoded command boundary");
@@ -328,7 +329,7 @@ fn decoded_moving_gatherer_replays_frozen_command_and_automatic_effect() {
         let operations = decoded
             .iter()
             .filter_map(|record| match record {
-                economylog::EconomyLogRecord::Operation(operation)
+                turts_audit::EconomyLogRecord::Operation(operation)
                     if operation.before.economy.tick == tick_number =>
                 {
                     Some(operation)
@@ -403,7 +404,7 @@ fn decoded_moving_gatherer_replays_frozen_command_and_automatic_effect() {
         let (tick_before, tick_state, tick_events) = decoded
             .iter()
             .find_map(|record| match record {
-                economylog::EconomyLogRecord::Tick {
+                turts_audit::EconomyLogRecord::Tick {
                     tick,
                     before,
                     state,
@@ -434,18 +435,18 @@ fn decoded_moving_gatherer_replays_frozen_command_and_automatic_effect() {
     let tick_record = bad_tick_state
         .iter_mut()
         .find_map(|record| match record {
-            economylog::EconomyLogRecord::Tick { state, tick, .. } if *tick == 24 => Some(state),
+            turts_audit::EconomyLogRecord::Tick { state, tick, .. } if *tick == 24 => Some(state),
             _ => None,
         })
         .unwrap();
     tick_record.economy.tick += 1;
-    assert!(economylog::validate_records(&bad_tick_state).is_err());
+    assert!(turts_audit::validate_records(&bad_tick_state).is_err());
 
     let mut bad_economy_state = decoded.clone();
     let worker_inventory = bad_economy_state
         .iter_mut()
         .find_map(|record| match record {
-            economylog::EconomyLogRecord::Tick { state, tick, .. } if *tick == 24 => state
+            turts_audit::EconomyLogRecord::Tick { state, tick, .. } if *tick == 24 => state
                 .economy
                 .inventories
                 .iter_mut()
@@ -454,18 +455,18 @@ fn decoded_moving_gatherer_replays_frozen_command_and_automatic_effect() {
         })
         .unwrap();
     worker_inventory.items[0].on_hand += 1;
-    assert!(economylog::validate_records(&bad_economy_state).is_err());
+    assert!(turts_audit::validate_records(&bad_economy_state).is_err());
 
     let mut missing_event = decoded.clone();
     let tick_record = missing_event
         .iter_mut()
         .find_map(|record| match record {
-            economylog::EconomyLogRecord::Tick { events, tick, .. } if *tick == 24 => Some(events),
+            turts_audit::EconomyLogRecord::Tick { events, tick, .. } if *tick == 24 => Some(events),
             _ => None,
         })
         .unwrap();
     tick_record.clear();
-    assert!(economylog::validate_records(&missing_event).is_err());
+    assert!(turts_audit::validate_records(&missing_event).is_err());
 }
 
 #[test]
@@ -534,11 +535,11 @@ fn decoded_fractional_movement_uses_captured_fixed_timestep() {
     writer.write_tick(&trail, tick).unwrap();
     writer.flush().unwrap();
 
-    let decoded = economylog::read_jsonl(Cursor::new(writer.into_inner())).unwrap();
+    let decoded = turts_audit::read_jsonl(Cursor::new(writer.into_inner())).unwrap();
     let movement = decoded
         .iter()
         .find_map(|record| match record {
-            economylog::EconomyLogRecord::Tick { state, .. } => state
+            turts_audit::EconomyLogRecord::Tick { state, .. } => state
                 .raw_units
                 .iter()
                 .find(|unit| unit.unit_id == 3)
@@ -553,14 +554,14 @@ fn decoded_fractional_movement_uses_captured_fixed_timestep() {
     let moved = corrupted
         .iter_mut()
         .find_map(|record| match record {
-            economylog::EconomyLogRecord::Tick { state, .. } => {
+            turts_audit::EconomyLogRecord::Tick { state, .. } => {
                 state.raw_units.iter_mut().find(|unit| unit.unit_id == 3)
             }
             _ => None,
         })
         .unwrap();
     moved.pos.x = f32::from_bits(moved.pos.x.to_bits() + 1);
-    assert!(economylog::validate_records(&corrupted).is_err());
+    assert!(turts_audit::validate_records(&corrupted).is_err());
 }
 
 #[derive(Clone)]
@@ -906,14 +907,14 @@ fn order_input_matches_frozen(
 }
 
 fn replay_task4_order_log(
-    records: &[economylog::EconomyLogRecord],
+    records: &[turts_audit::EconomyLogRecord],
     expected_initial: &turts_sim::AuditState,
     expected_commands: &[FrozenCommand],
     expected_claims: &[(u8, u64)],
 ) {
-    use economylog::EconomyLogRecord;
+    use turts_audit::EconomyLogRecord;
 
-    economylog::validate_records(records).unwrap_or_else(|error| {
+    turts_audit::validate_records(records).unwrap_or_else(|error| {
         panic!("Task4 catalog-derived order replay rejected the process log: {error}")
     });
     let initial = records
@@ -983,11 +984,11 @@ fn replay_task4_order_log(
 }
 
 fn mutate_order_command_after(
-    records: &mut [economylog::EconomyLogRecord],
+    records: &mut [turts_audit::EconomyLogRecord],
     seq: u32,
     mut mutate: impl FnMut(&mut turts_sim::AuditState),
 ) {
-    use economylog::EconomyLogRecord;
+    use turts_audit::EconomyLogRecord;
     let operation_id = records
         .iter()
         .find_map(|record| match record {
@@ -1135,8 +1136,8 @@ struct ReplaySummary {
 }
 
 fn wait_for_owner_rifle_output(path: &std::path::Path) -> (u32, u32) {
-    use economylog::EconomyLogRecord;
     use std::time::{Duration, Instant};
+    use turts_audit::EconomyLogRecord;
 
     let started = Instant::now();
     loop {
@@ -1164,7 +1165,7 @@ fn wait_for_owner_rifle_output(path: &std::path::Path) -> (u32, u32) {
 }
 
 fn audit_state_at(path: &std::path::Path, tick: u32) -> turts_sim::AuditState {
-    use economylog::EconomyLogRecord;
+    use turts_audit::EconomyLogRecord;
     let records = wait_for_audit_tick(path, tick);
     let matching: Vec<_> = records
         .iter()
@@ -1184,7 +1185,7 @@ fn audit_state_at(path: &std::path::Path, tick: u32) -> turts_sim::AuditState {
 }
 
 fn audit_last_tick(path: &std::path::Path) -> u32 {
-    use economylog::EconomyLogRecord;
+    use turts_audit::EconomyLogRecord;
     read_complete_economy_log(path)
         .expect("decode complete economy audit log")
         .iter()
@@ -1659,8 +1660,8 @@ fn assert_first_raw_snapshot_matches_owner(
     raw_path: &std::path::Path,
     slot: u8,
 ) {
-    use economylog::EconomyLogRecord;
     use std::time::{Duration, Instant};
+    use turts_audit::EconomyLogRecord;
 
     let started = Instant::now();
     loop {
@@ -1791,8 +1792,8 @@ fn economy_log_path(server: &support::ServerProc) -> &std::path::Path {
 
 fn read_live_complete_tick_prefix(
     path: &std::path::Path,
-) -> Result<Vec<economylog::EconomyLogRecord>, String> {
-    use economylog::EconomyLogRecord;
+) -> Result<Vec<turts_audit::EconomyLogRecord>, String> {
+    use turts_audit::EconomyLogRecord;
 
     let bytes = std::fs::read(path).map_err(|error| format!("read {}: {error}", path.display()))?;
     let Some(last_newline) = bytes.iter().rposition(|byte| *byte == b'\n') else {
@@ -1817,7 +1818,7 @@ fn read_live_complete_tick_prefix(
     let last_tick = records
         .iter()
         .rposition(|record| matches!(record, EconomyLogRecord::Tick { .. }));
-    let full_validation = economylog::validate_records(&records);
+    let full_validation = turts_audit::validate_records(&records);
     if full_validation.is_ok() {
         return Ok(records);
     }
@@ -1864,22 +1865,22 @@ fn read_live_complete_tick_prefix(
             .expect("open command id has a boundary record")
     };
     records.truncate(stable_end);
-    economylog::validate_records(&records)?;
+    turts_audit::validate_records(&records)?;
     Ok(records)
 }
 
 fn read_complete_economy_log(
     path: &std::path::Path,
-) -> Result<Vec<economylog::EconomyLogRecord>, String> {
+) -> Result<Vec<turts_audit::EconomyLogRecord>, String> {
     read_live_complete_tick_prefix(path)
 }
 
 fn wait_for_audit_tick(
     path: &std::path::Path,
     required_tick: u32,
-) -> Vec<economylog::EconomyLogRecord> {
-    use economylog::EconomyLogRecord;
+) -> Vec<turts_audit::EconomyLogRecord> {
     use std::time::{Duration, Instant};
+    use turts_audit::EconomyLogRecord;
 
     let started = Instant::now();
     loop {
@@ -1921,10 +1922,10 @@ fn replay_public_log_with_model(
     frozen: &[FrozenCommand],
     require_positive: bool,
 ) -> ReplaySummary {
-    use economylog::EconomyLogRecord;
     use std::collections::BTreeMap;
+    use turts_audit::EconomyLogRecord;
     let records = read_complete_economy_log(path).unwrap();
-    economylog::validate_records(&records).unwrap();
+    turts_audit::validate_records(&records).unwrap();
     let decoded_initial = match &records[0] {
         EconomyLogRecord::Initial(state) => state.clone(),
         _ => unreachable!(),
@@ -2746,7 +2747,7 @@ fn e8_commands_are_authoritative_and_acked() {
     let seq10_audit = decoded
         .iter()
         .find_map(|record| match record {
-            economylog::EconomyLogRecord::CommandBoundary(command)
+            turts_audit::EconomyLogRecord::CommandBoundary(command)
                 if command.input.slot.0 == wire_slot && command.input.seq == 10 =>
             {
                 Some(command)
@@ -2757,7 +2758,7 @@ fn e8_commands_are_authoritative_and_acked() {
     let seq10_operation = decoded
         .iter()
         .find_map(|record| match record {
-            economylog::EconomyLogRecord::Operation(operation)
+            turts_audit::EconomyLogRecord::Operation(operation)
                 if operation.operation_id == seq10_audit.operation_id =>
             {
                 Some(operation)
@@ -2808,7 +2809,7 @@ fn e8_commands_are_authoritative_and_acked() {
     let admissions = decoded
         .iter()
         .filter_map(|record| match record {
-            economylog::EconomyLogRecord::Admission {
+            turts_audit::EconomyLogRecord::Admission {
                 reason,
                 raw_envelope,
                 before,
@@ -2850,7 +2851,7 @@ fn e8_commands_are_authoritative_and_acked() {
     let seq7_audit = decoded
         .iter()
         .find_map(|record| match record {
-            economylog::EconomyLogRecord::CommandBoundary(audit)
+            turts_audit::EconomyLogRecord::CommandBoundary(audit)
                 if audit.input.slot.0 == wire_slot && audit.input.seq == 7 =>
             {
                 Some(audit)
@@ -2875,7 +2876,7 @@ fn e8_commands_are_authoritative_and_acked() {
     let seq7_operation = decoded
         .iter()
         .find_map(|record| match record {
-            economylog::EconomyLogRecord::Operation(operation)
+            turts_audit::EconomyLogRecord::Operation(operation)
                 if operation.operation_id == seq7_audit.operation_id =>
             {
                 Some(operation)
@@ -2887,13 +2888,13 @@ fn e8_commands_are_authoritative_and_acked() {
     assert!(seq7_operation.events.is_empty());
     assert!(decoded.iter().any(|record| matches!(
         record,
-        economylog::EconomyLogRecord::CommandBoundary(audit)
+        turts_audit::EconomyLogRecord::CommandBoundary(audit)
             if audit.operation_id == seq7_audit.operation_id
                 && audit.input.slot.0 == wire_slot && audit.input.seq == 7
     )));
     assert!(decoded.iter().all(|record| !matches!(
         record,
-        economylog::EconomyLogRecord::CommandBoundary(audit)
+        turts_audit::EconomyLogRecord::CommandBoundary(audit)
             if audit.input.slot.0 == wire_slot && audit.input.seq == 8
     )));
     for (index, (fixture, reaches_domain)) in wire_cases.iter().enumerate() {
@@ -2905,7 +2906,7 @@ fn e8_commands_are_authoritative_and_acked() {
         let command = decoded
             .iter()
             .find_map(|record| match record {
-                economylog::EconomyLogRecord::CommandBoundary(command)
+                turts_audit::EconomyLogRecord::CommandBoundary(command)
                     if command.input.slot.0 == fixture.slot && command.input.seq == fixture.seq =>
                 {
                     Some(command)
@@ -2921,7 +2922,7 @@ fn e8_commands_are_authoritative_and_acked() {
         let operation = decoded
             .iter()
             .find_map(|record| match record {
-                economylog::EconomyLogRecord::Operation(operation)
+                turts_audit::EconomyLogRecord::Operation(operation)
                     if operation.operation_id == command.operation_id =>
                 {
                     Some(operation)
@@ -2976,7 +2977,7 @@ fn e8_commands_are_authoritative_and_acked() {
     assert!(
         final_records.iter().all(|record| !matches!(
             record,
-            economylog::EconomyLogRecord::Claim {
+            turts_audit::EconomyLogRecord::Claim {
                 player_id: 10_003,
                 ..
             }
@@ -3017,7 +3018,7 @@ fn e8_commands_are_authoritative_and_acked() {
     assert!(
         final_records.iter().all(|record| !matches!(
             record,
-            economylog::EconomyLogRecord::Claim {
+            turts_audit::EconomyLogRecord::Claim {
                 player_id: 10_004,
                 ..
             }
@@ -3186,7 +3187,7 @@ fn run_e8_public_variant_process() {
         let audit = records
             .iter()
             .find_map(|record| match record {
-                economylog::EconomyLogRecord::CommandBoundary(audit)
+                turts_audit::EconomyLogRecord::CommandBoundary(audit)
                     if audit.input.slot.0 == slot && audit.input.seq == frozen_command.seq =>
                 {
                     Some(audit)
@@ -3202,7 +3203,7 @@ fn run_e8_public_variant_process() {
         let operation = records
             .iter()
             .find_map(|record| match record {
-                economylog::EconomyLogRecord::Operation(operation)
+                turts_audit::EconomyLogRecord::Operation(operation)
                     if operation.operation_id == audit.operation_id =>
                 {
                     Some(operation)
@@ -3229,7 +3230,7 @@ fn run_e8_public_variant_process() {
     let produced = records
         .iter()
         .find_map(|record| match record {
-            economylog::EconomyLogRecord::CommandBoundary(command)
+            turts_audit::EconomyLogRecord::CommandBoundary(command)
                 if command.input.slot.0 == slot && command.input.seq == 7 =>
             {
                 command
@@ -3266,7 +3267,7 @@ fn run_e8_public_variant_process() {
     let canceled_state = records
         .iter()
         .find_map(|record| match record {
-            economylog::EconomyLogRecord::CommandBoundary(command)
+            turts_audit::EconomyLogRecord::CommandBoundary(command)
                 if command.input.slot.0 == slot && command.input.seq == 8 =>
             {
                 Some(&command.after)
@@ -3290,7 +3291,7 @@ fn run_e8_public_variant_process() {
         job.reservation = None;
     });
     assert!(
-        economylog::validate_records(&missing_reservation)
+        turts_audit::validate_records(&missing_reservation)
             .unwrap_err()
             .contains("Produce changed state outside the catalog-derived job"),
         "captured Produce without its empty reservation token is rejected"
@@ -3316,7 +3317,7 @@ fn run_e8_public_variant_process() {
         };
     });
     assert!(
-        economylog::validate_records(&mismatched_token)
+        turts_audit::validate_records(&mismatched_token)
             .unwrap_err()
             .contains("Produce changed state outside the catalog-derived job"),
         "captured claim with a token for another JobId is rejected"
@@ -3342,7 +3343,7 @@ fn run_e8_public_variant_process() {
         };
     });
     assert!(
-        economylog::validate_records(&leaked_claim)
+        turts_audit::validate_records(&leaked_claim)
             .unwrap_err()
             .contains("Cancel changed state outside requested job removal"),
         "captured Cancel that leaks the empty claim is rejected"
