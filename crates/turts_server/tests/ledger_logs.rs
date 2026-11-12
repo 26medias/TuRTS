@@ -517,9 +517,13 @@ fn ledger_view_keeps_every_field_of_real_tick_states() {
             for field in turts_sim::LEDGER_DROPPED_FIELDS {
                 audit.as_object_mut().unwrap().remove(field);
             }
-            assert_eq!(
-                ledger, audit,
-                "{name}: the ledger view of a Tick state differs from the audit state without the dropped fields"
+            let differing: Vec<&str> = turts_sim::LEDGER_KEPT_FIELDS
+                .into_iter()
+                .filter(|field| ledger.get(field) != audit.get(field))
+                .collect();
+            assert!(
+                differing.is_empty() && ledger == audit,
+                "{name}: the ledger view of a Tick state differs from the audit state without the dropped fields: {differing:?}"
             );
             for field in turts_sim::LEDGER_KEPT_FIELDS {
                 if ledger.get(field).is_some_and(|value| !empty_json(value)) {
