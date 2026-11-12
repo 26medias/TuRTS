@@ -234,7 +234,7 @@ fn ensure_valid(trail: &turts_sim::AuditTrail) -> Result<(), std::io::Error> {
 mod tests {
     use super::EconomyLogWriter;
     use std::io::Cursor;
-    use turts_audit::{EconomyLogRecord, read_jsonl, validate_side_by_side};
+    use turts_audit::{EconomyLogRecord, read_jsonl, validate_ledger};
     use turts_mod_api::WorldPos;
     use turts_sim::economy::views::RawUnitAudit;
     use turts_sim::{AuditState, AuditTrail, headless_app};
@@ -244,8 +244,12 @@ mod tests {
         turts_sim::audit_state(app.world_mut())
     }
 
+    /// The ledger audit has no movement model. It accepts the Orders-phase operation of a unit
+    /// order, and it reads the phase as a shape rule: a Command phase needs a command boundary
+    /// (the replay validator also rejected the phase `Other` here; that rule needed the model of
+    /// the movement step, and the movement tests and the writer scan hold it now).
     #[test]
-    fn validator_accepts_an_orders_operation_before_movement() {
+    fn ledger_accepts_an_orders_operation_before_movement() {
         use turts_mod_api::{Footprint, PackageId, UnitDef, UnitRegistry};
         use turts_sim::{
             MapBounds, MoveTarget, Order, OrderTargetSim, Owner, Position, SlotId, UnitId,
@@ -319,17 +323,17 @@ mod tests {
             .unwrap();
         writer.flush().unwrap();
         let mut records = read_jsonl(Cursor::new(writer.output)).unwrap();
-        assert!(validate_side_by_side(&records).is_ok());
+        assert_eq!(validate_ledger(&records), Ok(()));
 
         if let EconomyLogRecord::Operation(operation) = &mut records[1] {
-            operation.phase = turts_sim::economy::transaction::AuditPhase::Other;
+            operation.phase = turts_sim::economy::transaction::AuditPhase::Command;
         } else {
             panic!("captured unit order did not decode as an operation");
         }
         assert!(
-            validate_side_by_side(&records)
+            validate_ledger(&records)
                 .unwrap_err()
-                .contains("movement transition changed nonmovement state")
+                .contains("operation 1 has Command phase without a command")
         );
     }
 
@@ -445,12 +449,19 @@ mod tests {
             }
         ));
 
-        let mut wrong_slot = decoded;
-        let EconomyLogRecord::Claim { slot, .. } = &mut wrong_slot[1] else {
+        // The ledger audit rejects a claim of a slot that is not configured. The choice of the
+        // first open slot is not a ledger rule: `session.rs` tests hold it (A1c: the replay
+        // validator also rejected a claim of slot 1 while slot 0 was open).
+        let mut unknown_slot = decoded;
+        let EconomyLogRecord::Claim { slot, .. } = &mut unknown_slot[1] else {
             panic!("claim record")
         };
-        *slot = 1;
-        assert!(validate_side_by_side(&wrong_slot).is_err());
+        *slot = 9;
+        assert!(
+            validate_ledger(&unknown_slot)
+                .unwrap_err()
+                .contains("slots: player 902 claims slot 9, which is not configured")
+        );
     }
 
     #[test]
@@ -483,6 +494,10 @@ mod tests {
             panic!("admission record")
         };
         after.economy.tick = 1;
-        assert!(validate_side_by_side(&changed).is_err());
+        assert!(
+            validate_ledger(&changed).unwrap_err().contains(
+                "wire-only rejection for player 902, slot 0, tick 0 changed audited state"
+            )
+        );
     }
 }

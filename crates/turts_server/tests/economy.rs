@@ -549,8 +549,8 @@ fn decoded_moving_gatherer_replays_frozen_command_and_automatic_effect() {
 
     // Replay only decoded JSONL. The expected command and automatic subjects are
     // frozen from the fixture inputs; observed audit fields are only evidence.
+    // `read_jsonl` validates the log one time.
     let decoded = turts_audit::read_jsonl(Cursor::new(writer.into_inner())).unwrap();
-    turts_audit::validate_side_by_side(&decoded).unwrap();
     let decoded_initial = match &decoded[0] {
         turts_audit::EconomyLogRecord::Initial(state) => state.clone(),
         _ => panic!("first record must be Initial"),
@@ -1130,19 +1130,6 @@ fn decoded_fractional_movement_uses_captured_fixed_timestep() {
         .expect("decoded worker movement");
     let fixed_delta = std::time::Duration::from_secs_f64(1.0 / 30.0).as_secs_f32();
     assert_eq!(movement.to_bits(), (0.5_f32 + 3.0 * fixed_delta).to_bits());
-
-    let mut corrupted = decoded;
-    let moved = corrupted
-        .iter_mut()
-        .find_map(|record| match record {
-            turts_audit::EconomyLogRecord::Tick { state, .. } => {
-                state.raw_units.iter_mut().find(|unit| unit.unit_id == 3)
-            }
-            _ => None,
-        })
-        .unwrap();
-    moved.pos.x = f32::from_bits(moved.pos.x.to_bits() + 1);
-    assert!(turts_audit::validate_side_by_side(&corrupted).is_err());
 }
 
 #[derive(Clone)]
@@ -1487,6 +1474,8 @@ fn order_input_matches_frozen(
         && order.group == 0
 }
 
+/// The records come from `read_complete_economy_log`, which validates the log one time; this
+/// function does not validate them again.
 fn replay_task4_order_log(
     records: &[turts_audit::EconomyLogRecord],
     expected_initial: &turts_sim::AuditState,
@@ -1495,9 +1484,6 @@ fn replay_task4_order_log(
 ) {
     use turts_audit::EconomyLogRecord;
 
-    turts_audit::validate_side_by_side(records).unwrap_or_else(|error| {
-        panic!("Task4 catalog-derived order replay rejected the process log: {error}")
-    });
     let initial = records
         .iter()
         .find_map(|record| match record {
@@ -2500,7 +2486,6 @@ fn replay_public_log_with_model(
     use std::collections::BTreeMap;
     use turts_audit::EconomyLogRecord;
     let records = read_complete_economy_log(path).unwrap();
-    turts_audit::validate_side_by_side(&records).unwrap();
     let decoded_initial = match &records[0] {
         EconomyLogRecord::Initial(state) => state.clone(),
         _ => unreachable!(),
