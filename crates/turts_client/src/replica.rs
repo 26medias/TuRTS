@@ -625,7 +625,20 @@ impl Replica {
         let Some(record) = self.job_progress.get(&(producer, job)) else {
             return 0;
         };
-        turts_rules::progress::value_at(
+        let Some(duration_ticks) = self
+            .economy
+            .queues
+            .iter()
+            .filter(|queue| queue.producer.0 == producer)
+            .flat_map(|queue| queue.jobs.iter())
+            .find(|held| held.id.0 == job)
+            .map(|held| held.duration_ticks)
+        else {
+            return 0;
+        };
+        // `done`, `total` and `per_tick` count raw units of 1/Q tick (`RateRecord`): the ticks are
+        // `base_ticks_done(units, duration_ticks, total)`. At Q = 1 the units are the ticks.
+        let units = turts_rules::progress::value_at(
             &turts_rules::progress::RateRecord {
                 done: record.done,
                 total: record.total,
@@ -634,7 +647,8 @@ impl Replica {
                 stalled: false,
             },
             self.last_applied_tick.unwrap_or(0),
-        )
+        );
+        turts_rules::progress::base_ticks_done(units, duration_ticks, record.total)
     }
 
     /// `None` before the first snapshot.

@@ -841,3 +841,70 @@ fn job_progress_derives_the_elapsed_ticks_and_follows_the_queue() {
     assert_eq!(replica.apply_delta(&gone, now), DeltaOutcome::Applied);
     assert!(replica.job_progress.is_empty());
 }
+
+/// Q = 2 values built by hand (no sim change): the record counts raw units of 1/Q tick, and the
+/// client derives ticks with `base_ticks_done(units, duration_ticks, total)`. A job of 100 ticks has
+/// `total` 200; at rate 1/2 a tick adds 1 unit, at full rate 2 units.
+#[test]
+fn job_progress_in_raw_units_of_one_over_q_derives_base_ticks() {
+    let now = Instant::now();
+    let setup = |per_tick: u64| {
+        let mut replica = replica(3);
+        let mut initial = snapshot(10);
+        initial.economy.queues.push(QueueState {
+            producer: UnitId(1),
+            jobs: vec![turts_net_protocol::JobState {
+                id: JobId(44),
+                recipe: "base:train_rifleman".to_string(),
+                stage: JobStage::Running,
+                duration_ticks: 100,
+                charged: vec![Cost {
+                    resource: "base:credits".to_string(),
+                    amount: 100,
+                    source: CostSource::SlotBalance,
+                }],
+                reserved: vec![],
+            }],
+            enabled: true,
+        });
+        initial.records.jobs = vec![turts_net_protocol::JobProgress {
+            producer: UnitId(1),
+            job: JobId(44),
+            progress: turts_net_protocol::RateRecord {
+                done: 0,
+                total: 200,
+                per_tick,
+                at_tick: 10,
+                state: turts_net_protocol::RecordState::Running,
+                charged: vec![],
+                held: false,
+                held_since_tick: 0,
+            },
+        }];
+        assert_eq!(
+            replica.apply_snapshot(&initial, now),
+            SnapshotOutcome::Applied { replayed: 0 }
+        );
+        replica
+    };
+    let run = |replica: &mut Replica, from: u32, to: u32| {
+        for tick in from..=to {
+            assert_eq!(
+                replica.apply_delta(&delta(tick, tick - 1), now),
+                DeltaOutcome::Applied
+            );
+        }
+    };
+    // Rate 1/2 at Q = 2: 1 unit a tick, so 50 ticks later 50 units = 25 ticks of base time.
+    let mut half = setup(1);
+    assert_eq!(half.job_elapsed_ticks(1, 44), 0);
+    run(&mut half, 11, 60);
+    assert_eq!(half.job_elapsed_ticks(1, 44), 25);
+    // Full rate at Q = 2: 2 units a tick, so 50 ticks later 100 units = 50 ticks.
+    let mut full = setup(2);
+    run(&mut full, 11, 60);
+    assert_eq!(full.job_elapsed_ticks(1, 44), 50);
+    // The record never runs past `total`: 200 units are 100 ticks.
+    run(&mut full, 61, 200);
+    assert_eq!(full.job_elapsed_ticks(1, 44), 100);
+}
