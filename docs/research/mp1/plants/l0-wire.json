@@ -383,8 +383,8 @@
       {
         "file": "crates/turts_client/src/replica.rs",
         "edit": {
-          "old": "            return SnapshotOutcome::IgnoredStale;\n        }\n\n        let Some(mut candidate) = self.stage_snapshot(snapshot) else {",
-          "new": "            return SnapshotOutcome::IgnoredStale;\n        }\n        if self.resync.is_none() {\n            return SnapshotOutcome::IgnoredStale;\n        }\n\n        let Some(mut candidate) = self.stage_snapshot(snapshot) else {"
+          "old": "            return SnapshotOutcome::IgnoredStale;\n        }\n\n        let Some((mut candidate, mut staged_store)) = self.stage_snapshot(snapshot) else {",
+          "new": "            return SnapshotOutcome::IgnoredStale;\n        }\n        if self.resync.is_none() {\n            return SnapshotOutcome::IgnoredStale;\n        }\n\n        let Some((mut candidate, mut staged_store)) = self.stage_snapshot(snapshot) else {"
         }
       }
     ],
@@ -404,7 +404,7 @@
     "headed": false,
     "expected_red": "an unrequested newer Snapshot applies",
     "exit": 101,
-    "commit": "32c148f89dde57ade6a0acba602077cc4103e2a0",
+    "commit": "b1c22351d7031d0ed8e44f4d98cfd62e1e880873",
     "expected_selected": "point_14_an_unrequested_snapshot_applies_and_a_stale_one_is_ignored"
   },
   {
@@ -1166,10 +1166,10 @@
     "plant": "(b) the store keeps a job record that the queue no longer holds",
     "files": [
       {
-        "file": "crates/turts_client/src/replica.rs",
+        "file": "crates/turts_client/src/replica_store.rs",
         "edit": {
-          "old": "        !removed.contains(producer)\n            && economy.queues.iter().any(|queue| {",
-          "new": "        !removed.contains(producer)\n            || economy.queues.iter().any(|queue| {"
+          "old": "        for (producer, held) in &step.queue_jobs {\n            self.drop_jobs_where(*producer, |job| !held.contains(&job));\n        }\n",
+          "new": ""
         }
       }
     ],
@@ -1189,7 +1189,7 @@
     "headed": false,
     "expected_red": "assertion failed",
     "exit": 101,
-    "commit": "32c148f89dde57ade6a0acba602077cc4103e2a0",
+    "commit": "b1c22351d7031d0ed8e44f4d98cfd62e1e880873",
     "expected_selected": "job_progress_derives_the_elapsed_ticks_and_follows_the_queue"
   },
   {
@@ -1197,7 +1197,7 @@
     "plant": "(c) a job record for a producer that the same delta removes is accepted",
     "files": [
       {
-        "file": "crates/turts_client/src/replica.rs",
+        "file": "crates/turts_client/src/replica_store.rs",
         "edit": {
           "old": "        if removed.contains(&key.0) || !seen.insert(key) {\n",
           "new": "        if !seen.insert(key) {\n"
@@ -1220,7 +1220,7 @@
     "headed": false,
     "expected_red": "assertion `left == right` failed",
     "exit": 101,
-    "commit": "32c148f89dde57ade6a0acba602077cc4103e2a0",
+    "commit": "b1c22351d7031d0ed8e44f4d98cfd62e1e880873",
     "expected_selected": "job_progress_derives_the_elapsed_ticks_and_follows_the_queue"
   },
   {
@@ -1230,8 +1230,8 @@
       {
         "file": "crates/turts_client/src/replica.rs",
         "edit": {
-          "old": "            self.last_applied_tick.unwrap_or(0),\n        );\n",
-          "new": "            record.at_tick,\n        );\n"
+          "old": "        let units = replica_store::record_value(record, self.applied_tick());\n",
+          "new": "        let units = replica_store::record_value(record, record.at_tick);\n"
         }
       }
     ],
@@ -1251,7 +1251,7 @@
     "headed": false,
     "expected_red": "assertion `left == right` failed",
     "exit": 101,
-    "commit": "32c148f89dde57ade6a0acba602077cc4103e2a0",
+    "commit": "b1c22351d7031d0ed8e44f4d98cfd62e1e880873",
     "expected_selected": "job_progress_derives_the_elapsed_ticks_and_follows_the_queue"
   },
   {
