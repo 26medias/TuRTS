@@ -2038,6 +2038,29 @@ fn owner_report_projection_from_audit(
         snapshot.healths.is_empty(),
         "M2 owner snapshot has no health rows"
     );
+    // The client debug state keeps `elapsed_ticks` of each job as a value derived from the job
+    // progress record (protocol 5 removed it from `JobState`); the audit holds the sim value.
+    let mut economy = serde_json::to_value(&snapshot.economy).expect("economy JSON");
+    if let Some(queues) = economy["queues"].as_array_mut() {
+        for queue in queues {
+            let producer = queue["producer"].as_u64().expect("producer");
+            if let Some(jobs) = queue["jobs"].as_array_mut() {
+                for job in jobs {
+                    let id = job["id"].as_u64().expect("job id");
+                    let elapsed = state
+                        .economy
+                        .economy
+                        .queues
+                        .iter()
+                        .filter(|queue| u64::from(queue.producer) == producer)
+                        .flat_map(|queue| queue.jobs.iter())
+                        .find(|job| job.id == id)
+                        .map_or(0, |job| job.elapsed_ticks);
+                    job["elapsed_ticks"] = serde_json::json!(elapsed);
+                }
+            }
+        }
+    }
     serde_json::json!({
         "tick": snapshot.tick,
         "units": snapshot.units.iter().map(|unit| serde_json::json!({
@@ -2050,7 +2073,7 @@ fn owner_report_projection_from_audit(
             "max_health": serde_json::Value::Null,
         })).collect::<Vec<_>>(),
         "nodes": snapshot.nodes,
-        "economy": snapshot.economy,
+        "economy": economy,
         // M2 has no M3 factory/combat state; retain explicit empty wire families so later
         // nonempty additions still diverge from this independently audit-derived projection.
         "belts": snapshot.belts,
