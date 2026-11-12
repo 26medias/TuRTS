@@ -152,17 +152,14 @@ pub(crate) const UNBUILT_FEATURES: &[UnbuiltLine] = &[
     line("Predicate::Placing", "UI-PLACE"),
     // UI-LABEL: `world.unit_labels` (H24, errata E10, E22).
     line("world.unit_labels", "UI-LABEL"),
-    // UI-HUD: `role` (H19), `hotkey` (O8), `card` (O10), `Value::Supply`, `ConstructionQueue`,
-    // `Sites`, `SelectionTypes`, `Notices`, `Predicate::SupplyShort`, `ItemHas`, the item fields
-    // `Role`, `State`, `Paid`, `Refund`, `Badge`.
+    // UI-HUD: `role` (H19), `hotkey` (O8), `card` (O10), `Value::Supply`, the list sources
+    // `ConstructionQueue`, `Sites`, `SelectionTypes`, `Notices` (in `Source` only: orchestrator
+    // ruling M3), `Predicate::SupplyShort`, `ItemHas`, the item fields `Role`, `State`, `Paid`,
+    // `Refund`, `Badge`.
     line("role", "UI-HUD"),
     line("hotkey", "UI-HUD"),
     line("card", "UI-HUD"),
     line("Value::Supply", "UI-HUD"),
-    line("Value::ConstructionQueue", "UI-HUD"),
-    line("Value::Sites", "UI-HUD"),
-    line("Value::SelectionTypes", "UI-HUD"),
-    line("Value::Notices", "UI-HUD"),
     line("Source::ConstructionQueue", "UI-HUD"),
     line("Source::Sites", "UI-HUD"),
     line("Source::SelectionTypes", "UI-HUD"),
@@ -339,7 +336,7 @@ mod tests {
             ("UI2-CONN", 3),
             ("UI-PLACE", 6),
             ("UI-LABEL", 1),
-            ("UI-HUD", 19),
+            ("UI-HUD", 15),
             ("UI-RESULT", 8),
             ("UI2-RESULT", 1),
             ("UI2-HUD", 12),
@@ -353,7 +350,7 @@ mod tests {
             *got.entry(line.owner).or_default() += 1;
         }
         assert_eq!(got, want);
-        assert_eq!(UNBUILT_FEATURES.len(), 121);
+        assert_eq!(UNBUILT_FEATURES.len(), 117);
     }
 
     /// Each row of 0.2.4 either has an `UNBUILT` line, or is in this list of the rows that the

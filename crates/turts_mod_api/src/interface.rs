@@ -207,10 +207,6 @@ pub enum Value {
     Format(String, Vec<Value>),
     /// API 0.2.4, row H7: the supply of a slot, provided or consumed.
     Supply(ContentRef, SupplySide),
-    ConstructionQueue,
-    Sites,
-    Notices,
-    SelectionTypes,
     Connection,
     Outcome,
     OutcomeReason,
@@ -299,7 +295,8 @@ pub enum Source {
     Alerts,
     Bindings,
     Guide,
-    /// API 0.2.4, row H7: the list sources.
+    /// API 0.2.4, row H7: the list sources. They are in `Source` only: a list name is not a
+    /// `Value` (orchestrator ruling M3 on the review of `L0-API1`, option (a)).
     ConstructionQueue,
     Sites,
     Notices,

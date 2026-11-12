@@ -405,10 +405,6 @@ pub(crate) const VERSION_TABLE: &[VersionTableRow] = &[
     variant_0_2_4("AlertTrigger::GathererIdle"),
     // H7: the new values and sources.
     variant_0_2_4("Value::Supply"),
-    variant_0_2_4("Value::ConstructionQueue"),
-    variant_0_2_4("Value::Sites"),
-    variant_0_2_4("Value::Notices"),
-    variant_0_2_4("Value::SelectionTypes"),
     variant_0_2_4("Value::Connection"),
     variant_0_2_4("Value::Outcome"),
     variant_0_2_4("Value::OutcomeReason"),
@@ -773,7 +769,7 @@ mod tests {
                 assert_eq!(row.since_api, "0.2.4");
             }
         }
-        assert_eq!(tested, 59, "the number of VAR and COMBO rows of 0.2.4");
+        assert_eq!(tested, 55, "the number of VAR and COMBO rows of 0.2.4");
     }
 
     /// With no parsed value yet, a parsed row is skipped and a RAW row still fires. With the

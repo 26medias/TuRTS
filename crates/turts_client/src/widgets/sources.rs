@@ -168,10 +168,6 @@ pub fn read_value_for_item(
         // API 0.2.4 (row H7): the values of `UI-HUD`, `UI-RESULT`, `UI-HINT`, `UI2-CONN` and
         // `UI2-RESULT` (plan 5.3). Until then a widget that binds one shows nothing (null).
         Value::Supply(..)
-        | Value::ConstructionQueue
-        | Value::Sites
-        | Value::Notices
-        | Value::SelectionTypes
         | Value::Connection
         | Value::Outcome
         | Value::OutcomeReason

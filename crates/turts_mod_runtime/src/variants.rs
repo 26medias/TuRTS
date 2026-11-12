@@ -347,10 +347,6 @@ impl InterfaceWalk<'_> {
     fn value(&mut self, value: &Value, path: &str) {
         let name = match value {
             Value::Supply(..) => Some("Value::Supply"),
-            Value::ConstructionQueue => Some("Value::ConstructionQueue"),
-            Value::Sites => Some("Value::Sites"),
-            Value::Notices => Some("Value::Notices"),
-            Value::SelectionTypes => Some("Value::SelectionTypes"),
             Value::Connection => Some("Value::Connection"),
             Value::Outcome => Some("Value::Outcome"),
             Value::OutcomeReason => Some("Value::OutcomeReason"),
@@ -803,14 +799,14 @@ mod tests {
             ),
             (
                 widget(
-                    r#"Button(icon: Some(Bind(Sites)), label: None, action: Input("menu"), hotkey_label: false)"#,
+                    r#"Button(icon: Some(Bind(Hint)), label: None, action: Input("menu"), hotkey_label: false)"#,
                     "",
                 ),
                 "root[w].widget.icon",
             ),
             (
                 widget(
-                    r#"Button(icon: None, label: Some(Bind(Notices)), action: Input("menu"), hotkey_label: false)"#,
+                    r#"Button(icon: None, label: Some(Bind(MatchStats(UnitsLost))), action: Input("menu"), hotkey_label: false)"#,
                     "",
                 ),
                 "root[w].widget.label",
@@ -825,18 +821,18 @@ mod tests {
             "Value::Supply",
             "Value::Hint",
             "Value::MatchClock",
-            "Value::Sites",
-            "Value::Notices",
+            "Value::Hint",
+            "Value::MatchStats",
             "Value::Connection",
         ];
         for ((root, path), name) in places.iter().zip(names) {
             one(&interface(root, ""), name, "interface/hud.ron", path);
         }
         // A tooltip on the widget.
-        let tip = r#"(id: "w", at: None, size: (w: Px(1.0), h: Px(1.0)), tooltip: Some(SelectionTypes), widget: Box(fill: None, border: None, children: []))"#;
+        let tip = r#"(id: "w", at: None, size: (w: Px(1.0), h: Px(1.0)), tooltip: Some(Outcome), widget: Box(fill: None, border: None, children: []))"#;
         one(
             &interface(tip, ""),
-            "Value::SelectionTypes",
+            "Value::Outcome",
             "interface/hud.ron",
             "root[w].tooltip",
         );
