@@ -1,0 +1,34 @@
+id	disposition	evidence checked	verdict
+CA13	done:CAM1	tests/browser/cam1-oracle.js:1-79 asserts pan, edge, zoom clamp (52-53), centre; no look-at bound assert. Item = "camera stays inside the playable area" (docs/research/review-2026-10/inventory-engine.md:166)	WRONG: touches, does not prove
+PE04	done:SEL2	sel-oracle.js: no timing or hitch assert found (grep ms|hitch|frame_time)	WRONG: touches only
+AN06	done:VIS1	vis-oracle.js: no marker assert; markers are in ORD7 (feedback-oracle, expected_marker_kind)	PARTIAL: cite ORD7 too
+PE07	done:ORD7	feedback-oracle.js	NOT TRACED
+PF05	done:ORD7	feedback-oracle.js	NOT TRACED
+CA16	done:SH1	-	NOT TRACED
+AU06	done:AUD1	feedback-oracle.js:119,159 categories effects, voice	ok
+EC04	done:ORD3	orders-oracle.js:276-277 remaining == 0	ok
+PC19	done:SEL4	shell-oracle.js:316 judgeSel4DeathPrune	ok
+UI08	done:MM1	rows/MM1.json ping_colour	ok (oracle not read)
+PR07	done:forge_cases	forge_cases.rs:1271 PrerequisitesMissing in c17	ok
+IN04	done:km3	km3.rs:104 two_clicks_within_400ms_and_4px_double	ok
+EC03	done:economy_gather	economy_gather.rs:471 nearest_receiver_wins_before_id_tie_break	ok
+EC05	done:economy_gather	economy_gather.rs:656 depleted_original_reselects...	ok
+GM10	done:mc_group	mc_group.rs:491 gmu_post_target_ends_on_a_ring	ok
+MP09	done:mc_group	mc_group.rs:321 gmu_clamps_finite_outside_target	ok
+MP07	done:acceptance	acceptance.rs:246 t2a_package_parity exists; yardstick dep MP01 = later:M4	WRONG by design rule line 451
+CB05	later:MP2	TGT2 (design:387) is retaliation; note "Not in X2; see the weak-cover list" vs design:436 "X2 takes this"; no weak-cover list exists (grep)	WRONG: in TGT2
+OR26	later:MP2	note "Needs CB05 (later:MP2)": falls with CB05	RECHECK
+TM01	later:M5	dep MF02 later:M9 -> rule-consistent; note cites S:727 "Needs teams (MP1)" as "M5 needs teams"	NOTE WRONG
+MF07	in LOB1	LOB1 (design:364) does not check the countdown that the note names	touches only
+MD12	later:M9	design 7.6:267 "fields come from the mod settings schema (S:314)"	CONFLICT
+MF12	in RES1	design:365	ok
+MF14	in MAT1	design:363	ok
+MF10	later:M5	dep TM01	ok
+MF02	later:M9	dep MD12	ok
+CB04	later:MP2	MP1 rule stated	ok
+CO02	later:M4	dep CO03	ok
+IN09	later:M9	dep UI17	ok
+GM07	later:M4b	roadmap M4b push	ok
+OR20	later:MB	dep UN07	ok
+UN11	later:MB	S:798-800	ok
+AN02	later:MB	dep CB10	ok

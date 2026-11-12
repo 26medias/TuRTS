@@ -1,0 +1,30 @@
+[B_cc_health] flags=[cc_health] exit=2
+frontier/units/command_center.ron: removal: a unit with a queue cannot be removed
+[B_build_prod] flags=[build_prod] exit=2
+frontier/production/build_guard_turret.ron: output_unit: output must be mobile and cannot be a producer
+[B_lanes] flags=[lanes] exit=2
+frontier/units/command_center.ron: unknown field `queues` at line 1 column 287 (allowed: recipes, queue_capacity, spawn_offsets)
+[B_con] flags=[con] exit=2
+frontier/units/command_center.ron: unknown field `constructor` at line 1 column 516 (allowed: id, name, footprint, movement, inventory, gatherer, drop_off, producer, output_inventory, extractor, conveyor, inserter, machine, research, health, weapon, removal)
+[B_dmg] flags=[dmg] exit=2
+frontier/units/rifleman.ron: unknown field `damage_type` at line 1 column 283 (allowed: range, cooldown_ms, damage, ammo, targets)
+[B_combat] flags=[combat] exit=2
+manifest.ron: unknown field `combat` at line 18 column 9 (allowed: units, maps, visuals, resources, nodes, production, recipes, technologies, orders, interface, input, assets)
+[B_pwr] flags=[pwr] exit=2
+frontier/resources/power.ron: unknown variant `Capacity` at line 1 column 56 (allowed: Balance, Item)
+[B_place] flags=[place] exit=2
+frontier/units/command_center.ron: unknown field `placement` at line 1 column 516 (allowed: id, name, footprint, movement, inventory, gatherer, drop_off, producer, output_inventory, extractor, conveyor, inserter, machine, research, health, weapon, removal)
+[B_rep] flags=[rep] exit=2
+frontier/units/engineer.ron: unknown field `repairer` at line 1 column 243 (allowed: id, name, footprint, movement, inventory, gatherer, drop_off, producer, output_inventory, extractor, conveyor, inserter, machine, research, health, weapon, removal)
+[B_pay] flags=[pay] exit=2
+frontier/production/train_rifleman.ron: unknown variant `ChargeOverTime` at line 1 column 185 (allowed: ChargeOnQueue, ReserveThenCharge)
+[B_neworders] flags=[neworders] exit=2
+frontier/orders/order_construct.ron: unknown variant `Construct` at line 1 column 61 (allowed: Move, Stop, Hold, Attack, Gather, Produce, CancelProduction, Remove, SetEnabled)
+[B_hud] flags=[hud] exit=2
+frontier/interface/hud.ron: unknown variant `Supply` at line 9 column 162 (allowed: Balance, Balances, SelectionPrimary, SelectionUnits, CommandCard, BuildMenu, ProductionQueue, ControlGroups, Alerts, LastNotice, Guide, GuideOpen, Bindings, Item, Literal, Format)
+[B_match] flags=[match] exit=2
+frontier/maps/twin_fields.ron: unknown field `match` at line 34 column 5 (allowed: id, size, placements, nodes, slot_economy, belts)
+[B_model] flags=[model] exit=2
+frontier/assets/assets.ron: unknown field `models` at line 1 column 101 (allowed: images, fonts, sounds, cursors)
+[B_api24] flags=[api24] exit=2
+frontier/manifest.ron: engine_api: engine api `^0.2.4` does not accept engine `0.2.3`

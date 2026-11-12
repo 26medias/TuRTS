@@ -1,0 +1,107 @@
+=== S1 hint follower, hauler ordered at 50 s
+    34.0s ps done, credits 901, power 100/40
+    46.0s rifle done, credits 777, power 100/40
+    52.0s rifle done, credits 526, power 100/40
+    58.0s rifle done, credits 276, power 100/40
+    65.0s tur done, credits 101, power 100/70
+    81.1s +200 delivery, credits 200
+   117.2s +200 delivery, credits 202
+   153.3s +200 delivery, credits 200
+   158.4s tank done, credits 2, power 100/70
+   189.4s +200 delivery, credits 201
+   195.3s rifle done, credits 102, power 100/70
+   201.3s rifle done, credits 2, power 100/70
+   225.5s +200 delivery, credits 202
+   261.6s +200 delivery, credits 200
+   297.7s +200 delivery, credits 202
+  at 300s: credits 113, harvested 1400, low power for 34s
+  "on hold" spans (start-end s): [(73, 81), (86, 117), (122, 153), (158, 189), (201, 225), (231, 262), (267, 298)]
+  longest hold 31 s; time with both queues empty 21 s
+=== S2 same choices, hauler gathers from 0 s
+    31.1s +200 delivery, credits 1137
+    34.0s ps done, credits 1101, power 100/40
+    46.0s rifle done, credits 977, power 100/40
+    52.0s rifle done, credits 726, power 100/40
+    58.0s rifle done, credits 476, power 100/40
+    65.0s tur done, credits 301, power 100/70
+    67.2s +200 delivery, credits 501
+   103.3s +200 delivery, credits 200
+   108.4s tank done, credits 2, power 100/70
+   139.4s +200 delivery, credits 201
+   145.3s rifle done, credits 102, power 100/70
+   151.3s rifle done, credits 2, power 100/70
+   175.5s +200 delivery, credits 202
+   211.6s +200 delivery, credits 200
+   247.7s +200 delivery, credits 202
+   283.8s +200 delivery, credits 200
+   286.3s tank done, credits 103, power 100/70
+  at 300s: credits 1, harvested 1600, low power for 34s
+  "on hold" spans (start-end s): [(83, 103), (108, 139), (151, 175), (181, 212), (217, 248), (253, 284), (290, 300)]
+  longest hold 31 s; time with both queues empty 21 s
+=== S3 hauler never ordered (no hint names it)
+    34.0s ps done, credits 901, power 100/40
+    46.0s rifle done, credits 777, power 100/40
+    52.0s rifle done, credits 526, power 100/40
+    58.0s rifle done, credits 276, power 100/40
+    65.0s tur done, credits 101, power 100/70
+  at 300s: credits 0, harvested 0, low power for 34s
+  "on hold" spans (start-end s): [(73, 300)]
+  longest hold 227 s; time with both queues empty 21 s
+=== S4 power + second hauler, hauler from 20 s
+    34.0s ps done, credits 464, power 100/40
+    43.0s haul done, credits 102, power 100/40
+    49.0s rifle done, credits 2, power 100/40
+    51.1s +200 delivery, credits 201
+    57.0s rifle done, credits 102, power 100/40
+    79.0s +200 delivery, credits 200
+    87.2s +200 delivery, credits 200
+    95.1s tur done, credits 2, power 100/70
+   115.1s +200 delivery, credits 202
+   123.3s +200 delivery, credits 200
+   151.2s +200 delivery, credits 202
+   159.4s +200 delivery, credits 200
+   161.9s tank done, credits 103, power 100/70
+   187.3s +200 delivery, credits 202
+   195.5s +200 delivery, credits 200
+   223.4s +200 delivery, credits 202
+   228.5s tank done, credits 4, power 100/70
+   231.6s +200 delivery, credits 201
+   259.5s +200 delivery, credits 202
+   267.7s +200 delivery, credits 200
+   295.6s +200 delivery, credits 202
+   298.1s tank done, credits 105, power 100/70
+  at 300s: credits 105, harvested 2800, low power for 34s
+  "on hold" spans (start-end s): [(49, 51), (64, 79), (100, 115), (120, 123), (128, 151), (156, 159), (164, 187), (192, 195), (201, 223), (229, 232), (237, 259), (265, 268), (273, 296)]
+  longest hold 23 s; time with both queues empty 20 s
+=== S5 tank rush
+    27.0s ps done, credits 456, power 100/40
+    33.5s tank done, credits 202, power 100/40
+    36.1s +200 delivery, credits 301
+    72.2s +200 delivery, credits 202
+   108.3s +200 delivery, credits 200
+   110.8s tank done, credits 103, power 100/40
+   144.4s +200 delivery, credits 202
+   180.5s +200 delivery, credits 200
+   216.6s +200 delivery, credits 202
+   221.7s tank done, credits 4, power 100/40
+   252.7s +200 delivery, credits 204
+   288.8s +200 delivery, credits 404
+  at 300s: credits 404, harvested 1600, low power for 27s
+  "on hold" spans (start-end s): [(44, 72), (77, 108), (113, 144), (150, 180), (186, 217)]
+  longest hold 31 s; time with both queues empty 81 s
+=== S6 three launchers
+    22.0s launch done, credits 714, power 0/40
+    27.0s ps done, credits 584, power 100/40
+    33.5s launch done, credits 403, power 100/40
+    36.1s +200 delivery, credits 531
+    42.5s launch done, credits 354, power 100/40
+    72.2s +200 delivery, credits 554
+   108.3s +200 delivery, credits 754
+   144.4s +200 delivery, credits 954
+   180.5s +200 delivery, credits 1154
+   216.6s +200 delivery, credits 1354
+   252.7s +200 delivery, credits 1554
+   288.8s +200 delivery, credits 1754
+  at 300s: credits 1754, harvested 1600, low power for 27s
+  "on hold" spans (start-end s): []
+  longest hold 0 s; time with both queues empty 261 s
