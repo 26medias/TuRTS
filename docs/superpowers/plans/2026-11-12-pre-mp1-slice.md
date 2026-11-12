@@ -59,6 +59,49 @@ gate is passed for the tasks up to and including A2a. A2b1 gets a short re-check
   Q1b adds `movement/probe.rs`. The use-cycles frame/plain, frame/search and frame/pool_index come from
   `MovementFrameUnit` and `MovementFrameOutput` in `frame.rs`; A4 can move those types to `mod.rs` (optional).
 
+**From the Q1b review (2026-11-12, simulation-core-engineer, two rounds; Q1b merged, 0 High).**
+
+- The plan text of Q1b Step 5 is void: the stream cannot see `separated`. The red instrument for the probe flags is
+  `crates/turts_sim/tests/probe_flags.rs`. The plan count "13/13 plants" is void: the classifier self-test has 74 plants.
+- `was_projected` is `Some(value)` in all three loops and `null` only for a unit that did not reach a projection loop
+  (this replaces "null for a pool unit"). `gather_stage` is a trace field (format /4).
+- Hashes to log before A2c (R6): `tests/m3/refreeze_allowed.json` a431dbd826cbbd3e130b9a8820911711c41fa4a8d7efa82dca90d49214165bc7;
+  the emitter `crates/turts_pack/tests/m2_trace.rs` e5152ece49414eaf46800e1c0d29f7144ef38c51531336bdb9b84a779988f924;
+  `crates/turts_sim/src/movement/probe.rs` aaa45aaad4d8deea4526311fba1d01c12cd660130345e6f8219356322c2a4cae.
+- After D0p merges, and before A2a starts: emit the base trace again and log its sha256. The depletion repair changes
+  `gather.rs`, and `gather_stage` may move at node depletion with the stream sha unchanged (NOT TRACED).
+- What the Q2 approval can rest on: single-unit moves, gather timing and the order of economy operations, bit for bit
+  (three packages byte-equal; acme differs only as listed, with equal positions). What it cannot rest on: crowds. On
+  the stream no unit separates, is projected, claims a slot or moves in a group. Those behaviours are held by the A2a
+  kernel reference, `probe_flags`, `group_movement`, `gmu_same_point`, `mc_group` and T7. The Q2 request to the CEO
+  gives both parts.
+- `scripts/qa/probe_neutral.sh` (CI step) holds the sim equal with the probe feature off and on; `scripts/boundary.sh`
+  has a no-probes row for the server and client binaries. A task that adds a gated probe line runs both.
+- Low, open: `per_unit` against `envelope` in `move_to_route` comes from the command shape; a gather carry error below
+  5 is invisible on the stream content.
+
+**From the re-check of MP1 plan revision 2 (2026-11-12, technical-director H-A and M-A; MP1 plan revision 3,
+rulings R-W and R-I).** Tasks A3, A2b1, A2b2 and A2c must do these:
+
+- **A3 builds stacked on A4** (TD option P-b). A3 branches from the head of `pre-mp1/a4-frame` when the A4 build ends,
+  before A4 merges (G1 is merged). This replaces "A4, G1" as plain inputs (section 3 row A3) and the Task A3 line "It rebases on
+  A2c": A3 takes A4 and A2c into its branch with merge commits, not with a rebase. A3 still merges only after Q2 and
+  at least 1 run after A4. If A4 must rebase after A3 branched (the R3 case: A2c edits a `movement/` file), A4 merges
+  `pre-mp1/integration` in place of the rebase, and A3 merges the new A4 head.
+- **A3 merges into `pre-mp1/integration` with a merge commit, not a rebase**, so the A3 commits keep their ids.
+- **Two MP1 tasks merge the A3 branch.** MP1 tasks `L-TGT` and `L-OBS` take A3 as a cross stack: each branches
+  from `mp1/integration` and merges `pre-mp1/a3-grids` into its own branch at the end of the A3 build. So a rebase
+  or a history rewrite of `pre-mp1/a3-grids` after the A3 build ends breaks those two lanes. A review repair of A3
+  goes on top as a new commit; the A3 builder tells Root, and Root tells the owners of `L-TGT` and `L-OBS`.
+- **The order writer rule (for A2b1, A2b2, A2c and A3).** MP1 adds one writer of `UnitOrders`,
+  `set_unit_orders` (MP1 plan, task `L0-WIRE`), and a check that is red on any other production write: a syn scan
+  (`crates/turts_checks/tests/order_writers.rs`) of `get_mut::<UnitOrders>()`, `remove::<UnitOrders>()`, `insert` of
+  a `UnitOrders` value, a field assignment, and a helper that takes `&mut UnitOrders` or `&mut Order`; and a
+  `test-probes` system in `SimSet::Collect` that compares `Changed<UnitOrders>` and `RemovedComponents<UnitOrders>`
+  with the change list. The slice does not have this code, so no slice gate changes. A slice task that adds or moves
+  a write of `UnitOrders` names each such line (`path:line`) in its report. At the forward merge, the MP1 owner
+  (`network-engineer`) routes it through `set_unit_orders` (about 1 run for each of A2b1, A2b2 and A2c).
+
 ## 0. Line numbers
 
 - All `path:line` in this plan are at `431c3ad` (TuRTS-mp1), or at the commit that the line names.

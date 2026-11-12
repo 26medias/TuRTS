@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""MP1 plan check (producer; revision 2 after gate 2, 2026-11-12). Python 3 standard library only.
+"""MP1 plan check (producer; revision 3 after the re-check of plan revision 2, 2026-11-12). Python 3 standard library only.
 
 It reads the task table of the MP1 plan and the MP1 design. It prints the graph
 numbers (schedule, critical path, waves, lanes, headed runs, tiers, conflicts) and
@@ -15,7 +15,18 @@ it checks:
   - each (task, slice task) pair of block mp1-tree is a path through Inputs;
   - each row part has at least one plant entry (block mp1-plants); the owner
     descends from each plant task (Inputs or Merge after); a pixel plant ("px")
-    needs a Headed count above 0 in its task.
+    needs a Headed count above 0 in its task;
+  - (revision 3, qa N2, rigour L4) a row part whose design "Runs" cell names
+    "pixels" has at least one plant entry marked lane+px; each plant cell holds a
+    design plant label of the row: a label "(x)" of the design "Red build" cell,
+    or, for a row whose Red build cell has no label, three words in sequence of
+    that cell; the task text of each plant task names the row with the word
+    "plant" near it, and the first label of the cell after the row name;
+  - (revision 3) the pairs of REQUIRED_TREE are paths through Inputs and are
+    listed in block mp1-tree; each cross stack (an MP1 task with a stacked slice
+    input) has its row in block mp1-tree;
+  - (revision 3, ruling R-T) every MP1 task with a Headed count above 0 descends
+    from Q-LOCK through Inputs.
 
 Schedule model (gate 2, rigour M1 and TD H2):
   - a plain input i: the task starts at end[i] (i merged);
@@ -28,7 +39,7 @@ Schedule model (gate 2, rigour M1 and TD H2):
 Usage:
   python3 -I mp1_plan_check.py <plan.md> <design.md>          exit 0 green, 1 red
   python3 -I mp1_plan_check.py <plan.md> <design.md> --self-test
-The self-test applies thirteen mutations to the parsed plan and expects red each time.
+The self-test applies twenty mutations to the parsed plan and expects red each time.
 """
 import copy
 import re
@@ -37,6 +48,24 @@ from collections import defaultdict
 
 ROW_ID = re.compile(r"^[A-Z]{2,5}[0-9]$")
 OUTSIDE = ("gate2", "MP2", "M7", "M4", "M8", "Root", "closed", "CEO")
+LABEL = re.compile(r"\(([a-z]|[0-9]{1,2})\)")
+RANGE = re.compile(r"\(([a-z]|[0-9]{1,2})\) to \(([a-z]|[0-9]{1,2})\)")
+# Build-tree pairs that the script holds itself, so that a deleted mp1-tree row
+# cannot remove the rule (rigour L4 n1, n3). Each pair: (task, task that must be
+# on a path of Inputs to it), with its source.
+REQUIRED_TREE = (
+    ("L0-API1", "S2"), ("L0-API1", "D0p"),      # E1, D:2304
+    ("L0-SIM", "S2"), ("L0-SIM", "D0p"),        # E1, D:2304
+    ("L0-WIRE", "S2"), ("L0-WIRE", "D0p"),      # E1, D:2304
+    ("L0b-ORD", "A1c"),                         # E2, D:2305
+    ("L-PAY", "A1d"), ("L-INC", "A1d"),         # the ledger oracle, D:2421-2422
+    ("L-TGT", "A3"),                            # D:2224-2225, TD H2
+    ("L-OBS", "A3"),                            # D:2523, rigour H2
+    ("C1-FINAL", "A3"),                         # D:2365, X0e
+    ("C1-PLAYER1", "I-PLAY1"),                  # it judges the I-PLAY1 evidence set (R-D)
+    ("C1-PLAYER", "REG2-1"),                    # it judges the REG2-1 evidence set (R-D)
+    ("PT3-PLAYER", "REG2-2"),                   # it judges the REG2-2 evidence set (R-D)
+)
 
 
 def block(text, name):
@@ -82,7 +111,27 @@ def parse_plan(text):
     moves = {c[0]: (c[1], c[2]) for c in table(block(text, "mp1-moves"))}
     tree = [(c[0], items(c[1])) for c in table(block(text, "mp1-tree"))]
     plants = [dict(part=c[0], task=c[1], plants=c[2], red=c[3]) for c in table(block(text, "mp1-plants"))]
-    return dict(tasks=tasks, order=order, opens=opens, splits=splits, moves=moves, tree=tree, plants=plants)
+    return dict(tasks=tasks, order=order, opens=opens, splits=splits, moves=moves, tree=tree, plants=plants,
+                texts=task_texts(text, tasks))
+
+
+def task_texts(text, tasks):
+    """The task text: the "### Task <id>" section (a heading can name several
+    tasks), or the stage-2 table row that starts with "| `<id>` |"."""
+    texts = defaultdict(str)
+    parts = re.split(r"^(#{2,3} .*)$", text, flags=re.M)
+    for i in range(1, len(parts) - 1, 2):
+        head, body = parts[i], parts[i + 1]
+        if not head.startswith("### Task "):
+            continue
+        for tid in re.findall(r"Task ([A-Za-z0-9-]+)", head):
+            if tid in tasks:
+                texts[tid] += head + body
+    for line in text.splitlines():
+        m = re.match(r"^\| `([A-Za-z0-9-]+)` \|", line)
+        if m and m.group(1) in tasks:
+            texts[m.group(1)] += line + "\n"
+    return dict(texts)
 
 
 def parse_design(text):
@@ -101,7 +150,13 @@ def parse_design(text):
     scope = re.findall(r"^\| (X[0-9]+[a-z]?) \|", s4, re.M)
     s15 = text.split("## 15. Open points", 1)[1].split("The disposition", 1)[0]
     points = [int(x) for x in re.findall(r"^([0-9]+)\. ", s15, re.M)]
-    return rows, s1, s2, scope, points
+    info = {}
+    for line in s12.splitlines():
+        m = re.match(r"^\| ([A-Z]{2,5}[0-9]) \|", line)
+        if m:
+            c = [x.strip() for x in line.strip().strip("|").split("|")]
+            info[m.group(1)] = dict(red=c[2], runs=c[-1], labels=set(LABEL.findall(c[2])))
+    return rows, s1, s2, scope, points, info
 
 
 def deps(d):
@@ -175,7 +230,7 @@ def levels(tasks):
 
 
 def expected_parts(plan, design, red):
-    rows, s1, s2, scope, points = design
+    rows, s1, s2, scope, points, info = design
     expected = {}
     for r in rows:
         if r in plan["splits"]:
@@ -201,7 +256,7 @@ def expected_parts(plan, design, red):
 
 def check(plan, design, out):
     tasks, order = plan["tasks"], plan["order"]
-    rows, s1, s2, scope, points = design
+    rows, s1, s2, scope, points, info = design
     red = []
     for t, d in tasks.items():
         for i in deps(d):
@@ -271,6 +326,28 @@ def check(plan, design, out):
         if "px" in e["red"] and tasks[e["task"]]["headed"] < 1:
             red.append("task %s has a pixel plant for %s and no headed run" % (e["task"], e["part"]))
         by_part[e["part"]].append(e["task"])
+    # revision 3: pixel status from the design Runs cell; plant labels; task text
+    texts = plan.get("texts", {})
+    for e in plan["plants"]:
+        if e["task"] not in tasks or e["part"] not in expected:
+            continue
+        row = e["part"].split("/")[0]
+        d = info.get(row)
+        if d is None:
+            red.append("plant entry %s: row %s has no design row" % (e["part"], row))
+            continue
+        if not plant_label_ok(e["plants"], d):
+            red.append("plant entry %s / %s holds no design plant label of row %s" % (e["part"], e["task"], row))
+        if not step_names_plant(texts.get(e["task"], ""), row, e["plants"], d):
+            red.append("task %s: its step does not name the plants of %s" % (e["task"], e["part"]))
+    px_parts = defaultdict(bool)
+    for e in plan["plants"]:
+        if e["red"].strip() == "lane+px":
+            px_parts[e["part"]] = True
+    for p in sorted(expected):
+        d = info.get(p.split("/")[0])
+        if d and "pixels" in d["runs"] and not px_parts[p]:
+            red.append("row part %s runs on pixels (design Runs: %s) but no plant entry is lane+px" % (p, d["runs"]))
     for p in sorted(expected):
         if not by_part.get(p):
             red.append("row part %s has no plant entry" % p)
@@ -280,9 +357,64 @@ def check(plan, design, out):
             for t in by_part[p]:
                 if t != o[0] and t not in up_all[o[0]]:
                     red.append("row part %s: owner %s does not descend from plant task %s" % (p, o[0], t))
+    # revision 3: required build-tree pairs, cross stacks, the GPU lock task
+    listed = {(t, n) for t, needs in plan["tree"] for n in needs}
+    for t, n in REQUIRED_TREE:
+        if t not in tasks or n not in tasks:
+            continue
+        if n not in up_in[t]:
+            red.append("task %s must have %s in its build tree through Inputs (REQUIRED_TREE)" % (t, n))
+        if (t, n) not in listed:
+            red.append("block mp1-tree has no row for the required pair %s / %s" % (t, n))
+    for t, d in tasks.items():
+        if d["stage"] == "slice":
+            continue
+        for x in d["stacked"]:
+            if tasks[x]["stage"] == "slice" and (t, x) not in listed:
+                red.append("cross stack %s^ in %s has no row in block mp1-tree" % (x, t))
+    if "Q-LOCK" in tasks:
+        for t, d in tasks.items():
+            if d["stage"] != "slice" and d["headed"] > 0 and "Q-LOCK" not in up_in[t]:
+                red.append("headed task %s does not descend from Q-LOCK through Inputs" % t)
     if out:
         report(plan, start, end, pred, expected, scope, points, up_in)
     return red
+
+
+def cell_labels(cell):
+    labs = set(LABEL.findall(cell))
+    for a, b in RANGE.findall(cell):
+        if a.isdigit() and b.isdigit():
+            labs |= {str(k) for k in range(int(a), int(b) + 1)}
+        elif a.isalpha() and b.isalpha():
+            labs |= {chr(k) for k in range(ord(a), ord(b) + 1)}
+    return labs
+
+
+def words(t):
+    return re.findall(r"[a-z0-9_]+", t.lower().replace("`", ""))
+
+
+def plant_label_ok(cell, d):
+    if d["labels"]:
+        return bool(cell_labels(cell) & d["labels"])
+    w, dw = words(cell), " ".join(words(d["red"]))
+    return any(" ".join(w[i:i + 3]) in dw for i in range(len(w) - 2))
+
+
+def step_names_plant(text, row, cell, d):
+    key = None
+    if d["labels"]:
+        m = LABEL.search(cell)
+        key = m.group(0) if m else None
+    low = text.lower()
+    for m in re.finditer(r"\b%s\b" % re.escape(row), text):
+        a, b = max(0, m.start() - 300), m.end() + 300
+        if "plant" not in low[a:b]:
+            continue
+        if key is None or key in text[m.end():b]:
+            return True
+    return False
 
 
 def report(plan, start, end, pred, expected, scope, points, up_in):
@@ -457,13 +589,55 @@ def mutations(plan):
 
     def m12(p):
         d = p["tasks"]["L-OBS"]
-        d["inputs"].remove("A3")
+        if "A3" in d["inputs"]:
+            d["inputs"].remove("A3")
+        else:
+            d["stacked"].remove("A3")
         d["after"].append("A3")
     mut("rigour: A3 merge-after only in L-OBS", m12)
 
     def m13(p):
         p["tasks"]["UI-PLACE"]["headed"] = 0
     mut("qa: pixel plant with no headed run", m13)
+
+    # revision 3: the six green mutations of the re-check (qa N2 m4 to m6, rigour L4 n1 to n3)
+    def m14(p):
+        t = p["texts"]["L-STO"]
+        cut = "plants STO1 (a) to (e)"
+        if cut not in t:
+            raise ValueError("no plant text in L-STO")
+        p["texts"]["L-STO"] = t.replace(cut, "")
+    mut("qa m4: L-STO step without its plant text", m14)
+
+    def plant_entry(p, part, task):
+        return next(e for e in p["plants"] if e["part"] == part and e["task"] == task)
+
+    def m15(p):
+        plant_entry(p, "GHO1", "UI-PLACE")["red"] = "lane"
+    mut("qa m5: GHO1 plant lane, not lane+px", m15)
+
+    def m16(p):
+        plant_entry(p, "HUD5", "UI-HUD")["plants"] = "none"
+    mut("qa m6: HUD5 plant cell none", m16)
+
+    def m17(p):
+        p["tree"] = [(t, n) for t, n in p["tree"] if t != "L-TGT"]
+        d = p["tasks"]["L-TGT"]
+        d["stacked"].remove("A3")
+        d["after"].append("A3")
+    mut("rigour n1: L-TGT tree row gone, A3 merge-after", m17)
+
+    def m18(p):
+        plant_entry(p, "FX1/s1", "L-FX-PRES")["red"] = "lane"
+    mut("rigour n2: FX1/s1 pixel plant lane (mixed row)", m18)
+
+    def m19(p):
+        p["tasks"]["C1-PLAYER1"]["inputs"].remove("I-PLAY1")
+    mut("rigour n3: C1-PLAYER1 without I-PLAY1", m19)
+
+    def m20(p):
+        p["tasks"]["L0-DBG"]["inputs"].remove("Q-LOCK")
+    mut("R-T: headed L0-DBG without Q-LOCK", m20)
     return out
 
 
