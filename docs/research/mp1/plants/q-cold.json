@@ -882,14 +882,14 @@
     "command": [
       "node",
       "--test",
-      "--test-name-pattern=first-click probe, green page",
+      "--test-name-pattern=ring around the unit alone",
       "tests/browser/cold-probe.test.js"
     ],
     "env": {},
     "headed": false,
-    "expected_red": "✖ first-click probe, green page: every own unit click selects it and changes the picture",
+    "expected_red": "✖ first-click probe: a ring around the unit alone (no panel) is a visible change",
     "exit": 1,
-    "commit": "5fe6f811bc94aaa3410e2475fcb9267631ed6e84"
+    "commit": "05e30db1c8560124ddb105d457cfdab3557d71a2"
   },
   {
     "row": "Q-COLD",
