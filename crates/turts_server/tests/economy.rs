@@ -1839,6 +1839,16 @@ fn owner_unit_orders_from_audit(
         .collect()
 }
 
+/// LIMIT (follow-up of L0-WIRE, item 3): this oracle cannot go red on a wrong rate in the process
+/// scenarios, because no raw Snapshot of those scenarios holds a running job (the first Snapshot is
+/// taken at the join, before the scripted `Produce`; a plant "wire rate + 1" stayed green). I chose to
+/// state the limit and not to re-time a process scenario: a scenario change costs a full
+/// `acceptance.sh` run (about 25 minutes) for each try, and the guard that does see a wrong rate
+/// already exists and is cheap: `crates/turts_client/tests/job_progress_clients.rs` compares the
+/// derived value of three real `Replica` clients with the sim at every tick (plants `JOBRATE1/(a)`
+/// to `(f)`). This oracle still checks the shape of the Snapshot records (`total`, `at_tick`, the
+/// state, the job list) when a job is present.
+///
 /// The rate of each job at the tick of `state`, MEASURED from the audit of the sim: the change of
 /// `elapsed_ticks` from this tick to the next one. It does not read the stage or the disabled set,
 /// so it cannot copy the export rule. A job that is gone at the next tick completed (it advanced by

@@ -626,7 +626,8 @@ fn production_queue(context: SourceContext<'_>) -> SourceData {
                 if job.duration_ticks == 0 {
                     1.0
                 } else {
-                    (elapsed as f64 / job.duration_ticks as f64).clamp(0.0, 1.0)
+                    // `elapsed` is at most `duration_ticks` (the derivation caps it), so no clamp.
+                    elapsed as f64 / job.duration_ticks as f64
                 },
             );
             if let Some(icon) = job_icon(context, &job.recipe) {
@@ -2535,10 +2536,10 @@ mod tests {
         replica.job_progress.insert(
             (6, 55),
             turts_net_protocol::RateRecord {
-                // The record says 120 of 200 while the job says 80 ticks: the progress is above 1
-                // and the display clamps it (the clamp in `production_queue` has this test).
+                // The job ran past its duration: the derived ticks never pass the duration
+                // (`value_at` caps at `total`, `base_ticks_done` scales by `duration / total`).
                 done: 120,
-                total: 200,
+                total: 80,
                 per_tick: 0,
                 at_tick: 0,
                 state: turts_net_protocol::RecordState::Running,

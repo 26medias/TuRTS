@@ -22,7 +22,15 @@ pub enum RecordState {
 }
 
 /// A value at a tick and a rate (design 6.8, "Records with a start tick and a rate"):
-/// `done` of `total` at `at_tick`, and `per_tick` more in each following tick. The record is
+/// `done` of `total` at `at_tick`, and `per_tick` more in each following tick.
+///
+/// Units (ruling of the L0-WIRE follow-up): `done`, `total` and `per_tick` count RAW UNITS of 1/Q
+/// tick, where Q is the least common multiple of every `Rate` denominator of the catalog (design
+/// 6.4, "Progress in integers"). Today Q is 1, so the units are ticks. The client derives the ticks
+/// with `turts_rules::progress::base_ticks_done(units, duration_ticks, total)`, where
+/// `duration_ticks` comes from the `JobState` (`Replica::job_elapsed_ticks`). Example: Q = 2, a job of
+/// 100 ticks at rate 1/2: `total` 200, `per_tick` 1 (a tick adds `rate_step(Q, rate)` units), and 50
+/// ticks later `done` is 50 units, which is 25 ticks of base time. The record is
 /// sent only when the rate, the job state or `held` changes, never each tick. The client
 /// evaluates it at the tick of its last applied delta.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
