@@ -691,9 +691,10 @@ def prepare(root, rec, use_git):
         if not path.is_file():
             raise refusal(rec, f"{name} is missing: the file was moved or deleted; re-pin the record")
         if use_git:
-            if git(root, "ls-files", "--error-unmatch", "--", name).returncode != 0:
+            # --no-optional-locks: a read-only check must not refresh the stat cache in .git/index.
+            if git(root, "--no-optional-locks", "ls-files", "--error-unmatch", "--", name).returncode != 0:
                 raise refusal(rec, f"{name} is not tracked by git")
-            if git(root, "status", "--porcelain", "--", name).stdout.strip():
+            if git(root, "--no-optional-locks", "status", "--porcelain", "--", name).stdout.strip():
                 raise refusal(rec, f"{name} is not clean: git status shows a change in it")
         originals[name] = path.read_bytes()
         try:
@@ -705,6 +706,9 @@ def prepare(root, rec, use_git):
         except Refused as exc:
             reason = str(exc) if name in str(exc) else f"{name}: {exc}"
             raise refusal(rec, f"{reason}; when the file changed, re-pin the record") from None
+    if all(planted[name].encode("utf-8") == originals[name] for name in originals):
+        raise refusal(rec, "the plant changes nothing: the edits of the record cancel each other, so "
+                           "the plant would stay green")
     return originals, planted
 
 
@@ -831,6 +835,33 @@ def refusals_of(root, records, use_git):
     return refused
 
 
+def run_state_notes(root, use_git):
+    """Why a "not clean" line of --check can be false: a journal that a killed run left (the next run
+    mode recovers it), or a run in flight (it holds the lock; its plant is in the tree). Read-only:
+    the lock file is opened for reading and tried with a shared, non-blocking flock; nothing is
+    created, recovered or deleted."""
+    directory = git_dir(root) if use_git else None
+    if directory is None:
+        return []
+    notes = []
+    if (directory / JOURNAL_NAME).exists():
+        notes.append(f"{directory / JOURNAL_NAME} exists: a killed run left a plant, so a \"not clean\" "
+                     "line below can be false. Run the run mode once to recover it (the run mode does "
+                     "that first); --check does not recover.")
+    try:
+        handle = os.open(directory / LOCK_NAME, os.O_RDONLY)
+    except OSError:
+        return notes
+    try:
+        fcntl.flock(handle, fcntl.LOCK_SH | fcntl.LOCK_NB)
+    except BlockingIOError:
+        notes.append(f"{directory / LOCK_NAME} is held: a run in flight has a plant in the tree, so a "
+                     "\"not clean\" line below can be false. Wait for that run to end, then check again.")
+    finally:
+        os.close(handle)
+    return notes
+
+
 def stale_records(root, records, chosen, use_git):
     """--check: return (the number of records of `chosen` that apply, one text for each stale
     record). A record that --files did not select but whose file is gone is stale too: the run mode
@@ -935,6 +966,8 @@ def main(argv=None):
         if args.check:
             records, chosen = select_from(root, plants_dir, args, use_git, require_files=False)
             applying, stale = stale_records(root, records, chosen, use_git)
+            for note in run_state_notes(root, use_git):
+                print(f"NOTE {note}", flush=True)
             for message in stale:
                 print(f"STALE {message}", flush=True)
             print(f"mp1_plants: --check: {applying} record(s) apply, {len(stale)} stale", flush=True)
@@ -1740,12 +1773,14 @@ def l_deleted_path_is_accepted_in_files(fx):
 
 
 def tree_snapshot(fx):
-    """Every file under the repository folder (the git folder excluded) with its bytes, and the
-    names that sit in the git folder that the runner could write (journal, lock)."""
+    """Every file under the repository folder (the git folder excluded) with its bytes, the names
+    that sit in the git folder that the runner could write (journal, lock), and the sha256 of
+    .git/index (`git status` refreshes the stat cache there unless it runs with no optional locks)."""
     files = {str(p.relative_to(fx.root)): p.read_bytes()
              for p in sorted(fx.root.rglob("*")) if p.is_file() and ".git" not in p.relative_to(fx.root).parts}
     git_dir_path = Path(fx.git("rev-parse", "--absolute-git-dir").strip())
-    return files, sorted(n for n in (JOURNAL_NAME, LOCK_NAME) if (git_dir_path / n).exists())
+    index = hashlib.sha256((git_dir_path / "index").read_bytes()).hexdigest()
+    return files, sorted(n for n in (JOURNAL_NAME, LOCK_NAME) if (git_dir_path / n).exists()), index
 
 
 def stale_a(**over):
@@ -1774,6 +1809,7 @@ def q3_check_stale_anchor_exits_2_and_names_the_record(fx):
     expect(code == 2, f"stale anchor: exit {code}, wanted 2\n{out}")
     stale = [line for line in out.splitlines() if line.startswith("STALE ")]
     expect(len(stale) == 1, f"wanted one STALE line\n{out}")
+    expect("1 record(s) apply, 1 stale" in out, f"the count line is wrong\n{out}")
     for part in ("T9/stale", "t.json[1]", "a.txt", "occurs 0 times"):
         expect(part in stale[0], f"STALE line lacks {part!r}: {stale[0]}")
     expect("T1/a" not in out.replace("STALE", ""), f"the clean record is named\n{out}")
@@ -1853,7 +1889,8 @@ def q3_check_with_files_selects_like_the_run_mode(fx):
     code, out = fx.cli("--check", "--files", "a.txt")
     expect(code == 0 and "1 record(s) apply, 0 stale" in out, f"--files a.txt: exit {code}\n{out}")
     code, out = fx.cli("--check", "--files", "b.txt")
-    expect(code == 2 and "STALE T1/b" in out, f"--files b.txt: exit {code}\n{out}")
+    expect(code == 2 and "STALE T1/b" in out and "0 record(s) apply, 1 stale" in out,
+           f"--files b.txt: exit {code}\n{out}")
     code, out = fx.cli("--check", "--files", "zzz.txt")
     expect(code == 2, f"a mistyped path: exit {code}, wanted 2\n{out}")
 
@@ -1866,6 +1903,77 @@ def q3_check_does_not_mix_with_list_and_list_stays_as_it_is(fx):
            f"--check with --list: exit {code}, wanted 2\n{out}")
     code, out = fx.cli("--list", "--all")
     expect(code == 0 and "T9/stale" in out and "STALE" not in out, f"--list changed: exit {code}\n{out}")
+
+
+@case
+def q3_check_names_a_leftover_journal_and_does_not_recover(fx):
+    fx.write_records([make_record(command=[sys.executable, "-c", CHECK_FLAG])])
+    (fx.root / "a.txt").write_text("alpha BAD\nbeta\n")        # looks like a plant that a kill left
+    journal = fx.journal()
+    journal.write_text("[]")
+    before = tree_snapshot(fx)
+    code, out = fx.cli("--check", "--all")
+    expect(code == 2 and "STALE T1/a" in out, f"exit {code}\n{out}")
+    notes = [line for line in out.splitlines() if line.startswith("NOTE ")]
+    expect(len(notes) == 1 and JOURNAL_NAME in notes[0] and "run mode" in notes[0], f"journal note: {notes}\n{out}")
+    expect(tree_snapshot(fx) == before, "--check recovered or changed a file")
+    expect((fx.root / "a.txt").read_text() == "alpha BAD\nbeta\n", "--check restored a.txt")
+    journal.unlink()
+    (fx.root / "a.txt").write_text(Fixture.FILES["a.txt"])
+    code, out = fx.cli("--check", "--all")
+    expect(code == 0 and "NOTE" not in out, f"no journal: exit {code}\n{out}")
+
+
+@case
+def q3_check_names_a_run_in_flight_and_not_a_free_lock_file(fx):
+    fx.write_records([make_record(plant="g", files=[{"file": "a.txt", "edit": {"old": "beta", "new": "gamma"}}])])
+    fx.cli("--all")                                           # the run mode leaves a free lock file
+    lock = Path(fx.git("rev-parse", "--absolute-git-dir").strip()) / LOCK_NAME
+    expect(lock.exists(), "the run mode left no lock file: the case tests nothing")
+    code, out = fx.cli("--check", "--all")
+    expect(code == 0 and "NOTE" not in out, f"free lock file: exit {code}\n{out}")
+    handle = os.open(lock, os.O_RDWR)
+    try:
+        fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        (fx.root / "a.txt").write_text("alpha GOOD\nbeta\nplanted by the other run\n")
+        code, out = fx.cli("--check", "--all")
+    finally:
+        os.close(handle)
+    notes = [line for line in out.splitlines() if line.startswith("NOTE ")]
+    expect(code == 2 and len(notes) == 1 and "run in flight" in notes[0] and "wait" in notes[0].lower(),
+           f"lock note: exit {code}, {notes}\n{out}")
+
+
+@case
+def q3_net_zero_plant_is_refused_in_both_modes(fx):
+    net_zero = make_record(plant="zero", command=[sys.executable, "-c", CHECK_FLAG], files=[
+        {"file": "a.txt", "edit": [{"old": "GOOD", "new": "GOOD2"}, {"old": "GOOD2", "new": "GOOD"}]}])
+    fx.write_records([net_zero])
+    code_check, out_check = fx.cli("--check", "--all")
+    code_run, out_run = fx.cli("--all")
+    expect(code_check == 2 and code_run == 2, f"exit codes {code_check} and {code_run}, wanted 2 and 2\n{out_run}")
+    stale = [l[len("STALE "):] for l in out_check.splitlines() if l.startswith("STALE ")]
+    refused = [l[len("REFUSED "):] for l in out_run.splitlines() if l.startswith("REFUSED ")]
+    expect(len(stale) == 1 and stale == refused and "changes nothing" in stale[0], f"{stale}\n{refused}")
+    expect(not (fx.root / "ran.flag").exists(), "a command ran")
+    # A record that changes one file and leaves the other as it was still applies.
+    two = make_record(files=[{"file": "a.txt", "edit": {"old": "GOOD", "new": "BAD"}},
+                             {"file": "b.txt", "edit": [{"old": "two", "new": "2"}, {"old": "2", "new": "two"}]}])
+    fx.write_records([two])
+    code, out = fx.cli("--check", "--all")
+    expect(code == 0, f"one file changed, one not: exit {code}\n{out}")
+
+
+@case
+def q3_check_does_not_write_the_git_index(fx):
+    fx.write_records([make_record(command=[sys.executable, "-c", CHECK_FLAG])])
+    for name in Fixture.FILES:
+        os.utime(fx.root / name, (1_000_000_000, 1_000_000_000))   # same bytes, other stat: status wants to refresh
+    index = Path(fx.git("rev-parse", "--absolute-git-dir").strip()) / "index"
+    before = hashlib.sha256(index.read_bytes()).hexdigest()
+    code, out = fx.cli("--check", "--all")
+    expect(code == 0, f"exit {code}\n{out}")
+    expect(hashlib.sha256(index.read_bytes()).hexdigest() == before, ".git/index changed during --check")
 
 
 def self_test():

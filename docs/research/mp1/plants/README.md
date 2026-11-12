@@ -45,7 +45,7 @@ For each selected record (a failure at any step names the record `row/plant`):
    This check covers all the records, in every mode, also the ones that `--files` does not select.
 2. Every file of every record exists. A moved or deleted file gives `REFUSED <row>/<plant> [<json file>[<index>]]: ... re-pin the record` and exit 2.
 3. A file must be tracked and clean (`git status` shows no change in it). This check comes before the anchor check.
-4. Each anchor occurs exactly once. A patch that does not apply, or an anchor that occurs 0 or 2 times, gives `REFUSED` and exit 2. No command runs if any selected record is refused.
+4. Each anchor occurs exactly once. A patch that does not apply, or an anchor that occurs 0 or 2 times, gives `REFUSED` and exit 2. So does a record whose edits cancel each other (the planted text equals the original in every file). No command runs if any selected record is refused.
 5. The command is green (exit 0) on the clean source. The plants that share a command, an `env` and an `expected_selected` form a command group: one baseline for the group.
 6. For each plant: the edit, then the red (see above), then the restore (`git checkout HEAD -- <file>`). Every byte is equal to the byte before the run, and `git status --porcelain -uall` shows the same lines as before the group. A new file that the command wrote (untracked) is a `PLANT-FAIL` that names the file; the runner does not delete it.
 7. A green run after each restore (a group of N plants: N red runs and N + 1 green runs). The green run after a restore is the baseline of the next plant, so a flaky command or a residue in an ignored folder cannot give a red to a plant with no effect. A green run that fails after a restore fails that plant and stops the group: the plants that did not run fail with `not run`.
@@ -80,9 +80,13 @@ as JSON. `--root` and `--plants-dir` select another worktree or folder (used by 
 ## The fast check
 
 `--check` (with `--all` or `--files`) tells in seconds whether the records still apply to the tree.
-It runs no build and no test, writes no file, takes no lock and does not read the journal. It uses
-the same function as the run mode (`prepare`, steps 2 to 4 above: the file exists, is tracked and
-clean, and each anchor and each patch applies), so the two modes cannot differ. Exit 0: every
+It runs no build and no test, writes no file (its `git` calls use `--no-optional-locks`, so `.git/index`
+keeps its bytes), takes no lock and does not recover the journal. It uses the same function as the
+run mode (`prepare`, steps 2 to 4 above: the file exists, is tracked and clean, each anchor and each
+patch applies, and the edits of a record do not cancel each other), so the two modes cannot differ.
+When a journal exists or the lock is held, it prints one `NOTE` line first: a plant of a killed run
+or of a run in flight can make a `not clean` line false. Run the run mode once to recover, or wait
+for the run in flight, and check again. Exit 0: every
 selected record applies. Exit 2: one line `STALE <row>/<plant> [<json file>[<index>]]: <file>:
 <reason>` for each stale record, then a count line. A record of a file that is gone is stale even
 when `--files` does not select it (the run mode refuses it too). `--check` does not run the
