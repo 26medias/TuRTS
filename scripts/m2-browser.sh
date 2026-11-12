@@ -74,8 +74,10 @@ if [[ $# -eq 0 && -z "$PACKAGE" && -z "$CASE_ID" ]]; then
         echo "M2_DEFAULT_SUITE_FAILED: at least one case is red; read the M2_CASE_* lines above" >&2
         exit 1
     fi
-    printf 'M2_DEFAULT_SUITE_SUMMARY {"selected_count":%s,"completed_count":%s,"passed_count":%s,"semantic_failed_count":0,"infrastructure_failed_count":0,"timeout_count":0}\n' \
-        "$selected_count" "$selected_count" "$selected_count"
+    local_only_count=$(python3 "$ROOT/tests/m2/local_only.py" --count <<<"$case_list")
+    ran_count=$((selected_count - local_only_count))
+    printf 'M2_DEFAULT_SUITE_SUMMARY {"selected_count":%s,"completed_count":%s,"passed_count":%s,"semantic_failed_count":0,"infrastructure_failed_count":0,"timeout_count":0,"local_only_count":%s}\n' \
+        "$selected_count" "$ran_count" "$ran_count" "$local_only_count"
     exit 0
 fi
 while [[ $# -gt 0 ]]; do
@@ -123,6 +125,21 @@ if [[ -n "$CASE_ID" ]]; then
     case "$PACKAGE:$CASE_ID" in
         base:E9-browser-base-selection|base:E9-browser-base-economy|base:E9-browser-base-recovery|base:E9-browser-base-public-convergence|base:E9-browser-base-loss-conversion|base:E9-browser-base-loss-charge|base:E9-browser-base-loss-refund|base:E9-browser-base-loss-spawn|base:E9-browser-base-loss-final_change|haul:E9-browser-haul-economy|haul:E9-browser-haul-public-convergence|acme:E9-browser-acme-selection|acme:E9-browser-acme-public-convergence|cedar:E9-browser-cedar-economy|cedar:E9-browser-cedar-public-convergence) ;;
         *) echo "unknown browser case $CASE_ID for package $PACKAGE" >&2; exit 2 ;;
+    esac
+fi
+# A case listed in M2_LOCAL_ONLY_CASES needs a real GPU and runs in the local gate. The hosted job
+# says so in a plain line and in $GITHUB_STEP_SUMMARY (tests/m2/local_only.py); a case that is
+# listed but has no row in tests/m2/local-only.tsv is an error, never a skip.
+if [[ -n "$CASE_ID" ]]; then
+    local_only_status=0
+    python3 "$ROOT/tests/m2/local_only.py" --decide "$CASE_ID" || local_only_status=$?
+    case "$local_only_status" in
+        0) ;;
+        10)
+            printf 'M2_CASE_SUMMARY {"selected_count":1,"completed_count":0,"passed_count":0,"semantic_failed_count":0,"infrastructure_failed_count":0,"timeout_count":0,"local_only_count":1}\n'
+            exit 0
+            ;;
+        *) exit 2 ;;
     esac
 fi
 CHROME_BIN="${CHROME_BIN:-$(command -v google-chrome || command -v chromium || true)}"
@@ -286,6 +303,20 @@ else
     printf '{"package":"%s","case_id":"%s","offset_x":0,"map_translation":"none"}\n' \
         "$PACKAGE" "$CASE_ID" > "$ARTIFACT_DIR/map-fixture-translation.json"
 fi
+
+# M2_RECIPE_DURATION_SCALE (unset keeps the true recipe times, as the local GPU run does): lengthen
+# the recipe of the three economy cases in the packed copy only (scripts/t7.sh T7_SCOUT_SPEED is the
+# pattern). The hosted software renderer needs 8 to 10 s between Produce and Cancel (run 43214215645),
+# and the recipes last 5 and 6 s. The receipt is always written; m2-oracle.js reads it.
+python3 "$ROOT/tests/m2/recipe_duration.py" \
+    --source "$ROOT/mods/$PACKAGE" --packed "$ARTIFACT_DIR/pack/$PACKAGE" \
+    --package "$PACKAGE" --case "$CASE_ID" --scale "${M2_RECIPE_DURATION_SCALE:-1}" \
+    --receipt "$ARTIFACT_DIR/recipe-duration.json" \
+    > "$ARTIFACT_DIR/recipe-duration.log" 2>&1 || {
+        cat "$ARTIFACT_DIR/recipe-duration.log" >&2
+        exit 1
+    }
+cat "$ARTIFACT_DIR/recipe-duration.log"
 
 "$PACKER_BIN" "$ARTIFACT_DIR/pack/$PACKAGE" > "$ARTIFACT_DIR/pack.log" 2>&1
 

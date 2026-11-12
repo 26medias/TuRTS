@@ -24,6 +24,9 @@ const {
 } = require("./m2-oracle-lib.js");
 const { visibleRingPixels } = require("./vis-full-oracle.js");
 const { validateTranslationReceipt } = require("./harness/m2-fixture.js");
+const { parseDurationMs, recipeFor, validateRecipeDuration } = require("./harness/m2-recipe.js");
+const fs = require("node:fs");
+const path = require("node:path");
 
 // mods/<package>/units/*.ron names; scripts/m2-browser.sh renames the two cedar units.
 const UNIT_NAMES = {
@@ -43,6 +46,8 @@ const OFFSET = { base: 18, haul: 18, cedar: 18, acme: 0 };
 // windows showed at any poll (compare mode "cross_poll"). Only the hosted software-render legs of
 // .github/workflows/ci.yml set the value: there the windows show about 1 frame per second (runs
 // ci-run134-m2-sw-gl-1 and -2) and seldom show one tick at one poll. A poll reads both windows.
+// Since hosted run 43214215645 no CI leg sets it: the windows share no tick on the software renderer
+// (0 shared ticks in 1651 polls, 180 s), so these cases are local-only (tests/m2/local-only.tsv).
 // Both profiles keep the first projection of each tick.
 const CONVERGENCE_ENV = "TURTS_M2_CONVERGENCE_LIMIT_MS";
 const CONVERGENCE_GATE = Object.freeze({ name: "gate", min_ms: 10000, stall_ms: 15000, limit_ms: 10000, poll_ms: 100, cross_poll: false });
@@ -584,6 +589,17 @@ async function judgeCase(view, params) {
     // The packed map copy is the source map moved by the declared offset (tests/m2/browser_fixture.py).
     validateTranslationReceipt(packageName, caseId, String(OFFSET[packageName]),
         JSON.parse(await view.serverFile("map-fixture-translation.json")));
+    // The packed recipe time (M2_RECIPE_DURATION_SCALE, tests/m2/recipe_duration.py): the true time
+    // comes from mods/, never from the receipt, and every job must show the packed duration. The
+    // economy cases check the jobs at the end, so that a plant fails for its own reason first (a
+    // missing button leaves no job in the world).
+    const recipe = recipeFor(caseId);
+    const sourceDurationMs = recipe
+        ? parseDurationMs(fs.readFileSync(path.join(__dirname, "..", "..", "mods", recipe.package, recipe.file), "utf8"), recipe.file)
+        : null;
+    const recipeReceipt = JSON.parse(await view.serverFile("recipe-duration.json"));
+    const checkRecipeDuration = () => validateRecipeDuration({ packageName, caseId, sourceDurationMs, checkpoints, receipt: recipeReceipt });
+    if (!recipe) checkRecipeDuration();
     const joined = at("m2-joined");
     assertJoined(joined, packageName);
     assertPublicProjectionSchema(joined);
@@ -603,6 +619,7 @@ async function judgeCase(view, params) {
         judgeProductionCancel(input, checkpoints, at, joined, packageName);
         judgeGather(input, checkpoints, at, joined, packageName);
     }
+    if (recipe) checkRecipeDuration();
     return null;
 }
 

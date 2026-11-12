@@ -17,7 +17,7 @@ ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "m2-browser.sh"
 
 
-def run_default_suite(temporary: Path) -> subprocess.CompletedProcess:
+def run_default_suite(temporary: Path, extra_env=None, args=()) -> subprocess.CompletedProcess:
     logs = temporary / "prebuilt-logs"
     logs.mkdir()
     for name in ("server-build.log", "packer-build.log", "trunk-build.log"):
@@ -30,9 +30,10 @@ def run_default_suite(temporary: Path) -> subprocess.CompletedProcess:
         M2_ARTIFACT_ROOT=str(temporary / "runs"),
         CHROME_BIN="/bin/true",
     )
-    for name in ("M2_PACKAGE_NAME", "M2_CASE_ID"):
+    for name in ("M2_PACKAGE_NAME", "M2_CASE_ID", "M2_LOCAL_ONLY_CASES", "GITHUB_STEP_SUMMARY", "M2_RECIPE_DURATION_SCALE"):
         env.pop(name, None)
-    return subprocess.run(["bash", str(SCRIPT)], cwd=ROOT, env=env, capture_output=True, text=True, timeout=300)
+    env.update(extra_env or {})
+    return subprocess.run(["bash", str(SCRIPT), *args], cwd=ROOT, env=env, capture_output=True, text=True, timeout=300)
 
 
 class DefaultSuiteTests(unittest.TestCase):
