@@ -42,6 +42,8 @@ jobs:
           python3 tests/m2/test_recipe_duration.py
           python3 tests/m2/test_local_only.py
           python3 tests/m2/local_only.py --check
+      - name: Python browser row parameter tests
+        run: python3 tests/mc/test_mc_browser_params.py
       - name: Acceptance (M2 and M3 process tests, release, serial)
         run: bash scripts/acceptance.sh
       - name: Upload native and acceptance diagnostics
@@ -222,7 +224,7 @@ jobs:
         working-directory: tests/browser
       - name: Browser projection and audit helper tests
         if: matrix.suite == 't7-m3'
-        run: node --test tests/browser/m2-projection.test.js tests/browser/m2-audit.test.js tests/browser/t7-oracle.test.js tests/browser/t7-driver.test.js tests/browser/m3-oracle.test.js tests/browser/pt1-oracle.test.js tests/browser/m2-oracle.test.js tests/browser/m2-recipe.test.js
+        run: node --test tests/browser/m2-projection.test.js tests/browser/m2-audit.test.js tests/browser/t7-oracle.test.js tests/browser/t7-driver.test.js tests/browser/m3-oracle.test.js tests/browser/pt1-oracle.test.js tests/browser/m2-oracle.test.js tests/browser/hud2-driver.test.js tests/browser/volume-tracks.test.js tests/browser/ord3-route.test.js tests/browser/mm1-driver.test.js tests/browser/sel3-double-click.test.js tests/browser/audio-resume-hook.test.js tests/browser/harness/bounded-raf.test.js tests/browser/harness/capture-contract.test.js tests/browser/harness/checkpoint-run.test.js tests/browser/harness/cli.test.js tests/browser/harness/click9-pixels.test.js tests/browser/harness/contextmenu-observer.test.js tests/browser/harness/device-audit-descriptor.test.js tests/browser/harness/device-audit.test.js tests/browser/harness/document-epoch.test.js tests/browser/harness/hd1-ui-pixels.test.js tests/browser/harness/hud1-oracle.test.js tests/browser/harness/hud4-oracle.test.js tests/browser/harness/hud4-pixels.test.js tests/browser/harness/io-contract.test.js tests/browser/harness/io-event-observer.test.js tests/browser/harness/launch-profile.test.js tests/browser/harness/m2-fixture.test.js tests/browser/harness/measure-launch-options.test.js tests/browser/harness/params-contract.test.js tests/browser/harness/pixel-profile.test.js tests/browser/harness/png.test.js tests/browser/harness/project.test.js tests/browser/harness/reload-bridges.test.js tests/browser/harness/scene-checkpoints.test.js tests/browser/harness/startup-record.test.js tests/browser/measure-webgpu-hook.test.js tests/browser/mm1-oracle.test.js tests/browser/shell-oracle-cam2.test.js tests/browser/shell-oracle-km2-pixels.test.js tests/browser/shell-oracle-km2.test.js tests/browser/shell-oracle-p1-attachment.test.js tests/browser/shell-oracle-sh1.test.js tests/browser/shell-oracle-slot1-deadline.test.js tests/browser/shell-oracle-slot1-receipts.test.js tests/browser/vis-full-driver.test.js tests/browser/vis-full-oracle.test.js tests/browser/vis2-validation.test.js tests/browser/harness/client-error.test.js tests/browser/harness/client-settings-seed.test.js tests/browser/m2-recipe.test.js
       # The browser steps use the Chrome profile of the job env.
       - name: T7 browser join
         if: matrix.suite == 't7-m3'

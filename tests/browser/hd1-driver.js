@@ -10,6 +10,12 @@ async function drive(io, params) {
     const viewport = params.viewport;
     const camera = { lookAt: [28.85, 20.2], height: 38, pitch: 0.7, yaw: 0, fov: Math.PI / 3 };
     let previousTick = 0;
+    // The first join shows the "Click to play" overlay until a gesture (client_shell.rs
+    // sync_focus_overlay, since 3d0cf2f); it takes the first pointer input, here the box select.
+    // A keydown is also the gesture (crates/turts_client_web/index.html:39-40); F9 has no binding
+    // (RUN130).
+    await io.key("F9");
+    await io.wait(300);
     for (let index = 0; index < params.actions.length; index += 1) {
         const action = params.actions[index];
         await io.wait(Math.max(0, action.tick - previousTick) * 50 + 200);

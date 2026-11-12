@@ -323,6 +323,7 @@ pub fn debug_json(world: &World) -> String {
         "audio": audio,
         "contextmenu": context_menu,
         "focus": focus,
+        "frame_limits": crate::pacing::frame_limits_json(world.get_resource::<bevy::winit::WinitSettings>()),
         "player_id": player_id,
         "player_id_decimal": player_id_decimal,
         "alert_pings": alert_pings,
