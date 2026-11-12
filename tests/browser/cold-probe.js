@@ -103,9 +103,14 @@ function visibleButtons(ui, viewport) {
         .sort((a, b) => a.rect[1] - b.rect[1] || a.rect[0] - b.rect[0]);
 }
 
-// The visible buttons whose centre is NOT on the page (a control that a person cannot reach).
+const CLOSE_TEXT = /^(close|dismiss|ok|got it|x|×)$/i;
+
+// The buttons that a person cannot reach: a visible button whose centre is not on the page, and a Close-like button that
+// the UI record marks as not visible because its place is outside the page (the client clips what is outside: at 1024x768
+// the "Close" of the forge guide has a fixed offset of 1176 px).
 function buttonsOutsidePage(ui, viewport) {
-    return ui.filter((widget) => widget.kind === "button" && widget.visible && widget.rect && widget.rect[2] > 0 && widget.rect[3] > 0 && !inside(center(widget.rect), viewport));
+    return ui.filter((widget) => widget.kind === "button" && widget.rect && widget.rect[2] > 0 && widget.rect[3] > 0 && !inside(center(widget.rect), viewport)
+        && (widget.visible || CLOSE_TEXT.test((widget.text ?? "").trim())));
 }
 
 // The order buttons of the selection: visible, enabled, an action of kind "order"; the destructive ones last.
@@ -201,7 +206,6 @@ function bigLayers(ui, viewport) {
         && (widget.rect[2] * widget.rect[3]) / (viewport.width * viewport.height) > 0.5);
 }
 
-const CLOSE_TEXT = /^(close|dismiss|ok|got it|x|×)$/i;
 
 // The positive control: close the layer that the first click met, by the button that the UI record shows for it.
 async function closeLayer(session) {
@@ -451,7 +455,7 @@ async function buttons(session, options) {
     const under = visibleButtons(ready.world.ui, viewport);
     record.start_overlay_buttons = overlay ? under.map((widget) => widget.id) : [];
     if (overlay && under.length) {
-        record.f8_start = await tryButton(under[0], 0, "s");
+        record.f8_start = await tryButton(under[0], 0, "s-");
         record.summary = { start: { verdict: record.f8_start.acted ? "PASS" : "FAIL", button: under[0].id,
             reason: record.f8_start.acted ? `${under[0].id} acted on its first click` : `the first click on ${under[0].id} changed nothing: the start overlay took it` } };
     } else record.summary = { start: { verdict: "PASS", reason: overlay ? "no button under the start overlay" : "no start overlay" } };

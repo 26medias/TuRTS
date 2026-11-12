@@ -24,12 +24,13 @@
 //   nodeShows     false: a click on the node shows no name
 //   groundKeeps   true: a click on open ground keeps the selection
 //   rightDead     true: a right click on open ground shows nothing
+//   cameraButton  true: a "Center" button that moves the camera: the scene centres shift by 40 px, nothing else changes
 //   helpButton    true: a "Help" button that opens a "help_panel" widget; helpDead true: it does nothing
 //   hover         true: resting the pointer on the Help button shows a "help::tooltip" and a "help_glow" widget
 
 function fixtureGame(options = {}) {
     const opts = { startOverlay: false, guide: null, guideWords: 12, alerts: 0, alertsLateMs: 0, units: 3, selectShows: true, noPanel: false, selectsNothing: false, noise: false,
-        orders: true, ordersDead: false, enemyShows: true, nodeShows: true, groundKeeps: false, rightDead: false, helpButton: false, helpDead: false, hover: false, ...options };
+        orders: true, ordersDead: false, enemyShows: true, nodeShows: true, groundKeeps: false, rightDead: false, helpButton: false, helpDead: false, cameraButton: false, hover: false, ...options };
     return `<!doctype html><meta charset="utf-8"><title>fixture game</title>
 <body style="margin:0;background:#1c1f26;font:16px sans-serif;color:#fff;overflow:hidden">
 <style>
@@ -67,6 +68,7 @@ function fixtureGame(options = {}) {
 <div id="noise" class="abs"></div>
 <div id="orders"></div>
 <div id="alerts"></div>
+${opts.cameraButton ? '<button id="cam" class="abs" style="left:1100px;top:80px;width:80px;height:30px;z-index:10;opacity:0.99">Center</button>' : ""}
 ${opts.helpButton ? '<button id="help" class="abs">Help</button><div id="help_panel" class="abs">Help text</div>' : ""}
 ${opts.guide ? `<div id="guide" class="abs" style="background:${opts.guide === "opaque" ? "rgb(20,30,40)" : "rgba(20,30,40,0.8)"}"><div id="guide_copy" class="abs"></div><button id="guide_close" class="abs">Close</button></div>` : ""}
 ${opts.startOverlay ? '<div id="overlay" class="abs"><div id="start_text" class="abs" style="left:546px;top:346px;width:188px;height:29px;font-size:26px">Click to play</div></div>' : ""}
@@ -79,6 +81,7 @@ let selection = [];
 let notices = [];
 let markers = 0;
 let stateOff = false;
+let camX = 0;
 const $ = (id) => document.getElementById(id);
 const units = [...OWN.map(([id, x, y]) => ({ id, x, y, owner: 0 })), { id: ENEMY[0], x: ENEMY[1], y: ENEMY[2], owner: 1 }];
 function notice(text) { notices = [{ message: text, text }]; $("notice").style.display = "block"; $("notice").textContent = text; }
@@ -145,6 +148,8 @@ const overlay = $("overlay");
 if (overlay) overlay.addEventListener("mousedown", () => overlay.remove());
 const guide = $("guide");
 if (guide) $("guide_close").addEventListener("mousedown", () => guide.remove());
+const cam = $("cam");
+if (cam) cam.addEventListener("mousedown", () => { camX += 40; });
 const help = $("help");
 let hovered = false;
 if (help) { help.addEventListener("mouseenter", () => { hovered = OPTS.hover; }); help.addEventListener("mouseleave", () => { hovered = false; }); }
@@ -153,13 +158,16 @@ const rect = (el) => { const r = el.getBoundingClientRect(); return [r.x, r.y, r
 const shown = (el) => el && document.body.contains(el) && el.style.display !== "none" && getComputedStyle(el).display !== "none";
 function widgets() {
     const list = [];
-    const w = (id, kind, el, extra = {}) => list.push({ id, kind, rect: rect(el), visible: true, enabled: true, capture_root: true, text: null, ...extra });
+    // As the real client does, a widget whose place is outside the page is not visible in the record.
+    const onPage = (r) => r[0] + r[2] / 2 >= 0 && r[1] + r[3] / 2 >= 0 && r[0] + r[2] / 2 < innerWidth && r[1] + r[3] / 2 < innerHeight;
+    const w = (id, kind, el, extra = {}) => { const r = rect(el); list.push({ id, kind, rect: r, visible: onPage(r), enabled: true, capture_root: true, text: null, ...extra }); };
     const ov = $("overlay");
     if (ov && document.body.contains(ov)) list.push({ id: "focus_overlay", kind: "focus_overlay", rect: [0, 0, 1280, 720], visible: true, enabled: true, capture_root: true, focus_policy_block: true,
         text_nodes: [{ rect: rect($("start_text")), text: "Click to play", visible: true }] });
     const g = $("guide");
     if (g && document.body.contains(g)) { w("guide", "widget", g); w("guide_copy", "widget", copy, { text: copy.textContent }); w("guide_close", "button", $("guide_close"), { text: "Close" }); }
     document.querySelectorAll(".alert").forEach((el, k) => w("alert_rows/alert_line[" + k + "]", "button", el, { text: el.textContent }));
+    if (cam) w("camera_button", "button", cam, { text: "Center", widget_action: { kind: "center_camera", x: 1, y: 1 } });
     if (help) { w("help", "button", help, { text: "Help" }); const p = $("help_panel"); if (p.style.display === "block") w("help_panel", "widget", p, { text: "Help text" }); }
     if (hovered) { list.push({ id: "help::tooltip", kind: "widget", rect: [1100, 52, 90, 20], visible: true, enabled: true, text: "Help tip" }); list.push({ id: "help_glow", kind: "widget", rect: [1096, 16, 88, 38], visible: true, enabled: true, text: null }); }
     if (shown($("selection_panel"))) w("selection_panel", "widget", $("selection_panel"), { text: $("selection_panel").textContent });
@@ -174,7 +182,7 @@ const debug = () => JSON.stringify({ phase: "Joined { slot: 0 }", slot: 0, selec
     replicated_world: { units: units.map((u) => ({ unit_id: u.id, owner_slot: u.owner, content_id: "fixture:" + (u.owner ? "enemy" : "own") })) } });
 window.turts_debug = debug;
 window.turts_debug_request = () => Promise.resolve(debug());
-window.turts_scene = () => JSON.stringify({ units: units.map((u) => ({ unit_id: u.id, translation: [u.x, 0, u.y], ground_screen_center: [u.x, u.y], pick_radius: 30 })),
+window.turts_scene = () => JSON.stringify({ units: units.map((u) => ({ unit_id: u.id, translation: [u.x, 0, u.y], ground_screen_center: [u.x + camX, u.y], pick_radius: 30 })),
     nodes: [{ node_id: NODE[0], translation: [NODE[1], 0, NODE[2]], ground_screen_center: [NODE[1], NODE[2]], pick_radius: 30 }] });
 window.turts_ui = () => JSON.stringify(widgets());
 </script>`;

@@ -101,6 +101,9 @@ test("orderButtons: visible enabled order buttons, the destructive ones last; bo
         button("hold", "Hold [H]", 330), button("out", "Out", 900)];
     assert.deepEqual(orderButtons(ui, view).map((entry) => entry.id), ["disable", "hold", "remove"], "order kind only, on the page, enabled; Remove last");
     assert.deepEqual(buttonsOutsidePage(ui, view).map((entry) => entry.id), ["out"]);
+    const clipped = [{ id: "close", kind: "button", visible: false, enabled: true, rect: [1225, 15, 92, 44], text: "Close" }, { id: "other", kind: "button", visible: false, enabled: true, rect: [1225, 65, 92, 44], text: "Other" },
+        { id: "inside", kind: "button", visible: false, enabled: true, rect: [100, 15, 92, 44], text: "Close" }];
+    assert.deepEqual(buttonsOutsidePage(clipped, { width: 1024, height: 768 }).map((entry) => entry.id), ["close"], "a hidden Close outside the page counts; other hidden buttons and a hidden one inside do not");
     assert.equal(boxHalf(0), 48);
     assert.equal(boxHalf(30), 48, "1.5 x 30 = 45: the minimum holds");
     assert.equal(boxHalf(100), 150, "a large object gets a box 1.5 times its size");
@@ -320,13 +323,14 @@ test("an order button with no visible result is a P3 FAIL; the other orders stil
     assert.ok(record.orders.filter((order) => order.acted).every((order) => order.notice), "Hold and Remove answer with a notice within 1 s");
 });
 
-test("each extra click has a red case: an enemy with no panel, a node with no name, ground that keeps the selection, a right click that shows nothing", { skip, timeout: 400000 }, async () => {
-    for (const [option, name] of [["enemyShows", "enemy"], ["nodeShows", "node"], ["groundKeeps", "ground_clear"], ["rightDead", "right_click"]]) {
-        const { record } = await probe("first-click", { ...GREEN, [option]: option === "groundKeeps" || option === "rightDead" });
-        assert.equal(record.summary.extras.verdict, "FAIL", `${option}: ${JSON.stringify(record.extras)}`);
-        assert.deepEqual(record.summary.extras.failed, [name], option);
-    }
-});
+for (const [option, value, name] of [["enemyShows", false, "enemy"], ["nodeShows", false, "node"], ["groundKeeps", true, "ground_clear"], ["rightDead", true, "right_click"]]) {
+    test(`extra click red case: ${name} (${option}: ${value})`, T, async () => {
+        const { record } = await probe("first-click", { ...GREEN, [option]: value });
+        assert.equal(record.summary.extras.verdict, "FAIL", JSON.stringify(record.extras));
+        assert.deepEqual(record.summary.extras.failed, [name]);
+        assert.equal(record.summary.verdict, "PASS", "the units and the orders still pass");
+    });
+}
 
 test("a second window size: at 1024x768 the Close control of the guide is outside the page (P5), and the control cannot close the layer", T, async () => {
     const viewport = { width: 1024, height: 768 };
@@ -431,6 +435,13 @@ test("buttons probe: a start overlay that vanishes on the first click does not c
     assert.equal(record.f8_start.acted, false);
     assert.deepEqual(record.f8_start.changed_ids, []);
     assert.equal(record.summary.verdict, "FAIL", "the dead button does nothing after the start either");
+});
+
+test("buttons probe: a button whose effect is a moved camera acts (the unit centres shift); the UI record and the pictures near it do not change", T, async () => {
+    const { record } = await probe("buttons", { ...GREEN, startOverlay: false, cameraButton: true });
+    const button = record.buttons.find((entry) => entry.id === "camera_button");
+    assert.deepEqual([button.acted, button.acted_ui, button.acted_box, button.camera_moved], [true, false, false, true], JSON.stringify(button));
+    assert.equal(record.summary.verdict, "PASS");
 });
 
 test("buttons probe: what the pointer resting on a button shows (a tooltip, a glow) is not the click acting", T, async () => {
