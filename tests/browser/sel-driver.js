@@ -42,9 +42,9 @@ async function drive(io, params) {
     for (const stage of params.stages) {
         const points = selectorPoints(stage.selector, targets, before, stage.gesture);
         if (stage.gesture === "double-click") {
-            await io.click(points.start.x, points.start.y, "left");
-            await io.wait(80);
-            await io.click(points.start.x, points.start.y, "left");
+            // One harness action sends both clicks back to back (count 2), so a loaded host cannot
+            // stretch the gap between them past the 400 ms double-click window (RUN130: 468 ms).
+            await io.click(points.start.x, points.start.y, "left", { count: 2 });
         } else if (stage.gesture === "click") {
             await withModifiers(io, stage.modifiers || [], async () => io.click(points.start.x, points.start.y, "left"));
         } else if (stage.gesture === "box") {

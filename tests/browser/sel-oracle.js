@@ -17,20 +17,17 @@ async function judge(view, params) {
     const initialImage = decodePng(Buffer.from(await view.serverFile("sel-initial.png.b64"), "base64"));
     let actionIndex = 0;
     for (const stage of params.stages || []) {
-        const count = stage.gesture === "double-click" ? 2 : 1;
-        const stageActions = actions.slice(actionIndex, actionIndex + count);
-        actionIndex += count;
+        // One harness action for each stage. A double click is one click action with count 2: its
+        // two pointer press and release pairs are timed by their own browser events.
+        const stageActions = actions.slice(actionIndex, actionIndex + 1);
+        actionIndex += 1;
         const action = stageActions.at(-1);
         const expectedCall = stage.gesture === "box" ? "drag" : "click";
-        assert.equal(stageActions.length, count, `SEL ${stage.label} is missing a real harness action`);
+        assert.equal(stageActions.length, 1, `SEL ${stage.label} is missing a real harness action`);
         assert(stageActions.every((entry) => entry.call === expectedCall), `SEL ${stage.label} used the wrong real harness gesture`);
         assert(action, `SEL ${stage.label} must be a physical harness ${stage.gesture}`);
-        if (stage.gesture === "double-click") {
-            const [first, second] = stageActions;
-            assert(second.wall_time_ms - first.wall_time_ms <= 400, `SEL ${stage.label} clicks exceed the 400 ms double-click window`);
-            assert(Math.hypot(second.args[0] - first.args[0], second.args[1] - first.args[1]) <= 4, `SEL ${stage.label} clicks exceed the 4 px double-click radius`);
-        }
-        const mouseUp = action.actual_events?.find((event) => event.type === "pointerup");
+        if (stage.gesture === "double-click") assertDoubleClick(action, stage);
+        const mouseUp = action.actual_events?.filter((event) => event.type === "pointerup").at(-1);
         assert(mouseUp?.canvas_target, `SEL ${stage.label} pointer release did not land on the rendered canvas`);
         const mouseUpSeq = mouseUp?.seq;
         assert(Number.isInteger(mouseUpSeq), `SEL ${stage.label} has no actual canvas pointer-release sequence`);
@@ -70,6 +67,23 @@ async function judge(view, params) {
         }
         if (stage.expected_unit_content_id) assertTypeSelectionIsVisible(frame, debug, scene, stage);
     }
+}
+
+// The double click is one click action with count 2: press, release, press, release at one point.
+// The product reads the second release as the double click when the two presses are at most 400 ms
+// and 4 px apart (crates/turts_interaction/src/lib.rs, InteractionSettings::default).
+function assertDoubleClick(action, stage) {
+    assert.equal(action.args?.[3]?.count, 2, `SEL ${stage.label} must send both clicks as one harness action with count 2`);
+    const events = (action.actual_events || []).filter((event) => event.type === "pointerdown" || event.type === "pointerup");
+    assert.deepEqual(events.map((event) => event.type), ["pointerdown", "pointerup", "pointerdown", "pointerup"],
+        `SEL ${stage.label} must record two actual press and release pairs`);
+    assert(events.every((event, index) => index === 0 || event.seq > events[index - 1].seq),
+        `SEL ${stage.label} pointer events carry increasing sequence numbers`);
+    const [first, , second] = events;
+    assert(Number.isFinite(first.wall_time_ms) && Number.isFinite(second.wall_time_ms),
+        `SEL ${stage.label} presses carry browser times`);
+    assert(second.wall_time_ms - first.wall_time_ms <= 400, `SEL ${stage.label} clicks exceed the 400 ms double-click window`);
+    assert(Math.hypot(second.client_x - first.client_x, second.client_y - first.client_y) <= 4, `SEL ${stage.label} clicks exceed the 4 px double-click radius`);
 }
 
 function screenshotCheckpoint(input, checkpoints, filename) {
@@ -296,4 +310,4 @@ function project(matrix, viewport, point) {
     return [viewport[0] + (ndcX + 1) * viewport[2] / 2, viewport[1] + (1 - ndcY) * viewport[3] / 2];
 }
 
-module.exports = { judge };
+module.exports = { judge, __test: { assertDoubleClick } };
