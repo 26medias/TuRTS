@@ -1519,7 +1519,7 @@ fn checked_unit_reference(
 }
 
 /// The engine actions with a fixed name. The group and camera actions have their own rule below.
-const ENGINE_ACTION_NAMES: [&str; 14] = [
+const ENGINE_ACTION_NAMES: &[&str] = &[
     "select",
     "box_select",
     "command",
