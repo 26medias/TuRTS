@@ -9,12 +9,15 @@ pub mod grid;
 pub mod harness;
 pub mod ids;
 pub mod map;
+pub mod match_config;
 pub mod movement;
 pub mod orders;
+mod outcome;
 pub mod plugin;
 pub mod registry;
 pub mod rules_adapter;
 pub mod slots;
+pub mod unit_index;
 pub mod world;
 
 use economy::GatherOrder;
@@ -55,6 +58,7 @@ pub use economy::{EconomyOrders, SurfaceNodes};
 pub use harness::headless_app;
 pub use ids::{IdAllocators, JobId, NodeId};
 pub use map::load_map;
+pub use match_config::{MatchConfig, MatchSetting, match_started};
 pub use orders::{
     Order, OrderCommand, OrderFailure, OrderPolicyAudit, OrderTargetSim,
     OrderUnitCapabilitiesAudit, QueueMode, UnitOrders, UnitOutcomes,
@@ -63,6 +67,7 @@ pub use plugin::SimPlugin;
 pub use plugin::SimSet;
 pub use registry::{UnitTypeEntry, UnitTypes};
 pub use slots::{ClaimError, SlotId, Slots};
+pub use unit_index::{UnitIndex, unit_entity};
 pub use world::{
     ChangedThisTick, MapBounds, MoveTarget, Owner, Position, Tick, UnitId, UnitState, UnitType,
     gameplay_entity_count, snapshot,

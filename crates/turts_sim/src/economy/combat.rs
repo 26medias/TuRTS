@@ -9,6 +9,7 @@ use turts_mod_api::{ContentId, SlotRelation, WeaponStat};
 use super::{
     events::{EconomyEventKind, RemoveCause},
     ledger::Endpoint,
+    power,
     research::{Disabled, ResearchState, modifier},
     transaction::{self, Transaction},
 };
@@ -195,7 +196,10 @@ pub(crate) fn run_combat(world: &mut World) {
             }
             _ => None,
         });
-        let target = if suppressed_by_fire_policy || suppressed_by_engage {
+        let target = if suppressed_by_fire_policy
+            || suppressed_by_engage
+            || !power::weapon_enabled(world, weapon)
+        {
             None
         } else {
             choose_target(world, origin, &parameters, &combat_index, focus)
@@ -217,6 +221,7 @@ pub(crate) fn run_combat(world: &mut World) {
                 },
             );
         }
+        let fire_enabled = power::weapon_enabled(world, weapon);
         let _ = transaction::transact(world, |tx| {
             tx.mark_m3();
             let mut state = tx.weapon_state(weapon)?;
@@ -235,7 +240,7 @@ pub(crate) fn run_combat(world: &mut World) {
                 return Ok(());
             }
 
-            let Some(target) = target else {
+            let Some(target) = target.filter(|_| fire_enabled) else {
                 state.status = WeaponStatus::NoTarget;
                 if focus.is_none() || state.last_target != focus {
                     state.last_target = None;
@@ -1084,6 +1089,80 @@ mod tests {
             .unwrap();
         assert!(actor.get::<crate::MoveTarget>().is_none());
         assert_eq!(app.world().resource::<Healths>().0[&2], 195);
+    }
+
+    #[test]
+    fn a_weapon_that_the_power_stub_disables_does_not_acquire_and_does_not_fire() {
+        use crate::economy::power::PowerProbe;
+        let mut app = app_with(20, 1000, 5);
+        install_attack_move(&mut app);
+        app.world_mut().insert_resource(PowerProbe {
+            weapon_enabled: false,
+            rate: turts_rules::Ratio::ONE,
+        });
+        for _ in 0..3 {
+            app.update();
+        }
+        let actor = app
+            .world()
+            .iter_entities()
+            .find(|entity| entity.get::<UnitId>().is_some_and(|id| id.0 == 1))
+            .unwrap();
+        assert!(
+            actor.get::<crate::MoveTarget>().is_some(),
+            "the weapon chose a target: acquisition does not call weapon_enabled"
+        );
+        assert_eq!(
+            app.world().resource::<crate::economy::combat::Weapons>().0[&1].last_target,
+            None
+        );
+        assert_eq!(app.world().resource::<Healths>().0[&2], 200);
+        // The same world with the probe says "enabled": the weapon acts as in the test above.
+        let mut enabled = app_with(20, 1000, 5);
+        install_attack_move(&mut enabled);
+        enabled.world_mut().insert_resource(PowerProbe {
+            weapon_enabled: true,
+            rate: turts_rules::Ratio::ONE,
+        });
+        enabled.update();
+        assert_eq!(enabled.world().resource::<Healths>().0[&2], 195);
+    }
+
+    #[test]
+    fn a_plain_weapon_that_the_power_stub_disables_does_not_fire() {
+        use crate::economy::power::PowerProbe;
+        let mut app = app_with(20, 0, 5);
+        app.world_mut().insert_resource(PowerProbe {
+            weapon_enabled: false,
+            rate: turts_rules::Ratio::ONE,
+        });
+        for _ in 0..5 {
+            app.update();
+        }
+        assert_eq!(app.world().resource::<Healths>().0[&2], 200);
+        assert!(fired_events(&app).is_empty());
+    }
+
+    #[test]
+    fn the_outcome_slot_sees_a_unit_that_the_death_path_removed_in_the_same_tick() {
+        use bevy_app::FixedUpdate;
+        use bevy_ecs::prelude::*;
+        #[derive(Resource, Default)]
+        struct Seen(Vec<(u32, bool)>);
+        fn probe(index: Res<crate::UnitIndex>, tick: Res<crate::Tick>, mut seen: ResMut<Seen>) {
+            seen.0.push((tick.0, index.get(2).is_some()));
+        }
+        // One shot of 200 kills the target (200 health) in tick 1.
+        let mut app = app_with(20, 0, 200);
+        app.init_resource::<Seen>();
+        app.add_systems(FixedUpdate, probe.in_set(crate::SimSet::Outcome));
+        app.update();
+        assert_eq!(app.world().resource::<Healths>().0.get(&2), None);
+        assert_eq!(
+            app.world().resource::<Seen>().0,
+            [(1, false)],
+            "the outcome check ran before the removal of the killed unit"
+        );
     }
 
     #[test]

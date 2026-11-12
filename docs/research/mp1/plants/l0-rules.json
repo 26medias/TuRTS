@@ -465,13 +465,13 @@
             "formula_ratchet",
             "--",
             "--exact",
-            "formula_copies_do_not_grow"
+            "formula_copies_do_not_grow_and_the_record_is_exact"
         ],
         "env": {},
         "headed": false,
         "expected_red": "formula ratchet:\ncrates/turts_sim/src/slots.rs: u128_div: a file with no record has a count of 1: call turts_rules::<function> in place of a new copy, or raise the count with a reason in the commit",
         "exit": 101,
-        "expected_selected": "formula_copies_do_not_grow",
+        "expected_selected": "formula_copies_do_not_grow_and_the_record_is_exact",
         "commit": "b6e7e566c4826e48ce954f3fd7132c87ec3d8082"
     },
     {
@@ -493,13 +493,13 @@
             "formula_ratchet",
             "--",
             "--exact",
-            "formula_copies_do_not_grow"
+            "formula_copies_do_not_grow_and_the_record_is_exact"
         ],
         "env": {},
         "headed": false,
         "expected_red": "formula ratchet:\ncrates/turts_sim/src/economy/production.rs: u128_div: the count went up from 1 to 2: call turts_rules::<function> in place of a new copy, or raise the count with a reason in the commit",
         "exit": 101,
-        "expected_selected": "formula_copies_do_not_grow",
+        "expected_selected": "formula_copies_do_not_grow_and_the_record_is_exact",
         "commit": "b6e7e566c4826e48ce954f3fd7132c87ec3d8082"
     },
     {

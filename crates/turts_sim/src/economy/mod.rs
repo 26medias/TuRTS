@@ -1,12 +1,17 @@
+pub mod acquire;
 pub mod combat;
+pub mod construction;
 pub mod conveyor;
 pub mod events;
 pub mod extractor;
 pub mod gather;
+pub mod income;
 pub mod inserter;
 pub mod ledger;
 pub mod machine;
+pub mod power;
 pub mod production;
+pub mod repair;
 pub mod research;
 pub mod transaction;
 pub mod views;

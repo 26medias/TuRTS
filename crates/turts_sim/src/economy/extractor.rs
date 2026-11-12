@@ -15,8 +15,8 @@ use super::{
     transaction::{extract_from_node, transact},
 };
 use crate::{
-    RejectReason, SimClock, UnitId, bootstrap::InstalledCatalog, ids::NodeId, registry::UnitTypes,
-    world::UnitType,
+    RejectReason, SimClock, bootstrap::InstalledCatalog, ids::NodeId, registry::UnitTypes,
+    unit_index::unit_entity, world::UnitType,
 };
 
 /// Current extractor condition.
@@ -66,7 +66,7 @@ pub(crate) fn run_extract(world: &mut World) {
         .copied()
         .collect::<Vec<_>>();
     for unit in units {
-        let Some(entity) = find_unit(world, unit) else {
+        let Some(entity) = unit_entity(world, unit) else {
             continue;
         };
         let Some(unit_type) = world.get::<UnitType>(entity) else {
@@ -136,12 +136,6 @@ pub(crate) fn run_extract(world: &mut World) {
             Ok(())
         });
     }
-}
-
-fn find_unit(world: &World, id: u32) -> Option<bevy_ecs::entity::Entity> {
-    world
-        .iter_entities()
-        .find_map(|entity| (entity.get::<UnitId>()?.0 == id).then_some(entity.id()))
 }
 
 #[cfg(test)]
@@ -279,6 +273,29 @@ mod tests {
             .iter()
             .filter(|event| matches!(event.kind, EconomyEventKind::Extracted { .. }))
             .count()
+    }
+
+    #[test]
+    fn the_extractor_pass_reads_the_unit_index_and_does_not_scan() {
+        use crate::unit_index::index_entry_for_test;
+        let mut control = fixture(20, 2, 100, 100);
+        for _ in 0..10 {
+            step(&mut control);
+        }
+        assert_eq!(ore_count(&control), 1);
+        // The entry of the drill points at a bare entity with an owner and no unit type: the pass
+        // skips it. A scan would still find the real drill and extract (the owner is there so
+        // that the later transaction, which reads the index too, could pay out).
+        let mut indexed = fixture(20, 2, 100, 100);
+        let bare = index_entry_for_test(indexed.world_mut(), DRILL);
+        indexed
+            .world_mut()
+            .entity_mut(bare)
+            .insert(Owner(SlotId(0)));
+        for _ in 0..10 {
+            step(&mut indexed);
+        }
+        assert_eq!(ore_count(&indexed), 0, "run_extract scanned the world");
     }
 
     #[test]

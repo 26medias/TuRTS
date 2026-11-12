@@ -117,7 +117,7 @@ pub fn install(app: &mut App, advertised: Advertised) {
     app.add_systems(
         FixedPreUpdate,
         admit_player_commands
-            .after(SimSet::Advance)
+            .after(SimSet::Construction)
             .before(SimSet::Commands),
     );
     app.add_systems(
@@ -790,6 +790,7 @@ mod tests {
         });
         app.add_plugins(turts_net_lightyear::ProtocolPlugin);
         app.add_plugins(turts_sim::SimPlugin { tick_hz: 20 });
+        app.insert_resource(turts_sim::MatchConfig::immediate(20));
         app.init_resource::<crate::stats::Stats>();
         app.insert_resource(crate::stats::MatchId(0));
         install(&mut app, advertised());
@@ -961,6 +962,7 @@ mod tests {
         });
         app.add_plugins(turts_net_lightyear::ProtocolPlugin);
         app.add_plugins(turts_sim::SimPlugin { tick_hz: 20 });
+        app.insert_resource(turts_sim::MatchConfig::immediate(20));
         app.init_resource::<crate::stats::Stats>();
         app.insert_resource(crate::stats::MatchId(0));
         install(&mut app, advertised());
@@ -1088,6 +1090,32 @@ mod tests {
 }
 
 #[cfg(test)]
+/// The admission systems of the server run in `FixedPreUpdate` between the tick advance and
+/// the commands. The sets `Supply` and `Construction` sit in that gap (ruling of the set
+/// order), so the admission systems must be ordered against them: an exclusive system
+/// that is not ordered against another system that touches a resource is an ambiguity, and
+/// the ambiguity check of the schedule makes it an error.
+pub(crate) fn assert_fixed_pre_update_is_totally_ordered(mut app: App) {
+    use bevy::ecs::schedule::{LogLevel, ScheduleBuildSettings};
+    #[derive(Resource, Default)]
+    struct Probe(u32);
+    app.init_resource::<Probe>();
+    for set in [SimSet::Supply, SimSet::Construction] {
+        app.add_systems(
+            FixedPreUpdate,
+            (|mut probe: ResMut<Probe>| probe.0 += 1).in_set(set),
+        );
+    }
+    app.edit_schedule(FixedPreUpdate, |schedule| {
+        schedule.set_build_settings(ScheduleBuildSettings {
+            ambiguity_detection: LogLevel::Error,
+            ..Default::default()
+        });
+    });
+    app.world_mut().run_schedule(FixedPreUpdate);
+}
+
+#[cfg(test)]
 mod admission_tests {
     use super::*;
     use bevy::time::{TimePlugin, TimeUpdateStrategy};
@@ -1114,10 +1142,11 @@ mod admission_tests {
         });
         app.add_plugins(TimePlugin)
             .add_plugins(turts_sim::SimPlugin { tick_hz })
+            .insert_resource(turts_sim::MatchConfig::immediate(tick_hz))
             .add_systems(
                 FixedPreUpdate,
                 admit_player_commands
-                    .after(SimSet::Advance)
+                    .after(SimSet::Construction)
                     .before(SimSet::Commands),
             );
         app.init_resource::<StagedPlayerCommands>()
@@ -1756,6 +1785,22 @@ mod admission_tests {
     }
 
     #[test]
+    fn the_production_admission_system_is_ordered_against_every_set_before_the_commands() {
+        let mut app = App::new();
+        app.add_plugins(TimePlugin)
+            .add_plugins(turts_sim::SimPlugin { tick_hz: 20 })
+            .insert_resource(turts_sim::MatchConfig::immediate(20));
+        install(
+            &mut app,
+            Advertised {
+                lockfile_hash: String::new(),
+                tick_hz: 20,
+            },
+        );
+        super::assert_fixed_pre_update_is_totally_ordered(app);
+    }
+
+    #[test]
     fn production_receive_survives_lightyear_last_without_a_fixed_tick() {
         use lightyear::link::recv_payload_from_bytes;
         use lightyear::prelude::server::ServerPlugins;
@@ -1766,6 +1811,7 @@ mod admission_tests {
         });
         app.add_plugins(turts_net_lightyear::ProtocolPlugin);
         app.add_plugins(turts_sim::SimPlugin { tick_hz: 20 });
+        app.insert_resource(turts_sim::MatchConfig::immediate(20));
         app.init_resource::<crate::stats::Stats>();
         app.insert_resource(crate::stats::MatchId(0));
         app.insert_resource(crate::orders::ServerCatalog(test_order_catalog()));

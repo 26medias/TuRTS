@@ -75,6 +75,18 @@ pub fn rate_step(q: u64, rate: Ratio) -> Option<u64> {
     u64::try_from(product / denominator).ok()
 }
 
+/// The ticks of base time that `done` units of progress stand for, for a job whose `total` is
+/// `duration_ticks x Q` (design 6.4): `floor(done x duration_ticks / total)`. At Q = 1
+/// (`total == duration_ticks`) it is `done`. A job with no total (0) shows `done`. The views
+/// call it so that `elapsed_ticks` and `duration_ticks` are in the same unit.
+pub fn base_ticks_done(done: u64, duration_ticks: u64, total: u64) -> u64 {
+    if total == 0 {
+        return done;
+    }
+    let ticks = u128::from(done) * u128::from(duration_ticks) / u128::from(total);
+    saturate_u64(ticks)
+}
+
 /// Ticks left until `ready_tick` (a weapon record): 0 when ready.
 pub fn cooldown_left(ready_tick: u32, tick: u32) -> u32 {
     ready_tick.saturating_sub(tick)
