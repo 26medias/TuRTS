@@ -80,14 +80,29 @@ pub fn assign_fallback_pools(
     next_pool_id: &mut u64,
 ) -> Vec<MovementPool> {
     requests.sort_unstable_by_key(|request| request.unit_id);
+    // The outputs of a step are in unit-id order, as the requests are: one walk over both
+    // (the A2b1 review, finding L1).
+    debug_assert!(
+        outputs
+            .windows(2)
+            .all(|pair| pair[0].unit_id < pair[1].unit_id),
+        "the outputs of a step are in unit-id order"
+    );
+    let mut cursor = 0;
     requests
         .into_iter()
         .map(|mut request| {
             *next_pool_id = next_pool_id.saturating_add(1);
             request.pool.pool_id = *next_pool_id;
+            while outputs
+                .get(cursor)
+                .is_some_and(|output| output.unit_id < request.unit_id)
+            {
+                cursor += 1;
+            }
             let progress = outputs
-                .iter_mut()
-                .find(|output| output.unit_id == request.unit_id)
+                .get_mut(cursor)
+                .filter(|output| output.unit_id == request.unit_id)
                 .and_then(|output| output.progress.as_mut())
                 .expect("a fallback request names a unit of the frame that holds its progress");
             debug_assert_eq!(progress.pool_id, 0, "a fallback pool has no id yet");

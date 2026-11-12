@@ -45,6 +45,20 @@ fn count_pool_slot_candidates(count: usize) {
     POOL_SLOT_CANDIDATE_CHECKS.with(|checks| checks.set(checks.get() + count));
 }
 
+#[cfg(test)]
+thread_local! {
+    /// The pool indexes that the step built for pools of one (one primary slot or none), in the
+    /// frame setup or on demand (task A2b1, review finding H1).
+    static POOL_OF_ONE_INDEX_BUILDS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+fn count_pool_index_build(primary_count: u32) {
+    if primary_count <= 1 {
+        POOL_OF_ONE_INDEX_BUILDS.with(|builds| builds.set(builds.get() + 1));
+    }
+}
+
 /// Current lifecycle of one accepted group-movement envelope.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MovementActivity {

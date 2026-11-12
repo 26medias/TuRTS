@@ -98,10 +98,21 @@ pub fn step_frame_with_fallbacks(
         .collect();
     let max_radius = units.iter().map(|unit| unit.radius).fold(0.0_f32, f32::max);
     let mut grid = crate::grid::UniformGrid::new(&points, 2.0 * max_radius);
+    // A pool of one (one primary slot or none: the fallback pools, a one-unit envelope) has no
+    // index for the frame. Its index is built only when its member looks for a free slot
+    // (`lazy_pool_index`), from the state of that moment. The clearance of a slot depends only on
+    // the units near it at that moment, and the frame refreshes a slot each time a unit moves
+    // near it, so the index built late equals the index that the frame would have kept (the A2b1
+    // review, finding H1: an index for each pool of one in each tick was the cost of the step).
     let mut pool_indexes: BTreeMap<_, _> = frame
         .pools
         .iter()
-        .map(|(&pool_id, pool)| (pool_id, MovementPoolIndex::new(pool, frame.bounds)))
+        .filter(|(_, pool)| !is_pool_of_one(pool))
+        .map(|(&pool_id, pool)| {
+            #[cfg(test)]
+            super::count_pool_index_build(pool.primary_count);
+            (pool_id, MovementPoolIndex::new(pool, frame.bounds))
+        })
         .collect();
     let mut plain_reserved = Vec::new();
     let mut plain_static = Vec::new();
@@ -444,17 +455,27 @@ pub fn step_frame_with_fallbacks(
                     && is_free(*slot)
                     && (!assigned_slots.contains(&key) || key == old_slot_key)
             });
-            let pool_escape = pool_indexes.get(&progress.pool_id).and_then(|index| {
-                index.nearest_free(
-                    unit.unit_id,
-                    unit.position,
-                    progress.pool_id,
-                    Some(old_slot_key),
-                    &assigned_slots,
-                    unit.radius,
-                    is_free,
-                )
-            });
+            let lazy = lazy_pool_index(
+                frame,
+                &pool_indexes,
+                progress.pool_id,
+                &assigned_slots,
+                (&units, &points, &grid, max_radius),
+            );
+            let pool_escape = pool_indexes
+                .get(&progress.pool_id)
+                .or(lazy.as_ref())
+                .and_then(|index| {
+                    index.nearest_free(
+                        unit.unit_id,
+                        unit.position,
+                        progress.pool_id,
+                        Some(old_slot_key),
+                        &assigned_slots,
+                        unit.radius,
+                        is_free,
+                    )
+                });
             let outside_escape = MovementSearch {
                 bounds: frame.bounds,
                 units: &units,
@@ -857,29 +878,41 @@ pub fn step_frame_with_fallbacks(
                             progress.slot.x.to_bits(),
                             progress.slot.y.to_bits(),
                         );
-                        let spare = pool_indexes.get(&progress.pool_id).and_then(|pool_index| {
-                            pool_index.nearest_free(
-                                unit.unit_id,
-                                position,
-                                progress.pool_id,
-                                None,
-                                &assigned_slots,
-                                unit.radius,
-                                |slot| {
-                                    let key =
-                                        (progress.pool_id, slot.x.to_bits(), slot.y.to_bits());
-                                    key != old_slot_key
-                                        && grid
-                                            .within(&points, slot, unit.radius + max_radius)
-                                            .into_iter()
-                                            .all(|other_index| {
-                                                other_index == index
-                                                    || slot.distance(units[other_index].position)
-                                                        >= unit.radius + units[other_index].radius
-                                            })
-                                },
-                            )
-                        });
+                        let lazy = lazy_pool_index(
+                            frame,
+                            &pool_indexes,
+                            progress.pool_id,
+                            &assigned_slots,
+                            (&units, &points, &grid, max_radius),
+                        );
+                        let spare = pool_indexes
+                            .get(&progress.pool_id)
+                            .or(lazy.as_ref())
+                            .and_then(|pool_index| {
+                                pool_index.nearest_free(
+                                    unit.unit_id,
+                                    position,
+                                    progress.pool_id,
+                                    None,
+                                    &assigned_slots,
+                                    unit.radius,
+                                    |slot| {
+                                        let key =
+                                            (progress.pool_id, slot.x.to_bits(), slot.y.to_bits());
+                                        key != old_slot_key
+                                            && grid
+                                                .within(&points, slot, unit.radius + max_radius)
+                                                .into_iter()
+                                                .all(|other_index| {
+                                                    other_index == index
+                                                        || slot
+                                                            .distance(units[other_index].position)
+                                                            >= unit.radius
+                                                                + units[other_index].radius
+                                                })
+                                    },
+                                )
+                            });
                         if let Some(spare) = spare {
                             if remove_pool_slot_claim(
                                 &mut slot_claim_counts,
@@ -1016,4 +1049,43 @@ pub fn step_frame_with_fallbacks(
         }
     }
     MovementStep { outputs, fallbacks }
+}
+
+/// A pool with one primary slot or none (`MovementPool::primary_count`): it gets no index for the
+/// frame (`lazy_pool_index`).
+fn is_pool_of_one(pool: &MovementPool) -> bool {
+    pool.primary_count <= 1
+}
+
+/// The index of a pool of one, built from the state of this moment of the frame: the units, their
+/// grid and the assigned slots. `None` for a pool that has a frame index (`pool_indexes`) or that
+/// the frame does not hold.
+fn lazy_pool_index(
+    frame: &MovementFrame,
+    pool_indexes: &BTreeMap<u64, MovementPoolIndex>,
+    pool_id: u64,
+    assigned_slots: &std::collections::HashSet<(u64, u32, u32)>,
+    (units, points, grid, max_radius): (
+        &[MovementFrameUnit],
+        &[crate::grid::GridPoint],
+        &crate::grid::UniformGrid,
+        f32,
+    ),
+) -> Option<MovementPoolIndex> {
+    if pool_indexes.contains_key(&pool_id) {
+        return None;
+    }
+    let pool = frame
+        .pools
+        .get(&pool_id)
+        .filter(|pool| is_pool_of_one(pool))?;
+    #[cfg(test)]
+    super::count_pool_index_build(pool.primary_count);
+    let mut index = MovementPoolIndex::new(pool, frame.bounds);
+    for slot_index in 0..index.points.len() {
+        let point = index.points[slot_index].position;
+        let assigned = assigned_slots.contains(&(pool_id, point.x.to_bits(), point.y.to_bits()));
+        index.refresh_slot_clearance(slot_index, units, points, grid, max_radius, assigned);
+    }
+    Some(index)
 }

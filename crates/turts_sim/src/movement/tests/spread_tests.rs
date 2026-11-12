@@ -964,3 +964,126 @@ fn step_frame_rejects_fully_occupied_spares_without_pool_wide_stalled_scans() {
     );
     eprintln!("canonical N={count} occupied-spare candidate inspections={inspected}");
 }
+
+/// A unit with a pool of one of `pool_id` at `slot`, moving from `position`.
+fn pool_of_one_unit(
+    unit_id: u32,
+    pool_id: u64,
+    position: Vec2,
+    slot: Vec2,
+) -> (MovementFrameUnit, MovementPool) {
+    let unit = MovementFrameUnit {
+        unit_id,
+        owner_slot: 0,
+        unit_type: 1,
+        position,
+        radius: 0.5,
+        speed: Some(3.0),
+        target: Some(slot),
+        progress: Some(MoveProgress {
+            pool_id,
+            slot,
+            activity: MovementActivity::Moving,
+            pass_mode: false,
+            stalling_on_group: false,
+            stalled_ticks: 0,
+            best_distance: position.distance(slot),
+            claim_count: 0,
+            follow_origin: None,
+            gather_goal: None,
+            fallback: Some(super::MoveFallback {
+                failure_recorded: false,
+            }),
+        }),
+        plain_progress: None,
+        physical_escape: None,
+    };
+    let pool = MovementPool {
+        pool_id,
+        point: slot,
+        spacing: 1.1,
+        primary_count: 1,
+        slots: vec![slot, slot + Vec2::new(1.1, 0.0)],
+    };
+    (unit, pool)
+}
+
+/// The cost guard of the pools of one (the A2b1 review, finding H1). A frame with 40 units, each
+/// with its own pool of one and a free path, builds no pool index: the step builds the index of
+/// a pool of one only when its member looks for a free slot (a stall at its deadline, or
+/// `Blocked`). A count, not a time: the bound is exact on every machine.
+#[test]
+fn pools_of_one_build_no_index_in_a_free_frame() {
+    let mut units = Vec::new();
+    let mut pools = BTreeMap::new();
+    for index in 0..40_u32 {
+        let position = Vec2::new(
+            4.0 + 3.0 * (index % 10) as f32,
+            4.0 + 3.0 * (index / 10) as f32,
+        );
+        let (unit, pool) = pool_of_one_unit(
+            index + 1,
+            u64::from(index) + 1,
+            position,
+            position + Vec2::new(0.0, 30.0),
+        );
+        units.push(unit);
+        pools.insert(pool.pool_id, pool);
+    }
+    let frame = MovementFrame {
+        bounds: Vec2::splat(64.0),
+        tick_hz: 20,
+        units,
+        pools,
+    };
+    super::POOL_OF_ONE_INDEX_BUILDS.with(|builds| builds.set(0));
+    let outputs = step_frame(&frame, 0.05);
+    let builds = super::POOL_OF_ONE_INDEX_BUILDS.with(std::cell::Cell::get);
+    assert!(
+        outputs.iter().all(|output| output.progress.is_some()),
+        "each unit keeps its pool of one"
+    );
+    assert_eq!(
+        builds, 0,
+        "the step built {builds} indexes for pools of one"
+    );
+}
+
+/// Design 9.17 at the site where a physical escape ends with no step (the body of the unit no
+/// longer overlaps another body at the start of the frame; the A2b1 review, finding M2): a
+/// `Blocked` fallback pool keeps `Blocked`, its slot and its pool, and the escape ends. The pool
+/// of an order in the same state clears its progress (the same frame with `fallback: None`).
+#[test]
+fn a_blocked_fallback_keeps_blocked_when_its_escape_ends_without_a_step() {
+    for fallback in [true, false] {
+        let position = Vec2::new(10.0, 10.0);
+        let (mut unit, pool) = pool_of_one_unit(1, 7, position, position + Vec2::new(1.1, 0.0));
+        let progress = unit.progress.as_mut().unwrap();
+        progress.activity = MovementActivity::Blocked;
+        if !fallback {
+            progress.fallback = None;
+        }
+        unit.target = None;
+        unit.physical_escape = Some(super::PhysicalEscape { target: None });
+        let expected = unit.progress.clone();
+        let frame = MovementFrame {
+            bounds: Vec2::splat(64.0),
+            tick_hz: 20,
+            units: vec![unit],
+            pools: BTreeMap::from([(7, pool)]),
+        };
+        let output = step_frame(&frame, 0.05).remove(0);
+        assert_eq!(output.physical_escape, None, "the escape ends: no overlap");
+        if fallback {
+            assert_eq!(
+                output.progress, expected,
+                "a Blocked fallback pool keeps Blocked until a new order or a new trip (9.17)"
+            );
+        } else {
+            assert_eq!(
+                output.progress, None,
+                "the pool of an order clears its progress"
+            );
+        }
+    }
+}

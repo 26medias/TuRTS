@@ -76,11 +76,13 @@ pub(crate) fn integrate_movement(world: &mut World) {
     let tick_hz = world
         .get_resource::<crate::SimClock>()
         .map_or(20, |clock| clock.tick_hz);
-    let frame = MovementFrame {
+    // The frame takes the pools out of the resource for the step and gives them back after it,
+    // so the step does not copy each pool in each tick (the A2b1 review, finding H1).
+    let mut frame = MovementFrame {
         bounds,
         tick_hz,
         units: units.iter().map(|(_, _, unit)| unit.clone()).collect(),
-        pools: world.resource::<MovementPools>().0.clone(),
+        pools: std::mem::take(&mut world.resource_mut::<MovementPools>().0),
     };
     let preserve_resting_units = units
         .iter()
@@ -100,6 +102,7 @@ pub(crate) fn integrate_movement(world: &mut World) {
         mut outputs,
         fallbacks,
     } = step_frame_with_fallbacks(&frame, delta, &preserve_resting_units);
+    world.resource_mut::<MovementPools>().0 = std::mem::take(&mut frame.pools);
     #[cfg(feature = "test-probes")]
     let fallback_units: Vec<u32> = fallbacks.iter().map(|request| request.unit_id).collect();
     // The fallback pools of one take their ids from the counter of the order pools, in unit-id

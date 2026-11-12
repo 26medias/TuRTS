@@ -3608,35 +3608,7 @@ mod gatherers {
     /// The depot is unit 1; `workers[i]` is a worker with id `i + 2`. Each worker gets a Gather
     /// order on the node.
     pub fn app(node_stock: u64, workers: &[Vec2]) -> bevy_app::App {
-        let mut placements = vec![placement("depot", DEPOT_POS)];
-        placements.extend(workers.iter().map(|at| placement("worker", *at)));
-        let map = MapDef {
-            id: "strip".into(),
-            size: MapSize { x: 80.0, y: 20.0 },
-            placements,
-            nodes: vec![NodePlacement {
-                node: "crowd:deposit".into(),
-                pos: WorldPos {
-                    x: NODE_POS.x,
-                    y: NODE_POS.y,
-                },
-                remaining: node_stock,
-            }],
-            slot_economy: Vec::new(),
-            belts: Vec::new(),
-        };
-        let mut app = headless_app(TICK_HZ);
-        let staged = stage_package(
-            app.world(),
-            catalog(),
-            SourceDef {
-                file: "maps/strip.ron".into(),
-                value: map,
-            },
-            TICK_HZ,
-        )
-        .unwrap();
-        install_package(app.world_mut(), staged);
+        let mut app = world(&[(NODE_POS, node_stock)], workers);
         for (seq, unit_id) in (1..).zip(2..2 + workers.len() as u32) {
             let command = Command {
                 slot: SlotId(0),
@@ -3657,6 +3629,41 @@ mod gatherers {
             let result = apply_command(app.world_mut(), &command);
             assert_eq!(result.units.accepted, vec![unit_id], "{result:?}");
         }
+        app
+    }
+
+    /// The depot is unit 1; `workers[i]` is a worker with id `i + 2`; `nodes[k]` is a node with
+    /// the given stock. No unit has an order.
+    pub fn world(nodes: &[(Vec2, u64)], workers: &[Vec2]) -> bevy_app::App {
+        let mut placements = vec![placement("depot", DEPOT_POS)];
+        placements.extend(workers.iter().map(|at| placement("worker", *at)));
+        let map = MapDef {
+            id: "strip".into(),
+            size: MapSize { x: 80.0, y: 20.0 },
+            placements,
+            nodes: nodes
+                .iter()
+                .map(|&(at, remaining)| NodePlacement {
+                    node: "crowd:deposit".into(),
+                    pos: WorldPos { x: at.x, y: at.y },
+                    remaining,
+                })
+                .collect(),
+            slot_economy: Vec::new(),
+            belts: Vec::new(),
+        };
+        let mut app = headless_app(TICK_HZ);
+        let staged = stage_package(
+            app.world(),
+            catalog(),
+            SourceDef {
+                file: "maps/strip.ron".into(),
+                value: map,
+            },
+            TICK_HZ,
+        )
+        .unwrap();
+        install_package(app.world_mut(), staged);
         app
     }
 
@@ -4002,4 +4009,248 @@ fn fallback_takes_the_nearest_free_hex_slot() {
     }
     let (slot, position) = rested.expect("the mover rests on its fallback slot");
     assert_eq!(position, slot, "the mover stands on its slot");
+}
+
+/// The entity of a unit id.
+fn unit_entity(app: &mut bevy_app::App, unit_id: u32) -> bevy_ecs::entity::Entity {
+    app.world_mut()
+        .iter_entities()
+        .find(|entity| {
+            entity
+                .get::<turts_sim::UnitId>()
+                .is_some_and(|id| id.0 == unit_id)
+        })
+        .unwrap()
+        .id()
+}
+
+/// The ring-1 points of a hex pool at `p` with the spacing `s`, in the order of their angle
+/// (`atan2` ascending, MC design 6.3 step 3 "ties by angle").
+fn ring_one_by_angle(p: Vec2, s: f32) -> Vec<Vec2> {
+    let mut ring: Vec<Vec2> = (0..6)
+        .map(|k| {
+            let angle = std::f32::consts::FRAC_PI_3 * k as f32;
+            p + Vec2::new(angle.cos(), angle.sin()) * s
+        })
+        .collect();
+    ring.sort_by(|a, b| {
+        (a.y - p.y)
+            .atan2(a.x - p.x)
+            .total_cmp(&(b.y - p.y).atan2(b.x - p.x))
+    });
+    ring
+}
+
+/// Two trips with no pool find their goal occupied in the same tick (the A2b1 review, finding
+/// M1). The step reserves the slot of the first one before the second one looks, so the two
+/// pools never hold one slot. Unit 1 rests on P = (30, 15); units 2 and 3 take P as engine trips
+/// (a `MoveTarget`, no order). The expected slots come from the ring rule (MC design 6.3), in
+/// this test: s = 2 x 0.5 + 0.1; unit 2 takes the ring point with the smallest angle; unit 3
+/// takes the one with the smallest angle among the points at least s (less 1.0e-5) from the
+/// slot of unit 2.
+#[test]
+fn two_same_tick_fallbacks_take_two_ring_slots() {
+    let p = Vec2::new(30.0, 15.0);
+    let s = 2.0 * 0.5 + 0.1;
+    let mut app = app_with_units_on(
+        &[(p.x, p.y), (10.0, 10.0), (10.0, 20.0)],
+        &[0, 0, 0],
+        MapSize { x: 64.0, y: 64.0 },
+        0.5,
+    );
+    for unit_id in [2, 3] {
+        let entity = unit_entity(&mut app, unit_id);
+        app.world_mut().entity_mut(entity).insert(MoveTarget(p));
+    }
+    app.update();
+    let ring = ring_one_by_angle(p, s);
+    let expected_2 = ring[0];
+    let expected_3 = *ring
+        .iter()
+        .find(|point| point.distance(expected_2) >= s - 1.0e-5)
+        .unwrap();
+    let slot_of = |app: &mut bevy_app::App, unit_id: u32| {
+        let entity = unit_entity(app, unit_id);
+        app.world()
+            .entity(entity)
+            .get::<turts_sim::movement::MoveProgress>()
+            .filter(|progress| progress.is_fallback())
+            .map(|progress| progress.slot)
+            .expect("the trip takes a fallback pool")
+    };
+    let slot_2 = slot_of(&mut app, 2);
+    let slot_3 = slot_of(&mut app, 3);
+    assert!(
+        slot_2.distance(expected_2) <= 1.0e-4,
+        "unit 2 takes {expected_2:?}, got {slot_2:?}"
+    );
+    assert!(
+        slot_3.distance(expected_3) <= 1.0e-4,
+        "unit 3 takes {expected_3:?}, got {slot_3:?}"
+    );
+    // The invariant: no two pools hold one slot.
+    let mut slots: Vec<[u32; 2]> = app
+        .world_mut()
+        .query::<&turts_sim::movement::MoveProgress>()
+        .iter(app.world())
+        .map(|progress| [progress.slot.x.to_bits(), progress.slot.y.to_bits()])
+        .collect();
+    let count = slots.len();
+    slots.sort_unstable();
+    slots.dedup();
+    assert_eq!(slots.len(), count, "two pools hold one slot");
+}
+
+/// The tie rule of the ring (the A2b1 review, finding L2): P = (30.3, 17.7), radius 0.7, so
+/// s = 2 x 0.7 + 0.1 = 1.5. A resting unit stands on P and a static post on the ring point at
+/// -120 degrees, so five ring points are legal and tie by distance. MC design 6.3 step 3: ties by
+/// angle; the test takes the legal point with the smallest `atan2` angle, which is the point at
+/// -60 degrees, (31.05, 16.40096).
+#[test]
+fn fallback_ring_tie_takes_the_smallest_angle() {
+    let p = Vec2::new(30.3, 17.7);
+    let radius = 0.7_f32;
+    let s = 2.0 * radius + 0.1;
+    let ring = ring_one_by_angle(p, s);
+    let post_point = ring[0];
+    let expected = ring[1];
+    assert!(
+        expected.distance(Vec2::new(31.05, 16.40096)) <= 1.0e-4,
+        "the ring rule gives the point at -60 degrees: {expected:?}"
+    );
+    let mut app = app_with_units_on(
+        &[(40.0, 10.0), (p.x, p.y)],
+        &[0, 0],
+        MapSize { x: 64.0, y: 64.0 },
+        radius,
+    );
+    let post = app
+        .world_mut()
+        .resource_mut::<UnitTypes>()
+        .register_unit_type(
+            &PackageId(ORIGIN.to_owned()),
+            UnitDef {
+                id: "tie-post".into(),
+                name: "Tie post".into(),
+                movement: None,
+                inventory: None,
+                gatherer: None,
+                drop_off: None,
+                producer: None,
+                footprint: Footprint::Circle { radius },
+                output_inventory: None,
+                extractor: None,
+                conveyor: None,
+                inserter: None,
+                machine: None,
+                research: None,
+                health: None,
+                weapon: None,
+                removal: None,
+            },
+        )
+        .unwrap();
+    app.world_mut().spawn((
+        turts_sim::UnitId(10),
+        turts_sim::UnitType(post),
+        turts_sim::Owner(SlotId(0)),
+        turts_sim::Position(post_point),
+    ));
+    let mover = unit_entity(&mut app, 1);
+    app.world_mut().entity_mut(mover).insert(MoveTarget(p));
+    app.update();
+    let slot = app
+        .world()
+        .entity(mover)
+        .get::<turts_sim::movement::MoveProgress>()
+        .filter(|progress| progress.is_fallback())
+        .map(|progress| progress.slot)
+        .expect("the trip takes a fallback pool");
+    assert!(
+        slot.distance(expected) <= 1.0e-4,
+        "the tied ring points give the one with the smallest angle {expected:?}, got {slot:?}"
+    );
+}
+
+/// A gather trip whose fallback pool is in flight when its node empties (design 9.19, the A2b1
+/// review, finding M3). The gather leg of the worker changes its goal to the next node; the
+/// order phase ends the fallback pool because its `gather_goal` names the old node, and the
+/// worker then goes to the new node. A fallback with no goal would keep the slot of the empty
+/// node, with no target after `set_deposit`.
+///
+/// Depot unit 1 at (4, 10); node 1 at (30, 10) with a stock of 4; node 2 at (30, 16). Worker A
+/// (unit 2) at (60, 10) gathers node 1 (legacy `Gather`); its approach point (32, 10) holds an
+/// idle worker (unit 3), so A takes a fallback pool. Worker C (unit 4) at (28.2, 9.4) is in
+/// reach of node 1 and empties it in about four ticks. A must gather at node 2 within
+/// `2 x (distance / speed) + 5 s` of the tick node 1 empties, where `distance` is from A to its
+/// approach point at node 2 (reach 0.5 + 1 + 0.5 = 2).
+#[test]
+fn fallback_ends_when_the_gather_endpoint_changes() {
+    use gatherers::*;
+    let node_2 = Vec2::new(30.0, 16.0);
+    let mut app = world(
+        &[(Vec2::new(30.0, 10.0), 4), (node_2, 1_000)],
+        &[
+            Vec2::new(60.0, 10.0),
+            Vec2::new(32.0, 10.0),
+            Vec2::new(28.2, 9.4),
+        ],
+    );
+    for (seq, unit_id) in [(1, 2), (2, 4)] {
+        let command = Command {
+            slot: SlotId(0),
+            seq,
+            kind: CommandKind::Gather {
+                unit_id,
+                node_id: turts_sim::NodeId(1),
+            },
+        };
+        let result = turts_sim::apply_command(app.world_mut(), &command);
+        assert!(result.outcome.is_ok(), "{result:?}");
+    }
+    let worker_a = unit_entity(&mut app, 2);
+    let mut fallback_before_empty = false;
+    let mut emptied: Option<(u32, Vec2)> = None;
+    let mut gathered_at: Option<u32> = None;
+    for tick in 1..=1_200_u32 {
+        app.update();
+        let a = app.world().entity(worker_a);
+        let position = a.get::<turts_sim::Position>().unwrap().0;
+        if emptied.is_none() {
+            fallback_before_empty |= a
+                .get::<turts_sim::movement::MoveProgress>()
+                .is_some_and(|progress| progress.is_fallback());
+            if turts_sim::node_view(app.world(), turts_sim::NodeId(1))
+                .unwrap()
+                .remaining
+                == 0
+            {
+                emptied = Some((tick, position));
+            }
+        } else if stage(&app, 2) == turts_sim::GatherStage::Gathering
+            && position.distance(node_2) <= 2.0 + 1.0e-4
+        {
+            gathered_at = Some(tick);
+            break;
+        }
+    }
+    assert!(
+        fallback_before_empty,
+        "worker A holds a fallback pool on its node-1 leg before the node empties"
+    );
+    let (empty_tick, from) = emptied.expect("node 1 empties");
+    let approach = node_2 + (from - node_2).normalize() * 2.0;
+    let distance = from.distance(approach);
+    let deadline = ((2.0 * distance / SPEED + 5.0) * f32::from(TICK_HZ)).ceil() as u32;
+    let at = gathered_at.unwrap_or_else(|| {
+        panic!(
+            "worker A never gathers at node 2 after node 1 empties at tick {empty_tick}; \
+             deadline {deadline} ticks"
+        )
+    });
+    assert!(
+        at - empty_tick <= deadline,
+        "worker A gathers at node 2 {} ticks after node 1 empties; deadline {deadline}",
+        at - empty_tick
+    );
 }
