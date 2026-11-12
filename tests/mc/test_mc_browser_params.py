@@ -68,7 +68,7 @@ class McBrowserParamsTests(unittest.TestCase):
     def test_stored_client_settings_are_limited_to_slot1_with_a_valid_frame_limit_and_reason(self) -> None:
         rows = pathlib.Path(__file__).resolve().parents[1] / "browser/rows"
         slot1 = json.loads((rows / "SLOT1.json").read_text())
-        self.assertEqual(validate_task16_plan(slot1)["client_settings"]["frame_limit"], 30)
+        self.assertEqual(validate_task16_plan(slot1)["client_settings"]["frame_limit"], 20)
         plan = slot1["stages"]["task16"]
         for value in (5, 241, -1, "30", 30.0, True, None):
             plan["client_settings"] = {"frame_limit": value, "reason": "three clients"}

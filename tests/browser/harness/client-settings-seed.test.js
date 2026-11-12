@@ -37,11 +37,30 @@ test("the seed keeps a document that the window already has (reload, copied wind
     assert.equal(storage.items.get(SETTINGS_KEY), existing);
 });
 
+// A fake page with a stored document and a client debug state that reports `applied`.
+function fakePage(value, applied) {
+    return {
+        evaluate: async (fn, key) => withWindow({
+            localStorage: fakeStorage(value === null ? {} : { [key]: value }),
+            turts_debug: () => JSON.stringify({ frame_limits: applied }),
+        }, () => fn(key)),
+    };
+}
+
 test("the stored check reads the real document and refuses another value", async () => {
-    const seed = clientSettingsSeed({ client_settings: { frame_limit: 30, reason: "three clients" } });
-    const page = (value) => ({ evaluate: async (fn, key) => withWindow({ localStorage: fakeStorage(value === null ? {} : { [key]: value }) }, () => fn(key)) });
-    assert.deepEqual(await assertStoredClientSettings(page(JSON.stringify({ controls: { frame_limit: 30 } })), seed, 1),
-        { window: 1, key: SETTINGS_KEY, frame_limit: 30 });
-    await assert.rejects(assertStoredClientSettings(page(JSON.stringify({ controls: { frame_limit: 0 } })), seed, 2), /window 2 stored frame_limit 0, expected 30/);
-    await assert.rejects(assertStoredClientSettings(page(null), seed, 3), /window 3 stored frame_limit null/);
+    const seed = clientSettingsSeed({ client_settings: { frame_limit: 20, reason: "three clients" } });
+    const applied = { focused: 20, background: 60 };
+    assert.deepEqual(await assertStoredClientSettings(fakePage(JSON.stringify({ controls: { frame_limit: 20 } }), applied), seed, 1),
+        { window: 1, key: SETTINGS_KEY, frame_limit: 20, applied });
+    await assert.rejects(assertStoredClientSettings(fakePage(JSON.stringify({ controls: { frame_limit: 0 } }), applied), seed, 2), /window 2 stored frame_limit 0, expected 20/);
+    await assert.rejects(assertStoredClientSettings(fakePage(null, applied), seed, 3), /window 3 stored frame_limit null/);
+});
+
+test("the check goes red when the client ignores the stored frame limit", async () => {
+    const seed = clientSettingsSeed({ client_settings: { frame_limit: 20, reason: "three clients" } });
+    const stored = JSON.stringify({ controls: { frame_limit: 20 } });
+    await assert.rejects(assertStoredClientSettings(fakePage(stored, { focused: 0, background: 60 }), seed, 1),
+        /window 1 applied frame limit 0, expected the stored 20/);
+    await assert.rejects(assertStoredClientSettings(fakePage(stored, null), seed, 2),
+        /window 2 applied frame limit null, expected the stored 20/);
 });

@@ -37,6 +37,8 @@ jobs:
         run: bash scripts/boundary.sh
       - name: Python refutation harness tests
         run: python3 tests/m2/test_refutations.py
+      - name: Python browser row parameter tests
+        run: python3 tests/mc/test_mc_browser_params.py
       - name: Acceptance (M2 and M3 process tests, release, serial)
         run: bash scripts/acceptance.sh
       - name: Upload native and acceptance diagnostics

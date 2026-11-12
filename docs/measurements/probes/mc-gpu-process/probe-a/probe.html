@@ -1,0 +1,83 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>probe-a</title>
+<style>html,body{margin:0;background:#000;overflow:hidden}canvas{display:block}</style></head>
+<body><canvas id="c"></canvas>
+<script>
+"use strict";
+// Probe A page. Query: w, h (canvas pixels), mode = clear | work, writes = comma list of byte sizes.
+// clear: each animation frame takes the swapchain texture, runs one render pass with a clear, submits.
+// work: 5 render passes on the swapchain texture (the first clears), 4 draws in each (20 draws),
+// the writes listed in `writes` (one queue.writeBuffer each) and 2 submits (passes 1-4, pass 5).
+const q = new URLSearchParams(location.search);
+const W = Number(q.get("w") || 1280), H = Number(q.get("h") || 720), MODE = q.get("mode") || "clear";
+let WRITES = (q.get("writes") || "").split(",").filter(Boolean).map(Number);
+if (MODE === "work" && WRITES.length === 0) WRITES = new Array(17).fill(256);
+window.__probe = { frames: 0, times: [], errors: 0, ready: false, failed: null, writes: WRITES.length, write_bytes: WRITES.reduce((a, b) => a + b, 0) };
+(async () => {
+    try {
+        const canvas = document.getElementById("c");
+        canvas.width = W; canvas.height = H;
+        canvas.style.width = W + "px"; canvas.style.height = H + "px";
+        const adapter = await navigator.gpu.requestAdapter();
+        const device = await adapter.requestDevice();
+        device.onuncapturederror = () => { window.__probe.errors += 1; };
+        const ctx = canvas.getContext("webgpu");
+        const format = navigator.gpu.getPreferredCanvasFormat();
+        ctx.configure({ device, format, alphaMode: "opaque" });
+        let pipeline = null, bind = null, uniform = null;
+        const buffers = [], payloads = [];
+        if (MODE === "work") {
+            const module = device.createShaderModule({ code: `
+struct U { t: vec4f };
+@group(0) @binding(0) var<uniform> u: U;
+@vertex fn vs(@builtin(vertex_index) v: u32, @builtin(instance_index) i: u32) -> @builtin(position) vec4f {
+    var p = array<vec2f, 3>(vec2f(-0.1, -0.1), vec2f(0.1, -0.1), vec2f(0.0, 0.1));
+    let o = vec2f(f32(i % 5u) * 0.35 - 0.7, f32(i / 5u) * 0.35 - 0.6) + vec2f(sin(u.t.x), 0.0) * 0.05;
+    return vec4f(p[v] + o, 0.0, 1.0);
+}
+@fragment fn fs() -> @location(0) vec4f { return vec4f(0.9, 0.5, 0.2, 1.0); }` });
+            pipeline = device.createRenderPipeline({ layout: "auto", vertex: { module, entryPoint: "vs" },
+                fragment: { module, entryPoint: "fs", targets: [{ format }] }, primitive: { topology: "triangle-list" } });
+            const usize = Math.max(256, Math.ceil(WRITES[0] / 16) * 16);
+            uniform = device.createBuffer({ size: usize, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+            bind = device.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries: [{ binding: 0, resource: { buffer: uniform } }] });
+            for (const size of WRITES) {
+                const s = Math.max(4, Math.ceil(size / 4) * 4);
+                buffers.push(device.createBuffer({ size: s, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST }));
+                payloads.push(new Uint8Array(s));
+            }
+        }
+        const frame = (ts) => {
+            const p = window.__probe;
+            p.frames += 1; p.times.push(performance.now());
+            if (p.times.length > 20000) p.times.splice(0, 10000);
+            const view = ctx.getCurrentTexture().createView();
+            if (MODE === "clear") {
+                const enc = device.createCommandEncoder();
+                const pass = enc.beginRenderPass({ colorAttachments: [{ view, loadOp: "clear", storeOp: "store", clearValue: { r: (p.frames % 60) / 60, g: 0.2, b: 0.3, a: 1 } }] });
+                pass.end();
+                device.queue.submit([enc.finish()]);
+            } else {
+                // The first write goes to the uniform (time in its first float); the rest go to buffers of the measured sizes.
+                new Float32Array(payloads[0].buffer, 0, 1)[0] = ts / 1000;
+                device.queue.writeBuffer(uniform, 0, payloads[0]);
+                for (let k = 1; k < buffers.length; k += 1) { payloads[k][0] = p.frames & 255; device.queue.writeBuffer(buffers[k], 0, payloads[k]); }
+                const encA = device.createCommandEncoder();
+                const encB = device.createCommandEncoder();
+                for (let n = 0; n < 5; n += 1) {
+                    const enc = n < 4 ? encA : encB;
+                    const pass = enc.beginRenderPass({ colorAttachments: [{ view, loadOp: n === 0 ? "clear" : "load", storeOp: "store", clearValue: { r: 0.1, g: 0.1, b: 0.15, a: 1 } }] });
+                    pass.setPipeline(pipeline); pass.setBindGroup(0, bind);
+                    for (let d = 0; d < 4; d += 1) pass.draw(3, 1, 0, n * 4 + d);
+                    pass.end();
+                }
+                device.queue.submit([encA.finish()]);
+                device.queue.submit([encB.finish()]);
+            }
+            requestAnimationFrame(frame);
+        };
+        window.__probe.ready = true;
+        requestAnimationFrame(frame);
+    } catch (e) { window.__probe.failed = String(e && e.stack || e); }
+})();
+</script></body></html>
