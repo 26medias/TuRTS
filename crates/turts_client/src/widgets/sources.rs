@@ -1010,11 +1010,12 @@ fn binding_rows(context: SourceContext<'_>) -> SourceData {
     );
     SourceData {
         scalar: None,
-        items: actions
-            .iter()
-            .map(|(name, bindings)| {
+        items: controls_order(context.input_map, actions.keys())
+            .into_iter()
+            .map(|name| {
+                let bindings = &actions[name];
                 let mut item = ItemData::default();
-                item.set(ItemField::Name, humanize_action(name));
+                item.set(ItemField::Name, action_label(context.content, name));
                 let label = bindings
                     .iter()
                     .map(|binding| {
@@ -1027,6 +1028,45 @@ fn binding_rows(context: SourceContext<'_>) -> SourceData {
             })
             .collect(),
     }
+}
+
+/// The player label of an input action in the controls lists (guide `Bindings` rows and the
+/// menu). When an order of the mod has the action as its `hotkey`, the label is the order name
+/// (`key_stop` gives "Stop selected units"). Else it is `humanize_action`. When two orders share
+/// a hotkey, the order with the first content id gives the name.
+pub(crate) fn action_label(content: &crate::content::ClientContent, action: &str) -> String {
+    content
+        .catalog
+        .orders
+        .values()
+        .find(|order| order.hotkey == action)
+        .map_or_else(|| humanize_action(action), |order| order.name.clone())
+}
+
+/// The order of the controls lists: the mod actions first, then camera and selection, then the
+/// control groups. Inside each part the input order stays (a stable sort).
+pub(crate) fn controls_order<'a>(
+    input_map: &turts_mod_api::InputMapDef,
+    actions: impl IntoIterator<Item = &'a String>,
+) -> Vec<&'a String> {
+    let engine = turts_interaction::input_map::engine_defaults()
+        .into_iter()
+        .map(|action| action.name)
+        .collect::<std::collections::BTreeSet<_>>();
+    let part = |name: &str| {
+        if name.starts_with("group_") {
+            2
+        } else if input_map.actions.iter().any(|action| action.name == name)
+            && !engine.contains(name)
+        {
+            0
+        } else {
+            1
+        }
+    };
+    let mut ordered = actions.into_iter().collect::<Vec<_>>();
+    ordered.sort_by_key(|name| part(name));
+    ordered
 }
 
 pub(crate) fn humanize_action(action: &str) -> String {

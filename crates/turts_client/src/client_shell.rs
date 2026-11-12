@@ -25,6 +25,17 @@ use crate::{
 #[derive(Component)]
 pub(crate) struct SettingsMenuOverlay;
 
+/// The width of the action label column of the menu. An order name of up to 20 characters
+/// ("Disable this machine", 192 px in the 16 px default font) stays on one line, so each
+/// single-key row keeps the same height.
+const MENU_ACTION_LABEL_WIDTH: f32 = 200.0;
+/// The start width of the key column. It grows into the free width of the row; the label, the
+/// keys and the two buttons fit in the 476 px of the panel without a shrink.
+const MENU_BINDING_BASIS_WIDTH: f32 = 120.0;
+/// The fixed height of the binding feedback block: one 14 px status line (20 px), the gap
+/// (8 px) and the Swap/Cancel row (24 px). The rows do not move when the text shows or clears.
+const BINDING_FEEDBACK_HEIGHT: f32 = 52.0;
+
 #[derive(Component)]
 pub(crate) struct RejoinOverlayCamera;
 
@@ -816,6 +827,14 @@ impl Plugin for ClientShellPlugin {
                 .after(sync_focus_overlay)
                 .before(UiPresentationSet),
         );
+        app.init_resource::<SoundLockTimer>().add_systems(
+            Update,
+            (
+                sync_sound_off_notice.after(sync_focus_overlay),
+                sync_sound_status_label.after(toggle_settings_menu),
+            )
+                .before(UiPresentationSet),
+        );
     }
 }
 
@@ -832,11 +851,12 @@ fn sync_focus_overlay(
     let Some(window_focused) = windows.iter().next().map(|window| window.focused) else {
         return;
     };
-    let audio_locked = audio.as_deref().is_some_and(|feed| {
-        !feed.context_states.is_empty()
-            && !crate::audio::browser_contexts_ready(&feed.context_states, feed.gesture_seen)
+    // Ruling O15: the overlay waits for the first gesture, not for running audio. A browser can
+    // keep its context suspended after the gesture; the sound notice covers that case.
+    let awaiting_gesture = audio.as_deref().is_some_and(|feed| {
+        crate::audio::BrowserAudio::from_feed(feed) == crate::audio::BrowserAudio::AwaitingGesture
     });
-    if focus.0 && window_focused && !audio_locked {
+    if focus.0 && window_focused && !awaiting_gesture {
         for entity in &overlays {
             commands.entity(entity).despawn();
         }
@@ -875,6 +895,97 @@ fn sync_focus_overlay(
                 TextColor(Color::WHITE),
             ));
         });
+}
+
+/// The shell text that shows when audio stays locked after the first gesture.
+pub(crate) const SOUND_OFF_NOTICE: &str = "Sound is off. Click or press a key to turn it on.";
+/// The resume request of a gesture needs some frames. The notice waits this long first.
+const SOUND_NOTICE_DELAY_SECS: f32 = 0.5;
+const SOUND_NOTICE_SECS: f32 = 8.0;
+
+/// The shell row of `SOUND_OFF_NOTICE`. It does not capture input.
+#[derive(Component)]
+pub(crate) struct SoundOffNotice;
+
+/// The time that the current locked period started, from `Time<Real>`.
+#[derive(Resource, Default)]
+struct SoundLockTimer(Option<std::time::Duration>);
+
+/// Show `SOUND_OFF_NOTICE` for 8 s when audio stays locked after the first gesture. Each later
+/// gesture asks the browser to resume audio through the page hook (index.html).
+fn sync_sound_off_notice(
+    audio: Option<Res<crate::debug_feed::AudioFeed>>,
+    time: Res<Time<Real>>,
+    mut timer: ResMut<SoundLockTimer>,
+    notices: Query<Entity, With<SoundOffNotice>>,
+    mut commands: Commands,
+) {
+    let locked = audio.as_deref().is_some_and(|feed| {
+        crate::audio::BrowserAudio::from_feed(feed) == crate::audio::BrowserAudio::Locked
+    });
+    let now = time.elapsed();
+    let visible = if locked {
+        let since = *timer.0.get_or_insert(now);
+        let age = now.saturating_sub(since).as_secs_f32();
+        (SOUND_NOTICE_DELAY_SECS..SOUND_NOTICE_DELAY_SECS + SOUND_NOTICE_SECS).contains(&age)
+    } else {
+        timer.0 = None;
+        false
+    };
+    if !visible {
+        for entity in &notices {
+            commands.entity(entity).despawn();
+        }
+        return;
+    }
+    if !notices.is_empty() {
+        return;
+    }
+    commands.spawn((
+        SoundOffNotice,
+        Node {
+            position_type: PositionType::Absolute,
+            top: Val::Px(16.0),
+            left: Val::Percent(50.0),
+            width: Val::Px(440.0),
+            margin: UiRect::left(Val::Px(-220.0)),
+            padding: UiRect::all(Val::Px(8.0)),
+            justify_content: JustifyContent::Center,
+            ..default()
+        },
+        ZIndex(i32::MAX - 2),
+        BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.72)),
+        bevy::picking::Pickable::IGNORE,
+        Text::new(SOUND_OFF_NOTICE),
+        TextFont {
+            font_size: FontSize::Px(16.0),
+            ..default()
+        },
+        TextColor(Color::WHITE),
+        TextLayout::new(Justify::Center, LineBreak::WordBoundary),
+    ));
+}
+
+/// Keep the menu sound label equal to the browser audio state.
+fn sync_sound_status_label(
+    audio: Option<Res<crate::debug_feed::AudioFeed>>,
+    mut labels: Query<&mut Text, With<crate::volume_settings::SoundStatusText>>,
+) {
+    let label = sound_status_label(audio.as_deref());
+    for mut text in &mut labels {
+        if text.0 != label {
+            text.0 = label.to_owned();
+        }
+    }
+}
+
+fn sound_status_label(audio: Option<&crate::debug_feed::AudioFeed>) -> &'static str {
+    audio
+        .map_or(
+            crate::audio::BrowserAudio::NotObserved,
+            crate::audio::BrowserAudio::from_feed,
+        )
+        .menu_label()
 }
 
 pub(crate) fn sync_client_notice(
@@ -979,6 +1090,7 @@ struct SettingsMenuSources<'w> {
     acquired: Option<Res<'w, AcquiredPackages>>,
     preferences: Res<'w, CorePreferences>,
     labels: Res<'w, BindingLabels>,
+    audio: Option<Res<'w, crate::debug_feed::AudioFeed>>,
 }
 
 fn toggle_settings_menu(
@@ -996,6 +1108,7 @@ fn toggle_settings_menu(
         acquired,
         preferences,
         labels,
+        audio,
     } = sources;
     if !effects.is_changed()
         || !effects.0.iter().any(
@@ -1026,7 +1139,18 @@ fn toggle_settings_menu(
         }
         actions
     });
-    let action_ids = effective.keys().cloned().collect::<Vec<_>>();
+    let action_ids = input_map.map_or_else(Vec::new, |input| {
+        crate::widgets::sources::controls_order(input, effective.keys())
+            .into_iter()
+            .cloned()
+            .collect::<Vec<_>>()
+    });
+    let action_label = |action: &str| {
+        acquired.as_deref().map_or_else(
+            || crate::widgets::sources::humanize_action(action),
+            |acquired| crate::widgets::sources::action_label(&acquired.0.content, action),
+        )
+    };
 
     let overlay = commands
         .spawn((
@@ -1050,7 +1174,10 @@ fn toggle_settings_menu(
         ))
         .id();
 
-    let panel = commands
+    // The frame holds the title and the binding feedback, which do not scroll, and the
+    // scrolling list of the settings. So the rebind prompt, the conflict text and Swap/Cancel
+    // stay in view for a Change on any row (RUN133 H1).
+    let frame = commands
         .spawn((
             Node {
                 width: Val::Px(520.0),
@@ -1059,22 +1186,17 @@ fn toggle_settings_menu(
                 padding: UiRect::all(Val::Px(22.0)),
                 flex_direction: FlexDirection::Column,
                 row_gap: Val::Px(12.0),
-                overflow: bevy::ui::Overflow {
-                    x: bevy::ui::OverflowAxis::Clip,
-                    y: bevy::ui::OverflowAxis::Scroll,
-                },
+                overflow: bevy::ui::Overflow::clip(),
                 border_radius: BorderRadius::all(Val::Px(8.0)),
                 ..default()
             },
-            bevy::ui_widgets::ScrollArea,
             BackgroundColor(Color::srgb(0.075, 0.09, 0.12)),
             BorderColor::all(Color::srgb(0.34, 0.43, 0.52)),
         ))
         .id();
-
-    commands.entity(overlay).add_child(panel);
-    commands.entity(panel).with_children(|panel| {
-        panel.spawn((
+    commands.entity(overlay).add_child(frame);
+    commands.entity(frame).with_children(|frame| {
+        frame.spawn((
             Text::new("Settings"),
             TextFont {
                 font_size: FontSize::Px(22.0),
@@ -1082,6 +1204,55 @@ fn toggle_settings_menu(
             },
             TextColor(Color::WHITE),
         ));
+        if !action_ids.is_empty() {
+            frame
+                .spawn(Node {
+                    width: Val::Percent(100.0),
+                    height: Val::Px(BINDING_FEEDBACK_HEIGHT),
+                    flex_direction: FlexDirection::Column,
+                    flex_shrink: 0.0,
+                    row_gap: Val::Px(8.0),
+                    overflow: bevy::ui::Overflow::clip(),
+                    ..default()
+                })
+                .with_children(|feedback| {
+                    feedback.spawn((
+                        BindingFeedbackText,
+                        Text::new(""),
+                        Node {
+                            width: Val::Percent(100.0),
+                            flex_shrink: 0.0,
+                            ..default()
+                        },
+                        TextFont {
+                            font_size: FontSize::Px(14.0),
+                            ..default()
+                        },
+                        TextColor(Color::srgb(0.92, 0.78, 0.36)),
+                    ));
+                });
+        }
+    });
+    let panel = commands
+        .spawn((
+            Node {
+                width: Val::Percent(100.0),
+                flex_grow: 1.0,
+                flex_basis: Val::Px(0.0),
+                min_height: Val::Px(0.0),
+                flex_direction: FlexDirection::Column,
+                row_gap: Val::Px(12.0),
+                overflow: bevy::ui::Overflow {
+                    x: bevy::ui::OverflowAxis::Clip,
+                    y: bevy::ui::OverflowAxis::Scroll,
+                },
+                ..default()
+            },
+            bevy::ui_widgets::ScrollArea,
+        ))
+        .id();
+    commands.entity(frame).add_child(panel);
+    commands.entity(panel).with_children(|panel| {
         if !action_ids.is_empty() {
             panel.spawn((
                 Text::new("Key bindings"),
@@ -1107,9 +1278,10 @@ fn toggle_settings_menu(
                     })
                     .with_children(|row| {
                         row.spawn((
-                            Text::new(crate::widgets::sources::humanize_action(action)),
+                            Text::new(action_label(action)),
                             Node {
-                                width: Val::Px(180.0),
+                                width: Val::Px(MENU_ACTION_LABEL_WIDTH),
+                                flex_shrink: 0.0,
                                 ..default()
                             },
                             TextFont {
@@ -1123,7 +1295,7 @@ fn toggle_settings_menu(
                             },
                             Text::new(binding),
                             Node {
-                                width: Val::Px(160.0),
+                                width: Val::Px(MENU_BINDING_BASIS_WIDTH),
                                 flex_grow: 1.0,
                                 ..default()
                             },
@@ -1136,30 +1308,6 @@ fn toggle_settings_menu(
                         spawn_binding_button(row, "Reset", action, BindingButtonKind::Reset);
                     });
             }
-            panel
-                .spawn(Node {
-                    width: Val::Percent(100.0),
-                    flex_direction: FlexDirection::Column,
-                    flex_shrink: 0.0,
-                    row_gap: Val::Px(8.0),
-                    ..default()
-                })
-                .with_children(|feedback| {
-                    feedback.spawn((
-                        BindingFeedbackText,
-                        Text::new(""),
-                        Node {
-                            width: Val::Percent(100.0),
-                            flex_shrink: 0.0,
-                            ..default()
-                        },
-                        TextFont {
-                            font_size: FontSize::Px(14.0),
-                            ..default()
-                        },
-                        TextColor(Color::srgb(0.92, 0.78, 0.36)),
-                    ));
-                });
         }
         panel.spawn((
             Text::new("Gameplay settings"),
@@ -1228,7 +1376,12 @@ fn toggle_settings_menu(
             1.0,
         );
     });
-    spawn_volume_controls(&mut commands, panel, *volumes);
+    spawn_volume_controls(
+        &mut commands,
+        panel,
+        *volumes,
+        sound_status_label(audio.as_deref()),
+    );
 }
 
 fn spawn_settings_toggle(
@@ -1708,16 +1861,22 @@ fn on_binding_button_activated_at_boundary(
                 .or_else(|| timeline.last_message_id);
             editor.capturing = Some(button.action.clone());
             editor.conflict = None;
-            editor.status = Some(format!("Press a key or mouse button for {}", button.action));
+            editor.status = Some(format!(
+                "Press a key or mouse button for {}",
+                crate::widgets::sources::action_label(&acquired.0.content, &button.action)
+            ));
         }
         BindingButtonKind::Reset => {
             if reset_binding_override(&mut preferences.runtime_bindings, &defaults, &button.action)
             {
-                editor.status = Some(format!("{} restored to the package default", button.action));
+                editor.status = Some(format!(
+                    "{} restored to the package default",
+                    crate::widgets::sources::action_label(&acquired.0.content, &button.action)
+                ));
             } else if defaults.contains_key(&button.action) {
                 editor.status = Some(format!(
                     "{} already uses the package default",
-                    button.action
+                    crate::widgets::sources::action_label(&acquired.0.content, &button.action)
                 ));
             } else {
                 editor.status = Some("Action is unavailable".into());
@@ -1832,7 +1991,7 @@ fn capture_physical_binding(
         BindingEditResult::Applied => {
             editor.status = Some(format!(
                 "{} changed to {}",
-                action,
+                crate::widgets::sources::action_label(&acquired.0.content, &action),
                 binding_label(&binding, Some(&labels))
             ));
             editor.capturing = None;
@@ -1845,7 +2004,9 @@ fn capture_physical_binding(
                 binding_label(&binding, Some(&labels)),
                 conflicting
                     .iter()
-                    .map(|action| crate::widgets::sources::humanize_action(action))
+                    .map(|action| {
+                        crate::widgets::sources::action_label(&acquired.0.content, action)
+                    })
                     .collect::<Vec<_>>()
                     .join(", ")
             ));
@@ -2367,7 +2528,7 @@ pub(crate) mod tests {
         };
         assert_eq!(action_label, "Pan camera down");
         assert_eq!(label_font, FontSize::Px(16.0));
-        assert_eq!(label_node, Val::Px(180.0));
+        assert_eq!(label_node, Val::Px(MENU_ACTION_LABEL_WIDTH));
         let (action_end, audio_heading, first_audio_control) = {
             let world = app.world_mut();
             let mut rows = world.query::<(Entity, &Text)>();
@@ -2505,6 +2666,144 @@ pub(crate) mod tests {
             0,
             "a real running, gesture-unlocked audio context removes the overlay"
         );
+    }
+
+    const SOUND_OFF_NOTICE: &str = "Sound is off. Click or press a key to turn it on.";
+
+    /// A shell app with a focused canvas and a fixed frame step of 250 ms.
+    fn start_gate_app(audio: crate::debug_feed::AudioFeed) -> App {
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins)
+            .insert_resource(CoreEffects::default())
+            .insert_resource(VolumeSettings::default())
+            .insert_resource(FocusFeed(true))
+            .insert_resource(audio)
+            .insert_resource(bevy::time::TimeUpdateStrategy::ManualDuration(
+                std::time::Duration::from_millis(250),
+            ))
+            .add_plugins(ClientShellPlugin);
+        app.world_mut().spawn((
+            Window {
+                focused: true,
+                ..default()
+            },
+            PrimaryWindow,
+        ));
+        app
+    }
+
+    fn focus_overlays(app: &mut App) -> usize {
+        let mut overlays = app
+            .world_mut()
+            .query_filtered::<Entity, With<FocusOverlay>>();
+        overlays.iter(app.world()).count()
+    }
+
+    fn shows_text(app: &mut App, wanted: &str) -> bool {
+        let mut texts = app.world_mut().query::<&Text>();
+        texts.iter(app.world()).any(|text| text.0 == wanted)
+    }
+
+    /// Design 10.1 with ruling O15: the start overlay waits for the first gesture only. When
+    /// audio stays locked after it, input works and a notice shows for 8 s.
+    #[test]
+    fn locked_audio_after_the_first_gesture_removes_the_overlay_and_shows_the_sound_notice() {
+        let mut app = start_gate_app(crate::debug_feed::AudioFeed {
+            context_states: vec!["suspended".into()],
+            gesture_seen: false,
+            ..default()
+        });
+        app.update();
+        assert_eq!(focus_overlays(&mut app), 1, "no gesture yet: Click to play");
+        assert!(!shows_text(&mut app, SOUND_OFF_NOTICE));
+
+        app.world_mut()
+            .resource_mut::<crate::debug_feed::AudioFeed>()
+            .gesture_seen = true;
+        app.update();
+        assert_eq!(
+            focus_overlays(&mut app),
+            0,
+            "the first gesture removes the overlay, also when audio stays locked"
+        );
+        let mut first_shown = None;
+        let mut last_shown = None;
+        for frame in 0..48 {
+            app.update();
+            assert_eq!(
+                focus_overlays(&mut app),
+                0,
+                "input works while audio is locked"
+            );
+            if shows_text(&mut app, SOUND_OFF_NOTICE) {
+                first_shown.get_or_insert(frame);
+                last_shown = Some(frame);
+                // Input works: the notice takes no pointer input.
+                let world = app.world_mut();
+                let notice = world
+                    .query_filtered::<Entity, With<SoundOffNotice>>()
+                    .single(world)
+                    .expect("one sound notice");
+                assert!(
+                    world.get::<UiCaptureRoot>(notice).is_none(),
+                    "the sound notice must not capture world input"
+                );
+                assert_eq!(
+                    world.get::<bevy::picking::Pickable>(notice),
+                    Some(&bevy::picking::Pickable::IGNORE),
+                    "the sound notice lets the pointer through"
+                );
+            }
+        }
+        let (first, last) = (first_shown.unwrap(), last_shown.unwrap());
+        assert!(first <= 4, "the notice shows within 1 s: frame {first}");
+        let frames = last - first + 1;
+        assert!(
+            (31..=33).contains(&frames),
+            "the notice shows for 8 s (32 frames of 250 ms): {frames}"
+        );
+
+        *app.world_mut().resource_mut::<CoreEffects>() = menu_action();
+        app.update();
+        assert!(
+            shows_text(&mut app, "Sound: off"),
+            "the menu says Sound: off"
+        );
+        app.world_mut().resource_mut::<CoreEffects>().0.clear();
+        app.world_mut()
+            .resource_mut::<crate::debug_feed::AudioFeed>()
+            .context_states = vec!["running".into()];
+        app.update();
+        assert!(
+            shows_text(&mut app, "Sound: on"),
+            "the menu follows the audio"
+        );
+        assert!(!shows_text(&mut app, "Sound: off"));
+
+        *app.world_mut().resource_mut::<FocusFeed>() = FocusFeed(false);
+        app.update();
+        assert_eq!(
+            focus_overlays(&mut app),
+            1,
+            "a focus loss shows the overlay again"
+        );
+    }
+
+    #[test]
+    fn running_audio_after_the_first_gesture_shows_no_sound_notice() {
+        let mut app = start_gate_app(crate::debug_feed::AudioFeed {
+            context_states: vec!["running".into()],
+            gesture_seen: true,
+            ..default()
+        });
+        for _ in 0..12 {
+            app.update();
+            assert_eq!(focus_overlays(&mut app), 0);
+            assert!(!shows_text(&mut app, SOUND_OFF_NOTICE));
+        }
+        *app.world_mut().resource_mut::<CoreEffects>() = menu_action();
+        app.update();
+        assert!(shows_text(&mut app, "Sound: on"));
     }
 
     #[test]
@@ -4386,5 +4685,123 @@ pub(crate) mod tests {
             app.update();
             assert!(has_text(&mut app, "Connection lost"));
         }
+    }
+
+    fn packed_forge_packages() -> AcquiredPackages {
+        let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../mods/forge");
+        let archive = turts_mod_runtime::archive::PackageArchive::parse(
+            &turts_mod_runtime::pack::pack_dir(&dir).expect("pack forge"),
+        )
+        .expect("parse forge");
+        let mut packages = forge_acquired_packages();
+        packages.0.content = ClientContent::from_archives(&[archive]).expect("resolve forge");
+        packages
+    }
+
+    /// The action labels of the open menu, in the order of the panel rows.
+    fn menu_action_labels(app: &mut App) -> Vec<String> {
+        let world = app.world_mut();
+        let panel = world
+            .query_filtered::<Entity, With<bevy::ui_widgets::ScrollArea>>()
+            .iter(world)
+            .next()
+            .expect("the open settings panel scrolls");
+        let rows = world.get::<Children>(panel).unwrap().to_vec();
+        rows.into_iter()
+            .filter_map(|row| {
+                let first = *world.get::<Children>(row)?.first()?;
+                let node = world.get::<Node>(first)?;
+                (node.width == Val::Px(MENU_ACTION_LABEL_WIDTH))
+                    .then(|| world.get::<Text>(first).unwrap().0.clone())
+            })
+            .collect()
+    }
+
+    /// Player path step 14 (PT1): a first-time player finds Stop in the menu. A mod action row
+    /// takes the name of its order; mod actions come first, then camera and selection, then groups.
+    #[test]
+    fn menu_rows_name_mod_actions_by_order_and_list_them_before_the_groups() {
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins)
+            .insert_resource(menu_action())
+            .insert_resource(VolumeSettings::default())
+            .insert_resource(packed_forge_packages())
+            .add_plugins(ClientShellPlugin);
+        app.update();
+        let labels = menu_action_labels(&mut app);
+        assert_eq!(labels.len(), 51, "{labels:?}");
+        assert!(
+            labels.contains(&"Stop selected units".to_owned()),
+            "{labels:?}"
+        );
+        assert!(
+            !labels.iter().any(|label| label.starts_with("Key ")),
+            "{labels:?}"
+        );
+        let is_group = |label: &String| {
+            ["Assign group ", "Select group ", "Add to group "]
+                .iter()
+                .any(|prefix| label.starts_with(prefix))
+        };
+        let mut orders = app
+            .world()
+            .resource::<AcquiredPackages>()
+            .0
+            .content
+            .catalog
+            .orders
+            .values()
+            .map(|order| order.name.clone())
+            .collect::<Vec<_>>();
+        orders.sort_unstable();
+        let mut first = labels[..orders.len()].to_vec();
+        first.sort_unstable();
+        assert_eq!(first, orders, "mod actions come first: {labels:?}");
+        let first_group = labels.iter().position(is_group).unwrap();
+        assert!(first_group > orders.len(), "{labels:?}");
+        assert!(labels[first_group..].iter().all(is_group), "{labels:?}");
+    }
+
+    /// RUN133 H1: the rebind prompt, the conflict text and Swap/Cancel stay in view for a Change
+    /// on any row. The feedback block is outside the scrolling rows, above them, with a fixed
+    /// height, so the rows do not move when the text shows or clears.
+    #[test]
+    fn binding_feedback_stays_above_the_scrolling_rows_with_a_fixed_height() {
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins)
+            .insert_resource(menu_action())
+            .insert_resource(VolumeSettings::default())
+            .insert_resource(packed_forge_packages())
+            .add_plugins(ClientShellPlugin);
+        app.update();
+        let world = app.world_mut();
+        let scroll = world
+            .query_filtered::<Entity, With<bevy::ui_widgets::ScrollArea>>()
+            .single(world)
+            .expect("one scrolling area");
+        let text = world
+            .query_filtered::<Entity, With<BindingFeedbackText>>()
+            .single(world)
+            .expect("one feedback text");
+        let block = world.get::<ChildOf>(text).unwrap().parent();
+        let mut ancestor = Some(block);
+        while let Some(entity) = ancestor {
+            assert_ne!(
+                entity, scroll,
+                "the feedback block must not scroll with the rows"
+            );
+            ancestor = world.get::<ChildOf>(entity).map(ChildOf::parent);
+        }
+        let panel = world.get::<ChildOf>(scroll).unwrap().parent();
+        let siblings = world.get::<Children>(panel).unwrap().to_vec();
+        let block_index = siblings.iter().position(|entity| *entity == block);
+        let scroll_index = siblings.iter().position(|entity| *entity == scroll);
+        assert!(
+            block_index.is_some() && block_index < scroll_index,
+            "the feedback block sits above the scrolling rows in the same panel"
+        );
+        let node = world.get::<Node>(block).unwrap();
+        assert_eq!(node.height, Val::Px(BINDING_FEEDBACK_HEIGHT));
+        assert_eq!(node.flex_shrink, 0.0);
     }
 }

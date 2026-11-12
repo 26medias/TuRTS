@@ -186,7 +186,7 @@
                     "phase": "conflicts",
                     "x": 650,
                     "y": 500,
-                    "delta": 725
+                    "delta": -10000
                 },
                 {
                     "call": "wait",
@@ -197,7 +197,7 @@
                     "call": "click",
                     "phase": "conflicts",
                     "x": 784,
-                    "y": 225,
+                    "y": 446,
                     "button": "left"
                 },
                 {
@@ -214,7 +214,7 @@
                     "call": "click",
                     "phase": "conflicts",
                     "x": 430,
-                    "y": 556,
+                    "y": 121,
                     "button": "left"
                 },
                 {
@@ -247,7 +247,7 @@
                     "phase": "conflicts",
                     "x": 650,
                     "y": 500,
-                    "delta": 10000
+                    "delta": -10000
                 },
                 {
                     "call": "wait",
@@ -279,7 +279,7 @@
                     "phase": "conflicts",
                     "x": 650,
                     "y": 500,
-                    "delta": 725
+                    "delta": -10000
                 },
                 {
                     "call": "wait",
@@ -290,7 +290,7 @@
                     "call": "click",
                     "phase": "conflicts",
                     "x": 784,
-                    "y": 225,
+                    "y": 446,
                     "button": "left"
                 },
                 {
@@ -307,7 +307,7 @@
                     "call": "click",
                     "phase": "conflicts",
                     "x": 495,
-                    "y": 556,
+                    "y": 121,
                     "button": "left"
                 },
                 {
@@ -319,7 +319,7 @@
                     "call": "click",
                     "phase": "conflicts",
                     "x": 850,
-                    "y": 225,
+                    "y": 446,
                     "button": "left"
                 },
                 {
@@ -352,7 +352,7 @@
                     "phase": "conflicts",
                     "x": 650,
                     "y": 500,
-                    "delta": 10000
+                    "delta": -10000
                 },
                 {
                     "call": "wait",

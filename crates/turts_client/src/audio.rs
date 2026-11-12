@@ -331,6 +331,43 @@ pub fn browser_contexts_ready(states: &[String], gesture_seen: bool) -> bool {
     gesture_seen && !states.is_empty() && states.iter().all(|state| state == "running")
 }
 
+/// The browser audio state that the shell shows (design 10.1, ruling O15). The page hook
+/// (`turts_client_web/index.html`) records the contexts and the first gesture, and it asks each
+/// suspended context to resume on each pointer down and key down.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BrowserAudio {
+    /// The hook saw no audio context: the native client, or a page with no context.
+    NotObserved,
+    /// No pointer down or key down yet. The start overlay shows.
+    AwaitingGesture,
+    /// A gesture came, but a context is not running. No sound plays.
+    Locked,
+    /// Every context runs after a gesture. Sound plays.
+    Running,
+}
+
+impl BrowserAudio {
+    pub fn from_feed(feed: &AudioFeed) -> Self {
+        if feed.context_states.is_empty() {
+            Self::NotObserved
+        } else if !feed.gesture_seen {
+            Self::AwaitingGesture
+        } else if browser_contexts_ready(&feed.context_states, feed.gesture_seen) {
+            Self::Running
+        } else {
+            Self::Locked
+        }
+    }
+
+    /// The menu label: "Sound: off" until audio runs.
+    pub fn menu_label(self) -> &'static str {
+        match self {
+            Self::NotObserved | Self::Running => "Sound: on",
+            Self::AwaitingGesture | Self::Locked => "Sound: off",
+        }
+    }
+}
+
 /// Apply category gain to a sink. Master remains represented in the product; GlobalVolume stays 1.
 pub fn set_sink_gain(
     settings: VolumeSettings,

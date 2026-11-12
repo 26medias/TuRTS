@@ -41,7 +41,7 @@
                     "phase": "player-override",
                     "x": 650,
                     "y": 500,
-                    "delta": 10000
+                    "delta": -10000
                 },
                 {
                     "call": "wait",
@@ -64,7 +64,7 @@
                     "phase": "player-override",
                     "x": 650,
                     "y": 500,
-                    "delta": 1450
+                    "delta": -10000
                 },
                 {
                     "call": "wait",
@@ -75,7 +75,7 @@
                     "call": "click",
                     "phase": "player-override",
                     "x": 784,
-                    "y": 116,
+                    "y": 338,
                     "button": "left"
                 },
                 {
@@ -122,7 +122,7 @@
                     "phase": "player-override",
                     "x": 650,
                     "y": 500,
-                    "delta": 10000
+                    "delta": -10000
                 },
                 {
                     "call": "wait",
@@ -145,7 +145,7 @@
                     "phase": "player-override",
                     "x": 650,
                     "y": 500,
-                    "delta": 1450
+                    "delta": -10000
                 },
                 {
                     "call": "wait",
@@ -156,7 +156,7 @@
                     "call": "click",
                     "phase": "player-override",
                     "x": 784,
-                    "y": 116,
+                    "y": 338,
                     "button": "left"
                 },
                 {

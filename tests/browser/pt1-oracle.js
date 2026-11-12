@@ -39,7 +39,7 @@ function step(number, condition, message) {
 
 // ---- Labels of the rendered Controls rows --------------------------------------------------
 
-// Rust `humanize_action` (crates/turts_client/src/widgets/sources.rs:1012-1046).
+// Rust `humanize_action` (crates/turts_client/src/widgets/sources.rs), for the actions of no order.
 function humanizeAction(action) {
     let known;
     if (action.startsWith("group_assign_")) known = `Assign group ${action.slice(13)}`;
@@ -82,8 +82,20 @@ function playerLabel(binding, labels = {}) {
     return JSON.stringify(binding);
 }
 
+// Rust `action_label` (crates/turts_client/src/widgets/sources.rs): a row of a mod action takes
+// the name of the forge order that has the action as its hotkey (mods/forge/orders/*.ron).
+const FORGE_ORDER_LABELS = {
+    key_cancel: "Cancel this job", key_disable: "Disable this machine", key_enable: "Enable this machine",
+    key_hold: "Hold this position", key_move: "Move selected units", key_remove: "Remove this machine",
+    key_research: "Research an upgrade", key_stop: "Stop selected units",
+};
+
+function actionLabel(action) {
+    return FORGE_ORDER_LABELS[action] ?? humanizeAction(action);
+}
+
 function rowText(action, bindings, labels = {}) {
-    return `${humanizeAction(action)}: ${bindings.map((binding) => playerLabel(binding, labels)).join(", ")}`;
+    return `${actionLabel(action)}: ${bindings.map((binding) => playerLabel(binding, labels)).join(", ")}`;
 }
 
 function controlsRows(debug) {
@@ -544,4 +556,4 @@ async function judge(view, params) {
     return result;
 }
 
-module.exports = { judge, assertControlsMatch, humanizeAction, layoutLabels, playerLabel, presses, rowText };
+module.exports = { judge, actionLabel, assertControlsMatch, humanizeAction, layoutLabels, playerLabel, presses, rowText };

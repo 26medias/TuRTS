@@ -18,6 +18,20 @@ struct TooltipView {
 #[derive(Component, Default)]
 struct TooltipOffset(Vec2);
 
+/// The font of `tooltip_style`, resolved through the widget assets of `package`. Tooltips and
+/// button labels use it. When the mod gives no font, this is the Bevy default font.
+pub(super) fn style_font(world: &World, style: &TooltipStyle, package: &str) -> Handle<Font> {
+    style
+        .font
+        .as_deref()
+        .and_then(|font| {
+            world
+                .get_resource::<WidgetAssets>()?
+                .font(&super::qualify(package, font))
+        })
+        .unwrap_or_default()
+}
+
 pub fn spawn_tooltip_view(
     world: &mut World,
     owner: Entity,
@@ -25,18 +39,7 @@ pub fn spawn_tooltip_view(
     style: &TooltipStyle,
     package: &str,
 ) {
-    let font = style
-        .font
-        .as_deref()
-        .and_then(|font| {
-            let id = if font.contains(':') {
-                font.to_owned()
-            } else {
-                format!("{package}:{font}")
-            };
-            world.get_resource::<WidgetAssets>()?.font(&id)
-        })
-        .unwrap_or_default();
+    let font = style_font(world, style, package);
     let owner_id = world
         .get::<AuthoredWidgetId>(owner)
         .map_or_else(|| format!("entity-{}", owner.index()), |id| id.0.clone());

@@ -570,7 +570,7 @@ async function judgeKm1(view, input, captures) {
         defaultWheelEvent.client_y >= defaultGuideRoot.rect[1] && defaultWheelEvent.client_y < defaultGuideRoot.rect[1] + defaultGuideRoot.rect[3],
     "KM1 pre-override physical wheel missed the actual section-five bindings list rectangle");
     requireProduct(hasBindingLabel(defaultGuideCapture.checkpoint.debug, "M"),
-        "KM1", "labels-guide", "actual pre-override guide section five omits the package default Key move label after a physical list scroll");
+        "KM1", "labels-guide", "actual pre-override guide section five omits the package default Move selected units label after a physical list scroll");
 
     const guideWheel = input.map((entry, index) => ({ entry, index })).find(({ entry, index }) =>
         index > keyCallIndex && entry.call === "wheel" && entry.window === keyReceipt.window &&
@@ -590,7 +590,7 @@ async function judgeKm1(view, input, captures) {
         capture.document_epoch === guideWheel.entry.document_epoch);
     assert(guideCapture, "KM1 actual guide list lacks the same-document post-wheel screenshot/checkpoint");
     requireProduct(hasBindingLabel(guideCapture.checkpoint.debug, "Q"),
-        "KM1", "labels-guide", "actual guide section five omits the effective player Key move label after a physical scroll over its list");
+        "KM1", "labels-guide", "actual guide section five omits the effective player Move selected units label after a physical scroll over its list");
     await judgeKm1ReservedPack(view);
 
     const reload = input.findIndex((entry) => entry.call === "reload");
@@ -643,7 +643,7 @@ async function judgeKm1(view, input, captures) {
 }
 
 function judgeKm1GuidePixels(captures, decoded) {
-    const labels = [["guide-default", "Key move: M"], ["guide-effective", "Key move: Q"]];
+    const labels = [["guide-default", "Move selected units: M"], ["guide-effective", "Move selected units: Q"]];
     const samples = labels.map(([name, expected]) => {
         const capture = captures.find((item) => item.name === name);
         const node = capture?.checkpoint.debug.ui_snapshot?.find((item) => item.id?.startsWith("guide.4.") &&
@@ -666,8 +666,8 @@ function judgeKm1GuidePixels(captures, decoded) {
             }
             return points;
         };
-        return { capture, rect: node.rect, prefix: light(x, y, 57, height),
-            key: light(x + 57, y, 18, height), absence: light(x, y + height, 75, 3) };
+        return { capture, rect: node.rect, prefix: light(x, y, 112, height),
+            key: light(x + 112, y, 18, height), absence: light(x, y + height, 75, 3) };
     });
     assert(samples[0].capture.document_epoch === samples[1].capture.document_epoch &&
         samples[0].capture.window === samples[1].capture.window && samples[0].capture.input_call < samples[1].capture.input_call,
@@ -691,18 +691,18 @@ function requireKm1ChangeClickHitsMoveRow(input, captures, captureName, beforeIn
     const menu = rowCapture.checkpoint.debug.ui_snapshot.find((node) => node.kind === "settings_menu" && node.id === "settings_menu");
     assert(menu && menu.visible === true && menu.descendants_truncated === false && menu.text_truncated === false &&
         Array.isArray(menu.text_nodes), `KM1 ${captureName} has no complete visible menu labels`);
-    const move = menu.text_nodes.find((node) => node.text === "Key move" && node.visible === true &&
+    const move = menu.text_nodes.find((node) => node.text === "Move selected units" && node.visible === true &&
         Array.isArray(node.rect) && node.rect.length === 4 && node.rect.every(Number.isFinite));
     const expectedLabel = captureName === "edit-row" ? "M" : "Q";
     const defaultKey = menu.text_nodes.find((node) => node.text === expectedLabel && node.visible === true &&
         Array.isArray(node.rect) && node.rect.length === 4 && node.rect.every(Number.isFinite));
     assert(move && defaultKey && Math.abs(move.rect[1] - defaultKey.rect[1]) <= 1,
-        `KM1 ${captureName} does not show the actual Key move row with its expected effective label`);
+        `KM1 ${captureName} does not show the actual Move selected units row with its expected effective label`);
     const [mx, my, mw, mh] = move.rect;
     const change = menu.text_nodes.find((node) => node.text === "Change" && node.visible === true &&
         Array.isArray(node.rect) && node.rect.length === 4 && node.rect.every(Number.isFinite) &&
         node.rect[0] >= mx + mw && node.rect[1] + node.rect[3] >= my && node.rect[1] <= my + mh);
-    assert(change, `KM1 ${captureName} has no actual Change button on the Key move row`);
+    assert(change, `KM1 ${captureName} has no actual Change button on the Move selected units row`);
     const click = input.map((entry, index) => ({ entry, index })).find(({ entry, index }) => index > rowCapture.input_call &&
         index < beforeInputIndex && entry.call === "click" && entry.args?.[2] === "left" &&
         entry.window === rowCapture.window && entry.document_epoch === rowCapture.document_epoch);
@@ -711,7 +711,7 @@ function requireKm1ChangeClickHitsMoveRow(input, captures, captureName, beforeIn
     assert(point && Number.isFinite(point.client_x) && Number.isFinite(point.client_y) &&
         point.client_x >= change.rect[0] && point.client_x < change.rect[0] + change.rect[2] &&
         point.client_y >= change.rect[1] && point.client_y < change.rect[1] + change.rect[3],
-    `KM1 ${captureName} physical click missed the actual Key move Change button rectangle`);
+    `KM1 ${captureName} physical click missed the actual Move selected units Change button rectangle`);
     return click;
 }
 
@@ -743,7 +743,7 @@ async function judgeKm1ReservedPack(view) {
 function hasBindingLabel(debug, label) {
     return Array.isArray(debug.ui_snapshot) && debug.ui_snapshot.some((node) =>
         typeof node.id === "string" && node.id.startsWith("guide.4.") && node.visible === true &&
-        typeof node.text === "string" && node.text.includes(`Key move: ${label}`));
+        typeof node.text === "string" && node.text.includes(`Move selected units: ${label}`));
 }
 
 function judgeSh1MenuControls(input, captures) {
