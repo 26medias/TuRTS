@@ -3841,6 +3841,11 @@ fn run_replay_spawn_window_subcase() {
     // longest time that keeps the second assertion true for every answer tick of 0 or more (the output comes the
     // recipe's ticks after the order, and the window ends 12 ticks after the answer), and it widens the slack of the
     // first one to 10 ticks (500 ms). Every expected tick below follows from this value.
+    // The client runs at the default reorder grace (5 ticks), the configuration a player runs: the lost
+    // charge delta is only seen as a loss when the progress passes the grace, so the answer comes later than
+    // with the strict chain rule. Measured on the merged head (label reorder2-e9-merged, raw log of the
+    // client): the first delta is tick 6, the held answer Snapshot is tick 11, the spawn delta is tick 18.
+    // So 11 < 18 (the answer predates the output) and 18 <= 11 + 12 (the output is inside the hold window).
     let short_recipe = original.replace(
         "duration_ms: 5000",
         &format!("duration_ms: {SPAWN_WINDOW_RECIPE_MS}"),

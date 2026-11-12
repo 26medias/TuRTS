@@ -155,5 +155,7 @@ run_cargo_test background_pace exact -p turts_client --test background_pace -- -
 run_cargo_test det1 exact -p turts_server --test det1 -- --ignored --test-threads=1 --exact det1_fixed_tick_muster_script_is_equal_through_tick_400_and_has_neighbour_work
 run_cargo_test el1 exact -p turts_server --test el1 -- --ignored --test-threads=1 --exact el1_muster_movement_and_queued_gather_validate_every_captured_tick
 run_cargo_test mc_kill_replica exact -p turts_server --test mc_kill_replica -- --ignored --test-threads=1 --exact ordered_attack_kill_reaches_the_owner_replica_without_a_resync
+run_cargo_test mc_reorder_stall exact -p turts_server --test mc_reorder_stall -- --ignored --test-threads=1 --exact a_server_stall_of_0_6_s_makes_no_resync
+run_cargo_test p8_one_flush_order exact -p turts_net_lightyear --features spike --test spike -- --ignored --test-threads=1 --exact p8_one_flush_reorders_deltas_by_size
 MC_HD1_NATIVE_REFERENCE_DIR="$log_dir/hd1-native-reference-run" run_logged "$log_dir/hd1-native-reference.log" scripts/hd1-native-reference.sh
 run_cargo_test hd1_c195 exact -p turts_client --test hd1 -- --ignored --test-threads=1 --exact same_tick_double_group_recall_reprojects_the_following_world_target

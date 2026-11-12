@@ -227,6 +227,7 @@ pub fn alert_state() -> (ReplicaState, AcquiredPackages) {
         }),
         content: Some(content.clone()),
         config: Default::default(),
+        reorder_grace_override: None,
     };
     let presentation = PresentationContent {
         interface: Some(interface()),

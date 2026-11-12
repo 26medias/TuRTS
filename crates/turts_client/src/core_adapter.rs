@@ -1654,6 +1654,7 @@ mod adapter_tests {
             }),
             content: Some(content.clone()),
             config: Default::default(),
+            reorder_grace_override: None,
         };
         let camera = content.camera.as_ref().map_or(
             CameraState {
@@ -1771,6 +1772,7 @@ mod adapter_tests {
             }),
             content: Some(content.clone()),
             config: Default::default(),
+            reorder_grace_override: None,
         };
         let camera = content.camera.as_ref().map_or(
             CameraState {

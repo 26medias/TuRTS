@@ -1106,8 +1106,8 @@
         "tests/browser"
       ]
     ],
-    "anchor": "        if buffer.len() >= limit {\n            buffer.clear();\n            self.buffer_overflows = self.buffer_overflows.saturating_add(1);\n            self.gap_seen = true;\n            if self.gap_anchor.is_none() {\n                self.gap_anchor = self.last_applied_tick.or(Some(delta.base_tick));\n            }\n            // Task 12 policy: discard the triggering batch as well as the old tail.\n            return;\n        }",
-    "replacement": "        if buffer.len() > limit {\n            self.buffer_overflows = self.buffer_overflows.saturating_add(1);\n            self.gap_seen = true;\n            if self.gap_anchor.is_none() {\n                self.gap_anchor = self.last_applied_tick.or(Some(delta.base_tick));\n            }\n            // Task 12 policy: discard the triggering batch as well as the old tail.\n            return;\n        }",
+    "anchor": "        if buffer.len() >= limit {\n            buffer.clear();\n            self.buffer_overflows = self.buffer_overflows.saturating_add(1);\n            self.gap_seen = true;\n            self.tail_lost = true;\n            if self.gap_anchor.is_none() {\n                self.gap_anchor = self.last_applied_tick.or(Some(delta.base_tick));\n            }\n            // Task 12 policy: discard the triggering batch as well as the old tail.\n            return;\n        }",
+    "replacement": "        if buffer.len() > limit {\n            self.buffer_overflows = self.buffer_overflows.saturating_add(1);\n            self.gap_seen = true;\n            self.tail_lost = true;\n            if self.gap_anchor.is_none() {\n                self.gap_anchor = self.last_applied_tick.or(Some(delta.base_tick));\n            }\n            // Task 12 policy: discard the triggering batch as well as the old tail.\n            return;\n        }",
     "plant_note": "MC task 21: the plant stays; the expected failure text is an assert of m2-oracle.js judgeRecovery."
   },
   {
@@ -1117,8 +1117,8 @@
     "plant_path": "crates/turts_client/src/ingest.rs",
     "replacements": [
       {
-        "anchor": "    if hooks.outstanding_request {\n        return Vec::new();\n    }\n    if replica\n        .resync_span_ticks()",
-        "replacement": "    if hooks.outstanding_request && counters.resync_requests_sent > 1 {\n        return Vec::new();\n    }\n    if replica\n        .resync_span_ticks()"
+        "anchor": "    if hooks.outstanding_request || !replica.in_resync() {\n        return Vec::new();\n    }\n    if replica\n        .resync_span_ticks()",
+        "replacement": "    if (hooks.outstanding_request && counters.resync_requests_sent > 1) || !replica.in_resync() {\n        return Vec::new();\n    }\n    if replica\n        .resync_span_ticks()"
       },
       {
         "anchor": "    if hooks.outstanding_request {\n        return None;\n    }\n    hooks.outstanding_request = true;",

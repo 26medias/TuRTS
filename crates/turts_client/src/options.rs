@@ -14,6 +14,9 @@ pub struct ClientOptions {
     pub headless: bool,
     /// Maximum retained delta batches while waiting for resync.
     pub resync_buffer_batches: usize,
+    /// Test hook: the reorder grace in ticks. `None` uses the catch-up limit of the server frame
+    /// (`replica::max_catchup_ticks`); 0 gives the strict chain rule (the M1 rule).
+    pub reorder_grace_ticks: Option<u32>,
     /// A fixed player id. `None` means a random id for the session.
     pub player_id: Option<u64>,
     /// Test hook: write one record per frame to this path.
@@ -65,6 +68,7 @@ impl Default for ClientOptions {
             ws_url: String::new(),
             headless: false,
             resync_buffer_batches: 256,
+            reorder_grace_ticks: None,
             player_id: None,
             frame_log: None,
             out: None,
@@ -107,6 +111,10 @@ Options:
   --headless      Run with no window and no rendering.
   --resync-buffer-batches N
                   Maximum retained delta batches during recovery (default 256; must be positive).
+  --reorder-grace-ticks N
+                  Test hook: ticks a delta that is ahead of the chain may wait for its predecessor
+                  before a resync starts (default: the catch-up limit of one server frame, 5 at
+                  20 Hz; 0 asks at the first chain break).
   --player-id N   Use N as the player id. The default is a random id for each run.
   --help, -h      Print this text and exit with 0.
 
@@ -183,6 +191,9 @@ pub fn parse_cli(args: &[String]) -> Result<ClientOptions, String> {
             "--headless" => options.headless = true,
             "--resync-buffer-batches" => {
                 options.resync_buffer_batches = positive_bound(flag, value()?)?;
+            }
+            "--reorder-grace-ticks" => {
+                options.reorder_grace_ticks = Some(number(flag, value()?)?);
             }
             "--player-id" => options.player_id = Some(number(flag, value()?)?),
             "--frame-log" => options.frame_log = Some(PathBuf::from(value()?)),

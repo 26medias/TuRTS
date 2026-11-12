@@ -496,6 +496,7 @@ mod tests {
             }),
             content: Some(move_test_content()),
             config: Default::default(),
+            reorder_grace_override: None,
         };
         let mut app = App::new();
         app.insert_resource(ClientOpts(options))
