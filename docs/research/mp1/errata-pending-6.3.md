@@ -91,3 +91,34 @@ The orchestrator applies these in one pass when lane 0 exits. Each comes from an
   now; the task makes a parsed-row message name its file where the value knows it.
 - Verified: no released package form changed from accept to refuse (old and new packer on unit, map and placement forms at
   seven requirement forms; every exit code equal).
+
+## From PRES-PROBE (2026-11-12; `docs/research/mp1/probes/pres-probe/README.md` on `mp1/integration`)
+
+Probe 1, a model from package bytes on Bevy 0.20: YES (native headless; wasm32 `cargo check`; the browser run is NOT TRACED).
+- `PRES-MODELS` (plan): use the flat template (design 8.1 says no scenes; the plan row says `WorldAssetRoot`: the design
+  wins); register an EMPTY shared memory `Dir` as an asset source before `DefaultPlugins` and insert the package bytes at
+  acquire time (late bytes work: the `Dir` is shared); put the lock hash in the asset path; keep `Mesh3d` on the unit root
+  (the browser scene bridge filters on it); keep `turret` and `muzzle` as own entities for design 8.2.
+- The per-slot team material works with shared handles: insert the slot's `MeshMaterial3d` on each entity whose
+  `GltfMaterialName` is `team`; two units of one slot share one handle; no material for each unit.
+- Bevy 0.20 facts for the task text: `GltfPrimitive.material` is `Option<Handle<GltfMaterial>>`; the labelled sub-asset
+  `Material{n}/std` exists only with `PbrPlugin`; `GltfPlugin` must come before `PbrPlugin`; a manual update loop needs
+  `app.finish()` and `app.cleanup()`; a headless load test needs `TaskPool`, `Asset`, `Transform`, `Mesh`,
+  `WorldSerialization` and `Gltf` plugins (and, for the standard material, a window plugin with no window, camera, image,
+  a render plugin with no backend, and PBR).
+- A Bevy load of the bad-pivot model succeeds, so the pack check (MDL1) is the only gate for the model rules.
+- The headless client branch has no `AssetPlugin`: `PRES-MODELS` decides what the headless client does with a model.
+
+Probe 2, the HUD change counter on today's tree (forge HUD, 108 widget entities, a static replica):
+- Today: 89 `Text`, 66 `Node` and 108 `Visibility` components are marked changed in EVERY frame (red in 58 of 58 frames).
+- The four write sites that the plan gate named are not enough. `UI-HUD` must change: `widgets/values.rs:39, :65, :124`;
+  `widgets/tooltip.rs:97, :100`; `widgets/tree.rs:73, :76` (`update_fit_layout`), `:96` and `:840` (callers of
+  `apply_node_placement`, which must end with `set_if_neq`), `:104` and `:848` (`UiTransform`). With all of them the count
+  is 0 after frame 2.
+- Time for one update, release build: 2.8 to 3.0 ms today, 1.7 to 1.8 ms with the changes (about 40 % less; the host was
+  loaded, so read the ratio; the browser cost is NOT TRACED).
+- The red test for `UI-HUD` is `hud_change_counter.rs` of the probe folder; it runs headless with no GPU. The counter
+  must be a system (a world read after `app.update()` always reads false).
+- NOT TRACED: other systems that write `Text`, `Node` or `Visibility` each frame outside the test app
+  (`client_screens.rs:256`, `settings.rs:558`, `bindings_editor.rs:1042/1065`, `notices.rs:141/166`,
+  `volume_settings.rs:227`, `visuals/world_tooltip.rs:21`). `UI-HUD` or `PRES-MEASURE` checks them.
