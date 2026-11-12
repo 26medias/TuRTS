@@ -842,8 +842,8 @@
       {
         "file": "crates/turts_mod_runtime/src/mp1_validation.rs",
         "edit": {
-          "old": "if colours.len() < slots.len()",
-          "new": "if false && colours.len() < slots.len()"
+          "old": "if colours.len() < seats {",
+          "new": "if false && colours.len() < seats {"
         }
       }
     ],
@@ -864,7 +864,7 @@
     "expected_red": "H15 one different colour for each player slot: the package passes, a refusal was expected",
     "exit": 101,
     "expected_selected": 1,
-    "commit": "a274957"
+    "commit": "4906a2a"
   },
   {
     "row": "VAL1 M1",
@@ -1790,5 +1790,313 @@
     "exit": 101,
     "expected_selected": 1,
     "commit": "318e5a4"
+  },
+  {
+    "row": "L0-API2 review M2",
+    "plant": "a: the K8 detector has no research arm (package at ^0.2.3)",
+    "files": [
+      {
+        "file": "crates/turts_mod_runtime/src/variants.rs",
+        "edit": {
+          "old": "        || unit.research.is_some()\n",
+          "new": ""
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_mod_runtime",
+      "--locked",
+      "--test",
+      "val1",
+      "k8_removal_with_a_queue_is_refused_at_0_2_3_for_each_queue",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "called `Result::unwrap_err()` on an `Ok` value",
+    "exit": 101,
+    "expected_selected": 1,
+    "commit": "4906a2a"
+  },
+  {
+    "row": "L0-API2 review M2",
+    "plant": "b: the K8 detector has no research arm (unit test)",
+    "files": [
+      {
+        "file": "crates/turts_mod_runtime/src/variants.rs",
+        "edit": {
+          "old": "        || unit.research.is_some()\n",
+          "new": ""
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_mod_runtime",
+      "--locked",
+      "--lib",
+      "variants::tests::removal_with_a_queue_is_found_for_each_queue_capability",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "research: [",
+    "exit": 101,
+    "expected_selected": 1,
+    "commit": "4906a2a"
+  },
+  {
+    "row": "L0-API2 review M2",
+    "plant": "c: the K8 detector has no constructor arm (unit test)",
+    "files": [
+      {
+        "file": "crates/turts_mod_runtime/src/variants.rs",
+        "edit": {
+          "old": "        || unit.constructor.is_some();\n    if unit.removal.is_some() && has_queue {",
+          "new": ";\n    if unit.removal.is_some() && has_queue {"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_mod_runtime",
+      "--locked",
+      "--lib",
+      "variants::tests::removal_with_a_queue_is_found_for_each_queue_capability",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "constructor: [",
+    "exit": 101,
+    "expected_selected": 1,
+    "commit": "4906a2a"
+  },
+  {
+    "row": "L0-API2 review M2",
+    "plant": "d: the K8 detector has no machine arm (package at ^0.2.3)",
+    "files": [
+      {
+        "file": "crates/turts_mod_runtime/src/variants.rs",
+        "edit": {
+          "old": "        || unit.machine.is_some()\n        || unit.research.is_some()\n",
+          "new": "        || unit.research.is_some()\n"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_mod_runtime",
+      "--locked",
+      "--test",
+      "val1",
+      "k8_removal_with_a_queue_is_refused_at_0_2_3_for_each_queue",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "called `Result::unwrap_err()` on an `Ok` value",
+    "exit": 101,
+    "expected_selected": 1,
+    "commit": "4906a2a"
+  },
+  {
+    "row": "L0-API2 review M2",
+    "plant": "e: the K8 detector has no producer arm (package at ^0.2.3)",
+    "files": [
+      {
+        "file": "crates/turts_mod_runtime/src/variants.rs",
+        "edit": {
+          "old": "    let has_queue = unit.producer.is_some()\n        || unit.machine.is_some()",
+          "new": "    let has_queue = unit.machine.is_some()"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_mod_runtime",
+      "--locked",
+      "--test",
+      "val1",
+      "k8_removal_with_a_queue_is_refused_at_0_2_3_for_each_queue",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "called `Result::unwrap_err()` on an `Ok` value",
+    "exit": 101,
+    "expected_selected": 1,
+    "commit": "4906a2a"
+  },
+  {
+    "row": "L0-API2 review M3",
+    "plant": "a: H15 counts the slots of the map placements again",
+    "files": [
+      {
+        "file": "crates/turts_mod_runtime/src/mp1_validation.rs",
+        "edit": {
+          "old": "            let seats = usize::from(SLOT_COUNT);\n",
+          "new": "            let seats = self\n                .maps\n                .iter()\n                .flat_map(|(_, map)| map.placements.iter().map(|placement| placement.owner_slot))\n                .collect::<BTreeSet<u8>>()\n                .len();\n"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_mod_runtime",
+      "--locked",
+      "--test",
+      "val1",
+      "m1_m2_h15_the_match_file",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "H15 the seats of the lobby, not the slots of the placements: the package passes, a refusal was expected",
+    "exit": 101,
+    "expected_selected": 1,
+    "commit": "4906a2a"
+  },
+  {
+    "row": "L0-API2 review M3",
+    "plant": "b: SLOT_COUNT is 3 in turts_mod_api (the packer reads the constant)",
+    "files": [
+      {
+        "file": "crates/turts_mod_api/src/lib.rs",
+        "edit": {
+          "old": "pub const SLOT_COUNT: u8 = 2;",
+          "new": "pub const SLOT_COUNT: u8 = 3;"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_mod_runtime",
+      "--locked",
+      "--test",
+      "val1",
+      "the_package_val1_passes_the_validation_column",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "needs 3 different slot colours",
+    "exit": 101,
+    "expected_selected": 1,
+    "commit": "4906a2a"
+  },
+  {
+    "row": "L0-API2 review L1",
+    "plant": "a: the font lookup gives no hint and no allowed list",
+    "files": [
+      {
+        "file": "crates/turts_mod_runtime/src/mp1_validation.rs",
+        "edit": {
+          "old": "            Some(font) if !fonts.contains(font) => Err(self.unknown(\n                file,\n                path,\n                \"font asset\",\n                font,\n                fonts.iter().map(|name| name.to_string()).collect(),\n            )),",
+          "new": "            Some(font) if !fonts.contains(font) => {\n                Err(self.fail(file, path, format!(\"unknown font asset `{font}`\")))\n            }"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_mod_runtime",
+      "--locked",
+      "--test",
+      "val1",
+      "h11_h13_h24_an_unknown_font_gets_the_hint_and_the_allowed_list",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "did you mean `ui_font`?",
+    "exit": 101,
+    "expected_selected": 1,
+    "commit": "4906a2a"
+  },
+  {
+    "row": "L0-API2 review L2",
+    "plant": "a: the KEY1 (b) text has no index in its field path",
+    "files": [
+      {
+        "file": "crates/turts_mod_runtime/src/mp1_validation.rs",
+        "edit": {
+          "old": "&format!(\"actions[{action_index}].default[{binding_index}]\"),",
+          "new": "\"actions\","
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_mod_runtime",
+      "--locked",
+      "--test",
+      "val1",
+      "key1_b_unique_default_keys",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "actions[4].default[0]",
+    "exit": 101,
+    "expected_selected": 1,
+    "commit": "4906a2a"
+  },
+  {
+    "row": "L0-API2 review L3",
+    "plant": "a: the K2 gap limit is exclusive (`<` becomes `<=`)",
+    "files": [
+      {
+        "file": "crates/turts_mod_runtime/src/mp1_validation.rs",
+        "edit": {
+          "old": "if placement.gap < least {",
+          "new": "if placement.gap <= least {"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_mod_runtime",
+      "--locked",
+      "--test",
+      "val1",
+      "k2_the_gap_limit_is_inclusive",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "gap 2.0: ",
+    "exit": 101,
+    "expected_selected": 1,
+    "commit": "4906a2a"
   }
 ]
