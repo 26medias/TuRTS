@@ -147,7 +147,26 @@ jobs:
   #   enabled Cancel screenshot at 27.3 s to 27.8 s (12.1 s to 12.6 s after the click; 13.5 s is the need with the click).
   #   M2_RECIPE_DURATION_SCALE_CASES=E9-browser-base-loss-refund=5 gives that one case a 25 s recipe (margin 1.9; x4
   #   would give 1.5). The general factor never applies to it, and no other loss case or recovery case is scaled. The
-  #   50 % refund of a running job and the 10 s drop wait are unchanged. Hosted result of this factor: NOT TRACED.
+  #   50 % refund of a running job and the 10 s drop wait are unchanged.
+  #   Result in hosted run 43242960493 (first run with the factor): the case passes, 25 s recipe (500 ticks). Measured:
+  #   Produce click 18.5 s, queue shot 27.4 s (8.9 s after the click, job at 135 of 500 ticks), Cancel click 33.2 s
+  #   (14.7 s after the Produce click, job at 252 of 500 ticks), credits 450 after the cancel. The measured need is
+  #   14.7 s, so the margin is 25 / 14.7 = 1.7 (the 1.9 above was computed on an estimate of 13.5 s).
+  # - The wall-clock window of the oracle for an applied order (tests/browser/m2-oracle.js, `appliedAfter` and
+  #   `cancelRefundShot`). It was 6000 ms between the checkpoint before the click and the checkpoint that shows the
+  #   order. One checkpoint costs 5 to 6.6 s on the software renderer, so it failed run 43242960493 (position-only
+  #   plant on final_change, 6.6 s) and run 43264331478 (cedar-economy baseline, 6.3 s), while the server had applied
+  #   the order 44 and 46 ticks (2.2 s and 2.3 s) after the pre-click checkpoint. Over 31 retained hosted windows the
+  #   wall time was 3.4 s to 6.6 s and the server latency 30 to 52 ticks. The oracle now judges the latency in server
+  #   ticks: `applied_tick - replicated tick of the pre-click checkpoint` at most 6 x `debug.tick_hz` (120 at 20 Hz),
+  #   never before that tick, with a far wall guard of 60 s for a dead run (9 times the hosted maximum).
+  # - Native test e9_loss_and_small_buffer_converge, subcase run_replay_spawn_window_subcase (shard 1/4, plant
+  #   E9-duplicate-spawn-tail-replay; red in run 43242960493: `response Snapshot predates the output`, economy.rs). The
+  #   output came 4 ticks (200 ms) after the order and the held resync answer had to be taken before it: the answer is
+  #   1 tick after the order, so the slack was 2 ticks (100 ms), and a server or client stall of that size lost the race.
+  #   The subcase now packs a 600 ms recipe (12 ticks, the most that the 12-tick hold window allows): the slack is 10
+  #   ticks (500 ms). Measured locally with an answer delayed by the client: 300 ms fails the 200 ms recipe and passes
+  #   the 600 ms one; 500 ms still passes; 600 ms fails (the limit).
   # - Public-convergence cases (base, haul, acme, cedar; the refutation leg E9-browser-convergence-owner-offset
   #   uses the base one). Each window shows a new tick only every 28 ticks and the two windows are 16 ticks out
   #   of phase, so they share no tick (0 shared ticks in 1651 and 1656 polls, 180 s). A longer limit cannot
