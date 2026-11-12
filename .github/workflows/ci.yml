@@ -196,6 +196,11 @@ jobs:
       # The browser steps use the Chrome profile of the job env.
       - name: T7 browser join
         if: matrix.suite == 't7-m3'
+        # The software renderer shows one frame every 2 to 3.4 s. A scout at speed 6 crosses the T7
+        # path in 6.8 s, so hosted run 43174011989 recorded 2 frames in the move, and the oracle
+        # needs 3. Speed 1.5 gives a move of about 27 s (scripts/t7.sh, T7_SCOUT_SPEED).
+        env:
+          T7_SCOUT_SPEED: "1.5"
         run: bash scripts/t7.sh
       # M3 runs also after a red T7, so one run shows both results.
       - name: M3 browser controls (F10, private Xvfb, software WebGPU)
