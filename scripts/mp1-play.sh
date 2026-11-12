@@ -5,6 +5,8 @@
 #
 #   scripts/mp1-play.sh --prepare DIR [--package P]          build the server, the package and the client into DIR
 #   scripts/mp1-play.sh --prepared DIR [--package P]         serve the game, start Chrome, print the URL and the port
+#   scripts/mp1-play.sh --url URL                            start only the Chrome, at the loopback address URL (a game that
+#                                                            another command serves; the cold-play tool uses this form)
 #   scripts/mp1-play.sh --print-plan                         print the free port and the Chrome command; start nothing
 #
 # --prepared builds nothing (scripts/mc-browser.sh --serve-only --prepared refuses with exit 66 when DIR
@@ -24,14 +26,14 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PACKAGE=mods/muster
 usage() {
-    echo "usage: scripts/mp1-play.sh --prepare DIR [--package P] | --prepared DIR [--package P] | --print-plan" >&2
+    echo "usage: scripts/mp1-play.sh --prepare DIR [--package P] | --prepared DIR [--package P] | --url URL | --print-plan" >&2
     exit 2
 }
 (($# >= 1)) || usage
 mode="$1"
 shift
 dir=""
-if [[ "$mode" == --prepare || "$mode" == --prepared ]]; then
+if [[ "$mode" == --prepare || "$mode" == --prepared || "$mode" == --url ]]; then
     (($# >= 1)) || usage
     dir="$1"
     shift
@@ -72,7 +74,10 @@ fi
 if [[ "$mode" == --prepare ]]; then
     exec bash "$ROOT/scripts/mc-browser.sh" "$PACKAGE" --prepare "$dir"
 fi
-[[ "$mode" == --prepared ]] || usage
+[[ "$mode" == --prepared || "$mode" == --url ]] || usage
+if [[ "$mode" == --url ]]; then
+    [[ "$dir" =~ ^https?://(127\.0\.0\.1|localhost)(:[0-9]+)?(/|\?|$) ]] || { echo "mp1-play: --url takes a loopback address (http://127.0.0.1:PORT/...)" >&2; exit 2; }
+fi
 
 CHROME_BIN="${CHROME_BIN:-$(command -v google-chrome || command -v chromium || true)}"
 [[ -n "$CHROME_BIN" && -x "$CHROME_BIN" ]] || { echo "Chrome binary unavailable; set CHROME_BIN" >&2; exit 1; }
@@ -96,20 +101,24 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-bash "$ROOT/scripts/mc-browser.sh" "$PACKAGE" --serve-only --prepared "$dir" >"$SERVE_LOG" 2>&1 &
-SERVE_PID=$!
 URL=""
-for _ in $(seq 1 300); do
-    URL="$(sed -n 's/^URL: //p' "$SERVE_LOG" | head -1)"
-    [[ -n "$URL" ]] && break
-    kill -0 "$SERVE_PID" 2>/dev/null || break
-    sleep 0.2
-done
-if [[ -z "$URL" ]]; then
-    echo "mp1-play: the server did not start" >&2
-    cat "$SERVE_LOG" >&2
-    # a stale prepared folder gives exit 66 from the serve step
-    wait "$SERVE_PID" 2>/dev/null && exit 1 || exit $?
+if [[ "$mode" == --url ]]; then
+    URL="$dir"
+else
+    bash "$ROOT/scripts/mc-browser.sh" "$PACKAGE" --serve-only --prepared "$dir" >"$SERVE_LOG" 2>&1 &
+    SERVE_PID=$!
+    for _ in $(seq 1 300); do
+        URL="$(sed -n 's/^URL: //p' "$SERVE_LOG" | head -1)"
+        [[ -n "$URL" ]] && break
+        kill -0 "$SERVE_PID" 2>/dev/null || break
+        sleep 0.2
+    done
+    if [[ -z "$URL" ]]; then
+        echo "mp1-play: the server did not start" >&2
+        cat "$SERVE_LOG" >&2
+        # a stale prepared folder gives exit 66 from the serve step
+        wait "$SERVE_PID" 2>/dev/null && exit 1 || exit $?
+    fi
 fi
 
 PORT="$(free_port)"
