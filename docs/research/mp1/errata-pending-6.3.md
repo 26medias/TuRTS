@@ -179,3 +179,10 @@ Probe 2, the HUD change counter on today's tree (forge HUD, 108 widget entities,
 - No MC package gives two armed slots (only `mods/forge/units/turret.ron` and `mods/muster/units/trooper.ron` have a weapon). Plan step 1 of E-GPU assumed one.
 - **Product defect to assign (lead, root cause NOT TRACED):** an attack order from out of range stops the unit at 4.000025 from the target with range 4.0, and it never fires (`crates/turts_sim/src/orders/behaviours/attack.rs:30-34`, `economy/combat.rs:321`). Owner: `simulation-core-engineer`, after the L0-SIM repair merges (same files). It must be closed before `L-TGT`.
 - The hosted MM1 probe of plan step 2 cannot run: the workflow has no MM1 step. Frame times sit at about 30 fps; cause NOT TRACED (given to the frame pacing repair).
+
+## From the L0-DBG review (2026-11-12, `review-l0-dbg.md`)
+
+- The review failed with 1 High: four `page.waitForFunction(async ...)` predicates never wait (Playwright does not await the predicate), so the join gate and the SH1 and SLOT1 waits passed at once; new reds in SEL1, M2 and SH1. Repair in work.
+- Ruling (orchestrator, as the reviewer proposes): the default debug request keeps the 4 Hz cap; `min_interval_ms` 0 is a legal test-only form for the SH1 per-frame phase capture. Erratum for row DBG1: "With a request, the rate is at most 4 Hz; a harness can pass `min_interval_ms` 0 for a per-frame capture (SH1 only, test-only)."
+- Old reds at the base 51f1223, not from this task: ORD3 (same message), SH1 run 1 ("Execution context was destroyed"), SLOT1.
+- Wrapper note: a v4 headed caller bypasses the v6 ticket queue. Every lane must use v6.
