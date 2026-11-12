@@ -11,11 +11,10 @@
 // function that is not `async` but returns a Promise), and the wait rejects in its first poll.
 const vm = require("node:vm");
 
-const AsyncFunction = Object.getPrototypeOf(async () => {}).constructor;
-
 function assertSyncFunction(predicate) {
     if (typeof predicate !== "function") throw new TypeError("waitForSync: the predicate must be a function");
-    if (predicate instanceof AsyncFunction) throw new TypeError("waitForSync: the predicate is an async function; Playwright does not await it");
+    // The tag, not `instanceof`: a function of another realm (a vm context) is async too.
+    if (Object.prototype.toString.call(predicate) === "[object AsyncFunction]") throw new TypeError("waitForSync: the predicate is an async function; Playwright does not await it");
 }
 
 // The source of a function as one JavaScript expression: an arrow, a `function`, or a method of an

@@ -73,6 +73,13 @@ test("a predicate that returns a Promise or a thenable throws in the page, in th
     }
 });
 
+test("an async function of another realm is refused as well", async () => {
+    const foreign = vm.runInNewContext("(async () => true)");
+    const page = fakePage({});
+    await assert.rejects(waitForSync(page, foreign), /async function/);
+    assert.equal(page.calls.length, 0);
+});
+
 test("a value that is not a function is refused", async () => {
     await assert.rejects(waitForSync(fakePage({}), "window.x"), TypeError);
     await assert.rejects(waitForSync(fakePage({}), undefined), TypeError);

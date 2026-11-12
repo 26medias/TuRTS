@@ -28,16 +28,19 @@ function launchParams(row, viewport = "1280x720@2") {
 // $SERVER_BIN, so each test runs ONE of the two assignments of the script, taken from the script
 // text, before the recorder. SERVER_BIN is not given to the recorder from the test environment:
 // that would make argv[0] a value of the test (L0-DBG follow-up, finding L1).
+// The first is the one line of the script that starts at column 0; the second is the one indented
+// line (inside `if [[ -n "$PREPARED" ]]`). Each must exist exactly once, so a moved or doubled
+// assignment makes the test red instead of leaving a path unchecked.
 const SERVER_BIN_ASSIGNMENT = {
-    target: /^[ \t]*SERVER_BIN="\$TARGET\/release\/turts_server"$/m,
-    prepared: /^[ \t]*SERVER_BIN="\$PREPARED\/bin\/turts_server"$/m,
+    target: /^SERVER_BIN="[^"\n]*"$/gm,
+    prepared: /^[ \t]+SERVER_BIN="[^"\n]*"$/gm,
 };
 const SERVER_BIN_EXPECTED = { target: "/fixture/target/release/turts_server", prepared: "/fixture/prepared/bin/turts_server" };
 
 function serverBinAssignment(source, branch) {
-    const match = SERVER_BIN_ASSIGNMENT[branch].exec(source);
-    assert(match, `scripts/mc-browser.sh has no SERVER_BIN assignment for the ${branch} branch`);
-    return match[0].trim();
+    const matches = source.match(SERVER_BIN_ASSIGNMENT[branch]) ?? [];
+    assert.equal(matches.length, 1, `scripts/mc-browser.sh has ${matches.length} SERVER_BIN assignments for the ${branch} branch, not one`);
+    return matches[0].trim();
 }
 
 function launcherServerArgv(syntheticSet, syntheticUnits, orderLogSet = "false", branch = "target") {
@@ -289,6 +292,7 @@ test("argv[0] is the server binary of the TARGET branch and of the prepared bran
 test("an ambient SERVER_BIN does not reach the recorder, and a script with no assignment is refused", () => {
     process.env.SERVER_BIN = "/ambient/turts_server";
     try { assert.equal(launcherServerArgv("false", "")[0], SERVER_BIN_EXPECTED.target); } finally { delete process.env.SERVER_BIN; }
-    assert.throws(() => serverBinAssignment("SERVER_ARGS=(x)", "target"), /no SERVER_BIN assignment for the target branch/);
-    assert.throws(() => serverBinAssignment('SERVER_BIN="$TARGET/release/other"', "target"), /no SERVER_BIN assignment/);
+    assert.throws(() => serverBinAssignment("SERVER_ARGS=(x)", "target"), /0 SERVER_BIN assignments for the target branch/);
+    assert.throws(() => serverBinAssignment('SERVER_BIN="a"\nSERVER_BIN="b"', "target"), /2 SERVER_BIN assignments/);
+    assert.equal(serverBinAssignment('x\nSERVER_BIN="$TARGET/release/other"\n  SERVER_BIN="p"', "target"), 'SERVER_BIN="$TARGET/release/other"');
 });
