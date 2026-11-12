@@ -1590,3 +1590,64 @@ fn authored_force_move_never_fires_and_hold_remains_stationary_while_firing() {
         "Hold does not resume movement while firing"
     );
 }
+
+#[test]
+fn actual_muster_attack_from_out_of_range_fires_from_every_bearing() {
+    // The trooper (weapon range 4.0) orders an attack on dummy 45 from out of range. The unit
+    // that ends its approach must be in range by the rule that lets its weapon fire. The first
+    // bearing is the one of the E-GPU measurement (`docs/measurements/mp1.md`, "Combat"): the
+    // trooper stood at (50.818394, 31.575668) from the target (54, 34), and never fired.
+    let actor = 40;
+    let target = 45;
+    let target_pos = Vec2::new(54.0, 34.0);
+    let measured = Vec2::new(50.818394, 31.575668);
+    let mut bearings = vec![(measured - target_pos).normalize()];
+    bearings.extend((0..24).map(|step| {
+        let angle = step as f32 * std::f32::consts::TAU / 24.0;
+        Vec2::new(angle.cos(), angle.sin())
+    }));
+    let mut never_fired = Vec::new();
+    for (index, bearing) in bearings.into_iter().enumerate() {
+        let mut app = app_with_muster();
+        isolate_order_trial(&mut app, actor, &[target]);
+        let start = target_pos + bearing * 8.0;
+        set_pos(&mut app, actor, start);
+        set_pos(&mut app, target, target_pos);
+        let full = health(&mut app, target).unwrap();
+        let accepted = apply(
+            &mut app,
+            command(
+                1,
+                "muster:order_attack",
+                Behaviour::Attack,
+                TargetKind::Unit,
+                OrderTargetSim::Unit(target),
+                vec![actor],
+                QueueMode::Replace,
+            ),
+        );
+        assert_eq!(accepted.units.accepted, vec![actor]);
+        // 4 units at 0.15 a tick is 27 ticks; 80 ticks is the bound for one 5-damage shot.
+        for _ in 0..80 {
+            app.update();
+            if health(&mut app, target).is_none_or(|current| current < full) {
+                break;
+            }
+        }
+        if health(&mut app, target).is_some_and(|current| current == full) {
+            let stop = app
+                .world()
+                .entity(entity_for(&app, actor))
+                .get::<Position>()
+                .unwrap()
+                .0;
+            never_fired.push((index, start, stop, stop.distance(target_pos)));
+        }
+    }
+    assert!(
+        never_fired.is_empty(),
+        "{} of 25 attacks from out of range never fired; (bearing, start, stop, stop distance): {:?}",
+        never_fired.len(),
+        never_fired
+    );
+}

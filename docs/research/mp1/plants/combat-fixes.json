@@ -1,0 +1,298 @@
+[
+  {
+    "row": "COMBAT-FIXES",
+    "plant": "1a (stall repair reverted: last_target kept for the ordered attacker, kill test)",
+    "files": [
+      {
+        "file": "crates/turts_sim/src/economy/transaction_m3.rs",
+        "edit": {
+          "old": "            if updated.last_target == Some(unit) {\n",
+          "new": "            if !retained_for_order && updated.last_target == Some(unit) {\n"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_sim",
+      "--locked",
+      "--lib",
+      "economy::combat::tests::ordered_attack_kill_replicates_no_reference_to_the_removed_target",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "tick 1: a replicated weapon row names a removed unit",
+    "exit": 101,
+    "commit": "9ff4f9c7a624cc5e7d83bcc806bcda59431815ba",
+    "expected_selected": "economy::combat::tests::ordered_attack_kill_replicates_no_reference_to_the_removed_target"
+  },
+  {
+    "row": "COMBAT-FIXES",
+    "plant": "1b (stall repair reverted, kill by another weapon)",
+    "files": [
+      {
+        "file": "crates/turts_sim/src/economy/transaction_m3.rs",
+        "edit": {
+          "old": "            if updated.last_target == Some(unit) {\n",
+          "new": "            if !retained_for_order && updated.last_target == Some(unit) {\n"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_sim",
+      "--locked",
+      "--lib",
+      "economy::combat::tests::kill_by_another_weapon_clears_the_ordered_attacker_target_reference",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "tick 1: a replicated weapon row names a removed unit",
+    "exit": 101,
+    "commit": "9ff4f9c7a624cc5e7d83bcc806bcda59431815ba",
+    "expected_selected": "economy::combat::tests::kill_by_another_weapon_clears_the_ordered_attacker_target_reference"
+  },
+  {
+    "row": "COMBAT-FIXES",
+    "plant": "1c (marker cleared for the ordered attacker: the order fails TargetGone)",
+    "files": [
+      {
+        "file": "crates/turts_sim/src/economy/transaction_m3.rs",
+        "edit": {
+          "old": "            if !retained_for_order && updated.ordered_target_fired == Some(unit) {\n",
+          "new": "            if updated.ordered_target_fired == Some(unit) {\n"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_sim",
+      "--locked",
+      "--lib",
+      "economy::combat::tests::attack_target_gone_after_a_shot_completes_normally",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "assertion failed: orders.last_failure.is_none()",
+    "exit": 101,
+    "commit": "9ff4f9c7a624cc5e7d83bcc806bcda59431815ba",
+    "expected_selected": "economy::combat::tests::attack_target_gone_after_a_shot_completes_normally"
+  },
+  {
+    "row": "COMBAT-FIXES",
+    "plant": "1d (stall repair reverted, process test: the owner replica resyncs)",
+    "files": [
+      {
+        "file": "crates/turts_sim/src/economy/transaction_m3.rs",
+        "edit": {
+          "old": "            if updated.last_target == Some(unit) {\n",
+          "new": "            if !retained_for_order && updated.last_target == Some(unit) {\n"
+        }
+      }
+    ],
+    "command": [
+      "bash",
+      "-c",
+      "cargo build -p turts_server --locked && cargo build -p turts_client --locked && cargo test -p turts_server --locked --test mc_kill_replica -- --ignored --exact ordered_attack_kill_reaches_the_owner_replica_without_a_resync"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "resync(s) across the kill of unit 46",
+    "exit": 101,
+    "commit": "9ff4f9c7a624cc5e7d83bcc806bcda59431815ba",
+    "expected_selected": "ordered_attack_kill_reaches_the_owner_replica_without_a_resync"
+  },
+  {
+    "row": "COMBAT-FIXES",
+    "plant": "1e (audit oracle line reverted: weapon last_target not checked)",
+    "files": [
+      {
+        "file": "crates/turts_pack/tests/common/conservation.rs",
+        "edit": {
+          "old": "                .any(|r| r.unit == *id || r.last_target == Some(*id))\n",
+          "new": "                .any(|r| r.unit == *id)\n"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_pack",
+      "--locked",
+      "--test",
+      "forge_cases",
+      "--",
+      "--exact",
+      "dangling_fails_on_weapon_last_target"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "called `Result::unwrap_err()` on an `Ok` value",
+    "exit": 101,
+    "commit": "9ff4f9c7a624cc5e7d83bcc806bcda59431815ba",
+    "expected_selected": "dangling_fails_on_weapon_last_target"
+  },
+  {
+    "row": "COMBAT-FIXES",
+    "plant": "2a (stand-off returns the unchecked ring point: the old approach, sim sweep)",
+    "files": [
+      {
+        "file": "crates/turts_sim/src/economy/combat.rs",
+        "edit": {
+          "old": "    if within_weapon_range(ring, target, range) {\n",
+          "new": "    if true {\n"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_sim",
+      "--locked",
+      "--lib",
+      "economy::combat::tests::attack_from_out_of_range_fires_on_every_bearing_and_distance",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "approaches never fired within the walk bound",
+    "exit": 101,
+    "commit": "9ff4f9c7a624cc5e7d83bcc806bcda59431815ba",
+    "expected_selected": "economy::combat::tests::attack_from_out_of_range_fires_on_every_bearing_and_distance"
+  },
+  {
+    "row": "COMBAT-FIXES",
+    "plant": "2b (stand-off returns the unchecked ring point, random rings)",
+    "files": [
+      {
+        "file": "crates/turts_sim/src/economy/combat.rs",
+        "edit": {
+          "old": "    if within_weapon_range(ring, target, range) {\n",
+          "new": "    if true {\n"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_sim",
+      "--locked",
+      "--lib",
+      "economy::combat::tests::weapon_stand_off_is_in_range_for_random_rings",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "is out of range",
+    "exit": 101,
+    "commit": "9ff4f9c7a624cc5e7d83bcc806bcda59431815ba",
+    "expected_selected": "economy::combat::tests::weapon_stand_off_is_in_range_for_random_rings"
+  },
+  {
+    "row": "COMBAT-FIXES",
+    "plant": "2c (stand-off returns the unchecked ring point, real Muster package)",
+    "files": [
+      {
+        "file": "crates/turts_sim/src/economy/combat.rs",
+        "edit": {
+          "old": "    if within_weapon_range(ring, target, range) {\n",
+          "new": "    if true {\n"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_pack",
+      "--locked",
+      "--test",
+      "mc_order_rows",
+      "--",
+      "--exact",
+      "actual_muster_attack_from_out_of_range_fires_from_every_bearing"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "attacks from out of range never fired",
+    "exit": 101,
+    "commit": "9ff4f9c7a624cc5e7d83bcc806bcda59431815ba",
+    "expected_selected": "actual_muster_attack_from_out_of_range_fires_from_every_bearing"
+  },
+  {
+    "row": "COMBAT-FIXES",
+    "plant": "2d (the pull is half a bound: too small for the rounding)",
+    "files": [
+      {
+        "file": "crates/turts_sim/src/economy/combat.rs",
+        "edit": {
+          "old": "const STAND_OFF_BOUNDS: f32 = 4.0;\n",
+          "new": "const STAND_OFF_BOUNDS: f32 = 0.5;\n"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_sim",
+      "--locked",
+      "--lib",
+      "economy::combat::tests::weapon_stand_off_is_in_range_for_random_rings",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "is out of range",
+    "exit": 101,
+    "commit": "9ff4f9c7a624cc5e7d83bcc806bcda59431815ba",
+    "expected_selected": "economy::combat::tests::weapon_stand_off_is_in_range_for_random_rings"
+  },
+  {
+    "row": "COMBAT-FIXES",
+    "plant": "2e (the stand-off always pulls in: a passing ring point moves)",
+    "files": [
+      {
+        "file": "crates/turts_sim/src/economy/combat.rs",
+        "edit": {
+          "old": "    if within_weapon_range(ring, target, range) {\n",
+          "new": "    if false {\n"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_sim",
+      "--locked",
+      "--lib",
+      "economy::combat::tests::weapon_stand_off_is_in_range_for_random_rings",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "a ring point that is in range stays unchanged",
+    "exit": 101,
+    "commit": "9ff4f9c7a624cc5e7d83bcc806bcda59431815ba",
+    "expected_selected": "economy::combat::tests::weapon_stand_off_is_in_range_for_random_rings"
+  }
+]
