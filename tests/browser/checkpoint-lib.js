@@ -149,6 +149,22 @@ function assertReplicaLag(checkpoint, index, maxLag, label) {
     return lag;
 }
 
+// A replica that never lost a message asks for no resync. The stall after a kill (RUN142) is a run of
+// rejected updates and resync requests: `ingest.resync_requests_sent` counts them for the whole run, so a
+// capture that misses the stall window still shows it. Saved MM1 runs: 36 of 36 runs without the repair of
+// commit 50eb827 show 9 to 24 requests in window 1, the 8 runs with the repair show 0. A local run has no packet
+// loss, so any request is a fault of the product (or of a host stall, which assertConnectionHeld names first).
+function assertNoResync(checkpoints, label) {
+    for (const entry of checkpoints) {
+        const ingest = entry.debug?.ingest;
+        assert(ingest && Number.isSafeInteger(ingest.resync_requests_sent),
+            `${label}: checkpoint ${entry.input_call} (window ${entry.window}) has no ingest.resync_requests_sent`);
+        assert.equal(ingest.resync_requests_sent, 0,
+            `${label}: the replica of window ${entry.window} asked the server for ${ingest.resync_requests_sent} resyncs by checkpoint ` +
+            `${entry.input_call} (replica tick ${entry.debug?.replicated_world?.tick}); a local run needs none (the kill stall of RUN142)`);
+    }
+}
+
 // The netcode timeout of the client (crates/turts_client/src/join.rs:345, client_timeout_secs).
 const NETCODE_TIMEOUT_MS = 10000;
 
@@ -183,6 +199,7 @@ module.exports = {
     NETCODE_TIMEOUT_MS,
     assertConnectionHeld,
     assertNoDriverStop,
+    assertNoResync,
     assertReplicaLag,
     bindingLabel,
     checkpointAt,

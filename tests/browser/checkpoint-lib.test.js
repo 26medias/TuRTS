@@ -5,7 +5,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const { test } = require("node:test");
-const { NETCODE_TIMEOUT_MS, assertConnectionHeld, assertReplicaLag, longestTickGap, serverTickAt, serverTickIndex } = require("./checkpoint-lib.js");
+const { NETCODE_TIMEOUT_MS, assertConnectionHeld, assertNoResync, assertReplicaLag, longestTickGap, serverTickAt, serverTickIndex } = require("./checkpoint-lib.js");
 
 const T0 = 1794490000000; // a wall clock in ms
 // A tick log of ticks 1..N. The tick k ends at T0 + 50 k ms, plus the listed extra stalls. Two unit rows for each tick.
@@ -64,4 +64,14 @@ test("the netcode timeout of the checker is the client value in the source", () 
     const match = /client_timeout_secs: (\d+),/.exec(source);
     assert.ok(match, "crates/turts_client/src/join.rs sets client_timeout_secs");
     assert.equal(Number(match[1]) * 1000, NETCODE_TIMEOUT_MS);
+});
+
+test("a resync request anywhere in a local run is red, also when no capture fell inside the stall (the build without the stall repair)", () => {
+    const ok = (window, resync) => ({ input_call: 3, window, debug: { ingest: { resync_requests_sent: resync }, replicated_world: { tick: 100 } } });
+    assert.doesNotThrow(() => assertNoResync([ok(1, 0), ok(2, 0), ok(1, 0)], "MM1"));
+    // Window 1 stands at tick 100 here: the later captures read the repaired pace, the counter keeps the stall.
+    assert.throws(() => assertNoResync([ok(1, 0), ok(1, 12), ok(2, 0)], "MM1"),
+        /MM1: the replica of window 1 asked the server for 12 resyncs by checkpoint 3 \(replica tick 100\)/);
+    assert.throws(() => assertNoResync([ok(1, 0), ok(2, 1)], "MM1"), /window 2 asked the server for 1 resyncs/);
+    assert.throws(() => assertNoResync([{ input_call: 4, window: 1, debug: {} }], "MM1"), /has no ingest\.resync_requests_sent/);
 });

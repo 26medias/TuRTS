@@ -4,7 +4,7 @@
 const assert = require("node:assert/strict");
 const { decodePng, pixelAt } = require("./harness/png.js");
 const { unprojectGround } = require("./hud4-oracle.js");
-const { assertConnectionHeld, assertReplicaLag, serverTickIndex } = require("./checkpoint-lib.js");
+const { assertConnectionHeld, assertNoResync, assertReplicaLag, serverTickIndex } = require("./checkpoint-lib.js");
 
 // The presentation delay of the client, in ticks (crates/turts_client/src/interp.rs:10,
 // `INTERP_DELAY_TICKS`; mm1-oracle.test.js reads that line, so a change there turns the test red).
@@ -30,6 +30,8 @@ async function judge(view, params) {
     const checkpoints = JSON.parse(await view.serverFile("scene-checkpoints.json"));
     const tickIndex = serverTickIndex(await view.serverFile("server-tick.log"));
     assertConnectionHeld(checkpoints, tickIndex, "MM1");
+    // The stall leaves a count in the replica: red whether or not a capture fell inside the stall.
+    assertNoResync(checkpoints, "MM1");
     const window1Shots = [];
     const shot = async (name, window) => {
         const saveIndex = input.findIndex((entry) => entry.call === "save" && entry.args?.[0] === name);
