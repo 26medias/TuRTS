@@ -99,7 +99,7 @@
       {
         "file": "tests/browser/harness/view.js",
         "edit": {
-          "old": "                if (bridge === \"turts_debug\" && typeof window.turts_debug_request === \"function\") {\n                    return window.turts_debug_request();\n                }\n",
+          "old": "                if (bridge === \"turts_debug\" && !held && typeof window.turts_debug_request === \"function\") {\n                    return window.turts_debug_request();\n                }\n",
           "new": ""
         }
       }
@@ -113,6 +113,213 @@
     "headed": false,
     "expected_red": "record: 'stale'",
     "exit": 1,
-    "commit": "a6781b9"
+    "commit": "77d4296"
+  },
+  {
+    "row": "L0-DBG",
+    "plant": "h1-scan",
+    "files": [
+      {
+        "file": "tests/browser/harness/run.js",
+        "edit": {
+          "old": "    await page.waitForFunction(() => {\n        if (window.turts_error) return true;",
+          "new": "    await page.waitForFunction(async () => {\n        if (window.turts_error) return true;"
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "tests/browser/harness/wait-predicate.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "harness/run.js:809 async predicate",
+    "exit": 1,
+    "commit": "77d4296"
+  },
+  {
+    "row": "L0-DBG",
+    "plant": "h1-fake",
+    "files": [
+      {
+        "file": "tests/browser/harness/run.js",
+        "edit": {
+          "old": "    await page.waitForFunction(() => {\n        if (window.turts_error) return true;",
+          "new": "    await page.waitForFunction(async () => {\n        if (window.turts_error) return true;"
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "tests/browser/harness/checkpoint-run.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "the predicate returned a Promise: Playwright would not await it",
+    "exit": 1,
+    "commit": "77d4296"
+  },
+  {
+    "row": "L0-DBG",
+    "plant": "h1-wait",
+    "files": [
+      {
+        "file": "tests/browser/harness/run.js",
+        "edit": {
+          "old": "    await page.waitForFunction(() => {\n        if (window.turts_error) return true;",
+          "new": "    await page.waitForFunction(async () => {\n        if (window.turts_error) return true;"
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "tests/browser/harness/debug-request.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "the wait polled 1 times; it must wait for the Joined record",
+    "exit": 1,
+    "commit": "77d4296"
+  },
+  {
+    "row": "L0-DBG",
+    "plant": "h2",
+    "files": [
+      {
+        "file": "tests/browser/pt1-oracle.js",
+        "edit": {
+          "old": "step(number, String(last?.phase ?? \"\").startsWith(\"Joined\"), `${label} ends at ${lastPhase}, not Joined`);",
+          "new": "step(number, true, `${label} ends at ${lastPhase}, not Joined`);"
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "tests/browser/pt1-oracle.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "Missing expected exception",
+    "exit": 1,
+    "commit": "77d4296"
+  },
+  {
+    "row": "L0-DBG",
+    "plant": "h3",
+    "files": [
+      {
+        "file": "tests/browser/harness/view.js",
+        "edit": {
+          "old": "if (bridge === \"turts_debug\" && !held && typeof window.turts_debug_request === \"function\") {",
+          "new": "if (bridge === \"turts_debug\" && typeof window.turts_debug_request === \"function\") {"
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "tests/browser/harness/debug-request.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "+   record: 'fresh'",
+    "exit": 1,
+    "commit": "77d4296"
+  },
+  {
+    "row": "L0-DBG",
+    "plant": "h4",
+    "files": [
+      {
+        "file": "tests/browser/harness/scene-checkpoints.js",
+        "edit": {
+          "old": "? await window.turts_debug_request() : window.turts_debug();",
+          "new": "? await window.turts_debug_request(0) : window.turts_debug();"
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "tests/browser/harness/debug-request-use.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "callers with an argument",
+    "exit": 1,
+    "commit": "77d4296"
+  },
+  {
+    "row": "L0-DBG",
+    "plant": "h5",
+    "files": [
+      {
+        "file": "tests/browser/egpu-run.js",
+        "edit": {
+          "old": "const debug = JSON.parse(await (window.turts_debug_request?.() ?? window.turts_debug()));",
+          "new": "const debug = JSON.parse(window.turts_debug());"
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "tests/browser/harness/debug-request-use.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "+   'tests/browser/egpu-run.js'",
+    "exit": 1,
+    "commit": "77d4296"
+  },
+  {
+    "row": "L0-DBG",
+    "plant": "h6",
+    "files": [
+      {
+        "file": "scripts/mp1-play.sh",
+        "edit": {
+          "old": "        --no-first-run --no-default-browser-check\n",
+          "new": "        --mute-audio --no-first-run --no-default-browser-check\n"
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "tests/browser/mp1-capture.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "scripts/mp1-play.sh touches the sound",
+    "exit": 1,
+    "commit": "77d4296"
+  },
+  {
+    "row": "L0-DBG",
+    "plant": "h7",
+    "files": [
+      {
+        "file": "tests/browser/mp1-capture.js",
+        "edit": {
+          "old": "const [portText, ...rest] = argv;",
+          "new": "const [portText = \"9222\", ...rest] = argv;"
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "tests/browser/mp1-capture.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "tests/browser/mp1-capture.js names a fixed port",
+    "exit": 1,
+    "commit": "77d4296"
   }
 ]
