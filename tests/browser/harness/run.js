@@ -9,6 +9,7 @@ const { createView } = require("./view.js");
 const { prepareSh1Lifecycle } = require("./sh1-lifecycle.js");
 const { createSceneCheckpoints } = require("./scene-checkpoints.js");
 const { planFor, runM2Fixture } = require("./m2-ingest.js");
+const { beginOwnerHold, endOwnerHold, firstClientError } = require("./slot1-owner-hold.js");
 const { installContextMenuObserver } = require("./contextmenu-observer.js");
 const { installBoundedRafHold } = require("./bounded-raf.js");
 const { installDeviceAudit, collectDeviceAudit } = require("./device-audit-descriptor.js");
@@ -183,6 +184,16 @@ async function run(options) {
         const slotIds = slotFixture ? makeSlotFixtureIds() : null;
         const slotStartup = [];
         for (let n = 0; n < windows; n += 1) {
+            // SLOT1: the owner frames wait while window 3 gets its GPU device (slot1-owner-hold.js).
+            let ownerHold = null;
+            if (slotFixture && n === 2) ownerHold = await beginOwnerHold(pages.slice(0, 2));
+            const releaseOwners = async () => {
+                if (!ownerHold) return;
+                const begun = ownerHold;
+                ownerHold = null;
+                const record = await endOwnerHold(pages.slice(0, 2), begun);
+                await writePrivateJson(path.join(options.outDir, "slot1-owner-hold.json"), record);
+            };
             if (slotFixture && startupRafProbeEnabled && n === 2) {
                 await runSlot1StartupRafProbe({ pages, documentEpochs, outDir: options.outDir,
                     boundedRafSha256: crypto.createHash("sha256").update(boundedRafSource).digest("hex") });
@@ -254,7 +265,9 @@ async function run(options) {
             if (slotFixture) {
                 try {
                     startup = await waitForTask16Role(page, n === 2 ? "unclaimed-third" : "slot-owner");
+                    await releaseOwners();
                 } catch (error) {
+                    await releaseOwners().catch(() => {});
                     if (startupRafProbeEnabled && n === 2) {
                         let observation;
                         try { observation = await readTask16StartupObservation(page); }
@@ -395,10 +408,8 @@ async function run(options) {
         }
         // The boot check (above) runs once; a client error later in the run also stops it, as the
         // legacy t7.js poll did at each read (MC task 21, M4). Checkpoints check it at each screenshot.
-        for (const [index, page] of pages.entries()) {
-            const clientError = await page.evaluate(() => window.turts_error || null);
-            if (clientError) throw new Error(`browser client failed in window ${index + 1}: ${clientError}`);
-        }
+        const clientError = await firstClientError(pages);
+        if (clientError) throw new Error(`browser client failed in window ${clientError.window}: ${clientError.error}`);
         await oracle.judge(view, params);
         console.log(`PASS ${path.basename(options.oraclePath)}`);
     } catch (error) {
