@@ -2267,7 +2267,7 @@ mod tests {
     #[test]
     fn a_removed_unit_has_no_order_record_and_is_not_cleared() {
         let mut app = app_with(20, 0, 200);
-        set_ammo(&mut app, 1, 10, 0);
+        set_ammo(&mut app, 1, 0, 0);
         let target = entity_of(&app, 2);
         crate::orders::writer::set_unit_orders(
             app.world_mut(),
@@ -2277,8 +2277,11 @@ mod tests {
                 ..Default::default()
             },
         );
-        // Tick 1: the record of unit 2 appears; the shot of unit 1 kills unit 2 in the same
-        // tick, so the record of tick 1 is not sent.
+        // Tick 1: no ammo, so no shot; the record of unit 2 is published.
+        app.update();
+        assert!(listed(&app).contains(&2));
+        // Tick 2: the shot kills unit 2. Its record left the view, and it is not cleared.
+        set_ammo(&mut app, 1, 10, 0);
         app.update();
         let committed = app
             .world()

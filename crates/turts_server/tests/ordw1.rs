@@ -99,10 +99,7 @@ fn ordw1_idle_units_cost_no_order_or_weapon_bytes() {
                 .count();
             // The full table exists and has a record for each idle unit: the old delta carried it
             // in each tick, so the test below is not vacuous.
-            assert!(
-                table >= 200,
-                "a record for each idle unit: {table}"
-            );
+            assert!(table >= 200, "a record for each idle unit: {table}");
             snapshot_bytes = record_bytes(&export::snapshot_for(&view, SlotId(0)).unit_orders);
         }
         // The first delta carries one weapon record for each unit: the status goes from Ready
@@ -292,18 +289,50 @@ fn ordw1_weapon_records_are_sent_on_change_and_never_name_a_removed_unit() {
     );
 }
 
-/// One `Fired` record is at most 8 B in postcard (case C), with an index and no string. Plant:
-/// a string weapon field.
+/// One `Fired` record is at most 8 B in postcard (case C), with an index and no string. The
+/// record goes through the export writer, so a string weapon field is red: plant (5). The index
+/// is 200 so that a decimal string would add bytes.
 #[test]
 fn ordw1_a_fired_effect_is_at_most_eight_bytes() {
-    let fired = wire::Effect::Fired {
-        unit: wire::UnitId(16_383),
-        target: wire::UnitId(16_383),
-        weapon: 3,
+    let view = view_of_two_units();
+    let batch = CommittedTick {
+        tick: 9,
+        effects: vec![EffectRow::Fired {
+            unit: 16_383,
+            target: 16_383,
+            weapon: 200,
+        }],
+        ..Default::default()
     };
-    let size = postcard::to_vec::<_, 65536>(&fired).unwrap().len();
-    eprintln!("ORDW1-BYTES Fired with two unit ids below 16,384: {size} B");
+    let delta = export::delta_for(&batch, &view, SlotId(0));
+    let fired = &delta.records.effects[0];
+    let size = postcard::to_vec::<_, 64>(fired).unwrap().len();
+    eprintln!("ORDW1-BYTES Fired with two unit ids below 16,384 and weapon index 200: {size} B");
     assert!(size <= 8, "Fired is {size} B");
+}
+
+/// `orders_cleared` is written for the owner only, and a removed unit is not in it. Plant (1): no
+/// `orders_cleared` in the delta.
+#[test]
+fn orders_cleared_is_written_for_the_owner_and_skips_nothing_that_the_sim_listed() {
+    let view = view_of_two_units();
+    let batch = CommittedTick {
+        tick: 9,
+        orders_cleared: vec![(3, 0), (4, 1), (6, 0)],
+        ..Default::default()
+    };
+    let delta = export::delta_for(&batch, &view, SlotId(0));
+    assert_eq!(
+        delta
+            .records
+            .orders_cleared
+            .iter()
+            .map(|unit| unit.0)
+            .collect::<Vec<_>>(),
+        vec![3, 6]
+    );
+    let other = export::delta_for(&batch, &view, SlotId(1));
+    assert_eq!(other.records.orders_cleared, vec![wire::UnitId(4)]);
 }
 
 // ---- the removal rule for the records that name a unit --------------------------------------
