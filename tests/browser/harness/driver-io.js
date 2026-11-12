@@ -6,6 +6,8 @@ const path = require("node:path");
 const crypto = require("node:crypto");
 const { qualifyNavigationReceipt } = require("./navigation-receipt.js");
 
+// The longest wait for the page bridges after a reload that has scene checkpoints.
+const BRIDGES_READY_MS = 20000;
 const IO_KEYS = Object.freeze(["click", "drag", "key", "move", "wheel", "screenshot", "save", "wait", "reload", "use"]);
 
 function wallTime() { return Date.now(); }
@@ -299,6 +301,18 @@ function createDriverIo(pages, { outputDir, inputLog = [], initialCursor = { x: 
                     if (observed?.joined) break;
                     await page().waitForTimeout(150);
                 }
+            }
+            if (afterScreenshot && !observeReloadLoad) {
+                // A screenshot of a page that has no bridge yet cannot get its scene checkpoint
+                // ("missing scene checkpoint bridge", RUN142 AUD1). The wait is in the harness, not
+                // in the driver, and it is bounded. It never throws: a page that stays without bridges
+                // fails at its first checkpointed screenshot, as before.
+                entry.bridges_ready_after_reload = await page().waitForFunction(() => {
+                    try {
+                        return typeof window.turts_scene === "function" && typeof window.turts_debug === "function" &&
+                            Boolean(window.turts_scene()) && Boolean(window.turts_debug());
+                    } catch { return false; }
+                }, null, { timeout: BRIDGES_READY_MS, polling: 100 }).then(() => true, () => false);
             }
             const after = documentEpochs[state.selected] ?? 0;
             entry.document_epoch_after = after;

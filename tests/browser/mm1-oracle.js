@@ -39,6 +39,12 @@ async function judge(view, params) {
     const afterLeft = await shot("mm1-after-left.png", 1);
     const afterDrag = await shot("mm1-after-drag.png", 1);
     const afterRight = await shot("mm1-after-right.png", 1);
+    // The later captures after the right click (the driver takes them for a replica that is late).
+    const afterRightLater = [];
+    const laterNames = steps.after_right_later || [];
+    assert.deepEqual(laterNames, laterNames.map((_, index) => `mm1-after-right-${index + 2}.png`),
+        "MM1 later captures after the right click must be numbered 2, 3, ... in the order they were taken");
+    for (const name of laterNames) afterRightLater.push(await shot(name, 1));
     const afterZoom = await shot("mm1-after-zoom.png", 1);
     const pingWindow = await shot("mm1-window2-ping.png", 2);
 
@@ -103,7 +109,8 @@ async function judge(view, params) {
     assertClose2(projectMapPoint(afterRight.checkpoint.scene, dragTarget), viewportCenter(afterRight.checkpoint.scene), 1.5,
         "right-click smart command must not move the camera");
     assertOrderFromInput(afterRight.checkpoint.debug, rightInput, "muster:order_move", ownId, { point: rightTarget },
-        "minimap right click must issue the selected trooper's smart move at the minimap world point");
+        "minimap right click must issue the selected trooper's smart move at the minimap world point",
+        afterRightLater.map((later) => later.checkpoint.debug));
 
     assertClose2(projectMapPoint(afterZoom.checkpoint.scene, dragTarget), viewportCenter(afterZoom.checkpoint.scene), 1.5,
         "camera zoom must preserve the minimap drag target");
@@ -272,7 +279,13 @@ function assertCameraZoom(before, after) {
 
 function distance2(a, b) { return Math.hypot(a[0] - b[0], a[1] - b[1]); }
 
-function assertOrderFromInput(debug, input, orderId, unit, target, message) {
+// The emitted order and the server result come from the capture that the driver took after the click.
+// The replicated active order is read from the first capture whose replica tick has reached the tick at
+// which the server accepted the order (`result.tick`): a replica that is behind that tick cannot show the
+// order yet (RUN142: the replica stood still for 1.05 s after a kill, see the finding about
+// `last_target`). `later` holds the later captures (the debug of each) in the order they were taken. When
+// no capture reaches the accept tick, or the capture that does shows another order, the check is red.
+function assertOrderFromInput(debug, input, orderId, unit, target, message, later = []) {
     const sequence = input.event_seq?.at(-1);
     assert(Number.isSafeInteger(sequence), `${message}: missing physical pointer release sequence`);
     const frames = debug.frames?.retained_input || [];
@@ -283,11 +296,19 @@ function assertOrderFromInput(debug, input, orderId, unit, target, message) {
     const emitted = (frame.emitted_orders || []).find((entry) => entry.order === orderId && entry.units?.includes(unit));
     assert(emitted, message);
     assert(Number.isSafeInteger(emitted.seq), `${message}: emitted order has no retained sequence`);
-    const result = frames.flatMap((entry) => entry.results || []).find((entry) =>
-        entry.seq === emitted.seq && entry.unit === unit);
+    const captures = [debug, ...later];
+    let result;
+    for (const capture of captures) {
+        result = (capture.frames?.retained_input || []).flatMap((entry) => entry.results || []).find((entry) =>
+            entry.seq === emitted.seq && entry.unit === unit);
+        if (result) break;
+    }
     assert.equal(result?.status, "accepted",
         `${message}: the server must accept the exact emitted sequence for this unit`);
-    const active = (debug.replicated_world?.unit_orders || []).find((entry) => entry.unit === unit);
+    const state = captures.find((capture) => capture.replicated_world?.tick >= result.tick);
+    assert(state, `${message}: the replica did not reach the server accept tick ${result.tick} in ${captures.length} captures ` +
+        `(replica ticks ${captures.map((capture) => capture.replicated_world?.tick)})`);
+    const active = (state.replicated_world?.unit_orders || []).find((entry) => entry.unit === unit);
     assert.equal(active?.current?.order, orderId,
         `${message}: the actual replicated unit order must still name the accepted order`);
     if (Object.hasOwn(target, "unit")) {
@@ -452,4 +473,4 @@ function nearColor(pixel, color, tolerance) {
     return Math.hypot(pixel[0] - color[0], pixel[1] - color[1], pixel[2] - color[2]) <= tolerance;
 }
 
-module.exports = { judge };
+module.exports = { judge, assertOrderFromInput };

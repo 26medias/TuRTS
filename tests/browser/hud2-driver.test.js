@@ -25,11 +25,21 @@ function chunk(type, data) {
 }
 
 // A 1280x720 PNG whose Controls region holds one bright line at a row that depends on the scroll.
-function screenshot(scroll) {
+function screenshot(scroll, frame = -1) {
     const width = 1280;
     const height = 720;
     const raw = Buffer.alloc((width * 4 + 1) * height);
     const line = 100 + (scroll % 500);
+    // A moving blue block behind the see-through guide (a drone or a belt item): not near-white.
+    if (frame >= 0) {
+        const left = 520 + ((frame * 37) % 400);
+        for (let y = 300; y < 340; y += 1) {
+            for (let x = left; x < left + 40; x += 1) {
+                const offset = y * (width * 4 + 1) + 1 + x * 4;
+                raw[offset] = 0; raw[offset + 1] = 114; raw[offset + 2] = 178; raw[offset + 3] = 255;
+            }
+        }
+    }
     for (let x = 500; x < 1100; x += 1) {
         const offset = line * (width * 4 + 1) + 1 + x * 4;
         raw[offset] = 255;
@@ -50,13 +60,14 @@ function screenshot(scroll) {
 
 // A fake page: the overlay eats input until the first click; then each wheel step scrolls the
 // list by its amount until the list end (maxScroll). The drive stops at the tail screenshot.
-function fakeIo(maxScroll) {
+function fakeIo(maxScroll, animated = false) {
     const calls = [];
     let overlay = true;
     let scroll = 0;
+    let frame = 0;
     const io = {
         calls,
-        async screenshot() { calls.push("screenshot"); return screenshot(scroll); },
+        async screenshot() { calls.push("screenshot"); frame += 1; return screenshot(scroll, animated ? frame : -1); },
         async save(name) { calls.push(`save:${name}`); if (name === "hud2-controls-bottom.png") throw new Error("STOP"); },
         async click() { calls.push("click"); overlay = false; },
         async move() { calls.push("move"); },
@@ -67,6 +78,14 @@ function fakeIo(maxScroll) {
     };
     return io;
 }
+
+test("HUD2 reaches the list end although the world moves behind the see-through guide (RUN142 plants-B)", async () => {
+    const io = fakeIo(840, true);
+    await assert.rejects(drive(io, { row: "HUD2", package: "mods/forge" }), /STOP/);
+    const wheels = io.calls.filter((call) => call.startsWith("wheel:")).length;
+    assert.equal(io.scroll(), 840, "the list reached its end");
+    assert.ok(wheels <= 8, `a moving background must not keep the scroll going to the step cap: ${wheels} wheel steps`);
+});
 
 test("HUD2 dismisses the play overlay, then scrolls the Controls list until it stops moving (RUN130)", async () => {
     for (const maxScroll of [840, 1500]) {
@@ -79,18 +98,69 @@ test("HUD2 dismisses the play overlay, then scrolls the Controls list until it s
     }
 });
 
-const { controlsTailRow } = require("./hud2-oracle.js");
+const { controlsTailRow, humanizeAction } = require("./hud2-oracle.js");
 
-test("the HUD2 Controls tail is the last row shown, whatever its label and place (RUN130)", () => {
-    const actions = Object.fromEntries(Array.from({ length: 50 }, (_, index) => [`a${index}`, [{ Key: { code: `Key${String.fromCharCode(65 + (index % 26))}`, mods: index >= 26 ? ["Shift"] : [] } }]]));
-    actions.zoom = [{ Wheel: "Up" }];
-    const row = (index, text, y, visible = true) => ({ id: `guide.4.bindings/binding[index:${index}]`, kind: "widget", text, rect: [490, y, 700, 24], visible });
-    const rows = Object.entries(actions).map(([name, bindings], index) => row(index, `Any label ${name}: ${bindings.map((binding) => binding.Key ? [...binding.Key.mods, binding.Key.code.slice(3)].join("+") : "Wheel up").join(", ")}`, 94 + index * 28 - 900, false));
-    rows[50] = { ...rows[50], rect: [490, 640, 700, 24], visible: true };
+// Fifty-one actions with fixed texts (written out here, not made by the oracle code): 26 order hotkeys
+// "key_a".."key_z" (order names "Order A".."Order Z", keys A..Z), 24 "group_add_1".."group_add_24"
+// (label "Add to group N", keys Shift+Digit N mod 10), the Toggle guide action (F1) and the zoom action.
+const LETTERS = Array.from({ length: 26 }, (_, index) => String.fromCharCode(65 + index));
+const ORDER_LABELS = Object.fromEntries(LETTERS.map((letter) => [`key_${letter.toLowerCase()}`, `Order ${letter}`]));
+function controlsFixture() {
+    const actions = {};
+    const texts = {};
+    for (const letter of LETTERS) {
+        actions[`key_${letter.toLowerCase()}`] = [{ Key: { code: `Key${letter}`, mods: [] } }];
+        texts[`key_${letter.toLowerCase()}`] = `Order ${letter}: ${letter}`;
+    }
+    for (let number = 1; number <= 24; number += 1) {
+        actions[`group_add_${number}`] = [{ Key: { code: `Digit${number % 10}`, mods: ["Shift"] } }];
+        texts[`group_add_${number}`] = `Add to group ${number}: Shift+${number % 10}`;
+    }
+    actions.toggle_guide = [{ Key: { code: "F1", mods: [] } }];
+    texts.toggle_guide = "Toggle guide: F1";
+    actions.camera_zoom = [{ Wheel: "Up" }];
+    texts.camera_zoom = "Zoom camera: Wheel up";
+    return { actions, texts };
+}
+
+// The rows in a scrambled order (index order is the product's, the content order is not required).
+function controlsRowsFor(texts, visibleFrom = 46) {
+    return Object.values(texts).map((text, index) => ({
+        id: `guide.4.bindings/binding[index:${index}]`, kind: "widget", text, rect: [490, 94 + (index - visibleFrom + 20) * 28, 700, 24],
+        visible: index >= visibleFrom,
+    }));
+}
+
+test("the HUD2 Controls check: every row is the label and the keys of one action (review 2140da4, high 1)", () => {
+    const { actions, texts } = controlsFixture();
+    assert.equal(Object.keys(actions).length, 52);
+    const rows = controlsRowsFor(texts);
+    rows[51] = { ...rows[51], rect: [490, 640, 700, 24], visible: true };
     const debug = (list) => ({ effective_bindings: { actions }, ui_snapshot: [{ id: "guide.4.bindings", visible: true }, ...list] });
-    assert.equal(controlsTailRow(debug(rows)).index, 50);
-    assert.throws(() => controlsTailRow(debug(rows.slice(0, 50))), /one row for each effective action/);
-    assert.throws(() => controlsTailRow(debug(rows.map((item, index) => (index === 50 ? { ...item, visible: false } : item)))), /visibly render its last row/);
-    assert.throws(() => controlsTailRow(debug(rows.map((item, index) => (index === 50 ? { ...item, rect: [490, 1438, 700, 24] } : item)))), /fit the actual visible Controls viewport/);
-    assert.throws(() => controlsTailRow(debug(rows.map((item, index) => (index === 50 ? { ...item, text: "Zoom: F12" } : item)))), /keys of an effective action/);
+    const edit = (index, change) => debug(rows.map((item, at) => (at === index ? { ...item, ...change } : item)));
+    assert.equal(controlsTailRow(debug(rows), ORDER_LABELS).index, 51, "the true list is green");
+    const red = (list, pattern) => assert.throws(() => controlsTailRow(list, ORDER_LABELS), pattern);
+    red(debug(rows.slice(0, 51)), /one row for each effective action/);
+    red(edit(51, { visible: false }), /visibly render its last row/);
+    red(edit(51, { rect: [490, 1438, 700, 24] }), /fit the actual visible Controls viewport/);
+    // The reviewer's plants: a middle row with a wrong key, the tail row with the keys of another
+    // action, a wrong tail label, a wrong middle label, and two rows that swap their keys.
+    red(edit(50, { text: "Toggle guide: F12" }), /sorted key texts/);
+    red(edit(51, { text: "Add to group 1: Shift+1" }), /sorted key texts/);
+    red(edit(51, { text: "Zoom: Wheel up" }), /one effective action/);
+    red(edit(50, { text: "Toggle gide: F1" }), /one effective action/);
+    const swapped = rows.map((item, at) => (at === 50 ? { ...item, text: "Toggle guide: Wheel up" } : at === 51 ? { ...item, text: "Zoom camera: F1" } : item));
+    red(debug(swapped), /one effective action/);
+    const duplicated = rows.map((item, at) => (at === 51 ? { ...item, id: "guide.4.bindings/binding[index:50]" } : item));
+    red(debug(duplicated), /indexes must run from 0/);
+    // The order names come from the package: with no order names, the Order rows are red.
+    assert.throws(() => controlsTailRow(debug(rows), {}), /one effective action/);
+});
+
+test("the HUD2 action labels are the readable action names (sources.rs humanize_action)", () => {
+    assert.equal(humanizeAction("group_assign_1"), "Assign group 1");
+    assert.equal(humanizeAction("camera_pan_down"), "Pan camera down");
+    assert.equal(humanizeAction("toggle_guide"), "Toggle guide");
+    assert.equal(humanizeAction("type_modifier"), "Type modifier");
+    assert.equal(humanizeAction("selection_remove"), "Remove from selection");
 });
