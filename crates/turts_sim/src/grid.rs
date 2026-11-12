@@ -61,17 +61,26 @@ impl UniformGrid {
         self.insert(index, to);
     }
 
-    pub(crate) fn within(&self, points: &[GridPoint], position: Vec2, reach: f32) -> Vec<usize> {
-        // Scan the cells of the bounding box of the query disc. The margin is
-        // larger than the f32 error of the distance filter below, so every
-        // point that the filter accepts is in a scanned cell (ruling 3, G1).
+    /// The cells that `within` scans: the bounding box of the query disc, as
+    /// `(min_cell, max_cell)`, both ends included. The margin is larger than
+    /// the f32 error of the distance filter in `within`, so every point that
+    /// the filter accepts is in a scanned cell (ruling 3, G1).
+    fn cell_range(&self, position: Vec2, reach: f32) -> ((i64, i64), (i64, i64)) {
         let half = reach.abs() + EDGE_MARGIN * reach.abs().max(1.0);
         let (low_x, low_y) = cell(position - Vec2::splat(half), self.cell_size);
         let (high_x, high_y) = cell(position + Vec2::splat(half), self.cell_size);
-        let min_x = i64::from(low_x);
-        let max_x = i64::from(high_x);
-        let min_y = i64::from(low_y);
-        let max_y = i64::from(high_y);
+        (
+            (i64::from(low_x), i64::from(low_y)),
+            (i64::from(high_x), i64::from(high_y)),
+        )
+    }
+
+    /// The indices of the points within `reach` of `position`, sorted by id.
+    /// A negative `reach` is not legal input: debug builds panic. Release
+    /// builds scan the cells of `reach.abs()` and accept no point.
+    pub(crate) fn within(&self, points: &[GridPoint], position: Vec2, reach: f32) -> Vec<usize> {
+        debug_assert!(reach >= 0.0, "reach must not be negative: {reach}");
+        let ((min_x, min_y), (max_x, max_y)) = self.cell_range(position, reach);
         let width = (max_x - min_x + 1) as u128;
         let height = (max_y - min_y + 1) as u128;
         let sparse_scan = width.saturating_mul(height) > self.cells.len() as u128;
@@ -135,6 +144,36 @@ fn cell(position: Vec2, size: f32) -> (i32, i32) {
 mod tests {
     use super::{GridPoint, UniformGrid};
     use bevy_math::Vec2;
+
+    #[cfg(debug_assertions)]
+    #[test]
+    #[should_panic(expected = "reach must not be negative")]
+    fn within_refuses_a_negative_reach_in_debug_builds() {
+        let points = [GridPoint {
+            id: 0,
+            position: Vec2::ZERO,
+        }];
+        UniformGrid::new(&points, 1.0).within(&points, Vec2::ZERO, -1.0);
+    }
+
+    #[test]
+    fn a_reach_of_one_cell_from_a_cell_centre_scans_3_by_3_cells() {
+        // The 3 grids of `check_queries`, for a base cell size of 0.9.
+        for size in [0.9_f32, 0.9 * 2.0 + 0.1, 0.9 * 3.0] {
+            let grid = UniformGrid::new(&[], size);
+            for cell_index in [2_i64, -3] {
+                let centre = Vec2::splat((cell_index as f32 + 0.5) * size);
+                assert_eq!(
+                    grid.cell_range(centre, size),
+                    (
+                        (cell_index - 1, cell_index - 1),
+                        (cell_index + 1, cell_index + 1)
+                    ),
+                    "cell size {size}, centre cell {cell_index}",
+                );
+            }
+        }
+    }
 
     #[test]
     fn grid_returns_neighbours_in_unit_id_order() {
@@ -278,9 +317,25 @@ mod tests {
                 id: 1,
                 position: Vec2::new(-7.200_000_3, -3.6),
             },
+            // The mirror case: the point is on the high side of the query box.
+            GridPoint {
+                id: 2,
+                position: Vec2::new(-1.4, 0.0),
+            },
         ];
-        let gate_queries = [(Vec2::new(1.8, 0.0), 9.0), (Vec2::new(1.8, -3.6), 9.0)];
-        let gate_missed = check_queries(&gate_points, 0.9, &gate_queries, &mut count);
+        let high_reach = 3.0 * 0.7;
+        let gate_queries = [
+            (Vec2::new(1.8, 0.0), 9.0),
+            (Vec2::new(1.8, -3.6), 9.0),
+            (Vec2::new(-3.5, 0.0), high_reach),
+        ];
+        assert_eq!(
+            brute_force_ids(&gate_points, gate_queries[2].0, high_reach),
+            vec![2],
+            "the high-side gate point must be inside reach in f32",
+        );
+        let mut gate_missed = check_queries(&gate_points, 0.9, &gate_queries[..2], &mut count);
+        gate_missed |= check_queries(&gate_points, 0.7, &gate_queries[2..], &mut count);
 
         // 24,000 seeded queries: 400 rounds of 60 queries.
         let mut rng = TestRng(0x9E37_79B9_7F4A_7C15);
@@ -355,7 +410,7 @@ mod tests {
             check_queries(&points, cell_size, &queries, &mut count);
         }
 
-        assert_eq!(count.queries, 24_002);
+        assert_eq!(count.queries, 24_003);
         assert_eq!(count.extras, 0, "within returned points outside reach");
         assert!(
             count.misses == 0,
