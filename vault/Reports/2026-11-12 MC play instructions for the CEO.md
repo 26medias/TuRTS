@@ -6,6 +6,19 @@ tags: [turts, mc, pt1, pt2, ceo]
 
 # MC play test: instructions for the CEO
 
+> **Update 2026-11-12, 07:20.** The play build is the repaired one (branch `codex/mc-fix-pt1`, commit `9b3a7bd`), compiled
+> ahead of time. The first play failed (beeps without end, no visible goal). The repair cut the alert sounds in window A
+> from 330 in 213 s to 12 in 108 s, and added a goal box with tasks for each side. A blind check by the `player` agent
+> from screenshots gave PLAY-NOW; that agent did not play and did not hear the build.
+>
+> **What to expect (5 minutes):** window A is blue, window B is orange. Each side is a 5-step task list on a test level.
+> There is no win and no loss. The orange drone dies at the end on purpose. Blue waits about one minute for the research
+> button; the goal box gives tasks for the wait.
+>
+> **Known weak points (no need to report):** nothing says "you are done" after the last task; a disabled machine shows no
+> "off" word; both windows show both colour blocks; the "Arm Loader: waiting for items. This is normal." alert still has a
+> sound, one time for each wait. The first real match comes with MP1.
+
 You play two short tests: PT1 on the mod `forge` (two browser windows) and PT2 on the mod `muster` (one window). Together they take 15 to 30 minutes. The play log records "not blind", because you know the project.
 
 ## 1. Start the game
