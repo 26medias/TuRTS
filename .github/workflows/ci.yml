@@ -192,7 +192,7 @@ jobs:
         working-directory: tests/browser
       - name: Browser projection and audit helper tests
         if: matrix.suite == 't7-m3'
-        run: node --test tests/browser/m2-projection.test.js tests/browser/m2-audit.test.js tests/browser/t7-oracle.test.js tests/browser/t7-driver.test.js tests/browser/m3-oracle.test.js tests/browser/pt1-oracle.test.js tests/browser/m2-oracle.test.js tests/browser/hud2-driver.test.js tests/browser/volume-tracks.test.js tests/browser/ord3-route.test.js tests/browser/mm1-driver.test.js tests/browser/sel3-double-click.test.js tests/browser/harness/client-error.test.js
+        run: node --test tests/browser/m2-projection.test.js tests/browser/m2-audit.test.js tests/browser/t7-oracle.test.js tests/browser/t7-driver.test.js tests/browser/m3-oracle.test.js tests/browser/pt1-oracle.test.js tests/browser/m2-oracle.test.js tests/browser/hud2-driver.test.js tests/browser/volume-tracks.test.js tests/browser/ord3-route.test.js tests/browser/mm1-driver.test.js tests/browser/sel3-double-click.test.js tests/browser/harness/client-error.test.js tests/browser/harness/client-settings-seed.test.js
       # The browser steps use the Chrome profile of the job env.
       - name: T7 browser join
         if: matrix.suite == 't7-m3'

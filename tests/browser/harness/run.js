@@ -10,6 +10,7 @@ const { prepareSh1Lifecycle } = require("./sh1-lifecycle.js");
 const { createSceneCheckpoints } = require("./scene-checkpoints.js");
 const { planFor, runM2Fixture } = require("./m2-ingest.js");
 const { firstClientError, assertNoClientErrorBeforeClose } = require("./client-error.js");
+const { seedStoredClientSettings, clientSettingsSeed, assertStoredClientSettings } = require("./client-settings-seed.js");
 const { installContextMenuObserver } = require("./contextmenu-observer.js");
 const { installBoundedRafHold } = require("./bounded-raf.js");
 const { installDeviceAudit, collectDeviceAudit } = require("./device-audit-descriptor.js");
@@ -183,6 +184,9 @@ async function run(options) {
         if (slotFixture && windows !== 3) throw new Error("SLOT1 fixture requires exactly three simultaneous windows");
         const slotIds = slotFixture ? makeSlotFixtureIds() : null;
         const slotStartup = [];
+        // A stored player setting of the row (SLOT1: the frame limit), loaded by each client.
+        const settingsSeed = clientSettingsSeed(params.task16);
+        const storedSettings = [];
         for (let n = 0; n < windows; n += 1) {
             if (slotFixture && startupRafProbeEnabled && n === 2) {
                 await runSlot1StartupRafProbe({ pages, documentEpochs, outDir: options.outDir,
@@ -210,6 +214,7 @@ async function run(options) {
                 });
             }
             if (slotFixture) await installOneUseSessionSeed(context, slotIds[n]);
+            if (settingsSeed) await context.addInitScript(seedStoredClientSettings, settingsSeed);
             const page = await context.newPage();
             if (deviceAuditEnabled) await Promise.all(deviceAuditAttachTasks.splice(0));
             documentEpochs[n] = 0;
@@ -268,6 +273,10 @@ async function run(options) {
                 }
                 startup = { ...startup, window: n + 1, document_epoch: documentEpochs[n] };
                 slotStartup.push(startup);
+                if (settingsSeed) {
+                    storedSettings.push(await assertStoredClientSettings(page, settingsSeed, n + 1));
+                    await writePrivateJson(path.join(options.outDir, "stored-client-settings.json"), storedSettings);
+                }
                 await writePrivateJson(path.join(options.outDir, "slot1-startup-results.json"), slotStartup);
                 if (n < 2 && !(startup.phase.startsWith("Joined") && startup.last_frame && startup.cameras_3d === 1)) {
                     const outcome = oracle.judgeStartupOutcome({ row: "SLOT1", clause: "owners-stable", role: n === 0 ? "A" : "B", startup });

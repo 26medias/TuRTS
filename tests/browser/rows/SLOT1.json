@@ -21,6 +21,10 @@
         "task16": {
             "status": "executable",
             "gpu_device_audit": true,
+            "client_settings": {
+                "frame_limit": 30,
+                "reason": "Three clients on one host. With two clients at the default (no limit), one thread of the Chrome GPU process runs at 93 to 96 % and the third WebGPU requestDevice waits 6 s to more than 30 s; with the stored frame limit 30 it ran at 73 to 85 % and the third device came in 101 to 474 ms (docs/measurements/mc-gpu-process-saturation.md)."
+            },
             "phases": [
                 "capacity",
                 "copy-refusal",
