@@ -8,6 +8,7 @@ const { createDriverIo } = require("./driver-io.js");
 const { createView } = require("./view.js");
 const { prepareSh1Lifecycle } = require("./sh1-lifecycle.js");
 const { createSceneCheckpoints } = require("./scene-checkpoints.js");
+const { waitForDebugRecord } = require("./wait-sync.js");
 const { planFor, runM2Fixture } = require("./m2-ingest.js");
 const { installContextMenuObserver } = require("./contextmenu-observer.js");
 const { installBoundedRafHold } = require("./bounded-raf.js");
@@ -803,14 +804,13 @@ function installTask16StorageAudit({ fixture = null, targetOrigin = null, window
 }
 
 async function waitForJoinedRole(page) {
-    // Playwright does not await a predicate, so this one is sync (tests/browser/harness/wait-predicate.test.js).
-    // Each poll starts a request for a record (design D 9, row DBG1) and reads the record that
-    // the last request published; an older page publishes in each frame.
-    await page.waitForFunction(() => {
+    // Every wait goes through harness/wait-sync.js: Playwright does not await a predicate, so the
+    // predicate is sync. A poll asks for a record (design D 9, row DBG1) when no request is pending
+    // and reads the record that the last request published; an older page publishes in each frame.
+    await waitForDebugRecord(page, () => {
         if (window.turts_error) return true;
         if (typeof window.turts_debug !== "function" || typeof window.turts_scene !== "function") return false;
         try {
-            window.turts_debug_request?.().catch(() => {});
             const debug = JSON.parse(window.turts_debug());
             const scene = JSON.parse(window.turts_scene());
             return typeof debug.phase === "string" && debug.phase.startsWith("Joined") && Boolean(debug.last_frame) && scene.cameras_3d === 1;
@@ -819,12 +819,11 @@ async function waitForJoinedRole(page) {
 }
 
 async function waitForTask16Role(page, role) {
-    // A sync predicate, as in waitForJoinedRole: it starts a request and reads the last record.
-    await page.waitForFunction((expectedRole) => {
+    // As in waitForJoinedRole: a sync check of the record that the last request published.
+    await waitForDebugRecord(page, (expectedRole) => {
         if (window.turts_error) return true;
         if (typeof window.turts_debug !== "function" || typeof window.turts_scene !== "function") return false;
         try {
-            window.turts_debug_request?.().catch(() => {});
             const debug = JSON.parse(window.turts_debug());
             const scene = JSON.parse(window.turts_scene());
             const terminal = typeof debug.phase === "string" && (debug.phase.startsWith("Failed") ||

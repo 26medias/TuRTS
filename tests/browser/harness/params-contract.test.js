@@ -23,17 +23,34 @@ function launchParams(row, viewport = "1280x720@2") {
     } finally { fs.rmSync(output, { recursive: true, force: true }); }
 }
 
-function launcherServerArgv(syntheticSet, syntheticUnits, orderLogSet = "false") {
+// The two places where scripts/mc-browser.sh sets the server binary: from TARGET (the build inside
+// the run) and from PREPARED (a prepared folder, Q-PREBUILD). The argv recorder below uses
+// $SERVER_BIN, so each test runs ONE of the two assignments of the script, taken from the script
+// text, before the recorder. SERVER_BIN is not given to the recorder from the test environment:
+// that would make argv[0] a value of the test (L0-DBG follow-up, finding L1).
+const SERVER_BIN_ASSIGNMENT = {
+    target: /^[ \t]*SERVER_BIN="\$TARGET\/release\/turts_server"$/m,
+    prepared: /^[ \t]*SERVER_BIN="\$PREPARED\/bin\/turts_server"$/m,
+};
+const SERVER_BIN_EXPECTED = { target: "/fixture/target/release/turts_server", prepared: "/fixture/prepared/bin/turts_server" };
+
+function serverBinAssignment(source, branch) {
+    const match = SERVER_BIN_ASSIGNMENT[branch].exec(source);
+    assert(match, `scripts/mc-browser.sh has no SERVER_BIN assignment for the ${branch} branch`);
+    return match[0].trim();
+}
+
+function launcherServerArgv(syntheticSet, syntheticUnits, orderLogSet = "false", branch = "target") {
     const source = fs.readFileSync(path.join(__dirname, "../../../scripts/mc-browser.sh"), "utf8");
     const start = source.indexOf("SERVER_ARGS=(");
     const end = source.indexOf("PYSERVERARGV\n", start) + "PYSERVERARGV\n".length;
     assert(start >= 0 && end > start, "extract the actual production server argv array and recorder");
     const output = fs.mkdtempSync(path.join(os.tmpdir(), "mc-server-argv-"));
     try {
-        execFileSync("bash", ["-c", source.slice(start, end)], {
-            env: { ...process.env, TARGET: "/fixture/target", SERVER_BIN: "/fixture/target/release/turts_server", OUT: output, SYNTHETIC_SET: syntheticSet, SYNTHETIC_UNITS: syntheticUnits, ORDER_LOG_SET: orderLogSet },
-            stdio: "pipe",
-        });
+        const env = { ...process.env, TARGET: "/fixture/target", PREPARED: "/fixture/prepared", OUT: output, SYNTHETIC_SET: syntheticSet,
+            SYNTHETIC_UNITS: syntheticUnits, ORDER_LOG_SET: orderLogSet };
+        delete env.SERVER_BIN;
+        execFileSync("bash", ["-c", `${serverBinAssignment(source, branch)}\n${source.slice(start, end)}`], { env, stdio: "pipe" });
         return JSON.parse(fs.readFileSync(path.join(output, "server-argv.json"), "utf8"))
             .map((arg) => arg.startsWith(output + path.sep) ? `<OUT>/${arg.slice(output.length + 1)}` : arg);
     } finally { fs.rmSync(output, { recursive: true, force: true }); }
@@ -261,4 +278,17 @@ test("MC task 21: a row with effective_bindings gets params.bindings from the pa
         run();
         assert.equal(Object.hasOwn(JSON.parse(fs.readFileSync(outPath, "utf8")), "bindings"), false);
     } finally { fs.rmSync(output, { recursive: true, force: true }); }
+});
+
+test("argv[0] is the server binary of the TARGET branch and of the prepared branch of scripts/mc-browser.sh", () => {
+    for (const branch of ["target", "prepared"]) {
+        assert.equal(launcherServerArgv("false", "", "false", branch)[0], SERVER_BIN_EXPECTED[branch], branch);
+    }
+});
+
+test("an ambient SERVER_BIN does not reach the recorder, and a script with no assignment is refused", () => {
+    process.env.SERVER_BIN = "/ambient/turts_server";
+    try { assert.equal(launcherServerArgv("false", "")[0], SERVER_BIN_EXPECTED.target); } finally { delete process.env.SERVER_BIN; }
+    assert.throws(() => serverBinAssignment("SERVER_ARGS=(x)", "target"), /no SERVER_BIN assignment for the target branch/);
+    assert.throws(() => serverBinAssignment('SERVER_BIN="$TARGET/release/other"', "target"), /no SERVER_BIN assignment/);
 });
