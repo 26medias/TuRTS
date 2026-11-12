@@ -25,7 +25,7 @@ const VIEWPORT = { width: 1280, height: 720 };
 // (16, 258), Cancel at offset 176 in each 28-pixel row with a gap of 4.
 const BUILD_ROW = (index) => ({ x: 136, y: 204 + index * 32, sample: { x: 252, y: 204 + index * 32 } });
 const JOB_CANCEL = (index) => ({ x: 224, y: 272 + index * 32, sample: { x: 195, y: 272 + index * 32 } });
-// Engine button fills (crates/turts_client/src/widgets/mod.rs update_widget_button_states).
+// Engine button fills (crates/turts_client/src/widgets/activation.rs update_widget_button_states).
 const BUTTON_FILL = { enabled: [33, 66, 77], hovered: [46, 102, 112], pressed: [26, 77, 92], disabled: [51, 51, 51] };
 
 function layout(params) {
@@ -141,7 +141,7 @@ async function gather(io, where, label, seconds) {
 }
 
 // The first click of a fresh page dismisses the "Click to play" overlay (audio is locked until a
-// gesture: crates/turts_client/src/client_shell.rs sync_focus_overlay); the overlay blocks it.
+// gesture: crates/turts_client/src/client_shell/notices.rs sync_focus_overlay); the overlay blocks it.
 async function dismissOverlay(io) {
     await io.click(640, 690, "left");
     await io.wait(300);

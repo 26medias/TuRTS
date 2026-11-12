@@ -50,7 +50,7 @@ async function clickCardRow(io, index, label) {
 }
 
 // The first click of a fresh page dismisses the "Click to play" overlay (audio is locked until a
-// gesture: crates/turts_client/src/client_shell.rs sync_focus_overlay); the overlay blocks it.
+// gesture: crates/turts_client/src/client_shell/notices.rs sync_focus_overlay); the overlay blocks it.
 async function dismissOverlay(io) {
     await io.click(640, 690, "left");
     await io.wait(300);

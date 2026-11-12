@@ -431,3 +431,83 @@ fn e1_rejects_production_unit_reference_plant() {
         "unit",
     );
 }
+
+/// Scan a tree that holds the listed file `visuals/tests.rs` with a content id inside it.
+/// `parent_source` is the text of the parent file `visuals.rs`.
+fn scan_listed_test_module(
+    name: &str,
+    parent_source: &str,
+) -> (
+    Result<Vec<support::Hit>, support::ScanError>,
+    PathBuf,
+    PathBuf,
+) {
+    let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let catalog = derive_tokens(&repo.join("mods")).expect("all exported definitions derive");
+    let root = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(format!("test_module_{name}"));
+    let _ = std::fs::remove_dir_all(&root);
+    let src = root.join("crates/turts_client/src");
+    std::fs::create_dir_all(src.join("visuals")).unwrap();
+    let parent = src.join("visuals.rs");
+    let file = src.join("visuals/tests.rs");
+    std::fs::write(&parent, parent_source).unwrap();
+    std::fs::write(&file, "const RECIPE: &str = \"forge:make_shells\";").unwrap();
+    let result = scan_rust(&[root.join("crates")], &catalog);
+    let _ = std::fs::remove_dir_all(root);
+    (result, parent, file)
+}
+
+fn assert_test_module_plant_is_red(name: &str, parent_source: &str, why: &str) {
+    let (result, parent, file) = scan_listed_test_module(name, parent_source);
+    let error = result.expect_err("an ungated listed test-module file must make the scan red");
+    assert!(
+        matches!(error, support::ScanError::TestModule(..)),
+        "wrong error kind: {error}"
+    );
+    let text = error.to_string();
+    for needed in [
+        file.display().to_string(),
+        parent.display().to_string(),
+        why.to_string(),
+    ] {
+        assert!(text.contains(&needed), "message lacks {needed:?}: {text}");
+    }
+}
+
+#[test]
+fn listed_test_module_with_cfg_test_gate_is_skipped() {
+    let (result, ..) = scan_listed_test_module("gated", "fn a() {}\n#[cfg(test)]\nmod tests;\n");
+    let hits = result.expect("a gated test module parses and is skipped");
+    assert!(
+        hits.is_empty(),
+        "gated test file must stay skipped: {hits:#?}"
+    );
+}
+
+#[test]
+fn listed_test_module_without_cfg_test_is_red() {
+    assert_test_module_plant_is_red("no_cfg", "fn a() {}\nmod tests;\n", "is not gated");
+}
+
+#[test]
+fn listed_test_module_with_not_test_gate_is_red() {
+    assert_test_module_plant_is_red(
+        "not_test",
+        "#[cfg(not(test))]\nmod tests;\n",
+        "is not gated",
+    );
+}
+
+#[test]
+fn listed_test_module_with_inline_body_is_red() {
+    assert_test_module_plant_is_red(
+        "inline",
+        "#[cfg(test)]\nmod tests { const A: u8 = 1; }\n",
+        "has an inline body",
+    );
+}
+
+#[test]
+fn listed_test_module_without_declaration_is_red() {
+    assert_test_module_plant_is_red("missing", "fn a() {}\n", "declares no `mod tests`");
+}

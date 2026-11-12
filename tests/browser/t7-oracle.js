@@ -80,7 +80,7 @@ async function judgeRun(view, params) {
     const lefts = input.map((entry, index) => ({ entry, index })).filter(({ entry }) => entry.call === "click" && entry.args?.[2] === "left");
     const rights = input.map((entry, index) => ({ entry, index })).filter(({ entry }) => entry.call === "click" && entry.args?.[2] === "right");
     // Condition 1 (QA0D:422-425): one right click at (px, py) after the left click. The first click
-    // of a fresh page goes to the "Click to play" overlay (crates/turts_client/src/client_shell.rs
+    // of a fresh page goes to the "Click to play" overlay (crates/turts_client/src/client_shell/notices.rs
     // sync_focus_overlay: audio locked until a gesture), so the selecting left click is the last
     // left click before the right click; at most one more left click (the overlay) comes first.
     assert.equal(rights.length, 1, "T7 condition 1: the input log must hold exactly one right click");

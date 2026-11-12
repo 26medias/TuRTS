@@ -25,7 +25,7 @@ async function stop(io, reason) {
 }
 
 // The first click of a fresh page dismisses the "Click to play" overlay (audio is locked until a
-// gesture: crates/turts_client/src/client_shell.rs sync_focus_overlay); the overlay blocks the
+// gesture: crates/turts_client/src/client_shell/notices.rs sync_focus_overlay); the overlay blocks the
 // click, so it reaches no unit. The point is below the map, where a click selects nothing.
 const OVERLAY_CLICK = { x: 640, y: 690 };
 

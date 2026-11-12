@@ -47,6 +47,8 @@ pub enum ScanError {
     Io(PathBuf, std::io::Error),
     Package(PathBuf, String),
     Rust(PathBuf, String),
+    /// A listed test-module file whose parent does not declare it as `#[cfg(test)] mod`.
+    TestModule(PathBuf, PathBuf, String),
 }
 impl std::fmt::Display for ScanError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -54,6 +56,12 @@ impl std::fmt::Display for ScanError {
             Self::Io(p, e) => write!(f, "cannot read {}: {e}", p.display()),
             Self::Package(p, e) => write!(f, "invalid package at {}: {e}", p.display()),
             Self::Rust(p, e) => write!(f, "Rust parse failed at {}: {e}", p.display()),
+            Self::TestModule(file, parent, e) => write!(
+                f,
+                "test-module file {} is skipped by the scan, but its parent {}: {e}",
+                file.display(),
+                parent.display()
+            ),
         }
     }
 }
@@ -496,8 +504,12 @@ fn add_visual(c: &mut TokenCatalog, p: &str, path: &str, d: &VisualDef) {
 
 pub fn scan_rust(roots: &[PathBuf], c: &TokenCatalog) -> Result<Vec<Hit>, ScanError> {
     let mut fslist = Vec::new();
+    let mut skipped = Vec::new();
     for r in roots {
-        collect(r, &mut fslist)?
+        collect(r, &mut fslist, &mut skipped)?
+    }
+    for file in &skipped {
+        check_test_module_gate(file)?
     }
     fslist.sort();
     let mut hits = Vec::new();
@@ -525,13 +537,55 @@ const TEST_MODULE_FILES: &[&str] = &[
     "crates/turts_client/src/visuals/tests.rs",
     "crates/turts_client/src/widgets/tests.rs",
 ];
-fn collect(p: &Path, out: &mut Vec<PathBuf>) -> Result<(), ScanError> {
+/// The scan skips a listed file by path only. This check reads the parent file and requires an
+/// `ItemMod` named like the file stem, with no inline body and a `#[cfg(test)]` gate. Without it,
+/// production code could hide in a skipped file.
+fn check_test_module_gate(file: &Path) -> Result<(), ScanError> {
+    let fail = |parent: &Path, why: String| ScanError::TestModule(file.into(), parent.into(), why);
+    let dir = file.parent().unwrap_or(Path::new(""));
+    let stem = file.file_stem().and_then(|x| x.to_str()).unwrap_or("");
+    let sibling = dir.with_extension("rs");
+    let mod_rs = dir.join("mod.rs");
+    let parent = [sibling.as_path(), mod_rs.as_path()]
+        .into_iter()
+        .find(|c| c.is_file())
+        .ok_or_else(|| {
+            fail(
+                &sibling,
+                "no parent file (`<dir>.rs` or `<dir>/mod.rs`)".into(),
+            )
+        })?;
+    let source = fs::read_to_string(parent).map_err(|e| ScanError::Io(parent.into(), e))?;
+    let parsed =
+        syn::parse_file(&source).map_err(|e| ScanError::Rust(parent.into(), e.to_string()))?;
+    let declaration = parsed.items.iter().find_map(|item| match item {
+        Item::Mod(m) if m.ident == stem => Some(m),
+        _ => None,
+    });
+    let Some(declaration) = declaration else {
+        return Err(fail(parent, format!("declares no `mod {stem}`")));
+    };
+    if declaration.content.is_some() {
+        return Err(fail(parent, format!("`mod {stem}` has an inline body")));
+    }
+    if production_cfg(&declaration.attrs) {
+        return Err(fail(
+            parent,
+            format!("`mod {stem}` is not gated by `#[cfg(test)]`"),
+        ));
+    }
+    Ok(())
+}
+fn collect(p: &Path, out: &mut Vec<PathBuf>, skipped: &mut Vec<PathBuf>) -> Result<(), ScanError> {
     if p.is_file() {
         if p.extension().is_some_and(|x| x == "rs")
             && !p.components().any(|x| x.as_os_str() == "tests")
-            && !TEST_MODULE_FILES.iter().any(|file| p.ends_with(file))
         {
-            out.push(p.into())
+            if TEST_MODULE_FILES.iter().any(|file| p.ends_with(file)) {
+                skipped.push(p.into())
+            } else {
+                out.push(p.into())
+            }
         }
         return Ok(());
     }
@@ -540,7 +594,7 @@ fn collect(p: &Path, out: &mut Vec<PathBuf>) -> Result<(), ScanError> {
         if q.is_dir() && q.file_name().is_some_and(|x| x == "tests") {
             continue;
         }
-        collect(&q, out)?
+        collect(&q, out, skipped)?
     }
     Ok(())
 }

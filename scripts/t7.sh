@@ -102,8 +102,13 @@ pathlib.Path(out).write_text(json.dumps({
     "viewport": {"width": 1280, "height": 720, "device_scale_factor": 1},
 }, sort_keys=True) + "\n")
 EOF
-[[ -z "${M2_CHROME_ARGS_JSON:-}" ]] || export MC_CHROME_ARGS_JSON="$M2_CHROME_ARGS_JSON"
-[[ -z "${M2_IGNORE_DEFAULT_ARGS_JSON:-}" ]] || export MC_CHROME_IGNORE_DEFAULT_ARGS_JSON="$M2_IGNORE_DEFAULT_ARGS_JSON"
+# The M2_* names come from CI. The MC_* names come from the headed wrapper (mc_headed_v4.sh),
+# and they hold `--alsa-output-device=null`. An MC_* value that is already set wins, so T7 keeps
+# the wrapper's arguments. With no MC_* value, the M2_* value is used, as before.
+[[ -z "${M2_CHROME_ARGS_JSON:-}" || -n "${MC_CHROME_ARGS_JSON:-}" ]] \
+    || export MC_CHROME_ARGS_JSON="$M2_CHROME_ARGS_JSON"
+[[ -z "${M2_IGNORE_DEFAULT_ARGS_JSON:-}" || -n "${MC_CHROME_IGNORE_DEFAULT_ARGS_JSON:-}" ]] \
+    || export MC_CHROME_IGNORE_DEFAULT_ARGS_JSON="$M2_IGNORE_DEFAULT_ARGS_JSON"
 T7_COMMAND=(node tests/browser/harness/run.js "$PAGE_URL" "$OUT"
     tests/browser/t7-driver.js tests/browser/t7-oracle.js --params "$OUT/params.json" --viewport 1280x720)
 if [[ "${M2_HEADLESS:-true}" == "false" ]]; then

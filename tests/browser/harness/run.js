@@ -66,7 +66,7 @@ async function recordStartup(page, windowNumber, observations, waitForJoin) {
     finally { joined = true; await sampler; }
     observations.push({ window: windowNumber, wall_time_ms: Date.now(), ...(await page.evaluate(loadObservation)) });
     // The layout labels that the web entry gives the client (crates/turts_client_web/src/lib.rs:187-235),
-    // so an oracle renders the same key labels (client_shell.rs BindingLabels::from_layout_entries).
+    // so an oracle renders the same key labels (client_shell/bindings_editor.rs BindingLabels::from_layout_entries).
     const keyboardLayout = await page.evaluate(async () => {
         try { return Object.fromEntries(await navigator.keyboard.getLayoutMap()); } catch { return null; }
     });
