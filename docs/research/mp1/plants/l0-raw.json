@@ -1,0 +1,66 @@
+[
+    {
+        "row": "VAL1 plant (2)",
+        "plant": "L0-RAW (a): the exports.orders row reads the parsed value (non-empty list) again; an explicit `orders: []` on ^0.2.2 packs",
+        "files": [
+            {
+                "file": "crates/turts_mod_runtime/src/version_table.rs",
+                "patch": "diff --git a/crates/turts_mod_runtime/src/version_table.rs b/crates/turts_mod_runtime/src/version_table.rs\nindex b0f753d..23e4f6e 100644\n--- a/crates/turts_mod_runtime/src/version_table.rs\n+++ b/crates/turts_mod_runtime/src/version_table.rs\n@@ -70,7 +70,11 @@ pub(crate) const VERSION_TABLE: &[VersionTableRow] = &[\n         detect: Detect::Parsed(is_library),\n         since_api: \"0.2.2\",\n     },\n-    export_group(\"exports.orders\", &[\"exports\", \"orders\"]),\n+    VersionTableRow {\n+        name: \"exports.orders\",\n+        detect: Detect::Parsed(|manifest, _| !manifest.exports.orders.is_empty()),\n+        since_api: \"0.2.3\",\n+    },\n     export_group(\"exports.interface\", &[\"exports\", \"interface\"]),\n     export_group(\"exports.input\", &[\"exports\", \"input\"]),\n     export_group(\"exports.assets\", &[\"exports\", \"assets\"]),\n"
+            }
+        ],
+        "command": "cargo test -p turts_mod_runtime --locked --test raw_presence",
+        "env": {},
+        "headed": false,
+        "expected_red": "the version table must refuse this package",
+        "exit": 101,
+        "commit": "2a0eab3ad0a2b65af8d8e82010eb097bb86a57c9"
+    },
+    {
+        "row": "VAL1 plant (1)",
+        "plant": "L0-RAW (b1): the exports.input row is removed from VERSION_TABLE",
+        "files": [
+            {
+                "file": "crates/turts_mod_runtime/src/version_table.rs",
+                "patch": "diff --git a/crates/turts_mod_runtime/src/version_table.rs b/crates/turts_mod_runtime/src/version_table.rs\nindex b0f753d..d7221d7 100644\n--- a/crates/turts_mod_runtime/src/version_table.rs\n+++ b/crates/turts_mod_runtime/src/version_table.rs\n@@ -72,7 +72,6 @@ pub(crate) const VERSION_TABLE: &[VersionTableRow] = &[\n     },\n     export_group(\"exports.orders\", &[\"exports\", \"orders\"]),\n     export_group(\"exports.interface\", &[\"exports\", \"interface\"]),\n-    export_group(\"exports.input\", &[\"exports\", \"input\"]),\n     export_group(\"exports.assets\", &[\"exports\", \"assets\"]),\n     VersionTableRow {\n         name: \"weapon with movement\",\n"
+            }
+        ],
+        "command": "cargo test -p turts_mod_runtime --locked --lib",
+        "env": {},
+        "headed": false,
+        "expected_red": "input exports accepted engine_api ^0.2.2",
+        "exit": 101,
+        "commit": "2a0eab3ad0a2b65af8d8e82010eb097bb86a57c9"
+    },
+    {
+        "row": "VAL1 plant (1)",
+        "plant": "L0-RAW (b2): the `weapon with movement` row (COMBO, parsed value) is removed from VERSION_TABLE",
+        "files": [
+            {
+                "file": "crates/turts_mod_runtime/src/version_table.rs",
+                "patch": "diff --git a/crates/turts_mod_runtime/src/version_table.rs b/crates/turts_mod_runtime/src/version_table.rs\nindex b0f753d..04e8efb 100644\n--- a/crates/turts_mod_runtime/src/version_table.rs\n+++ b/crates/turts_mod_runtime/src/version_table.rs\n@@ -74,11 +74,6 @@ pub(crate) const VERSION_TABLE: &[VersionTableRow] = &[\n     export_group(\"exports.interface\", &[\"exports\", \"interface\"]),\n     export_group(\"exports.input\", &[\"exports\", \"input\"]),\n     export_group(\"exports.assets\", &[\"exports\", \"assets\"]),\n-    VersionTableRow {\n-        name: \"weapon with movement\",\n-        detect: Detect::Parsed(mobile_weapon_present),\n-        since_api: \"0.2.3\",\n-    },\n ];\n \n /// The groups that the RAW rows of `rows` read.\n"
+            }
+        ],
+        "command": "cargo test -p turts_mod_runtime --locked --test content_m3 mobile_weapon_with_api_before_0_2_3_rejected",
+        "env": {},
+        "headed": false,
+        "expected_red": "server path, ^0.2.1",
+        "exit": 101,
+        "commit": "2a0eab3ad0a2b65af8d8e82010eb097bb86a57c9"
+    },
+    {
+        "row": "VAL1 plant (2)",
+        "plant": "L0-RAW (c): the required field `dependencies` is detected by a key walk (RAW): every manifest writes it, so ^0.2.1 packages with `dependencies: {}` are refused",
+        "files": [
+            {
+                "file": "crates/turts_mod_runtime/src/version_table.rs",
+                "patch": "diff --git a/crates/turts_mod_runtime/src/version_table.rs b/crates/turts_mod_runtime/src/version_table.rs\nindex b0f753d..1ce3fd4 100644\n--- a/crates/turts_mod_runtime/src/version_table.rs\n+++ b/crates/turts_mod_runtime/src/version_table.rs\n@@ -62,7 +62,10 @@ const fn export_group(name: &'static str, path: &'static [&'static str]) -> Vers\n pub(crate) const VERSION_TABLE: &[VersionTableRow] = &[\n     VersionTableRow {\n         name: \"dependencies\",\n-        detect: Detect::Parsed(has_dependencies),\n+        detect: Detect::Raw {\n+            group: RawGroup::Manifest,\n+            path: &[\"dependencies\"],\n+        },\n         since_api: \"0.2.2\",\n     },\n     VersionTableRow {\n"
+            }
+        ],
+        "command": "cargo test -p turts_mod_runtime --locked --test raw_presence",
+        "env": {},
+        "headed": false,
+        "expected_red": "test the_required_dependencies_field_is_detected_on_the_parsed_value ... FAILED",
+        "exit": 101,
+        "commit": "2a0eab3ad0a2b65af8d8e82010eb097bb86a57c9"
+    }
+]
