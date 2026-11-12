@@ -1,0 +1,264 @@
+== turts_interaction/src/lib.rs
+3:pub mod camera;
+4:pub mod compose;
+5:pub mod groups;
+6:pub mod input_map;
+7:pub mod minimap;
+8:pub mod projection;
+9:pub mod selection;
+10:pub mod smart;
+25:pub struct Core {
+48:pub struct NamedDispatch {
+57:struct DispatchSource<'a> {
+63:impl Core {
+65:    pub fn new(initial_camera: CameraState) -> Self {
+88:    pub fn camera_state(&self) -> CameraState {
+93:    pub fn camera_pan_context(&self) -> Option<&str> {
+98:    pub fn pending_order_id(&self) -> Option<&str> {
+103:    pub fn dispatch_records(&self) -> &[NamedDispatch] {
+108:    pub fn dispatch_records_truncated(&self) -> usize {
+115:    pub fn selected_units(&self) -> &[UnitId] {
+122:    pub fn group_members(&self, group: u8) -> &[UnitId] {
+132:    pub fn project_world_to_screen(&self, point: Vec2, view: &Viewport) -> Vec2 {
+137:    pub fn step(
+539:    fn complete_selection_gesture(
+566:    fn begin_ui_capture(&mut self, allow_shell: bool) {
+574:    fn record_named_dispatch(
+596:    fn dispatch_named_action(
+755:    fn dispatch_order(
+776:fn modifiers_equal(a: &[Mod], b: &[Mod]) -> bool {
+779:fn logical_modifier(action: &str) -> Option<Mod> {
+786:fn physical_modifiers(keys: &[String]) -> Vec<Mod> {
+799:fn modifiers_before_key(code: &str, physical: &[Mod], held_keys: &[String]) -> Vec<Mod> {
+826:fn modifier_actions_matching(
+831:    fn mods(binding: &turts_mod_api::Binding) -> &[Mod] {
+859:impl Core {
+860:    fn modifier_actions_for_key(&self, code: &str, world: &dyn WorldView) -> Vec<String> {
+868:    fn modifier_actions_for_pointer(&self, button: Button, world: &dyn WorldView) -> Vec<String> {
+875:    fn action_for_wheel(&self, delta: f32, world: &dyn WorldView) -> Option<String> {
+884:    fn has_modifier_action(&self, action: &str) -> bool {
+889:    fn action_for_key(&self, code: &str, world: &dyn WorldView) -> Option<String> {
+902:    fn action_for_pointer(&self, button: Button, world: &dyn WorldView) -> Option<String> {
+914:    fn prune(&mut self, world: &dyn WorldView) {
+921:    fn assign_group(&mut self, group: u8, additive: bool, world: &dyn WorldView) {
+947:    fn recall_group(&mut self, group: u8, world: &dyn WorldView) {
+963:    fn select_click(
+1038:    fn box_select(&mut self, a: Vec2, b: Vec2, view: &Viewport, world: &dyn WorldView) {
+1083:    fn apply_priority(&mut self, world: &dyn WorldView) {
+1106:    fn explicit_target(
+1142:    fn compose_explicit(
+1174:    fn smart_command(
+1188:    pub fn smart_command_at_world_point(
+1343:    fn alloc_group(&mut self) -> u32 {
+1350:fn smart_target_compatible(order: &OrderDef, target: &OrderTarget) -> bool {
+1369:fn nearest_unit<'a>(
+1379:fn nearest_unit_at(point: Vec2, world: &dyn WorldView) -> Option<&UnitView> {
+1390:fn nearest_node<'a>(
+1400:fn nearest_node_at(point: Vec2, world: &dyn WorldView) -> Option<&NodeView> {
+1412:impl Default for Core {
+1413:    fn default() -> Self {
+1418:fn engine_group_action(action: &str, prefix: &str) -> Option<u8> {
+1425:fn camera_pan_action(action: &str) -> bool {
+1432:fn shell_action(action: &str) -> bool {
+1438:pub enum InputEvent {
+1495:pub enum UiOrderTarget {
+1500:fn intended_units(
+1528:fn send_explicit_units(
+1551:pub struct UnitView {
+1564:pub struct NodeView {
+1574:pub trait WorldView {
+1575:    fn units(&self) -> &[UnitView];
+1576:    fn nodes(&self) -> &[NodeView];
+1577:    fn own_slot(&self) -> SlotId;
+1578:    fn orders(&self) -> &[OrderDef];
+1579:    fn order_rules(&self) -> &OrderRulesDef;
+1580:    fn input_map(&self) -> &InputMapDef;
+1581:    fn runtime_binding_overrides(&self) -> &BTreeMap<String, Vec<turts_mod_api::Binding>> {
+1586:    fn interaction_settings(&self) -> InteractionSettings {
+1589:    fn camera_options(&self) -> camera::CameraOptions {
+1592:    fn map_size(&self) -> Option<Vec2> {
+1596:    fn selection_priority(&self) -> &[String];
+1597:    fn selection_rank(&self, content_id: &str) -> usize {
+1604:    fn can_gather(&self, unit: &UnitView, node: &NodeView) -> bool;
+1606:    fn can_produce(&self, _unit: &UnitView, _content_id: &str) -> bool {
+1610:    fn has_job(&self, _unit: &UnitView, _job: JobId) -> bool {
+1614:    fn can_weapon_target(&self, unit: &UnitView, target: &UnitView) -> bool;
+1618:pub struct InteractionSettings {
+1623:impl Default for InteractionSettings {
+1624:    fn default() -> Self {
+1634:pub struct Viewport {
+1641:pub struct CameraState {
+1650:impl Default for CameraState {
+== turts_client/src/visuals.rs
+38:struct VisualAssets {
+58:type RingOverlayMaterial = ExtendedMaterial<StandardMaterial, RingOverlayExtension>;
+61:struct OrderMarkerGizmoConfigGroup;
+63:fn order_marker_gizmo_config() -> GizmoConfig {
+72:struct RingOverlayExtension {}
+74:impl MaterialExtension for RingOverlayExtension {
+75:    fn alpha_mode() -> Option<AlphaMode> {
+79:    fn enable_prepass() -> bool {
+83:    fn enable_shadows() -> bool {
+87:    fn specialize(
+102:fn configure_ring_overlay_depth(depth: &mut DepthStencilState) {
+107:fn create_ring_overlay_materials(
+132:fn create_neutral_ring_overlay_materials(
+151:fn create_marker_overlay_material(
+166:fn neutral_ring_overlay_index(slot_colour: Color) -> usize {
+173:enum VisualMaterial {
+178:impl From<Handle<StandardMaterial>> for VisualMaterial {
+179:    fn from(material: Handle<StandardMaterial>) -> Self {
+185:struct VisualInputs<'w> {
+202:struct VisualId {
+211:enum VisualKind {
+222:struct HealthFill(u32);
+225:struct RingMetadata {
+233:pub(crate) struct WorldTooltip(pub(crate) u32);
+236:pub enum HealthMode {
+244:pub struct HealthDisplay(pub HealthMode);
+246:impl Default for HealthDisplay {
+247:    fn default() -> Self {
+253:struct RetainedMarker {
+265:struct MarkerOrderResult {
+271:struct VisualSession {
+277:fn retained_marker(
+308:fn marker_is_live(
+317:fn marker_is_live_for_orders(
+356:fn refresh_blocked_marks(
+373:fn health_bar_visible(mode: HealthMode, selected: bool, current: u64, max: u64) -> bool {
+381:fn health_fraction(current: u64, max: u64) -> Option<f32> {
+385:fn update_health_fill_transform(transform: &mut Mut<'_, Transform>, fraction: f32) -> bool {
+396:fn reset_marker_session(
+430:struct VisualState {
+441:pub struct VisualsPlugin;
+443:impl Plugin for VisualsPlugin {
+444:    fn build(&self, app: &mut App) {
+468:fn prepare_assets(
+559:fn draw_world_visuals(
+1087:fn collect_visible_rings(
+1113:struct HealthBarSync<'a> {
+1125:fn sync_health_bars(
+1193:fn reconcile_visual_entities(
+1253:fn spawn_visual(
+1282:fn update_world_tooltip(
+1360:fn tooltip_text(name: &str, owner_slot: u8) -> String {
+1364:fn marker_kind(kind: &str) -> &str {
+1372:fn unlit(color: Color) -> StandardMaterial {
+1380:fn parse_hex(value: &str) -> Color {
+1397:fn world_units_for_pixels(
+1426:fn annulus_mesh(gaps: bool) -> Mesh {
+1476:fn create_shared_meshes(assets: &mut VisualAssets, meshes: &mut Assets<Mesh>) {
+1482:#[cfg(test)]
+1483:mod tests {
+1491:    fn ring_overlay_uses_shared_per_slot_colours_and_depth_overlay_state() {
+1575:    fn order_markers_share_range_colour_overlay_material() {
+1595:    fn order_marker_gizmos_render_in_front_without_changing_other_gizmos() {
+1614:    fn update_test_health_fill(
+1623:    fn count_changed_transforms(
+1630:    fn reconcile_health_test_visuals(
+1649:    fn marker(id: u64, seqs: &[u32]) -> RetainedMarker {
+1676:    fn order_record(activity: Activity) -> UnitOrderRecord {
+1687:    fn clicked_marker_retires_on_authoritative_result_tick_rest() {
+1724:    fn marker_lifetime_is_capped_at_sixty_seconds() {
+1736:    fn split_fragments_and_refusals_retire_only_after_all_results() {
+1783:    fn replacement_intents_remain_distinct_and_session_reset_keeps_current_frame_click() {
+1858:    fn first_visual_session_keeps_a_same_frame_click_intent() {
+1885:    fn old_frame_intent_does_not_reappear_after_session_reset() {
+1934:    fn owner_session_change_keeps_only_the_current_frame_intent_fragments() {
+1984:    fn blocked_mark_reentry_starts_a_fresh_two_second_lifetime() {
+2019:    fn health_modes_fill_fraction_and_transform_guard_match_contract() {
+2040:    fn retained_health_fill_marks_transform_changed_only_when_fraction_changes() {
+2069:    fn health_fill_is_a_child_with_fraction_scale_and_left_aligned_offset() {
+2120:    fn tooltip_names_actual_unit_and_one_based_owner_slot() {
+2129:    fn shared_visual_mesh_inventory_has_two_ring_topologies_and_one_bar() {
+== turts_client/src/client_shell.rs
+26:pub(crate) struct SettingsMenuOverlay;
+31:const MENU_ACTION_LABEL_WIDTH: f32 = 200.0;
+34:const MENU_BINDING_BASIS_WIDTH: f32 = 120.0;
+37:const BINDING_FEEDBACK_HEIGHT: f32 = 52.0;
+40:pub(crate) struct RejoinOverlayCamera;
+43:pub(crate) struct FocusOverlay;
+46:struct BindingButton {
+52:enum BindingButtonKind {
+61:pub struct BindingLabels(pub BTreeMap<String, String>);
+63:impl BindingLabels {
+66:    pub fn from_layout_entries(entries: impl IntoIterator<Item = (String, String)>) -> Self {
+90:pub(crate) fn binding_label(binding: &Binding, labels: Option<&BindingLabels>) -> String {
+129:fn key_label(code: &str, labels: Option<&BindingLabels>) -> String {
+147:pub(crate) struct BindingEditorState {
+155:struct PointerReleaseBoundary {
+162:struct BindingInputRecord {
+173:struct PendingBindingActivation {
+179:struct BindingInputTimeline {
+197:impl Default for BindingInputTimeline {
+198:    fn default() -> Self {
+215:struct CaptureModifiers {
+224:impl CaptureModifiers {
+226:    fn from_keys(keys: Option<&ButtonInput<KeyCode>>) -> Self {
+238:    fn update_from_event(&mut self, event: &WindowEvent, primary: Option<Entity>) -> bool {
+270:    fn as_mods(self) -> Vec<turts_mod_api::Mod> {
+285:fn record_binding_input_timeline(
+373:fn is_capture_modifier(code: KeyCode) -> bool {
+385:#[cfg(test)]
+386:fn captured_binding(
+397:fn captured_binding_for_snapshot(
+444:struct BindingValueText {
+449:struct BindingFeedbackText;
+452:struct BindingConflictPrompt;
+455:enum SettingsToggle {
+462:struct SettingsToggleText;
+465:struct SettingsToggleState(SettingsToggle);
+468:enum SettingsSlider {
+477:pub(crate) enum BindingConflictChoice {
+484:pub(crate) enum BindingEditResult {
+492:fn same_physical_chord(left: &Binding, right: &Binding) -> bool {
+493:    fn mods_equal(left: &[turts_mod_api::Mod], right: &[turts_mod_api::Mod]) -> bool {
+522:fn contains_physical_chord(bindings: &[Binding], binding: &Binding) -> bool {
+529:pub(crate) fn edit_binding_override(
+599:fn is_reserved_browser_chord(binding: &Binding) -> bool {
+613:pub(crate) fn reset_binding_override(
+698:pub(crate) struct ClientSettings {
+706:impl Default for ClientSettings {
+707:    fn default() -> Self {
+719:pub(crate) fn apply_client_settings(
+738:pub(crate) struct ClientNotice;
+741:pub struct ClientShellPlugin;
+743:impl Plugin for ClientShellPlugin {
+744:    fn build(&self, app: &mut App) {
+841:fn sync_focus_overlay(
+901:pub(crate) const SOUND_OFF_NOTICE: &str = "Sound is off. Click or press a key to turn it on.";
+903:const SOUND_NOTICE_DELAY_SECS: f32 = 0.5;
+904:const SOUND_NOTICE_SECS: f32 = 8.0;
+908:pub(crate) struct SoundOffNotice;
+912:struct SoundLockTimer(Option<std::time::Duration>);
+916:fn sync_sound_off_notice(
+970:fn sync_sound_status_label(
+982:fn sound_status_label(audio: Option<&crate::debug_feed::AudioFeed>) -> &'static str {
+991:pub(crate) fn sync_client_notice(
+1064:pub(crate) fn sync_rejoin_camera(
+1085:struct SettingsMenuSources<'w> {
+1096:fn toggle_settings_menu(
+1387:fn spawn_settings_toggle(
+1430:fn spawn_settings_slider(
+1497:fn on_settings_toggle_activated(
+1527:fn release_pointer_lock(
+1536:fn update_pointer_lock(
+1572:fn sync_settings_toggle_labels(
+1596:fn on_off(value: bool) -> &'static str {
+1600:fn apply_client_setting_sliders(
+1617:fn sync_interaction_settings(
+1626:fn spawn_binding_button(
+1661:fn on_binding_pointer_press(
+1709:fn on_binding_pointer_click(
+1755:fn on_binding_keyboard_activation(
+1793:fn on_binding_button_activated(
+1830:fn on_binding_button_activated_at_boundary(
+1930:fn capture_physical_binding(
+2035:fn menu_binding_list_label(bindings: &[Binding], labels: &BindingLabels) -> String {
+2047:fn sync_binding_value_labels(
+2072:fn sync_binding_feedback(
+2115:#[cfg(test)]
+2116:pub(crate) mod tests {
+2126:    fn key(code: &str) -> Binding {
+2133:    fn forge_input_defaults() -> turts_mod_api::InputMapDef {
+2138:    fn forge_defaults() -> BTreeMap<String, Vec<Binding>> {

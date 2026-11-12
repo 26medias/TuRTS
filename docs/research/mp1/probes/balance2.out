@@ -1,0 +1,25 @@
+== single-target time to kill (s), first shot at t=0 ==
+rifleman  rifleman=9.0 launcher=7.0 engineer=5.0 tank=249.0 harvester=299.0 turret=299.0 power=299.0 cc=999.0
+launcher  rifleman=15.0 launcher=10.0 engineer=7.5 tank=20.0 harvester=22.5 turret=47.5 power=47.5 cc=165.0
+tank      rifleman=6.0 launcher=4.0 engineer=4.0 tank=24.0 harvester=28.0 turret=28.0 power=28.0 cc=98.0
+turret    rifleman=4.5 launcher=3.0 engineer=3.0 tank=18.0 harvester=21.0 turret=21.0 power=21.0 cc=73.5
+== ratio 1: time to kill, equal credits ==
+7 rifleman vs 1 tank                         A=  700 B=  700 t= 54.00s win=B    A_left=[] B_left=['tank:66']
+5 rifleman vs 1 tank                         A=  500 B=  700 t= 38.00s win=B    A_left=[] B_left=['tank:270']
+3 launcher vs 1 tank                         A=  750 B=  700 t=  7.50s win=A    A_left=['launcher:60', 'launcher:90'] B_left=[]
+5 rifleman vs 2 launcher                     A=  500 B=  500 t=  3.00s win=A    A_left=['rifleman:66', 'rifleman:120', 'rifleman:120', 'rifleman:120', 'rifleman:120'] B_left=[]
+1 tank vs 3 launcher (tank first)            A=  700 B=  750 t=  7.50s win=B    A_left=[] B_left=['launcher:60', 'launcher:90']
+== ratio 3: turret against tank ==
+1 tank vs 1 turret                           A=  700 B=  500 t= 18.00s win=B    A_left=[] B_left=['turret:200']
+2 tank vs 1 turret                           A= 1400 B=  500 t= 14.00s win=A    A_left=['tank:100', 'tank:500'] B_left=[]
+2 tank vs turret + 1 engineer (8 hp/s)       A= 1400 B=  500 t= 18.00s win=A    A_left=['tank:20', 'tank:500'] B_left=[]
+2 tank vs turret + 2 engineer (16 hp/s)      A= 1400 B=  500 t= 37.50s win=B    A_left=[] B_left=['turret:40']
+6 rifleman vs 1 turret                       A=  600 B=  500 t= 34.50s win=B    A_left=[] B_left=['turret:360']
+4 launcher vs 1 turret                       A= 1000 B=  500 t= 16.50s win=B    A_left=[] B_left=['turret:60']
+3 tank + 0 vs cc (siege time)                A= 2100 B=    0 t= 32.00s win=A    A_left=['tank:500', 'tank:500', 'tank:500'] B_left=[]
+4 launcher vs cc                             A= 1000 B=    0 t= 40.00s win=A    A_left=['launcher:90', 'launcher:90', 'launcher:90', 'launcher:90'] B_left=[]
+8 rifleman vs 1 tank (800 vs 700)            A=  800 B=  700 t= 44.00s win=A    A_left=['rifleman:60', 'rifleman:120', 'rifleman:120'] B_left=[]
+2 tank vs 2 tank + 1 engineer (16hp/s->8)    A= 1400 B= 1400 t= 34.00s win=B    A_left=[] B_left=['tank:268']
+1 tank vs 1 harvester                        A=  700 B=  800 t= 28.00s win=A    A_left=['tank:500'] B_left=[]
+3 rifleman vs 1 harvester                    A=  300 B=  800 t= 99.00s win=A    A_left=['rifleman:120', 'rifleman:120', 'rifleman:120'] B_left=[]
+2 launcher vs 1 harvester                    A=  500 B=  800 t= 10.00s win=A    A_left=['launcher:90', 'launcher:90'] B_left=[]

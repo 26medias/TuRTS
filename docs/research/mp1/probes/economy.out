@@ -1,0 +1,35 @@
+main   nearest node dist= 14.1 travel one way=  7.8 trip= 32.8s income=  365/min (no overhead)
+side   nearest node dist= 22.1 travel one way= 15.8 trip= 40.8s income=  294/min (no overhead)
+centre nearest node dist= 43.9 travel one way= 37.6 trip= 62.6s income=  192/min (no overhead)
+main slot0 dist [14.1, 15.1, 14.4] slot1 dist to same [83.2, 79.9, 76.2]
+side slot0 dist [22.1, 24.1] slot1 dist to same [84.9, 81.6]
+centre slot0 dist [43.9, 47.4, 47.2, 44.3] slot1 dist to same [47.4, 43.9, 47.2, 44.3]
+CC to CC 80.0
+--- Plan A: power, second harvester, then defence: trip 36.1s, first delivery 31.1s
+     23.9s power station done (credits    422, power 100/40)
+     32.7s harvester done (credits     98, power 100/40)
+     67.5s rifleman done (credits    248, power 100/40)
+     73.4s turret done (credits      3, power 100/70)
+     73.5s rifleman done (credits      0, power 100/70)
+    108.9s launcher done (credits    150, power 100/70)
+    at 180 s: credits 950, harvested 1800
+--- Plan B: power, turret, army: trip 36.1s, first delivery 31.1s
+     11.9s rifleman done (credits    950, power 0/40)
+     23.9s power station done (credits    701, power 100/40)
+     23.9s rifleman done (credits    700, power 100/40)
+     29.9s rifleman done (credits    450, power 100/40)
+     38.9s launcher done (credits    175, power 100/40)
+     69.4s turret done (credits     63, power 100/70)
+    176.9s tank done (credits    150, power 100/70)
+    at 180 s: credits 150, harvested 1000
+--- Plan C: no power first (shows the penalty): trip 36.1s, first delivery 31.1s
+     11.9s rifleman done (credits    950, power 0/40)
+     23.9s power station done (credits    701, power 100/40)
+     23.9s rifleman done (credits    700, power 100/40)
+     29.9s rifleman done (credits    600, power 100/40)
+     35.9s rifleman done (credits    700, power 100/40)
+     41.9s rifleman done (credits    600, power 100/40)
+     47.9s rifleman done (credits    500, power 100/40)
+     56.9s launcher done (credits    250, power 100/40)
+     65.9s launcher done (credits      0, power 100/40)
+    at 180 s: credits 800, harvested 1000

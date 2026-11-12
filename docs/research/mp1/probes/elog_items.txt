@@ -1,0 +1,101 @@
+19:pub(crate) enum EconomyLogRecord {
+51:struct ActiveOrderSpan {
+60:struct ActiveQueuedCapacityFailureSpan {
+71:struct PendingDispatchReplay {
+77:struct PlainCandidatePriorReplay {
+89:struct PlainCandidateReplay {
+99:fn accepted_plain_candidate_context(
+116:impl EconomyLogRecord {
+128:pub(crate) struct EconomyLogWriter<W> {
+132:impl<W: Write> EconomyLogWriter<W> {
+194:pub(crate) struct EconomyLogSink {
+200:impl EconomyLogSink {
+327:pub(crate) fn capture_completed_tick(world: &mut bevy::prelude::World) {
+335:fn ensure_valid(trail: &turts_sim::AuditTrail) -> Result<(), std::io::Error> {
+345:pub(crate) fn read_jsonl<R: BufRead>(input: R) -> Result<Vec<EconomyLogRecord>, String> {
+361:pub(crate) fn read_jsonl_file(
+371:pub(crate) fn validate_records(records: &[EconomyLogRecord]) -> Result<(), String> {
+1103:fn validate_order_result(command: &CommandAudit) -> Result<(), String> {
+1182:fn update_plain_move_identities(
+1249:fn accepted_replacement_units(command: &CommandAudit) -> Vec<u32> {
+1270:fn is_deferred_move_replace(kind: &turts_sim::CommandKind) -> bool {
+1286:fn plain_candidate_from_command(
+1375:fn reconcile_plain_move_identities(
+1402:fn expected_order_refusal(
+1762:fn expected_job_cost_refusal(
+1808:fn canonical_order_costs(costs: &[turts_sim::CostView]) -> Vec<turts_sim::CostView> {
+1815:fn expected_event_ordinal_refusal(before: &AuditState) -> Option<turts_sim::RejectReason> {
+1823:fn expected_cancel_refusal(
+1935:fn reservation_endpoint_order(endpoint: &turts_sim::ReservationEndpointView) -> u8 {
+1943:fn expected_refund_refusal(
+2084:fn validate_order_policy(command: &CommandAudit) -> Result<(), String> {
+2224:fn canonical_order_units(units: &[String]) -> Vec<String> {
+2230:fn canonical_capabilities(
+2238:fn validate_order_operation(
+2694:fn validate_automatic_order_operation(
+3527:fn validate_queued_movement_capacity_failure(
+3594:fn queued_capacity_failure_span(
+3704:fn validate_queued_movement_admission(
+3849:fn validate_plain_candidate_promotion(
+3964:fn plain_candidate_lost_to_tick_budget(
+3997:fn independent_plain_candidate_winners(
+4113:fn reconcile_plain_candidate_dispatches(
+4200:fn is_pending_movement_dispatch_operation(operation: &OperationAudit) -> bool {
+4224:fn is_movement_pool_member_dispatch_operation(operation: &OperationAudit) -> bool {
+4282:fn validate_pending_movement_dispatch(
+4701:fn audit_pending_target_is_live(
+4713:fn independent_plain_winners_before_request(
+4820:fn validate_pending_target_gone(
+4943:fn validate_pending_movement_failure(
+5164:fn validate_pending_dead_member_prune(operation: &OperationAudit) -> Result<(), String> {
+5278:fn start_next_audited_order(
+5433:fn start_next_audited_order_if_not_pending(
+5448:fn audited_gather_start_failure(
+5510:fn set_audited_gather_cycle(
+5542:fn clear_audited_gather_cycle(state: &mut AuditState, unit_id: u32) -> Result<(), String> {
+5567:fn set_audit_move_target(
+5581:fn reset_audited_weapon_target(state: &mut AuditState, unit_id: u32) {
+5593:fn clear_audit_gather(state: &mut AuditState, unit_id: u32) {
+5613:fn store_audited_unit_orders(state: &mut AuditState, unit_id: u32, orders: turts_sim::UnitOrders) {
+5623:fn validate_legacy_gather_order_state(
+5726:fn validate_attack_weapon_target_reset(
+5756:fn validate_set_enabled_state(
+5855:fn validate_immediate_economy_order(
+5876:fn validate_remove_order(
+6121:fn remove_audit_belt_piece(
+6166:fn validate_produce_order(
+6299:struct ExpectedQueuedJob(turts_sim::economy::views::RawJobAudit, turts_sim::JobView);
+6302:struct OrderJobPolicy {
+6308:fn captured_order_job_policy(
+6384:fn next_raw_job(
+6478:fn adjust_order_cost(
+6526:fn validate_cancel_order(
+6659:fn refund_amount(amount: u64, ratio: turts_mod_api::RefundRatio) -> Result<u64, String> {
+6672:fn event_source_from_endpoint(
+6684:fn event_for_order(
+6707:impl AppendOrderEvent for AuditState {
+6714:fn validate_deferred_move_admission_operation(
+6780:fn validate_order_span_end(
+6866:fn validate_legacy_move_to_command(
+7122:fn restore_plain_candidate_prior_audit(
+7171:fn validate_command_phase_order(
+7439:fn order_record(order: &turts_sim::OrderCommand) -> turts_sim::Order {
+7448:fn unit_orders_for(state: &AuditState, unit_id: u32) -> turts_sim::UnitOrders {
+7456:fn raw_move_target(state: &AuditState, unit_id: u32) -> Option<turts_mod_api::WorldPos> {
+7464:fn audit_unit_radius(state: &AuditState, unit_id: u32) -> f32 {
+7475:fn audit_attack_goal(
+7516:fn audit_attack_point_target_in_range(state: &AuditState, unit_id: u32) -> Result<bool, String> {
+7561:fn clamped_audit_point(
+7575:fn validate_clock_continuity(
+7597:fn validate_operation_continuity(
+7608:fn validate_operation_phase(
+7628:fn validate_plain_gather_goal_annotation(operation: &OperationAudit) -> Result<(), String> {
+7710:fn validate_gather_reach_transition(operation: &OperationAudit) -> Result<(), String> {
+7741:fn audit_plain_gather_goal(
+7760:fn audit_gather_interaction_reached(
+7845:fn validate_movement_transition(previous: &AuditState, current: &AuditState) -> Result<(), String> {
+8036:fn expected_dispatch_start_slot(
+8050:fn dispatch_start_slot_for_tick(
+8064:fn validate_tick_state(
+8084:#[cfg(test)]
+8085:mod tests {
