@@ -1,0 +1,8 @@
+(id: "tide", version: "0.1.0", kind: Game, engine_api: "^0.2.4", dependencies: {},
+ exports: (units: ["units/diver.ron", "units/lancer.ron", "units/skimmer.ron", "units/dock.ron", "units/spire.ron"],
+   maps: ["maps/reef.ron"], visuals: ["visuals/lancer.ron"], resources: ["resources/shells.ron", "resources/pearls.ron", "resources/current.ron"],
+   nodes: ["nodes/bed.ron"], production: ["production/train_diver.ron", "production/build_spire.ron"],
+   orders: ["orders/order_construct.ron", "orders/order_surrender.ron", "orders/order_gather.ron", "orders/rules.ron"],
+   interface: ["interface/hud.ron"], input: ["input/bindings.ron"], assets: ["assets/assets.ron"],
+   combat: ["combat/damage.ron"], match: ["match/match.ron"], visual_effects: ["fx/effects.ron"]),
+ context: Shared, capabilities: [], license: "LicenseRef-TBD")

@@ -1,0 +1,4 @@
+(id: "skimmer", name: "Skimmer", footprint: Circle(radius: 0.9), movement: Some((speed: 2.4)),
+ inventory: Some((capacity: 300, accepts: ["tide:shells"])),
+ gatherer: Some((items: ["tide:shells"], gather_per_second: 15, unload_per_second: 60, interaction_range: 1.5)),
+ drop_off: None, producer: None, health: Some((max: 300)), armour: Some((class: "tide:plating")))

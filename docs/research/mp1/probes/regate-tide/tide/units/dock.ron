@@ -1,0 +1,8 @@
+(id: "dock", name: "Dock", footprint: Circle(radius: 3.0), movement: None, inventory: None, gatherer: None,
+ drop_off: Some((rules: [(item: "tide:shells", effect: Convert(balance: "tide:pearls", per_item: 1))])),
+ producer: Some((recipes: ["tide:train_diver"], queue_capacity: 5, spawn_offsets: [(x: 4.0, y: 0.0)],
+     when_short: [(resource: "tide:current", effect: Rate((numerator: 2, denominator: 3)))])),
+ constructor: Some((buildings: ["tide:build_spire"], concurrent_sites: 1, queue_capacity: 4, progress: Autonomous,
+     when_short: [(resource: "tide:current", effect: Rate((numerator: 2, denominator: 3)))])),
+ build_area: Some(14.0), health: Some((max: 3500)), armour: Some((class: "tide:plating", flat: 5)),
+ provides: [(resource: "tide:current", amount: 50)], income: Some((resource: "tide:pearls", amount: 2, period_ms: 1000)))

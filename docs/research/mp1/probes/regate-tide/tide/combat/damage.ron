@@ -1,0 +1,5 @@
+(damage_types: ["spear", "bolt"], armour_classes: ["light_hull", "plating"], minimum: 1,
+ cells: [(damage: "tide:spear", armour: "tide:light_hull", ratio: (numerator: 1, denominator: 1)),
+         (damage: "tide:spear", armour: "tide:plating", ratio: (numerator: 1, denominator: 4)),
+         (damage: "tide:bolt", armour: "tide:light_hull", ratio: (numerator: 1, denominator: 2)),
+         (damage: "tide:bolt", armour: "tide:plating", ratio: (numerator: 5, denominator: 4))])
