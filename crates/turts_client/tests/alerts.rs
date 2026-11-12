@@ -606,3 +606,78 @@ fn production_completion_needs_output_evidence_and_does_not_treat_job_removal_as
         "a removed production job with its catalog output unit is completion evidence"
     );
 }
+
+/// Set the replica tick, run `frames` frames and count the inserter alerts of those frames.
+/// Bevy clamps each virtual frame to 250 ms, so 8 frames pass the 1 s rule cooldown.
+fn inserter_alerts_at(app: &mut bevy::app::App, tick: u32, frames: usize) -> usize {
+    app.world_mut()
+        .resource_mut::<ReplicaState>()
+        .replica
+        .as_mut()
+        .unwrap()
+        .last_applied_tick = Some(tick);
+    let mut count = 0;
+    for _ in 0..frames {
+        clear_feedback(app);
+        app.update();
+        count += app
+            .world()
+            .resource::<FrameFeedback>()
+            .alerts
+            .iter()
+            .filter(|alert| alert["id"] == "feedback_inserter_waiting")
+            .count();
+    }
+    count
+}
+
+fn set_inserter_stage(app: &mut bevy::app::App, stage: turts_net_protocol::InserterStage) {
+    app.world_mut()
+        .resource_mut::<ReplicaState>()
+        .replica
+        .as_mut()
+        .unwrap()
+        .inserters[0]
+        .stage = stage;
+}
+
+/// A wait is a state alert (PT1 repair): it alerts one time when the wait passes its threshold,
+/// not again each cooldown while the same wait lasts. A new wait alerts again.
+#[test]
+fn a_waiting_inserter_alerts_once_per_wait_and_again_after_a_new_wait() {
+    let (state, acquired) = alert_state();
+    let mut app = feedback_app(state, acquired);
+    app.update();
+    force_all_alert_sources(&mut app.world_mut().resource_mut::<ReplicaState>());
+    assert_eq!(
+        inserter_alerts_at(&mut app, 2, 1),
+        0,
+        "the wait starts at tick 2"
+    );
+    assert_eq!(
+        inserter_alerts_at(&mut app, 103, 8),
+        1,
+        "the wait passes 5 s"
+    );
+    for tick in [140, 200, 400] {
+        assert_eq!(
+            inserter_alerts_at(&mut app, tick, 8),
+            0,
+            "the same wait at tick {tick}, 2 s later, after the 1 s cooldown, does not alert again"
+        );
+    }
+    set_inserter_stage(&mut app, turts_net_protocol::InserterStage::ToDestination);
+    assert_eq!(inserter_alerts_at(&mut app, 401, 1), 0, "the wait ends");
+    set_inserter_stage(
+        &mut app,
+        turts_net_protocol::InserterStage::AtDestination(
+            turts_net_protocol::InserterWaitReason::DestinationFull,
+        ),
+    );
+    assert_eq!(inserter_alerts_at(&mut app, 402, 1), 0, "a new wait starts");
+    assert_eq!(
+        inserter_alerts_at(&mut app, 510, 8),
+        1,
+        "the new wait passes 5 s and alerts again"
+    );
+}

@@ -35,6 +35,10 @@ struct FeedbackRuntime {
     joined_match: Option<u64>,
 }
 
+/// The `wait_started` tick of a wait that has already alerted. No tick is later, so the wait
+/// does not pass its threshold again until it ends and a new wait starts.
+const WAIT_ALERTED: u32 = u32::MAX;
+
 #[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct FeedbackSet;
 
@@ -851,6 +855,18 @@ fn collect_alert_events(
             continue;
         }
         runtime.cooldowns.insert(rule.id.clone(), now);
+        // A wait is a state: it alerts once when it passes its threshold, not again while it
+        // lasts. A new wait starts when the unit stops waiting and waits again.
+        if matches!(
+            rule.trigger,
+            AlertTrigger::InserterWaiting(_) | AlertTrigger::GathererWaiting(_)
+        ) {
+            for unit in &units {
+                if let Some(started) = runtime.wait_started.get_mut(&(rule.id.clone(), *unit)) {
+                    *started = WAIT_ALERTED;
+                }
+            }
+        }
         let mut seen = BTreeSet::new();
         for unit in units {
             if unit != 0 && !seen.insert(unit) {
