@@ -91,7 +91,7 @@
   },
   {
     "row": "COMBAT-FIXES",
-    "plant": "1d (stall repair reverted, process test: the owner replica resyncs)",
+    "plant": "1d (stall repair reverted AND the export filter and resend off, process test: the owner replica resyncs)",
     "files": [
       {
         "file": "crates/turts_sim/src/economy/transaction_m3.rs",
@@ -99,6 +99,19 @@
           "old": "            if updated.last_target == Some(unit) {\n",
           "new": "            if !retained_for_order && updated.last_target == Some(unit) {\n"
         }
+      },
+      {
+        "file": "crates/turts_server/src/export.rs",
+        "edit": [
+          {
+            "old": "    if !batch.removed.is_empty() {\n        for row in &view.m3.raw_weapons {",
+            "new": "    if false {\n        for row in &view.m3.raw_weapons {"
+          },
+          {
+            "old": "            .last_target\n            .filter(|target| unit_exists(view, *target))\n            .map(messages::UnitId),",
+            "new": "            .last_target\n            .map(messages::UnitId),"
+          }
+        ]
       }
     ],
     "command": [
@@ -110,7 +123,7 @@
     "headed": false,
     "expected_red": "resync(s) across the kill of unit 46",
     "exit": 101,
-    "commit": "9ff4f9c7a624cc5e7d83bcc806bcda59431815ba",
+    "commit": "442d7b8920095dd802de367cbbcb726ed5d2cc27",
     "expected_selected": "ordered_attack_kill_reaches_the_owner_replica_without_a_resync"
   },
   {
