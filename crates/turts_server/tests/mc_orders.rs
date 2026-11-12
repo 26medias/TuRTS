@@ -568,6 +568,66 @@ fn queued_group_attack_spreads_and_strictly_replays() {
         "queued Point Attack shared-spread operations strictly replay: {:?}",
         turts_audit::validate_records(&records)
     );
+
+    // The outcome from the order log, with no help from the replay validator. The Move
+    // dispatches both members into one pool with two different slots. After the Move, the
+    // queued Attack dispatches each member again, to a new pool and to different slots.
+    let move_slots = first_logged_pool_slots(&records, &members, "audit:move");
+    let rush_slots = first_logged_pool_slots(&records, &members, "audit:rush");
+    for (order, slots) in [("audit:move", &move_slots), ("audit:rush", &rush_slots)] {
+        assert_eq!(
+            slots.len(),
+            members.len(),
+            "{order} dispatches every member into a pool: {slots:?}"
+        );
+        assert_ne!(
+            slots[0].1, slots[1].1,
+            "{order} spreads its members to different slots: {slots:?}"
+        );
+    }
+    assert_eq!(
+        move_slots[0].0, move_slots[1].0,
+        "the Move puts both members into one pool: {move_slots:?}"
+    );
+    assert!(
+        rush_slots.iter().all(|(pool, _)| *pool != move_slots[0].0),
+        "the queued Attack takes a new pool after the Move: {move_slots:?} {rush_slots:?}"
+    );
+}
+
+/// For each unit, the pool id and the slot at the first completed tick of the order log where
+/// the unit has the current order `order` and a movement pool. A unit with no such tick is
+/// left out.
+fn first_logged_pool_slots(
+    records: &[turts_audit::EconomyLogRecord],
+    units: &[u32],
+    order: &str,
+) -> Vec<(u64, bevy_math::Vec2)> {
+    units
+        .iter()
+        .filter_map(|unit_id| {
+            records.iter().find_map(|record| {
+                let turts_audit::EconomyLogRecord::Tick { state, .. } = record else {
+                    return None;
+                };
+                let current = state
+                    .unit_orders
+                    .iter()
+                    .find(|row| row.unit_id == *unit_id)?
+                    .orders
+                    .current
+                    .as_ref()?;
+                if current.order.to_string() != order {
+                    return None;
+                }
+                state
+                    .movement_progress
+                    .iter()
+                    .find(|row| row.unit_id == *unit_id)
+                    .map(|row| (row.progress.pool_id, row.progress.slot))
+            })
+        })
+        .collect()
 }
 
 #[test]

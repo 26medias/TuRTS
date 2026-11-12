@@ -65,7 +65,21 @@ fn live_audit_reader_ignores_only_unterminated_tail_and_waits_for_tick() {
     writer
         .write_initial(app.world().resource::<AuditTrail>(), initial)
         .unwrap();
-    for _ in 0..3 {
+    for tick_number in 1..=3 {
+        if tick_number == 2 {
+            // Tick 2 holds a command, so the log has a CommandBoundary before its Operation.
+            app.world_mut()
+                .resource_mut::<turts_sim::CommandQueue>()
+                .0
+                .push_back(turts_sim::Command {
+                    slot: turts_sim::SlotId(0),
+                    seq: 71,
+                    kind: turts_sim::CommandKind::Gather {
+                        unit_id: 3,
+                        node_id: turts_sim::NodeId(1),
+                    },
+                });
+        }
         app.update();
         let mut trail = app.world_mut().resource_mut::<AuditTrail>();
         for command in trail.drain_commands() {
@@ -101,6 +115,51 @@ fn live_audit_reader_ignores_only_unterminated_tail_and_waits_for_tick() {
         "turts-live-audit-{}-{nonce}.jsonl",
         std::process::id()
     ));
+
+    // A log cut inside an open CommandBoundary: every line is complete, but the Operation of
+    // the tick-2 command is not written yet. The complete prefix ends at the Tick 1 record.
+    let mut open_command = first.clone();
+    let mut boundary_seen = false;
+    for line in second_segment.split_inclusive(|byte| *byte == b'\n') {
+        open_command.extend_from_slice(line);
+        let value: serde_json::Value = serde_json::from_slice(line).unwrap();
+        if value["record"] == "command_boundary" {
+            boundary_seen = true;
+            break;
+        }
+    }
+    assert!(
+        boundary_seen,
+        "tick 2 of the test log holds a CommandBoundary"
+    );
+    let open_command_path =
+        path.with_file_name(format!("turts-live-audit-open-command-{nonce}.jsonl"));
+    std::fs::write(&open_command_path, &open_command).unwrap();
+    let complete_first = first
+        .split_inclusive(|byte| *byte == b'\n')
+        .map(|line| serde_json::from_slice::<EconomyLogRecord>(line).unwrap())
+        .collect::<Vec<_>>();
+    assert!(
+        matches!(
+            complete_first.last(),
+            Some(EconomyLogRecord::Tick { tick: 1, .. })
+        ),
+        "the expected prefix ends at the Tick 1 record"
+    );
+    // The instrument: the planted reader returns the whole tail, and the check rejects it.
+    let planted = whole_tail_reader(&open_command_path);
+    assert!(
+        planted.as_ref() != Ok(&complete_first),
+        "a reader that returns the whole tail keeps the open CommandBoundary: {:?}",
+        planted.map(|records| records.len())
+    );
+    let read = read_live_complete_tick_prefix(&open_command_path);
+    assert!(
+        read.as_ref() == Ok(&complete_first),
+        "the reader cuts the log before an open CommandBoundary: got {:?} records, expected {}",
+        read.map(|records| records.len()),
+        complete_first.len()
+    );
 
     std::fs::write(&path, first).unwrap();
     let half = second_segment.len() / 2;
@@ -231,6 +290,7 @@ fn live_audit_reader_ignores_only_unterminated_tail_and_waits_for_tick() {
     );
 
     std::fs::remove_file(path).unwrap();
+    std::fs::remove_file(open_command_path).unwrap();
     std::fs::remove_file(semantic_path).unwrap();
     std::fs::remove_file(initial_only_path).unwrap();
 }
@@ -1790,11 +1850,11 @@ fn economy_log_path(server: &support::ServerProc) -> &std::path::Path {
         .expect("server launched with economy logging")
 }
 
-fn read_live_complete_tick_prefix(
+/// Decode every newline-terminated line of a live economy log. The bytes after the last
+/// newline are a line that the server has not finished, and are ignored.
+fn decode_complete_jsonl_lines(
     path: &std::path::Path,
 ) -> Result<Vec<turts_audit::EconomyLogRecord>, String> {
-    use turts_audit::EconomyLogRecord;
-
     let bytes = std::fs::read(path).map_err(|error| format!("read {}: {error}", path.display()))?;
     let Some(last_newline) = bytes.iter().rposition(|byte| *byte == b'\n') else {
         return Ok(Vec::new());
@@ -1810,61 +1870,71 @@ fn read_live_complete_tick_prefix(
         }
         let line = std::str::from_utf8(line)
             .map_err(|error| format!("decode JSONL line {} as UTF-8: {error}", index + 1))?;
-        let record = serde_json::from_str::<EconomyLogRecord>(line)
+        let record = serde_json::from_str::<turts_audit::EconomyLogRecord>(line)
             .map_err(|error| format!("decode complete JSONL line {}: {error}", index + 1))?;
         records.push(record);
     }
+    Ok(records)
+}
 
-    let last_tick = records
+/// Planted reader for the reader test: it returns the whole tail and finds no incomplete batch.
+fn whole_tail_reader(path: &std::path::Path) -> Result<Vec<turts_audit::EconomyLogRecord>, String> {
+    decode_complete_jsonl_lines(path)
+}
+
+/// The number of records in the complete prefix of a live economy log.
+///
+/// The server sink writes the batch of one tick after the tick completes: the command
+/// boundaries, then the operations, then the `Tick` record (`economylog.rs`,
+/// `capture_completed_tick`). A reader can see part of that batch. The tail is the records
+/// after the last `Tick` record. When the tail holds a command boundary whose operation is not
+/// in the log yet, the batch is incomplete, and the prefix ends at the first boundary or
+/// operation of the tail. The `Claim` and `Admission` records before the batch stay, so the
+/// validator sees them.
+fn complete_prefix_end(records: &[turts_audit::EconomyLogRecord]) -> usize {
+    use turts_audit::EconomyLogRecord;
+
+    let tail_start = records
         .iter()
-        .rposition(|record| matches!(record, EconomyLogRecord::Tick { .. }));
-    let full_validation = turts_audit::validate_records(&records);
-    if full_validation.is_ok() {
-        return Ok(records);
-    }
-    let full_error = full_validation.unwrap_err();
-
-    let suffix_start = last_tick.map_or(0, |index| index + 1);
-    let completed_operations = records[suffix_start..]
+        .rposition(|record| matches!(record, EconomyLogRecord::Tick { .. }))
+        .map_or(0, |index| index + 1);
+    let tail = &records[tail_start..];
+    let operations = tail
         .iter()
         .filter_map(|record| match record {
             EconomyLogRecord::Operation(operation) => Some(operation.operation_id),
             _ => None,
         })
         .collect::<std::collections::BTreeSet<_>>();
-    let open_commands = records[suffix_start..]
-        .iter()
-        .filter_map(|record| match record {
+    let open_command = tail.iter().any(|record| {
+        matches!(
+            record,
             EconomyLogRecord::CommandBoundary(command)
-                if !completed_operations.contains(&command.operation_id) =>
-            {
-                Some(command.operation_id)
-            }
-            _ => None,
-        })
-        .collect::<std::collections::BTreeSet<_>>();
-    let Some(open_operation_id) = open_commands.first().copied() else {
-        return Err(full_error);
-    };
-    if full_error != format!("command operation id {open_operation_id} has no matching operation") {
-        return Err(full_error);
+                if !operations.contains(&command.operation_id)
+        )
+    });
+    if !open_command {
+        return records.len();
     }
-
-    let stable_end = if let Some(last_tick) = last_tick {
-        last_tick + 1
-    } else {
-        records
+    tail_start
+        + tail
             .iter()
             .position(|record| {
                 matches!(
                     record,
-                    EconomyLogRecord::CommandBoundary(command)
-                        if command.operation_id == open_operation_id
+                    EconomyLogRecord::CommandBoundary(_) | EconomyLogRecord::Operation(_)
                 )
             })
-            .expect("open command id has a boundary record")
-    };
-    records.truncate(stable_end);
+            .expect("an open command boundary is a record of the batch")
+}
+
+/// Read the complete prefix of a live economy log and validate it. The reader finds the
+/// incomplete tail from the record kinds; it reads no validator text.
+fn read_live_complete_tick_prefix(
+    path: &std::path::Path,
+) -> Result<Vec<turts_audit::EconomyLogRecord>, String> {
+    let mut records = decode_complete_jsonl_lines(path)?;
+    records.truncate(complete_prefix_end(&records));
     turts_audit::validate_records(&records)?;
     Ok(records)
 }

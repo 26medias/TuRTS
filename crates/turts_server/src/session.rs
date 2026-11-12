@@ -1056,6 +1056,17 @@ mod tests {
             .filter(|record| matches!(record, turts_audit::EconomyLogRecord::Claim { .. }))
             .count();
         assert_eq!(claims, 1, "a rejoin must not emit a second Claim record");
+        let claim = records.iter().find_map(|record| match record {
+            turts_audit::EconomyLogRecord::Claim {
+                player_id, slot, ..
+            } => Some((*player_id, *slot)),
+            _ => None,
+        });
+        assert_eq!(
+            claim,
+            Some((7, 0)),
+            "the one Claim record names player 7 and the slot that its session holds"
+        );
         turts_audit::validate_records(&records).unwrap();
         drop(app);
         std::fs::remove_file(path).unwrap();
