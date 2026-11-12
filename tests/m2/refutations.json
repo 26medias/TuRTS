@@ -1000,9 +1000,9 @@
     "id": "E9-browser-debug-only-ui",
     "kind": "browser",
     "runtime": "browser",
-    "plant_path": "crates/turts_client/src/visuals.rs",
-    "anchor": "    let mut ring_metadata = HashMap::new();\n    for unit_id in &selected.0 {",
-    "replacement": "    let mut ring_metadata = HashMap::new();\n    for unit_id in selected.0.iter().take(0) {",
+    "plant_path": "crates/turts_client/src/visuals/rings.rs",
+    "anchor": "    for unit_id in &selected.0 {",
+    "replacement": "    for unit_id in selected.0.iter().take(0) {",
     "command": [
       "/bin/bash",
       "-c",
@@ -1023,7 +1023,7 @@
         "tests/browser"
       ]
     ],
-    "plant_note": "MC task 21: economy_ui.rs is removed (task 12). The plain base HUD shows a selection only as the selection ring; the plant keeps debug.selection and removes the ring (crates/turts_client/src/visuals.rs). m2-oracle.js judgeSelection checks rings_shown and the ring pixels."
+    "plant_note": "MC task 21: economy_ui.rs is removed (task 12). The plain base HUD shows a selection only as the selection ring; the plant keeps debug.selection and removes the ring (crates/turts_client/src/visuals/rings.rs, the draw_selection_rings loop; MP1 L0-SPLIT moved it from visuals.rs). m2-oracle.js judgeSelection checks rings_shown and the ring pixels."
   },
   {
     "id": "E9-browser-missing-output-mesh",
