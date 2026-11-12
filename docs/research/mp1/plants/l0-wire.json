@@ -27,7 +27,7 @@
     "headed": false,
     "expected_red": "case A: the record is gone",
     "exit": 101,
-    "commit": "442d7b8920095dd802de367cbbcb726ed5d2cc27",
+    "commit": "fce6e1d2a12067b8df1e1382e14c6140ac29f2cc",
     "expected_selected": "case_a_orders_cleared_removes_the_record_and_an_omitted_record_stays"
   },
   {
@@ -58,7 +58,7 @@
     "headed": false,
     "expected_red": "assertion `left == right` failed",
     "exit": 101,
-    "commit": "442d7b8920095dd802de367cbbcb726ed5d2cc27",
+    "commit": "fce6e1d2a12067b8df1e1382e14c6140ac29f2cc",
     "expected_selected": "orders_cleared_is_written_for_the_owner_and_skips_nothing_that_the_sim_listed"
   },
   {
@@ -89,7 +89,7 @@
     "headed": false,
     "expected_red": "an idle tick carries",
     "exit": 101,
-    "commit": "442d7b8920095dd802de367cbbcb726ed5d2cc27",
+    "commit": "fce6e1d2a12067b8df1e1382e14c6140ac29f2cc",
     "expected_selected": "ordw1_idle_units_cost_no_order_or_weapon_bytes"
   },
   {
@@ -120,7 +120,7 @@
     "headed": false,
     "expected_red": "case B: after the resync the client shows no order for the unit",
     "exit": 101,
-    "commit": "442d7b8920095dd802de367cbbcb726ed5d2cc27",
+    "commit": "fce6e1d2a12067b8df1e1382e14c6140ac29f2cc",
     "expected_selected": "case_b_a_dropped_clearing_delta_is_repaired_by_the_snapshot"
   },
   {
@@ -151,7 +151,7 @@
     "headed": false,
     "expected_red": "repeats the previous record",
     "exit": 101,
-    "commit": "442d7b8920095dd802de367cbbcb726ed5d2cc27",
+    "commit": "fce6e1d2a12067b8df1e1382e14c6140ac29f2cc",
     "expected_selected": "ordw1_weapon_records_are_sent_on_change_and_never_name_a_removed_unit"
   },
   {
@@ -182,7 +182,7 @@
     "headed": false,
     "expected_red": "assertion failed",
     "exit": 101,
-    "commit": "442d7b8920095dd802de367cbbcb726ed5d2cc27",
+    "commit": "fce6e1d2a12067b8df1e1382e14c6140ac29f2cc",
     "expected_selected": "a_cooldown_countdown_is_not_a_weapon_change"
   },
   {
@@ -220,7 +220,7 @@
     "headed": false,
     "expected_red": "Fired is",
     "exit": 101,
-    "commit": "442d7b8920095dd802de367cbbcb726ed5d2cc27",
+    "commit": "fce6e1d2a12067b8df1e1382e14c6140ac29f2cc",
     "expected_selected": "ordw1_a_fired_effect_is_at_most_eight_bytes"
   },
   {
@@ -251,7 +251,7 @@
     "headed": false,
     "expected_red": "one record at the accept tick and one at the arrival tick",
     "exit": 101,
-    "commit": "442d7b8920095dd802de367cbbcb726ed5d2cc27",
+    "commit": "fce6e1d2a12067b8df1e1382e14c6140ac29f2cc",
     "expected_selected": "ordw1_a_single_move_gives_one_record_at_accept_and_one_at_arrival"
   },
   {
@@ -282,7 +282,7 @@
     "headed": false,
     "expected_red": "a write of `UnitOrders` outside `orders/writer.rs`",
     "exit": 101,
-    "commit": "442d7b8920095dd802de367cbbcb726ed5d2cc27",
+    "commit": "fce6e1d2a12067b8df1e1382e14c6140ac29f2cc",
     "expected_selected": "no_production_write_of_unit_orders_outside_the_writer"
   },
   {
@@ -313,7 +313,7 @@
     "headed": false,
     "expected_red": "an export writer reads sim state other than `CommittedTick` fields",
     "exit": 101,
-    "commit": "442d7b8920095dd802de367cbbcb726ed5d2cc27",
+    "commit": "fce6e1d2a12067b8df1e1382e14c6140ac29f2cc",
     "expected_selected": "the_export_writers_read_only_committed_tick_fields"
   },
   {
@@ -343,7 +343,7 @@
     "headed": false,
     "expected_red": "assertion `left == right` failed",
     "exit": 101,
-    "commit": "442d7b8920095dd802de367cbbcb726ed5d2cc27",
+    "commit": "fce6e1d2a12067b8df1e1382e14c6140ac29f2cc",
     "expected_selected": "session::admission_tests::a_refused_envelope_costs_a_bucket_token"
   },
   {
@@ -373,7 +373,7 @@
     "headed": false,
     "expected_red": "assertion `left == right` failed",
     "exit": 101,
-    "commit": "442d7b8920095dd802de367cbbcb726ed5d2cc27",
+    "commit": "fce6e1d2a12067b8df1e1382e14c6140ac29f2cc",
     "expected_selected": "session::tests::protocol_4_hello_is_refused_with_the_mismatch_reason"
   },
   {
@@ -404,7 +404,7 @@
     "headed": false,
     "expected_red": "an unrequested newer Snapshot applies",
     "exit": 101,
-    "commit": "442d7b8920095dd802de367cbbcb726ed5d2cc27",
+    "commit": "fce6e1d2a12067b8df1e1382e14c6140ac29f2cc",
     "expected_selected": "point_14_an_unrequested_snapshot_applies_and_a_stale_one_is_ignored"
   },
   {
@@ -435,7 +435,7 @@
     "headed": false,
     "expected_red": "the weapon that named the removed unit is resent",
     "exit": 101,
-    "commit": "442d7b8920095dd802de367cbbcb726ed5d2cc27",
+    "commit": "fce6e1d2a12067b8df1e1382e14c6140ac29f2cc",
     "expected_selected": "a_weapon_that_names_a_removed_unit_is_resent_without_the_target"
   },
   {
@@ -466,7 +466,7 @@
     "headed": false,
     "expected_red": "assertion `left == right` failed",
     "exit": 101,
-    "commit": "442d7b8920095dd802de367cbbcb726ed5d2cc27",
+    "commit": "fce6e1d2a12067b8df1e1382e14c6140ac29f2cc",
     "expected_selected": "a_weapon_that_names_a_removed_unit_is_resent_without_the_target"
   },
   {
@@ -496,7 +496,7 @@
     "headed": false,
     "expected_red": "assertion failed",
     "exit": 101,
-    "commit": "442d7b8920095dd802de367cbbcb726ed5d2cc27",
+    "commit": "fce6e1d2a12067b8df1e1382e14c6140ac29f2cc",
     "expected_selected": "economy::combat::tests::a_removed_unit_has_no_order_record_and_is_not_cleared"
   },
   {
@@ -527,7 +527,7 @@
     "headed": false,
     "expected_red": "assertion `left == right` failed",
     "exit": 101,
-    "commit": "442d7b8920095dd802de367cbbcb726ed5d2cc27",
+    "commit": "fce6e1d2a12067b8df1e1382e14c6140ac29f2cc",
     "expected_selected": "a_site_job_or_queue_record_of_a_removed_unit_is_not_written"
   },
   {
@@ -558,7 +558,7 @@
     "headed": false,
     "expected_red": "assertion `left == right` failed",
     "exit": 101,
-    "commit": "442d7b8920095dd802de367cbbcb726ed5d2cc27",
+    "commit": "fce6e1d2a12067b8df1e1382e14c6140ac29f2cc",
     "expected_selected": "a_bad_orders_cleared_list_rejects_the_delta"
   },
   {
@@ -590,7 +590,7 @@
     "headed": false,
     "expected_red": "the order change list misses the units",
     "exit": 101,
-    "commit": "442d7b8920095dd802de367cbbcb726ed5d2cc27",
+    "commit": "fce6e1d2a12067b8df1e1382e14c6140ac29f2cc",
     "expected_selected": "economy::combat::tests::a_stop_order_lists_the_cleared_record"
   },
   {
@@ -621,7 +621,7 @@
     "headed": false,
     "expected_red": "names the missing unit",
     "exit": 101,
-    "commit": "442d7b8920095dd802de367cbbcb726ed5d2cc27",
+    "commit": "fce6e1d2a12067b8df1e1382e14c6140ac29f2cc",
     "expected_selected": "the_sim_never_hands_the_export_a_weapon_that_names_a_missing_unit"
   },
   {
@@ -652,7 +652,7 @@
     "headed": false,
     "expected_red": "the weapon tables differ",
     "exit": 101,
-    "commit": "442d7b8920095dd802de367cbbcb726ed5d2cc27",
+    "commit": "fce6e1d2a12067b8df1e1382e14c6140ac29f2cc",
     "expected_selected": "a_snapshot_at_tick_n_equals_the_tables_built_from_the_deltas"
   },
   {
@@ -684,7 +684,7 @@
     "headed": false,
     "expected_red": "the order change list misses the units",
     "exit": 101,
-    "commit": "442d7b8920095dd802de367cbbcb726ed5d2cc27",
+    "commit": "fce6e1d2a12067b8df1e1382e14c6140ac29f2cc",
     "expected_selected": "economy::combat::tests::input_move_target_added_is_listed"
   },
   {
@@ -716,7 +716,7 @@
     "headed": false,
     "expected_red": "the order change list misses the units",
     "exit": 101,
-    "commit": "442d7b8920095dd802de367cbbcb726ed5d2cc27",
+    "commit": "fce6e1d2a12067b8df1e1382e14c6140ac29f2cc",
     "expected_selected": "economy::combat::tests::input_move_progress_added_is_listed"
   },
   {
@@ -748,7 +748,7 @@
     "headed": false,
     "expected_red": "the order change list misses the units",
     "exit": 101,
-    "commit": "442d7b8920095dd802de367cbbcb726ed5d2cc27",
+    "commit": "fce6e1d2a12067b8df1e1382e14c6140ac29f2cc",
     "expected_selected": "economy::combat::tests::input_plain_move_progress_added_is_listed"
   },
   {
@@ -780,7 +780,7 @@
     "headed": false,
     "expected_red": "the order change list misses the units",
     "exit": 101,
-    "commit": "442d7b8920095dd802de367cbbcb726ed5d2cc27",
+    "commit": "fce6e1d2a12067b8df1e1382e14c6140ac29f2cc",
     "expected_selected": "economy::combat::tests::input_physical_escape_added_is_listed"
   },
   {
@@ -812,7 +812,7 @@
     "headed": false,
     "expected_red": "the order change list misses the units",
     "exit": 101,
-    "commit": "442d7b8920095dd802de367cbbcb726ed5d2cc27",
+    "commit": "fce6e1d2a12067b8df1e1382e14c6140ac29f2cc",
     "expected_selected": "economy::combat::tests::input_move_target_removed_is_listed"
   },
   {
@@ -844,7 +844,7 @@
     "headed": false,
     "expected_red": "the order change list misses the units",
     "exit": 101,
-    "commit": "442d7b8920095dd802de367cbbcb726ed5d2cc27",
+    "commit": "fce6e1d2a12067b8df1e1382e14c6140ac29f2cc",
     "expected_selected": "economy::combat::tests::input_move_progress_removed_is_listed"
   },
   {
@@ -876,7 +876,7 @@
     "headed": false,
     "expected_red": "the order change list misses the units",
     "exit": 101,
-    "commit": "442d7b8920095dd802de367cbbcb726ed5d2cc27",
+    "commit": "fce6e1d2a12067b8df1e1382e14c6140ac29f2cc",
     "expected_selected": "economy::combat::tests::input_plain_move_progress_removed_is_listed"
   },
   {
@@ -908,7 +908,7 @@
     "headed": false,
     "expected_red": "the order change list misses the units",
     "exit": 101,
-    "commit": "442d7b8920095dd802de367cbbcb726ed5d2cc27",
+    "commit": "fce6e1d2a12067b8df1e1382e14c6140ac29f2cc",
     "expected_selected": "economy::combat::tests::input_physical_escape_removed_is_listed"
   },
   {
@@ -940,7 +940,7 @@
     "headed": false,
     "expected_red": "the order change list misses the units",
     "exit": 101,
-    "commit": "442d7b8920095dd802de367cbbcb726ed5d2cc27",
+    "commit": "fce6e1d2a12067b8df1e1382e14c6140ac29f2cc",
     "expected_selected": "economy::combat::tests::input_pending_table_entry_is_listed_in_both_directions"
   },
   {
@@ -972,7 +972,7 @@
     "headed": false,
     "expected_red": "the order change list misses the units",
     "exit": 101,
-    "commit": "442d7b8920095dd802de367cbbcb726ed5d2cc27",
+    "commit": "fce6e1d2a12067b8df1e1382e14c6140ac29f2cc",
     "expected_selected": "economy::combat::tests::input_gather_stage_is_listed"
   },
   {
@@ -1004,7 +1004,7 @@
     "headed": false,
     "expected_red": "the order change list misses the units",
     "exit": 101,
-    "commit": "442d7b8920095dd802de367cbbcb726ed5d2cc27",
+    "commit": "fce6e1d2a12067b8df1e1382e14c6140ac29f2cc",
     "expected_selected": "economy::combat::tests::input_a_spawned_unit_is_listed"
   },
   {
@@ -1034,7 +1034,255 @@
     "headed": false,
     "expected_red": "assertion `left == right` failed",
     "exit": 101,
-    "commit": "442d7b8920095dd802de367cbbcb726ed5d2cc27",
+    "commit": "fce6e1d2a12067b8df1e1382e14c6140ac29f2cc",
     "expected_selected": "economy::combat::tests::the_first_tick_lists_every_record_when_nothing_was_published_before"
+  },
+  {
+    "row": "SCAN1",
+    "plant": "(a) a write through world.query::<&mut UnitOrders>() in the Stop path: the widened scan is red",
+    "files": [
+      {
+        "file": "crates/turts_sim/src/orders/apply.rs",
+        "edit": {
+          "old": "            set_unit_orders(world, entity, UnitOrders::default());\n            clear_gather(world, unit_id);\n            Ok(None)\n        }\n        Behaviour::Hold => {",
+          "new": "            {\n                let mut query = world.query::<&mut UnitOrders>();\n                for mut orders in query.iter_mut(world) {\n                    *orders = UnitOrders::default();\n                }\n            }\n            clear_gather(world, unit_id);\n            Ok(None)\n        }\n        Behaviour::Hold => {"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "-p",
+      "turts_checks",
+      "--test",
+      "order_writers",
+      "no_production_write_of_unit_orders_outside_the_writer",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "a write of `UnitOrders` outside `orders/writer.rs`",
+    "exit": 101,
+    "commit": "fce6e1d2a12067b8df1e1382e14c6140ac29f2cc",
+    "expected_selected": "no_production_write_of_unit_orders_outside_the_writer"
+  },
+  {
+    "row": "SCAN1",
+    "plant": "(b) a direct write of UnitOrders in turts_server/src: the scan reads that crate",
+    "files": [
+      {
+        "file": "crates/turts_server/src/export_match.rs",
+        "edit": {
+          "old": "pub(super) fn match_state(",
+          "new": "fn _direct_write(world: &mut bevy::prelude::World, entity: bevy::prelude::Entity) {\n    world.entity_mut(entity).remove::<turts_sim::UnitOrders>();\n}\n\npub(super) fn match_state("
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "-p",
+      "turts_checks",
+      "--test",
+      "order_writers",
+      "no_production_write_of_unit_orders_outside_the_writer",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "a write of `UnitOrders` outside `orders/writer.rs`",
+    "exit": 101,
+    "commit": "fce6e1d2a12067b8df1e1382e14c6140ac29f2cc",
+    "expected_selected": "no_production_write_of_unit_orders_outside_the_writer"
+  },
+  {
+    "row": "JOBQ1",
+    "plant": "(a) the queue diff counts elapsed_ticks again: QueueState rides each delta while a job runs",
+    "files": [
+      {
+        "file": "crates/turts_sim/src/economy/views.rs",
+        "edit": {
+          "old": "            job.elapsed_ticks = 0;\n",
+          "new": "            let _ = &mut *job;\n"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "-p",
+      "turts_server",
+      "--test",
+      "ordw1",
+      "a_running_job_costs_no_bytes_between_its_changes",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "queues and job records ride only the ticks of a change",
+    "exit": 101,
+    "commit": "fce6e1d2a12067b8df1e1382e14c6140ac29f2cc",
+    "expected_selected": "a_running_job_costs_no_bytes_between_its_changes"
+  },
+  {
+    "row": "MATCH1",
+    "plant": "(a) the Snapshot writer leaves match_state None",
+    "files": [
+      {
+        "file": "crates/turts_server/src/export.rs",
+        "edit": {
+          "old": "            match_state: Some(wire::MatchState::default()),\n",
+          "new": "            match_state: None,\n"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "-p",
+      "turts_server",
+      "--test",
+      "ordw1",
+      "every_snapshot_carries_a_match_state",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "assertion `left == right` failed",
+    "exit": 101,
+    "commit": "fce6e1d2a12067b8df1e1382e14c6140ac29f2cc",
+    "expected_selected": "every_snapshot_carries_a_match_state"
+  },
+  {
+    "row": "JOBQ1",
+    "plant": "(b) the store keeps a job record that the queue no longer holds",
+    "files": [
+      {
+        "file": "crates/turts_client/src/replica.rs",
+        "edit": {
+          "old": "        !removed.contains(producer)\n            && economy.queues.iter().any(|queue| {",
+          "new": "        !removed.contains(producer)\n            || economy.queues.iter().any(|queue| {"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "-p",
+      "turts_client",
+      "--test",
+      "economy_replica",
+      "job_progress_derives_the_elapsed_ticks_and_follows_the_queue",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "assertion failed",
+    "exit": 101,
+    "commit": "fce6e1d2a12067b8df1e1382e14c6140ac29f2cc",
+    "expected_selected": "job_progress_derives_the_elapsed_ticks_and_follows_the_queue"
+  },
+  {
+    "row": "JOBQ1",
+    "plant": "(c) a job record for a producer that the same delta removes is accepted",
+    "files": [
+      {
+        "file": "crates/turts_client/src/replica.rs",
+        "edit": {
+          "old": "        if removed.contains(&key.0) || !seen.insert(key) {\n",
+          "new": "        if !seen.insert(key) {\n"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "-p",
+      "turts_client",
+      "--test",
+      "economy_replica",
+      "job_progress_derives_the_elapsed_ticks_and_follows_the_queue",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "assertion `left == right` failed",
+    "exit": 101,
+    "commit": "fce6e1d2a12067b8df1e1382e14c6140ac29f2cc",
+    "expected_selected": "job_progress_derives_the_elapsed_ticks_and_follows_the_queue"
+  },
+  {
+    "row": "JOBQ1",
+    "plant": "(d) the derived elapsed value ignores the rate: it stays at done",
+    "files": [
+      {
+        "file": "crates/turts_client/src/replica.rs",
+        "edit": {
+          "old": "            self.last_applied_tick.unwrap_or(0),\n        )\n    }\n",
+          "new": "            record.at_tick,\n        )\n    }\n"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "-p",
+      "turts_client",
+      "--test",
+      "economy_replica",
+      "job_progress_derives_the_elapsed_ticks_and_follows_the_queue",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "assertion `left == right` failed",
+    "exit": 101,
+    "commit": "fce6e1d2a12067b8df1e1382e14c6140ac29f2cc",
+    "expected_selected": "job_progress_derives_the_elapsed_ticks_and_follows_the_queue"
+  },
+  {
+    "row": "CAP1",
+    "plant": "(a) a ContentAtPoint record with a point that is not finite is accepted",
+    "files": [
+      {
+        "file": "crates/turts_client/src/replica.rs",
+        "edit": {
+          "old": "                    turts_net_protocol::OrderTarget::ContentAtPoint { point, .. } => {\n                        !finite_pos(*point)\n                    }\n",
+          "new": "                    turts_net_protocol::OrderTarget::ContentAtPoint { .. } => false,\n"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "-p",
+      "turts_client",
+      "--test",
+      "ordw1_replica",
+      "a_content_at_point_record_needs_a_finite_point",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "assertion `left == right` failed",
+    "exit": 101,
+    "commit": "fce6e1d2a12067b8df1e1382e14c6140ac29f2cc",
+    "expected_selected": "a_content_at_point_record_needs_a_finite_point"
   }
 ]
