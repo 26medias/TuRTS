@@ -1,0 +1,89 @@
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+   Compiling turts_client v0.2.0 (/home/julien/Projects/TuRTS-mp1-pres-probe/crates/turts_client)
+    Finished `test` profile [unoptimized] target(s) in 2.98s
+     Running tests/hud_change_counter.rs (target/mc-mp1-pres-probe/debug/deps/hud_change_counter-52b60381c68594d0)
+
+running 2 tests
+test hud_update_time_600_frames ... ignored
+test static_replica_hud_changes_no_text_node_or_visibility_after_frame_two ... widget_entities(AuthoredWidgetId)=108 other_ui_entities(Node, no id)=0
+frame  w.Text w.Node w.Vis | o.Text o.Node o.Vis   (frame k = writes made in update k)
+    1      89    108   108 |      0      0     0
+    2      89     66   108 |      0      0     0
+    3      89     66   108 |      0      0     0
+    4      89     66   108 |      0      0     0
+    5      89     66   108 |      0      0     0
+    6      89     66   108 |      0      0     0
+    7      89     66   108 |      0      0     0
+    8      89     66   108 |      0      0     0
+    9      89     66   108 |      0      0     0
+   10      89     66   108 |      0      0     0
+   11      89     66   108 |      0      0     0
+   12      89     66   108 |      0      0     0
+   13      89     66   108 |      0      0     0
+   14      89     66   108 |      0      0     0
+   15      89     66   108 |      0      0     0
+   16      89     66   108 |      0      0     0
+   17      89     66   108 |      0      0     0
+   18      89     66   108 |      0      0     0
+   19      89     66   108 |      0      0     0
+   20      89     66   108 |      0      0     0
+   21      89     66   108 |      0      0     0
+   22      89     66   108 |      0      0     0
+   23      89     66   108 |      0      0     0
+   24      89     66   108 |      0      0     0
+   25      89     66   108 |      0      0     0
+   26      89     66   108 |      0      0     0
+   27      89     66   108 |      0      0     0
+   28      89     66   108 |      0      0     0
+   29      89     66   108 |      0      0     0
+   30      89     66   108 |      0      0     0
+   31      89     66   108 |      0      0     0
+   32      89     66   108 |      0      0     0
+   33      89     66   108 |      0      0     0
+   34      89     66   108 |      0      0     0
+   35      89     66   108 |      0      0     0
+   36      89     66   108 |      0      0     0
+   37      89     66   108 |      0      0     0
+   38      89     66   108 |      0      0     0
+   39      89     66   108 |      0      0     0
+   40      89     66   108 |      0      0     0
+   41      89     66   108 |      0      0     0
+   42      89     66   108 |      0      0     0
+   43      89     66   108 |      0      0     0
+   44      89     66   108 |      0      0     0
+   45      89     66   108 |      0      0     0
+   46      89     66   108 |      0      0     0
+   47      89     66   108 |      0      0     0
+   48      89     66   108 |      0      0     0
+   49      89     66   108 |      0      0     0
+   50      89     66   108 |      0      0     0
+   51      89     66   108 |      0      0     0
+   52      89     66   108 |      0      0     0
+   53      89     66   108 |      0      0     0
+   54      89     66   108 |      0      0     0
+   55      89     66   108 |      0      0     0
+   56      89     66   108 |      0      0     0
+   57      89     66   108 |      0      0     0
+   58      89     66   108 |      0      0     0
+   59      89     66   108 |      0      0     0
+   60      89     66   108 |      0      0     0
+frames 3..=60: 58 frames; with a widget change=58; with any change=58; total changed Text=5162 Node=3828 Visibility=6264
+
+thread 'static_replica_hud_changes_no_text_node_or_visibility_after_frame_two' (3687430) panicked at crates/turts_client/tests/hud_change_counter.rs:308:5:
+assertion `left == right` failed: a static replica must change no Text, Node or Visibility after frame 2
+  left: 58
+ right: 0
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    static_replica_hud_changes_no_text_node_or_visibility_after_frame_two
+
+test result: FAILED. 0 passed; 1 failed; 1 ignored; 0 measured; 0 filtered out; finished in 3.18s
+
+error: test failed, to rerun pass `-p turts_client --test hud_change_counter`
+
+exit=101
