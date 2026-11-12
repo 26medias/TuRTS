@@ -507,7 +507,8 @@ mod tests {
     #[test]
     fn a_drag_that_comes_back_to_the_button_in_one_frame_is_not_a_click() {
         let (mut app, a, _) = app();
-        let away = ON_A + Vec2::new(CLICK_DRAG_PIXELS + 2.0, 0.0);
+        // 10 px: farther than the 4 px of the core, whatever the constant is (a plant raises it).
+        let away = ON_A + Vec2::new(10.0, 0.0);
         frame(
             &mut app,
             &[],
@@ -518,7 +519,7 @@ mod tests {
         assert_eq!(count(&app, "activate"), 0);
         // A slip of the hand inside the limit is still a click.
         let (mut app, a, _) = self::app();
-        let slip = ON_A + Vec2::new(CLICK_DRAG_PIXELS - 1.0, 0.0);
+        let slip = ON_A + Vec2::new(3.0, 0.0);
         frame(
             &mut app,
             &[],
@@ -527,6 +528,23 @@ mod tests {
             true,
         );
         assert_eq!(count(&app, "activate"), 1);
+    }
+
+    /// A press and a release on the same button more than the click distance apart, with no move
+    /// between (a jump of the pointer): by the rule of the core this is a drag, not a click. The hit
+    /// tests alone would pass (both positions are on the button), so the distance rule does this.
+    #[test]
+    fn a_press_and_a_release_far_apart_on_one_button_are_not_a_click() {
+        let (mut app, a, _) = app();
+        let (left, right) = (Vec2::new(10.0, 15.0), Vec2::new(90.0, 15.0));
+        frame(
+            &mut app,
+            &[],
+            &[a],
+            &[(PRESS, left), (RELEASE, right)],
+            true,
+        );
+        assert_eq!(count(&app, "activate"), 0);
     }
 
     /// Review L4: a release with no press in the same frame is Bevy's business. A press on a button, a
