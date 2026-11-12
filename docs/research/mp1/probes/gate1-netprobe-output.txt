@@ -1,0 +1,66 @@
+warning: variant `Destroyed` is never constructed
+  --> src/main.rs:22:5
+   |
+20 | enum EffectIdx {
+   |      --------- variant in this enum
+21 |     Fired { unit: UnitId, target: UnitId, weapon: u8 },
+22 |     Destroyed { unit: UnitId },
+   |     ^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: struct `UnitOrderChanges` is never constructed
+  --> src/main.rs:38:8
+   |
+38 | struct UnitOrderChanges {
+   |        ^^^^^^^^^^^^^^^^
+
+record sizes (postcard bytes):
+  UnitOrderRecord idle            6
+  UnitOrderRecord moving          35
+  UnitOrderRecord moving +2 queued 93
+  UnitDelta                       10
+  WeaponRecord cooling            10
+  HealthRecord                    3
+  Fired (weapon content id)       20
+  Fired (weapon index u8)         6
+  Destroyed                       3
+  SiteRecord (progress, charged)  27
+  PowerRecord                     5
+  empty Vec                       1
+
+per tick to one client (payload, postcard); per second at 20 Hz
+calm: 340 units, 40 moving, own 170 (40 with orders)
+  proto 4 delta total            2620 B/tick    52400 B/s
+    of which unit_orders full    2181 B/tick    43620 B/s (83 %)
+    of which weapons (own)          0 B/tick
+    of which positions            400 B/tick
+  unit_orders changes only (5)    614 B/tick total delta
+  + Fired content-id effects        0 B/tick        0 B/s
+  + Fired index effects             0 B/tick        0 B/s
+fight 0.5 Hz: 340 units, 120 moving, 60 firing
+  proto 4 delta total            4306 B/tick    86120 B/s
+    of which unit_orders full    2761 B/tick    55220 B/s (64 %)
+    of which weapons (own)        300 B/tick
+    of which positions           1200 B/tick
+  unit_orders changes only (5)   1720 B/tick total delta
+  + Fired content-id effects       40 B/tick      800 B/s
+  + Fired index effects            12 B/tick      240 B/s
+fight 1 Hz: 340 units, 120 moving, 60 firing
+  proto 4 delta total            4309 B/tick    86180 B/s
+    of which unit_orders full    2761 B/tick    55220 B/s (64 %)
+    of which weapons (own)        300 B/tick
+    of which positions           1200 B/tick
+  unit_orders changes only (5)   1723 B/tick total delta
+  + Fired content-id effects       60 B/tick     1200 B/s
+  + Fired index effects            18 B/tick      360 B/s
+large: 460 units, 200 moving, own 230
+  proto 4 delta total            6630 B/tick   132600 B/s
+    of which unit_orders full    4281 B/tick    85620 B/s (65 %)
+    of which weapons (own)        300 B/tick
+    of which positions           2001 B/tick
+  unit_orders changes only (5)   2524 B/tick total delta
+  + Fired content-id effects       60 B/tick     1200 B/s
+  + Fired index effects            18 B/tick      360 B/s
+60 units at 0.5 Hz: 30 Fired/s = 600 B/s (content id), 180 B/s (index)
+60 units at 1 Hz: 60 Fired/s = 1200 B/s (content id), 360 B/s (index)
