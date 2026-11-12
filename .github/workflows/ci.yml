@@ -36,7 +36,9 @@ jobs:
       - name: T1 dependency boundary
         run: bash scripts/boundary.sh
       - name: Python refutation harness tests
-        run: python3 tests/m2/test_refutations.py
+        run: |
+          python3 tests/m2/test_refutations.py
+          python3 tests/m2/test_m2_browser_suite.py
       - name: Acceptance (M2 and M3 process tests, release, serial)
         run: bash scripts/acceptance.sh
       - name: Upload native and acceptance diagnostics

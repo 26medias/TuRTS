@@ -62,12 +62,18 @@ if [[ $# -eq 0 && -z "$PACKAGE" && -z "$CASE_ID" ]]; then
         exit 1
     fi
     build_once
+    # A red case must not hide the others (hosted run 43214215645 showed 4 of 15 cases).
+    suite_status=0
     for package in base haul acme cedar; do
-        "$0" --package "$package"
+        "$0" --package "$package" || suite_status=1
     done
     for loss_family in conversion charge refund spawn final_change; do
-        "$0" --case "E9-browser-base-loss-$loss_family"
+        "$0" --case "E9-browser-base-loss-$loss_family" || suite_status=1
     done
+    if [[ "$suite_status" != 0 ]]; then
+        echo "M2_DEFAULT_SUITE_FAILED: at least one case is red; read the M2_CASE_* lines above" >&2
+        exit 1
+    fi
     printf 'M2_DEFAULT_SUITE_SUMMARY {"selected_count":%s,"completed_count":%s,"passed_count":%s,"semantic_failed_count":0,"infrastructure_failed_count":0,"timeout_count":0}\n' \
         "$selected_count" "$selected_count" "$selected_count"
     exit 0
