@@ -18,9 +18,10 @@
             visible: [SelectionSingle, PrimaryOwned],
             widget: Box(fill: Some(Colour("#111820")), border: Some("#425463"), children: [
                 (id: "info_name", at: Some((anchor: TopLeft, offset: (10.0, 8.0), pivot: None)), size: (w: Px(248.0), h: Px(24.0)), widget: Text(text: Format("{0}", [SelectionPrimary(Name)]), font: Some("forge_ui"), size: 17, colour: "#ffffff", align: Left, wrap: false)),
-                (id: "info_owner", at: Some((anchor: TopLeft, offset: (10.0, 34.0), pivot: None)), size: (w: Px(248.0), h: Px(20.0)), widget: Text(text: Format("Owner: Slot {0}", [SelectionPrimary(Owner)]), font: Some("forge_ui"), size: 13, colour: "#c8d5dc", align: Left, wrap: false)),
+                (id: "info_owner", at: Some((anchor: TopLeft, offset: (10.0, 34.0), pivot: None)), size: (w: Px(248.0), h: Px(20.0)), widget: Text(text: Literal("Owner: you"), font: Some("forge_ui"), size: 13, colour: "#c8d5dc", align: Left, wrap: false)),
                 (id: "info_inventory", at: Some((anchor: TopLeft, offset: (10.0, 58.0), pivot: None)), size: (w: Px(248.0), h: Px(78.0)), widget: Text(text: Format("Inventory: {0}", [SelectionPrimary(Inventory)]), font: Some("forge_ui"), size: 12, colour: "#ffffff", align: Left, wrap: true)),
                 (id: "info_health", at: Some((anchor: TopLeft, offset: (10.0, 140.0), pivot: None)), size: (w: Px(248.0), h: Px(20.0)), visible: [PrimaryHas(Movement)], widget: Text(text: Format("Health: {0}/{1}", [SelectionPrimary(Health), SelectionPrimary(MaxHealth)]), font: Some("forge_ui"), size: 13, colour: "#8ee0bd", align: Left, wrap: false)),
+                (id: "info_damage_base", at: Some((anchor: TopLeft, offset: (10.0, 140.0), pivot: None)), size: (w: Px(248.0), h: Px(20.0)), visible: [PrimaryHas(Weapon), Not(PrimaryHas(Movement))], widget: Text(text: Literal("Base damage 10. Hardened Shells add 10."), font: Some("forge_ui"), size: 12, colour: "#c8d5dc", align: Left, wrap: false)),
                 (id: "info_damage", at: Some((anchor: TopLeft, offset: (10.0, 164.0), pivot: None)), size: (w: Px(248.0), h: Px(20.0)), visible: [PrimaryHas(Weapon)], widget: Text(text: Format("Damage: {0}", [SelectionPrimary(Damage)]), font: Some("forge_ui"), size: 13, colour: "#ffffff", align: Left, wrap: false)),
                 (id: "info_range", at: Some((anchor: TopLeft, offset: (10.0, 188.0), pivot: None)), size: (w: Px(248.0), h: Px(20.0)), visible: [PrimaryHas(Weapon)], widget: Text(text: Format("Range: {0}", [SelectionPrimary(Range)]), font: Some("forge_ui"), size: 13, colour: "#ffffff", align: Left, wrap: false)),
                 (id: "info_ammo", at: Some((anchor: TopLeft, offset: (10.0, 212.0), pivot: None)), size: (w: Px(248.0), h: Px(20.0)), visible: [PrimaryHas(Weapon)], widget: Text(text: Format("Shells: {0}", [SelectionPrimary(Ammo)]), font: Some("forge_ui"), size: 13, colour: "#ffffff", align: Left, wrap: false)),
@@ -32,7 +33,8 @@
             size: (w: Px(272.0), h: Px(72.0)),
             visible: [SelectionSingle, PrimaryForeign, PrimaryHas(Movement)],
             widget: Box(fill: Some(Colour("#111820")), border: Some("#425463"), children: [
-                (id: "enemy_name", at: Some((anchor: TopLeft, offset: (10.0, 8.0), pivot: None)), size: (w: Px(248.0), h: Px(22.0)), widget: Text(text: Format("{0} · Slot {1}", [SelectionPrimary(Name), SelectionPrimary(Owner)]), font: Some("forge_ui"), size: 15, colour: "#ffffff", align: Left, wrap: false)),
+                (id: "enemy_name", at: Some((anchor: TopLeft, offset: (10.0, 8.0), pivot: None)), size: (w: Px(150.0), h: Px(22.0)), widget: Text(text: Format("{0}", [SelectionPrimary(Name)]), font: Some("forge_ui"), size: 15, colour: "#ffffff", align: Left, wrap: false)),
+                (id: "enemy_owner", at: Some((anchor: TopLeft, offset: (162.0, 10.0), pivot: None)), size: (w: Px(98.0), h: Px(20.0)), widget: Text(text: Literal("Other player"), font: Some("forge_ui"), size: 13, colour: "#c8d5dc", align: Right, wrap: false)),
                 (id: "enemy_health", at: Some((anchor: TopLeft, offset: (10.0, 36.0), pivot: None)), size: (w: Px(248.0), h: Px(22.0)), widget: Text(text: Format("Health: {0}/{1}", [SelectionPrimary(Health), SelectionPrimary(MaxHealth)]), font: Some("forge_ui"), size: 14, colour: "#f2cc60", align: Left, wrap: false)),
             ]),
         ),
@@ -76,7 +78,8 @@
             at: Some((anchor: TopLeft, offset: (296.0, 8.0), pivot: None)),
             size: (w: Px(620.0), h: Px(40.0)),
             widget: Box(fill: Some(Colour("#111820")), border: Some("#425463"), children: [
-                (id: "group_rows", at: Some((anchor: TopLeft, offset: (6.0, 6.0), pivot: None)), size: (w: Px(608.0), h: Px(28.0)), widget: List(source: ControlGroups, direction: Horizontal, gap: 4, max_items: 9, item: (id: "group", size: (w: Px(60.0), h: Px(24.0)), widget: Text(text: Format("{0}:{1}", [Item(Name), Item(Count)]), font: Some("forge_ui"), size: 12, colour: "#ffffff", align: Centre, wrap: false))))
+                (id: "group_heading", at: Some((anchor: TopLeft, offset: (8.0, 10.0), pivot: None)), size: (w: Px(56.0), h: Px(20.0)), widget: Text(text: Literal("Groups"), font: Some("forge_ui"), size: 13, colour: "#c8d5dc", align: Left, wrap: false)),
+                (id: "group_rows", at: Some((anchor: TopLeft, offset: (68.0, 6.0), pivot: None)), size: (w: Px(546.0), h: Px(28.0)), widget: List(source: ControlGroups, direction: Horizontal, gap: 4, max_items: 9, item: (id: "group", size: (w: Px(56.0), h: Px(24.0)), widget: Text(text: Format("{0}:{1}", [Item(Name), Item(Count)]), font: Some("forge_ui"), size: 12, colour: "#ffffff", align: Centre, wrap: false))))
             ]),
         ),
         (
@@ -85,14 +88,23 @@
             size: (w: Px(352.0), h: Px(196.0)),
             widget: Box(fill: Some(Colour("#111820")), border: Some("#425463"), children: [
                 (id: "alert_heading", at: Some((anchor: TopLeft, offset: (8.0, 5.0), pivot: None)), size: (w: Px(332.0), h: Px(20.0)), widget: Text(text: Literal("Alerts"), font: Some("forge_ui"), size: 14, colour: "#ffffff", align: Left, wrap: false)),
-                (id: "alert_rows", at: Some((anchor: TopLeft, offset: (8.0, 29.0), pivot: None)), size: (w: Px(332.0), h: Px(158.0)), widget: List(source: Alerts, direction: Vertical, gap: 3, max_items: 5, item: (id: "alert_line", size: (w: Fill, h: Px(28.0)), tooltip: Some(Item(Title)), widget: Button(icon: None, label: Some(Item(Name)), action: Item(Action), hotkey_label: false))))
+                (id: "alert_rows", at: Some((anchor: TopLeft, offset: (8.0, 29.0), pivot: None)), size: (w: Px(332.0), h: Px(158.0)), widget: List(source: Alerts, direction: Vertical, gap: 3, max_items: 5, item: (id: "alert_line", size: (w: Fill, h: Px(28.0)), tooltip: Some(Format("{0}. Click to see it.", [Item(Title)])), widget: Button(icon: None, label: Some(Item(Name)), action: Item(Action), hotkey_label: false))))
             ]),
         ),
         (
             id: "last_notice",
             at: Some((anchor: TopLeft, offset: (296.0, 56.0), pivot: None)),
             size: (w: Px(390.0), h: Px(52.0)),
-            widget: Text(text: Bind(LastNotice), font: Some("forge_ui"), size: 14, colour: "#ffcc00", align: Left, wrap: true),
+            widget: Text(text: Bind(LastNotice), font: Some("forge_ui"), size: 16, colour: "#ffcc00", align: Left, wrap: true),
+        ),
+        (
+            id: "objective",
+            at: Some((anchor: Bottom, offset: (0.0, -8.0), pivot: None)),
+            size: (w: Px(700.0), h: Px(58.0)),
+            visible: [Not(GuideOpen)],
+            widget: Box(fill: Some(Colour("#111820e0")), border: Some("#e69f00"), children: [
+                (id: "objective_text", at: Some((anchor: TopLeft, offset: (10.0, 6.0), pivot: None)), size: (w: Px(680.0), h: Px(48.0)), widget: Text(text: Literal("Blue side: make your Shell Turret hit harder. Click the Proving Lab (the top big blue building), then research Hardened Shells.\nOrange side: click your orange drone, then find the blue Shell Turret and its range."), font: Some("forge_ui"), size: 15, colour: "#ffffff", align: Left, wrap: true)),
+            ]),
         ),
         (
             id: "minimap",
@@ -127,12 +139,12 @@
     slot_colours: ["#0072B2", "#E69F00"],
     world: (ground: "#34424d", grid: "#50616d", selection: "#ffffff", health: "#56d4a8", range: "#f2cc60", show_range: true, tooltip: (background: "#111820", colour: "#ffffff", font: Some("forge_ui"), size: 14), health_bar: (width: 48, height: 6, background: "#182029", health: "#56d4a8")),
     alerts: [
-        (id: "forge_research_ready", trigger: ResearchReady, sound: Some("forge_alert"), text: "The lab can begin research", minimap_ping: true, cooldown: 1.0, priority: 10, coalesce_radius: 5.0),
-        (id: "forge_research_complete", trigger: ResearchComplete, sound: Some("forge_alert"), text: "Hardened Shells research is complete", minimap_ping: true, cooldown: 1.0, priority: 12, coalesce_radius: 5.0),
-        (id: "forge_out_of_ammo", trigger: OutOfAmmo, sound: Some("forge_alert"), text: "A turret needs more shells", minimap_ping: true, cooldown: 1.0, priority: 15, coalesce_radius: 5.0),
-        (id: "forge_output_blocked", trigger: OutputBlocked, sound: Some("forge_alert"), text: "The press output is blocked", minimap_ping: true, cooldown: 1.0, priority: 11, coalesce_radius: 5.0),
-        (id: "forge_loader_waiting", trigger: InserterWaiting(5.0), sound: Some("forge_alert"), text: "A loader is waiting for an item", minimap_ping: true, cooldown: 1.0, priority: 8, coalesce_radius: 5.0),
-        (id: "forge_unit_damaged", trigger: OwnUnitDamaged, sound: Some("forge_alert"), text: "A unit is under attack", minimap_ping: true, cooldown: 1.0, priority: 10, coalesce_radius: 5.0),
+        (id: "forge_research_ready", trigger: ResearchReady, sound: Some("forge_alert"), text: "Proving Lab can research Hardened Shells", minimap_ping: true, cooldown: 1.0, priority: 10, coalesce_radius: 5.0),
+        (id: "forge_research_complete", trigger: ResearchComplete, sound: Some("forge_alert"), text: "Hardened Shells done: the turret hits harder", minimap_ping: true, cooldown: 1.0, priority: 12, coalesce_radius: 5.0),
+        (id: "forge_out_of_ammo", trigger: OutOfAmmo, sound: Some("forge_alert"), text: "Shell Turret is out of shells", minimap_ping: true, cooldown: 60.0, priority: 15, coalesce_radius: 5.0),
+        (id: "forge_output_blocked", trigger: OutputBlocked, sound: Some("forge_alert"), text: "Shell Press is full: no room for its shells", minimap_ping: true, cooldown: 60.0, priority: 11, coalesce_radius: 5.0),
+        (id: "forge_loader_waiting", trigger: InserterWaiting(5.0), sound: Some("forge_alert"), text: "An Arm Loader is waiting for an item", minimap_ping: true, cooldown: 1.0, priority: 8, coalesce_radius: 5.0),
+        (id: "forge_unit_damaged", trigger: OwnUnitDamaged, sound: Some("forge_alert"), text: "A unit is under attack", minimap_ping: true, cooldown: 5.0, priority: 10, coalesce_radius: 5.0),
         (id: "forge_unit_destroyed", trigger: OwnUnitDestroyed, sound: Some("forge_alert"), text: "A unit was destroyed", minimap_ping: true, cooldown: 1.0, priority: 18, coalesce_radius: 5.0),
     ],
     reasons: {
@@ -145,7 +157,7 @@
         "queue_full": "The lab queue is full.",
         "not_queueable": "This order cannot be queued.",
         "blocked": "The unit cannot reach that place.",
-        "no_applicable_order": "Cannot move",
+        "no_applicable_order": "Cannot move. It is fixed in place.",
         "queue_disabled": "The machine is switched off.",
         "already_researched": "This upgrade is complete.",
         "already_researching": "This upgrade is already under way.",
@@ -161,11 +173,11 @@
     },
     selection_priority: ["forge:drill", "forge:press", "forge:lab", "forge:turret", "forge:arm_loader", "forge:belt", "forge:drone"],
     guide: [
-        (id: "factory", title: "Build shells", body: "The drill lifts ore. A belt carries it to the press, which turns it into shells."),
-        (id: "research", title: "Strengthen the turret", body: "Move shells into the proving lab. Research Hardened Shells there to improve your turret."),
-        (id: "pause", title: "Pause a machine", body: "Switch a machine off to stop its work. Switch it back on when you want it working again."),
-        (id: "drones", title: "Send your drones", body: "Move your drones around the factory. Select enemy machines to inspect them. An enemy turret shows its firing range; you cannot give enemy units orders."),
-        (id: "controls", title: "Controls", body: "Select with a left click. Drag with the left button to select a group. Right-click gives an order; hold Shift while right-clicking to queue it. Use a group action to assign, add or recall units. Press the group's key twice to centre the view. The list shows the current keys, including the menu and this guide.", widgets: [
+        (id: "goal", title: "Your goal", body: "Blue side: make your Shell Turret hit harder. Research Hardened Shells in the Proving Lab, the top big blue building.\nOrange side: find the blue Shell Turret and see how far it shoots."),
+        (id: "research", title: "Research Hardened Shells", body: "Click the Proving Lab. Shells come to it by themselves. When it holds 10, click Hardened Shells. Then click the turret: its damage goes from 10 to 20."),
+        (id: "pause", title: "Disable and enable", body: "Click the Shell Press, then click Disable this machine. It stops. Click Enable this machine to start it again."),
+        (id: "drones", title: "Your drone (orange side)", body: "Click your drone. Right-click the ground to move it. To queue a second point, use the queue key on the last page. Click a blue building to see its name and range."),
+        (id: "controls", title: "Keys", body: "Point at anything to see its name. Left click selects; drag to select many. Right click gives an order; hold Shift to queue it. Click an alert to go to its place. The list shows every key, with the keys for this guide and for Settings, where you can change any key.", widgets: [
             (id: "controls_heading", at: Some((anchor: TopLeft, offset: (490.0, 64.0), pivot: None)), size: (w: Px(700.0), h: Px(24.0)), layer: 60, widget: Text(text: Literal("Controls"), font: Some("forge_ui"), size: 18, colour: "#ffffff", align: Left, wrap: false)),
             (id: "bindings", at: Some((anchor: TopLeft, offset: (490.0, 94.0), pivot: None)), size: (w: Px(700.0), h: Px(584.0)), layer: 60, widget: List(source: Bindings, direction: Vertical, gap: 4, max_items: 64, item: (id: "binding", size: (w: Fill, h: Px(24.0)), widget: Text(text: Format("{0}: {1}", [Item(Name), Item(Title)]), font: Some("forge_ui"), size: 12, colour: "#ffffff", align: Left, wrap: false)))),
         ]),
