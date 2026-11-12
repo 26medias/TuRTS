@@ -726,31 +726,28 @@ impl Replica {
     }
 
     /// The elapsed ticks of a job at the tick of the last applied delta, from its progress record:
-    /// the value in raw units of 1/Q tick (`turts_rules::progress::value_at`), as ticks of base
-    /// time (`turts_rules::progress::base_ticks_done`). The `total` of a record is the duration of
-    /// the job times Q, so a record whose `total` is not a whole multiple of the duration of the
-    /// job in the queue is not a record of any Q: its value shows as it is (the same reading as
-    /// before the ruling, and the same for Q = 1). Never later than the last applied tick, so this
+    /// `done`, `total` and `per_tick` count raw units of 1/Q tick (`RateRecord`), so the value in
+    /// units (`turts_rules::progress::value_at`) becomes ticks of base time with
+    /// `base_ticks_done(units, duration_ticks, total)`, the duration read from the `JobState` of
+    /// the queue. At Q = 1 the units are the ticks. Never later than the last applied tick, so this
     /// is not prediction. 0 when the replica holds no record of the job, or no queue holds the job.
     pub fn job_elapsed_ticks(&self, producer: u32, job: u64) -> u64 {
         let Some(record) = self.store.job_progress(producer, job) else {
             return 0;
         };
-        let Some(duration) = self
+        let Some(duration_ticks) = self
             .economy
             .queues
             .iter()
-            .find(|queue| queue.producer.0 == producer)
-            .and_then(|queue| queue.jobs.iter().find(|held| held.id.0 == job))
+            .filter(|queue| queue.producer.0 == producer)
+            .flat_map(|queue| queue.jobs.iter())
+            .find(|held| held.id.0 == job)
             .map(|held| held.duration_ticks)
         else {
             return 0;
         };
-        let raw = replica_store::record_value(record, self.applied_tick());
-        if duration == 0 || record.total % duration != 0 {
-            return raw;
-        }
-        turts_rules::progress::base_ticks_done(raw, duration, record.total)
+        let units = replica_store::record_value(record, self.applied_tick());
+        turts_rules::progress::base_ticks_done(units, duration_ticks, record.total)
     }
 
     /// The item field `Paid` of a job: `turts_rules::progress::paid_at`.

@@ -22,7 +22,15 @@ pub enum RecordState {
 }
 
 /// A value at a tick and a rate (design 6.8, "Records with a start tick and a rate"):
-/// `done` of `total` at `at_tick`, and `per_tick` more in each following tick. The record is
+/// `done` of `total` at `at_tick`, and `per_tick` more in each following tick.
+///
+/// Units (ruling of the L0-WIRE follow-up): `done`, `total` and `per_tick` count RAW UNITS of 1/Q
+/// tick, where Q is the least common multiple of every `Rate` denominator of the catalog (design
+/// 6.4, "Progress in integers"). Today Q is 1, so the units are ticks. The client derives the ticks
+/// with `turts_rules::progress::base_ticks_done(units, duration_ticks, total)`, where
+/// `duration_ticks` comes from the `JobState` (`Replica::job_elapsed_ticks`). Example: Q = 2, a job of
+/// 100 ticks at rate 1/2: `total` 200, `per_tick` 1 (a tick adds `rate_step(Q, rate)` units), and 50
+/// ticks later `done` is 50 units, which is 25 ticks of base time. The record is
 /// sent only when the rate, the job state or `held` changes, never each tick. The client
 /// evaluates it at the tick of its last applied delta.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -55,10 +63,10 @@ pub struct SiteProgress {
 ///
 /// Store rule (ruling for `L0-STORE`): the store drops a `JobProgress` whose `(producer, job)` is no
 /// longer in the `QueueState` of the producer (the job completed or was cancelled), and one whose
-/// producer is removed. The replica does this today in `merge_job_progress`
-/// (`crates/turts_client/src/replica.rs`). The elapsed ticks of a job are
-/// `turts_rules::progress::value_at` of this record at the last applied tick: `JobState` has no
-/// `elapsed_ticks` since protocol 5.
+/// producer is removed. The side store of the replica does this
+/// (`crates/turts_client/src/replica_store.rs`, `held_jobs` and `RecordStore::apply`). The elapsed
+/// ticks of a job are `turts_rules::progress::value_at` of this record at the last applied tick,
+/// as ticks with `base_ticks_done`: `JobState` has no `elapsed_ticks` since protocol 5.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct JobProgress {
     /// The producer unit.

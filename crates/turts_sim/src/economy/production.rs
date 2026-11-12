@@ -296,10 +296,9 @@ pub(crate) fn run_production(world: &mut World) {
         if head_stage.is_none() {
             continue;
         }
-        // Preserve M2 worlds without M3 state, but freeze every disabled legacy producer.
-        let frozen = world
-            .get_resource::<super::research::Disabled>()
-            .is_some_and(|disabled| disabled.0.contains(&producer));
+        // Preserve M2 worlds without M3 state, but freeze every frozen legacy producer (a disabled
+        // one today). The one predicate of the freeze: `FreezeFacts::frozen`.
+        let frozen = freeze_facts_in_world(world, producer).frozen();
         if frozen {
             continue;
         }
@@ -399,13 +398,54 @@ pub fn job_step_per_tick(
     turts_rules::progress::rate_step(q, rate)
 }
 
+/// The facts that freeze a producer, a machine or a research station: the ONE place of the freeze
+/// rule. A frozen producer keeps the stage `Running` and does not advance. The sim skips it with
+/// `freeze_facts_in_world(..).frozen()` and the wire freezes it with `freeze_facts_in_view(..)
+/// .frozen()`: the same predicate. A new cause (`L-PWR`: no power; `L-PAY`: a held job) is a new
+/// field here. `frozen` destructures the struct and both builders list every field, so a cause that
+/// one builder or the predicate leaves out does not compile.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct FreezeFacts {
+    /// The producer is disabled (`SetEnabled`).
+    pub disabled: bool,
+}
+
+impl FreezeFacts {
+    /// True when the producer does not advance its jobs.
+    pub fn frozen(self) -> bool {
+        let Self { disabled } = self;
+        disabled
+    }
+}
+
+/// The freeze facts of `unit` in the world (the sim advance steps read this).
+pub(crate) fn freeze_facts_in_world(world: &World, unit: u32) -> FreezeFacts {
+    FreezeFacts {
+        disabled: world
+            .get_resource::<super::research::Disabled>()
+            .is_some_and(|disabled| disabled.0.contains(&unit)),
+    }
+}
+
+/// The freeze facts of `unit` in a view (the wire reads this).
+pub fn freeze_facts_in_view(view: &super::views::WorldView, unit: u32) -> FreezeFacts {
+    FreezeFacts {
+        disabled: view.m3.disabled.binary_search(&unit).is_ok(),
+    }
+}
+
 /// The progress per tick of a queue job as the view holds it (the wire reads this): the same
-/// function as the advance step, with the disabled set of the view and the full rate of lane 0
-/// (`power::rate_factor` is the stub `1/1` until `L-PWR`; Q is 1 until then). `L-PWR` must give
-/// the view the rate and the Q of each producer, and this function reads them. A machine and a
-/// research station read no rate: they call the function with the full rate.
+/// function as the advance step, with the freeze facts of the view.
+///
+/// `L-PWR` MUST CHANGE THIS FUNCTION. It passes Q = 1 and the full rate, which is right only while
+/// no capability has a `when_short` rate (`power::rate_factor` is the stub `1/1`). Rule (repair
+/// follow-up, `RateRecord` doc): the wire `done`, `total` and `per_tick` count raw units of 1/Q
+/// tick, so the view must carry the raw progress, the Q and the rate of each producer, and this
+/// function must call `job_step_per_tick(stage, frozen, rate, q)` with them and write
+/// `per_tick` in raw units (Q = 2, 100 ticks, rate 1/2: `total` 200, `per_tick` 1). A machine and
+/// a research station read no rate: they call the function with the full rate.
 pub fn view_job_per_tick(view: &super::views::WorldView, producer: u32, stage: JobStage) -> u64 {
-    let frozen = view.m3.disabled.binary_search(&producer).is_ok();
+    let frozen = freeze_facts_in_view(view, producer).frozen();
     job_step_per_tick(stage, frozen, power::full_rate(), 1).unwrap_or(0)
 }
 

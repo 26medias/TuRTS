@@ -3,29 +3,16 @@
 Status: the builder's list for the orchestrator. Each item names its two facts with `path:line`, the
 reading that the build takes, and what needs a decision. Nothing here changes a frozen M2/M3 value.
 
-## 1. The job elapsed ticks: the ruling and an old test input disagree (needs decision)
+## 1. The job elapsed ticks: the derivation of `mp1/l0-wire-fu` is kept
 
-Facts.
-
-- Ruling (`docs/research/mp1/errata-pending-6.3.md`, "From the second L0-WIRE re-check", item 1):
-  `done`, `total` and `per_tick` of `RateRecord` count raw units of 1/Q tick, and the client derives
-  ticks with `base_ticks_done(units, duration_ticks, total)` (`crates/turts_rules/src/progress.rs:82`).
-- The test `widgets::sources::tests::build_menu_reports_reserved_duplicate_costs_queue_capacity_and_missing_research`
-  (`crates/turts_client/src/widgets/sources.rs:2535-2557`) seeds a record of 120 of 200 for a job of 80 ticks and
-  expects the progress 1.0 (a clamp). 200 is a Q of 2.5. With `base_ticks_done` the value is 48 ticks
-  and the progress 0.6, so the test goes red. Plant `CLAMP1/(a)` (`docs/research/mp1/plants/l0-wire.json`)
-  runs this test: with a consistent record (`total` = 80) the progress cannot be above 1.0 (`base_ticks_done` of
-  `done <= total` is at most the duration), so the plant would stay green.
-
-Reading taken. `Replica::job_elapsed_ticks` derives the ticks with `base_ticks_done` when `total` is a whole
-multiple of the duration of the job in the queue (a valid Q), and shows the raw value when it is not (the
-reading before the ruling; the same for Q = 1, so the HUD and the debug state show the same values). The
-test input and the plant stay as they are. Tests: `the_elapsed_ticks_of_a_job_are_derived_from_raw_units_of_one_over_q_tick`
-(Q = 2: 20 raw units are 10 ticks) and `a_record_that_is_not_a_whole_q_shows_its_raw_value`.
-
-Needs decision. Option (a): keep this reading. Option (b): refuse the record (a stricter store) and change
-the test input to `total: 80`, and retire or re-pin `CLAMP1/(a)`: that changes an assertion input and a
-plant of another task, so the builder did not do it.
+The L0-WIRE follow-up (`origin/mp1/l0-wire-fu`, `32c148f8` and `dc72fa4d`) derives the ticks with
+`base_ticks_done(units, duration_ticks, total)`, reads the duration from the `JobState` of the queue, removes
+the display clamp of `production_queue`, and changes the seed of the `sources.rs` test to a record of 120 of 80.
+This branch merged it and moved the derivation into `Replica::job_elapsed_ticks` over the side store with no
+change of its expected values (`job_progress_in_raw_units_of_one_over_q_derives_base_ticks` is green). An
+earlier build of this branch held a guard (a record whose `total` is not a whole multiple of the duration showed
+its raw value) to keep the old 120-of-200 test; the merge made it unneeded and it is gone (test and plant
+`STORE3/(c)` removed).
 
 ## 2. `RateRecord` stalled reading: `held` and `WaitingForFunds` keep the value
 
@@ -97,8 +84,7 @@ an expected value: `crates/turts_client/tests/economy_replica.rs` (two `is_empty
 become `store_for_tests().seed_job_progress(..)`). `Replica::store_for_tests` is a `#[doc(hidden)]` seam on a
 production type, because the seeding tests are integration tests of another file set; no production code calls it.
 
-## 8. For `REC`, not done here
+## 8. The doc comment of `JobProgress`
 
-`crates/turts_net_protocol/src/records.rs:56-60` still says "The replica does this today in
-`merge_job_progress`". That function is gone: the rule is in `replica_store::held_jobs`. The branch
-`mp1/l0-wire-fu` edits the doc comments of `records.rs`, so this task leaves the file alone.
+`crates/turts_net_protocol/src/records.rs:62-70` named `merge_job_progress`; it now names `replica_store.rs`
+(`held_jobs`, `RecordStore::apply`). A comment change only.

@@ -325,24 +325,6 @@ fn the_elapsed_ticks_of_a_job_are_derived_from_raw_units_of_one_over_q_tick() {
     assert_eq!(replica.job_elapsed_ticks(OWN, 44), 10, "ticks of base time");
 }
 
-/// A record whose `total` is not a whole multiple of the duration of its job is not a record of
-/// any Q: its value shows as it is (the reading before the ruling; the same for Q = 1).
-#[test]
-fn a_record_that_is_not_a_whole_q_shows_its_raw_value() {
-    let _guard = serial();
-    let mut replica = replica();
-    let mut first = snapshot(10);
-    // The job says 100 ticks; 150 is a Q of 1.5.
-    first.records.jobs[0].progress = rate(30, 150, 0, 10);
-    applied(&mut replica, &first);
-    assert_eq!(replica.job_value(OWN, 44), Some(30));
-    assert_eq!(
-        replica.job_elapsed_ticks(OWN, 44),
-        30,
-        "a record that is not a whole Q shows its raw value"
-    );
-}
-
 /// A record for a job that no queue holds is dropped as the message applies, and so is a record
 /// of a job that the queue holds only in a later message.
 #[test]
