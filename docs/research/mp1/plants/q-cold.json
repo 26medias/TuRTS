@@ -694,5 +694,57 @@
     "expected_red": "FAIL: test_a_key_with_no_name_fails_c2a",
     "exit": 1,
     "commit": "4d5514cac02acc458affab6777432a408c1c4160"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "play-chrome-never-ready",
+    "files": [
+      {
+        "file": "scripts/mp1-play.sh",
+        "edit": {
+          "old": "    [[ \"$reply\" == *'\"Browser\"'* ]]\n",
+          "new": "    false\n"
+        }
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "tests/browser/cold-play.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "✖ mp1-play.sh --url starts a Chrome that answers on the printed port",
+    "exit": 1,
+    "commit": "1bc54499a3c1010d6f4b186924c4e212d2860224"
+  },
+  {
+    "row": "Q-COLD",
+    "plant": "play-profile-kept",
+    "files": [
+      {
+        "file": "scripts/mp1-play.sh",
+        "edit": [
+          {
+            "old": "        rm -rf \"$PROFILE\" 2>/dev/null && break\n",
+            "new": "        false && break\n"
+          },
+          {
+            "old": "    rm -rf \"$PROFILE\" \"$PROFILE.chrome.log\" \"$SERVE_LOG\" 2>/dev/null || true\n",
+            "new": "    true\n"
+          }
+        ]
+      }
+    ],
+    "command": [
+      "node",
+      "--test",
+      "tests/browser/cold-play.test.js"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "✖ mp1-play.sh --url starts a Chrome that answers on the printed port",
+    "exit": 1,
+    "commit": "1bc54499a3c1010d6f4b186924c4e212d2860224"
   }
 ]

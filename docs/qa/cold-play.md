@@ -87,6 +87,9 @@ agent needs a tool that can show a PNG file. Give it exactly:
 Do not give the agent the output of the start command or any file of `SESSION/internal/`: they name the debug port.
 The tool cannot stop an agent that looks for them; check C1 (the transcript) finds that.
 
+A game server gives each player slot to one client for the whole match (D25). A second session on the same server
+sees "This game is full". Start a new server (a new `--prepared` start, or a new `turts_server`) for each session.
+
 ## Check a session (the reviewer)
 
     python3 -I -B scripts/qa/cold_play_check.py SESSION [--receipt <label dir>/lock-receipt.json] [--json]
@@ -127,3 +130,30 @@ A sound that waited for the first click (the browser blocks sound until a gestur
 - F1, F2, F3, F4, F6 to F10 need a person or an agent that reads the screenshots.
 - Timing: the +200 ms picture is taken when the capture starts. Under a heavy load it can start late. The checker
   fails a picture that starts more than 500 ms (+200 ms) or 700 ms (+1000 ms) late.
+
+## The reference red (protocol check C5), run 2026-11-12
+
+The protocol must return FAIL on the build where a person failed. The tool was run on the forge package of the MC
+tree at `9b3a7bd` (a copy of the operator's play build: `dist` and `turts_server` with the sha256 values in
+`ref-build/SHA256SUMS` of the scratch folder; the server and the static files were started outside the lock, and the
+session used `--url`). One scripted session, 9 calls, the wrapper label `qcold-ref-5` (hold 116 s of 1800 s, exit 0).
+The evidence folder is `/tmp/claude-1000/-home-julien-Projects-TuRTS/bf418660-b272-4bb3-8628-8d9ef2677d1d/scratchpad/q-cold/ref-session-5/`.
+
+| Call | What the screenshots show |
+| --- | --- |
+| 1 `wait 8` | The page after load: a full-screen guide (goal text, key list) over the map, and "Click to play" in the centre. |
+| 2 `click 640 360 left` | "Click to play" is gone. The guide stays, full screen, with the map under it. |
+| 3, 4, 5 `click` on the centre of three blue buildings | No ring, no panel, no name, no order list. 0 pixels differ between the pictures before and after each click, apart from 665 pixels (an orange unit and the minimap) at the first. The world shows through the guide, which takes the click (F2, F3). |
+| 6, 7 `wait 30`, `wait 20` | At 72 s after the first click the reply says `STATEMENT DUE`. A `click` is refused (exit 3). No sound file exists yet. |
+| statement | Stored. The sound records are released after it. |
+| 8 `click` on "Close" (one click), 9 `click` on the same building | The guide closes at once. The building click now changes 28 % of the pixels: 182,954 in the left panels and 75,434 in the order panel (the control: the tool does see a change when there is one). |
+
+The checker on this folder (`ref/check-5.txt` in the scratch folder): every machine check passes except F5a:
+`forge:forge_alert` started 4 times from 41.0 s to 66.5 s (6 times from 41.0 s to 71.5 s). The audio context was
+`suspended` until the first click, so this is the sound that a person who clicks hears. The manual checks stay open.
+Pixel numbers: `ref/pixdiff-5.txt` (a probe in the scratch folder, `tests/browser/harness/png.js`).
+
+One thing the first attempts showed: `scripts/mp1-play.sh` (L0-DBG) waited for `<profile>/DevToolsActivePort`, which
+Chrome writes only for port 0, so it failed on every start with a port that it picked itself; and its cleanup returned 1
+for 4 stops in 12 when Chrome still wrote into the profile. Both are fixed in this task, with a test that starts
+Chrome through the script.
