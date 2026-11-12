@@ -29,7 +29,7 @@ class Folder:
     """A good evidence folder, as data. A test changes the data, then calls write()."""
 
     def __init__(self):
-        self.session = {"session_version": 1, "limit_ms": 600000, "statement_after_ms": 60000, "sample_ms": 500,
+        self.session = {"session_version": 2, "mode": "agent", "control": None, "limit_ms": 600000, "statement_after_ms": 60000, "sample_ms": 500,
                         "viewport": {"width": 1280, "height": 720}, "lock_marker": "qcold-test-1"}
         self.timeline = []  # (t_ms, kind, fields), written in this order
         self.shot_bytes = {}
@@ -40,6 +40,15 @@ class Folder:
         self.end = {"reason": "end", "t_ms": 80000, "limit_ms": 600000, "calls": 3, "first_click_ms": 2140, "statement_stored": True}
         self.write_statement = True
         self.skip_files = set()
+        self.ui = [
+            {"label": "before_first_input", "t_ms": 2000, "available": True, "alerts": 0, "alert_lines": 0, "widgets": [], "big_widgets": []},
+            {"label": "after_first_click_p200", "t_ms": 2400, "available": True, "alerts": 0, "alert_lines": 0,
+             "widgets": [{"id": "hud", "kind": "widget", "rect": [0, 0, 100, 20], "text": "Ore 500"}], "big_widgets": []},
+            {"label": "after_first_click_p1000", "t_ms": 3200, "available": True, "alerts": 0, "alert_lines": 0,
+             "widgets": [{"id": "hud", "kind": "widget", "rect": [0, 0, 100, 20], "text": "Ore 500"}], "big_widgets": []},
+        ]
+        self.probe = None
+        self.probe_name = None
         self.timeline_ready()
 
     def shot(self, name, t_start, target):
@@ -95,11 +104,26 @@ class Folder:
             (directory / "sound-records.json").write_text(json.dumps(self.sound))
         if self.end is not None:
             (directory / "end.json").write_text(json.dumps(self.end))
+        if self.ui is not None:
+            (directory / "ui-records.json").write_text(json.dumps({"records": self.ui}))
+        if self.probe is not None:
+            (directory / self.probe_name).write_text(json.dumps(self.probe))
         return directory
 
+    def as_probe(self, kind, record, control=None):
+        """A probe folder: the same log with no statement, ended by the probe; `record` is probe-<kind>.json."""
+        self.session.update(mode=f"probe-{kind}", control=control)
+        self.timeline = [item for item in self.timeline if item[1] != "statement_stored"]
+        self.timeline = [(t, k, {**f, "reason": "probe"} if k == "sounds_released" else f) for t, k, f in self.timeline]
+        self.write_statement = False
+        self.end.update(reason="probe-done", statement_stored=False)
+        self.probe, self.probe_name = record, f"probe-{kind}.json"
+        return self
 
-def run(directory, *extra):
-    result = subprocess.run([sys.executable, "-I", "-B", str(CHECKER), str(directory), *extra], capture_output=True, text=True)
+
+def run(directory, *extra, strict=False):
+    flags = [] if strict else ["--partial"]
+    result = subprocess.run([sys.executable, "-I", "-B", str(CHECKER), str(directory), *flags, *extra], capture_output=True, text=True)
     return result.returncode, result.stdout, result.stderr
 
 
@@ -120,12 +144,13 @@ class CheckerTest(unittest.TestCase):
         code, out, err = self.check(Folder())
         self.assertEqual(code, 0, out + err)
         self.assertIn("MACHINE CHECKS", out)
-        for check_id in ("E1", "E1b", "E2", "E2b", "L1", "L2", "C2a", "C3a", "C3b", "C3c", "C3d", "C3e", "C3f", "C3g", "C3h", "S1", "F5a", "F5b"):
+        for check_id in ("E1", "E1b", "E2", "E2b", "L1", "L2", "C2a", "C3a", "C3b", "C3c", "C3d", "C3e", "C3f", "C3g", "C3h", "S1", "F5a", "F5b", "U0", "F9", "F3", "F6"):
             self.assertRegex(out, rf"  (PASS|INFO) {check_id} ", check_id)
         self.assertIn("MANUAL CHECKS", out)
         for check_id in ("C0", "C1", "C2", "C3m", "C4", "C5"):
             self.assertRegex(out, rf"  TODO {check_id} ")
-        self.assertIn("This is not PERSON-READY.", out)
+        self.assertIn("RESULT: PARTIAL-PASS", out)
+        self.assertNotIn("PERSON-READY", out)
         self.assertIn("MATCH BY HAND: key KeyF at 3.3 s; the last screenshot before it: 0002-click-p1000.png", out)
 
     def test_json_output(self):
@@ -431,6 +456,182 @@ class CheckerTest(unittest.TestCase):
     def test_the_checker_never_prints_person_ready_as_a_result(self):
         code, out, _ = self.check(Folder())
         self.assertNotRegex(out, r"RESULT: PERSON-READY")
+
+
+PASS_CLICKS = {"kind": "first-click", "summary": {"verdict": "PASS", "clicks": 3, "failed": 0, "reason": "3 of 3 clicks selected the unit and changed the picture"}, "layer_close": None}
+FAIL_CLICKS = {"kind": "first-click", "summary": {"verdict": "FAIL", "clicks": 3, "failed": 3, "first_failure": {"n": 1, "unit_id": 1, "content_id": "forge:drill"},
+               "reason": "first click on unit 1 (forge:drill): selection [], no visible change; 3 of 3 clicks failed"}}
+PASS_BUTTONS = {"kind": "buttons", "buttons": [{"id": "help", "acted": True}], "summary": {"verdict": "PASS", "buttons": 1, "failed": 0, "reason": "1 of 1 buttons acted on the first click"}}
+FAIL_BUTTONS = {"kind": "buttons", "buttons": [{"id": "guide_close", "acted": False}], "summary": {"verdict": "FAIL", "buttons": 1, "failed": 1, "reason": "the first click on guide_close changed nothing"}}
+
+
+def long_text(count):
+    return " ".join(f"w{i}" for i in range(count))
+
+
+class ProbeAndUiTest(unittest.TestCase):
+    """The checks that the pass-2 ruling adds: the probes, F9, F3, F6, F8, and the verdict line."""
+
+    def write(self, folder, tmp, name="evidence"):
+        return folder.write(Path(tmp) / name)
+
+    def after(self, folder, widgets=(), big=()):
+        for record in folder.ui:
+            if record["label"].startswith("after_first_click"):
+                record["widgets"] = list(widgets)
+                record["big_widgets"] = list(big)
+
+    def failed(self, folder, *extra):
+        with tempfile.TemporaryDirectory() as tmp:
+            code, out, err = run(self.write(folder, tmp), *extra)
+        return code, [line.split()[1] for line in out.splitlines() if line.startswith("  FAIL")], out
+
+    # ---- F9, F3, F6, U0 ----------------------------------------------------------------------------
+
+    def test_a_text_of_more_than_40_words_fails_f9_and_40_words_pass(self):
+        folder = Folder()
+        self.after(folder, widgets=[{"id": "guide_copy", "kind": "widget", "rect": [0, 0, 1, 1], "text": long_text(41)}])
+        code, failed, out = self.failed(folder)
+        self.assertEqual((code, failed), (1, ["F9"]), out)
+        self.assertIn("guide_copy: 41 words", out)
+        folder = Folder()
+        self.after(folder, widgets=[{"id": "guide_copy", "kind": "widget", "rect": [0, 0, 1, 1], "text": long_text(40)}])
+        self.assertEqual(self.failed(folder)[0], 0)
+
+    def test_a_long_text_in_the_record_before_the_first_input_only_is_not_f9(self):
+        folder = Folder()
+        folder.ui[0]["widgets"] = [{"id": "intro", "kind": "widget", "rect": [0, 0, 1, 1], "text": long_text(90)}]
+        self.assertEqual(self.failed(folder)[0], 0)
+
+    def test_a_see_through_blocking_layer_fails_f3(self):
+        layer = {"id": "guide", "kind": "widget", "rect": [0, 0, 1280, 720], "area_share": 1.0, "capture_root": True, "focus_policy_block": None, "nonflat_share": 0.31}
+        folder = Folder()
+        self.after(folder, big=[layer])
+        code, failed, out = self.failed(folder)
+        self.assertEqual((code, failed), (1, ["F3"]), out)
+        self.assertIn("guide (area 100%, see-through 31%)", out)
+
+    def test_an_opaque_layer_a_layer_that_takes_no_input_and_a_small_one_are_not_f3(self):
+        for change in ({"nonflat_share": 0.0}, {"nonflat_share": 0.31, "capture_root": False}, {"nonflat_share": 0.049}):
+            folder = Folder()
+            layer = {"id": "guide", "kind": "widget", "rect": [0, 0, 1280, 720], "area_share": 1.0, "capture_root": True, "focus_policy_block": None, "nonflat_share": 0.31}
+            self.after(folder, big=[{**layer, **change}])
+            self.assertEqual(self.failed(folder)[0], 0, change)
+
+    def test_a_layer_that_could_not_be_measured_fails_f3(self):
+        folder = Folder()
+        self.after(folder, big=[{"id": "guide", "kind": "widget", "rect": [0, 0, 1, 1], "area_share": 1.0, "capture_root": True, "nonflat_share": None}])
+        code, failed, out = self.failed(folder)
+        self.assertEqual(failed, ["F3"], out)
+        self.assertIn("unmeasured", out)
+
+    def test_an_alert_line_before_the_first_input_fails_f6(self):
+        folder = Folder()
+        folder.ui[0].update(alert_lines=2, alerts=2)
+        code, failed, out = self.failed(folder)
+        self.assertEqual((code, failed), (1, ["F6"]), out)
+        self.assertIn("2 alert lines (debug alerts: 2)", out)
+        folder = Folder()
+        folder.ui[0].update(alerts=1)  # the debug state holds an alert that no widget shows yet
+        self.assertEqual(self.failed(folder)[1], ["F6"])
+        folder = Folder()
+        folder.ui[1].update(alert_lines=2, alerts=2)  # an alert line after the first click is not F6
+        self.assertEqual(self.failed(folder)[0], 0)
+
+    def test_missing_or_unanswered_ui_records_fail_u0(self):
+        folder = Folder()
+        folder.ui = None
+        self.assertEqual(self.failed(folder)[1], ["U0"])
+        folder = Folder()
+        folder.ui = [r for r in folder.ui if r["label"] != "after_first_click_p1000"]
+        self.assertEqual(self.failed(folder)[1], ["U0"])
+        folder = Folder()
+        folder.ui[0] = {"label": "before_first_input", "t_ms": 1, "available": False}
+        self.assertEqual(self.failed(folder)[1], ["U0"])
+
+    # ---- The probes -----------------------------------------------------------------------------------
+
+    def test_a_first_click_probe_that_failed_is_a_p1_fail(self):
+        folder = Folder().as_probe("first-click", FAIL_CLICKS)
+        code, failed, out = self.failed(folder)
+        self.assertEqual((code, failed), (1, ["P1"]), out)
+        self.assertIn("first click on unit 1 (forge:drill): selection [], no visible change", out)
+        self.assertIn("NOT-READY", out)
+
+    def test_a_passing_first_click_probe_with_no_click_is_not_a_pass(self):
+        record = {**PASS_CLICKS, "summary": {**PASS_CLICKS["summary"], "clicks": 0}}
+        self.assertEqual(self.failed(Folder().as_probe("first-click", record))[1], ["P1"])
+
+    def test_a_probe_with_no_record_fails(self):
+        folder = Folder().as_probe("first-click", PASS_CLICKS)
+        folder.probe = None
+        self.assertEqual(self.failed(folder)[1], ["P1"])
+        folder = Folder().as_probe("buttons", PASS_BUTTONS)
+        folder.probe = None
+        self.assertEqual(self.failed(folder)[1], ["F8"])
+
+    def test_the_buttons_probe_fails_f8_when_a_first_click_is_lost(self):
+        code, failed, out = self.failed(Folder().as_probe("buttons", FAIL_BUTTONS))
+        self.assertEqual((code, failed), (1, ["F8"]), out)
+        self.assertIn("guide_close", out)
+        self.assertEqual(self.failed(Folder().as_probe("buttons", PASS_BUTTONS))[0], 0)
+
+    def test_a_control_folder_is_judged_on_its_probe_only(self):
+        control = {**PASS_CLICKS, "layer_close": {"found": True, "clicks": 1, "closed": True}}
+        folder = Folder().as_probe("first-click", control, control="close-layer")
+        self.after(folder, widgets=[{"id": "g", "kind": "widget", "rect": [0, 0, 1, 1], "text": long_text(90)}])  # F9 is true, and not judged
+        folder.ui[0].update(alert_lines=2)
+        with tempfile.TemporaryDirectory() as tmp:
+            code, out, err = run(self.write(folder, tmp), strict=True)
+        self.assertEqual(code, 0, out)
+        self.assertIn("RESULT: CONTROL-PASS", out)
+        self.assertNotIn("F9", out.split("MANUAL CHECKS")[0])
+        folder = Folder().as_probe("first-click", {**control, "layer_close": {"found": True, "clicks": 3, "closed": False}}, control="close-layer")
+        code, failed, out = self.failed(folder, "--no-lock-check")
+        self.assertEqual((code, failed), (1, ["PC"]), out)
+        self.assertIn("CONTROL-FAIL", out)
+
+    # ---- The verdict ----------------------------------------------------------------------------------
+
+    def run_all(self, folders, *extra):
+        with tempfile.TemporaryDirectory() as tmp:
+            dirs = [folder.write(Path(tmp) / f"f{i}") for i, folder in enumerate(folders)]
+            args = [str(dirs[0])] + [x for d in dirs[1:] for x in ("--also", str(d))]
+            result = subprocess.run([sys.executable, "-I", "-B", str(CHECKER), *args, *extra], capture_output=True, text=True)
+        return result.returncode, result.stdout, result.stderr
+
+    def readiness(self, probe=PASS_CLICKS, buttons=PASS_BUTTONS):
+        return [Folder().as_probe("first-click", probe), Folder().as_probe("buttons", buttons), Folder()]
+
+    def test_all_three_parts_that_pass_give_machine_pass_with_the_manual_checks_open(self):
+        code, out, err = self.run_all(self.readiness())
+        self.assertEqual(code, 0, out + err)
+        self.assertIn("RESULT: MACHINE-PASS (manual checks open)", out)
+        self.assertNotIn("NOT-READY", out)
+
+    def test_a_failed_probe_gives_not_ready_whatever_the_agent_session_says(self):
+        code, out, err = self.run_all(self.readiness(probe=FAIL_CLICKS))
+        self.assertEqual(code, 1, out)
+        self.assertIn("RESULT: NOT-READY (failed: P1[probe-first-click])", out)
+        code, out, err = self.run_all(self.readiness(buttons=FAIL_BUTTONS))
+        self.assertIn("RESULT: NOT-READY (failed: F8[probe-buttons])", out)
+
+    def test_a_missing_part_gives_not_ready(self):
+        folders = self.readiness()
+        code, out, err = self.run_all(folders[:1])
+        self.assertEqual(code, 1, out)
+        self.assertIn("RESULT: NOT-READY (missing: buttons probe, agent session)", out)
+        code, out, err = self.run_all(folders[:2])
+        self.assertIn("RESULT: NOT-READY (missing: agent session)", out)
+        code, out, err = self.run_all([folders[2], folders[1]])
+        self.assertIn("RESULT: NOT-READY (missing: first-click probe)", out)
+
+    def test_the_agent_session_that_fails_gives_not_ready_even_when_both_probes_pass(self):
+        folders = self.readiness()
+        folders[2].sound["records"] = [{"sound_id": "a", "category": "effects", "play_id": i, "player_entity": i, "request_frame_index": i, "first_seen_ms": 1000 * i} for i in range(1, 5)]
+        code, out, err = self.run_all(folders)
+        self.assertEqual(code, 1)
+        self.assertIn("NOT-READY (failed: F5a[agent])", out)
 
 
 if __name__ == "__main__":

@@ -16,6 +16,7 @@ const os = require("node:os");
 const path = require("node:path");
 const test = require("node:test");
 const { ColdSession, listen, parseArgs, parseStatement, readSounds, MAX_LIMIT_S } = require("./cold-session.js");
+const { readWorld } = require("./cold-probe.js");
 const play = require("./cold-play.js");
 
 const REPO = path.resolve(__dirname, "../..");
@@ -25,6 +26,7 @@ const SESSION_JS = path.join(__dirname, "cold-session.js");
 const SCRIPT = path.join(REPO, "scripts/cold-play.sh");
 const SENTINEL = "SENTINEL_SOUND_ID";
 const BRIDGE_SENTINEL = "SENTINEL_BRIDGE_VALUE";
+const UI_SENTINEL = "SENTINEL_UI_TEXT";
 
 // ---- A fake page and a fake clock ------------------------------------------------------------
 
@@ -51,7 +53,9 @@ function fakePage(observations) {
     const window = {
         turts_debug: () => "",
         turts_debug_request: () => Promise.resolve(JSON.stringify({ audio: { context_state: BRIDGE_SENTINEL, sink_observations: observations },
-            bindings: BRIDGE_SENTINEL })),
+            bindings: BRIDGE_SENTINEL, slot: 0, selection: [], alerts: [], replicated_world: { units: [] } })),
+        turts_scene: () => JSON.stringify({ units: [] }),
+        turts_ui: () => JSON.stringify([{ id: "hud", kind: "widget", rect: [0, 0, 10, 10], text: UI_SENTINEL, visible: true, enabled: true, capture_root: true }]),
     };
     const page = {
         calls,
@@ -67,7 +71,7 @@ function fakePage(observations) {
         },
         screenshot: async ({ path: file, scale }) => { shots += 1; calls.push(["shot", scale]); fs.writeFileSync(file, Buffer.from(`PNG ${shots}`)); },
         evaluate: async (fn) => {
-            if (fn === readSounds) return new Function("window", `return (${fn.toString()})()`)(window);
+            if (fn === readSounds || fn === readWorld) return new Function("window", `return (${fn.toString()})()`)(window);
             return { width: 1280, height: 720 };
         },
     };
@@ -176,6 +180,7 @@ test("the sound records are not on the disk before the statement is stored; the 
     await ctx.call("click", "100", "100", "left");
     await ctx.session.sample();
     assert.deepEqual(sentinelFiles(ctx.dir, SENTINEL), [], "no file holds a sound id before the statement");
+    assert.deepEqual(sentinelFiles(ctx.dir, UI_SENTINEL), [], "no file holds a UI text before the statement");
     assert.equal(fs.existsSync(path.join(ctx.dir, "sound-records.json")), false);
     const early = await ctx.session.handle({ cmd: "statement", text: STATEMENT("0001-click-p200.png") });
     assert.equal(early.exit, 3, "before 60 s after the first click the statement is refused");
@@ -191,6 +196,7 @@ test("the sound records are not on the disk before the statement is stored; the 
     const ok = await ctx.session.handle({ cmd: "statement", text: STATEMENT("0001-click-p200.png") });
     assert.equal(ok.exit, 0, ok.lines.join("\n"));
     assert.ok(sentinelFiles(ctx.dir, SENTINEL).some((file) => file.endsWith("sound-records.json")), "the records are on the disk after the statement");
+    assert.ok(sentinelFiles(ctx.dir, UI_SENTINEL).some((file) => file.endsWith("ui-records.json")), "the UI records are released with them");
     const log = events(ctx.dir);
     const stored = log.find((event) => event.kind === "statement_stored");
     const released = log.find((event) => event.kind === "sounds_released");
@@ -256,6 +262,22 @@ test("a session ends at its limit with the evidence complete, and later calls ar
     assert.equal(after.exit, 4);
     assert.match(after.lines[0], /session has ended \(limit\)/);
     assert.equal(ctx.page.calls.filter((call) => call[0] === "down").length, 0, "no input after the limit");
+});
+
+test("the probe options: --probe first-click|buttons, --control close-layer only with the first-click probe, in the script and in the session", () => {
+    assert.equal(parseArgs(["--port", "5000", "--session", "x", "--probe", "buttons"]).probe, "buttons");
+    assert.deepEqual([parseArgs(["--port", "5000", "--session", "x", "--probe", "first-click", "--control", "close-layer"]).probe, parseArgs(["--port", "5000", "--session", "x", "--probe", "first-click", "--control", "close-layer"]).control], ["first-click", "close-layer"]);
+    assert.throws(() => parseArgs(["--port", "5000", "--session", "x", "--probe", "dance"]), /--probe takes first-click or buttons/);
+    assert.throws(() => parseArgs(["--port", "5000", "--session", "x", "--probe", "buttons", "--control", "close-layer"]), /--control close-layer goes with --probe first-click/);
+    assert.throws(() => parseArgs(["--port", "5000", "--session", "x", "--control", "close-layer"]), /goes with --probe first-click/);
+    const root = fakeRoot();
+    const run = (...extra) => spawnSync("bash", [path.join(root, "scripts/cold-play.sh"), "--session", path.join(root, `p-${extra.join("-")}`), "--url", "http://127.0.0.1:1/", ...extra], { encoding: "utf8", timeout: 20000 });
+    const good = run("--probe", "first-click", "--control", "close-layer");
+    assert.equal(good.status, 0, good.stderr);
+    assert.match(fs.readFileSync(path.join(root, "p---probe-first-click---control-close-layer/internal/session.log"), "utf8"), /--probe first-click --control close-layer/);
+    assert.equal(run("--probe", "dance").status, 2);
+    assert.equal(run("--probe", "buttons", "--control", "close-layer").status, 2);
+    assert.equal(run("--control", "close-layer").status, 2);
 });
 
 test("the session limit has a ceiling under the hold limit of the lock wrapper", async () => {
@@ -361,7 +383,7 @@ test("the client has no browser library and prints only the reply of the session
 // ---- Round trip with the checker -------------------------------------------------------------
 
 function check(dir, extra = []) {
-    const run = spawnSync("python3", ["-I", "-B", CHECKER, dir, "--no-lock-check", ...extra], { encoding: "utf8" });
+    const run = spawnSync("python3", ["-I", "-B", CHECKER, dir, "--no-lock-check", "--partial", ...extra], { encoding: "utf8" });
     return { status: run.status, out: run.stdout, err: run.stderr };
 }
 
@@ -390,7 +412,8 @@ test("round trip: a clean session passes the checker, which lists the checks tha
     assert.match(result.out, /PASS F5a /);
     assert.match(result.out, /MANUAL CHECKS/);
     for (const id of ["C0", "C1", "C2", "C4", "C5"]) assert.match(result.out, new RegExp(`TODO ${id} `));
-    assert.match(result.out, /RESULT: MACHINE-PASS\. The manual checks stay open\. This is not PERSON-READY\./);
+    assert.match(result.out, /RESULT: PARTIAL-PASS/);
+    assert.doesNotMatch(result.out, /PERSON-READY/);
     assert.match(result.out, /MATCH BY HAND: key KeyF at /, "each key is flagged for the reviewer");
 });
 
@@ -405,7 +428,7 @@ test("round trip: the checker goes red on a session with no statement", async ()
     assert.equal(result.status, 1, result.out);
     assert.match(result.out, /FAIL C3a /);
     assert.match(result.out, /FAIL C3c /);
-    assert.match(result.out, /RESULT: MACHINE-FAIL: C3a, C3c/);
+    assert.match(result.out, /RESULT: NOT-READY \(failed: C3a\[agent\], C3c\[agent\]\)/);
 });
 
 test("round trip: the checker goes red when one sound id plays 4 times in 60 s, and not for 3", async () => {
@@ -524,6 +547,7 @@ test("the tool never fixes the debugging port, mutes Chrome or touches the syste
     }
     const session = code(SESSION_JS);
     assert.equal([...session.matchAll(/writeFileSync\(path\.join\(this\.dir, "sound-records\.json"\)/g)].length, 1, "one writer of sound-records.json");
+    assert.equal([...session.matchAll(/writeFileSync\(path\.join\(this\.dir, "ui-records\.json"\)/g)].length, 1, "one writer of ui-records.json");
     assert.equal([...session.matchAll(/this\.releaseSounds\(/g)].length, 2, "two callers of the gate: the statement and the end");
     assert.doesNotMatch(session, /\.(?:newPage|newContext|goto|launch|launchPersistentContext)\(/, "the tool opens no page of its own");
 });

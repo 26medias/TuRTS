@@ -1,8 +1,17 @@
 #!/usr/bin/env python3
 """Check a cold-play evidence folder (task Q-COLD; docs/qa/cold-play.md).
 
-    python3 -I -B scripts/qa/cold_play_check.py <session folder> [--receipt lock-receipt.json]
-                                                  [--no-lock-check] [--json]
+    python3 -I -B scripts/qa/cold_play_check.py <folder> [--also <folder> ...] [--receipt lock-receipt.json]
+                                                  [--no-lock-check] [--partial] [--json]
+
+A readiness run has three folders: the first-click probe (cold-play.sh --probe first-click), the buttons probe
+(--probe buttons) and the agent session. Give one of them first and the others with --also. A folder of a
+positive control (--control close-layer) is judged on its probe only.
+
+The result line is NOT-READY when any machine check or probe fails or a part of the run is missing, and
+MACHINE-PASS (manual checks open) otherwise. The checker never reads the answer of an agent: an agent reads every
+text and obeys it, a person clicks what they see (input-ceo-second-play-test.md; errata-pending-6.3.md, last
+section). --partial skips the missing-part rule and prints PARTIAL-PASS (tests and a look at one folder).
 
 The checker reads the files that tests/browser/cold-session.js wrote. It starts no browser. It
 verifies what a machine can verify of the person-readiness protocol (input-ceo-second-play-test.md
@@ -24,8 +33,14 @@ Machine checks:
   S1  the sound records are complete and final, and the page debug bridge answered
   F5a no sound id more than 3 times in 60 s
   F5b no alert sound before the first input
+  P1  the first-click probe passed (every own unit click gave a selection and a visible change)
+  U0  the UI records exist (before the first input; after the first click)
+  F9  no visible text block of more than 40 words after the first click that no input opened
+  F3  no layer of more than half of the page that takes pointer input and is not opaque, after the first click
+  F6  no alert line before the first input
+  F8  the buttons probe: the first click on each visible button changed the UI record or the page
 
-Exit: 0 every machine check passes; 1 a machine check fails; 2 the folder cannot be read.
+Exit: 0 every machine check passes; 1 a machine check fails; 2 a folder cannot be read.
 Python 3 standard library only.
 """
 
@@ -37,7 +52,7 @@ import sys
 from pathlib import Path
 
 STATEMENT_KEYS = ("GOAL", "GOAL_SHOT", "FIRST_ACTION", "FIRST_ACTION_SHOT", "WORKED", "WORKED_SHOT")
-SHOT_NAME = re.compile(r"^(?:0000-start|\d{4}-[a-z]+-p(?:200|1000))\.png$")
+SHOT_NAME = re.compile(r"^(?:0000-start|\d{4}-[a-z]+-p(?:200|1000)|probe-\d{3}-[ab])\.png$")
 KEY_NAME = re.compile(r"^[A-Za-z0-9]{1,24}$")
 # "do not know" anywhere in a part is a fail (protocol check C3); an empty-answer word fails when it starts the part.
 NO_ANSWER = re.compile(r"\b(?:do not know|don['\u2019]?t know|no idea)\b|^(?:unknown|none|n/a|not sure|unsure|unclear|nothing)\b", re.IGNORECASE)
@@ -46,6 +61,8 @@ LIMIT_GRACE_MS = 10000
 WRAPPER_HOLD_S = 1800
 # The slack for a screenshot: it is taken after the wait; late is the fault.
 SHOT_LATE_MS = {200: 500, 1000: 700}
+MAX_WORDS = 40
+SEE_THROUGH_SHARE = 0.05
 # The times are whole milliseconds, so a screenshot can start 1 ms before its mark; more than that is early.
 EARLY_JITTER_MS = 3
 
@@ -88,16 +105,17 @@ def load_events(folder):
 class Report:
     def __init__(self):
         self.rows = []
+        self.label = ""
 
     def add(self, check, ok, text):
-        self.rows.append({"check": check, "status": "PASS" if ok else "FAIL", "text": text})
+        self.rows.append({"check": check, "status": "PASS" if ok else "FAIL", "text": text, "folder": self.label})
 
     def info(self, check, text):
-        self.rows.append({"check": check, "status": "INFO", "text": text})
+        self.rows.append({"check": check, "status": "INFO", "text": text, "folder": self.label})
 
     @property
     def failed(self):
-        return [row["check"] for row in self.rows if row["status"] == "FAIL"]
+        return [row["check"] if not row["folder"] else f"{row['check']}[{row['folder'].split()[0]}]" for row in self.rows if row["status"] == "FAIL"]
 
 
 def parse_statement(text):
@@ -122,10 +140,87 @@ def parse_statement(text):
     return fields, problems
 
 
-def check(folder, receipt=None, lock_check=True):
+def probe_checks(folder, mode, control, report):
+    """P1 (first-click probe), PC (its control), F8 (buttons probe): the verdict of a probe record."""
+    if mode not in ("probe-first-click", "probe-buttons"):
+        return
+    name = "probe-first-click.json" if mode == "probe-first-click" else "probe-buttons.json"
+    path = folder / name
+    if not path.is_file():
+        report.add("PC" if control else ("P1" if mode == "probe-first-click" else "F8"), False, f"{name} is missing: the probe did not finish")
+        return
+    record = load_json(path)
+    summary = record.get("summary", {})
+    ok = summary.get("verdict") == "PASS"
+    if mode == "probe-first-click":
+        if control:
+            closed = (record.get("layer_close") or {}).get("closed")
+            report.add("PC", ok and bool(closed), f"control ({control}): {summary.get('verdict')}; layer closed by the tool: {closed}; {summary.get('reason')}")
+        else:
+            report.add("P1", ok and summary.get("clicks", 0) >= 1, f"first-click probe {summary.get('verdict')}: {summary.get('reason')}")
+    else:
+        lost = [button for button in record.get("buttons", []) if not button.get("acted")]
+        report.add("F8", ok and not lost, f"buttons probe {summary.get('verdict')}: {summary.get('reason')}")
+
+
+def words(text):
+    return len(text.split()) if isinstance(text, str) else 0
+
+
+def ui_checks(folder, mode, report, by_kind):
+    """U0, F9, F3, F6 from ui-records.json: the UI record before the first input and after the first click."""
+    path = folder / "ui-records.json"
+    if not path.is_file():
+        report.add("U0", False, "ui-records.json is missing")
+        return
+    records = load_json(path).get("records", [])
+    by_label = {record.get("label"): record for record in records}
+    has_click = bool(by_kind.get("first_click"))
+    has_input = bool(by_kind.get("input")) and any(e.get("counts_as_input") for e in by_kind.get("input", []))
+    after = [by_label[label] for label in ("after_first_click_p200", "after_first_click_p1000") if label in by_label]
+    unavailable = [r.get("label") for r in records if not r.get("available")]
+    ok = (not has_input or "before_first_input" in by_label) and (not has_click or len(after) == 2) and not unavailable
+    report.add("U0", ok, f"UI records: {[r.get('label') for r in records]}" + (f"; the debug bridge did not answer for {unavailable}" if unavailable else ""))
+    if not records or unavailable:
+        return
+    # F9: a visible text block of more than 40 words that no input opened.
+    long_texts = {}
+    for record in after:
+        for widget in record.get("widgets", []):
+            count = words(widget.get("text"))
+            if widget.get("kind") != "focus_overlay" and count > MAX_WORDS:
+                long_texts[widget["id"]] = count
+    report.add("F9", not long_texts, f"no visible text of more than {MAX_WORDS} words after the first click"
+               + (f"; {', '.join(f'{k}: {v} words' for k, v in sorted(long_texts.items()))}" if long_texts else ""))
+    # F3: a layer of more than half of the page that takes pointer input and lets the world show through.
+    layers = {}
+    for record in after:
+        for widget in record.get("big_widgets", []):
+            if not (widget.get("capture_root") or widget.get("focus_policy_block")):
+                continue
+            share = widget.get("nonflat_share")
+            if share is None or share >= SEE_THROUGH_SHARE:
+                layers[widget["id"]] = (widget.get("area_share"), share)
+    report.add("F3", not layers, "no layer of more than half of the page takes input and shows the world through, after the first click"
+               + (f"; {', '.join(f'{k} (area {a:.0%}, see-through ' + ('unmeasured' if s is None else f'{s:.0%}') + ')' for k, (a, s) in sorted(layers.items()))}" if layers else ""))
+    # F6: an alert line before the first input.
+    before = by_label.get("before_first_input")
+    if before is not None:
+        lines, alerts = before.get("alert_lines", 0), before.get("alerts", 0)
+        report.add("F6", lines == 0 and alerts == 0, "no alert line before the first input"
+                   + (f"; {lines} alert line{'s' if lines != 1 else ''} (debug alerts: {alerts})" if lines or alerts else ""))
+    else:
+        report.info("F6", "no input in the session: nothing to compare")
+
+
+def check(folder, receipt=None, lock_check=True, report=None):
+    """Check one folder. Returns what the verdict needs: the mode, whether it is a control, the probe verdict."""
     session = load_json(folder / "session.json")
     events = load_events(folder)
-    report = Report()
+    mode = session.get("mode", "agent")
+    control = session.get("control")
+    report = report if report is not None else Report()
+    report.label = f"{mode}{' control' if control else ''} {folder}"
     by_kind = {}
     for event in events:
         by_kind.setdefault(event.get("kind"), []).append(event)
@@ -176,7 +271,7 @@ def check(folder, receipt=None, lock_check=True):
     # L1 and L2: the limits.
     limit_ms = session.get("limit_ms", 0)
     end_t = end.get("t_ms") if end else None
-    clean = (end is not None and bool(end_events) and end.get("reason") in ("limit", "end")
+    clean = (end is not None and bool(end_events) and end.get("reason") in ("limit", "end", "probe-done")
              and events and events[-1].get("kind") == "end")
     report.add("L1", 0 < limit_ms <= MAX_LIMIT_MS and clean and end_t is not None and end_t <= limit_ms + LIMIT_GRACE_MS,
                f"limit {limit_ms / 1000:.0f} s (at most 1500 s); ended {end.get('reason') if end else 'NOT ENDED'} at "
@@ -192,57 +287,63 @@ def check(folder, receipt=None, lock_check=True):
     else:
         report.info("L2b", "wrapper receipt not given (--receipt): hold time not checked")
 
-    # C2a: keys.
-    keys = [event for event in input_events if event["cmd"] == "key"]
-    shots_by_time = sorted(shot_events.values(), key=lambda shot: shot["t_done_ms"])
-    report.add("C2a", all(KEY_NAME.match(str(event["args"].get("code", ""))) for event in keys),
-               f"{len(keys)} key inputs name a key; {sum(1 for e in input_events if e['cmd'] in ('click', 'drag', 'move', 'wheel'))} point inputs")
-    for event in keys:
-        before = [shot["file"] for shot in shots_by_time if shot["t_done_ms"] <= event["t_start_ms"]]
-        report.info("C2a", f"MATCH BY HAND: key {event['args'].get('code')} at {event['t_start_ms'] / 1000:.1f} s; the last screenshot before it: {before[-1] if before else 'none'}")
+    if control:
+        probe_checks(folder, mode, control, report)
+        return {"mode": mode, "control": control}
+    if mode == "agent":
+        # C2a: keys.
+        keys = [event for event in input_events if event["cmd"] == "key"]
+        shots_by_time = sorted(shot_events.values(), key=lambda shot: shot["t_done_ms"])
+        report.add("C2a", all(KEY_NAME.match(str(event["args"].get("code", ""))) for event in keys),
+                   f"{len(keys)} key inputs name a key; {sum(1 for e in input_events if e['cmd'] in ('click', 'drag', 'move', 'wheel'))} point inputs")
+        for event in keys:
+            before = [shot["file"] for shot in shots_by_time if shot["t_done_ms"] <= event["t_start_ms"]]
+            report.info("C2a", f"MATCH BY HAND: key {event['args'].get('code')} at {event['t_start_ms'] / 1000:.1f} s; the last screenshot before it: {before[-1] if before else 'none'}")
 
-    # C3: the statement.
-    first_click = (by_kind.get("first_click") or [None])[0]
-    stored = (by_kind.get("statement_stored") or [None])[0]
-    released = by_kind.get("sounds_released", [])
-    statement_path = folder / "statement.txt"
-    report.add("C3a", statement_path.is_file() and stored is not None, "statement.txt exists and the log has statement_stored")
-    if stored is not None and statement_path.is_file():
-        text = statement_path.read_text(encoding="utf-8")
-        report.add("C3b", hashlib.sha256(text.encode("utf-8")).hexdigest() == stored.get("sha256"), "statement.txt has the recorded sha256")
-        first_release = released[0] if released else None
-        report.add("C3c", first_release is not None and stored["seq"] < first_release["seq"],
-                   f"the statement was stored (seq {stored['seq']}) before the sound records were released "
-                   f"(seq {first_release['seq'] if first_release else 'none'})")
-        if first_click is not None:
-            due = first_click["t_down_ms"] + 60000
-            report.add("C3d", stored["t_ms"] >= due, f"the statement came {(stored['t_ms'] - first_click['t_down_ms']) / 1000:.1f} s after the first click (60 s or more)")
-            between = [e["n"] for e in input_events if e["counts_as_input"] and due < e["t_start_ms"] < stored["t_ms"]]
-            report.add("C3e", not between, f"no input between the 60 s mark and the statement" + (f"; inputs {between}" if between else ""))
+        # C3: the statement.
+        first_click = (by_kind.get("first_click") or [None])[0]
+        stored = (by_kind.get("statement_stored") or [None])[0]
+        released = by_kind.get("sounds_released", [])
+        statement_path = folder / "statement.txt"
+        report.add("C3a", statement_path.is_file() and stored is not None, "statement.txt exists and the log has statement_stored")
+        if stored is not None and statement_path.is_file():
+            text = statement_path.read_text(encoding="utf-8")
+            report.add("C3b", hashlib.sha256(text.encode("utf-8")).hexdigest() == stored.get("sha256"), "statement.txt has the recorded sha256")
+            first_release = released[0] if released else None
+            report.add("C3c", first_release is not None and stored["seq"] < first_release["seq"],
+                       f"the statement was stored (seq {stored['seq']}) before the sound records were released "
+                       f"(seq {first_release['seq'] if first_release else 'none'})")
+            if first_click is not None:
+                due = first_click["t_down_ms"] + 60000
+                report.add("C3d", stored["t_ms"] >= due, f"the statement came {(stored['t_ms'] - first_click['t_down_ms']) / 1000:.1f} s after the first click (60 s or more)")
+                between = [e["n"] for e in input_events if e["counts_as_input"] and due < e["t_start_ms"] < stored["t_ms"]]
+                report.add("C3e", not between, f"no input between the 60 s mark and the statement" + (f"; inputs {between}" if between else ""))
+            else:
+                report.add("C3d", False, "no first click in the log: the 60 s clock never started")
+            fields, problems = parse_statement(text)
+            report.add("C3f", not problems, "the statement has the six parts" + (f"; PROBLEMS: {problems}" if problems else ""))
+            no_answer = [key for key in ("GOAL", "FIRST_ACTION", "WORKED") if NO_ANSWER.search(fields.get(key, ""))]
+            report.add("C3g", not no_answer, "no part of the statement is \"do not know\"" + (f"; {no_answer}" if no_answer else ""))
+            shot_problems = []
+            for key in (k for k in STATEMENT_KEYS if k.endswith("_SHOT") and k in fields):
+                name = Path(fields[key]).name
+                shot = shot_events.get(name)
+                if shot is None or not (shots_dir / name).is_file():
+                    shot_problems.append(f"{key}: {fields[key]} is not a screenshot of the session")
+                elif shot["t_done_ms"] > stored["t_ms"]:
+                    shot_problems.append(f"{key}: {name} was taken after the statement")
+            report.add("C3h", not shot_problems, "each part names a screenshot file of the session, taken before the statement" + (f"; PROBLEMS: {shot_problems}" if shot_problems else ""))
         else:
-            report.add("C3d", False, "no first click in the log: the 60 s clock never started")
-        fields, problems = parse_statement(text)
-        report.add("C3f", not problems, "the statement has the six parts" + (f"; PROBLEMS: {problems}" if problems else ""))
-        no_answer = [key for key in ("GOAL", "FIRST_ACTION", "WORKED") if NO_ANSWER.search(fields.get(key, ""))]
-        report.add("C3g", not no_answer, "no part of the statement is \"do not know\"" + (f"; {no_answer}" if no_answer else ""))
-        shot_problems = []
-        for key in (k for k in STATEMENT_KEYS if k.endswith("_SHOT") and k in fields):
-            name = Path(fields[key]).name
-            shot = shot_events.get(name)
-            if shot is None or not (shots_dir / name).is_file():
-                shot_problems.append(f"{key}: {fields[key]} is not a screenshot of the session")
-            elif shot["t_done_ms"] > stored["t_ms"]:
-                shot_problems.append(f"{key}: {name} was taken after the statement")
-        report.add("C3h", not shot_problems, "each part names a screenshot file of the session, taken before the statement" + (f"; PROBLEMS: {shot_problems}" if shot_problems else ""))
-    else:
-        report.add("C3c", False, "no statement: the sound records opened with no statement before them")
+            report.add("C3c", False, "no statement: the sound records opened with no statement before them")
 
     # S1, F5: the sound records.
     records_path = folder / "sound-records.json"
     sound = load_json(records_path) if records_path.is_file() else None
     if sound is None:
         report.add("S1", False, "sound-records.json is missing")
-        return report
+        probe_checks(folder, mode, control, report)
+        ui_checks(folder, mode, report, by_kind)
+        return {"mode": mode, "control": control}
     sampling = sound.get("sampling", {})
     expected = (end_t or 0) / sampling.get("interval_ms", 500) * 0.5
     samples = sampling.get("samples", 0)
@@ -266,45 +367,68 @@ def check(folder, receipt=None, lock_check=True):
     early = [f"{r.get('sound_id')} at {r['first_seen_ms'] / 1000:.1f} s" for r in records
              if (r.get("category") == "alerts" or "alert" in str(r.get("sound_id")).lower()) and r["first_seen_ms"] < first_input]
     report.add("F5b", not early, "no alert sound before the first input" + (f"; {early}" if early else ""))
-    return report
+    probe_checks(folder, mode, control, report)
+    ui_checks(folder, mode, report, by_kind)
+    return {"mode": mode, "control": control}
 
 
-def render(folder, report):
-    lines = [f"cold_play_check: {folder}", "MACHINE CHECKS"]
+def verdict(report, infos, partial):
+    """The result word. It never depends on an answer of an agent."""
+    failed = report.failed
+    if infos and all(info["control"] for info in infos):
+        return ("CONTROL-FAIL: " + ", ".join(failed)) if failed else "CONTROL-PASS (the probe can pass: it is not a readiness run)"
+    modes = {info["mode"] for info in infos if not info["control"]}
+    missing = [] if partial else [name for name, key in (("first-click probe", "probe-first-click"), ("buttons probe", "probe-buttons"), ("agent session", "agent")) if key not in modes]
+    if failed or missing:
+        parts = ([f"failed: {', '.join(failed)}"] if failed else []) + ([f"missing: {', '.join(missing)}"] if missing else [])
+        return f"NOT-READY ({'; '.join(parts)})"
+    if partial:
+        return "PARTIAL-PASS (manual checks open; one folder is not a readiness run)"
+    return "MACHINE-PASS (manual checks open)"
+
+
+def render(folders, report, result):
+    lines = ["cold_play_check: " + ", ".join(str(f) for f in folders), "MACHINE CHECKS"]
+    label = None
     for row in report.rows:
+        if row["folder"] != label:
+            label = row["folder"]
+            lines.append(f"  == {label}")
         lines.append(f"  {row['status']:<4} {row['check']:<4} {row['text']}")
     lines.append("MANUAL CHECKS (a person or an agent reads the evidence; this tool does not check them)")
     for check_id, text in MANUAL:
         lines.append(f"  TODO {check_id:<4} {text}")
-    failed = report.failed
-    if failed:
-        lines.append(f"RESULT: MACHINE-FAIL: {', '.join(failed)}")
-    else:
-        lines.append("RESULT: MACHINE-PASS. The manual checks stay open. This is not PERSON-READY.")
+    lines.append(f"RESULT: {result}")
     return "\n".join(lines)
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description="Check a cold-play evidence folder (no browser).")
+    parser = argparse.ArgumentParser(description="Check cold-play evidence folders (no browser).")
     parser.add_argument("folder")
-    parser.add_argument("--receipt", help="lock-receipt.json of the headed wrapper")
+    parser.add_argument("--also", action="append", default=[], help="another folder of the same readiness run (a probe or the agent session)")
+    parser.add_argument("--receipt", help="lock-receipt.json of the headed wrapper (for the first folder)")
     parser.add_argument("--no-lock-check", action="store_true", help="the session did not run under the headed wrapper (a test)")
+    parser.add_argument("--partial", action="store_true", help="do not require all three parts of a readiness run")
     parser.add_argument("--json", action="store_true", help="print the checks as JSON")
     args = parser.parse_args(argv)
-    folder = Path(args.folder)
+    folders = [Path(args.folder)] + [Path(f) for f in args.also]
+    report = Report()
+    infos = []
     try:
-        report = check(folder, args.receipt, not args.no_lock_check)
+        for index, folder in enumerate(folders):
+            infos.append(check(folder, args.receipt if index == 0 else None, not args.no_lock_check, report))
     except Unusable as error:
         print(f"cold_play_check: {error}", file=sys.stderr)
         return 2
     except (KeyError, TypeError, AttributeError) as error:
-        print(f"cold_play_check: the folder has an unexpected shape ({type(error).__name__}: {error})", file=sys.stderr)
+        print(f"cold_play_check: a folder has an unexpected shape ({type(error).__name__}: {error})", file=sys.stderr)
         return 2
+    result = verdict(report, infos, args.partial)
     if args.json:
-        print(json.dumps({"machine": report.rows, "manual": [{"check": c, "text": t} for c, t in MANUAL], "failed": report.failed}, indent=2))
+        print(json.dumps({"machine": report.rows, "manual": [{"check": c, "text": t} for c, t in MANUAL], "failed": report.failed, "result": result}, indent=2))
     else:
-        print(render(folder, report))
-    return 1 if report.failed else 0
+        print(render(folders, report, result))
+    return 0 if result.split()[0] in ("MACHINE-PASS", "PARTIAL-PASS", "CONTROL-PASS") else 1
 
 
 if __name__ == "__main__":

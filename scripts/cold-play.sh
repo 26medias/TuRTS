@@ -7,6 +7,13 @@
 #   scripts/cold-play.sh --session DIR --url URL [options]                        use a game that another command serves
 #
 # Options: --limit-secs N (1 to 1500, default 600)   --viewport WxH|none (default 1280x720)   --build TEXT
+#          --probe first-click|buttons   a scripted probe with no agent (tests/browser/cold-probe.js); the session
+#                                        ends when the probe ends. A probe needs a game that no one has joined
+#                                        (a slot is permanent): one fresh game for each probe and for the agent session.
+#          --control close-layer         with --probe first-click: the tool closes the layer that the start click
+#                                        met, then probes (the positive control: the probe can pass)
+# A readiness run is: --probe first-click, then --probe buttons, then (only if both pass) the agent session, each on
+# a fresh game; then scripts/qa/cold_play_check.py <folder> --also <folder> --also <folder>.
 #
 # The headed Chrome runs only under the lock wrapper (the GPU lock). The caller does:
 #   bash tests/browser (npm ci) and scripts/mp1-play.sh --prepare PREP       outside the lock
@@ -18,10 +25,10 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 usage() {
-    echo "usage: scripts/cold-play.sh --session DIR (--prepared PREP [--package P] | --url URL) [--limit-secs N] [--viewport WxH|none] [--build TEXT]" >&2
+    echo "usage: scripts/cold-play.sh --session DIR (--prepared PREP [--package P] | --url URL) [--limit-secs N] [--viewport WxH|none] [--build TEXT] [--probe first-click|buttons [--control close-layer]]" >&2
     exit 2
 }
-SESSION="" PREP="" PACKAGE="" URL_ARG="" LIMIT=600 VIEWPORT=1280x720 BUILD=""
+SESSION="" PREP="" PACKAGE="" URL_ARG="" LIMIT=600 VIEWPORT=1280x720 BUILD="" PROBE="" CONTROL=""
 while (($#)); do
     (($# >= 2)) || usage
     case "$1" in
@@ -32,6 +39,8 @@ while (($#)); do
         --limit-secs) LIMIT="$2" ;;
         --viewport) VIEWPORT="$2" ;;
         --build) BUILD="$2" ;;
+        --probe) PROBE="$2" ;;
+        --control) CONTROL="$2" ;;
         *) usage ;;
     esac
     shift 2
@@ -42,6 +51,8 @@ done
 [[ -z "$PACKAGE" || -n "$PREP" ]] || usage
 [[ "$LIMIT" =~ ^[0-9]+$ ]] && ((LIMIT >= 1 && LIMIT <= 1500)) || { echo "cold-play: --limit-secs must be a whole number from 1 to 1500" >&2; exit 2; }
 [[ "$VIEWPORT" == none || "$VIEWPORT" =~ ^[0-9]{3,5}x[0-9]{3,5}$ ]] || { echo "cold-play: --viewport takes WIDTHxHEIGHT or none" >&2; exit 2; }
+[[ -z "$PROBE" || "$PROBE" == first-click || "$PROBE" == buttons ]] || { echo "cold-play: --probe takes first-click or buttons" >&2; exit 2; }
+[[ -z "$CONTROL" || ( "$CONTROL" == close-layer && "$PROBE" == first-click ) ]] || { echo "cold-play: --control close-layer goes with --probe first-click" >&2; exit 2; }
 [[ ! -e "$SESSION" ]] || { echo "cold-play: $SESSION exists; a session writes a new folder" >&2; exit 2; }
 [[ -d "$ROOT/tests/browser/node_modules/playwright-core" ]] || { echo "cold-play: run npm ci in tests/browser first" >&2; exit 2; }
 
@@ -88,6 +99,8 @@ fi
 
 node_args=(--port "$PORT" --session "$SESSION" --url "$URL" --limit-secs "$LIMIT" --viewport "$VIEWPORT")
 [[ -z "$BUILD" ]] || node_args+=(--build "$BUILD")
+[[ -z "$PROBE" ]] || node_args+=(--probe "$PROBE")
+[[ -z "$CONTROL" ]] || node_args+=(--control "$CONTROL")
 node "$ROOT/tests/browser/cold-session.js" "${node_args[@]}" >"$SESSION/internal/session.log" 2>&1 &
 NODE_PID=$!
 wait "$NODE_PID" || { rc=$?; echo "cold-play: the session process failed (exit $rc); see $SESSION/internal/session.log" >&2; cat "$SESSION/internal/session.log" >&2; NODE_PID=""; exit "$rc"; }

@@ -15,6 +15,9 @@
 //   shots/            every screenshot: 0000-start.png, then NNNN-<input>-p200.png and -p1000.png
 //   statement.txt     the 60 s statement, stored when the agent calls `statement`
 //   sound-records.json the sound records of the page debug state (see the gate below)
+//   ui-records.json   the UI record (turts_ui) before the first input and after the first click, with the
+//                     measures that the checker needs (words, alert lines, big layers); held back like the sounds
+//   probe-*.json      the record of a scripted probe (cold-probe.js); a probe session has no agent
 //   end.json          why and when the session ended
 //   internal/         the control port and the logs of the start script (not for the agent)
 //
@@ -32,6 +35,9 @@ const crypto = require("node:crypto");
 const fs = require("node:fs");
 const net = require("node:net");
 const path = require("node:path");
+const { nonflatShare } = require("./cold-pixels.js");
+const { readWorld } = require("./cold-probe.js");
+const { decodePng } = require("./harness/png.js");
 
 const STATEMENT_AFTER_MS = 60000;
 const SHOT_OFFSETS_MS = [200, 1000];
@@ -117,9 +123,12 @@ class ColdSession {
     // `page` is a Playwright page (a fake in the unit tests). `now` is a monotonic clock in ms and
     // `sleep` waits for ms: the tests give a fake pair. `viewport` is { width, height } of the page.
     constructor({ page, dir, now = () => performance.now(), sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
-        limitMs = DEFAULT_LIMIT_S * 1000, viewport, meta = {} }) {
+        limitMs = DEFAULT_LIMIT_S * 1000, viewport, meta = {}, mode = "agent", control = null }) {
         if (!(limitMs >= 1000 && limitMs <= MAX_LIMIT_S * 1000)) throw new Error(`the session limit must be 1 to ${MAX_LIMIT_S} s`);
-        Object.assign(this, { page, dir, now, sleep, limitMs, viewport, meta });
+        Object.assign(this, { page, dir, now, sleep, limitMs, viewport, meta, mode, control });
+        this.uiRecords = [];
+        this.uiBeforeDone = false;
+        this.firstClickShots = false;
         this.shotsDir = path.join(dir, "shots");
         this.seq = 0;
         this.calls = 0;
@@ -156,7 +165,7 @@ class ColdSession {
         const size = this.viewport ?? await this.page.evaluate(() => ({ width: window.innerWidth, height: window.innerHeight }));
         this.size = size;
         fs.writeFileSync(path.join(this.dir, "session.json"), JSON.stringify({
-            session_version: 1, started_iso: new Date().toISOString(), limit_ms: this.limitMs, statement_after_ms: STATEMENT_AFTER_MS,
+            session_version: 2, mode: this.mode, control: this.control, started_iso: new Date().toISOString(), limit_ms: this.limitMs, statement_after_ms: STATEMENT_AFTER_MS,
             sample_ms: SAMPLE_MS, shot_offsets_ms: SHOT_OFFSETS_MS, viewport: size, ...this.meta,
         }, null, 2) + "\n");
         this.record("ready");
@@ -177,14 +186,41 @@ class ColdSession {
     }
 
     // The screenshots 200 ms and 1000 ms after `endMs`.
-    async shotsAfter(n, kind, endMs) {
+    async shotsAfter(n, kind, endMs, hook = null, firstClick = false) {
         const paths = [];
         for (const offset of SHOT_OFFSETS_MS) {
             // A timer can wake a millisecond early: wait again until the time is reached.
             for (let wait = endMs + offset - this.t(); wait > 0; wait = endMs + offset - this.t()) await this.sleep(wait);
-            paths.push(await this.shot(`${String(n).padStart(4, "0")}-${kind}-p${offset}`, endMs + offset));
+            const file = await this.shot(`${String(n).padStart(4, "0")}-${kind}-p${offset}`, endMs + offset);
+            paths.push(file);
+            if (firstClick) await this.captureUi(`after_first_click_p${offset}`, file);
+            if (hook) await hook(offset, file);
         }
         return paths;
+    }
+
+    // The three bridges as one record (cold-probe.js). Used by the probes and the UI records; never sent to an agent.
+    readWorld() { return this.page.evaluate(readWorld); }
+
+    // One UI record: the widgets, the alert lines, and for each layer of more than half of the page whether the
+    // world shows through it. `file` is a screenshot that was just taken; with none, a picture is taken for the measure.
+    async captureUi(label, file = null) {
+        const world = await this.readWorld().catch(() => ({ available: false }));
+        if (!world.available) { this.uiRecords.push({ label, t_ms: this.t(), available: false }); return; }
+        const size = this.size;
+        const big = world.ui.filter((widget) => widget.visible && widget.rect && (widget.rect[2] * widget.rect[3]) / (size.width * size.height) > 0.5);
+        let picture = null;
+        if (big.length) {
+            try { picture = decodePng(file ? fs.readFileSync(file) : await this.page.screenshot({ scale: "css" })); } catch { picture = null; }
+        }
+        this.uiRecords.push({
+            label, t_ms: this.t(), available: true, viewport: size, alerts: world.alerts,
+            alert_lines: world.ui.filter((widget) => widget.visible && /(^|\/)alert_line/.test(widget.id) && widget.kind !== "widget" && (widget.text ?? "").trim()).length,
+            widgets: world.ui.filter((widget) => widget.visible).map((widget) => ({ id: widget.id, kind: widget.kind, rect: widget.rect, text: widget.text,
+                capture_root: widget.capture_root, focus_policy_block: widget.focus_policy_block })),
+            big_widgets: big.map((widget) => ({ id: widget.id, kind: widget.kind, rect: widget.rect, area_share: Math.round((widget.rect[2] * widget.rect[3]) / (size.width * size.height) * 1000) / 1000,
+                capture_root: widget.capture_root, focus_policy_block: widget.focus_policy_block, nonflat_share: picture ? nonflatShare(picture, widget.rect) : null })),
+        });
     }
 
     // One read of the sound onsets. A failed read is counted, not thrown.
@@ -220,6 +256,7 @@ class ColdSession {
                 last_error: this.lastSampleError },
             context_states: this.contextStates, records,
         }, null, 2) + "\n");
+        fs.writeFileSync(path.join(this.dir, "ui-records.json"), JSON.stringify({ records: this.uiRecords }, null, 2) + "\n");
         this.releases += 1;
         this.record("sounds_released", { reason, final, records: records.length });
     }
@@ -238,7 +275,7 @@ class ColdSession {
         return lines;
     }
 
-    isDue() { return this.firstClickMs !== null && this.statementMs === null && this.t() >= this.firstClickMs + STATEMENT_AFTER_MS; }
+    isDue() { return this.mode === "agent" && this.firstClickMs !== null && this.statementMs === null && this.t() >= this.firstClickMs + STATEMENT_AFTER_MS; }
 
     reply(exit, lines) {
         if (this.isDue() && !this.dueRecorded) {
@@ -254,7 +291,7 @@ class ColdSession {
         return run;
     }
 
-    async dispatch({ cmd, args = [], text }) {
+    async dispatch({ cmd, args = [], text, hook = null }) {
         if (this.ended) return refuse(4, `the session has ended (${this.ended}). The evidence folder is complete.`);
         try {
             if (cmd === "status") return this.reply(0, ["status"]);
@@ -262,7 +299,7 @@ class ColdSession {
             if (cmd === "statement") return await this.storeStatement(text ?? "");
             if (cmd === "wait") return await this.wait(args);
             if (!INPUT_KINDS.has(cmd)) return refuse(2, `unknown call "${cmd}"`, USAGE);
-            return await this.input(cmd, args);
+            return await this.input(cmd, args, hook);
         } catch (error) {
             this.record("error", { cmd, message: String(error?.message || error).slice(0, 300) });
             return this.reply(6, [`the tool could not do "${cmd}": ${String(error?.message || error).split("\n")[0].slice(0, 200)}`]);
@@ -277,12 +314,14 @@ class ColdSession {
         return null;
     }
 
-    async input(cmd, args) {
+    async input(cmd, args, hook = null) {
         if (this.isDue()) {
             this.record("refused", { cmd, reason: "statement_due" });
             return this.reply(3, [`refused: "${cmd}" is an input, and your statement is due.`]);
         }
         const { page, sleep } = this;
+        // The UI record just before the first input (a wait is no input): alert lines before any input count here.
+        if (!this.uiBeforeDone && cmd !== "wait") { this.uiBeforeDone = true; await this.captureUi("before_first_input"); }
         const nums = args.map((arg) => this.number(arg));
         const startMs = this.t();
         const detail = {};
@@ -341,7 +380,9 @@ class ColdSession {
         const n = this.calls;
         const event = this.record("input", { n, cmd, args: detail, t_start_ms: startMs, t_down_ms: downMs, t_end_ms: endMs, counts_as_input: true });
         fs.appendFileSync(path.join(this.dir, "inputs.jsonl"), JSON.stringify(event) + "\n");
-        const shots = await this.shotsAfter(n, cmd, endMs);
+        const firstClick = !this.firstClickShots && downMs !== null && this.firstClickMs === downMs;
+        if (firstClick) this.firstClickShots = true;
+        const shots = await this.shotsAfter(n, cmd, endMs, hook, firstClick);
         return this.reply(0, [`input ${n}: ${cmd} ${args.join(" ")}`, `screenshot +200 ms: ${shots[0]}`, `screenshot +1000 ms: ${shots[1]}`]);
     }
 
@@ -387,7 +428,7 @@ class ColdSession {
             this.finishing = (async () => {
                 await this.sample();
                 this.ended = reason;
-                this.releaseSounds(this.statementMs === null ? "end-without-statement" : "end", true);
+                this.releaseSounds(this.mode !== "agent" ? "probe" : this.statementMs === null ? "end-without-statement" : "end", true);
                 const end = { reason, t_ms: this.t(), limit_ms: this.limitMs, calls: this.calls, first_click_ms: this.firstClickMs, statement_stored: this.statementMs !== null };
                 fs.writeFileSync(path.join(this.dir, "end.json"), JSON.stringify(end, null, 2) + "\n");
                 this.record("end", { reason });
@@ -421,7 +462,7 @@ function listen(session, onEnd) {
 }
 
 function parseArgs(argv) {
-    const options = { port: null, session: null, limitSecs: DEFAULT_LIMIT_S, viewport: { width: 1280, height: 720 }, build: null, url: null };
+    const options = { port: null, session: null, limitSecs: DEFAULT_LIMIT_S, viewport: { width: 1280, height: 720 }, build: null, url: null, probe: null, control: null };
     for (let i = 0; i < argv.length; i += 2) {
         const [flag, value] = [argv[i], argv[i + 1]];
         if (value === undefined) throw new Error(`${flag} needs a value`);
@@ -430,6 +471,8 @@ function parseArgs(argv) {
         else if (flag === "--limit-secs") options.limitSecs = Number(value);
         else if (flag === "--build") options.build = value;
         else if (flag === "--url") options.url = value;
+        else if (flag === "--probe") options.probe = value;
+        else if (flag === "--control") options.control = value;
         else if (flag === "--viewport") {
             if (value === "none") options.viewport = null;
             else {
@@ -442,6 +485,8 @@ function parseArgs(argv) {
     if (!(Number.isInteger(options.port) && options.port >= 1 && options.port <= 65535)) throw new Error("--port <1-65535> is required (the DEBUG_PORT of scripts/mp1-play.sh)");
     if (!options.session) throw new Error("--session <folder> is required");
     if (!(Number.isInteger(options.limitSecs) && options.limitSecs >= 1 && options.limitSecs <= MAX_LIMIT_S)) throw new Error(`--limit-secs must be a whole number from 1 to ${MAX_LIMIT_S}`);
+    if (options.probe !== null && !["first-click", "buttons"].includes(options.probe)) throw new Error("--probe takes first-click or buttons");
+    if (options.control !== null && !(options.probe === "first-click" && options.control === "close-layer")) throw new Error("--control close-layer goes with --probe first-click");
     return options;
 }
 
@@ -456,10 +501,23 @@ async function main(argv) {
     await page.bringToFront();
     const session = new ColdSession({
         page, dir: options.session, limitMs: options.limitSecs * 1000, viewport: options.viewport,
+        mode: options.probe ? `probe-${options.probe}` : "agent", control: options.control,
         meta: { url: options.url ?? page.url(), build: options.build, chrome: browser.version(), lock_marker: process.env.MC_LOCK_RUN ?? null, node: process.version },
     });
     if (options.viewport) await page.setViewportSize(options.viewport);
     await session.start();
+    if (options.probe) {
+        // A probe session: no agent, no control port. The probe runs, the session ends, the folder is complete.
+        const { runProbe } = require("./cold-probe.js");
+        const sampler = setInterval(() => { session.sample(); }, SAMPLE_MS);
+        const limit = setTimeout(() => { session.finish("limit"); }, Math.max(0, options.limitSecs * 1000 - session.t()));
+        let record;
+        try { record = await runProbe(session, options.probe, { control: options.control }); } finally { clearInterval(sampler); clearTimeout(limit); }
+        await session.finish(session.ended ?? "probe-done");
+        console.log(`PROBE ${options.probe}${options.control ? ` (control ${options.control})` : ""}: ${record.summary.verdict} - ${record.summary.reason}`);
+        try { await browser.close(); } catch { /* Chrome is gone */ }
+        return 0;
+    }
     let finished;
     const done = new Promise((resolve) => { finished = resolve; });
     const server = await listen(session, finished);
