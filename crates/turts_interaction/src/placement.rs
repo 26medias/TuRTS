@@ -8,9 +8,16 @@
 //!   `core_adapter/effects/placement.rs` (the ghost).
 //! - `Facts` is what `WorldView::placement_facts` gives (sites, footprints and the build area).
 //! - `intercept` runs at the top of the event loop of `Core::step`, before any other handler. When it
-//!   returns `true`, the event is not given to the other handlers: a right click in the placement
-//!   mode sends no order, and a left click that places changes no selection (design 7.2, GHO1
-//!   plant (d)).
+//!   returns `true`, the event is not given to the handlers of the loop: a right click in the
+//!   placement mode sends no order, and a left click that places changes no selection (design 7.2,
+//!   GHO1 plant (d)). It may take only: `PointerDown` and `PointerUp` of the left and the right
+//!   button, and `KeyDown` of the cancel key. It must not take `KeyUp`, `FocusLost`, `PointerLeft`,
+//!   `PointerMove`, `UiCapture`, `Wheel`, `Minimap` or `InputEvent::Placement`: a handler that is
+//!   skipped does not clear the held keys and buttons or run `on_input`. When it takes a
+//!   `PointerUp`, it clears `pointer_down` and the held button itself (what `on_pointer_up` does
+//!   first). The camera still sees every event: `camera_controller.step` reads `events`, not the
+//!   loop (`lib.rs`, the call after the second `prune`), except the wheel events that `on_wheel`
+//!   marks as ignored, so an intercepted `Wheel` would reach the camera even with Ctrl held.
 //! - `on_input` handles `InputEvent::Placement`.
 //! - `update` runs once for each step after the events, before the camera step, in the order
 //!   `placement`, `hints`, `alerts`.
@@ -21,7 +28,8 @@
 
 use super::{Core, Effect, InputEvent, Viewport, WorldView};
 
-/// The placement mode of the core. `taking_input` is `true` while the mode takes every input.
+/// The placement mode of the core. `taking_input` is `true` while the mode takes the placement
+/// clicks and the cancel key (see `intercept`); it never takes the other kinds of input.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct State {
     pub taking_input: bool,

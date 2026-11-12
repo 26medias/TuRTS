@@ -82,10 +82,47 @@ the code needs, and what the branch does. For the orchestrator to apply in revis
     before the `let`, the three arms) and has a self-test of 12 mutations, among them the five of the
     review (inner `continue` to `return`, an argument to `0`, `&mut Vec::new()` at a call, `now_ms` to
     `0`, the hook calls moved).
-16. **`docs/research/mp1/l0-split/run_proof.sh` (move A of `L0-SPLIT`) no longer applies verbatim.**
-    `draw_world_visuals` now has two more calls (`placement::draw`, `effects::draw`) and two more
-    fields in its destructure. The behaviour oracle is the scene oracle, byte-equal and green; a
-    planted `draw` that adds a visual turns it red (plant records `L0-CORE/v-*`).
+16. **`docs/research/mp1/l0-split/run_proof.sh` (the proofs of `L0-SPLIT`) no longer applies verbatim.**
+    - Move A: `draw_world_visuals` has two more calls (`placement::draw`, `effects::draw`) and two more
+      fields in its destructure. At 0816a87 the script prints DIFFERENT at token 32 (the destructure).
+      The re-review (run R6) removed those 4 lines and got EQUAL, so the cover of move A is not lost.
+    - Move B: at 0816a87 the script prints DIFFERENT at token 2724 (the new arms `Effect::Placement`
+      and `Effect::Hint`; old 2951 tokens, joined 2991) and `NOT-CALLED: placement_facts`,
+      `NOT-CALLED: hint_facts` (the two new `WorldView` methods that the script takes for concern
+      functions of the move, because they are new functions of `core_adapter.rs`). The re-review
+      (R6) removed the repair lines and got 2951 = 2951 tokens, and the only complaint left was the
+      NOT-CALLED line (I did not repeat that removal run).
+    - No gate runs either script (the `agents` job and the roster check do not). They are records of
+      the first pass. The behaviour oracle is the scene oracle (byte-equal and green) and the
+      adapter tests. A planted `draw` that adds a visual turns the scene oracle red (plant records
+      `L0-CORE/v-*`). Do not re-run these two scripts on a later head; re-pin them or drop them.
 17. **Typo "The the"** in the stub text of `hints.rs` and `alerts.rs`: gone with the rewrite.
 18. **`visuals/scene_tests.rs` setup** has two more `init_resource` lines (`placement::Feed`,
     `effects::Pool`), because `VisualInputs` has two more fields. No expected value changed.
+
+## Follow-up (after the re-check `rereview-l0-core.md`)
+
+19. **The fact builders are stateless and ran every frame (M-R1).** `frame_world` called
+    `facts::placement::build(replica, content)` and `facts::hint::build(replica, content)` and each
+    returned a new `Facts`. The plan asks for one rebuild for each applied delta (plan:977, :990),
+    which needs a cache. Now `build(&mut Facts, &Replica, &ClientContent)` updates the facts that the
+    last frame left. The facts of both owners live in `OwnerFacts` (`core_adapter/facts.rs`), kept in
+    `CoreRuntime::facts`: `drive_core_adapter` takes them before `frame_world` and puts them back at
+    its end. So an owner keeps its cache (for example the replica tick of its last rebuild) in its own
+    `Facts` type, in `turts_interaction/src/<owner>.rs`, and edits its own `facts/<owner>.rs`; it does
+    not edit `frame_world`. An early return of `drive_core_adapter` after `frame_world` drops the
+    facts, so the next frame starts from the default (a cold cache, not a wrong one). Test:
+    `core_adapter::adapter_tests::owner_facts_are_kept_from_frame_to_frame`.
+20. **The text of `taking_input` said "takes every input" (L-R1).** Read literally, it swallows
+    `KeyUp`, `FocusLost`, `PointerLeft`, `UiCapture` and `InputEvent::Placement` too, which leaves held
+    keys and buttons set and stops `on_input`. The text now lists what `intercept` may take
+    (`PointerDown` and `PointerUp` of the left and right button, `KeyDown` of the cancel key) and
+    what it must not take, and says that the camera still sees every event (`camera_controller.step`
+    reads `events`, not the loop), except the wheel events that `on_wheel` marks as ignored. Design
+    7.2 and GHO1 (d) need no change.
+21. **`run_proof.sh` was blind to `taking_input: true` in a literal or in a manual `Default` (L-R3).**
+    `taking_input.sh` now allows only the field declaration, the body of `intercept` and comments, and
+    refuses every other line that names the field. The dynamic case is owned by the test
+    `hook_tests::intercept_stub_takes_no_event_in_a_fresh_core`. Plant records `L0-CORE/t-*`.
+22. **`leave::activate` has no way to send `LeaveMatch` (re-check L-R2).** `UI-RESULT` adds one
+    parameter to `activate_widget`. No concurrent owner edits that header. Accepted by the re-check.

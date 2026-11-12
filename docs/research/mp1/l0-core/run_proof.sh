@@ -5,8 +5,10 @@
 #    with the arguments checked against the parameter names and the hooks checked in place.
 # 2. the self-test of that proof (twelve mutations, each must be DIFFERENT).
 # 3. the move of the arm CancelProduction into cancel::activate.
-# 4. nothing in the production source of turts_interaction sets `taking_input`, so the intercept
-#    hook returns `false` (its body is `core.placement.taking_input`, checked in step 1).
+# 4. nothing in the production source of turts_interaction sets `taking_input` (no assignment, no
+#    literal, no manual Default: `taking_input.sh`), so the intercept hook returns `false` (its body
+#    is `core.placement.taking_input`, checked in step 1). The test
+#    `hook_tests::intercept_stub_takes_no_event_in_a_fresh_core` owns the dynamic case.
 # 5. the test functions: none removed, the added ones listed.
 set -eu
 here=$(cd "$(dirname "$0")" && pwd)
@@ -33,8 +35,7 @@ git -C "$repo" show "$old:crates/turts_client/src/widgets/activation.rs" > "$tmp
 git -C "$repo" show "$new:crates/turts_client/src/widgets/activation/cancel.rs" > "$tmp/cancel.rs"
 python3 -I -B "$here/move_equal.py" "$tmp/activation_old.rs" "$tmp/cancel.rs" || status=1
 echo "== taking_input is never set in the production source"
-sets=$(git -C "$repo" grep -nE 'taking_input\s*=[^=]' "$new" -- "$lib" ':!*hook_tests.rs' || true)
-if [ -n "$sets" ]; then echo "$sets"; echo "TAKING-INPUT-SET"; status=1; else echo "no assignment (RESULT OK)"; fi
+bash "$here/taking_input.sh" "$new" || status=1
 echo "== test functions"
 (cd "$repo" && python3 -I -B "$here/static_tests.py" "$old" "$new") || status=1
 exit $status
