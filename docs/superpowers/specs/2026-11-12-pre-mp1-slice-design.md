@@ -1,6 +1,6 @@
 # Pre-MP1 slice: audit crate, one movement model, neighbour grid, file splits: design
 
-Date: 2026-11-12. Revision 2. Status: DRAFT. Gate round 1: the simulation lens FAILED revision 1 (one High: a third movement branch); the technical-director ruled (docs/research/mp1/ruling-td-one-step-function.md); sections 1, 2, 5 and 6 are replaced. The qa-lead lens is in progress.
+Date: 2026-11-12. Revision 3. Status: DRAFT. Revision 3: the qa-lead lens FAILED revision 1 with 4 High (docs/research/mp1/gate-slice-qa.md); sections 2, 4 and 5 take its text changes; a re-check by both lenses follows. Gate round 1: the simulation lens FAILED revision 1 (one High: a third movement branch); the technical-director ruled (docs/research/mp1/ruling-td-one-step-function.md); sections 1, 2, 5 and 6 are replaced. The qa-lead lens is in progress.
 Author: the orchestrator, from the technical-director input `docs/research/mp1/input-technical-director.md`
 (parts A and C) and the producer input `docs/research/mp1/input-producer.md` (part 2). The inputs are agent
 output; each claim below that this design depends on carries its `path:line` and is checked again at the gate.
@@ -46,7 +46,17 @@ Order: the depletion repair (`codex/mc-fix-deplete`) is merged -> G1 -> S1 -> S2
 | A4 | The rest of `step_frame_preserving_resting` becomes functions on `&mut FrameState`, called in one loop in unit-id order | refactor | Reference copy, bit-equal; stream unchanged |
 | A3 | Two neighbour grids (movers, statics); combat grid cell from the smallest weapon range | performance only | Reference copy, bit-equal; property test; RUN126 probe time recorded |
 
-A pure move is checked with `git diff -M --color-moved=dimmed-zebra --color-moved-ws=allow-indentation-change`. No line outside `mod`, `use` and visibility lines may show as added or removed.
+A pure move is checked with `item_equal.py` (`docs/research/mp1/probes/item_equal.py`): the multiset of the
+top-level items of the old files, with visibility removed, equals that of the new files, except `mod` and `use`
+items. The names of `cargo test -- --list` are the same before and after. The colour-moved git diff is a
+reading aid only: the gate showed that it hides a swap of two statements.
+
+"Bit-equal" in parts A2a, A4 and A3 means: every f32 of the frame output compared with `to_bits` (0.0 and
+-0.0 differ, because `movement.rs:481,964` use `atan2` and `total_cmp`); 64 fixed seeds, each chained for 300
+ticks; 1 to 5,000 movers; 0 to 20 statics of radius 0.5 to 8; a `preserve_resting` set that is not empty; a
+counter for each phase that must be above 0. Plants that must go red: a swap of two phases; a `FrameState`
+field that is reset; a -0.0; statics queried with reach `r` only; a merge that is not sorted; a speed of
+`Some(0.0)`.
 
 ## 3. `turts_audit` boundary
 
@@ -66,20 +76,40 @@ A pure move is checked with `git diff -M --color-moved=dimmed-zebra --color-move
   before and after each operation (`m3_m2_stream.rs:119`). The log writes a new `LedgerAudit` view; a sim
   structure enters the log format only through an explicit edit of `LedgerAudit`.
 
-## 4. Faults and rows that change in A1
+## 4. Faults, rows and readers that change in A1
 
-A fault with no red after the change is a defect of this slice.
+A fault with no red after the change is a defect of this slice. The gate ran the fault sets with the replay
+validator disabled (`docs/research/mp1/gate-slice-qa.md`): M3 17 of 17 red (they cannot reach the validator);
+native 29 of 33 red; the 4 others are the first two items below.
 
-- `E8-mixed-cost-partial-commit` (`tests/m2/refutations.json:768`): its red comes from `economylog.rs:2349`
-  today. Pin it to the new rule "a refused command or operation changes no account".
-- The other 40 M2 cases and the 17 M3 cases keep their reds (sources: `accounting.rs`, `conservation.rs`,
-  `turts_server/tests/economy.rs`, `m2-oracle.js`). The gate checks this claim by a run of the three fault sets.
-- Row EL1 of the MC design: "movement input missing" and "the validator of today" become void. "A write to
-  `Position` or `UnitOrders` outside the movement function and `capture_operation`" becomes a `turts_checks` scan
-  with a planted fixture. The row text changes to: the ledger validator accepts each tick, and the run records
-  the log bytes.
-- `mc_orders.rs` tests that say "strictly replays" must assert the order outcome from the order log. If they
-  do not do so today (NOT TRACED), A1 adds the assertions before the replay validator is deleted.
+1. The live-log reader. `economy.rs:1792-1870` (`read_live_complete_tick_prefix`) finds an incomplete tail from
+   the exact error text of the validator (`economylog.rs:1085`, matched at `economy.rs:1846`). With the validator
+   off, an incomplete tick reaches the oracle and the E9 and E8 rows can go flaky. The reader finds the
+   incomplete tail itself (the last `Tick` record, or an open `CommandBoundary`) and reads no validator text.
+   This lands before A1 step 3. Proof: the E9 loss cases green 5 times in a row.
+2. The three E8 cases share `e8_commands_are_authoritative_and_acked`, which holds validator self-checks
+   (`economy.rs:3293-3345`). `E8-mixed-cost-partial-commit` is pinned to the text of `economy.rs:3197`
+   ("rejected seq 5 is write neutral"), which is not in the validator and is red today. The self-checks
+   `:3293-3345` become plants of `reservations.rs` with the new messages, in the same commit that deletes the
+   replay validator.
+3. Readers of the log. The browser audit oracle reads `units[].pos`, `facing`, the gather order `stage` and the
+   node `pos` (`tests/browser/m2-audit.js:67-120`); EL1 reads `movement_progress`, `plain_movement_progress`,
+   `physical_escapes` and `unit_orders` (`el1.rs:188-215`). `LedgerAudit` keeps every field that these two
+   read. A1 step 3 runs the browser fault set (8 cases) and EL1.
+4. Cover that the replay validator gives today and that must stay:
+    - A refused command or operation leaves the full logged view unchanged (`economylog.rs:2346-2350`). This
+      rule stays in `lib.rs`; it needs no movement model. "Changes no account" alone is weaker.
+    - A unit that moves with no order: the `turts_checks` scan covers writes to `Position`, `UnitOrders`,
+      `MoveTarget`, `MoveProgress` and the pools, with an allow list of files, and a planted fixture that goes
+      red.
+    - `mc_orders.rs:469` asserts nothing but the validator today. It gets an outcome assertion from the order
+      log before the replay validator is deleted; the same holds for the other "strictly replays" tests
+      (`mc_orders.rs:574, 694, 824, 1089, 1094`) and `session.rs:1021`.
+5. Row EL1 of the MC design: "movement input missing" and "the validator of today" become void; the row text
+   changes to: the ledger validator accepts each tick, and the run records the log bytes.
+6. The plants for each domain file are rows of the CI fault registry, not only local tests.
+7. Both validators run side by side from A1 step 2 until every item above is green on one commit; that commit
+   is the exit condition; the next commit deletes the replay validator.
 
 ## 5. The one re-freeze (A2)
 
@@ -98,7 +128,22 @@ A fault with no red after the change is a defect of this slice.
 4. Classifier self-test. Each of these must give red: one flipped position bit; one added `Stored` event; one changed operation in `base`; one scout operation on the arrival tick itself.
 5. The technical-director reviews the classified difference. The CEO approves the old and the new sha256 in the vault, together with the player-visible change of section 1. Then the fixture and `refutations.py:18` change in one commit.
 
-Any difference outside P3 is a defect until it has a cause. "Regenerate with the current code" is refused. G1, A2a and A2b change no frozen value. If the stream test goes red on one of them, that step stops for a new ruling.
+The classifier compares more than positions, because the stream holds, for each tick, the operation count
+and the ordered operation id, event kinds and the before-equals-after flag of each operation
+(`m3_m2_stream.rs:19-36, 108-126, 361-374`):
+
+- P1 compares every trace field in `acme`, against a list of the allowed differences that is written before
+  A2c lands.
+- P2 compares the full events with their payloads, not only the kinds.
+- The trace has 4 packages x 400 ticks x the initial unit count; the classifier asserts these counts, so two
+  empty or short traces cannot pass.
+- Both runs log the sha256 of the trace emitter; the two must be equal.
+- The committed fixture must hash to the stream that the classifier read; a fixture written by
+  `UPDATE_M3_BASELINE` (`m3_m2_stream.rs:384`) from another run is refused.
+- More self-test plants that must give red: two operations of one `acme` tick in the other order; a flipped
+  before-equals-after flag on the tick-1 operation; an empty trace; a trace of 399 ticks.
+
+A difference outside P3 stops A2c. A new ruling and a new run of the self-test are needed before it continues. "Regenerate with the current code" is refused. G1, A2a and A2b change no frozen value. If the stream test goes red on one of them, that step stops for a new ruling.
 
 ## 6. Guards (A2)
 
