@@ -9512,14 +9512,21 @@ mod tests {
             records.extend(operations.into_iter().map(EconomyLogRecord::Operation));
             records.extend(ticks.into_iter().map(EconomyLogRecord::from_tick));
             let state = turts_sim::audit_state(app.world_mut());
-            if state.unit_orders.iter().any(|row| {
-                row.unit_id == 1
-                    && row
-                        .orders
-                        .last_failure
-                        .as_ref()
-                        .is_some_and(|failure| failure.reason == turts_sim::RejectReason::Blocked)
-            }) {
+            let blocked_wait = state.raw_orders.iter().any(|row| {
+                row.unit == 1
+                    && row.stage
+                        == turts_sim::economy::gather::GatherStage::Waiting {
+                            reason: turts_sim::economy::gather::WaitReason::Blocked,
+                        }
+            });
+            if blocked_wait
+                || state.unit_orders.iter().any(|row| {
+                    row.unit_id == 1
+                        && row.orders.last_failure.as_ref().is_some_and(|failure| {
+                            failure.reason == turts_sim::RejectReason::Blocked
+                        })
+                })
+            {
                 break;
             }
         }
@@ -15481,22 +15488,36 @@ mod tests {
             "actual Gather fallback lifecycle replays: {:?}",
             validation.err()
         );
+        // Ruling O16 extension (M2 design 5): a blocked Gather trip waits with
+        // Waiting(Blocked) and keeps its order; it does not fail with Blocked.
+        let blocked_wait = turts_sim::economy::gather::GatherStage::Waiting {
+            reason: turts_sim::economy::gather::WaitReason::Blocked,
+        };
         let failure_tick = records
             .iter()
             .find_map(|record| match record {
                 EconomyLogRecord::Operation(operation)
-                    if unit_orders_for(&operation.after, 1)
-                        .last_failure
-                        .as_ref()
-                        .is_some_and(|failure| {
-                            failure.reason == turts_sim::RejectReason::Blocked
-                        }) =>
+                    if operation
+                        .after
+                        .raw_orders
+                        .iter()
+                        .any(|order| order.unit == 1 && order.stage == blocked_wait) =>
                 {
                     Some(operation.before.economy.tick)
                 }
                 _ => None,
             })
-            .expect("an inaccessible Gather fallback records Blocked");
+            .expect("an inaccessible Gather fallback waits with Waiting(Blocked)");
+        assert!(
+            !records.iter().any(|record| match record {
+                EconomyLogRecord::Operation(operation) => unit_orders_for(&operation.after, 1)
+                    .last_failure
+                    .as_ref()
+                    .is_some_and(|failure| failure.reason == turts_sim::RejectReason::Blocked),
+                _ => false,
+            }),
+            "a blocked Gather trip never fails with Blocked"
+        );
         let movement_bound_ticks =
             ((2.0_f64 * f64::from(gather_distance) / 3.0 + 5.0) * 20.0).ceil() as u32;
         assert!(
@@ -15518,22 +15539,21 @@ mod tests {
                 .find(|order| order.unit == 1)
                 .unwrap()
                 .stage,
-            turts_sim::economy::gather::GatherStage::Idle
+            blocked_wait
         );
+        assert!(unit_orders_for(final_state, 1).last_failure.is_none());
         assert!(
             unit_orders_for(final_state, 1)
-                .last_failure
-                .as_ref()
-                .is_some_and(|failure| failure.reason == turts_sim::RejectReason::Blocked)
+                .current
+                .is_some_and(|order| order.behaviour == turts_mod_api::Behaviour::Gather),
+            "the waiting Gather keeps its order"
         );
         assert!(
             final_state
                 .plain_movement_progress
                 .iter()
-                .any(|row| row.unit_id == 1
-                    && row.progress.failure_recorded
-                    && row.progress.gather_goal
-                        == Some(turts_sim::movement::PlainGatherGoal::Node(1)))
+                .all(|row| row.unit_id != 1),
+            "the blocked wait ends only the plain movement state"
         );
         assert!(records.iter().any(|record| match record {
             EconomyLogRecord::Operation(operation) => {
@@ -15578,14 +15598,10 @@ mod tests {
         assert!(unit_orders_for(idless_final, 1).last_failure.is_none());
         assert!(
             idless_final
-                .plain_movement_progress
+                .raw_orders
                 .iter()
-                .any(|row| row.unit_id == 1
-                    && row.progress.activity == turts_sim::movement::MovementActivity::Blocked
-                    && row.progress.failure_recorded
-                    && row.progress.gather_goal
-                        == Some(turts_sim::movement::PlainGatherGoal::Node(1))),
-            "idless Gather keeps its only visible terminal Blocked result"
+                .any(|row| row.unit == 1 && row.stage == blocked_wait),
+            "idless Gather waits visibly with Waiting(Blocked)"
         );
 
         let (completed_then_idless, _, _) =
@@ -15604,15 +15620,15 @@ mod tests {
                 _ => None,
             })
             .expect("the completed-then-idless fixture includes its final tick");
-        assert!(unit_orders_for(completed_final, 1).last_failure.is_none());
+        assert!(
+            unit_orders_for(completed_final, 1).last_failure.is_none(),
+            "completed authored Move identity does not leak into the later legacy Gather wait"
+        );
         assert!(
             completed_final
-                .plain_movement_progress
+                .raw_orders
                 .iter()
-                .any(|row| row.unit_id == 1
-                    && row.progress.activity == turts_sim::movement::MovementActivity::Blocked
-                    && row.progress.failure_recorded),
-            "completed authored Move identity does not leak into the later legacy Gather failure"
+                .any(|row| row.unit == 1 && row.stage == blocked_wait)
         );
 
         let (restarted, _, _) = actual_plain_gather_fallback_log(false, false, false, true);
@@ -15625,15 +15641,11 @@ mod tests {
         assert!(
             restarted.iter().any(|record| match record {
                 EconomyLogRecord::Operation(operation) => {
-                    operation.before.plain_movement_progress.iter().any(|row| {
-                        row.unit_id == 1
-                            && row.progress.activity
-                                == turts_sim::movement::MovementActivity::Blocked
-                    }) && operation
-                        .after
-                        .plain_movement_progress
+                    operation
+                        .before
+                        .raw_orders
                         .iter()
-                        .all(|row| row.unit_id != 1)
+                        .any(|row| row.unit == 1 && row.stage == blocked_wait)
                         && operation.after.raw_orders.iter().any(|row| {
                             row.unit == 1
                                 && row.stage
@@ -15642,7 +15654,7 @@ mod tests {
                 }
                 _ => false,
             }),
-            "accepted legacy Gather clears the prior Blocked movement state"
+            "accepted legacy Gather restarts the waiting cycle"
         );
         let restarted_final = restarted
             .iter()
@@ -15685,14 +15697,15 @@ mod tests {
                 _ => None,
             })
             .expect("the active Move interruption fixture includes final ticks");
-        assert!(unit_orders_for(active_final, 1).last_failure.is_none());
+        assert!(
+            unit_orders_for(active_final, 1).last_failure.is_none(),
+            "the old authored Move ID cannot leak into the later idless Gather wait"
+        );
         assert!(
             active_final
-                .plain_movement_progress
+                .raw_orders
                 .iter()
-                .any(|row| row.unit_id == 1
-                    && row.progress.activity == turts_sim::movement::MovementActivity::Blocked),
-            "the old authored Move ID cannot leak into the later idless Gather failure"
+                .any(|row| row.unit == 1 && row.stage == blocked_wait)
         );
         let gather_reset = active_move_then_idless
             .iter()
