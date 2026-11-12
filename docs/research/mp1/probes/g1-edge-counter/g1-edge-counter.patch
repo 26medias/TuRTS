@@ -1,0 +1,107 @@
+diff --git a/crates/turts_sim/src/grid.rs b/crates/turts_sim/src/grid.rs
+index 3a5d715..5c70bee 100644
+--- a/crates/turts_sim/src/grid.rs
++++ b/crates/turts_sim/src/grid.rs
+@@ -113,6 +113,7 @@ impl UniformGrid {
+                 }
+             }
+         }
++        g1_edge_counter::record(self, points, position, reach, &found, (min_x, max_x, min_y, max_y));
+         found.sort_unstable_by_key(|index| (points[*index].id, *index));
+         found
+     }
+@@ -124,6 +125,94 @@ impl UniformGrid {
+     }
+ }
+ 
++/// G1 edge counter (probe patch, not committed). It compares each result with
++/// the cell range of the old code, `ceil(reach / cell)` rings around the cell
++/// of the query. `added` counts the points that the repair adds; `removed`
++/// counts the points that the old range had and the new range does not have.
++/// It writes to the file in `TURTS_G1_EDGE_LOG` (append, one line each).
++mod g1_edge_counter {
++    use super::{cell, GridPoint, UniformGrid};
++    use bevy_math::Vec2;
++    use std::io::Write;
++
++    static LOG: std::sync::OnceLock<Option<std::ffi::OsString>> = std::sync::OnceLock::new();
++    static STARTED: std::sync::Once = std::sync::Once::new();
++
++    fn line(path: &std::ffi::OsStr, text: String) {
++        if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
++            let _ = file.write_all(text.as_bytes());
++        }
++    }
++
++    fn inside(range: (i64, i64, i64, i64), at: (i32, i32)) -> bool {
++        let (x, y) = (i64::from(at.0), i64::from(at.1));
++        x >= range.0 && x <= range.1 && y >= range.2 && y <= range.3
++    }
++
++    pub(super) fn record(
++        grid: &UniformGrid,
++        points: &[GridPoint],
++        position: Vec2,
++        reach: f32,
++        found: &[usize],
++        new_range: (i64, i64, i64, i64),
++    ) {
++        let Some(path) = LOG.get_or_init(|| std::env::var_os("TURTS_G1_EDGE_LOG")) else {
++            return;
++        };
++        let pid = std::process::id();
++        let thread = std::thread::current().name().unwrap_or("?").to_string();
++        STARTED.call_once(|| {
++            line(path, format!("START pid={pid} thread={thread} exe={:?}\n", std::env::current_exe().ok()));
++        });
++        let (cx, cy) = cell(position, grid.cell_size);
++        let rings = (reach / grid.cell_size).ceil().max(0.0) as i64;
++        let old_range = (
++            i64::from(cx) - rings,
++            i64::from(cx) + rings,
++            i64::from(cy) - rings,
++            i64::from(cy) + rings,
++        );
++        let added = found
++            .iter()
++            .filter(|index| !inside(old_range, cell(points[**index].position, grid.cell_size)))
++            .count();
++        let accepted = |index: &usize| points[*index].position.distance_squared(position) <= reach * reach;
++        let old_area = ((old_range.1 - old_range.0 + 1) as u128) * ((old_range.3 - old_range.2 + 1) as u128);
++        let mut removed = 0usize;
++        if old_area > grid.cells.len() as u128 {
++            for (&at, indices) in &grid.cells {
++                if inside(old_range, at) && !inside(new_range, at) {
++                    removed += indices.iter().filter(|index| accepted(index)).count();
++                }
++            }
++        } else {
++            for y in old_range.2..=old_range.3 {
++                for x in old_range.0..=old_range.1 {
++                    let (Ok(x), Ok(y)) = (i32::try_from(x), i32::try_from(y)) else {
++                        continue;
++                    };
++                    if inside(new_range, (x, y)) {
++                        continue;
++                    }
++                    if let Some(indices) = grid.cells.get(&(x, y)) {
++                        removed += indices.iter().filter(|index| accepted(index)).count();
++                    }
++                }
++            }
++        }
++        if added > 0 || removed > 0 {
++            line(
++                path,
++                format!(
++                    "HIT pid={pid} thread={thread} added={added} removed={removed} q=({:?},{:?}) reach={reach:?} cell={:?}\n",
++                    position.x, position.y, grid.cell_size
++                ),
++            );
++        }
++    }
++}
++
+ fn cell(position: Vec2, size: f32) -> (i32, i32) {
+     (
+         (position.x / size).floor() as i32,

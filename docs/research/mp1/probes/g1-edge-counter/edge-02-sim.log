@@ -1,0 +1,20 @@
+START pid=1531166 thread=economy::combat::tests::attack_move_resumes_its_slot_after_the_engaged_target_is_gone exe=Some("/home/julien/Projects/TuRTS-pre-g1-grid/target/mc-pre-g1-grid/debug/deps/turts_sim-beab6015787642da")
+HIT pid=1531166 thread=grid::tests::within_matches_brute_force_scan added=1 removed=0 q=(1.8,0.0) reach=9.0 cell=0.9
+HIT pid=1531166 thread=grid::tests::within_matches_brute_force_scan added=1 removed=0 q=(1.8,-3.6) reach=9.0 cell=0.9
+HIT pid=1531166 thread=grid::tests::within_matches_brute_force_scan added=1 removed=0 q=(29.7,5.5) reach=3.3000002 cell=1.1
+HIT pid=1531166 thread=grid::tests::within_matches_brute_force_scan added=1 removed=0 q=(14.699999,-294.0) reach=8.4 cell=2.1
+HIT pid=1531166 thread=grid::tests::within_matches_brute_force_scan added=1 removed=0 q=(1.1,-92.4) reach=3.3000002 cell=1.1
+HIT pid=1531166 thread=grid::tests::within_matches_brute_force_scan added=1 removed=0 q=(-103.4,5.5) reach=3.3000002 cell=1.1
+HIT pid=1531166 thread=grid::tests::within_matches_brute_force_scan added=1 removed=0 q=(11.0,35.2) reach=3.3000002 cell=1.1
+HIT pid=1531166 thread=grid::tests::within_matches_brute_force_scan added=1 removed=0 q=(11.0,-123.200005) reach=3.3000002 cell=1.1
+HIT pid=1531166 thread=grid::tests::within_matches_brute_force_scan added=1 removed=0 q=(-48.4,2.2) reach=3.3000002 cell=1.1
+HIT pid=1531166 thread=grid::tests::within_matches_brute_force_scan added=1 removed=0 q=(0.2,-21.7) reach=0.3 cell=0.1
+HIT pid=1531166 thread=grid::tests::within_matches_brute_force_scan added=1 removed=0 q=(1.5,-105.9) reach=0.6 cell=0.3
+HIT pid=1531166 thread=grid::tests::within_matches_brute_force_scan added=1 removed=0 q=(11.0,-6.6000004) reach=3.3000002 cell=1.1
+HIT pid=1531166 thread=grid::tests::within_matches_brute_force_scan added=1 removed=0 q=(324.0,40.5) reach=16.2 cell=8.1
+HIT pid=1531166 thread=grid::tests::within_matches_brute_force_scan added=1 removed=0 q=(37.800003,1.5) reach=0.6 cell=0.3
+START pid=1531481 thread=move_to_nan_rejected_and_finite_outside_targets_clamped exe=Some("/home/julien/Projects/TuRTS-pre-g1-grid/target/mc-pre-g1-grid/debug/deps/command-05cac8de014a708a")
+START pid=1531496 thread=gmu_second_order_slots_keep_s_from_the_slots_of_the_resting_first_order exe=Some("/home/julien/Projects/TuRTS-pre-g1-grid/target/mc-pre-g1-grid/debug/deps/gmu_same_point-ca19f1591a2fbe3b")
+START pid=1532381 thread=an_exactly_primary_sized_pool_dispatches_without_any_spares exe=Some("/home/julien/Projects/TuRTS-pre-g1-grid/target/mc-pre-g1-grid/debug/deps/group_movement-dce2b48307190210")
+START pid=1534979 thread=changed_this_tick_lists_only_moved_units exe=Some("/home/julien/Projects/TuRTS-pre-g1-grid/target/mc-pre-g1-grid/debug/deps/movement-80a4231f0a7ce4e2")
+START pid=1534986 thread=point_move_outside_map_clamps_on_the_order_path exe=Some("/home/julien/Projects/TuRTS-pre-g1-grid/target/mc-pre-g1-grid/debug/deps/orders-983f94743cf07940")
