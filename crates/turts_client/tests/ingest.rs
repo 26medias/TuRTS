@@ -392,32 +392,40 @@ fn idle_resync_sends_one_request_after_10_ticks() {
 
 #[test]
 fn overflow_discards_trigger_coalesces_request_and_converges_on_successor() {
+    // Default reorder grace (5 ticks) and a cap of 3.
     let mut rig = Rig::new();
     rig.state.config.max_buffered_batches = 3;
     rig.hooks.hold_resync_snapshots = 4;
     assert!(rig.feed(welcome(100)).is_empty());
-    // These two tests pin the overflow and successor mechanics of the resync path itself. They
-    // use the strict chain rule (grace 0), so the request starts at the first chain break.
-    rig.state
-        .replica
-        .as_mut()
-        .unwrap()
-        .set_reorder_grace_ticks(0);
     assert!(rig.feed(snapshot(100)).is_empty());
+    assert_eq!(
+        rig.state.replica.as_ref().unwrap().reorder_grace_ticks(),
+        5,
+        "the default grace is in force"
+    );
 
-    assert_eq!(rig.feed(delta(102, 101)), vec![Outgoing::ResyncRequest]);
-    assert!(rig.feed(snapshot(102)).is_empty());
-    assert_eq!(rig.hooks.held.len(), 1);
-    assert!(rig.feed(delta(103, 102)).is_empty());
-    assert!(rig.feed(delta(104, 103)).is_empty());
-    assert!(rig.feed(delta(105, 104)).is_empty());
+    // 101 is lost. 102 to 104 fill the held window (cap 3). Delta 105 does not fit: the resync
+    // starts, and its tail (3 held deltas and the trigger) overflows the cap of 3 at once.
+    for tick in 102..=104 {
+        assert!(rig.feed(delta(tick, tick - 1)).is_empty(), "delta {tick}");
+    }
+    assert_eq!(rig.feed(delta(105, 104)), vec![Outgoing::ResyncRequest]);
     assert_eq!(rig.counters.buffer_overflows, 1);
     assert_eq!(rig.state.replica.as_ref().unwrap().buffered_batches(), 0);
     assert!(rig.hooks.outstanding_request);
+    assert_eq!(rig.counters.resync_by_chain_break, 1);
 
-    // A later heartbeat starts a fresh tail. Consuming the delayed, incomplete response allows
-    // exactly one successor request; the request marker remains set while that response waits.
-    assert_eq!(rig.feed(delta(106, 105)), vec![Outgoing::ResyncRequest]);
+    // The answer (tick 105) is held until the delta of tick 109.
+    assert!(rig.feed(snapshot(105)).is_empty());
+    assert_eq!(rig.hooks.held.len(), 1);
+    for tick in 106..=108 {
+        assert!(rig.feed(delta(tick, tick - 1)).is_empty(), "delta {tick}");
+    }
+    assert_eq!(rig.state.replica.as_ref().unwrap().buffered_batches(), 3);
+    // Delta 109 overflows the tail again, then the held answer is released: it cannot cover the
+    // discarded tail, so exactly one successor request goes out.
+    assert_eq!(rig.feed(delta(109, 108)), vec![Outgoing::ResyncRequest]);
+    assert_eq!(rig.counters.buffer_overflows, 2);
     assert_eq!(
         rig.state.replica.as_ref().unwrap().last_applied_tick,
         Some(100)
@@ -427,19 +435,19 @@ fn overflow_discards_trigger_coalesces_request_and_converges_on_successor() {
     assert!(rig.hooks.outstanding_request);
     assert_eq!(rig.counters.resync_requests_sent, 2);
     rig.hooks.hold_resync_snapshots = 2;
-    assert!(rig.feed(snapshot(106)).is_empty());
+    assert!(rig.feed(snapshot(109)).is_empty());
     assert!(rig.hooks.outstanding_request);
-    assert!(rig.feed(delta(107, 106)).is_empty());
-    assert!(rig.feed(delta(108, 107)).is_empty());
+    assert!(rig.feed(delta(110, 109)).is_empty());
+    assert!(rig.feed(delta(111, 110)).is_empty());
 
     let replica = rig.state.replica.as_ref().unwrap();
-    assert_eq!(replica.last_applied_tick, Some(108));
+    assert_eq!(replica.last_applied_tick, Some(111));
     assert!(!replica.in_resync());
     assert!(rig.hooks.held.is_empty());
     assert!(!rig.hooks.outstanding_request);
     assert_eq!(rig.counters.max_buffered_batches, 3);
     assert_eq!(rig.counters.max_outstanding_requests, 1);
-    assert_eq!(rig.counters.buffer_overflows, 1);
+    assert_eq!(rig.counters.buffer_overflows, 2);
     assert_eq!(rig.counters.successor_requests, 1);
     assert_eq!(rig.counters.snapshots_applied, 2);
     assert_eq!(rig.counters.resync_requests_sent, 2);
@@ -447,23 +455,24 @@ fn overflow_discards_trigger_coalesces_request_and_converges_on_successor() {
 
 #[test]
 fn held_stale_response_does_not_rollback_and_requests_one_successor() {
+    // Default reorder grace (5 ticks).
     let mut rig = Rig::new();
     assert!(rig.feed(welcome(100)).is_empty());
-    // Strict chain rule (grace 0): see the overflow test above.
-    rig.state
-        .replica
-        .as_mut()
-        .unwrap()
-        .set_reorder_grace_ticks(0);
     assert!(rig.feed(snapshot(100)).is_empty());
     assert!(rig.feed(delta(101, 100)).is_empty());
-    assert_eq!(rig.feed(delta(103, 102)), vec![Outgoing::ResyncRequest]);
+    // 102 is lost. 103 to 106 are held; delta 107 is 6 ticks past 101: one request.
+    for tick in 103..=106 {
+        assert!(rig.feed(delta(tick, tick - 1)).is_empty(), "delta {tick}");
+    }
+    assert_eq!(rig.feed(delta(107, 106)), vec![Outgoing::ResyncRequest]);
 
-    rig.hooks.hold_resync_snapshots = 5;
+    // The answer is a stale snapshot (tick 100), held until the delta of tick 110.
+    rig.hooks.hold_resync_snapshots = 10;
     assert!(rig.feed(snapshot(100)).is_empty());
     assert_eq!(rig.hooks.held.len(), 1);
-    assert!(rig.feed(delta(104, 103)).is_empty());
-    assert_eq!(rig.feed(delta(105, 104)), vec![Outgoing::ResyncRequest]);
+    assert!(rig.feed(delta(108, 107)).is_empty());
+    assert!(rig.feed(delta(109, 108)).is_empty());
+    assert_eq!(rig.feed(delta(110, 109)), vec![Outgoing::ResyncRequest]);
 
     let replica = rig.state.replica.as_ref().unwrap();
     assert_eq!(replica.last_applied_tick, Some(101));

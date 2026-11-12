@@ -66,13 +66,25 @@ pub enum ResyncReason {
     Successor,
 }
 
-/// The most ticks that one server frame can run: `Time<Virtual>` clamps a frame to 250 ms
-/// (`bevy_time-0.20.0/src/virt.rs:85`, `DEFAULT_MAX_DELTA`), and the overstep left from the
-/// frame before is less than one tick. So a frame runs at most `ceil(tick_hz / 4)` fixed ticks,
-/// and a catch-up flush holds at most that many deltas (5 at 20 Hz). The server sets no other
-/// limit (`crates/turts_server/src/main.rs:63-67`).
+/// The longest virtual-time step of one server frame: `Time<Virtual>` clamps a frame to this
+/// (`bevy_time-0.20.0/src/virt.rs:85`, `DEFAULT_MAX_DELTA`). Pinned for the running server app by
+/// `crates/turts_server/src/main.rs` (test `server_frame_clamp_and_timestep_are_pinned`).
+pub const MAX_FRAME_DELTA: std::time::Duration = std::time::Duration::from_millis(250);
+
+/// The most fixed ticks that one server frame can run, so the most deltas that one flush can hold.
+///
+/// Bevy adds the clamped frame delta to the overstep and runs one tick for each whole timestep
+/// (`bevy_time-0.20.0/src/fixed.rs:216-226, 243-255`). The overstep left by the frame before is
+/// below one timestep `T`, so a frame runs at most `1 + floor((MAX_FRAME_DELTA - 1 ns) / T)` ticks
+/// (5 at 20 Hz). `T` is `tick_duration(hz)` (`turts_net_lightyear`), rounded down to whole
+/// nanoseconds, which is why `hz / 4` is one too small at some rates (12, 48, 52, 68 Hz ...).
+/// The test `catchup_bound.rs` computes the bound with a real Bevy app.
 pub fn max_catchup_ticks(tick_hz: u16) -> u32 {
-    u32::from(tick_hz).div_ceil(4).max(1)
+    let tick_ns = turts_net_lightyear::tick_duration(tick_hz.max(1))
+        .as_nanos()
+        .max(1);
+    let most = 1 + (MAX_FRAME_DELTA.as_nanos() - 1) / tick_ns;
+    u32::try_from(most).unwrap_or(u32::MAX)
 }
 
 /// Technical cap on retained batches while waiting for a reliable snapshot.
@@ -169,6 +181,9 @@ pub struct Replica {
     config: ReplicaConfig,
     gap_anchor: Option<u32>,
     gap_seen: bool,
+    /// The recovery tail lost data (an overflow, or a hole older than the grace): a snapshot must
+    /// then cover the high-water tick, and the `ahead` hold is refused.
+    tail_lost: bool,
 }
 
 impl Replica {
@@ -209,6 +224,7 @@ impl Replica {
             },
             gap_anchor: None,
             gap_seen: false,
+            tail_lost: false,
         }
     }
 
@@ -322,12 +338,15 @@ impl Replica {
             replayed += 1;
         }
         let high = self.highest_observed_tick.unwrap_or(candidate.tick);
-        let ahead_within_grace = ahead.is_empty()
-            || (self.config.reorder_grace_ticks > 0
-                && !self.gap_seen
-                && ahead.len() <= self.config.max_buffered_batches
-                && high.saturating_sub(candidate.tick) <= self.config.reorder_grace_ticks);
-        if !ahead_within_grace {
+        // The deltas that are ahead may wait for their predecessor when the hole is inside the
+        // grace and the tail lost nothing. A hole in the retained tail that was already known as
+        // a loss does not block this: the snapshot covers it, and a new hole is judged here.
+        let ahead_ok = !ahead.is_empty()
+            && self.config.reorder_grace_ticks > 0
+            && !self.tail_lost
+            && ahead.len() <= self.config.max_buffered_batches
+            && high.saturating_sub(candidate.tick) <= self.config.reorder_grace_ticks;
+        if !ahead.is_empty() && !ahead_ok {
             // The hole is older than the grace: the snapshot does not cover it.
             replay_failed = true;
             remaining.append(&mut ahead);
@@ -340,7 +359,7 @@ impl Replica {
         let uncovered_high_water = self
             .highest_observed_tick
             .is_some_and(|high| candidate.tick < high);
-        let unresolved_gap = self.gap_seen && uncovered_high_water;
+        let unresolved_gap = self.gap_seen && uncovered_high_water && !ahead_ok;
         if replay_failed || !remaining.is_empty() || unresolved_gap {
             self.resync = Some(original_retained);
             self.gap_seen = true;
@@ -356,6 +375,7 @@ impl Replica {
         self.reorder = ahead;
         self.gap_anchor = None;
         self.gap_seen = false;
+        self.tail_lost = false;
         SnapshotOutcome::Applied { replayed }
     }
 
@@ -507,8 +527,17 @@ impl Replica {
         self.gap_seen = true;
     }
 
+    /// Keep a delta in the recovery tail (sorted, no duplicate tick, at most
+    /// `max_buffered_batches`).
+    ///
+    /// With a reorder grace, the tail keeps every component of the chain: a hole between two
+    /// components may be a late delta of the same flush. A component is dropped only when the
+    /// hole after it is older than the grace (`highest_observed - its last tick`): that is a loss,
+    /// and the snapshot must then cover the rest (`tail_lost`). With grace 0 (the M1 rule) only the
+    /// newest component stays.
     fn buffer_delta(&mut self, delta: WorldDelta) {
         let limit = self.config.max_buffered_batches;
+        let grace = self.config.reorder_grace_ticks;
         let buffer = self.resync.get_or_insert_with(Vec::new);
         if buffer.iter().any(|held| held.tick == delta.tick) {
             return;
@@ -517,6 +546,7 @@ impl Replica {
             buffer.clear();
             self.buffer_overflows = self.buffer_overflows.saturating_add(1);
             self.gap_seen = true;
+            self.tail_lost = true;
             if self.gap_anchor.is_none() {
                 self.gap_anchor = self.last_applied_tick.or(Some(delta.base_tick));
             }
@@ -543,18 +573,30 @@ impl Replica {
                 components.push(vec![held]);
             }
         }
-        if components.len() > 1 {
+        // The first component to keep: every earlier one has a hole after it that is a loss.
+        let keep_from = if grace == 0 {
+            components.len().saturating_sub(1)
+        } else {
+            let high = self.highest_observed_tick.unwrap_or(0);
+            (0..components.len().saturating_sub(1))
+                .rev()
+                .find(|&i| {
+                    let last = components[i].last().map_or(0, |d| d.tick);
+                    high.saturating_sub(last) > grace
+                })
+                .map_or(0, |i| i + 1)
+        };
+        if keep_from > 0 {
             self.gap_seen = true;
+            self.tail_lost = true;
             if self.gap_anchor.is_none() {
                 self.gap_anchor = components
                     .first()
                     .and_then(|component| component.first())
                     .map(|first| first.base_tick);
             }
-            *buffer = components.pop().unwrap_or_default();
-        } else {
-            *buffer = components.pop().unwrap_or_default();
         }
+        *buffer = components.into_iter().skip(keep_from).flatten().collect();
     }
 
     fn stage_snapshot(&self, snapshot: &Snapshot) -> Option<Candidate> {

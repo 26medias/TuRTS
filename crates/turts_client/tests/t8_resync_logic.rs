@@ -321,11 +321,125 @@ fn at_snapshot_10(max_buffered_batches: usize) -> Replica {
 }
 
 #[test]
-fn reorder_grace_is_the_catchup_limit_of_one_server_frame() {
-    // Time<Virtual> max_delta 250 ms: a frame runs at most ceil(hz / 4) fixed ticks.
+fn reorder_grace_is_5_ticks_at_20_hz() {
+    // The bound at every rate is computed from a real Bevy app in `catchup_bound.rs`.
     assert_eq!(max_catchup_ticks(20), 5);
-    assert_eq!(max_catchup_ticks(60), 15);
-    assert_eq!(max_catchup_ticks(30), 8);
+}
+
+#[test]
+fn reorder_probe_a_fresh_replica_gets_13_11_12_then_snapshot_10_with_no_request() {
+    let now = Instant::now();
+    let mut r = graced_replica(256);
+    for (tick, base) in [(13, 12), (11, 10), (12, 11)] {
+        assert_eq!(
+            r.apply_delta(&delta(tick, base), now),
+            DeltaOutcome::Buffered,
+            "delta {tick}"
+        );
+    }
+    assert_eq!(
+        buffered_ticks(&r),
+        vec![11, 12, 13],
+        "the tail keeps the reordered deltas"
+    );
+    assert_eq!(
+        r.apply_snapshot(&snapshot(10), now),
+        SnapshotOutcome::Applied { replayed: 3 }
+    );
+    assert_eq!(r.last_applied_tick, Some(13));
+    assert!(!r.in_resync());
+    assert_eq!(r.last_resync_reason, None);
+}
+
+#[test]
+fn reorder_probe_b_a_burst_while_waiting_for_the_answer_costs_no_second_request() {
+    let now = Instant::now();
+    let mut r = at_snapshot_10(256);
+    // 11 is lost; the request starts at delta 16.
+    for tick in 12..=15 {
+        assert_eq!(
+            r.apply_delta(&delta(tick, tick - 1), now),
+            DeltaOutcome::Buffered
+        );
+    }
+    assert_eq!(
+        r.apply_delta(&delta(16, 15), now),
+        DeltaOutcome::ResyncRequested
+    );
+    // One reordered burst arrives while the replica waits for the answer.
+    for tick in [19, 21, 17, 18, 20] {
+        assert_eq!(
+            r.apply_delta(&delta(tick, tick - 1), now),
+            DeltaOutcome::Buffered,
+            "delta {tick}"
+        );
+    }
+    assert_eq!(buffered_ticks(&r), (12..=21).collect::<Vec<u32>>());
+    assert_eq!(
+        r.apply_snapshot(&snapshot(11), now),
+        SnapshotOutcome::Applied { replayed: 10 }
+    );
+    assert_eq!(r.last_applied_tick, Some(21));
+}
+
+#[test]
+fn reorder_snapshot_answer_before_the_end_of_a_burst_holds_the_ahead_deltas() {
+    let now = Instant::now();
+    let mut r = at_snapshot_10(256);
+    for tick in 12..=15 {
+        r.apply_delta(&delta(tick, tick - 1), now);
+    }
+    assert_eq!(
+        r.apply_delta(&delta(16, 15), now),
+        DeltaOutcome::ResyncRequested
+    );
+    // 17 has not arrived; 18 to 20 have. The answer (tick 16) leaves a hole inside the grace.
+    for tick in [19, 20, 18] {
+        assert_eq!(
+            r.apply_delta(&delta(tick, tick - 1), now),
+            DeltaOutcome::Buffered
+        );
+    }
+    assert_eq!(
+        r.apply_snapshot(&snapshot(11), now),
+        SnapshotOutcome::Applied { replayed: 5 }
+    );
+    assert_eq!(r.last_applied_tick, Some(16));
+    assert_eq!(r.held_deltas(), 3);
+    assert_eq!(r.apply_delta(&delta(17, 16), now), DeltaOutcome::Applied);
+    assert_eq!(r.last_applied_tick, Some(20));
+    assert!(!r.in_resync());
+}
+
+#[test]
+fn reorder_tail_drops_a_hole_older_than_the_grace() {
+    // A real loss inside the tail: 15 never arrives. The older component expires at the grace.
+    let now = Instant::now();
+    let mut r = at_snapshot_10(256);
+    for tick in 12..=15 {
+        r.apply_delta(&delta(tick, tick - 1), now);
+    }
+    assert_eq!(
+        r.apply_delta(&delta(16, 15), now),
+        DeltaOutcome::ResyncRequested
+    );
+    for tick in 18..=23 {
+        assert_eq!(
+            r.apply_delta(&delta(tick, tick - 1), now),
+            DeltaOutcome::Buffered
+        );
+    }
+    assert_eq!(
+        buffered_ticks(&r),
+        vec![18, 19, 20, 21, 22, 23],
+        "the old component is gone"
+    );
+    // The answer predates the hole at 17: it cannot be published.
+    assert_eq!(
+        r.apply_snapshot(&snapshot(11), now),
+        SnapshotOutcome::ResyncRequested { replayed: 0 }
+    );
+    assert_eq!(r.last_resync_reason, Some(ResyncReason::Successor));
 }
 
 #[test]
