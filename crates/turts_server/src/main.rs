@@ -39,6 +39,19 @@ fn main() {
     }
 }
 
+/// The app with its time, lightyear and simulation plugins: the one the process runs. The frame
+/// clamp and the timestep that bound a catch-up burst come from here (see `frame_tests`).
+fn base_app(tick_hz: u16) -> App {
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins.set(ScheduleRunnerPlugin::run_loop(Duration::from_millis(1))));
+    app.add_plugins(ServerPlugins {
+        tick_duration: tick_duration(tick_hz),
+    });
+    app.add_plugins(ProtocolPlugin);
+    app.add_plugins(SimPlugin { tick_hz });
+    app
+}
+
 /// Stop the app with exit code 0 after this many ticks (`--run-ticks`).
 #[derive(Resource)]
 struct RunTicks(u32);
@@ -59,15 +72,7 @@ fn run() -> Result<(), String> {
         .parse()
         .map_err(|error| format!("ws_listen `{}`: {error}", cfg.ws_listen))?;
 
-    let mut app = App::new();
-    app.add_plugins(MinimalPlugins.set(ScheduleRunnerPlugin::run_loop(Duration::from_millis(1))));
-    app.add_plugins(ServerPlugins {
-        tick_duration: tick_duration(cfg.tick_hz),
-    });
-    app.add_plugins(ProtocolPlugin);
-    app.add_plugins(SimPlugin {
-        tick_hz: cfg.tick_hz,
-    });
+    let mut app = base_app(cfg.tick_hz);
 
     let booted = boot::boot(app.world_mut(), &cfg, &bytes).map_err(|error| error.to_string())?;
     let server_catalog = booted
@@ -139,5 +144,81 @@ fn run() -> Result<(), String> {
 fn exit_after_ticks(tick: Res<SimTick>, limit: Res<RunTicks>, mut exit: MessageWriter<AppExit>) {
     if tick.0 >= limit.0 {
         exit.write(AppExit::Success);
+    }
+}
+
+/// The client reorder grace (`turts_client::replica::max_catchup_ticks`) rests on two facts about
+/// this app. These tests read them from the app that `run` builds, so a change goes red here.
+#[cfg(test)]
+mod frame_tests {
+    use super::*;
+    use bevy::prelude::{PostUpdate, Schedules};
+    use bevy::time::{Fixed, Time, Virtual};
+
+    /// The app after its plugins finished and one frame ran (the Startup systems have run).
+    fn running_app(tick_hz: u16) -> App {
+        let mut app = base_app(tick_hz);
+        app.finish();
+        app.cleanup();
+        app.update();
+        app
+    }
+
+    #[test]
+    fn server_frame_clamp_and_timestep_are_pinned() {
+        for hz in [20u16, 30, 60] {
+            let app = running_app(hz);
+            let virtual_time = app.world().resource::<Time<Virtual>>();
+            assert_eq!(
+                virtual_time.max_delta(),
+                Duration::from_millis(250),
+                "Time<Virtual> max_delta of the server app: the grace assumes 250 ms"
+            );
+            assert_eq!(
+                app.world().resource::<Time<Fixed>>().timestep(),
+                tick_duration(hz),
+                "Time<Fixed> timestep of the server app is the tick duration"
+            );
+        }
+    }
+
+    /// One flush for each frame: lightyear sends in `PostUpdate`, once a frame, never in the fixed
+    /// schedules (`lightyear_transport-0.31.0/src/plugin.rs:674-679`, `Self::buffer_send`).
+    #[test]
+    fn lightyear_flushes_once_a_frame_in_post_update() {
+        let app = running_app(20);
+        let schedules = app.world().resource::<Schedules>();
+        let sends = |label| {
+            schedules
+                .iter()
+                .filter(|(l, _)| format!("{l:?}") == label)
+                .map(|(_, schedule)| {
+                    schedule
+                        .systems()
+                        .map(|systems| {
+                            systems
+                                .filter(|(_, system)| {
+                                    system.name().to_string().contains("buffer_send")
+                                })
+                                .count()
+                        })
+                        .unwrap_or(0)
+                })
+                .sum::<usize>()
+        };
+        assert_eq!(
+            sends(format!("{:?}", PostUpdate)),
+            1,
+            "one transport send in PostUpdate"
+        );
+        for fixed in [
+            "FixedFirst",
+            "FixedPreUpdate",
+            "FixedUpdate",
+            "FixedPostUpdate",
+            "FixedLast",
+        ] {
+            assert_eq!(sends(fixed.to_string()), 0, "no transport send in {fixed}");
+        }
     }
 }
