@@ -1672,5 +1672,108 @@
     "expected_failure": "a pooled chain has a fallback",
     "restore_check": "sha256(source)==baseline and selected test is green",
     "plant_note": "A2b1 stop ruling K2 (instrument plant): a pooled chain keeps movers with no pool, so it gets a fallback and is not compared on all ticks; the harness is red."
+  },
+  {
+    "id": "A2b1-pool-of-one-eager-index",
+    "plant_path": "crates/turts_sim/src/movement/frame.rs",
+    "anchor": "        .filter(|(_, pool)| !is_pool_of_one(pool))\n",
+    "replacement": "",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_sim",
+      "--lib",
+      "movement::spread_tests::pools_of_one_build_no_index_in_a_free_frame",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "indexes for pools of one",
+    "restore_check": "sha256(source)==baseline and selected test is green",
+    "plant_note": "A2b1 review H1: the step builds a pool index for each pool of one in each frame. The count guard is red."
+  },
+  {
+    "id": "A2b1-escape-clear-917",
+    "plant_path": "crates/turts_sim/src/movement/frame.rs",
+    "anchor": "                if outputs[index].progress.as_ref().is_some_and(|progress| {\n                    progress.activity == MovementActivity::Blocked && !progress.is_fallback()\n                }) {\n",
+    "replacement": "                if outputs[index].progress.as_ref().is_some_and(|progress| {\n                    progress.activity == MovementActivity::Blocked\n                }) {\n",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_sim",
+      "--lib",
+      "movement::spread_tests::a_blocked_fallback_keeps_blocked_when_its_escape_ends_without_a_step",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "keeps Blocked until a new order or a new trip",
+    "restore_check": "sha256(source)==baseline and selected test is green",
+    "plant_note": "A2b1 review M2 (fault F5): the escape-clear site with no step drops the design 9.17 guard and clears a Blocked fallback pool."
+  },
+  {
+    "id": "A2b1-same-tick-reservation",
+    "plant_path": "crates/turts_sim/src/movement/frame.rs",
+    "anchor": "                        position: previous.target.unwrap_or(previous.position),\n",
+    "replacement": "                        position: frame.units[index - 1].target.unwrap_or(previous.position),\n",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_sim",
+      "--test",
+      "group_movement",
+      "two_same_tick_fallbacks_take_two_ring_slots",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "unit 3 takes",
+    "restore_check": "sha256(source)==baseline and selected test is green",
+    "plant_note": "A2b1 review M1 (fault F1): the reservation of a unit that fell back in this tick keeps its old target, so the next unit takes the same ring slot."
+  },
+  {
+    "id": "A2b1-gather-goal-never-written",
+    "plant_path": "crates/turts_sim/src/economy/gather.rs",
+    "anchor": "                    progress.gather_goal = Some(goal);\n                }\n                return;\n",
+    "replacement": "                    let _ = (&mut progress, goal);\n                }\n                return;\n",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_sim",
+      "--test",
+      "group_movement",
+      "fallback_ends_when_the_gather_endpoint_changes",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "never gathers at node 2",
+    "restore_check": "sha256(source)==baseline and selected test is green",
+    "plant_note": "A2b1 review M3 (fault F2): set_target never writes gather_goal, so the order phase does not see the changed gather endpoint (design 9.19) and the fallback keeps the slot of the empty node."
+  },
+  {
+    "id": "A2b1-ring-tie-off-by-one",
+    "plant_path": "crates/turts_sim/src/movement/fallback.rs",
+    "anchor": "    let slot = assignments\n        .first()\n        .map_or(pool.point, |(_, destination)| *destination);\n",
+    "replacement": "    let slot = pool.slots.get(1).copied().unwrap_or(pool.point);\n    let _ = &assignments;\n",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_sim",
+      "--test",
+      "group_movement",
+      "fallback_ring_tie_takes_the_smallest_angle",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "the tied ring points give the one with the smallest angle",
+    "restore_check": "sha256(source)==baseline and selected test is green",
+    "plant_note": "A2b1 review L2 (fault F3): the fallback takes the second pool slot. The tie case of five ring slots is red."
   }
 ]
