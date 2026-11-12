@@ -9,7 +9,7 @@ const { createView } = require("./view.js");
 const { prepareSh1Lifecycle } = require("./sh1-lifecycle.js");
 const { createSceneCheckpoints } = require("./scene-checkpoints.js");
 const { planFor, runM2Fixture } = require("./m2-ingest.js");
-const { beginOwnerHold, endOwnerHold, firstClientError } = require("./slot1-owner-hold.js");
+const { firstClientError, assertNoClientErrorBeforeClose } = require("./client-error.js");
 const { installContextMenuObserver } = require("./contextmenu-observer.js");
 const { installBoundedRafHold } = require("./bounded-raf.js");
 const { installDeviceAudit, collectDeviceAudit } = require("./device-audit-descriptor.js");
@@ -184,16 +184,6 @@ async function run(options) {
         const slotIds = slotFixture ? makeSlotFixtureIds() : null;
         const slotStartup = [];
         for (let n = 0; n < windows; n += 1) {
-            // SLOT1: the owner frames wait while window 3 gets its GPU device (slot1-owner-hold.js).
-            let ownerHold = null;
-            if (slotFixture && n === 2) ownerHold = await beginOwnerHold(pages.slice(0, 2));
-            const releaseOwners = async () => {
-                if (!ownerHold) return;
-                const begun = ownerHold;
-                ownerHold = null;
-                const record = await endOwnerHold(pages.slice(0, 2), begun);
-                await writePrivateJson(path.join(options.outDir, "slot1-owner-hold.json"), record);
-            };
             if (slotFixture && startupRafProbeEnabled && n === 2) {
                 await runSlot1StartupRafProbe({ pages, documentEpochs, outDir: options.outDir,
                     boundedRafSha256: crypto.createHash("sha256").update(boundedRafSource).digest("hex") });
@@ -265,9 +255,7 @@ async function run(options) {
             if (slotFixture) {
                 try {
                     startup = await waitForTask16Role(page, n === 2 ? "unclaimed-third" : "slot-owner");
-                    await releaseOwners();
                 } catch (error) {
-                    await releaseOwners().catch(() => {});
                     if (startupRafProbeEnabled && n === 2) {
                         let observation;
                         try { observation = await readTask16StartupObservation(page); }
@@ -1053,6 +1041,7 @@ async function runSlot1Fixture({ io, driver, params, pages, contexts, slotIds, d
     await waitForPrivateOwnerCheckpoint(outDir, capacityCapture.completed_wall_time_ms);
     await assertNoHeldModifiers(inputLog);
     if (auditDevicePage) await auditDevicePage(pages[2], 2);
+    await assertNoClientErrorBeforeClose(pages[2], 3);
     await pages[2].close();
 
     const opener = pages[0];
@@ -1101,6 +1090,7 @@ async function runSlot1Fixture({ io, driver, params, pages, contexts, slotIds, d
     await waitForPrivateOwnerCheckpoint(outDir, terminalCapture.completed_wall_time_ms);
     await assertNoHeldModifiers(inputLog);
     if (auditDevicePage) await auditDevicePage(copied, 2);
+    await assertNoClientErrorBeforeClose(copied, 3);
     await copied.close();
 
     await driver.drive(io, { ...params, fixture_phase: "reload-rejoin" }, {
