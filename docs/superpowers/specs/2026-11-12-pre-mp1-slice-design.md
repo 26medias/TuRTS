@@ -1,6 +1,6 @@
 # Pre-MP1 slice: audit crate, one movement model, neighbour grid, file splits: design
 
-Date: 2026-11-12. Revision 3. Status: DRAFT. Revision 3: the qa-lead lens FAILED revision 1 with 4 High (docs/research/mp1/gate-slice-qa.md); sections 2, 4 and 5 take its text changes; a re-check by both lenses follows. Gate round 1: the simulation lens FAILED revision 1 (one High: a third movement branch); the technical-director ruled (docs/research/mp1/ruling-td-one-step-function.md); sections 1, 2, 5 and 6 are replaced. The qa-lead lens is in progress.
+Date: 2026-11-12. Revision 4. Status: gate PASSED WITH FINDINGS on revision 3 (qa-lead lens, 0 High; docs/research/mp1/gate-slice-qa.md and its re-check); revision 4 takes the 7 findings in section 9. The simulation lens re-check of the ruling is open. Revision 3: the qa-lead lens FAILED revision 1 with 4 High (docs/research/mp1/gate-slice-qa.md); sections 2, 4 and 5 take its text changes; a re-check by both lenses follows. Gate round 1: the simulation lens FAILED revision 1 (one High: a third movement branch); the technical-director ruled (docs/research/mp1/ruling-td-one-step-function.md); sections 1, 2, 5 and 6 are replaced. The qa-lead lens is in progress.
 Author: the orchestrator, from the technical-director input `docs/research/mp1/input-technical-director.md`
 (parts A and C) and the producer input `docs/research/mp1/input-producer.md` (part 2). The inputs are agent
 output; each claim below that this design depends on carries its `path:line` and is checked again at the gate.
@@ -121,7 +121,7 @@ native 29 of 33 red; the 4 others are the first two items below.
 2. The builder lands A2c and does not touch the fixture.
 3. A classifier (Python standard library) checks:
     - P0: for `base`, `haul` and `cedar`, the trace before and after is equal byte for byte.
-    - P1: in `acme`, every position is bitwise equal over 400 ticks.
+    - P1: in `acme`, every trace field equals the old trace, except the differences in the list that is committed before A2c. The list is a file whose sha256 is logged before the A2c commit.
     - P2: in all four packages, every economy event kind falls on the same tick.
     - P3: every added or changed operation is in `acme`, belongs to the scout, has no event kind, and falls on the accept tick or on the tick after arrival (Orders runs before Movement, `plugin.rs:97-98`). Expected: one added operation at tick 1 and one at the tick after arrival (gate probe: arrival 123, operation 124).
     - An independent calculation of the arrival tick, `ceil(|P - p0| / (speed x dt))`, must equal the arrival tick in the trace.
@@ -168,12 +168,38 @@ A difference outside P3 stops A2c. A new ruling and a new run of the self-test a
 - The UnitId-to-Entity index: MP1 (automatic targeting needs it).
 - `WorldDelta.unit_orders` changes only: the MP1 protocol bump.
 
-## 8. Open points for the gate
+## 8. Points that were open at the gate, and their answers
 
-1. Is the claim "only E8 gets its red from the validator" true? Run the three fault sets against a build where
-   the replay validator accepts everything.
-2. Does a pooled single move dispatch in the same tick, and is the pool of a lone unit collected after arrival
-   (both NOT TRACED)? If not, P1 fails and A2 needs a design change.
-3. The f32 cell-edge case of the grid (`grid.rs:63,120-124`): can `within` drop a point at exactly `reach`?
-4. Is the order "A1 before A2" enough to keep the validator out of A2, or does A2 still touch `LedgerAudit`
-   (`AuditState.plain_movement_progress` goes away)?
+1. "Only E8 gets its red from the validator": refuted and replaced by section 4 items 1 and 2 (gate run with the
+   validator disabled: M3 17 of 17 red, native 29 of 33).
+2. A pooled single move dispatches in the same tick, and the pool of a lone unit is collected in its arrival
+   tick (gate probe; section 6 "Pool collection").
+3. The grid edge case is real (43 misses in 24,000 queries): part G1.
+4. A2 does not touch the validator when A1 comes first; `AuditState.plain_movement_progress` goes away in A2b,
+   and `LedgerAudit` keeps what the readers of section 4 item 3 need.
+
+## 9. Amendments from the re-check of revision 3 (binding; they replace the lines they name)
+
+1. Live reader proof (section 4 item 1). First: `live_audit_reader_ignores_only_unterminated_tail_and_waits_for_tick`
+   (`economy.rs:54`) gets a log cut inside an open `CommandBoundary`; it is red on a planted reader that returns
+   the whole tail and green on the new reader. Then the E9 loss cases green 5 times in a row.
+2. E8 order (section 4 item 2). While the replay validator is in place, the red of `E8-mixed-cost-partial-commit`
+   comes first from the validator (`economy.rs:3184`). So the re-pin to the `economy.rs:3197` text lands in the
+   commit that deletes the replay validator, not before.
+3. G1 proof (section 2). The property test includes the case that the gate found: qx 1.8, px -7.2000003, reach 9,
+   cell 0.9 (negative coordinates).
+4. G1 edge counter (section 2 and section 5 item 0). The counter patch and its run log (commit, command, hits for
+   each test) go under `docs/research/mp1/probes/` with SHA256SUMS. The counter shows at least 1 hit on the gate
+   case before the stream run, so "0 hits" cannot come from a counter that never fires. The run includes the
+   ignored process tests (`scripts/acceptance.sh`).
+5. The one-step-function guard (section 6). A call counter cannot go red on a second branch inside one function.
+   The counter counts each shared phase (arrival, steering, projection, stall, fallback) for each unit and tick,
+   behind a test cargo feature that the `turts_sim` and `turts_server` tests enable. It is red on the build before
+   A2a (two branches today) and green after A2a; both runs are recorded. A CI grep shows that
+   `step_plain_progress` and the branch at `movement.rs:1932-2085` are gone.
+6. The trace and P0 (section 5 item 1). qa-lead adds the trace before A2a, not after A2b. P0 (traces equal byte
+   for byte) runs on all four packages at A2a and at A2b, and on `base`, `haul` and `cedar` at A2c. The trace
+   field `separated` gets a defined source; today it is a local variable (`movement.rs:770`, `:1973`). The claim
+   "the streams spend 0 unit-ticks on `PlainMoveProgress`" is measured by this trace, not assumed.
+7. Definition. activity: the `MovementActivity` of the unit's `MoveProgress` (`Pending`, `Moving`, `Resting`,
+   `Blocked`; `movement.rs:24-29`), or `none` when the unit has no `MoveProgress`; not the order or gather stage.
