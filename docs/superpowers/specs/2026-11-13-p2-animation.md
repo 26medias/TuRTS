@@ -1,6 +1,6 @@
 # Stage P2: animation
 
-Date: 2026-11-13. Status: ready to build. Roadmap: `2026-11-13-presentation-roadmap.md`, P2.
+Date: 2026-11-13. Status: complete on 2026-11-13. Roadmap: `2026-11-13-presentation-roadmap.md`, P2.
 Track: the package contract (section 3) is Foundation; the client work is the light path.
 Process: this spec, the build, one independent review that runs code. No plan document.
 Base: branch `codex/models-stage1` (stage P1, API 0.2.5).
@@ -196,3 +196,12 @@ reaction in the skirmish.
   The bind pose is too wide to describe a standing body. Static-model bounds stay unchanged.
 - The supplied Crossbowman prop penetrated the ground in Idle. Its local crossbow scale is
   halved. The body stays at scale 0.88 and the collision footprint stays unchanged.
+
+## Completion evidence
+
+All AN1–AN11 rows have passing evidence. The index is
+`target/mc-evidence/p2-acceptance.json`. The handoff is `target/mc-evidence/p2-handoff.md`.
+The independent code-running review is `target/mc-evidence/p2-independent-review.md`.
+Its three findings are fixed. No second review was needed.
+The measurement table is in `docs/measurements/models.md`.
+The final 400-unit walking scene runs at 39.07 FPS. The 1,000-unit row is a recorded stress limit.

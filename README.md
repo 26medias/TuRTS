@@ -9,11 +9,21 @@
 
 TuRTS is a mod-first real-time strategy engine built with Rust and Bevy. It has a browser WebAssembly client, a native client, and an authoritative headless server. Game content is delivered as packages through the public mod API.
 
-**Project stage: multiplayer industrial graybox prototype. M3 is locally validated and ready for Forge playtesting; hosted CI and integration approvals remain pending.** The engine supports package loading, two-player sessions, gathering, unit production and cancellation, extraction, conveyors, inserters, item recipes, research, ammunition-based combat and destruction. Clients recover through snapshots and deltas. The interface and visuals remain functional prototypes.
+**Current playable demo: a medieval fantasy skirmish against the computer.** Build Barracks, harvest timber, train Villagers and Crossbowmen, set rally points, fight, and reach Victory or Defeat. New skirmish starts another match. The browser build includes models, textures, team colours, graphics quality, pointer-centred zoom, walking and work animations, shot animation, construction rise, and falling bodies.
 
-The prototype scope includes selecting owned units with the left mouse button, issuing movement or Gather orders with the right mouse button, and using visible producer controls to Produce or Cancel jobs. Browser and native-window proofs covered these interactions against the real server and package fixtures. The demo match has two permanent player slots; a browser tab and native client count toward the same two slots. Closing a client does not release or reconnect its slot. Restart the server to begin a fresh match.
+The local tested launcher is:
 
-Construction and placement, power networks, gameplay AI, and victory or endgame flows are future work. Steam distribution is not prepared, and the visuals are not a finished art pass.
+```sh
+bash target/mc-evidence/play-skirmish.sh
+```
+
+That launcher uses prepared local artifacts. To build from source, use `bash scripts/skirmish-play.sh --prepare /absolute/path/to/prepared`, then `bash scripts/skirmish-play.sh --prepared /absolute/path/to/prepared --silent`. Test browsers must use a fresh profile and `--alsa-output-device=null`.
+
+This is a narrow playable slice. The full MP1 roster and two-human acceptance are not complete. The current simple opponent does not complete the general MP2 bot framework. Combat effects and offscreen attack warnings are the next presentation stage. Terrain, fog, broader lifecycle features, and large-scale performance remain later work.
+
+The older Forge industrial demonstration remains available below. It proves extraction, conveyors, inserters, recipes, research, and ammunition combat through the public mod API. Its two-slot and restart restrictions describe that demonstration.
+
+See the [project map](docs/reports/2026-11-13-project-overview.html), the [P2 spec](docs/superpowers/specs/2026-11-13-p2-animation.md), and the [model and animation measurements](docs/measurements/models.md). The project map is a dated snapshot from before P2.
 
 ## Try Forge locally
 
