@@ -1,0 +1,1 @@
+(id: "order_cancel", name: "Cancel training", behaviour: CancelProduction, target: Job, fire: None, engage: None, icon: "icon_order_cancel", hotkey: "key_cancel", cursor: None, card: None, units: ["skirmish:base", "skirmish:barracks"], description: "Cancel training.")

@@ -8294,6 +8294,9 @@ mod tests {
         catalog.units.insert(
             unit_id.clone(),
             ResolvedUnit {
+                constructor: None,
+                placement: None,
+                build_area: None,
                 id: unit_id,
                 name: "Walker".into(),
                 footprint: Footprint::Circle { radius },
@@ -8741,6 +8744,9 @@ mod tests {
             units: BTreeMap::from([(
                 worker.clone(),
                 ResolvedUnit {
+                    constructor: None,
+                    placement: None,
+                    build_area: None,
                     id: worker.clone(),
                     name: "Worker".into(),
                     footprint: Footprint::Circle { radius: 0.5 },
@@ -8806,6 +8812,9 @@ mod tests {
         catalog.units.insert(
             depot.clone(),
             ResolvedUnit {
+                constructor: None,
+                placement: None,
+                build_area: None,
                 id: depot.clone(),
                 name: "Depot".into(),
                 footprint: Footprint::Circle { radius: 0.5 },
@@ -8958,6 +8967,9 @@ mod tests {
             units: BTreeMap::from([(
                 worker.clone(),
                 ResolvedUnit {
+                    constructor: None,
+                    placement: None,
+                    build_area: None,
                     id: worker.clone(),
                     name: "Worker".into(),
                     footprint: Footprint::Circle { radius: 0.5 },
@@ -9420,6 +9432,9 @@ mod tests {
             resource_kinds: vec![],
             nodes: vec![],
             units: vec![CatalogUnitAudit {
+                constructor: None,
+                placement: None,
+                build_area: None,
                 id: producer_id,
                 radius: 0.5,
                 movement_speed: None,
@@ -9836,6 +9851,9 @@ mod tests {
             units: BTreeMap::from([(
                 worker.clone(),
                 ResolvedUnit {
+                    constructor: None,
+                    placement: None,
+                    build_area: None,
                     id: worker.clone(),
                     name: "Worker".into(),
                     footprint: Footprint::Circle { radius: 0.5 },
@@ -10049,6 +10067,9 @@ mod tests {
             units: BTreeMap::from([(
                 machine.clone(),
                 ResolvedUnit {
+                    constructor: None,
+                    placement: None,
+                    build_area: None,
                     id: machine.clone(),
                     name: "Press".into(),
                     footprint: Footprint::Circle { radius: 0.5 },
@@ -10319,6 +10340,9 @@ mod tests {
             units: BTreeMap::from([(
                 producer.clone(),
                 ResolvedUnit {
+                    constructor: None,
+                    placement: None,
+                    build_area: None,
                     id: producer.clone(),
                     name: "Producer".into(),
                     footprint: Footprint::Circle { radius: 0.5 },
@@ -10538,6 +10562,9 @@ mod tests {
             units: BTreeMap::from([(
                 drill.clone(),
                 ResolvedUnit {
+                    constructor: None,
+                    placement: None,
+                    build_area: None,
                     id: drill.clone(),
                     name: "Drill".into(),
                     footprint: Footprint::Circle { radius: 0.5 },
@@ -10688,6 +10715,9 @@ mod tests {
             units: BTreeMap::from([(
                 lab.clone(),
                 ResolvedUnit {
+                    constructor: None,
+                    placement: None,
+                    build_area: None,
                     id: lab.clone(),
                     name: "Lab".into(),
                     footprint: Footprint::Circle { radius: 0.5 },
@@ -11166,6 +11196,9 @@ mod tests {
                 radius: 2.0,
             }],
             units: vec![CatalogUnitAudit {
+                constructor: None,
+                placement: None,
+                build_area: None,
                 id: turts_mod_api::ContentId::parse("fixture:walker").unwrap(),
                 radius: 0.5,
                 movement_speed: Some(3.0),
@@ -11938,6 +11971,9 @@ mod tests {
         catalog.units.insert(
             unit_content.clone(),
             ResolvedUnit {
+                constructor: None,
+                placement: None,
+                build_area: None,
                 id: unit_content,
                 name: "Walker".into(),
                 footprint: Footprint::Circle { radius: 0.5 },
@@ -12374,6 +12410,9 @@ mod tests {
         catalog.units.insert(
             unit_id.clone(),
             ResolvedUnit {
+                constructor: None,
+                placement: None,
+                build_area: None,
                 id: unit_id,
                 name: "Walker".into(),
                 footprint: Footprint::Circle { radius: 0.5 },
@@ -13500,6 +13539,9 @@ mod tests {
             (large.clone(), "Large", 0.8_f32),
         ] {
             let resolved = ResolvedUnit {
+                constructor: None,
+                placement: None,
+                build_area: None,
                 id: id.clone(),
                 name: name.into(),
                 footprint: Footprint::Circle { radius },
@@ -16870,6 +16912,9 @@ mod tests {
                 radius: 0.5,
             });
             let catalog_unit = turts_sim::economy::views::CatalogUnitAudit {
+                constructor: None,
+                placement: None,
+                build_area: None,
                 id: turts_mod_api::ContentId::parse("fixture:weapon").unwrap(),
                 radius: 0.5,
                 movement_speed: None,
@@ -17724,6 +17769,9 @@ mod tests {
         catalog.units.insert(
             unit_id.clone(),
             turts_mod_api::ResolvedUnit {
+                constructor: None,
+                placement: None,
+                build_area: None,
                 id: unit_id.clone(),
                 name: "Walker".into(),
                 footprint: Footprint::Circle { radius: 0.5 },
@@ -17838,6 +17886,9 @@ mod tests {
                 radius: 2.0,
             }],
             units: vec![turts_sim::economy::views::CatalogUnitAudit {
+                constructor: None,
+                placement: None,
+                build_area: None,
                 id: turts_mod_api::ContentId::parse("fixture:walker").unwrap(),
                 radius: 0.5,
                 movement_speed: Some(3.0),
@@ -18648,6 +18699,9 @@ mod tests {
         catalog.units.insert(
             unit_id.clone(),
             turts_mod_api::ResolvedUnit {
+                constructor: None,
+                placement: None,
+                build_area: None,
                 id: unit_id,
                 name: "Walker".into(),
                 footprint: Footprint::Circle { radius: 0.5 },

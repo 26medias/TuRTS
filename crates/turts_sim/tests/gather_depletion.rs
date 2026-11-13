@@ -42,6 +42,9 @@ fn id(local: &str) -> ContentId {
 
 fn unit(local: &str, radius: f32) -> ResolvedUnit {
     ResolvedUnit {
+        constructor: None,
+        placement: None,
+        build_area: None,
         id: id(local),
         name: local.into(),
         footprint: Footprint::Circle { radius },

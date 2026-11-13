@@ -18,6 +18,7 @@ pub const VIEW: Viewport = Viewport {
 };
 
 pub struct TestWorld {
+    pub placement: turts_interaction::placement::Facts,
     pub units: Vec<UnitView>,
     pub nodes: Vec<NodeView>,
     pub rules: OrderRulesDef,
@@ -35,6 +36,7 @@ pub struct TestWorld {
 impl Default for TestWorld {
     fn default() -> Self {
         Self {
+            placement: Default::default(),
             units: vec![
                 unit(
                     1,
@@ -135,6 +137,9 @@ impl Default for TestWorld {
 }
 
 impl WorldView for TestWorld {
+    fn placement_facts(&self) -> &turts_interaction::placement::Facts {
+        &self.placement
+    }
     fn units(&self) -> &[UnitView] {
         &self.units
     }

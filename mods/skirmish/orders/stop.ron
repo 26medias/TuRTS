@@ -1,0 +1,1 @@
+(id: "order_stop", name: "Stop", behaviour: Stop, target: None, fire: None, engage: None, icon: "icon_order_stop", hotkey: "key_stop", cursor: None, card: None, units: ["skirmish:worker", "skirmish:soldier"], description: "Stop.")

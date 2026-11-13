@@ -48,10 +48,12 @@ pub fn to_sim(
         OrderTarget::Content(content) => ContentId::parse(content)
             .map(OrderTargetSim::Content)
             .unwrap_or(OrderTargetSim::Invalid),
-        // The placement target of design 6.8 is on the wire in lane 0, and the sim has no such
-        // target yet: `L-CON1` adds `OrderTargetSim::ContentAtPoint` and replaces this arm. Until
-        // then the order is refused like any other target that does not fit.
-        OrderTarget::ContentAtPoint { .. } => OrderTargetSim::Invalid,
+        OrderTarget::ContentAtPoint { content, point } => ContentId::parse(content)
+            .map(|content| OrderTargetSim::ContentAtPoint {
+                content,
+                point: bevy::math::Vec2::new(point.x, point.y),
+            })
+            .unwrap_or(OrderTargetSim::Invalid),
     };
     let order_package = order_id.package.clone();
     let queue_depth = catalog
@@ -196,6 +198,12 @@ fn refusals(units: &[UnitId], reason: CommandRejectReason) -> Vec<UnitRefusal> {
 fn wire_reason(reason: RejectReason) -> CommandRejectReason {
     use RejectReason as R;
     match reason {
+        R::SiteOutsideMap => CommandRejectReason::SiteOutsideMap,
+        R::SiteOutOfArea => CommandRejectReason::SiteOutOfArea,
+        R::SiteBlocked => CommandRejectReason::SiteBlocked,
+        R::SiteNearBuilding => CommandRejectReason::SiteNearBuilding,
+        R::SiteNearResource => CommandRejectReason::SiteNearResource,
+        R::ConstructionQueueFull => CommandRejectReason::ConstructionQueueFull,
         R::EmptyCommand => CommandRejectReason::EmptyCommand,
         R::TooManyUnits => CommandRejectReason::TooManyUnits,
         R::DuplicateUnit => CommandRejectReason::DuplicateUnit,
@@ -323,10 +331,9 @@ mod tests {
         ));
     }
 
-    /// The placement target is on the wire in protocol 5 and the sim has no such target until
-    /// `L-CON1`: it reaches the sim as `Invalid` and the validator refuses it.
+    /// A construction target keeps its content and point across the wire adapter.
     #[test]
-    fn a_content_at_point_target_reaches_the_sim_as_an_invalid_target() {
+    fn a_content_at_point_target_keeps_its_content_and_point() {
         let mut catalog = empty_catalog();
         let id = ContentId::parse("test:move").unwrap();
         catalog.orders.insert(
@@ -362,7 +369,7 @@ mod tests {
         let converted = to_sim(SlotId(0), &command, &catalog).expect("the envelope converts");
         assert!(matches!(
             &converted[0].kind,
-            CommandKind::Order(order) if order.target == OrderTargetSim::Invalid
+            CommandKind::Order(order) if order.target == OrderTargetSim::ContentAtPoint { content: ContentId::parse("test:depot").unwrap(), point: bevy::math::Vec2::new(2.0, 3.0) }
         ));
     }
 

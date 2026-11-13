@@ -1020,6 +1020,9 @@ mod tests {
 
     fn resolved_gatherer(id: ContentId, item: ContentId) -> turts_mod_api::ResolvedUnit {
         turts_mod_api::ResolvedUnit {
+            constructor: None,
+            placement: None,
+            build_area: None,
             id,
             name: "Worker".into(),
             footprint: turts_mod_api::Footprint::Circle { radius: 1.0 },

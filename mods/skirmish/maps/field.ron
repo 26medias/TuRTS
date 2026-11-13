@@ -1,0 +1,9 @@
+(id: "field", size: (x: 64.0, y: 48.0), placements: [(unit: "skirmish:base", owner_slot: 0, pos: (x: 10.0, y: 24.0), contents: []),
+(unit: "skirmish:worker", owner_slot: 0, pos: (x: 14.0, y: 20.0), contents: []),
+(unit: "skirmish:soldier", owner_slot: 0, pos: (x: 14.0, y: 28.0), contents: []),
+(unit: "skirmish:base", owner_slot: 1, pos: (x: 54.0, y: 24.0), contents: []),
+(unit: "skirmish:worker", owner_slot: 1, pos: (x: 50.0, y: 20.0), contents: []),
+(unit: "skirmish:soldier", owner_slot: 1, pos: (x: 50.0, y: 28.0), contents: [])], nodes: [
+ (node: "skirmish:trees", pos: (x: 21.0, y: 15.0), remaining: 2000),
+ (node: "skirmish:trees", pos: (x: 43.0, y: 15.0), remaining: 2000)
+ ], slot_economy: [(slot: 0, balances: [(balance: "skirmish:credits", amount: 200)]), (slot: 1, balances: [(balance: "skirmish:credits", amount: 200)])])

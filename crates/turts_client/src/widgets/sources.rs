@@ -458,11 +458,58 @@ fn build_menu(context: SourceContext<'_>) -> SourceData {
         return SourceData::default();
     };
     let producer_id = context.selection[0];
+    if context.replica.is_site(producer_id) {
+        return SourceData::default();
+    }
     // Design Player path step 5: the research entry names its key from the effective bindings.
     let produce_key = produce_order(context.content, &primary.content_id)
         .map(|(_, order)| current_hotkey(context, &order.hotkey))
         .unwrap_or_default();
     let mut rows = Vec::new();
+    if let Some(constructor) = &unit.constructor {
+        for recipe_id in &constructor.buildings {
+            if let Some(recipe) = context.content.catalog.production.get(recipe_id) {
+                let mut row = ItemData::default();
+                row.set(ItemField::Name, recipe.name.clone());
+                row.set(
+                    ItemField::Icon,
+                    unit_asset(context, &recipe.output_unit.to_string(), true),
+                );
+                row.set(
+                    ItemField::Action,
+                    WidgetAction::Place {
+                        constructor: producer_id,
+                        content: recipe.id.to_string(),
+                    },
+                );
+                let full = context.replica.construction_queue(producer_id).len()
+                    >= usize::from(constructor.queue_capacity);
+                let affordable = costs_affordable(context, producer_id, &recipe.costs);
+                row.set(ItemField::Enabled, !full && affordable);
+                row.set(
+                    ItemField::Reason,
+                    if full {
+                        reason(
+                            context.interface,
+                            "construction_queue_full",
+                            "Construction queue is full",
+                        )
+                    } else if !affordable {
+                        reason(
+                            context.interface,
+                            "insufficient_balance",
+                            "Insufficient resources",
+                        )
+                    } else {
+                        String::new()
+                    },
+                );
+                row.set(ItemField::Cost, cost_label(&recipe.costs, context.content));
+                row.set(ItemField::Time, recipe.duration_ms as f64 / 1000.0);
+                rows.push(row);
+            }
+        }
+    }
     if let Some(producer) = &unit.producer {
         for recipe_id in &producer.recipes {
             if let Some(recipe) = context.content.catalog.production.get(recipe_id) {
@@ -1399,6 +1446,9 @@ mod tests {
 
     fn resolved_unit(id: &str, movement: Option<MovementDef>) -> turts_mod_api::ResolvedUnit {
         turts_mod_api::ResolvedUnit {
+            constructor: None,
+            placement: None,
+            build_area: None,
             id: ContentId::parse(id).unwrap(),
             name: "Scout".into(),
             footprint: Footprint::Circle { radius: 1.0 },

@@ -1,0 +1,1 @@
+(id: "build_barracks", name: "Build Barracks", output_unit: "skirmish:barracks", duration_ms: 5000, costs: [(resource: "skirmish:credits", amount: 100, source: SlotBalance)], payment: ChargeOnQueue, cancel_refunds: (queued: (numerator: 1, denominator: 1), running: (numerator: 1, denominator: 2), output_blocked: (numerator: 1, denominator: 2)))

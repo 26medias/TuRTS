@@ -1251,6 +1251,9 @@ mod admission_tests {
         catalog.units.insert(
             id.clone(),
             ResolvedUnit {
+                constructor: None,
+                placement: None,
+                build_area: None,
                 id,
                 name: "Producer".into(),
                 footprint: Footprint::Circle { radius: 1.0 },
@@ -1787,6 +1790,9 @@ mod admission_tests {
             .insert(
                 id.clone(),
                 ResolvedUnit {
+                    constructor: None,
+                    placement: None,
+                    build_area: None,
                     id,
                     name: "Lab".into(),
                     footprint: Footprint::Circle { radius: 1.0 },
@@ -1954,6 +1960,9 @@ mod admission_tests {
         catalog.units.insert(
             id.clone(),
             ResolvedUnit {
+                constructor: None,
+                placement: None,
+                build_area: None,
                 id,
                 name: "Producer".into(),
                 footprint: Footprint::Circle { radius: 1.0 },
@@ -2410,6 +2419,9 @@ mod admission_tests {
             .insert(
                 static_id.clone(),
                 ResolvedUnit {
+                    constructor: None,
+                    placement: None,
+                    build_area: None,
                     id: static_id,
                     name: "Static".into(),
                     footprint: Footprint::Circle { radius: 1.0 },
@@ -2693,6 +2705,9 @@ mod admission_tests {
             .insert(
                 static_id.clone(),
                 ResolvedUnit {
+                    constructor: None,
+                    placement: None,
+                    build_area: None,
                     id: static_id,
                     name: "Static".into(),
                     footprint: Footprint::Circle { radius: 1.0 },

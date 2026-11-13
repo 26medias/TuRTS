@@ -222,6 +222,9 @@ mod tests {
         catalog.units.insert(
             unit_id.clone(),
             ResolvedUnit {
+                constructor: None,
+                placement: None,
+                build_area: None,
                 id: unit_id,
                 name: "Fixture".into(),
                 footprint: Footprint::Circle { radius: 0.5 },

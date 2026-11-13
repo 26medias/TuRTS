@@ -163,6 +163,9 @@ fn gatherer_app() -> (bevy_app::App, bevy_ecs::entity::Entity) {
     catalog.units.insert(
         id.clone(),
         turts_mod_api::ResolvedUnit {
+            constructor: None,
+            placement: None,
+            build_area: None,
             id: id.clone(),
             name: "Worker".into(),
             footprint: Footprint::Circle { radius: 0.5 },

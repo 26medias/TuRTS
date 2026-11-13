@@ -1,0 +1,1 @@
+(id: "order_produce", name: "Train units", behaviour: Produce, target: Content, fire: None, engage: None, icon: "icon_order_produce", hotkey: "key_produce", cursor: None, card: None, units: ["skirmish:base", "skirmish:barracks"], description: "Train units.")

@@ -3,8 +3,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 pub use turts_mod_api::content::{
-    ContentCatalog, ResolvedAmmo, ResolvedConveyor, ResolvedCost, ResolvedDropOff,
-    ResolvedDropOffEffect, ResolvedDropOffRule, ResolvedEffect, ResolvedGatherer,
+    ContentCatalog, ResolvedAmmo, ResolvedConstructor, ResolvedConveyor, ResolvedCost,
+    ResolvedDropOff, ResolvedDropOffEffect, ResolvedDropOffRule, ResolvedEffect, ResolvedGatherer,
     ResolvedInventory, ResolvedItemStack, ResolvedMachine, ResolvedNode, ResolvedProducer,
     ResolvedProduction, ResolvedRecipe, ResolvedResearchStation, ResolvedTechnology, ResolvedUnit,
     ResolvedWeapon, SourceDef,
@@ -388,6 +388,27 @@ fn validate_content_m2(
         catalog.units.insert(
             id.clone(),
             ResolvedUnit {
+                constructor: value
+                    .constructor
+                    .map(|constructor| {
+                        let buildings = resolve_refs(
+                            origin,
+                            &file,
+                            "constructor.buildings",
+                            &constructor.buildings,
+                        )?;
+                        unique_refs(origin, &file, "constructor.buildings", &buildings)?;
+                        Ok::<_, ModError>(ResolvedConstructor {
+                            buildings,
+                            concurrent_sites: constructor.concurrent_sites,
+                            queue_capacity: constructor.queue_capacity,
+                            progress: constructor.progress,
+                            when_short: constructor.when_short,
+                        })
+                    })
+                    .transpose()?,
+                placement: value.placement,
+                build_area: value.build_area,
                 id,
                 name: value.name,
                 footprint: value.footprint,
@@ -533,6 +554,18 @@ fn validate_content_m2(
     }
     for (unit_id, unit) in &catalog.units {
         let file = unit_source_file(origin, unit_id, &unit_files)?;
+        if let Some(constructor) = &unit.constructor {
+            for (index, recipe_id) in constructor.buildings.iter().enumerate() {
+                let path = format!("constructor.buildings[{index}]");
+                let recipe = catalog.production.get(recipe_id).ok_or_else(|| {
+                    unknown_ref(origin, file, &path, recipe_id, catalog.production.keys())
+                })?;
+                catalog
+                    .units
+                    .get(&recipe.output_unit)
+                    .ok_or_else(|| error(origin, file, &path, "building output does not exist"))?;
+            }
+        }
         if let Some(producer) = &unit.producer {
             for (i, recipe) in producer.recipes.iter().enumerate() {
                 if !catalog.production.contains_key(recipe) {
@@ -618,6 +651,28 @@ pub(crate) fn validate_content_with_m3(
 ) -> Result<ContentCatalog, ModError> {
     let mut catalog = validate_content_m2(origin, resources, units.clone(), nodes, production)?;
     crate::content_m3::resolve_content_m3(origin, &mut catalog, &units, recipes, technologies)?;
+    for unit in catalog.units.values() {
+        if let Some(constructor) = &unit.constructor {
+            for (index, recipe_id) in constructor.buildings.iter().enumerate() {
+                let output = &catalog.units[&catalog.production[recipe_id].output_unit];
+                if output.extractor.is_some()
+                    || output.inserter.is_some()
+                    || output.conveyor.is_some()
+                {
+                    let file = catalog
+                        .source_files
+                        .get(&unit.id)
+                        .map_or("content", String::as_str);
+                    return Err(error(
+                        origin,
+                        file,
+                        &format!("constructor.buildings[{index}]"),
+                        "construction of extractors, inserters, and conveyors is not supported in this engine build",
+                    ));
+                }
+            }
+        }
+    }
     Ok(catalog)
 }
 

@@ -1,0 +1,1 @@
+(target: Unit("skirmish:soldier"), shape: Capsule(radius: 0.4, height: 1.6))

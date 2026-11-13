@@ -438,6 +438,8 @@ pub fn stage_package(
 
 /// Commit a fully validated package. This operation has no fallible steps.
 pub fn install_package(world: &mut World, staged: StagedPackage) {
+    world.insert_resource(crate::economy::construction::ConstructionState::default());
+    world.remove_resource::<crate::economy::construction::ConstructionLimit>();
     boot_m3::initialize_m3_resources(world);
     world.insert_resource(staged.types);
     world.insert_resource(staged.bounds);

@@ -1,0 +1,12 @@
+(
+ id: "skirmish", version: "0.2.0", kind: Game, engine_api: "^0.2.4", dependencies: {},
+ exports: (
+  units: ["units/base.ron", "units/barracks.ron", "units/worker.ron", "units/soldier.ron"],
+  maps: ["maps/field.ron"],
+  visuals: ["visuals/base.ron", "visuals/barracks.ron", "visuals/worker.ron", "visuals/soldier.ron", "visuals/trees.ron"],
+  resources: ["resources/wood.ron", "resources/credits.ron"], nodes: ["nodes/trees.ron"],
+  production: ["production/barracks.ron", "production/worker.ron", "production/soldier.ron"],
+  orders: ["orders/move.ron", "orders/stop.ron", "orders/attack.ron", "orders/gather.ron", "orders/produce.ron", "orders/construct.ron", "orders/cancel.ron", "orders/rules.ron"],
+  interface: ["interface/hud.ron"], input: ["input/bindings.ron"], assets: ["assets/assets.ron"], match: ["match.ron"],
+ ), context: Shared, capabilities: [], license: "LicenseRef-TBD",
+)

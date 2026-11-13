@@ -45,6 +45,32 @@ fn content() -> ClientContent {
     let archive = PackageArchive::parse(&pack_dir(&base).expect("pack real base package"))
         .expect("parse base package");
     let mut content = ClientContent::from_archives(&[archive]).expect("resolve base catalog");
+    // Construction queues contain production ids from the constructor's declared list.
+    let building_recipe = turts_mod_api::ContentId::parse("base:build_command_center").unwrap();
+    let output = turts_mod_api::ContentId::parse("base:command_center").unwrap();
+    content.catalog.units.get_mut(&output).unwrap().placement =
+        Some(turts_mod_api::SitePlacementDef {
+            gap: 0.0,
+            node_clearance: 0.0,
+            in_build_area: false,
+            site_health: turts_mod_api::Ratio::ONE,
+        });
+    let mut builder =
+        content.catalog.units[&turts_mod_api::ContentId::parse("base:rifleman").unwrap()].clone();
+    builder.id = turts_mod_api::ContentId::parse("base:builder").unwrap();
+    builder.weapon = None;
+    builder.constructor = Some(turts_mod_api::ResolvedConstructor {
+        buildings: vec![building_recipe.clone()],
+        concurrent_sites: 2,
+        queue_capacity: 4,
+        progress: turts_mod_api::ConstructProgress::Autonomous,
+        when_short: vec![],
+    });
+    content.catalog.units.insert(builder.id.clone(), builder);
+    let mut recipe = content.catalog.production.values().next().unwrap().clone();
+    recipe.id = building_recipe.clone();
+    recipe.output_unit = output;
+    content.catalog.production.insert(building_recipe, recipe);
     // The base package has no `Supply` resource: the catalog of the test adds one.
     content.catalog.resources.insert(
         turts_mod_api::ContentId::parse(POWER).unwrap(),
@@ -136,7 +162,7 @@ fn snapshot(tick: u32) -> Snapshot {
         tick,
         units: vec![
             unit(OWN, "command_center", 0, false),
-            unit(CONSTRUCTOR, "rifleman", 0, false),
+            unit(CONSTRUCTOR, "builder", 0, false),
             unit(ENEMY, "command_center", 1, false),
             unit(SITE, "command_center", 0, true),
             unit(ENEMY_SITE, "command_center", 1, true),
@@ -168,7 +194,10 @@ fn snapshot(tick: u32) -> Snapshot {
     }];
     snapshot.records.construction_queues = vec![ConstructionQueue {
         constructor: UnitId(CONSTRUCTOR),
-        orders: vec![held("command_center", 5.0), held("command_center", 6.0)],
+        orders: vec![
+            held("build_command_center", 5.0),
+            held("build_command_center", 6.0),
+        ],
     }];
     snapshot.records.supply = vec![supply(100, 40)];
     snapshot.records.match_state = Some(MatchState {
@@ -220,7 +249,10 @@ fn the_getters_return_the_records_of_a_snapshot_and_a_delta() {
     assert_eq!(replica.supply("base:credits", SupplySide::Provided), None);
     assert_eq!(
         replica.construction_queue(CONSTRUCTOR),
-        &[held("command_center", 5.0), held("command_center", 6.0)]
+        &[
+            held("build_command_center", 5.0),
+            held("build_command_center", 6.0)
+        ]
     );
     assert!(replica.construction_queue(OWN).is_empty());
     assert_eq!(replica.sites().collect::<Vec<_>>(), vec![SITE, ENEMY_SITE]);
@@ -249,7 +281,7 @@ fn the_getters_return_the_records_of_a_snapshot_and_a_delta() {
     }];
     change.records.construction_queues = vec![ConstructionQueue {
         constructor: UnitId(CONSTRUCTOR),
-        orders: vec![held("command_center", 7.0)],
+        orders: vec![held("build_command_center", 7.0)],
     }];
     change.records.match_state = Some(MatchState {
         connections: vec![],
@@ -268,7 +300,7 @@ fn the_getters_return_the_records_of_a_snapshot_and_a_delta() {
     assert_eq!(replica.supply(POWER, SupplySide::Consumed), Some(130));
     assert_eq!(
         replica.construction_queue(CONSTRUCTOR),
-        &[held("command_center", 7.0)]
+        &[held("build_command_center", 7.0)]
     );
     assert_eq!(replica.site_progress(SITE), Some(&rate(30, 100, 2, 15)));
     // The job record of tick 10 is evaluated at the last applied tick, 15.
@@ -794,7 +826,7 @@ fn a_record_that_names_a_gone_or_wrong_unit_is_refused() {
                 d.removed = vec![UnitId(CONSTRUCTOR)];
                 d.records.construction_queues = vec![ConstructionQueue {
                     constructor: UnitId(CONSTRUCTOR),
-                    orders: vec![held("command_center", 1.0)],
+                    orders: vec![held("build_command_center", 1.0)],
                 }];
             }),
         ),
@@ -836,7 +868,7 @@ fn a_record_that_names_a_gone_or_wrong_unit_is_refused() {
             Box::new(|d| {
                 d.records.construction_queues = vec![ConstructionQueue {
                     constructor: UnitId(CONSTRUCTOR),
-                    orders: vec![held("no_such_unit", 1.0)],
+                    orders: vec![held("no_such_recipe", 1.0)],
                 }];
             }),
         ),
@@ -981,7 +1013,10 @@ impl Truth {
             sites: BTreeMap::from([(SITE, rate(5, 100, 1, 10))]),
             queues: BTreeMap::from([(
                 CONSTRUCTOR,
-                vec![held("command_center", 5.0), held("command_center", 6.0)],
+                vec![
+                    held("build_command_center", 5.0),
+                    held("build_command_center", 6.0),
+                ],
             )]),
             supply: Some(supply(100, 40)),
             match_state: first.records.match_state.unwrap(),
@@ -1066,7 +1101,7 @@ impl Truth {
                 }];
             }
             14 => {
-                let orders = vec![held("command_center", 9.0)];
+                let orders = vec![held("build_command_center", 9.0)];
                 self.queues.insert(CONSTRUCTOR, orders.clone());
                 d.records.construction_queues = vec![ConstructionQueue {
                     constructor: UnitId(CONSTRUCTOR),

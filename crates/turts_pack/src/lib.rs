@@ -34,7 +34,14 @@ pub fn load_package(world: &mut World, archive: &PackageArchive) -> Result<(), M
         },
         tick_hz,
     )?;
+    let construction_limit = archive
+        .match_defs()?
+        .first()
+        .and_then(|(_, definition)| definition.open_sites_per_slot);
     install_package(world, staged);
+    if let Some(limit) = construction_limit {
+        world.insert_resource(turts_sim::economy::construction::ConstructionLimit(limit));
+    }
     Ok(())
 }
 

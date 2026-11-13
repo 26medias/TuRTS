@@ -318,6 +318,9 @@ fn dynamic_list_values_refresh_without_replacing_button_entities() {
     content.catalog.units.insert(
         id.clone(),
         turts_mod_api::ResolvedUnit {
+            constructor: None,
+            placement: None,
+            build_area: None,
             id,
             name: "Scout".into(),
             footprint: turts_mod_api::Footprint::Circle { radius: 1.0 },
@@ -606,6 +609,9 @@ fn grid_item_tooltips_inherit_context_and_template_tooltips_override_it() {
     content.catalog.units.insert(
         worker_id.clone(),
         turts_mod_api::ResolvedUnit {
+            constructor: None,
+            placement: None,
+            build_area: None,
             id: worker_id.clone(),
             name: "Worker".into(),
             footprint: turts_mod_api::Footprint::Circle { radius: 1.0 },

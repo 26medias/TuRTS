@@ -15,8 +15,8 @@ pub mod written;
 
 pub use assets::{AssetsDef, CursorAsset, FileAsset, ImageAsset};
 pub use content::{
-    ContentCatalog, ContentRef, ResolvedAmmo, ResolvedConveyor, ResolvedCost, ResolvedDropOff,
-    ResolvedDropOffEffect, ResolvedDropOffRule, ResolvedEffect, ResolvedGatherer,
+    ContentCatalog, ContentRef, ResolvedAmmo, ResolvedConstructor, ResolvedConveyor, ResolvedCost,
+    ResolvedDropOff, ResolvedDropOffEffect, ResolvedDropOffRule, ResolvedEffect, ResolvedGatherer,
     ResolvedInventory, ResolvedItemStack, ResolvedMachine, ResolvedNode, ResolvedProducer,
     ResolvedProduction, ResolvedRecipe, ResolvedResearchStation, ResolvedTechnology, ResolvedUnit,
     ResolvedWeapon, SourceDef,

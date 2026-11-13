@@ -9,6 +9,7 @@ pub(crate) struct WorldTooltip(pub(crate) u32);
 pub(super) fn update_world_tooltip(
     commands: &mut Commands,
     hovered: Option<u32>,
+    selected_node: Option<turts_net_protocol::NodeId>,
     started: Option<Instant>,
     now: Instant,
     camera: &Camera,
@@ -33,6 +34,20 @@ pub(super) fn update_world_tooltip(
                 .world_to_viewport(camera_transform, world_to_scene(shown.pos) + Vec3::Y * 2.0)
                 .ok()?;
             Some((id, tooltip_text(&name, unit.owner_slot), point))
+        })
+        .or_else(|| {
+            let id = selected_node?;
+            let node = replica.nodes.get(&id)?;
+            let content = ContentId::parse(&node.content_id).ok()?;
+            let name = &catalog.nodes.get(&content)?.name;
+            let point = camera
+                .world_to_viewport(camera_transform, world_to_scene(node.pos) + Vec3::Y * 2.0)
+                .ok()?;
+            Some((
+                id.0,
+                format!("{name} - {} remaining", node.remaining),
+                point,
+            ))
         });
     let font = assets
         .tooltip_font

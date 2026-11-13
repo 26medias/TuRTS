@@ -33,6 +33,13 @@ impl Core {
     pub(super) fn prune(&mut self, world: &dyn WorldView) {
         let ids: std::collections::HashSet<_> = world.units().iter().map(|unit| unit.id).collect();
         self.selected.retain(|id| ids.contains(id));
+        if !self.selected.is_empty()
+            || self
+                .selected_node
+                .is_some_and(|id| !world.nodes().iter().any(|node| node.id == id))
+        {
+            self.selected_node = None;
+        }
         for group in &mut self.groups {
             group.retain(|id| ids.contains(id));
         }
@@ -58,9 +65,23 @@ impl Core {
                 .min_by(|a, b| a.1.total_cmp(&b.1))
                 .map(|(unit, _)| unit)
         });
+        self.selected_node = None;
         let Some(unit) = hit else {
             if !self.has_modifier_action("add_modifier") {
                 self.selected.clear();
+                self.last_click = None;
+                self.selected_node = ground.and_then(|point| {
+                    world
+                        .nodes()
+                        .iter()
+                        .filter_map(|node| {
+                            let distance = node.position.distance_squared(point);
+                            (distance <= node.radius.max(0.0).powi(2))
+                                .then_some((node.id, distance))
+                        })
+                        .min_by(|a, b| a.1.total_cmp(&b.1))
+                        .map(|(id, _)| id)
+                });
                 effects.push(Effect::SelectionChanged);
             }
             return;
@@ -113,6 +134,7 @@ impl Core {
         effects.push(Effect::SelectionChanged);
     }
     fn box_select(&mut self, a: Vec2, b: Vec2, view: &Viewport, world: &dyn WorldView) {
+        self.selected_node = None;
         let lo = a.min(b);
         let hi = a.max(b);
         let candidates: Vec<_> = world

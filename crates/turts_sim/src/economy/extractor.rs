@@ -171,6 +171,9 @@ mod tests {
             accepts: vec![ore.clone()],
         };
         let drill = ResolvedUnit {
+            constructor: None,
+            placement: None,
+            build_area: None,
             id: drill_id.clone(),
             name: "Drill".into(),
             footprint: Footprint::Circle { radius: 1.0 },

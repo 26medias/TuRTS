@@ -65,6 +65,9 @@ fn audit_catalog() -> ContentCatalog {
             let content_id = ContentId::parse(id).unwrap();
             let shooter = id == "audit:shooter";
             let unit = ResolvedUnit {
+                constructor: None,
+                placement: None,
+                build_area: None,
                 id: content_id.clone(),
                 name: id.into(),
                 footprint: Footprint::Circle { radius: 0.25 },

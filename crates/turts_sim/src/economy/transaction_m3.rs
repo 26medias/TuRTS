@@ -18,7 +18,6 @@ use crate::{
         extractor::{ExtractorState, Extractors},
         inserter::Inserters,
         ledger::{Account, EconomyLedger, Endpoint, ReservationClaim},
-        production::ProductionQueues,
         research::{Disabled, ResearchState},
     },
 };
@@ -150,9 +149,9 @@ impl Transaction<'_> {
                     return Err(RejectReason::IntegrityViolation);
                 }
                 if self
-                    .world
-                    .get_resource::<ProductionQueues>()
-                    .and_then(|queues| queues.0.get(&removal.unit))
+                    .queues()
+                    .0
+                    .get(&removal.unit)
                     .is_some_and(|queue| !queue.is_empty())
                 {
                     return Err(RejectReason::NotRemovable);
@@ -366,18 +365,29 @@ pub(crate) fn remove_unit(
     }
     let entity = find_unit_entity(tx.world, unit).ok_or(RejectReason::UnknownUnit)?;
     tx.mark_m3();
+    let mut construction = tx.construction();
+    construction.sites.remove(&unit);
+    construction.held.remove(&unit);
+    tx.stage_construction(construction);
     let owner = tx
         .world
         .get::<Owner>(entity)
         .map(|owner| owner.0.0)
         .ok_or(RejectReason::IntegrityViolation)?;
-    if tx
-        .world
-        .get_resource::<ProductionQueues>()
-        .and_then(|queues| queues.0.get(&unit))
-        .is_some_and(|queue| !queue.is_empty())
+    let mut queues = tx.queues();
+    if let Some(jobs) = queues.0.get_mut(&unit)
+        && !jobs.is_empty()
     {
-        return Err(RejectReason::NotRemovable);
+        if cause == RemoveCause::Removed {
+            return Err(RejectReason::NotRemovable);
+        }
+        for job in jobs.iter() {
+            if let Some(reservation) = &job.reservation {
+                super::release_reservation(tx, reservation)?;
+            }
+        }
+        jobs.clear();
+        tx.stage_queues(queues);
     }
 
     let ledger = tx
@@ -386,7 +396,9 @@ pub(crate) fn remove_unit(
         .ok_or(RejectReason::IntegrityViolation)?;
     let has_reservation = ledger
         .reservation_claims
-        .values()
+        .iter()
+        .filter(|(id, _)| !tx.writes.claims.contains_key(id))
+        .map(|(_, claim)| claim)
         .chain(tx.writes.claims.values())
         .any(|claim| match claim {
             ReservationClaim::Active(reservation) => reservation.lines.iter().any(|line| {

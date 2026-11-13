@@ -1,10 +1,10 @@
-//! The effect family `Placement` of `UI-PLACE` (design 7.2: the `Ghost` effect). L0-CORE made this
-//! file; `UI-PLACE` fills it. Until then the effect records nothing.
+//! Keep the current placement preview for the renderer.
 
 use super::*;
 
 pub(in crate::core_adapter) fn apply(
-    _output: turts_interaction::placement::Output,
-    _runtime: &mut CoreRuntime,
+    output: turts_interaction::placement::Output,
+    runtime: &mut CoreRuntime,
 ) {
+    runtime.placement_ghost = output.ghost;
 }

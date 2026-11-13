@@ -42,6 +42,9 @@ impl GeometricField {
 
 fn plain_unit(id: &str) -> ResolvedUnit {
     ResolvedUnit {
+        constructor: None,
+        placement: None,
+        build_area: None,
         id: ContentId::parse(id).unwrap(),
         name: "Support".into(),
         footprint: Footprint::Circle { radius: 0.25 },
@@ -69,6 +72,9 @@ fn catalog(field: GeometricField, value: f32) -> ContentCatalog {
     let id = ContentId::parse(field.id()).unwrap();
     let ore = ContentId::parse("probe:ore").unwrap();
     let unit = ResolvedUnit {
+        constructor: None,
+        placement: None,
+        build_area: None,
         id: id.clone(),
         name: "Probe unit".into(),
         footprint: Footprint::Circle { radius: 0.25 },

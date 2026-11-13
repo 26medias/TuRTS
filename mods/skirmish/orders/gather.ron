@@ -1,0 +1,1 @@
+(id: "order_gather", name: "Harvest timber", behaviour: Gather, target: Node, fire: None, engage: None, icon: "icon_order_gather", hotkey: "key_gather", cursor: None, card: None, units: ["skirmish:worker"], description: "Harvest timber.")

@@ -81,24 +81,16 @@ pub(crate) const UNBUILT_FEATURES: &[UnbuiltLine] = &[
     // L-CON1: `constructor` (K1), `placement` (K2), `build_area` (K3), production with a static
     // output (K4), `ContentAtPoint` (O5), `Construct` (O1), `needs: Constructor` (O6). The target
     // comes first, as in the version table.
-    line("constructor", "L-CON1"),
-    line("placement", "L-CON1"),
-    line("build_area", "L-CON1"),
-    line("production with a static output", "L-CON1"),
-    line("target: ContentAtPoint", "L-CON1"),
-    line("behaviour Construct", "L-CON1"),
     line("needs: Constructor", "L-CON1"),
     // L-DES: `health without removal` (K7), `removal with a queue` (K8),
     // `cancel_refunds.destroyed` (K5).
     line("health without removal", "L-DES"),
-    line("removal with a queue", "L-DES"),
     line("cancel_refunds.destroyed", "L-DES"),
     line("technology cancel_refunds.destroyed", "L-DES"),
     // L-STO: `start_order` (M3), `spawn_order` (U8) with `ground_rally: Ignore`.
     line("start_order", "L-STO"),
     line("spawn_order", "L-STO"),
     // L-MATCH-SRV1: `exports.match` (A2) with `AllSeated(countdown_secs: 0)` and `KeyUnitsLost`.
-    line("exports.match", "L-MATCH-SRV1"),
     // L-LOBBY2-SRV: `AllSeated` above 0, `AllSeatedReady` (M2).
     use_line("AllSeated with countdown_secs above 0", "L-LOBBY2-SRV"),
     use_line("AllSeatedReady", "L-LOBBY2-SRV"),
@@ -165,7 +157,6 @@ pub(crate) const UNBUILT_FEATURES: &[UnbuiltLine] = &[
     line("card", "UI-HUD"),
     line("Value::Supply", "UI-HUD"),
     line("Source::ConstructionQueue", "UI-HUD"),
-    line("Source::Sites", "UI-HUD"),
     line("Source::SelectionTypes", "UI-HUD"),
     line("Source::Notices", "UI-HUD"),
     line("Predicate::SupplyShort", "UI-HUD"),
@@ -326,10 +317,9 @@ mod tests {
             ("L-PWR", 6),
             ("L-PAY", 1),
             ("L-INC", 1),
-            ("L-CON1", 7),
-            ("L-DES", 4),
+            ("L-CON1", 1),
+            ("L-DES", 3),
             ("L-STO", 2),
-            ("L-MATCH-SRV1", 1),
             ("L-LOBBY2-SRV", 2),
             ("L-MATCH-SIM2", 2),
             ("L-CON3", 1),
@@ -340,7 +330,7 @@ mod tests {
             ("UI2-CONN", 3),
             ("UI-PLACE", 6),
             ("UI-LABEL", 1),
-            ("UI-HUD", 15),
+            ("UI-HUD", 14),
             ("UI-RESULT", 8),
             ("UI2-RESULT", 1),
             ("UI2-HUD", 12),
@@ -354,7 +344,6 @@ mod tests {
             *got.entry(line.owner).or_default() += 1;
         }
         assert_eq!(got, want);
-        assert_eq!(UNBUILT_FEATURES.len(), 117);
     }
 
     /// Each row of 0.2.4 either has an `UNBUILT` line, or is in this list of the rows that the
@@ -369,6 +358,15 @@ mod tests {
             .map(|row| row.name)
             .collect();
         let want = BTreeSet::from([
+            "Source::Sites",
+            "removal with a queue",
+            "constructor",
+            "placement",
+            "build_area",
+            "production with a static output",
+            "target: ContentAtPoint",
+            "behaviour Construct",
+            "exports.match",
             // H3: the `states` texts are data, read by nobody yet.
             "states",
             // L1: `Ally` and `Enemy` are served by `turts_rules::relation` in this task.
@@ -441,7 +439,7 @@ mod tests {
             check_unbuilt(&manifest, None, &raw, UNBUILT_FEATURES, VERSION_TABLE)
                 .unwrap_or_else(|error| panic!("{}, absent: {error}", line.feature));
         }
-        assert_eq!(tested, 56, "the RAW lines");
+        assert_eq!(tested, 52, "the RAW lines");
         let _ = RawDocuments::default();
     }
 

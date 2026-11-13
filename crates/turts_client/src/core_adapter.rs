@@ -140,6 +140,7 @@ pub fn camera_components(camera: CameraState) -> (Transform, Projection) {
 
 #[derive(Resource, Default)]
 pub struct CoreRuntime {
+    pub(crate) placement_ghost: Option<turts_interaction::placement::Ghost>,
     core: Option<Core>,
     content_index: Option<ContentIndex>,
     started: Option<Instant>,

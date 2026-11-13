@@ -457,6 +457,9 @@ mod tests {
         let second_technology = cid("research_fixture:second");
         let turret = cid("research_fixture:turret");
         let station = |id: ContentId, name: &str| ResolvedUnit {
+            constructor: None,
+            placement: None,
+            build_area: None,
             id,
             name: name.into(),
             footprint: Footprint::Circle { radius: 0.8 },
@@ -500,6 +503,9 @@ mod tests {
                 (
                     turret.clone(),
                     ResolvedUnit {
+                        constructor: None,
+                        placement: None,
+                        build_area: None,
                         id: turret.clone(),
                         name: "Turret".into(),
                         footprint: Footprint::Circle { radius: 0.8 },

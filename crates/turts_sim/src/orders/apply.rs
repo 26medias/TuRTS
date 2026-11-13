@@ -86,6 +86,7 @@ pub(crate) fn apply_order(
     let immediate = matches!(
         command.behaviour,
         Behaviour::Produce
+            | Behaviour::Construct
             | Behaviour::CancelProduction
             | Behaviour::Remove
             | Behaviour::SetEnabled(_)
@@ -101,6 +102,14 @@ pub(crate) fn apply_order(
             .map(|owner| owner.0);
         if owner != Some(slot) {
             outcomes.refused.push((*unit_id, R::NotOwner));
+            continue;
+        }
+        if world
+            .resource::<crate::economy::construction::ConstructionState>()
+            .sites
+            .contains_key(unit_id)
+        {
+            outcomes.refused.push((*unit_id, R::NotApplicable));
             continue;
         }
         let Some(unit_type) = world
@@ -152,17 +161,18 @@ pub(crate) fn apply_order(
             Behaviour::SetEnabled(_) => definition.is_some_and(unit_toggleable),
             // API 0.2.4: no unit is capable of a new behaviour until its lane builds it (the
             // packer refuses these orders with `UNBUILT_FEATURES` until then).
-            Behaviour::Construct
-            | Behaviour::CancelConstruction
+            Behaviour::Construct => definition.is_some_and(|unit| unit.constructor.is_some()),
+            Behaviour::CancelConstruction
             | Behaviour::SetRally
             | Behaviour::Repair
             | Behaviour::Surrender => false,
         };
         if !capable {
             let reason = match command.behaviour {
-                Behaviour::Gather | Behaviour::Produce | Behaviour::CancelProduction => {
-                    R::MissingCapability
-                }
+                Behaviour::Gather
+                | Behaviour::Produce
+                | Behaviour::CancelProduction
+                | Behaviour::Construct => R::MissingCapability,
                 Behaviour::Remove => R::NotRemovable,
                 Behaviour::SetEnabled(_) => R::NotToggleable,
                 _ => R::NotApplicable,
@@ -481,6 +491,7 @@ fn validate_target(
         | (turts_mod_api::TargetKind::Node, OrderTargetSim::Node(_))
         | (turts_mod_api::TargetKind::Job, OrderTargetSim::Job(_))
         | (turts_mod_api::TargetKind::Content, OrderTargetSim::Content(_))
+        | (turts_mod_api::TargetKind::ContentAtPoint, OrderTargetSim::ContentAtPoint { .. })
         | (turts_mod_api::TargetKind::None, OrderTargetSim::None) => true,
         (turts_mod_api::TargetKind::Content, OrderTargetSim::Invalid)
             if command.behaviour == Behaviour::Produce =>
@@ -493,6 +504,12 @@ fn validate_target(
         return Err(R::TargetInvalid);
     }
     match (&command.behaviour, &command.target) {
+        (Behaviour::Construct, OrderTargetSim::ContentAtPoint { point, .. })
+            if point.is_finite() =>
+        {
+            Ok(())
+        }
+        (Behaviour::Construct, OrderTargetSim::ContentAtPoint { .. }) => Err(R::TargetNotFinite),
         (Behaviour::Move, OrderTargetSim::Point(point)) if point.is_finite() => Ok(()),
         (Behaviour::Move, OrderTargetSim::Point(_)) => Err(R::TargetNotFinite),
         (Behaviour::Move, OrderTargetSim::Unit(unit)) => {
@@ -906,10 +923,13 @@ fn apply_unit_order(
             }
             Ok(job_id)
         }
-        // API 0.2.4: the behaviours that their lanes build later. `capable` above refuses them
-        // first, so this arm is not reached.
-        Behaviour::Construct
-        | Behaviour::CancelConstruction
+        Behaviour::Construct => {
+            let OrderTargetSim::ContentAtPoint { content, point } = order.target else {
+                return Err(R::TargetInvalid);
+            };
+            crate::economy::construction::construct(world, slot, unit_id, content, point)
+        }
+        Behaviour::CancelConstruction
         | Behaviour::SetRally
         | Behaviour::Repair
         | Behaviour::Surrender => Err(R::NotApplicable),

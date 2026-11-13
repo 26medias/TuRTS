@@ -516,6 +516,9 @@ mod tests {
         conveyor: Option<ResolvedConveyor>,
     ) -> ResolvedUnit {
         ResolvedUnit {
+            constructor: None,
+            placement: None,
+            build_area: None,
             id: unit_id,
             name: "Fixture unit".into(),
             footprint: Footprint::Circle { radius: 0.25 },

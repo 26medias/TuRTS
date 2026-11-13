@@ -1715,6 +1715,12 @@ fn owner_unit_orders_from_audit(
     fn reject_reason(reason: R) -> wire::CommandRejectReason {
         use wire::CommandRejectReason as W;
         match reason {
+            R::SiteOutsideMap => W::SiteOutsideMap,
+            R::SiteOutOfArea => W::SiteOutOfArea,
+            R::SiteBlocked => W::SiteBlocked,
+            R::SiteNearBuilding => W::SiteNearBuilding,
+            R::SiteNearResource => W::SiteNearResource,
+            R::ConstructionQueueFull => W::ConstructionQueueFull,
             R::EmptyCommand => W::EmptyCommand,
             R::TooManyUnits => W::TooManyUnits,
             R::DuplicateUnit => W::DuplicateUnit,
@@ -1765,6 +1771,13 @@ fn owner_unit_orders_from_audit(
         OrderTargetSim::Node(node) => wire::OrderTarget::Node(wire::NodeId(node.0)),
         OrderTargetSim::Job(job) => wire::OrderTarget::Job(wire::JobId(job.0)),
         OrderTargetSim::Content(content) => wire::OrderTarget::Content(content.to_string()),
+        OrderTargetSim::ContentAtPoint { content, point } => wire::OrderTarget::ContentAtPoint {
+            content: content.to_string(),
+            point: wire::Pos {
+                x: point.x,
+                y: point.y,
+            },
+        },
     };
     let summary = |order: &turts_sim::Order| wire::OrderSummary {
         order: order.order.to_string(),

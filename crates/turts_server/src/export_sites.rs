@@ -1,6 +1,5 @@
 //! The site records of one delta (design 6.8). Public: site existence and completion. Owner:
-//! the progress of a site. The writer of the sim rows is `L-CON1`; the sim rows are empty in
-//! lane 0, so these functions return empty lists.
+//! the progress of a site. All rows come from the committed simulation tick.
 //!
 //! This file reads only `CommittedTick` fields (the scan `order_writers.rs`).
 //!

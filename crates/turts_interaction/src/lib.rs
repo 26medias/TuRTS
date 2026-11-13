@@ -44,6 +44,7 @@ pub use world_view::{NodeView, UnitView, WorldView};
 pub struct Core {
     camera: CameraState,
     selected: Vec<UnitId>,
+    selected_node: Option<NodeId>,
     groups: Vec<Vec<UnitId>>,
     keys: Vec<String>,
     physical_mods: Vec<Mod>,
@@ -89,6 +90,7 @@ impl Core {
         Self {
             camera: initial_camera,
             selected: Vec::new(),
+            selected_node: None,
             groups: vec![Vec::new(); 10],
             keys: Vec::new(),
             physical_mods: Vec::new(),
@@ -113,6 +115,11 @@ impl Core {
     /// Returns the camera pose without allowing presentation to mutate core state.
     pub fn camera_state(&self) -> CameraState {
         self.camera
+    }
+
+    /// The selected public resource node, if the selection contains no units.
+    pub fn selected_node(&self) -> Option<NodeId> {
+        self.selected_node
     }
 
     /// Read-only cursor context for the camera controller's active pan direction.

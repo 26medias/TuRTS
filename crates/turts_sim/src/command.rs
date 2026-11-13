@@ -119,12 +119,24 @@ pub enum RejectReason {
     OutOfRange,
     NotQueueable,
     Blocked,
+    SiteOutsideMap,
+    SiteOutOfArea,
+    SiteBlocked,
+    SiteNearBuilding,
+    SiteNearResource,
+    ConstructionQueueFull,
 }
 
 impl RejectReason {
     /// The stable name of the reason.
     pub fn as_str(self) -> &'static str {
         match self {
+            Self::SiteOutsideMap => "site_outside_map",
+            Self::SiteOutOfArea => "site_out_of_area",
+            Self::SiteBlocked => "site_blocked",
+            Self::SiteNearBuilding => "site_near_building",
+            Self::SiteNearResource => "site_near_resource",
+            Self::ConstructionQueueFull => "construction_queue_full",
             Self::EmptyCommand => "empty_command",
             Self::TooManyUnits => "too_many_units",
             Self::DuplicateUnit => "duplicate_unit",

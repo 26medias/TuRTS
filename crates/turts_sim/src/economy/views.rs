@@ -150,6 +150,7 @@ pub struct UnitView {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum UnitOrderTargetView {
+    ContentAtPoint { content: ContentId, point: WorldPos },
     None,
     Point(WorldPos),
     Unit(u32),
@@ -324,6 +325,12 @@ pub struct CatalogNodeAudit {
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CatalogUnitAudit {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub constructor: Option<turts_mod_api::ResolvedConstructor>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub placement: Option<turts_mod_api::SitePlacementDef>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub build_area: Option<f32>,
     pub id: ContentId,
     pub radius: f32,
     pub movement_speed: Option<f32>,
@@ -464,6 +471,11 @@ pub struct EconomyChangesView {
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct WorldView {
+    #[serde(
+        default,
+        skip_serializing_if = "super::construction::ConstructionState::is_empty"
+    )]
+    pub construction: super::construction::ConstructionState,
     pub tick: u32,
     #[serde(
         default,
@@ -633,6 +645,10 @@ pub fn world_view(world: &mut World) -> WorldView {
     unit_orders.sort_by_key(|record| record.unit_id);
     let m3 = super::views_m3::m3_world_view(world);
     let mut view = WorldView {
+        construction: world
+            .get_resource::<super::construction::ConstructionState>()
+            .cloned()
+            .unwrap_or_default(),
         tick,
         m3,
         units,
@@ -701,6 +717,15 @@ fn unit_order_summary(order: &crate::orders::Order) -> UnitOrderSummaryView {
             crate::orders::OrderTargetSim::Job(job) => UnitOrderTargetView::Job(*job),
             crate::orders::OrderTargetSim::Content(content) => {
                 UnitOrderTargetView::Content(content.clone())
+            }
+            crate::orders::OrderTargetSim::ContentAtPoint { content, point } => {
+                UnitOrderTargetView::ContentAtPoint {
+                    content: content.clone(),
+                    point: WorldPos {
+                        x: point.x,
+                        y: point.y,
+                    },
+                }
             }
         },
     }
@@ -989,6 +1014,9 @@ pub fn audit_state(world: &mut World) -> AuditState {
                     .units
                     .iter()
                     .map(|(id, d)| CatalogUnitAudit {
+                        constructor: d.constructor.clone(),
+                        placement: d.placement,
+                        build_area: d.build_area,
                         id: id.clone(),
                         radius: match d.footprint {
                             turts_mod_api::Footprint::Circle { radius } => radius,

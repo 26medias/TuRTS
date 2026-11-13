@@ -43,7 +43,15 @@ use turts_sim::{
 pub fn snapshot_for(view: &WorldView, slot: SlotId) -> wire::Snapshot {
     wire::Snapshot {
         tick: view.tick,
-        units: view.units.iter().map(unit_snapshot).collect(),
+        units: view
+            .units
+            .iter()
+            .map(|unit| {
+                let mut snapshot = unit_snapshot(unit);
+                snapshot.site = view.construction.sites.contains_key(&unit.unit_id);
+                snapshot
+            })
+            .collect(),
         nodes: view.nodes.iter().map(node_state).collect(),
         economy: wire::EconomyState {
             balances: view
@@ -120,6 +128,32 @@ pub fn snapshot_for(view: &WorldView, slot: SlotId) -> wire::Snapshot {
         // The site, job, queue, supply and match rows have no source in the view yet: their
         // writers (`L-CON1`, `L-PAY`, `L-PWR`, `L-MATCH-SIM`) add it.
         records: wire::SnapshotRecords {
+            sites: turts_sim::economy::construction::progress_rows(view)
+                .iter()
+                .filter(|row| row.owner_slot == slot.0)
+                .map(|row| wire::SiteProgress {
+                    unit: wire::UnitId(row.unit),
+                    progress: export_jobs::rate_record(row),
+                })
+                .collect(),
+            construction_queues: turts_sim::economy::construction::queue_rows(view)
+                .iter()
+                .filter(|row| row.owner_slot == slot.0)
+                .map(|row| wire::ConstructionQueue {
+                    constructor: wire::UnitId(row.constructor),
+                    orders: row
+                        .orders
+                        .iter()
+                        .map(|(content, point)| wire::HeldOrder {
+                            content: content.to_string(),
+                            point: wire::Pos {
+                                x: point.x,
+                                y: point.y,
+                            },
+                        })
+                        .collect(),
+                })
+                .collect(),
             // Every Snapshot carries `Some` (design 6.7.13, ruling for `L0-STORE`): the empty state
             // is the lane-0 value for "no match state yet"; `L-MATCH-SIM` fills it from the sim.
             match_state: Some(wire::MatchState::default()),
@@ -138,7 +172,16 @@ pub fn delta_for(batch: &CommittedTick, view: &WorldView, slot: SlotId) -> wire:
     wire::WorldDelta {
         tick: batch.tick,
         base_tick: batch.tick.saturating_sub(1),
-        spawned: batch.spawned.iter().map(unit_snapshot).collect(),
+        spawned: batch
+            .spawned
+            .iter()
+            .map(|unit| {
+                let mut snapshot = unit_snapshot(unit);
+                snapshot.site = view.construction.sites.contains_key(&unit.unit_id)
+                    || batch.sites_completed.contains(&unit.unit_id);
+                snapshot
+            })
+            .collect(),
         removed: batch
             .removed
             .iter()
@@ -583,6 +626,12 @@ fn weapon_state(row: &RawWeaponAudit, tick: u32, view: &WorldView) -> wire::Weap
 fn command_reject_reason(reason: turts_sim::RejectReason) -> wire::CommandRejectReason {
     use turts_sim::RejectReason as R;
     match reason {
+        R::SiteOutsideMap => wire::CommandRejectReason::SiteOutsideMap,
+        R::SiteOutOfArea => wire::CommandRejectReason::SiteOutOfArea,
+        R::SiteBlocked => wire::CommandRejectReason::SiteBlocked,
+        R::SiteNearBuilding => wire::CommandRejectReason::SiteNearBuilding,
+        R::SiteNearResource => wire::CommandRejectReason::SiteNearResource,
+        R::ConstructionQueueFull => wire::CommandRejectReason::ConstructionQueueFull,
         R::EmptyCommand => wire::CommandRejectReason::EmptyCommand,
         R::TooManyUnits => wire::CommandRejectReason::TooManyUnits,
         R::DuplicateUnit => wire::CommandRejectReason::DuplicateUnit,
@@ -643,6 +692,13 @@ fn unit_order_state(record: &turts_sim::economy::views::UnitOrderView) -> wire::
             Target::Node(node) => wire::OrderTarget::Node(messages::NodeId(node.0)),
             Target::Job(job) => wire::OrderTarget::Job(messages::JobId(job.0)),
             Target::Content(content) => wire::OrderTarget::Content(content.to_string()),
+            Target::ContentAtPoint { content, point } => wire::OrderTarget::ContentAtPoint {
+                content: content.to_string(),
+                point: wire::Pos {
+                    x: point.x,
+                    y: point.y,
+                },
+            },
         },
     };
     wire::UnitOrderRecord {

@@ -107,6 +107,23 @@ test("the order probe keeps a selected moving unit instead of chasing it with a 
     assert.deepEqual(selected.world.selection, [1]);
 });
 
+test("selecting the next unit cancels a pending target order first", async () => {
+    const unit = { unit_id: 2, center: [450, 250], pick_radius: 8 };
+    const world = { selection: [1], units: [unit], pending_order_id: "p:gather" };
+    const buttons = [];
+    const session = {
+        size: { width: 1280, height: 720 },
+        readWorld: async () => world,
+        handle: async ({ args }) => {
+            buttons.push(args[2]);
+            if (args[2] === "right") world.pending_order_id = null;
+            else if (world.pending_order_id === null) world.selection = [2];
+        },
+    };
+    assert.ok(await selectUnit(session, unit), "the target mode swallowed the next unit's selection click");
+    assert.deepEqual(buttons, ["right", "left"]);
+});
+
 test("an armed order needs a visible named control and its visible target prompt", () => {
     const button = { kind: "button", visible: true, enabled: true, text: "Move [M]", action: { kind: "order", id: "p:move" } };
     const prompt = { kind: "client_notice", visible: true, text: "Move: click the map. Right-click cancels." };

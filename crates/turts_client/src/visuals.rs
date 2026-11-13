@@ -359,6 +359,21 @@ fn draw_world_visuals(
     visuals.active = true;
     let (camera, camera_transform) = camera_pair;
     let local_slot = welcome.slot;
+    if let Some(ghost) = &runtime.placement_ghost {
+        let colour = if ghost.valid {
+            Color::srgb(0.2, 1.0, 0.4)
+        } else {
+            Color::srgb(1.0, 0.2, 0.2)
+        };
+        marker_gizmos.circle(
+            Isometry3d::new(
+                Vec3::new(ghost.point.x, 0.08, ghost.point.y),
+                Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2),
+            ),
+            ghost.radius,
+            colour,
+        );
+    }
     let selected_ids: HashSet<u32> = selected.0.iter().copied().collect();
     let presented_by_id: HashMap<u32, _> = presented
         .units
@@ -467,6 +482,7 @@ fn draw_world_visuals(
     update_world_tooltip(
         &mut commands,
         hovered,
+        runtime.core().and_then(|core| core.selected_node()),
         visuals.hover_started,
         now,
         camera,

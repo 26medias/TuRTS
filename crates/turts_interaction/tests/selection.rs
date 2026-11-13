@@ -6,6 +6,23 @@ use turts_mod_api::{Binding, Button, EngineOverride, Mod};
 use turts_net_protocol::UnitId;
 
 #[test]
+fn a_resource_click_selects_the_node_and_a_later_unit_click_clears_it() {
+    let world = TestWorld::default();
+    let mut core = Core::default();
+    let node = &world.nodes[0];
+    let px = core.project_world_to_screen(node.position, &VIEW);
+    click(&mut core, &world, Button::Left, px, vec![], 10);
+    assert_eq!(
+        core.selected_node(),
+        Some(node.id),
+        "the resource click has no observable selection"
+    );
+    assert!(core.selected_units().is_empty());
+    select_world_point(&mut core, &world, UnitId(1), 30);
+    assert_eq!(core.selected_node(), None);
+}
+
+#[test]
 fn boxed_own_mobile_units_exclude_own_static_units() {
     let world = TestWorld::default();
     let mut core = Core::default();

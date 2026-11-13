@@ -76,6 +76,7 @@ fn job(id: u64, stage: JobStage, charged: Vec<CostView>, reserved: Vec<CostView>
 }
 fn fixture() -> WorldView {
     WorldView {
+        construction: Default::default(),
         tick: 42,
         m3: turts_sim::economy::views_m3::M3AuditState::default(),
         unit_orders: vec![],

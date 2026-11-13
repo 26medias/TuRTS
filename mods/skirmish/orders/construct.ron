@@ -1,0 +1,1 @@
+(id: "order_construct", name: "Place building", behaviour: Construct, target: ContentAtPoint, fire: None, engage: None, icon: "icon_order_produce", hotkey: "key_construct", cursor: None, card: None, units: ["skirmish:base"], description: "Place building.")

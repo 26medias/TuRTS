@@ -97,6 +97,7 @@ pub enum OrderTargetSim {
     Node(NodeId),
     Job(JobId),
     Content(ContentId),
+    ContentAtPoint { content: ContentId, point: Vec2 },
 }
 
 /// Whether an order replaces or appends to a unit's queue.

@@ -171,7 +171,7 @@ macro_rules! raw_case {
 fn a1_a2_a3_new_export_groups() {
     for (feature, owner, group) in [
         ("exports.combat", "L-DMG", "combat"),
-        ("exports.match", "L-MATCH-SRV1", "match"),
+        ("exports.match", "", "match"),
         ("exports.visual_effects", "L-FX-PRES", "visual_effects"),
     ] {
         let edits: &'static [Edit] = Box::leak(Box::new([(
@@ -293,7 +293,7 @@ raw_case!(
 raw_case!(
     k1_constructor,
     "constructor",
-    "L-CON1",
+    "",
     DEPOT,
     "constructor",
     &[(
@@ -305,7 +305,7 @@ raw_case!(
 raw_case!(
     k2_placement,
     "placement",
-    "L-CON1",
+    "",
     DEPOT,
     "placement",
     &[(DEPOT, DEPOT_TAIL, "(x: 0.0, y: -4.0)])), placement: None,")]
@@ -313,7 +313,7 @@ raw_case!(
 raw_case!(
     k3_build_area,
     "build_area",
-    "L-CON1",
+    "",
     DEPOT,
     "build_area",
     &[(DEPOT, DEPOT_TAIL, "(x: 0.0, y: -4.0)])), build_area: None,")]
@@ -701,10 +701,10 @@ order_case!(
 order_case!(
     o5_content_at_point,
     "target: ContentAtPoint",
-    "L-CON1",
+    "",
     "Construct",
     "ContentAtPoint",
-    r#"["cedar:depot"]"#,
+    "[]",
     "target"
 );
 
@@ -846,7 +846,7 @@ fn h10_predicates_in_a_visible_list() {
 fn h7_source_variants_in_a_list_widget() {
     for (source, feature, owner) in [
         ("ConstructionQueue", "Source::ConstructionQueue", "UI-HUD"),
-        ("Sites", "Source::Sites", "UI-HUD"),
+        ("Sites", "Source::Sites", ""),
         ("Notices", "Source::Notices", "UI-HUD"),
         ("SelectionTypes", "Source::SelectionTypes", "UI-HUD"),
     ] {

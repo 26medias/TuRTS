@@ -15,6 +15,9 @@ fn extractor_runs_in_fixed_extract_set() {
     let drill_id = ContentId::parse("probe:drill").unwrap();
     let node_id = ContentId::parse("probe:deposit").unwrap();
     let drill = ResolvedUnit {
+        constructor: None,
+        placement: None,
+        build_area: None,
         id: drill_id.clone(),
         name: "Drill".into(),
         footprint: Footprint::Circle { radius: 1.0 },

@@ -550,6 +550,9 @@ mod tests {
 
     fn unit(id: &str, health: Option<u64>) -> ResolvedUnit {
         ResolvedUnit {
+            constructor: None,
+            placement: None,
+            build_area: None,
             id: cid(id),
             name: id.into(),
             footprint: Footprint::Circle { radius: 0.5 },

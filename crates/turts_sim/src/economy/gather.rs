@@ -1168,6 +1168,12 @@ fn receiver_rule(
     item: &ContentId,
     catalog: &turts_mod_api::ContentCatalog,
 ) -> Option<(ResolvedDropOffEffect, u64)> {
+    if world
+        .get_resource::<super::construction::ConstructionState>()
+        .is_some_and(|state| state.sites.contains_key(&receiver))
+    {
+        return None;
+    }
     let types = world.get_resource::<UnitTypes>()?;
     let entity = unit_entity(world, receiver)?;
     let type_id = world.get::<UnitType>(entity)?.0;

@@ -1,90 +1,280 @@
-//! Task `UI-PLACE`: the placement mode and the effect `Ghost { content, point, valid, reason }`
-//! (design 7.2, 7.5). L0-CORE made this file and wired every shared edit point once, so `UI-PLACE`
-//! edits only this file (and its client files) and adds no line elsewhere in this crate:
-//!
-//! - `State` is the field `Core::placement` (the placement mode).
-//! - `Input` is the payload of `InputEvent::Placement` (a client widget enters the mode).
-//! - `Output` is the payload of `Effect::Placement`; the adapter shows it with
-//!   `core_adapter/effects/placement.rs` (the ghost).
-//! - `Facts` is what `WorldView::placement_facts` gives (sites, footprints and the build area).
-//! - `intercept` runs at the top of the event loop of `Core::step`, before any other handler. When it
-//!   returns `true`, the event is not given to the handlers of the loop: a right click in the
-//!   placement mode sends no order, and a left click that places changes no selection (design 7.2,
-//!   GHO1 plant (d)). It may take only: `PointerDown` and `PointerUp` of the left and the right
-//!   button, and `KeyDown` of the cancel key. It must not take `KeyUp`, `FocusLost`, `PointerLeft`,
-//!   `PointerMove`, `UiCapture`, `Wheel`, `Minimap` or `InputEvent::Placement`: a handler that is
-//!   skipped does not clear the held keys and buttons or run `on_input`. When it takes a
-//!   `PointerUp`, it clears `pointer_down` and the held button itself (what `on_pointer_up` does
-//!   first). The camera still sees every event: `camera_controller.step` reads `events`, not the
-//!   loop (`lib.rs`, the call after the second `prune`), except the wheel events that `on_wheel`
-//!   marks as ignored, so an intercepted `Wheel` would reach the camera even with Ctrl held.
-//! - `on_input` handles `InputEvent::Placement`.
-//! - `update` runs once for each step after the events, before the camera step, in the order
-//!   `placement`, `hints`, `alerts`.
-//!
-//! Until `UI-PLACE` builds them, `intercept` returns `false` and no code sets
-//! `State::taking_input`; `on_input` and `update` add no effect and change no state. The types
-//! hold only what `intercept` needs: `UI-PLACE` adds the rest of its fields here.
+//! Construction placement uses the same geometry rules as the authoritative server.
 
-use super::{Core, Effect, InputEvent, Viewport, WorldView};
+use super::{Core, Effect, InputEvent, Vec2, Viewport, WorldView};
+use std::collections::BTreeMap;
+use turts_mod_api::{Behaviour, Button, TargetKind};
+use turts_net_protocol::{OrderEnvelope, OrderTarget, Pos, QueueMode, UnitId};
+use turts_rules::placement::{self, BuildSource, Circle, Obstacle, Point, QueueFill};
 
-/// The placement mode of the core. `taking_input` is `true` while the mode takes the placement
-/// clicks and the cancel key (see `intercept`); it never takes the other kinds of input.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct State {
     pub taking_input: bool,
+    constructor: u32,
+    content: String,
+    order: String,
+    pressed: Option<(Button, Vec2)>,
 }
 
-/// An input of the placement mode (an activation of `WidgetAction::Place`). Empty until `UI-PLACE`.
 #[derive(Debug, Clone, Default, PartialEq)]
-pub struct Input {}
+pub struct Input {
+    pub constructor: u32,
+    pub content: String,
+}
 
-/// An effect of the placement mode (the ghost). Empty until `UI-PLACE`.
 #[derive(Debug, Clone, Default, PartialEq)]
-pub struct Output {}
+pub struct Output {
+    pub ghost: Option<Ghost>,
+}
 
-/// The world data of the placement rule (design 6.1). Empty until `UI-PLACE`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Ghost {
+    pub content: String,
+    pub point: Vec2,
+    pub radius: f32,
+    pub valid: bool,
+    pub reason: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Recipe {
+    pub radius: f32,
+    pub gap: f32,
+    pub node_clearance: f32,
+    pub in_build_area: bool,
+}
+
 #[derive(Debug, Clone, Default, PartialEq)]
-pub struct Facts {}
+pub struct Facts {
+    pub recipes: BTreeMap<String, Recipe>,
+    pub constructors: BTreeMap<u32, Vec<String>>,
+    pub build_sources: BTreeMap<u8, Vec<BuildSource>>,
+    pub obstacles: Vec<Obstacle>,
+    pub nodes: Vec<Circle>,
+    pub queues: BTreeMap<u32, QueueFill>,
+}
 
 impl Core {
-    /// Read-only observation seam for the placement mode.
     pub fn placement_state(&self) -> &State {
         &self.placement
     }
 }
 
-/// The pre-dispatch hook of `Core::step`: `true` when the placement mode took this event.
+fn cancel(core: &mut Core, effects: &mut Vec<Effect>) {
+    core.placement = State::default();
+    core.pending_order = None;
+    core.pointer_down = None;
+    effects.push(Effect::Placement(Output::default()));
+    effects.push(Effect::Cursor {
+        context: "default".into(),
+    });
+}
+
+fn ghost(core: &Core, px: Vec2, world: &dyn WorldView, view: &Viewport) -> Option<Ghost> {
+    let point = super::projection::screen_to_world(px, view, core.camera)?;
+    let facts = world.placement_facts();
+    let recipe = facts.recipes.get(&core.placement.content)?;
+    let bounds = world.map_size()?;
+    let site = placement::Site {
+        footprint: Circle {
+            centre: Point {
+                x: point.x,
+                y: point.y,
+            },
+            radius: recipe.radius,
+        },
+        gap: recipe.gap,
+        node_clearance: recipe.node_clearance,
+        in_build_area: recipe.in_build_area,
+        queue: facts.queues.get(&core.placement.constructor).copied(),
+    };
+    let verdict = placement::check(
+        &site,
+        &placement::View {
+            map_width: bounds.x,
+            map_height: bounds.y,
+            build_sources: facts
+                .build_sources
+                .get(&world.own_slot().0)
+                .map_or(&[], Vec::as_slice),
+            obstacles: &facts.obstacles,
+            nodes: &facts.nodes,
+        },
+        |_| true,
+    );
+    let reason = match verdict {
+        placement::Verdict::Valid => None,
+        placement::Verdict::Refused { reason, .. } => Some(reason.key().into()),
+    };
+    Some(Ghost {
+        content: core.placement.content.clone(),
+        point,
+        radius: recipe.radius,
+        valid: reason.is_none(),
+        reason,
+    })
+}
+
 pub fn intercept(
     core: &mut Core,
     _input_index: usize,
-    _event: &InputEvent,
-    _world: &dyn WorldView,
-    _view: &Viewport,
+    event: &InputEvent,
+    world: &dyn WorldView,
+    view: &Viewport,
     _now_ms: u64,
-    _effects: &mut Vec<Effect>,
+    effects: &mut Vec<Effect>,
 ) -> bool {
-    core.placement.taking_input
+    if !core.placement.taking_input {
+        return false;
+    }
+    match event {
+        InputEvent::KeyDown { code, .. }
+            if core.action_for_key(code, world).as_deref() == Some("cancel") =>
+        {
+            cancel(core, effects);
+            true
+        }
+        InputEvent::PointerDown {
+            button,
+            px,
+            over_widget: false,
+        } if core.ui_capture.is_none() && matches!(button, Button::Left | Button::Right) => {
+            core.placement.pressed = Some((*button, *px));
+            core.pointer_down = None;
+            core.pointer = Some((*px, false));
+            true
+        }
+        InputEvent::PointerUp {
+            button,
+            px,
+            over_widget,
+        } if matches!(button, Button::Left | Button::Right) => {
+            core.pointer_down = None;
+            core.held_buttons.retain(|held| held != button);
+            core.held_modifier_actions
+                .remove(&format!("pointer:{button:?}"));
+            let pressed = core.placement.pressed.take();
+            if core.ui_capture.is_none()
+                && !over_widget
+                && pressed.is_some_and(|(down, start)| {
+                    down == *button && start.distance(*px) <= super::CLICK_DRAG_PIXELS
+                })
+            {
+                if *button == Button::Right {
+                    cancel(core, effects);
+                } else if let Some(ghost) = ghost(core, *px, world, view) {
+                    if ghost.valid {
+                        effects.push(Effect::Send(OrderEnvelope {
+                            order: core.placement.order.clone(),
+                            units: vec![UnitId(core.placement.constructor)],
+                            target: OrderTarget::ContentAtPoint {
+                                content: core.placement.content.clone(),
+                                point: Pos {
+                                    x: ghost.point.x,
+                                    y: ghost.point.y,
+                                },
+                            },
+                            queue: QueueMode::Replace,
+                            group: 0,
+                        }));
+                        cancel(core, effects);
+                    } else if let Some(reason) = ghost.reason {
+                        effects.push(Effect::Notice {
+                            text_key: reason,
+                            units: vec![UnitId(core.placement.constructor)],
+                        });
+                    }
+                }
+            }
+            true
+        }
+        _ => false,
+    }
 }
 
-/// The handler of `InputEvent::Placement`. Stub: no effect, no state change.
 pub fn on_input(
-    _core: &mut Core,
-    _input: &Input,
-    _world: &dyn WorldView,
+    core: &mut Core,
+    input: &Input,
+    world: &dyn WorldView,
     _view: &Viewport,
     _now_ms: u64,
-    _effects: &mut Vec<Effect>,
+    effects: &mut Vec<Effect>,
 ) {
+    if core.ui_capture.is_some() {
+        return;
+    }
+    let Some(unit) = world
+        .units()
+        .iter()
+        .find(|unit| unit.id.0 == input.constructor && unit.owner_slot == world.own_slot())
+    else {
+        return;
+    };
+    let facts = world.placement_facts();
+    if !facts
+        .constructors
+        .get(&input.constructor)
+        .is_some_and(|recipes| recipes.contains(&input.content))
+        || !facts.recipes.contains_key(&input.content)
+    {
+        return;
+    }
+    let Some(order) = world.orders().iter().find(|order| {
+        order.behaviour == Behaviour::Construct
+            && order.target == TargetKind::ContentAtPoint
+            && (order.units.is_empty() || order.units.contains(&unit.content_id))
+    }) else {
+        return;
+    };
+    core.placement = State {
+        taking_input: true,
+        constructor: input.constructor,
+        content: input.content.clone(),
+        order: order.id.clone(),
+        pressed: None,
+    };
+    core.pending_order = Some(order.id.clone());
+    core.pointer_down = None;
+    effects.push(Effect::Cursor {
+        context: order.cursor.clone().unwrap_or_else(|| "default".into()),
+    });
 }
 
-/// The placement hook of `Core::step`. Stub: no effect, no state change.
 pub fn update(
-    _core: &mut Core,
-    _events: &[InputEvent],
-    _world: &dyn WorldView,
-    _view: &Viewport,
+    core: &mut Core,
+    events: &[InputEvent],
+    world: &dyn WorldView,
+    view: &Viewport,
     _now_ms: u64,
-    _effects: &mut Vec<Effect>,
+    effects: &mut Vec<Effect>,
 ) {
+    if !core.placement.taking_input {
+        return;
+    }
+    if events
+        .iter()
+        .any(|event| matches!(event, InputEvent::FocusLost))
+        || !world
+            .placement_facts()
+            .constructors
+            .contains_key(&core.placement.constructor)
+    {
+        cancel(core, effects);
+        return;
+    }
+    // An ordinary cancel action or another targeting mode also ends placement.
+    if core.pending_order.as_deref() != Some(core.placement.order.as_str()) {
+        core.placement = State::default();
+        effects.push(Effect::Placement(Output::default()));
+        return;
+    }
+    let shown = if core.ui_capture.is_none() {
+        core.pointer.and_then(|(px, over_widget)| {
+            (!over_widget)
+                .then(|| ghost(core, px, world, view))
+                .flatten()
+        })
+    } else {
+        None
+    };
+    effects.push(Effect::Placement(Output { ghost: shown }));
 }

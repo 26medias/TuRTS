@@ -74,6 +74,12 @@ pub fn queue_production(
     if owner.0 != slot {
         return Err(RejectReason::NotOwner);
     }
+    if world
+        .get_resource::<super::construction::ConstructionState>()
+        .is_some_and(|state| state.sites.contains_key(&producer))
+    {
+        return Err(RejectReason::NotApplicable);
+    }
     let unit_type = unit_type.ok_or(RejectReason::MissingCapability)?;
     let type_entry = world
         .get_resource::<UnitTypes>()
@@ -270,6 +276,7 @@ pub fn cancel_production(
 
 /// Advance the head of each producer queue once, in ascending producer-id order.
 pub(crate) fn run_production(world: &mut World) {
+    super::construction::advance_sites(world);
     let research_ids = super::research::research_station_ids(world);
     super::research::run_research(world);
     let machine_ids = super::machine::machine_ids(world);
@@ -754,6 +761,9 @@ mod m3_disabled_legacy_producer_tests {
             .unwrap();
         let resolved_unit =
             |id: turts_mod_api::ContentId, name: &str, radius, producer, movement| ResolvedUnit {
+                constructor: None,
+                placement: None,
+                build_area: None,
                 id,
                 name: name.into(),
                 footprint: Footprint::Circle { radius },

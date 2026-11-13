@@ -81,6 +81,91 @@ fn validate(
 }
 
 #[test]
+fn construction_definitions_reach_the_resolved_catalog() {
+    let mut builder = valid_worker();
+    builder.value.movement = None;
+    builder.value.gatherer = None;
+    builder.value.constructor = Some(ConstructorDef {
+        buildings: vec!["cedar:hire".into()],
+        concurrent_sites: 2,
+        queue_capacity: 3,
+        progress: ConstructProgress::Autonomous,
+        when_short: vec![],
+    });
+    builder.value.placement = Some(SitePlacementDef {
+        gap: 0.5,
+        node_clearance: 1.0,
+        in_build_area: true,
+        site_health: Ratio {
+            numerator: 1,
+            denominator: 2,
+        },
+    });
+    builder.value.build_area = Some(12.0);
+    let recipe = source(
+        "production/hire.ron",
+        ProductionDef {
+            id: "hire".into(),
+            name: "Build".into(),
+            hotkey: None,
+            card: None,
+            output_unit: "cedar:worker".into(),
+            duration_ms: 100,
+            costs: vec![],
+            payment: PaymentPolicy::ChargeOnQueue,
+            cancel_refunds: CancelRefunds {
+                queued: RefundRatio::ONE,
+                running: RefundRatio::ONE,
+                output_blocked: RefundRatio::ONE,
+                destroyed: RefundRatio::ZERO,
+            },
+        },
+    );
+    let catalog = validate(
+        vec![builder.clone()],
+        vec![resource("wood", ResourceKind::Item)],
+        vec![],
+        vec![recipe.clone()],
+    )
+    .unwrap();
+    let resolved = &catalog.units[&ContentId::parse("cedar:worker").unwrap()];
+    let constructor = resolved
+        .constructor
+        .as_ref()
+        .expect("constructor was dropped");
+    assert_eq!(
+        constructor.buildings,
+        vec![ContentId::parse("cedar:hire").unwrap()]
+    );
+    assert_eq!(constructor.concurrent_sites, 2);
+    assert_eq!(constructor.queue_capacity, 3);
+    assert_eq!(resolved.placement, builder.value.placement);
+    assert_eq!(resolved.build_area, Some(12.0));
+    let mut tower = builder.clone();
+    tower.value.id = "tower".into();
+    tower.value.constructor = None;
+    tower.value.extractor = Some(ExtractorDef {
+        per_second: 1,
+        interaction_range: 3.0,
+    });
+    let mut recipe = recipe;
+    recipe.value.output_unit = "cedar:tower".into();
+    let refusal = validate(
+        vec![builder, tower],
+        vec![resource("wood", ResourceKind::Item)],
+        vec![],
+        vec![recipe],
+    )
+    .unwrap_err();
+    assert!(
+        refusal
+            .to_string()
+            .contains("construction of extractors, inserters, and conveyors is not supported"),
+        "{refusal}"
+    );
+}
+
+#[test]
 fn cedar_companion_records_parse_against_staged_schema() {
     let manifest = r#"(id: "cedar", version: "0.2.0", kind: Game, engine_api: "^0.2", dependencies: {}, exports: (units: ["units/depot.ron", "units/worker.ron"], maps: ["maps/clearing.ron"], visuals: ["visuals/depot.ron", "visuals/worker.ron", "visuals/grove.ron"], resources: ["resources/wood.ron"], nodes: ["nodes/grove.ron"], production: ["production/hire.ron"]), context: Shared, capabilities: [], license: "LicenseRef-TBD")"#;
     let wood = r#"(id: "wood", name: "Timber", unit_name: "log", kind: Item)"#;

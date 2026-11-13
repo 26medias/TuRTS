@@ -1,0 +1,1 @@
+(id: "train_worker", name: "Train Worker", output_unit: "skirmish:worker", duration_ms: 3000, costs: [(resource: "skirmish:credits", amount: 30, source: SlotBalance)], payment: ChargeOnQueue, cancel_refunds: (queued: (numerator: 1, denominator: 1), running: (numerator: 1, denominator: 2), output_blocked: (numerator: 1, denominator: 2)))

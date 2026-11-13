@@ -339,6 +339,8 @@ pub(crate) fn finish_tick_audit(world: &mut World) {
 
 #[derive(Default)]
 struct WriteSet {
+    construction: Option<super::construction::ConstructionState>,
+    completed_buildings: Vec<(u32, crate::boot_m3::PreparedCapabilityRows)>,
     accounts: BTreeMap<(Endpoint, ContentId), Account>,
     claims: BTreeMap<JobId, ReservationClaim>,
     queues: Option<ProductionQueues>,
@@ -404,6 +406,30 @@ fn transact_inner<R>(
 }
 
 impl Transaction<'_> {
+    pub(crate) fn construction(&self) -> super::construction::ConstructionState {
+        self.writes.construction.clone().unwrap_or_else(|| {
+            self.world
+                .get_resource::<super::construction::ConstructionState>()
+                .cloned()
+                .unwrap_or_default()
+        })
+    }
+
+    pub(crate) fn stage_construction(&mut self, state: super::construction::ConstructionState) {
+        self.writes.construction = Some(state);
+    }
+
+    pub(crate) fn stage_completed_building(
+        &mut self,
+        unit: u32,
+        rows: crate::boot_m3::PreparedCapabilityRows,
+    ) -> Result<(), RejectReason> {
+        if crate::unit_index::unit_entity(self.world, unit).is_none() {
+            return Err(RejectReason::UnknownUnit);
+        }
+        self.writes.completed_buildings.push((unit, rows));
+        Ok(())
+    }
     pub(crate) fn allocate_unit_id(&mut self) -> Result<u32, RejectReason> {
         let id = self.writes.next_unit_id.unwrap_or_else(|| {
             self.world
@@ -653,6 +679,12 @@ impl Transaction<'_> {
             world.insert_resource(EconomyLedger::default());
         }
         transaction_m3::apply_overlays(world, &mut writes);
+        if let Some(state) = writes.construction.take() {
+            world.insert_resource(state);
+        }
+        for (unit, rows) in writes.completed_buildings.drain(..) {
+            crate::boot_m3::apply_capability_rows(world, unit, rows);
+        }
         {
             let mut ledger = world.resource_mut::<EconomyLedger>();
             for ((endpoint, resource), account) in writes.accounts {

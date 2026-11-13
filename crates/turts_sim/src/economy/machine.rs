@@ -489,6 +489,9 @@ mod tests {
         let ore = cid("machine_fixture:ore");
         let part = cid("machine_fixture:part");
         let definition = ResolvedUnit {
+            constructor: None,
+            placement: None,
+            build_area: None,
             id: machine_id.clone(),
             name: "Press".into(),
             footprint: Footprint::Circle { radius: 1.0 },

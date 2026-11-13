@@ -1,13 +1,7 @@
-//! Stub sources of task `UI-HUD` (plan 5.3; design 7.3 to 7.5). L0-CORE made this file; `UI-HUD`
-//! fills it and reads the store getters of `L0-STORE`.
-//!
-//! The list sources fill the item fields `Role`, `State`, `Paid`, `Refund` and `Badge` with
-//! `ItemData::set` (the key names of these fields are in `item_field_key` in `sources.rs`).
-//! Until `UI-HUD` builds a function, it gives what an engine of API 0.2.3 gave: a list with no
-//! rows, a null value, a predicate that does not hold.
+//! Construction progress reads committed replica records. Other pending HUD sources stay empty.
 
-use super::{SourceContext, SourceData};
-use turts_mod_api::{ContentRef, ItemField, SupplySide};
+use super::{ItemData, SourceContext, SourceData, WidgetAction};
+use turts_mod_api::{ContentId, ContentRef, ItemField, SupplySide};
 
 fn no_rows() -> SourceData {
     SourceData {
@@ -20,8 +14,48 @@ pub(in crate::widgets) fn source_construction_queue(_context: SourceContext<'_>)
     no_rows()
 }
 
-pub(in crate::widgets) fn source_sites(_context: SourceContext<'_>) -> SourceData {
-    no_rows()
+pub(in crate::widgets) fn source_sites(context: SourceContext<'_>) -> SourceData {
+    let items = context
+        .replica
+        .sites()
+        .filter_map(|id| {
+            let unit = context.replica.units.get(&id)?;
+            if unit.owner_slot != context.owner_slot {
+                return None;
+            }
+            let record = context.replica.site_progress(id)?;
+            let done = context.replica.site_value(id)?.min(record.total);
+            let name = ContentId::parse(&unit.content_id)
+                .ok()
+                .and_then(|id| context.content.catalog.units.get(&id))
+                .map_or(unit.content_id.as_str(), |unit| unit.name.as_str());
+            let mut row = ItemData::default();
+            row.set(ItemField::Name, name);
+            row.set(ItemField::Action, WidgetAction::Select { unit: id });
+            row.set(ItemField::Enabled, true);
+            row.set(
+                ItemField::Progress,
+                done as f64 / record.total.max(1) as f64,
+            );
+            row.set(
+                ItemField::RemainingSeconds,
+                if record.per_tick == 0 {
+                    None
+                } else {
+                    Some(
+                        (record.total - done) as f64
+                            / record.per_tick as f64
+                            / f64::from(context.replica.tick_hz.max(1)),
+                    )
+                },
+            );
+            Some(row)
+        })
+        .collect();
+    SourceData {
+        scalar: None,
+        items,
+    }
 }
 
 pub(in crate::widgets) fn source_notices(_context: SourceContext<'_>) -> SourceData {

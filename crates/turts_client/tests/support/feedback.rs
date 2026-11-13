@@ -104,6 +104,9 @@ pub fn alert_state() -> (ReplicaState, AcquiredPackages) {
     content.catalog.units.insert(
         station_id.clone(),
         ResolvedUnit {
+            constructor: None,
+            placement: None,
+            build_area: None,
             id: station_id.clone(),
             name: "Research Station".into(),
             footprint: Footprint::Circle { radius: 1.0 },

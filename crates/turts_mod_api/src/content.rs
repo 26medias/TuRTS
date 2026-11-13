@@ -46,6 +46,14 @@ pub struct ResolvedProducer {
     pub queue_capacity: u16,
     pub spawn_offsets: Vec<WorldPos>,
 }
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ResolvedConstructor {
+    pub buildings: Vec<ContentId>,
+    pub concurrent_sites: u16,
+    pub queue_capacity: u16,
+    pub progress: ConstructProgress,
+    pub when_short: Vec<WhenShort>,
+}
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResolvedConveyor {
     pub slots_per_piece: u8,
@@ -84,6 +92,9 @@ pub struct ResolvedUnit {
     pub gatherer: Option<ResolvedGatherer>,
     pub drop_off: Option<ResolvedDropOff>,
     pub producer: Option<ResolvedProducer>,
+    pub constructor: Option<ResolvedConstructor>,
+    pub placement: Option<SitePlacementDef>,
+    pub build_area: Option<f32>,
     pub output_inventory: Option<ResolvedInventory>,
     pub extractor: Option<ExtractorDef>,
     pub conveyor: Option<ResolvedConveyor>,

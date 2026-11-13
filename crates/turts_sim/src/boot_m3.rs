@@ -904,6 +904,9 @@ mod tests {
         let drone_id = ContentId::parse("forge:drone").unwrap();
         let shell = ContentId::parse("forge:shell").unwrap();
         let drone = ResolvedUnit {
+            constructor: None,
+            placement: None,
+            build_area: None,
             id: drone_id.clone(),
             name: "Drone".into(),
             footprint: Footprint::Circle { radius: 0.6 },
@@ -1088,6 +1091,9 @@ mod tests {
         catalog.units.insert(
             producer_id.clone(),
             ResolvedUnit {
+                constructor: None,
+                placement: None,
+                build_area: None,
                 id: producer_id.clone(),
                 name: "Producer".into(),
                 footprint: Footprint::Circle { radius: 0.6 },
@@ -1114,6 +1120,9 @@ mod tests {
         catalog.units.insert(
             output_id.clone(),
             ResolvedUnit {
+                constructor: None,
+                placement: None,
+                build_area: None,
                 id: output_id.clone(),
                 name: "Mobile Output".into(),
                 footprint: Footprint::Circle { radius: 0.6 },

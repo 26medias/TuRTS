@@ -42,7 +42,7 @@ fn assert_hook_is_a_stub(hook: Hook, name: &str) {
 }
 
 #[test]
-fn placement_hook_is_empty_until_ui_place_builds_it() {
+fn inactive_placement_adds_no_effect_and_changes_no_state() {
     assert_hook_is_a_stub(turts_interaction::placement::update, "placement");
 }
 

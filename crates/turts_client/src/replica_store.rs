@@ -268,12 +268,40 @@ fn unique<T, K: Eq + std::hash::Hash>(records: &[T], key: impl Fn(&T) -> K) -> b
     records.iter().all(|record| seen.insert(key(record)))
 }
 
-fn valid_orders(context: &ReplicaContext, queue: &ConstructionQueue) -> bool {
+fn valid_orders(
+    context: &ReplicaContext,
+    units: &HashMap<u32, UnitReplica>,
+    queue: &ConstructionQueue,
+) -> bool {
+    let Some(constructor) = units
+        .get(&queue.constructor.0)
+        .and_then(|unit| ContentId::parse(&unit.content_id).ok())
+        .and_then(|id| context.content.catalog.units.get(&id))
+        .and_then(|unit| unit.constructor.as_ref())
+    else {
+        return false;
+    };
+    if queue.orders.len() > usize::from(constructor.queue_capacity) {
+        return false;
+    }
     queue.orders.iter().all(|order| {
         finite(order.point)
-            && ContentId::parse(&order.content)
-                .ok()
-                .is_some_and(|id| context.content.catalog.units.contains_key(&id))
+            && ContentId::parse(&order.content).ok().is_some_and(|id| {
+                constructor.buildings.contains(&id)
+                    && context
+                        .content
+                        .catalog
+                        .production
+                        .get(&id)
+                        .is_some_and(|recipe| {
+                            context
+                                .content
+                                .catalog
+                                .units
+                                .get(&recipe.output_unit)
+                                .is_some_and(|unit| unit.placement.is_some())
+                        })
+            })
     })
 }
 
@@ -348,7 +376,7 @@ fn construction_rows(
     let mut rows = Vec::with_capacity(records.len());
     for record in records {
         if !own_unit(context, units, removed, record.constructor.0)
-            || !valid_orders(context, record)
+            || !valid_orders(context, units, record)
         {
             return None;
         }

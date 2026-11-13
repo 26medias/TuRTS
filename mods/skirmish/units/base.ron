@@ -1,0 +1,6 @@
+(id: "base", name: "Command centre", footprint: Circle(radius: 2.0), movement: None,
+ inventory: None, gatherer: None,
+ drop_off: Some((rules: [(item: "skirmish:wood", effect: Convert(balance: "skirmish:credits", per_item: 1))])),
+ producer: Some((recipes: ["skirmish:train_worker"], queue_capacity: 5, spawn_offsets: [(x: 0.0, y: 4.0), (x: 4.0, y: 0.0), (x: 0.0, y: -4.0)])),
+ constructor: Some((buildings: ["skirmish:build_barracks"], concurrent_sites: 2, queue_capacity: 4)),
+ build_area: Some(16.0), health: Some((max: 1000)), removal: Some((by_command: true, contents: Destroy)))

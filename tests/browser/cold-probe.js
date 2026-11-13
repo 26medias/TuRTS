@@ -335,11 +335,18 @@ async function firstClick(session, options) {
 }
 
 async function selectUnit(session, unit) {
-    const current = await session.readWorld();
-    const fresh = current.units.find((entry) => entry.unit_id === unit.unit_id);
+    let current = await session.readWorld();
+    let fresh = current.units.find((entry) => entry.unit_id === unit.unit_id);
     if (!fresh || !inside(fresh.center, session.size)) return null;
-    const [x, y] = fresh.center.map(Math.round);
+    let [x, y] = fresh.center.map(Math.round);
     if (current.selection.includes(unit.unit_id)) return { x, y, radius: fresh.pick_radius, world: current };
+    if (current.pending_order_id) {
+        current = (await clickKeeping(session, x, y, "right")).world;
+        if (current.pending_order_id) return null;
+        fresh = current.units.find((entry) => entry.unit_id === unit.unit_id);
+        if (!fresh || !inside(fresh.center, session.size)) return null;
+        [x, y] = fresh.center.map(Math.round);
+    }
     const { world } = await clickKeeping(session, x, y, "left");
     return world.selection.includes(unit.unit_id) ? { x, y, radius: fresh.pick_radius, world } : null;
 }

@@ -97,6 +97,7 @@ impl Plugin for SimPlugin {
             .init_resource::<SurfaceNodes>()
             .init_resource::<EconomyOrders>()
             .init_resource::<ProductionQueues>()
+            .init_resource::<crate::economy::construction::ConstructionState>()
             .init_resource::<CommandQueue>()
             .init_resource::<CommandResults>()
             .init_resource::<crate::movement::MovementPools>()
@@ -343,6 +344,13 @@ fn publish_completed_tick(world: &mut World) {
         events,
         unit_orders: order_list.records,
         orders_cleared: order_list.cleared,
+        sites_completed: std::mem::take(
+            &mut world
+                .resource_mut::<crate::economy::construction::ConstructionState>()
+                .completed,
+        ),
+        site_progress: crate::economy::construction::progress_rows(&completed),
+        construction_queues: crate::economy::construction::queue_rows(&completed),
         ..Default::default()
     };
     world.insert_resource(batch);
