@@ -1229,10 +1229,10 @@ fn expected_order_refusal(
             if !point.is_finite() {
                 return Ok(Some(R::TargetNotFinite));
             }
-            if let Some(bounds) = &before.bounds {
-                if point.x < 0.0 || point.y < 0.0 || point.x > bounds.x || point.y > bounds.y {
-                    return Ok(Some(R::TargetInvalid));
-                }
+            if let Some(bounds) = &before.bounds
+                && (point.x < 0.0 || point.y < 0.0 || point.x > bounds.x || point.y > bounds.y)
+            {
+                return Ok(Some(R::TargetInvalid));
             }
         }
         (turts_mod_api::Behaviour::Move, turts_sim::OrderTargetSim::Point(point))

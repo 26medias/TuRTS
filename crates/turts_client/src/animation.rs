@@ -60,6 +60,7 @@ pub struct AnimationLibrary(pub HashMap<AssetId<Gltf>, ClipSet>);
 pub struct UnitAnimation {
     pub player: Entity,
     pub pose_nodes: Vec<Entity>,
+    pub bind_pose: Vec<Transform>,
     pub clips: ClipSet,
     pub mapping: ModelAnimations,
     pub current: Option<String>,
@@ -83,6 +84,8 @@ pub struct VisualBody {
 #[derive(Resource, Default)]
 pub struct BodySerial(pub u64);
 
+pub type GpuChildren = Vec<(Entity, AssetId<Mesh>, AssetId<StandardMaterial>)>;
+
 /// Build the same named hierarchy and skin links as the glTF loader, with shared render assets.
 #[allow(clippy::too_many_arguments)]
 pub fn spawn_rig(
@@ -102,10 +105,7 @@ pub fn spawn_rig(
     library: &mut AnimationLibrary,
     materials: &HashMap<AssetId<bevy::gltf::GltfMaterial>, Handle<StandardMaterial>>,
     mapping: &ModelAnimations,
-) -> Option<(
-    Entity,
-    Vec<(Entity, AssetId<Mesh>, AssetId<StandardMaterial>)>,
-)> {
+) -> Option<(Entity, GpuChildren)> {
     let source = gltf.source.as_ref()?;
     let set = library
         .0
@@ -218,6 +218,11 @@ pub fn spawn_rig(
     commands.entity(root).insert(UnitAnimation {
         player,
         pose_nodes: (0..gltf.nodes.len()).map(|i| entities[&i]).collect(),
+        bind_pose: gltf
+            .nodes
+            .iter()
+            .filter_map(|h| nodes.get(h).map(|n| n.transform))
+            .collect(),
         clips: set,
         mapping: mapping.clone(),
         current: None,
@@ -242,11 +247,8 @@ pub fn animate_units(
     replica: Res<ReplicaState>,
     events: Res<VisualEvents>,
     mut rigs: Query<(Option<&PresentedUnit>, &mut UnitAnimation)>,
-    mut players: Query<(
-        &mut AnimationPlayer,
-        &mut AnimationTransitions,
-        &mut Transform,
-    )>,
+    mut players: Query<(&mut AnimationPlayer, &mut AnimationTransitions)>,
+    mut transforms: Query<&mut Transform>,
 ) {
     let positions: HashMap<_, _> = presented
         .units
@@ -254,8 +256,7 @@ pub fn animate_units(
         .map(|u| (u.unit_id, Vec2::new(u.pos.x, u.pos.y)))
         .collect();
     for (unit, mut rig) in &mut rigs {
-        let Ok((mut player, mut transitions, mut rig_transform)) = players.get_mut(rig.player)
-        else {
+        let Ok((mut player, mut transitions)) = players.get_mut(rig.player) else {
             continue;
         };
         let dt = time.delta_secs();
@@ -301,6 +302,21 @@ pub fn animate_units(
             idle
         };
         let Some(entry) = entry.cloned() else {
+            if rig.current.is_none() {
+                continue;
+            }
+            player.stop_all();
+            *transitions = AnimationTransitions::default();
+            rig.current = None;
+            rig.yaw_offset = 0.;
+            if let Ok(mut transform) = transforms.get_mut(rig.player) {
+                transform.rotation = Quat::IDENTITY;
+            }
+            for (node, rest) in rig.pose_nodes.iter().zip(&rig.bind_pose) {
+                if let Ok(mut transform) = transforms.get_mut(*node) {
+                    *transform = *rest;
+                }
+            }
             continue;
         };
         let holding = attacking && !fired && rig.shot_left <= 0. && !moving && !rig.dead;
@@ -322,7 +338,9 @@ pub fn animate_units(
         } else {
             0.
         };
-        rig_transform.rotation = Quat::from_rotation_y(rig.yaw_offset);
+        if let Ok(mut transform) = transforms.get_mut(rig.player) {
+            transform.rotation = Quat::from_rotation_y(rig.yaw_offset);
+        }
         let changed = rig.current.as_ref() != Some(&name) || fired;
         if changed {
             let active = transitions.play(&mut player, clip.node, Duration::from_secs_f32(0.15));
@@ -367,7 +385,7 @@ pub fn animate_units(
             } else if visible && rig.pending_time >= cadence {
                 let next = active.seek_time() + rig.pending_time;
                 active.seek_to(if rig.dead || rig.shot_left > 0. {
-                    next.min(clip.duration)
+                    next.min((clip.duration - f32::EPSILON * clip.duration.max(1.)).max(0.))
                 } else {
                     next % clip.duration.max(0.001)
                 });
@@ -448,6 +466,7 @@ mod tests {
                 UnitAnimation {
                     player,
                     pose_nodes: Vec::new(),
+                    bind_pose: Vec::new(),
                     clips: ClipSet {
                         graph: Handle::default(),
                         clips,
@@ -608,6 +627,45 @@ mod tests {
                 .current
                 .as_deref(),
             Some("Death")
+        );
+    }
+    #[test]
+    fn review_missing_idle_returns_to_bind_pose_after_movement() {
+        let (mut app, root, player) = fixture();
+        app.world_mut()
+            .get_mut::<UnitAnimation>(root)
+            .unwrap()
+            .mapping
+            .idle = None;
+        step(&mut app, 0.1, 0.016, Activity::Moving);
+        let node = app.world().get::<UnitAnimation>(root).unwrap().clips.clips["Walk"].node;
+        step(&mut app, 0.1, 0.016, Activity::Idle);
+        assert!(
+            !app.world()
+                .get::<AnimationPlayer>(player)
+                .unwrap()
+                .is_playing_animation(node),
+            "missing idle must return to bind pose, not retain the last walking pose"
+        );
+    }
+    #[test]
+    fn completed_death_stays_on_its_terminal_pose_below_the_loop_boundary() {
+        let (mut app, root, player) = fixture();
+        app.world_mut().get_mut::<UnitAnimation>(root).unwrap().dead = true;
+        for _ in 0..120 {
+            step(&mut app, 0., 1. / 60., Activity::Idle);
+        }
+        let rig = app.world().get::<UnitAnimation>(root).unwrap();
+        let seek = app
+            .world()
+            .get::<AnimationPlayer>(player)
+            .unwrap()
+            .animation(rig.clips.clips["Death"].node)
+            .unwrap()
+            .seek_time();
+        assert!(
+            (0.999..1.).contains(&seek),
+            "death must hold its last frame without wrapping, got {seek}"
         );
     }
     #[test]
@@ -874,6 +932,7 @@ mod crowd_tests {
             app.world_mut().spawn(UnitAnimation {
                 player,
                 pose_nodes: vec![node],
+                bind_pose: vec![Transform::default()],
                 clips: ClipSet {
                     graph: graph.clone(),
                     clips: HashMap::new(),

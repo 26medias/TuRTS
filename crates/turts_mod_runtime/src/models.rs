@@ -340,15 +340,19 @@ fn pose_bounds(
     for channel in animation.channels() {
         let reader = channel.reader(|_| Some(blob));
         let node = channel.target().node().index();
+        // Cubic outputs store [incoming tangent, value, outgoing tangent] for each key.
+        let key = usize::from(
+            channel.sampler().interpolation() == gltf::animation::Interpolation::CubicSpline,
+        );
         match reader.read_outputs()? {
             gltf::animation::util::ReadOutputs::Translations(mut values) => {
-                local[node].0 = values.next()?
+                local[node].0 = values.nth(key)?
             }
             gltf::animation::util::ReadOutputs::Rotations(values) => {
-                local[node].1 = values.into_f32().next()?
+                local[node].1 = values.into_f32().nth(key)?
             }
             gltf::animation::util::ReadOutputs::Scales(mut values) => {
-                local[node].2 = values.next()?
+                local[node].2 = values.nth(key)?
             }
             _ => {}
         }
