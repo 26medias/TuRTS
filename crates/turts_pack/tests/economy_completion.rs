@@ -19,6 +19,18 @@ fn command(seq: u32, producer: u32, recipe: &str) -> Command {
     }
 }
 
+// These fixtures test a fully enclosed search, including fallback rings.
+// An existing surface node supplies the enclosure without adding units or accounts.
+fn enclose_exit_search(app: &mut bevy_app::App, radius: f32) {
+    app.world_mut()
+        .resource_mut::<turts_sim::bootstrap::InstalledCatalog>()
+        .0
+        .nodes
+        .get_mut(&cid("probe:stand"))
+        .unwrap()
+        .radius = radius;
+}
+
 #[test]
 fn completion_spawns_once_after_exact_duration() {
     let mut app = scenario(20);
@@ -266,6 +278,7 @@ fn output_blocked_cancellation_refunds_both_policies() {
         }
         let mut app = scenario(20);
         load_package(app.world_mut(), &archive_from_files(files)).unwrap();
+        enclose_exit_search(&mut app, 50.0);
         let job = apply_command(app.world_mut(), &command(1, 1, recipe))
             .outcome
             .unwrap()
@@ -338,6 +351,7 @@ fn blocked_retry_spawns_once_without_recharge_and_starts_successor_next_tick() {
     // Block both declared offsets with existing units.
     set_pos(app.world_mut(), 3, bevy_math::Vec2::new(8.0, 12.0));
     set_pos(app.world_mut(), 5, bevy_math::Vec2::new(8.0, 4.0));
+    enclose_exit_search(&mut app, 50.0);
     advance(&mut app, 120);
     assert_eq!(
         audit_state(app.world_mut()).economy.queues[0].jobs[0].stage,
@@ -350,6 +364,7 @@ fn blocked_retry_spawns_once_without_recharge_and_starts_successor_next_tick() {
         .resource::<turts_sim::IdAllocators>()
         .next_values()
         .0;
+    enclose_exit_search(&mut app, 1.0);
     set_pos(app.world_mut(), 3, bevy_math::Vec2::new(12.0, 8.0));
     set_pos(app.world_mut(), 5, bevy_math::Vec2::new(52.0, 8.0));
     app.update();
@@ -578,6 +593,7 @@ fn checked_shared_unit_id_exhaustion_keeps_blocked_job_and_charge() {
     };
     set_pos(app.world_mut(), 3, bevy_math::Vec2::new(8.0, 12.0));
     set_pos(app.world_mut(), 5, bevy_math::Vec2::new(8.0, 4.0));
+    enclose_exit_search(&mut app, 50.0);
     advance(&mut app, 120);
     let before = audit_state(app.world_mut());
     let (next_node, next_job) = {
@@ -590,6 +606,7 @@ fn checked_shared_unit_id_exhaustion_keeps_blocked_job_and_charge() {
     app.world_mut()
         .resource_mut::<turts_sim::IdAllocators>()
         .set_next_values(u32::MAX, next_node, next_job);
+    enclose_exit_search(&mut app, 1.0);
     set_pos(app.world_mut(), 3, bevy_math::Vec2::new(12.0, 8.0));
     set_pos(app.world_mut(), 5, bevy_math::Vec2::new(52.0, 8.0));
     app.update();
@@ -875,7 +892,7 @@ fn cancel_just_before_completion_prevents_spawn() {
 }
 
 #[test]
-fn earlier_producer_spawn_blocks_shared_candidate() {
+fn earlier_producer_spawn_makes_later_producer_use_fallback() {
     let mut files = economy_files();
     let map = String::from_utf8(files["maps/test.ron"].clone()).unwrap();
     files.insert(
@@ -906,23 +923,21 @@ fn earlier_producer_spawn_blocks_shared_candidate() {
     .outcome
     .unwrap();
     advance(&mut app, 101);
-    assert_eq!(committed_tick(app.world()).spawned.len(), 1);
+    assert_eq!(committed_tick(app.world()).spawned.len(), 2);
     assert_eq!(
         committed_tick(app.world()).spawned[0].pos,
         bevy_math::Vec2::new(8.0, 12.0)
     );
     let state = audit_state(app.world_mut());
-    assert_eq!(
+    assert!(
         state
             .economy
             .queues
             .iter()
-            .find(|q| q.producer == 4)
-            .unwrap()
-            .jobs[0]
-            .stage,
-        turts_sim::JobStage::OutputBlocked
+            .all(|queue| queue.jobs.is_empty())
     );
+    let spawned = &committed_tick(app.world()).spawned;
+    assert!(spawned[0].pos.distance(spawned[1].pos) >= 1.0);
 }
 
 #[test]
@@ -1189,6 +1204,10 @@ fn gathering_depletion_unlocks_one_blocked_output_with_empty_typed_capabilities(
         "maps/test.ron".into(),
         map.replacen("remaining: 1000", "remaining: 2", 1)
             .replace(
+                ", (node: \"probe:stand\", pos: (x: 40.0, y: 8.0), remaining: 1000)",
+                "",
+            )
+            .replace(
                 "unit: \"probe:worker\", owner_slot: 0, pos: (x: 12.0, y: 8.0), contents: []",
                 "unit: \"probe:worker\", owner_slot: 0, pos: (x: 22.0, y: 8.0), contents: []",
             )
@@ -1210,6 +1229,7 @@ fn gathering_depletion_unlocks_one_blocked_output_with_empty_typed_capabilities(
     );
     let mut app = scenario(20);
     load_package(app.world_mut(), &archive_from_files(files)).unwrap();
+    enclose_exit_search(&mut app, 50.0);
     assert!(
         apply_command(
             app.world_mut(),

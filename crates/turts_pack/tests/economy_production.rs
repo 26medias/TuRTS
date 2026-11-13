@@ -36,6 +36,14 @@ fn fixture_with_amounts(timber: u64, token: u64, tick_hz: u16) -> bevy_app::App 
     );
     let mut app = scenario(tick_hz);
     load_package(app.world_mut(), &archive_from_files(files)).unwrap();
+    // Enclose fallback rings as well as the authored out-of-map exits.
+    app.world_mut()
+        .resource_mut::<turts_sim::bootstrap::InstalledCatalog>()
+        .0
+        .nodes
+        .get_mut(&cid("probe:stand"))
+        .unwrap()
+        .radius = 50.0;
     app
 }
 
@@ -714,6 +722,13 @@ fn queue_capacity_includes_output_blocked_head() {
     );
     let mut app = scenario(10);
     load_package(app.world_mut(), &archive_from_files(files)).unwrap();
+    app.world_mut()
+        .resource_mut::<turts_sim::bootstrap::InstalledCatalog>()
+        .0
+        .nodes
+        .get_mut(&cid("probe:stand"))
+        .unwrap()
+        .radius = 50.0;
     assert!(
         apply_command(app.world_mut(), &produce(0, 1, 1, "probe:hire"))
             .outcome
