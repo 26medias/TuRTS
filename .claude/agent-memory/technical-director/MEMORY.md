@@ -3,4 +3,22 @@
 - [Client control gap facts](project_client_control_gap.md) — 2026-10-28 anchors: one-unit Selection, plane picking, atomic group MoveTo, 256 cap, no mod UI/audio schema
 - [Bevy 0.20 and CI facts](project_bevy020_ci.md) — 0.20 schedule names; FixedTimesteps driver; lightyear 0.31 trees; gate-2 skeleton probe; cargo tree silent-pass trap
 - [MC gate-1 boundary facts](project_mc_gate1.md) — wasm32 nobevy gap, T1X copy trap, version table 0.2.3 probe, glam versions, JobId
+- [MC T22 GMU facts](project_mc_t22_gmu.md) — idle trooper wall at s, sweep sums units, C2 geometry, P6 lattice, PF04 text
+- [MC architecture audit facts](project_mc_audit.md) — RUN126: grid max-radius probe, dual move paths, economylog 2nd model, unit_orders table, fault profile
+- [MP1 input facts](project_mp1_input.md) — refutations vs economylog, stream before==after trap, grid filters by distance, conservation.rs
+- [Pre-MP1 S1 audit crate facts](project_pre_s1_audit.md) — token check, read_jsonl validates, shadowed audit rows, bevy facade edge, A1 traps
 - [MC gate-2 plan facts](project_mc_gate2.md) — server has no lib, scan hits marker/gather/remove, API-bump test traps, Cargo.lock edges, debug.rs keys
+- [MP1 design repair facts](project_mp1_repair.md) — ron::Value keeps keys not variants, reason/cursor key sets, admission order, 6.10 choices
+- [MP1 reconcile facts](project_mp1_reconcile.md) — rev 4 part 5: reason keys, caps wait, MatchDef/6.7.13 authority, alert/Welcome/CardCell anchors
+- [MP1 rev 5 facts](project_mp1_rev5.md) — AllSeated(0) choice, spawn order, AlertDef.priority exists, 49/22 key lists, xcheck.py
+- [MP1 rev 6 facts](project_mp1_rev6.md) — ground_rally field, GOAL1 driver/oracle split, points 19-21, xcheck 'row X12' trap
+- [Pre-S3 review facts](project_pre_s3_review.md) — S3 split: plan plant names wrong test, regex fix, 34 pub(super) all needed, surface equal
+- [MP1 gate-2 plan facts](project_mp1_gate2_plan.md) — check-script merge-after trap, combat.rs cell lines, SimPlugin sites, replica Candidate, path 52/51/49
+- [Pre-S45 review facts](project_pre_s45_review.md) — ungated-mod scan hole, T7 audio flag override, 99 vis all needed, surface probe method, hot spots
+- [L0-RULES review facts](project_mp1_l0_rules.md) — turts_rules 51bd515: heal saturation, team fallback collision, seam gaps, Cargo.lock plant trap
+- [L0-SPLIT review facts](project_l0_split_review.md) — e0569d1: inline instrument, oracle gaps (active flag), commuting pairs, list 1608/1614
+- [Pre-S2 review facts](project_pre_s2_review.md) — S2 orders split: 4 reflows, 50 vis all needed, 12-red plant list, ratchet rows, SCC
+- [L0-SIM order ruling](project_l0_sim_order.md) — 2026-11-12: frozen tick set order, pay pass, Repair before Combat, admission after Construction
+- [L0-CORE review facts](project_l0_core_review.md) — ec88338: FocusAlert unit variant High, post-loop hook too late, shared-type edit points, proof blind spots
+- [A2b1 stop ruling facts](project_slice_a2b1_stop.md) — probe values unpinned, kernel_reference live-fed chain, coverage-count trap, plant (c) test
+- [A1d ruling facts](project_slice_a1d_ruling.md) — (ii) keep conservation.rs; C6 probe run; ledger reads logged catalog; ResMut scan gap; TDI :38

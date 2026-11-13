@@ -228,6 +228,39 @@ a 4-vCPU, 8-GB server. Measure, do not promise capacity.
 
 Use 4 spaces per indentation level, including in Rust. Write clean, DRY code (section 4.2).
 
+## Working mode: playable first, speed first (CEO, 2026-11-12)
+
+The CEO's goal: build the game as fast as possible with no loss of quality, in weeks, not in six
+months. CEO words: "we anvil only the big specs otherwise we waste time and tokens". After five
+milestones the CEO tried the build two times and could not play it. These rules come first and
+override the gate rules below where they conflict.
+
+- **Playable first.** The first goal of every milestone with a client is a build that a person can
+  play. Each working day ends with a build that the scripted player probes (`docs/qa/cold-play.md`)
+  can play further than the day before. A proven part that nobody can play is not progress.
+- **Two tracks.**
+  - *Foundation* (server authority, wire protocol, determinism, the mod API contract, the data
+    model): full process. A spec, one gate with one to three lenses, a plan, an independent review
+    that runs things.
+  - *Everything else* (features, HUD, content, client behaviour, tools, test drivers): the light
+    path. Build straight through, run it, one review at the end of the FEATURE by one seat, merge.
+- **No review for each task.** No gate for a small or test-only change: the orchestrator checks it.
+  A repair gets one check of the repaired items by the reviewer who found them. A PASS with minor
+  findings merges; the minor findings go on one list and are closed in bulk.
+- **Machinery on a diet.** The plant registry (`mp1_plants.py`), the receipt ledgers, per-task
+  rulings as binding plan amendments, and one worktree and cache for each lane are allowed only
+  for the Foundation track. Do not add a record, ledger or instrument unless a defect that escaped
+  demands it. Frozen values are checked at the merge, not in every lane.
+- **Merge gates.** Light path: fmt, clippy, the tests of the crates that changed, the wasm32 check.
+  The full gate set and acceptance run one time for each integration push, not for each lane.
+- **Design questions go to the CEO early, in plain game terms.** A rule that a player can see (who
+  keeps a point, what a button does) is asked before the build, with an example from play, not
+  with task ids. The CEO decided on 2026-11-12: contested move points follow "arrive first", and
+  the unit id must never decide a result that a player can see.
+- **Still in force, always:** never merge or push `main` without the CEO; verify, never assume;
+  a reviewer runs things; no test browser may play sound on the desktop; no play request to the
+  CEO before the readiness probes pass; no architectural debt in the Foundation track.
+
 ## Agent team
 
 Seventeen project subagents live in `.claude/agents/`. Their design is
@@ -240,9 +273,9 @@ session is the orchestrator. It picks the lenses per gate with these rules.
   for architecture, `producer` for plans. Consumer: `mod-builder` when the artefact touches
   4.3, 5, or 6.5; `player` when it touches 3, 6.6, 16.2, or 17; otherwise the Second of the
   section.
-- **Selection rule.** Four lenses per gate. When an artefact spans several subsystems, add one
-  domain seat per extra subsystem and say so. Six agents is the cap for one gate; above six,
-  ask the user. When a default lens has no claim to test in the artefact, drop it and say why.
+- **Selection rule.** These lens rules apply to a gate of a BIG spec in the Foundation track
+  only (see "Working mode"). One lens is the default; two or three for a milestone design.
+  Four is the cap; above four, ask the user. Drop a lens that has no claim to test.
 - **Milestone artefacts.** For a spec or plan on a milestone (spec section 14), the engine
   lens is the Primary of the first subsystem in the Demonstration column, and each further
   subsystem adds its Primary. For M1: `web-platform-engineer`, `network-engineer`,
@@ -258,7 +291,7 @@ session is the orchestrator. It picks the lenses per gate with these rules.
 - **Build.** Domain builder for the crate. `qa-lead` writes or reviews the test instrument.
 - **Verify.** `qa-lead` runs. `player` and `mod-builder` judge.
 - **Client milestones.** (G11, G12, 2026-10-29) `player`, `bevy-rendering-engineer` and
-  `ux-designer` sit at every gate for a milestone with a client. `ux-designer` is the Primary
+  `ux-designer` sit at the gate of the milestone DESIGN for a milestone with a client (one gate, not every task). `ux-designer` is the Primary
   for D65, D66, D67 and the client side of D70, and the Second for D68. The player check of a
   milestone is run by the `player` agent and by a person; a person signs off.
 - **Git.** Never `git add -A` while an agent runs. Stage explicit paths. Memory files under
@@ -270,8 +303,8 @@ re-check each 0.19 snippet against 0.20.
 
 The studio keeps its work log, decisions, task board, knowledge, and the daily CEO report in a
 dedicated Obsidian vault at `vault/` in this repository (committed; public; no secrets).
-Log every decision and every day of work there; write the daily report at the end of each
-working session.
+Log every CEO decision there, and write one short daily report at the end of each working
+session. Do not log each agent pass.
 
 Roster check: `bash docs/agents/check.sh` (format, budget, standing-rules identity) and
 `bash docs/agents/check_fixtures.sh` (proves the check can go red). Run both before you commit

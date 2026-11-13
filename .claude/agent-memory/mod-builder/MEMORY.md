@@ -2,3 +2,8 @@
 - [M1 design gate 1](m1-design-gate1.md) — gate-1 8 gaps closed in rev 2; open: map rules, T2a visual oracle, type-name leak test (2026-10-26)
 - [M1 test zeta run](m1-test-zeta.md) — zeta ran end to end; orphan visual silent; client reject exit 0; --move moves all units
 - [Full review 2026-10-28](full-review-2026-10-28.md) — probes: weapons static, producers indestructible, no building output; C&C 50 %, SC 29.5 %
+- [MP1 L0-RAW review](mp1-l0-raw-review.md) — RAW works for exports; gaps: list elements, 2nd presence parser, `Manifest(` form (2026-11-12)
+- [Sound-off passes 2 and 3](mp1-sound-off-rereview.md) — pass 3 High: shadowed menu key packs; probe Chrome not silent (2026-11-12)
+- [MP1 L0-API2 review](mp1-l0-api2-review.md) — column verified; 5 stale l0-raw plants; K8 research arm untested; H15 ruling (2026-11-12)
+- [MP1 L0-API1 review](mp1-l0-api1-review.md) — 0.2.4 packer texts verified; gaps: task id in UNBUILT text, H11 shapes, H7 split (2026-11-12)
+- [MP1 design gate 1](mp1-design-gate1.md) — rev 4 re-gate: 9 of 12 closed; open: alert place/credits stat, RAW on variants (2026-11-12)

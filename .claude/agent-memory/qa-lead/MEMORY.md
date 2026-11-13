@@ -6,3 +6,41 @@
 - [QA0 design 2026-10-29](qa0-design-2026-10-29.md) — library rule inverted; naive schema dispatch accepts duplicates; 3 parse sites need resolve
 - [QA0 plan 2026-10-29](qa0-plan-2026-10-29.md) — pinned typo texts; dr_model3 exits 0 always; SC2 no red under O1; turts-pack writes tar beside dir
 - [MC plan gate 2](mc-plan-gate2-2026-10-29.md) — DET1 wall_ns; ledger 0 breaks dr6 self-test; CI skips browser steps; io.page bypass
+- [MC task 21 source](mc-t21-source-2026-11-11.md) — plain M2 HUD cannot produce (STOP); test_refutations red at base; settings_menu in ui_snapshot
+- [MC T22 RUN112](mc-t22-run112-2026-11-11.md) — reviewed source did not compile; GM40 driver picked beacons; GMU same-point red; EL1 log 6.4 GB
+- [MC T21 RUN118](mc-t21-run118-2026-11-11.md) — duplicate-outstanding timing; MC_JOBS=4 for headed v4; PT1 tooltip fix; button font glyph gap
+- [MC CI RUN142 review](mc-ci-run142-2026-11-11.md) — waitForSharedTick widens sample; matrix check passes commented leg; hosted E9 baseline red
+- [MC REG1 parallel runner](mc-reg1-parallel-2026-11-11.md) — cargo relocation hazard (baked CARGO_BIN_EXE); m3 393->107 s; native 1666 s; wasm LTO 9 GB
+- [MP1 coverage build](mp1-coverage-2026-11-11.md) — R4 chains force later rows; EC03/EC05 M2 tests red; no CORE goal item
+- [Pre-MP1 Q1a classifier](pre-mp1-q1a-classifier-2026-11-11.md) — 5af18c1 then 45a545f (review repairs, 44 plants, 7 mutants); trusted allowed list; byte compare
+- [MC deplete review](mc-deplete-review-2026-11-11.md) — 43282fe: unpruned muster scene ends Blocked with cargo; helper never asserted; E9 600 s green
+- [MP1 gate-1 repair](mp1-gate1-repair-2026-11-11.md) — gate form-only, R7b proof; scan misses interface kinds; wrong MC done evidence list
+- [Pre-MP1 G1 review](pre-mp1-g1-review-2026-11-11.md) — high-side margin plant green; no negative reach; no cell pin; counter 14/0 reproduced
+- [Pre-MP1 A1a review](pre-mp1-a1a-review-2026-11-12.md) — reader keeps no-Tick batches; :469 misses wrong destination; sink order unpinned
+- [Pre-MP1 slice gate](pre-mp1-slice-gate-2026-11-11.md) — validator-off fault runs; color-moved hides swaps; signed zero; browser oracle reads pos from economy log
+- [MC CI fix2 2026-11-12](mc-ci-fix2-2026-11-12.md) — 41c5f27: convergence gate/wide profiles, limit mutants red, matrix check on full lines
+- [MC deplete re-review](mc-deplete-rereview-2026-11-12.md) — 22eca1c: free_approach unpinned (plants green); validator misses cargo loss; no HUD wait text
+- [Pre-MP1 Q1b trace](pre-mp1-q1b-trace-2026-11-12.md) — d08dc24; plan Step 5 plant green on stream; counts 0; leak check; 69 plants
+- [MP1 plan gate 2](mp1-plan-gate2-2026-11-12.md) — 24a18e1 + rev2 f7090aa: check blind to px label; flock has no priority; capture path untraced
+- [Pre-MP1 Q1b follow-up](pre-mp1-q1b-followup-2026-11-12.md) — e516af9: real was_projected, gather_stage /4, probe_neutral.sh, leak row; 74 plants; survivors killed by unittests
+- [MP1 Q-PLANTS 2026-11-12](mp1-q-plants-2026-11-12.md) — 244d69d: runner, 28 mutants, v2 parallel runner sha, dirty-file refusal, no CI step
+- [MP1 Q-LOCK build](mp1-qlock-2026-11-12.md) — mc_headed_v6.sh; 14 plants red; e2 arg-order slip took the real lock once; e1 blind to existing lock
+- [MP1 Q-PREBUILD](mp1-qprebuild-2026-11-12.md) — mc_prepare.py stale check exit 66; cold 582 s, warm 27-37 s, prepared 0.47 s; fault runner not split
+- [MC pixel fix4](mc-pixel-fix4-2026-11-12.md) — ORD3/MM1/SEL3/SLOT1 timing repairs at 39e62d9; overlay dims window 2 ping; SLOT1 owner hold; PER1 proposal not in plan
+- [Pre-MP1 A1b review](pre-mp1-a1b-review-2026-11-12.md) — c536c8c: refusal blind to pending orders; allow list per file; 3 replay-off reds owed A1c
+- [MP1 Q-PLANTS2](mp1-q-plants2-2026-11-12.md) — d42bf7a: 56 records converted, 65/65 serial+parallel; comma in plant id breaks parallel v2
+- [MC HUD2 fix5](mc-hud2-fix5-2026-11-12.md) — 2140da4 repair: replica stalls 1.1 s after every kill (10/10); oracle replay method; 38 tests join CI
+- [MP1 E-GPU](mp1-egpu-2026-11-12.md) — 466ed01: two windows PASS 600 s; no package has 2 armed slots; out-of-range attack never fires; hosted MM1 never ran
+- [MC CI3 offline fetch](mc-ci3-offline-fetch-2026-11-12.md) — browser m2/refutation red = CARGO_NET_OFFLINE without fetch, not GPU; fix 8fb2aa4
+- [Pre-MP1 A2a review](pre-mp1-a2a-review-2026-11-12.md) — ab37cea: copy exact; late arrival 0 hits, fault green; -p turts_sim runs 0 harness tests
+- [MC CI4 diagnosis](mc-ci4-diagnosis-2026-11-12.md) — red browser jobs = software-render timing in baseline cases; suite hid 11/15; ae04af9
+- [MC CI5 build](mc-ci5-2026-11-12.md) — ba6804b: recipe x4 packed copy + oracle tick check; convergence local-only ledger; pattern t7.sh
+- [MC CI6](mc-ci6-2026-11-12.md) — baabf0d follow-up (marks/receipts/refusal); hosted f4744f9: only base-loss-refund red (5 s recipe vs 7-12 s steps), x5 proposed
+- [Pre-MP1 A1c review](pre-mp1-a1c-review-2026-11-12.md) — b552c71 FAIL (to_sim allowed_units, resting set); re-check 3c53b96 PASS; sweep misses escape branch; v6 shim
+- [MC fix rows6](mc-fix-rows6-2026-11-12.md) — 3c7346a2: ORD4 reds = server stall over 10 s netcode timeout; resync counter detects kill stall; Python CI list check
+- [MP1 Q-COLD](mp1-qcold-2026-11-12.md) — pass 1 4b5eff61 + pass 2 245d697e: probes, UI checks, NOT-READY verdict; test Chromes need silentEnv
+- [MC CI7](mc-ci7-2026-11-12.md) — hosted flakes: native e9 spawn-window race; oracle 6 s window; refund need 14.7 s
+- [Pre-MP1 A1d review](pre-mp1-a1d-review-2026-11-12.md) — a921096b FAIL (move); e2ba109c PASS: scan misses copy-insert, get_resource_or_init
+- [MC CI8](mc-ci8-2026-11-12.md) — ci7 branch: oracle ticks latency; spawn-window recipe 600 ms (12-tick hold cap)
+- [MC table 9d2ab86b](mc-table-9d2ab86b-2026-11-12.md) — 33/34 rows green; SEL4 double-tap 432 ms vs 400 window; accept green; 5 receipts, sound 0
+- [MP1 forward-MC review](mp1-forward-mc-review-2026-11-12.md) — 37c41e70 PASS: held-delta jobs unpinned (F2 green); scan blind forms; p1-probe run.sh; 30 headed runs green
