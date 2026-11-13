@@ -41,3 +41,14 @@ A guide covered the whole screen but let the map show through. While it was open
 - A possible Steam release is not in the specification. It is a later phase; say the word and the producer writes it as a proposed milestone.
 
 ## Nothing needs a decision from you today.
+
+
+## Evening update
+
+**For the CEO, in short:** no playable build yet. Today's work was mostly proof work on the slice and on MP1 lane 0. You changed the working mode: playable first, the full process only for the foundation. Codex takes over with that mode.
+
+- **Decided by you today:** move points follow "arrive first"; the unit id never decides what a player sees; "Anvil only the big specs".
+- **Ready to land (one step each):** slice A1d and A2b1; MP1 forward merge, L0-STORE, sound off by default.
+- **Stopped on a measurement:** the SEL4 test repair (the next step is named in the handoff).
+- **Nothing needs you now.** The next thing you see should be a build that passes the player probes.
+- Handoff: `vault/Reports/2026-11-12 Handoff to Codex.md`.
