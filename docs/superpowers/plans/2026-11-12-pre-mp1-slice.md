@@ -35,6 +35,10 @@ gate is passed for the tasks up to and including A2a. A2b1 gets a short re-check
 - The five test changes outside the A2b1 list (`plain_movement_tests.rs:187`, `:394`; `orders/tests.rs:2692`; `frame_hash.rs:211`; `probe_flags.rs:117`; `ledger_logs.rs:530`) are allowed observation changes or inversions under the D 9.21 conditions. The plan names them here.
 - From A2b2 on the 9.18 cut-off of `kernel_reference` is void: the live and reference fallback requests must be bit-equal and all ticks of all 128 chains are compared. The present harness fails at `kernel_reference.rs:904-917` when the reference is refreshed. `plain_movement_tests.rs:394` is a third port at A2b2.
 
+**From the A2b1 re-check (2026-11-12, performance-architect; `docs/research/mp1/rereview-slice-a2b1.md`).** Binding for A2c:
+- Cost gate of A2c: the crowd of 1,000 and of 5,000 single `MoveTo`, 12 interleaved pairs against the A2c base. The p50 of ticks 2-41 and the p50 of ticks 42-301 must stay at or below 1.15 times the base. Lazy index builds for each tick must not exceed the members that are `Blocked` or at the stall deadline.
+- At A2b1 the unit that gets a contested point does not change (the lower id gives the point up, as before the slice). "The first unit keeps the point" comes at A2c. CEO touch point 1 therefore decides A2c.
+
 **From the A1d ruling (2026-11-12, technical-director; `docs/research/mp1/ruling-slice-a1d.md`; review `docs/research/mp1/review-slice-a1d.md`).** Binding for A1d and for the orchestrator's gates:
 - Ruling (ii). `crates/turts_pack/tests/common/conservation.rs` stays in the test tree as the independent source oracle. D `:73-74` is replaced by D section 9 item 25. The A1d exit "one oracle" is void.
 - A1d keeps from `a921096b`: `assert_run_constants` (`crates/turts_server/tests/economy.rs:138-156`) and its two call sites, the removal of the `bevy*` dependencies of `turts_audit`, the three `A1d-run-constants-*` rows (plants moved to real state), and their test in `tests/m2/test_refutations.py`.
