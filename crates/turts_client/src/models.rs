@@ -122,6 +122,14 @@ pub struct ModelState {
     first_ready: HashMap<String, f64>,
 }
 impl ModelState {
+    pub(crate) fn texture(
+        &mut self,
+        source: &Handle<Image>,
+        quality: Quality,
+        images: &mut Assets<Image>,
+    ) -> Handle<Image> {
+        limited_texture(source, quality, images, &mut self.images)
+    }
     pub fn yaw(&self, id: u32) -> Option<f32> {
         self.facing.get(&id).map(|(_, yaw)| *yaw)
     }

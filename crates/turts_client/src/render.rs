@@ -328,6 +328,8 @@ pub fn setup_scene(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut images: ResMut<Assets<Image>>,
+    settings: Res<crate::models::GraphicsSettings>,
+    mut model_state: ResMut<crate::models::ModelState>,
     mut done: Local<bool>,
 ) {
     if *done || !matches!(*phase, Phase::Joined { .. }) {
@@ -358,10 +360,9 @@ pub fn setup_scene(
         let texture = |id: &str, srgb: bool, images: &mut Assets<Image>| -> Option<Handle<Image>> {
             let bytes = &acquired.0.presentation.images.get(id)?.bytes;
             let dynamic = image::load_from_memory(bytes).ok()?;
-            let limit = 4096;
-            let dynamic = dynamic.resize(limit, limit, image::imageops::FilterType::Triangle);
+            // Keep the authored pixels for later quality changes, without a GPU copy.
             let mut image =
-                Image::from_dynamic(dynamic, srgb, bevy::asset::RenderAssetUsages::default());
+                Image::from_dynamic(dynamic, srgb, bevy::asset::RenderAssetUsages::MAIN_WORLD);
             image.sampler =
                 bevy::image::ImageSampler::Descriptor(bevy::image::ImageSamplerDescriptor {
                     address_mode_u: bevy::image::ImageAddressMode::Repeat,
@@ -382,6 +383,14 @@ pub fn setup_scene(
         base: ground_material.base_color_texture.clone(),
         normal: ground_material.normal_map_texture.clone(),
     };
+    ground_material.base_color_texture = ground_source
+        .base
+        .as_ref()
+        .map(|source| model_state.texture(source, settings.quality, &mut images));
+    ground_material.normal_map_texture = ground_source
+        .normal
+        .as_ref()
+        .map(|source| model_state.texture(source, settings.quality, &mut images));
     commands.spawn((
         ground_source,
         Mesh3d(meshes.add(ground_mesh)),

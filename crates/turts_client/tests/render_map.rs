@@ -296,6 +296,7 @@ fn setup_app(phase: Phase) -> App {
     app.add_plugins((MinimalPlugins, AssetPlugin::default()))
         .init_asset::<Mesh>()
         .init_asset::<StandardMaterial>()
+        .init_asset::<Image>()
         .insert_resource(phase)
         .insert_resource(AcquiredPackages(Acquired {
             lockfile_hash: String::new(),
@@ -306,6 +307,8 @@ fn setup_app(phase: Phase) -> App {
             content: ClientContent::default(),
             presentation: Default::default(),
         }))
+        .init_resource::<turts_client::models::GraphicsSettings>()
+        .init_resource::<turts_client::models::ModelState>()
         .add_systems(Update, setup_scene);
     app
 }
