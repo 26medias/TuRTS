@@ -1842,5 +1842,68 @@
     "expected_failure": "the trip rests on the clamped goal",
     "restore_check": "sha256(source)==baseline and selected test is green",
     "plant_note": "A2b1 re-check L1 (fault F6): the pushed fallback keeps the unclamped goal as its target in place of its slot. The edge trip rests at another place."
+  },
+  {
+    "id": "A1d-run-constants-durations",
+    "plant_path": "crates/turts_sim/src/movement/ecs.rs",
+    "anchor": "        .map_or(Vec2::ZERO, |bounds| bounds.size);\n    let tick_hz = world\n",
+    "replacement": "        .map_or(Vec2::ZERO, |bounds| bounds.size);\n    if let Some(mut durations) = world.get_resource_mut::<crate::bootstrap::ProductionDurations>() {\n        for ticks in durations.0.values_mut() {\n            *ticks += 1;\n        }\n    }\n    let tick_hz = world\n",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_server",
+      "--test",
+      "economy",
+      "decoded_moving_gatherer_replays_frozen_command_and_automatic_effect",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "the compiled durations changed inside the run",
+    "restore_check": "sha256(source)==baseline and selected test is green",
+    "plant_note": "A1d (A1d ruling, L1): the REAL ProductionDurations resource grows by 1 tick in each movement step. The compiled durations are a field that the log does not hold, so only assert_run_constants, which reads the live world at each tick, is red on the log path."
+  },
+  {
+    "id": "A1d-run-constants-unit-types",
+    "plant_path": "crates/turts_sim/src/movement/ecs.rs",
+    "anchor": "        .map_or(Vec2::ZERO, |bounds| bounds.size);\n    let tick_hz = world\n",
+    "replacement": "        .map_or(Vec2::ZERO, |bounds| bounds.size);\n    if let Some(mut types) = world.get_resource_mut::<crate::registry::UnitTypes>() {\n        let local = format!(\"zz{}\", types.len());\n        let def = turts_mod_api::UnitDef {\n            id: local,\n            name: String::new(),\n            footprint: turts_mod_api::Footprint::Circle { radius: 1.0 },\n            movement: None,\n            inventory: None,\n            gatherer: None,\n            drop_off: None,\n            producer: None,\n            output_inventory: None,\n            extractor: None,\n            conveyor: None,\n            inserter: None,\n            machine: None,\n            research: None,\n            health: None,\n            weapon: None,\n            removal: None,\n        };\n        let _ = turts_mod_api::UnitRegistry::register_unit_type(\n            &mut *types,\n            &turts_mod_api::PackageId(\"zz\".to_string()),\n            def,\n        );\n    }\n    let tick_hz = world\n",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_server",
+      "--test",
+      "economy",
+      "decoded_moving_gatherer_replays_frozen_command_and_automatic_effect",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "the unit type registry changed inside the run",
+    "restore_check": "sha256(source)==baseline and selected test is green",
+    "plant_note": "A1d (A1d ruling, L1): the REAL UnitTypes resource gains one registered type in each movement step. The unit type registry is a field that the log does not hold, so only assert_run_constants is red on the log path."
+  },
+  {
+    "id": "A1d-run-constants-resources",
+    "plant_path": "crates/turts_sim/src/movement/ecs.rs",
+    "anchor": "        .map_or(Vec2::ZERO, |bounds| bounds.size);\n    let tick_hz = world\n",
+    "replacement": "        .map_or(Vec2::ZERO, |bounds| bounds.size);\n    world.remove_resource::<crate::bootstrap::ProductionDurations>();\n    let tick_hz = world\n",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_server",
+      "--test",
+      "economy",
+      "decoded_moving_gatherer_replays_frozen_command_and_automatic_effect",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "the resource presence changed inside the run",
+    "restore_check": "sha256(source)==baseline and selected test is green",
+    "plant_note": "A1d (A1d ruling, L1): the REAL ProductionDurations resource is removed in the movement step, so its presence changes. Resource presence is a field that the log does not hold, so only assert_run_constants is red on the log path."
   }
 ]

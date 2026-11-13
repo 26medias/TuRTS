@@ -1,3 +1,13 @@
+//! No-content scan of the production Rust of `crates/` (a content word of a mod must not appear in
+//! engine code).
+//!
+//! Known gap (A1d review, `docs/research/mp1/ruling-slice-a1d.md`): the scan matches whole words.
+//! A compound name such as `ore_items` or `shell_items` is not split at the underscore, so it
+//! is not reported (`support/mod.rs`, the identifier rule). A split rule needs an exception
+//! design: a probe found 49 compound identifiers (193 uses, 29 files) with a content token, and
+//! the top one is `client_shell`, a spec term. Owner: `qa-lead`. Deadline: before the first MP1
+//! package with new content ids merges.
+
 mod support;
 
 use std::path::PathBuf;

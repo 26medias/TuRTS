@@ -7,24 +7,21 @@
 //! (entry, kind, type) has the pinned number of writes (A1c: a new writer in an allowed file is
 //! red, plant: a `get_mut::<Position>` write in `economy/combat.rs`).
 //!
-//! A write is, in production code (the scanner production filter: no `#[cfg(test)]` item, no
-//! `tests` directory, no listed test module file):
-//! - a `&mut T` type (a query, a parameter, a field);
-//! - a method call with the turbofish `T` and a writing name (`get_mut`, `remove`, `take`,
-//!   `resource_mut`, `get_resource_mut`, `insert_resource`, `init_resource`);
-//! - a value of `T` that the code makes: `T(..)`, `T { .. }` or a call of a `T::` function
-//!   (spawn and insert bundles hold such values).
+//! A write is the kind of write of the shared visitor (`support/writers.rs`: `&mut T`, `ResMut<T>`
+//! `Mut<T>` and `NonSendMut<T>` (arm added in A1d), a method with the turbofish `T` and a writing
+//! name, a value of `T` that the code makes). The methods here are `get_mut`, `remove`, `take`,
+//! `resource_mut`, `get_resource_mut`, `insert_resource`, `init_resource`,
+//! `get_resource_or_init` and `get_resource_or_insert_with` (the last two give a `Mut<T>`).
 //!
-//! Known gap: a value of `T` that a file receives and inserts with no `&mut T`, no turbofish and
-//! no constructor is not seen. Code review must catch it.
+//! Known gap: a value of `T` that a file receives and inserts with no `&mut T`, no `ResMut<T>`,
+//! no turbofish and no constructor is not seen. Code review must catch it.
 
 mod support;
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
-use support::{collect, production_attrs, production_expr};
-use syn::visit::Visit;
+use support::writers::{Write, production_writes as scan_production, scan_file as scan_one};
 
 const WRITTEN: [&str; 7] = [
     "Position",
@@ -35,7 +32,7 @@ const WRITTEN: [&str; 7] = [
     "MovementPool",
     "MovementPools",
 ];
-const WRITE_METHODS: [&str; 7] = [
+const WRITE_METHODS: [&str; 9] = [
     "get_mut",
     "remove",
     "take",
@@ -43,6 +40,8 @@ const WRITE_METHODS: [&str; 7] = [
     "get_resource_mut",
     "insert_resource",
     "init_resource",
+    "get_resource_or_init",
+    "get_resource_or_insert_with",
 ];
 
 /// The production writes of movement state, pinned as a multiset. An entry is a file, or a
@@ -149,122 +148,8 @@ const PINNED: &[(&str, &str, &[Pin])] = &[
     ),
 ];
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-struct Write {
-    file: String,
-    line: usize,
-    kind: &'static str,
-    type_name: String,
-}
-
-struct Scan<'a> {
-    file: &'a str,
-    writes: Vec<Write>,
-}
-
-impl Scan<'_> {
-    fn hit(&mut self, span: proc_macro2::Span, kind: &'static str, type_name: &str) {
-        self.writes.push(Write {
-            file: self.file.to_owned(),
-            line: span.start().line,
-            kind,
-            type_name: type_name.to_owned(),
-        });
-    }
-}
-
-fn written(path: &syn::Path) -> Option<String> {
-    path.segments
-        .iter()
-        .map(|segment| segment.ident.to_string())
-        .find(|name| WRITTEN.contains(&name.as_str()))
-}
-
-fn written_type(ty: &syn::Type) -> Option<String> {
-    match ty {
-        syn::Type::Path(path) => written(&path.path),
-        _ => None,
-    }
-}
-
-impl<'ast> Visit<'ast> for Scan<'_> {
-    fn visit_item_mod(&mut self, node: &'ast syn::ItemMod) {
-        if production_attrs(&node.attrs) {
-            syn::visit::visit_item_mod(self, node);
-        }
-    }
-
-    fn visit_item_fn(&mut self, node: &'ast syn::ItemFn) {
-        if production_attrs(&node.attrs) {
-            syn::visit::visit_item_fn(self, node);
-        }
-    }
-
-    fn visit_item_impl(&mut self, node: &'ast syn::ItemImpl) {
-        if production_attrs(&node.attrs) {
-            syn::visit::visit_item_impl(self, node);
-        }
-    }
-
-    fn visit_impl_item_fn(&mut self, node: &'ast syn::ImplItemFn) {
-        if production_attrs(&node.attrs) {
-            syn::visit::visit_impl_item_fn(self, node);
-        }
-    }
-
-    fn visit_type_reference(&mut self, node: &'ast syn::TypeReference) {
-        if node.mutability.is_some()
-            && let Some(name) = written_type(&node.elem)
-        {
-            self.hit(node.and_token.span, "&mut", &name);
-        }
-        syn::visit::visit_type_reference(self, node);
-    }
-
-    fn visit_expr(&mut self, node: &'ast syn::Expr) {
-        if !production_expr(node) {
-            return;
-        }
-        match node {
-            syn::Expr::MethodCall(call)
-                if WRITE_METHODS.contains(&call.method.to_string().as_str()) =>
-            {
-                let turbofish = call.turbofish.iter().flat_map(|fish| fish.args.iter());
-                for argument in turbofish {
-                    if let syn::GenericArgument::Type(ty) = argument
-                        && let Some(name) = written_type(ty)
-                    {
-                        self.hit(call.method.span(), "method", &name);
-                    }
-                }
-            }
-            syn::Expr::Call(call) => {
-                if let syn::Expr::Path(path) = call.func.as_ref()
-                    && let Some(name) = written(&path.path)
-                {
-                    self.hit(path.path.segments[0].ident.span(), "construct", &name);
-                }
-            }
-            syn::Expr::Struct(literal) => {
-                if let Some(name) = written(&literal.path) {
-                    self.hit(literal.path.segments[0].ident.span(), "construct", &name);
-                }
-            }
-            _ => {}
-        }
-        syn::visit::visit_expr(self, node);
-    }
-}
-
-fn scan_file(path: &Path, label: &str) -> Vec<Write> {
-    let source = std::fs::read_to_string(path).expect("read a scanned file");
-    let file = syn::parse_file(&source).expect("parse a scanned file");
-    let mut scan = Scan {
-        file: label,
-        writes: Vec::new(),
-    };
-    scan.visit_file(&file);
-    scan.writes
+fn scan_file(path: &std::path::Path, label: &str) -> Vec<Write> {
+    scan_one(path, label, &WRITTEN, &WRITE_METHODS)
 }
 
 fn repo() -> PathBuf {
@@ -273,28 +158,7 @@ fn repo() -> PathBuf {
 
 /// The production writes of the crates that can write the simulation world.
 fn production_writes() -> Vec<Write> {
-    let repo = repo();
-    let mut files = Vec::new();
-    let mut skipped = Vec::new();
-    for root in [
-        "crates/turts_sim/src",
-        "crates/turts_server/src",
-        "crates/turts_pack/src",
-    ] {
-        collect(&repo.join(root), &mut files, &mut skipped).expect("collect the source files");
-    }
-    files.sort();
-    let mut writes = Vec::new();
-    for file in files {
-        let label = file
-            .strip_prefix(&repo)
-            .expect("a scanned file is in the repository")
-            .to_string_lossy()
-            .replace('\\', "/");
-        let label = label.trim_start_matches("./").to_owned();
-        writes.extend(scan_file(&file, &label));
-    }
-    writes
+    scan_production(&repo(), &WRITTEN, &WRITE_METHODS)
 }
 
 /// The scan finds each kind of write in the planted fixture, and no read and no test code.
@@ -316,6 +180,11 @@ fn scan_finds_every_planted_write() {
             (22, "&mut", "Position"),
             (29, "method", "MovementPools"),
             (33, "construct", "MoveProgress"),
+            (43, "mut-param", "MovementPools"),
+            (47, "mut-param", "Position"),
+            (51, "mut-param", "MovementPools"),
+            (60, "method", "MovementPools"),
+            (64, "method", "MovementPools"),
         ],
         "the scan misses a planted write, or finds a read or test code"
     );

@@ -40,6 +40,30 @@ fn read_only(world: &World, entity: Entity) -> Option<Vec2> {
     world.get::<Position>(entity).map(|position| position.0)
 }
 
+fn pools_param(mut pools: ResMut<MovementPools>) {
+    pools.0.clear();
+}
+
+fn component_handle(world: &mut World, entity: Entity) -> Option<Mut<Position>> {
+    world.get_entity_mut(entity).ok()?.get_mut()
+}
+
+fn non_send_param(mut pools: NonSendMut<MovementPools>) {
+    pools.0.clear();
+}
+
+fn read_param(pools: Res<MovementPools>) -> usize {
+    pools.0.len()
+}
+
+fn pools_or_init(world: &mut World) {
+    world.get_resource_or_init::<MovementPools>().0.clear();
+}
+
+fn pools_or_insert(world: &mut World) {
+    world.get_resource_or_insert_with::<MovementPools>(Default::default);
+}
+
 #[cfg(test)]
 mod tests {
     fn test_write(world: &mut World) {

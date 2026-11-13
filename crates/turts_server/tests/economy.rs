@@ -59,10 +59,20 @@ fn economy_fixture_app_at(tick_hz: u16) -> bevy_app::App {
 /// four immutable fields come from `template`, so the immutability rule of the oracle
 /// (`accounting.rs`, "immutable clock, bounds, catalog, durations, type registry, or resource
 /// presence changed") compares the template with itself on the log path. A change of `bounds`,
-/// `resources`, `compiled_durations` or `unit_types` inside a run is NOT seen by the log-based
-/// oracle tests. It is held by the in-process oracle (`turts_pack` accounting tests, which read
-/// `AuditState` from the trail) and by `full_state_rebuilds_the_audit_state`. The log is not
-/// widened for this.
+/// `resources`, `compiled_durations` or `unit_types` inside a run is NOT seen by the oracle on a
+/// log. The log is not widened for this (A1d decision, see `assert_run_constants`). Who sees it:
+/// - the in-process oracle (`turts_pack` accounting tests, which read `AuditState` from the trail);
+/// - `full_state_rebuilds_the_audit_state`;
+/// - `assert_run_constants`, which reads the live world at each tick, in the two log tests that
+///   own a live world and use `full_state`
+///   (`decoded_moving_gatherer_replays_frozen_command_and_automatic_effect` and
+///   `e9_base_gather_trace_replays_node_depletion_in_process`);
+/// - for `bounds`, the movement sweep test
+///   (`movement::ecs::tests::the_movement_system_writes_only_movement_state`).
+///
+/// Not seen: the process tests (`replay_public_log` on the log of a server process). They have no
+/// live world in the test, so for them the four fields are held by the items above, run on the
+/// same sim code.
 fn full_state(
     ledger: &turts_sim::LedgerAudit,
     template: &turts_sim::AuditState,
@@ -116,6 +126,33 @@ fn full_state(
         allocators: ledger.allocators,
         claims: ledger.claims.clone(),
     }
+}
+
+/// The four `AuditState` fields that the log does not hold (`bounds`, `resources`,
+/// `compiled_durations`, `unit_types`) never change in a run. The oracle on a log cannot see
+/// them (`full_state`), so a test with a live world reads them from the world at each tick and
+/// compares them with the start of the run. The start of the run is the same sim, so this is a
+/// "did not change" check: it needs no expected value, and it does not read the value from the
+/// template that the oracle then compares with itself. Plant N12 of the A1c review (the map
+/// bounds grow in each movement step) is red here.
+fn assert_run_constants(app: &mut bevy_app::App, start: &turts_sim::AuditState, tick: u32) {
+    let now = turts_sim::audit_state(app.world_mut());
+    assert_eq!(
+        now.bounds, start.bounds,
+        "tick {tick}: the map bounds changed inside the run"
+    );
+    assert_eq!(
+        now.resources, start.resources,
+        "tick {tick}: the resource presence changed inside the run"
+    );
+    assert_eq!(
+        now.compiled_durations, start.compiled_durations,
+        "tick {tick}: the compiled durations changed inside the run"
+    );
+    assert_eq!(
+        now.unit_types, start.unit_types,
+        "tick {tick}: the unit type registry changed inside the run"
+    );
 }
 
 /// A logged command boundary as the oracle reads it (`full_state` for both snapshots).
@@ -664,6 +701,7 @@ fn decoded_moving_gatherer_replays_frozen_command_and_automatic_effect() {
                 .push_back(expected_command.clone());
         }
         app.update();
+        assert_run_constants(&mut app, &initial, tick_number);
         let mut trail = app.world_mut().resource_mut::<AuditTrail>();
         assert!(trail.valid);
         let commands = trail.drain_commands();
@@ -926,6 +964,7 @@ fn e9_base_gather_trace_replays_node_depletion_in_process() {
         let trail = app.world_mut().resource_mut::<AuditTrail>();
         writer.write_initial(&trail, initial).unwrap();
     }
+    let run_start = audit_state(app.world_mut());
     let mut depleted_at = None;
     let mut failed_at = None;
     let mut last_tick = 0;
@@ -937,6 +976,7 @@ fn e9_base_gather_trace_replays_node_depletion_in_process() {
                 .push_back(command.clone());
         }
         app.update();
+        assert_run_constants(&mut app, &run_start, tick);
         let mut trail = app.world_mut().resource_mut::<AuditTrail>();
         assert!(trail.valid);
         for audit in trail.drain_commands() {
