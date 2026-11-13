@@ -48,6 +48,7 @@ fn app_with_units(positions: &[(f32, f32)]) -> bevy_app::App {
         .register_unit_type(&origin, def)
         .unwrap();
     let map = MapDef {
+        ground: None,
         id: "field".to_string(),
         size: MapSize { x: 64.0, y: 64.0 },
         placements: positions
@@ -165,6 +166,7 @@ fn second_load_map_continues_unit_ids() {
     let mut app = app_with_units(&[(8.0, 8.0), (20.0, 20.0)]);
     let origin = PackageId(ORIGIN.to_string());
     let map = MapDef {
+        ground: None,
         id: "extra".to_string(),
         size: MapSize { x: 64.0, y: 64.0 },
         placements: vec![Placement {

@@ -289,6 +289,27 @@ pub fn step_frame_preserving_resting(
                 position.y = position
                     .y
                     .clamp(unit.radius, (frame.bounds.y - unit.radius).max(unit.radius));
+                // Eight projection passes can cycle between neighbours. Never commit an overlap
+                // when the body still has its previous legal position.
+                if body_overlaps_position(
+                    position,
+                    index,
+                    unit.radius,
+                    &units,
+                    &points,
+                    &grid,
+                    max_radius,
+                ) && !body_overlaps_position(
+                    unit.position,
+                    index,
+                    unit.radius,
+                    &units,
+                    &points,
+                    &grid,
+                    max_radius,
+                ) {
+                    position = unit.position;
+                }
                 let still_overlapping = body_overlaps_position(
                     position,
                     index,
@@ -500,6 +521,27 @@ pub fn step_frame_preserving_resting(
             position.y = position
                 .y
                 .clamp(unit.radius, (frame.bounds.y - unit.radius).max(unit.radius));
+            // Eight projection passes can cycle between neighbours. Never commit an overlap
+            // when the body still has its previous legal position.
+            if body_overlaps_position(
+                position,
+                index,
+                unit.radius,
+                &units,
+                &points,
+                &grid,
+                max_radius,
+            ) && !body_overlaps_position(
+                unit.position,
+                index,
+                unit.radius,
+                &units,
+                &points,
+                &grid,
+                max_radius,
+            ) {
+                position = unit.position;
+            }
             let reached = position == escape && is_free(escape);
             update_target_claims(
                 &mut target_claims,
@@ -733,6 +775,27 @@ pub fn step_frame_preserving_resting(
             position.y = position
                 .y
                 .clamp(unit.radius, (frame.bounds.y - unit.radius).max(unit.radius));
+            // Eight projection passes can cycle between neighbours. Never commit an overlap
+            // when the body still has its previous legal position.
+            if body_overlaps_position(
+                position,
+                index,
+                unit.radius,
+                &units,
+                &points,
+                &grid,
+                max_radius,
+            ) && !body_overlaps_position(
+                unit.position,
+                index,
+                unit.radius,
+                &units,
+                &points,
+                &grid,
+                max_radius,
+            ) {
+                position = unit.position;
+            }
             #[cfg(feature = "test-probes")]
             {
                 outputs[index].probe = super::probe::FrameFlags {
@@ -932,6 +995,27 @@ pub fn step_frame_preserving_resting(
         position.y = position
             .y
             .clamp(unit.radius, (frame.bounds.y - unit.radius).max(unit.radius));
+        // Eight projection passes can cycle between neighbours. Never commit an overlap
+        // when the body still has its previous legal position.
+        if body_overlaps_position(
+            position,
+            index,
+            unit.radius,
+            &units,
+            &points,
+            &grid,
+            max_radius,
+        ) && !body_overlaps_position(
+            unit.position,
+            index,
+            unit.radius,
+            &units,
+            &points,
+            &grid,
+            max_radius,
+        ) {
+            position = unit.position;
+        }
         #[cfg(feature = "test-probes")]
         {
             outputs[index].probe.was_projected = Some(was_projected);

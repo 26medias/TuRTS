@@ -5,6 +5,7 @@ use super::*;
 
 #[derive(Component, Clone, Copy)]
 pub(super) enum SettingsToggle {
+    Quality,
     EdgeScroll,
     CursorLock,
     HealthBars,
@@ -27,6 +28,7 @@ pub(super) enum SettingsSlider {
 /// Settings that must reach the existing camera, Bevy UI and window owners.
 #[derive(Resource, Clone, Copy, Debug, PartialEq)]
 pub(crate) struct ClientSettings {
+    pub quality: crate::models::Quality,
     pub scroll_speed: f32,
     pub edge_scroll: bool,
     pub ui_scale: f32,
@@ -41,6 +43,7 @@ pub(crate) struct ClientSettings {
 impl Default for ClientSettings {
     fn default() -> Self {
         Self {
+            quality: crate::models::Quality::High,
             scroll_speed: 1.0,
             edge_scroll: true,
             ui_scale: 1.0,
@@ -57,11 +60,15 @@ impl Default for ClientSettings {
 pub(crate) fn apply_client_settings(
     settings: Res<ClientSettings>,
     mut camera: Option<ResMut<crate::camera::CameraConfiguration>>,
+    mut graphics: Option<ResMut<crate::models::GraphicsSettings>>,
     mut ui_scale: Option<ResMut<bevy::ui::UiScale>>,
     mut window_modes: Option<ResMut<bevy::winit::WinitSettings>>,
 ) {
     if !settings.is_changed() {
         return;
+    }
+    if let Some(graphics) = graphics.as_deref_mut() {
+        graphics.quality = settings.quality;
     }
     if let Some(camera) = camera.as_deref_mut() {
         camera.options.scroll_speed = settings.scroll_speed;
@@ -312,6 +319,12 @@ pub(super) fn toggle_settings_menu(
             },
             TextColor(Color::WHITE),
         ));
+        spawn_settings_toggle(
+            panel,
+            "Graphics quality",
+            settings.quality.label(),
+            SettingsToggle::Quality,
+        );
         spawn_settings_slider(
             panel,
             "Scroll speed",
@@ -500,6 +513,7 @@ pub(super) fn on_settings_toggle_activated(
         return;
     };
     match toggle {
+        SettingsToggle::Quality => settings.quality = settings.quality.next(),
         SettingsToggle::EdgeScroll => settings.edge_scroll = !settings.edge_scroll,
         SettingsToggle::CursorLock => {
             settings.cursor_lock = !settings.cursor_lock;
@@ -571,6 +585,7 @@ pub(super) fn sync_settings_toggle_labels(
 ) {
     for (state, mut text) in &mut states {
         let value = match state.0 {
+            SettingsToggle::Quality => settings.quality.label().to_string(),
             SettingsToggle::EdgeScroll => on_off(settings.edge_scroll).to_string(),
             SettingsToggle::CursorLock => on_off(settings.cursor_lock).to_string(),
             SettingsToggle::HealthBars => health

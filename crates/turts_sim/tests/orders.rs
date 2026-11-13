@@ -78,6 +78,7 @@ fn app_with_units(mobile: usize, static_units: usize, foreign: usize) -> bevy_ap
         app.world_mut(),
         &origin,
         &MapDef {
+            ground: None,
             id: "field".into(),
             size: MapSize { x: 100.0, y: 100.0 },
             placements,

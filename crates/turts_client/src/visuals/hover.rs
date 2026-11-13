@@ -13,6 +13,7 @@ pub(super) fn resolve_hover(
     presented: &Presented,
     content: &ClientContent,
     replica: &Replica,
+    model_state: Option<&crate::models::ModelState>,
     visuals: &mut VisualState,
     now: Instant,
 ) -> Option<u32> {
@@ -26,7 +27,10 @@ pub(super) fn resolve_hover(
                 .units
                 .iter()
                 .filter_map(|unit| {
-                    let shape = content.shapes.get(&unit.content_id)?;
+                    let shape = content
+                        .model_pick_shapes
+                        .get(&unit.content_id)
+                        .or_else(|| content.shapes.get(&unit.content_id))?;
                     let yaw = replica
                         .units
                         .get(&unit.unit_id)
@@ -41,7 +45,7 @@ pub(super) fn resolve_hover(
                         *ray.direction,
                         Vec2::new(unit.pos.x, unit.pos.y),
                         shape,
-                        yaw,
+                        model_state.and_then(|m| m.yaw(unit.unit_id)).unwrap_or(yaw),
                     )
                     .map(|distance| (unit.unit_id, distance))
                 })

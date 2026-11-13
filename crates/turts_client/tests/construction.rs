@@ -123,6 +123,7 @@ fn fixture(policy: PaymentPolicy, mutate: impl FnOnce(&mut ContentCatalog, &mut 
         source_files: BTreeMap::new(),
     };
     let mut map = MapDef {
+        ground: None,
         id: "field".into(),
         size: MapSize { x: 64.0, y: 64.0 },
         placements: vec![Placement {

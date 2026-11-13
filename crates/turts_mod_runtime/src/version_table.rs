@@ -159,6 +159,20 @@ const fn variant_0_2_4(name: &'static str) -> VersionTableRow {
 /// detection kind that its design row names, and nowhere else. The order is the order of the
 /// first refusal when one package has several problems.
 pub(crate) const VERSION_TABLE: &[VersionTableRow] = &[
+    raw("model.lods", "0.2.5", RawGroup::Visuals, &["model", "lods"]),
+    raw(
+        "model.scale",
+        "0.2.5",
+        RawGroup::Visuals,
+        &["model", "scale"],
+    ),
+    raw(
+        "model.animations",
+        "0.2.5",
+        RawGroup::Visuals,
+        &["model", "animations"],
+    ),
+    raw("ground", "0.2.5", RawGroup::Maps, &["ground"]),
     // API 0.2.2.
     VersionTableRow {
         name: "dependencies",

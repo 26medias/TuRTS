@@ -116,6 +116,7 @@ fn app_with_units() -> bevy_app::App {
         app.world_mut(),
         &origin,
         &MapDef {
+            ground: None,
             id: "field".into(),
             size: MapSize { x: 64.0, y: 64.0 },
             placements: vec![place("walker", 8.0, 8.0), place("building", 20.0, 20.0)],

@@ -650,6 +650,7 @@ mod tests {
             source_files: BTreeMap::new(),
         };
         let map = MapDef {
+            ground: None,
             id: "combat_fixture:map".into(),
             size: MapSize { x: 32.0, y: 32.0 },
             placements,
@@ -2669,6 +2670,7 @@ mod tests {
             source_files: BTreeMap::from([(cid(WEAPON), "units/weapon.ron".into())]),
         };
         let map = MapDef {
+            ground: None,
             id: "combat_fixture:map".into(),
             size: MapSize { x: 32.0, y: 32.0 },
             placements: vec![

@@ -8,6 +8,7 @@ pub mod content_mc_validation;
 pub mod hash;
 pub mod lock;
 pub mod manifest;
+pub mod models;
 pub mod pack;
 pub mod parse;
 pub mod resolve;

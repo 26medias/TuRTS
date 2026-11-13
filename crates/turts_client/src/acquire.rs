@@ -43,6 +43,10 @@ pub struct VerifiedRootMod {
 /// Authored interface and its accepted package-local image/font payloads.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct PresentationContent {
+    pub models: BTreeMap<String, Vec<u8>>,
+    pub model_visuals: BTreeMap<String, turts_mod_api::ModelDef>,
+    pub model_bounds: BTreeMap<String, ([f32; 3], [f32; 3])>,
+    pub ground: Option<turts_mod_api::GroundDef>,
     pub interface: Option<InterfaceDef>,
     pub interface_package: Option<String>,
     pub images: BTreeMap<String, PresentationImage>,
@@ -143,8 +147,20 @@ pub fn build_acquired_with_root(
     lockfile_hash: String,
     verified_root_mod: Option<VerifiedRootMod>,
 ) -> Result<Acquired, String> {
-    let content = ClientContent::from_archives(archives).map_err(|error| error.to_string())?;
+    let mut content = ClientContent::from_archives(archives).map_err(|error| error.to_string())?;
     let presentation = presentation_from_archives(archives)?;
+    for (id, model) in &presentation.model_visuals {
+        if let Some((min, max)) = presentation.model_bounds.get(&model.asset) {
+            content.model_pick_shapes.insert(
+                id.clone(),
+                Shape::Cuboid {
+                    x: 2.0 * min[0].abs().max(max[0].abs()) * model.scale,
+                    y: 2.0 * min[2].abs().max(max[2].abs()) * model.scale,
+                    z: max[1] * model.scale,
+                },
+            );
+        }
+    }
     let visuals = content.shapes.clone();
     let mut unit_names = HashMap::new();
     let mut map_size = None;
@@ -173,6 +189,22 @@ pub fn build_acquired_with_root(
 fn presentation_from_archives(archives: &[PackageArchive]) -> Result<PresentationContent, String> {
     let mut presentation = PresentationContent::default();
     for archive in archives {
+        for (_, visual) in archive.visuals().map_err(|e| e.to_string())? {
+            if let Some(model) = visual.model {
+                let target = match visual.target {
+                    turts_mod_api::VisualTarget::Unit(id)
+                    | turts_mod_api::VisualTarget::Node(id) => id,
+                };
+                presentation.model_visuals.insert(target, model);
+            }
+        }
+        if presentation.ground.is_none() {
+            presentation.ground = archive
+                .maps()
+                .map_err(|e| e.to_string())?
+                .into_iter()
+                .find_map(|(_, map)| map.ground);
+        }
         if presentation.interface.is_none()
             && let Some((_, interface)) = archive
                 .interfaces()
@@ -210,6 +242,18 @@ fn merge_asset_bytes(
     assets: AssetsDef,
     presentation: &mut PresentationContent,
 ) -> Result<(), String> {
+    for model in assets.models {
+        let bytes = archive
+            .file(&model.path)
+            .ok_or_else(|| format!("missing model {}", model.path))?;
+        let info = turts_mod_runtime::models::inspect_glb(&archive.id().0, &model.path, bytes)
+            .map_err(|e| e.to_string())?;
+        let key = qualified_asset_id(&archive.id().0, &model.id);
+        presentation
+            .model_bounds
+            .insert(key.clone(), (info.min, info.max));
+        presentation.models.insert(key, bytes.to_vec());
+    }
     for image in assets.images {
         let bytes = archive
             .file(&image.path)

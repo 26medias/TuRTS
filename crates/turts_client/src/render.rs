@@ -326,6 +326,7 @@ pub fn setup_scene(
     acquisition: Option<Res<Acquisition>>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    mut images: ResMut<Assets<Image>>,
     mut done: Local<bool>,
 ) {
     if *done || !matches!(*phase, Phase::Joined { .. }) {
@@ -342,9 +343,48 @@ pub fn setup_scene(
     let (directional, transform, ambient) = crate::camera::light_components(light.as_ref());
     commands.spawn((directional, transform));
     commands.insert_resource(ambient);
+    let mut ground_mesh = Plane3d::default().mesh().size(width, depth).build();
+    let mut ground_material = StandardMaterial::from(Color::srgb(0.25, 0.4, 0.25));
+    if let Some(ground) = &acquired.0.presentation.ground {
+        if let Some(bevy::mesh::VertexAttributeValues::Float32x2(uvs)) =
+            ground_mesh.attribute_mut(Mesh::ATTRIBUTE_UV_0)
+        {
+            for uv in uvs {
+                uv[0] *= width / ground.tile_size;
+                uv[1] *= depth / ground.tile_size;
+            }
+        }
+        let texture = |id: &str, srgb: bool, images: &mut Assets<Image>| -> Option<Handle<Image>> {
+            let bytes = &acquired.0.presentation.images.get(id)?.bytes;
+            let dynamic = image::load_from_memory(bytes).ok()?;
+            let limit = 4096;
+            let dynamic = dynamic.resize(limit, limit, image::imageops::FilterType::Triangle);
+            let mut image =
+                Image::from_dynamic(dynamic, srgb, bevy::asset::RenderAssetUsages::default());
+            image.sampler =
+                bevy::image::ImageSampler::Descriptor(bevy::image::ImageSamplerDescriptor {
+                    address_mode_u: bevy::image::ImageAddressMode::Repeat,
+                    address_mode_v: bevy::image::ImageAddressMode::Repeat,
+                    ..default()
+                });
+            Some(images.add(image))
+        };
+        ground_material.base_color = Color::WHITE;
+        ground_material.base_color_texture = texture(&ground.base_colour, true, &mut images);
+        ground_material.normal_map_texture = ground
+            .normal
+            .as_deref()
+            .and_then(|id| texture(id, false, &mut images));
+        ground_material.perceptual_roughness = 1.0;
+    }
+    let ground_source = crate::models::GroundSurface {
+        base: ground_material.base_color_texture.clone(),
+        normal: ground_material.normal_map_texture.clone(),
+    };
     commands.spawn((
-        Mesh3d(meshes.add(Plane3d::default().mesh().size(width, depth))),
-        MeshMaterial3d(materials.add(Color::srgb(0.25, 0.4, 0.25))),
+        ground_source,
+        Mesh3d(meshes.add(ground_mesh)),
+        MeshMaterial3d(materials.add(ground_material)),
         Transform::from_translation(centre),
     ));
 }
@@ -455,10 +495,20 @@ pub struct UnitRenderPlugin;
 
 impl Plugin for UnitRenderPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<SlotMaterials>();
+        app.init_resource::<SlotMaterials>()
+            .init_resource::<crate::models::ModelState>()
+            .init_resource::<crate::models::GraphicsSettings>();
         app.add_systems(
             Update,
-            (setup_scene, sync_slot_materials, sync_units, sync_nodes)
+            (
+                setup_scene,
+                sync_slot_materials,
+                sync_units,
+                sync_nodes,
+                crate::models::sync_models,
+                crate::models::quality_lighting,
+                crate::models::sync_ground_quality,
+            )
                 .chain()
                 .after(update_presented),
         );

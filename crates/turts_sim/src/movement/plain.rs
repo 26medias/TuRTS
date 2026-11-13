@@ -220,6 +220,27 @@ pub(super) fn step_plain_progress(
     position.y = position
         .y
         .clamp(unit.radius, (bounds.y - unit.radius).max(unit.radius));
+    // Eight projection passes can cycle between neighbours. Never commit an overlap
+    // when the body still has its previous legal position.
+    if body_overlaps_position(
+        position,
+        index,
+        unit.radius,
+        units,
+        points,
+        grid,
+        max_radius,
+    ) && !body_overlaps_position(
+        unit.position,
+        index,
+        unit.radius,
+        units,
+        points,
+        grid,
+        max_radius,
+    ) {
+        position = unit.position;
+    }
     #[cfg(feature = "test-probes")]
     {
         output.probe.was_projected = Some(was_projected);

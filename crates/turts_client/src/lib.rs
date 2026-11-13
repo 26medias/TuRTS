@@ -20,6 +20,7 @@ pub mod input;
 pub mod interp;
 pub mod join;
 pub mod minimap;
+pub mod models;
 pub mod options;
 pub mod pacing;
 pub mod palette;
@@ -307,6 +308,7 @@ pub fn build_app(opts: ClientOptions) -> App {
             Duration::from_secs_f64(1.0 / 60.0),
         )));
     } else {
+        models::register_model_source(&mut app);
         app.add_plugins(DefaultPlugins.set(window_plugin()))
             .insert_resource(pacing::default_winit_settings());
     }

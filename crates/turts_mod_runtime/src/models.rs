@@ -1,0 +1,501 @@
+//! Embedded glTF package contract. This module has no renderer or simulation dependency.
+use crate::archive::PackageArchive;
+use std::{collections::BTreeMap, io::Cursor};
+use turts_mod_api::{Footprint, ModError, ModelDef, VisualTarget};
+
+/// Loading limits. These are safety limits, not quality presets.
+pub struct ModelLimits {
+    pub file_bytes: usize,
+    pub package_bytes: usize,
+    pub triangles: usize,
+    pub image_side: u32,
+    pub materials: usize,
+    pub joints: usize,
+}
+pub const MODEL_LIMITS: ModelLimits = ModelLimits {
+    file_bytes: 32 * 1024 * 1024,
+    package_bytes: 512 * 1024 * 1024,
+    triangles: 100_000,
+    image_side: 4096,
+    materials: 8,
+    joints: 128,
+};
+#[derive(Debug, Clone)]
+pub struct ModelInfo {
+    pub triangles: usize,
+    pub min: [f32; 3],
+    pub max: [f32; 3],
+    pub materials: Vec<String>,
+    pub nodes: Vec<String>,
+    pub warnings: Vec<String>,
+}
+fn error(package: &str, file: &str, field: &str, message: impl Into<String>) -> ModError {
+    ModError::new(package, field, message).with_file(file)
+}
+
+/// Parse exactly the glTF revision used by Bevy. External resources are never accepted.
+pub fn inspect_glb(package: &str, file: &str, bytes: &[u8]) -> Result<ModelInfo, ModError> {
+    let fail = |field, message: String| error(package, file, field, message);
+    if bytes.len() > MODEL_LIMITS.file_bytes {
+        return Err(fail("bytes", "model exceeds 32 MiB".into()));
+    }
+    if bytes.get(..4) != Some(b"glTF") || bytes.get(4..8) != Some(&2u32.to_le_bytes()) {
+        return Err(fail("version", "expected glTF 2.0 binary (.glb)".into()));
+    }
+    let glb =
+        gltf::Gltf::from_slice(bytes).map_err(|e| fail("model", format!("invalid GLB: {e}")))?;
+    if let Some(extension) = glb.extensions_required().next() {
+        return Err(fail(
+            "extensionsRequired",
+            format!("unsupported required extension `{extension}`"),
+        ));
+    }
+    for buffer in glb.buffers() {
+        if matches!(buffer.source(), gltf::buffer::Source::Uri(_)) {
+            return Err(fail(
+                "buffers.uri",
+                "all model data must be embedded; external uri is refused".into(),
+            ));
+        }
+    }
+    let blob = glb.blob.as_deref().unwrap_or(&[]);
+    if glb.buffers().any(|b| b.length() > blob.len()) {
+        return Err(fail(
+            "buffers.byteLength",
+            "embedded buffer is shorter than its declared length".into(),
+        ));
+    }
+    let mut warnings = Vec::new();
+    for image in glb.images() {
+        let gltf::image::Source::View { view, mime_type } = image.source() else {
+            return Err(fail(
+                "images.uri",
+                "all images must be embedded; external uri is refused".into(),
+            ));
+        };
+        if !matches!(mime_type, "image/png" | "image/jpeg") {
+            return Err(fail(
+                "images.mimeType",
+                format!("stage 1 accepts PNG and JPEG, got `{mime_type}`"),
+            ));
+        }
+        let data = blob
+            .get(view.offset()..view.offset().saturating_add(view.length()))
+            .ok_or_else(|| {
+                fail(
+                    "images.bufferView",
+                    "image is outside the binary buffer".into(),
+                )
+            })?;
+        let reader = image::ImageReader::new(Cursor::new(data))
+            .with_guessed_format()
+            .map_err(|e| fail("images", e.to_string()))?;
+        let format = reader.format();
+        if !matches!(
+            format,
+            Some(image::ImageFormat::Png | image::ImageFormat::Jpeg)
+        ) {
+            return Err(fail("images", "image bytes must be PNG or JPEG".into()));
+        }
+        let (w, h) = reader
+            .into_dimensions()
+            .map_err(|e| fail("images", e.to_string()))?;
+        if w > MODEL_LIMITS.image_side || h > MODEL_LIMITS.image_side {
+            return Err(fail(
+                "images.size",
+                format!("image {w}x{h} exceeds 4096 px on each side"),
+            ));
+        }
+        if !w.is_power_of_two() || !h.is_power_of_two() {
+            warnings.push(format!(
+                "{package}/{file}: images.size: image {w}x{h} is not a power of two"
+            ));
+        }
+    }
+    if glb.materials().len() > MODEL_LIMITS.materials {
+        return Err(fail("materials", "model has more than 8 materials".into()));
+    }
+    for material in glb.materials() {
+        if material.alpha_mode() == gltf::material::AlphaMode::Blend {
+            return Err(fail(
+                "materials.alphaMode",
+                "BLEND is not supported in stage 1; use OPAQUE or MASK".into(),
+            ));
+        }
+    }
+    for skin in glb.skins() {
+        if skin.joints().len() > MODEL_LIMITS.joints {
+            return Err(fail("skins.joints", "skin has more than 128 joints".into()));
+        }
+    }
+    if glb.cameras().len() > 0
+        || glb.nodes().any(|n| {
+            n.extensions()
+                .is_some_and(|e| e.contains_key("KHR_lights_punctual"))
+        })
+    {
+        warnings.push(format!(
+            "{package}/{file}: cameras/lights: embedded cameras and lights are ignored"
+        ));
+    }
+    let mut triangles = 0usize;
+    for mesh in glb.meshes() {
+        for primitive in mesh.primitives() {
+            let count = primitive
+                .indices()
+                .map(|a| a.count())
+                .or_else(|| primitive.get(&gltf::Semantic::Positions).map(|a| a.count()))
+                .unwrap_or(0);
+            triangles = triangles.saturating_add(match primitive.mode() {
+                gltf::mesh::Mode::Triangles => count / 3,
+                gltf::mesh::Mode::TriangleStrip | gltf::mesh::Mode::TriangleFan => {
+                    count.saturating_sub(2)
+                }
+                _ => 0,
+            });
+        }
+    }
+    if triangles > MODEL_LIMITS.triangles {
+        return Err(fail(
+            "triangles",
+            format!("model has {triangles} triangles; limit is 100000"),
+        ));
+    }
+    let mut min = [f32::INFINITY; 3];
+    let mut max = [f32::NEG_INFINITY; 3];
+    let scenes: Vec<_> = glb
+        .default_scene()
+        .into_iter()
+        .chain(if glb.default_scene().is_none() {
+            glb.scenes().collect()
+        } else {
+            Vec::new()
+        })
+        .collect();
+    for scene in scenes {
+        for node in scene.nodes() {
+            bounds(node, identity(), blob, &mut min, &mut max, 0).map_err(|e| fail("bounds", e))?;
+        }
+    }
+    if !min.into_iter().chain(max).all(f32::is_finite) {
+        return Err(fail(
+            "bounds",
+            "model has no finite visible geometry".into(),
+        ));
+    }
+    Ok(ModelInfo {
+        triangles,
+        min,
+        max,
+        materials: glb
+            .materials()
+            .filter_map(|m| m.name().map(str::to_owned))
+            .collect(),
+        nodes: glb
+            .nodes()
+            .filter_map(|n| n.name().map(str::to_owned))
+            .collect(),
+        warnings,
+    })
+}
+fn identity() -> [[f32; 4]; 4] {
+    [
+        [1., 0., 0., 0.],
+        [0., 1., 0., 0.],
+        [0., 0., 1., 0.],
+        [0., 0., 0., 1.],
+    ]
+}
+fn multiply(a: [[f32; 4]; 4], b: [[f32; 4]; 4]) -> [[f32; 4]; 4] {
+    let mut c = [[0.; 4]; 4];
+    for col in 0..4 {
+        for row in 0..4 {
+            c[col][row] = (0..4).map(|k| a[k][row] * b[col][k]).sum();
+        }
+    }
+    c
+}
+fn bounds(
+    node: gltf::Node<'_>,
+    parent: [[f32; 4]; 4],
+    blob: &[u8],
+    min: &mut [f32; 3],
+    max: &mut [f32; 3],
+    depth: usize,
+) -> Result<(), String> {
+    if depth > 128 {
+        return Err("model node hierarchy exceeds 128 levels".into());
+    }
+    let transform = multiply(parent, node.transform().matrix());
+    if let Some(mesh) = node.mesh() {
+        for primitive in mesh.primitives() {
+            let reader = primitive.reader(|_| Some(blob));
+            let positions = reader
+                .read_positions()
+                .ok_or("mesh needs readable POSITION data")?;
+            for p in positions {
+                for axis in 0..3 {
+                    let v = transform[0][axis] * p[0]
+                        + transform[1][axis] * p[1]
+                        + transform[2][axis] * p[2]
+                        + transform[3][axis];
+                    if !v.is_finite() {
+                        return Err("non-finite model position".into());
+                    }
+                    min[axis] = min[axis].min(v);
+                    max[axis] = max[axis].max(v);
+                }
+            }
+        }
+    }
+    for child in node.children() {
+        bounds(child, transform, blob, min, max, depth + 1)?;
+    }
+    Ok(())
+}
+fn check_name(
+    package: &str,
+    file: &str,
+    field: &str,
+    name: &Option<String>,
+    names: &[String],
+) -> Result<(), ModError> {
+    if let Some(name) = name {
+        if !names.contains(name) {
+            let hint = names
+                .iter()
+                .min_by_key(|n| edit_distance(name, n))
+                .map_or(String::new(), |n| format!("; did you mean `{n}`?"));
+            return Err(error(
+                package,
+                file,
+                field,
+                format!("unknown name `{name}`{hint}; names: {}", names.join(", ")),
+            ));
+        }
+    }
+    Ok(())
+}
+fn edit_distance(a: &str, b: &str) -> usize {
+    let mut row: Vec<_> = (0..=b.chars().count()).collect();
+    for (i, ac) in a.chars().enumerate() {
+        let mut prev = row[0];
+        row[0] = i + 1;
+        for (j, bc) in b.chars().enumerate() {
+            let old = row[j + 1];
+            row[j + 1] = (row[j] + 1).min(old + 1).min(prev + usize::from(ac != bc));
+            prev = old;
+        }
+    }
+    row[b.chars().count()]
+}
+
+/// Model checks are client/pack checks. The server never needs visual geometry.
+pub fn validate_models(archive: &PackageArchive) -> Result<Vec<String>, ModError> {
+    let package = &archive.id().0;
+    let mut images = std::collections::BTreeSet::new();
+    let mut models = BTreeMap::new();
+    let mut total = 0usize;
+    for (file, assets) in archive.assets()? {
+        for image in assets.images {
+            images.insert(format!("{package}:{}", image.id));
+        }
+        for asset in assets.models {
+            if models.contains_key(&asset.id) {
+                return Err(error(
+                    package,
+                    &file,
+                    "models.id",
+                    format!("duplicate model asset `{}`", asset.id),
+                ));
+            }
+            if !asset.path.ends_with(".glb") {
+                return Err(error(
+                    package,
+                    &file,
+                    "models.path",
+                    "model files must use .glb",
+                ));
+            }
+            let bytes = archive.file(&asset.path).ok_or_else(|| {
+                error(
+                    package,
+                    &file,
+                    "models.path",
+                    format!("missing model `{}`", asset.path),
+                )
+            })?;
+            total = total.saturating_add(bytes.len());
+            if total > MODEL_LIMITS.package_bytes {
+                return Err(error(
+                    package,
+                    &file,
+                    "models.bytes",
+                    "all models exceed 512 MiB",
+                ));
+            }
+            models.insert(asset.id.clone(), inspect_glb(package, &asset.path, bytes)?);
+        }
+    }
+    for (file, map) in archive.maps()? {
+        if let Some(ground) = map.ground {
+            if !ground.tile_size.is_finite() || ground.tile_size <= 0.0 {
+                return Err(error(
+                    package,
+                    &file,
+                    "ground.tile_size",
+                    "tile size must be finite and positive",
+                ));
+            }
+            for image in std::iter::once(&ground.base_colour).chain(ground.normal.iter()) {
+                if !images.contains(image) {
+                    return Err(error(
+                        package,
+                        &file,
+                        "ground",
+                        format!("unknown ground image `{image}`"),
+                    ));
+                }
+            }
+        }
+    }
+    let content = archive.content()?;
+    let mut warnings = Vec::new();
+    for (file, visual) in archive.visuals_unchecked()? {
+        let Some(model) = visual.model else { continue };
+        let radius = match &visual.target {
+            VisualTarget::Unit(id) => content
+                .units
+                .iter()
+                .find(|(k, _)| k.to_string() == *id)
+                .map(|(_, u)| match u.footprint {
+                    Footprint::Circle { radius } => radius,
+                }),
+            VisualTarget::Node(id) => content
+                .nodes
+                .iter()
+                .find(|(k, _)| k.to_string() == *id)
+                .map(|(_, n)| n.radius),
+        }
+        .ok_or_else(|| {
+            error(
+                package,
+                &file,
+                "target",
+                "model target does not exist in this package",
+            )
+        })?;
+        validate_visual_model(package, &file, &model, radius, &models, &mut warnings)?;
+    }
+    for info in models.values() {
+        warnings.extend(info.warnings.iter().cloned());
+    }
+    Ok(warnings)
+}
+fn validate_visual_model(
+    package: &str,
+    file: &str,
+    model: &ModelDef,
+    radius: f32,
+    models: &BTreeMap<String, ModelInfo>,
+    warnings: &mut Vec<String>,
+) -> Result<(), ModError> {
+    if !model.scale.is_finite() || model.scale <= 0.0 {
+        return Err(error(
+            package,
+            file,
+            "model.scale",
+            "scale must be finite and positive",
+        ));
+    }
+    let mut threshold = 1.0;
+    let mut triangles = usize::MAX;
+    for (level, asset, below) in std::iter::once((0, model.asset.as_str(), None)).chain(
+        model
+            .lods
+            .iter()
+            .enumerate()
+            .map(|(i, l)| (i + 1, l.asset.as_str(), Some(l.below_screen_height))),
+    ) {
+        let local = asset.strip_prefix(&format!("{package}:")).unwrap_or(asset);
+        let info = models.get(local).ok_or_else(|| {
+            error(
+                package,
+                file,
+                "model.asset",
+                format!("unknown model asset `{asset}`"),
+            )
+        })?;
+        if let Some(below) = below {
+            if !below.is_finite() || below <= 0.0 || below >= threshold {
+                return Err(error(
+                    package,
+                    file,
+                    "model.lods.below_screen_height",
+                    "LOD thresholds must be positive, below 1, and strictly decrease",
+                ));
+            }
+            threshold = below;
+        }
+        if info.triangles > triangles {
+            return Err(error(
+                package,
+                file,
+                "model.lods",
+                "a LOD has more triangles than its preceding level",
+            ));
+        }
+        triangles = info.triangles;
+        check_name(
+            package,
+            file,
+            "model.team_material",
+            &model.team_material,
+            &info.materials,
+        )?;
+        check_name(
+            package,
+            file,
+            "model.turret_node",
+            &model.turret_node,
+            &info.nodes,
+        )?;
+        check_name(
+            package,
+            file,
+            "model.muzzle_node",
+            &model.muzzle_node,
+            &info.nodes,
+        )?;
+        let x = info.min[0].abs().max(info.max[0].abs()) * model.scale;
+        let z = info.min[2].abs().max(info.max[2].abs()) * model.scale;
+        let ratio = x.hypot(z) / radius;
+        if !(0.5..=1.5).contains(&ratio) {
+            return Err(error(
+                package,
+                file,
+                "model.bounds",
+                format!(
+                    "LOD {level} scaled XZ radius is {ratio:.3} times the footprint radius; expected 0.5 to 1.5"
+                ),
+            ));
+        }
+        if ratio > 1.2 {
+            warnings.push(format!("{package}/{file}: model.bounds: LOD {level} radius is {ratio:.3} times the footprint"));
+        }
+        if (info.min[1] * model.scale).abs() > 0.05 {
+            return Err(error(
+                package,
+                file,
+                "model.pivot",
+                format!("LOD {level} lowest scaled point must be within 0.05 of ground"),
+            ));
+        }
+        if level == 0 && info.triangles > 20_000 && model.lods.is_empty() {
+            warnings.push(format!(
+                "{package}/{file}: model.lods: model above 20000 triangles has no LOD"
+            ));
+        }
+    }
+    Ok(())
+}

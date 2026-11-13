@@ -480,8 +480,19 @@ type SceneWidgetQuery<'w, 's> = Query<
 >;
 
 fn publish_scene(
-    units: Query<(&SceneUnit, &GlobalTransform), With<Mesh3d>>,
-    nodes: Query<(&SceneNode, &GlobalTransform), With<Mesh3d>>,
+    model_instances: Query<(
+        Option<&SceneUnit>,
+        Option<&SceneNode>,
+        &turts_client::models::ModelInstance,
+    )>,
+    units: Query<
+        (&SceneUnit, &GlobalTransform),
+        Or<(With<Mesh3d>, With<turts_client::models::ModelInstance>)>,
+    >,
+    nodes: Query<
+        (&SceneNode, &GlobalTransform),
+        Or<(With<Mesh3d>, With<turts_client::models::ModelInstance>)>,
+    >,
     cameras: Query<(Entity, &Camera, &GlobalTransform, &RenderTarget), With<Camera3d>>,
     windows: Query<(Entity, &Window), With<PrimaryWindow>>,
     widgets: SceneWidgetQuery<'_, '_>,
@@ -631,6 +642,9 @@ fn publish_scene(
         })
         .collect::<Vec<_>>();
     widget_rects.sort_by(|left, right| left["id"].as_str().cmp(&right["id"].as_str()));
+    scene["models"] = serde_json::Value::Array(model_instances.iter().map(|(unit,node,instance)|serde_json::json!({
+        "unit_id":unit.map(|u|u.0),"node_id":node.map(|n|n.0),"asset":instance.asset,"level":instance.level,"quality":instance.quality
+    })).collect());
     scene["widgets"] = serde_json::Value::Array(widget_rects);
     *SCENE.lock().unwrap() = scene.to_string();
 }

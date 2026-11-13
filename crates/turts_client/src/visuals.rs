@@ -301,6 +301,7 @@ fn prepare_assets(
 fn draw_world_visuals(
     mut commands: Commands,
     inputs: VisualInputs,
+    model_state: Option<Res<crate::models::ModelState>>,
     window: Query<&Window, With<PrimaryWindow>>,
     cameras: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
     mut gizmos: Gizmos,
@@ -390,6 +391,7 @@ fn draw_world_visuals(
         &presented,
         content,
         replica,
+        model_state.as_deref(),
         &mut visuals,
         now,
     );

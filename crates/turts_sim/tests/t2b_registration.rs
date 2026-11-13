@@ -63,6 +63,7 @@ fn placement(unit: &str, owner_slot: u8, x: f32, y: f32) -> Placement {
 
 fn map_def(size: f32, placements: Vec<Placement>) -> MapDef {
     MapDef {
+        ground: None,
         id: "field".to_string(),
         size: MapSize { x: size, y: size },
         placements,

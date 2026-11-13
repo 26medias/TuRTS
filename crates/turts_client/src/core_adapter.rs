@@ -267,6 +267,7 @@ struct ContentIndex {
 }
 
 struct FrameWorld {
+    model_yaws: HashMap<u32, f32>,
     facings: HashMap<u32, turts_net_protocol::Facing>,
     units: Vec<UnitView>,
     nodes: Vec<NodeView>,
@@ -292,7 +293,10 @@ impl WorldView for FrameWorld {
                 .to_euler(EulerRot::YXZ)
                 .0
         });
-        Some((shape, yaw))
+        Some((
+            shape,
+            self.model_yaws.get(&unit.id.0).copied().unwrap_or(yaw),
+        ))
     }
     fn node_pick_shape(&self, node: &NodeView) -> Option<&turts_mod_api::Shape> {
         self.index.nodes.get(&node.content_id)?.shape.as_ref()
@@ -429,7 +433,11 @@ fn content_index(state: &ReplicaState, acquired: Option<&AcquiredPackages>) -> C
             (
                 id.to_string(),
                 DenseUnit {
-                    shape: content.shapes.get(&id.to_string()).cloned(),
+                    shape: content
+                        .model_pick_shapes
+                        .get(&id.to_string())
+                        .or_else(|| content.shapes.get(&id.to_string()))
+                        .cloned(),
                     index: index as u32,
                     footprint_radius: radius,
                     capabilities,
@@ -449,7 +457,11 @@ fn content_index(state: &ReplicaState, acquired: Option<&AcquiredPackages>) -> C
                 (
                     id.to_string(),
                     DenseNode {
-                        shape: content.shapes.get(&id.to_string()).cloned(),
+                        shape: content
+                            .model_pick_shapes
+                            .get(&id.to_string())
+                            .or_else(|| content.shapes.get(&id.to_string()))
+                            .cloned(),
                         index: index as u32,
                         radius: node.radius,
                         item: *item,
@@ -562,6 +574,7 @@ fn frame_world(
         })
         .collect();
     Some(FrameWorld {
+        model_yaws: HashMap::new(),
         facings: replica
             .units
             .iter()
@@ -732,6 +745,7 @@ fn minimap_at(
 
 #[derive(SystemParam)]
 struct AdapterInputs<'w, 's> {
+    model_state: Option<Res<'w, crate::models::ModelState>>,
     windows: Query<
         'w,
         's,
@@ -798,7 +812,7 @@ fn drive_core_adapter(
     {
         camera_configuration.options.authored = content.camera.clone();
     }
-    let Some(world) = frame_world(
+    let Some(mut world) = frame_world(
         &state,
         acquired.as_deref(),
         &presented,
@@ -809,6 +823,9 @@ fn drive_core_adapter(
     ) else {
         return;
     };
+    if let Some(models) = input.model_state.as_deref() {
+        world.model_yaws = models.yaws();
+    }
     if runtime.core.is_none() {
         if !state
             .replica

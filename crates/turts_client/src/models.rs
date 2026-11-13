@@ -1,0 +1,628 @@
+//! Package-owned glTF bytes, shared render assets, client quality, LOD and facing.
+use crate::{
+    ingest::ReplicaState,
+    join::AcquiredPackages,
+    present::Presented,
+    render::{PresentedNode, PresentedUnit, SlotMaterials},
+};
+use bevy::{
+    asset::{
+        AssetApp, AssetId,
+        io::{
+            AssetSourceBuilder,
+            memory::{Dir, MemoryAssetReader},
+        },
+    },
+    gltf::{Gltf, GltfLoaderSettings, GltfMaterial, GltfMesh, GltfNode},
+    prelude::*,
+};
+use std::{collections::HashMap, path::Path};
+
+#[derive(Resource, Clone, Default)]
+pub struct PackageModelSource(Dir);
+/// Register before AssetPlugin. No package model is ever resolved through an HTTP reader.
+pub fn register_model_source(app: &mut App) {
+    #[cfg(target_family = "wasm")]
+    if let Some(delay) = web_sys::window()
+        .and_then(|w| w.location().search().ok())
+        .and_then(|q| {
+            q.trim_start_matches('?').split('&').find_map(|v| {
+                v.strip_prefix("test_model_delay_ms=")
+                    .and_then(|v| v.parse::<u64>().ok())
+            })
+        })
+    {
+        app.insert_resource(ModelState {
+            ready_delay_ms: delay.min(10000),
+            ..Default::default()
+        });
+    }
+    let dir = Dir::default();
+    let reader = dir.clone();
+    app.register_asset_source(
+        "package",
+        AssetSourceBuilder::new(move || {
+            Box::new(MemoryAssetReader {
+                root: reader.clone(),
+            })
+        }),
+    );
+    app.insert_resource(PackageModelSource(dir));
+}
+#[derive(
+    Clone, Copy, Debug, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize,
+)]
+#[serde(rename_all = "lowercase")]
+pub enum Quality {
+    Low,
+    Medium,
+    #[default]
+    High,
+}
+impl Quality {
+    pub fn next(self) -> Self {
+        match self {
+            Self::Low => Self::Medium,
+            Self::Medium => Self::High,
+            Self::High => Self::Low,
+        }
+    }
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Low => "Low",
+            Self::Medium => "Medium",
+            Self::High => "High",
+        }
+    }
+    fn texture_limit(self) -> u32 {
+        match self {
+            Self::Low => 512,
+            Self::Medium => 1024,
+            Self::High => 4096,
+        }
+    }
+    fn lod_bias(self) -> f32 {
+        match self {
+            Self::Low => 0.5,
+            Self::Medium => 0.75,
+            Self::High => 1.0,
+        }
+    }
+}
+#[derive(Resource, Default, Clone, Copy)]
+pub struct GraphicsSettings {
+    pub quality: Quality,
+}
+#[derive(Clone)]
+struct Primitive {
+    mesh: Handle<Mesh>,
+    material: Handle<GltfMaterial>,
+    transform: Transform,
+}
+#[derive(Component)]
+pub struct ModelInstance {
+    pub asset: String,
+    pub level: usize,
+    pub quality: Quality,
+    children: Vec<Entity>,
+}
+#[derive(Resource, Default)]
+pub struct ModelState {
+    handles: HashMap<String, Handle<Gltf>>,
+    templates: HashMap<String, Vec<Primitive>>,
+    materials: HashMap<(AssetId<GltfMaterial>, Option<u8>, Quality), Handle<StandardMaterial>>,
+    images: HashMap<(AssetId<Image>, Quality), Handle<Image>>,
+    facing: HashMap<u32, (Vec2, f32)>,
+    /// Test driver may delay readiness. It never changes authoritative state.
+    pub ready_delay_ms: u64,
+    first_ready: HashMap<String, f64>,
+}
+impl ModelState {
+    pub fn yaw(&self, id: u32) -> Option<f32> {
+        self.facing.get(&id).map(|(_, yaw)| *yaw)
+    }
+    pub fn yaws(&self) -> HashMap<u32, f32> {
+        self.facing
+            .iter()
+            .map(|(id, (_, yaw))| (*id, *yaw))
+            .collect()
+    }
+}
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct ModelSources<'w> {
+    acquired: Option<Res<'w, AcquiredPackages>>,
+    source: Option<Res<'w, PackageModelSource>>,
+    server: Res<'w, AssetServer>,
+    gltfs: Res<'w, Assets<Gltf>>,
+    meshes: Res<'w, Assets<GltfMesh>>,
+    nodes: Res<'w, Assets<GltfNode>>,
+    materials: Res<'w, Assets<GltfMaterial>>,
+    palette: Res<'w, SlotMaterials>,
+    replica: Res<'w, ReplicaState>,
+    presented: Res<'w, Presented>,
+    time: Res<'w, Time>,
+    settings: Res<'w, GraphicsSettings>,
+}
+fn flatten(
+    handle: &Handle<GltfNode>,
+    parent: Transform,
+    nodes: &Assets<GltfNode>,
+    meshes: &Assets<GltfMesh>,
+    out: &mut Vec<Primitive>,
+) -> Option<()> {
+    let node = nodes.get(handle)?;
+    let transform = parent.mul_transform(node.transform);
+    if let Some(mesh) = &node.mesh {
+        for p in &meshes.get(mesh)?.primitives {
+            out.push(Primitive {
+                mesh: p.mesh.clone(),
+                material: p.material.clone().unwrap_or_default(),
+                transform,
+            });
+        }
+    }
+    for child in &node.children {
+        flatten(child, transform, nodes, meshes, out)?;
+    }
+    Some(())
+}
+/// Select by projected model height. The previous level adds hysteresis around each threshold.
+pub fn select_lod(
+    model: &turts_mod_api::ModelDef,
+    screen_height: f32,
+    quality: Quality,
+    previous: usize,
+) -> usize {
+    let height = screen_height * quality.lod_bias();
+    let mut level = 0;
+    for (i, lod) in model.lods.iter().enumerate() {
+        let hysteresis = if previous > i { 1.08 } else { 0.92 };
+        if height < lod.below_screen_height * hysteresis {
+            level = i + 1;
+        }
+    }
+    level
+}
+/// Rate-limited visual yaw (+Z forward), independent of server movement and combat.
+pub fn turn_toward(yaw: f32, direction: Vec2, dt: f32) -> f32 {
+    if direction.length_squared() < 1e-8 {
+        return yaw;
+    }
+    let target = direction.x.atan2(direction.y);
+    let delta = (target - yaw + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU)
+        - std::f32::consts::PI;
+    yaw + delta.clamp(
+        -std::f32::consts::TAU / 0.4 * dt,
+        std::f32::consts::TAU / 0.4 * dt,
+    )
+}
+fn limited_texture(
+    handle: &Handle<Image>,
+    quality: Quality,
+    images: &mut Assets<Image>,
+    cache: &mut HashMap<(AssetId<Image>, Quality), Handle<Image>>,
+) -> Handle<Image> {
+    if let Some(result) = cache.get(&(handle.id(), quality)) {
+        return result.clone();
+    }
+    let Some(source) = images.get(handle) else {
+        return handle.clone();
+    };
+    let limit = quality.texture_limit();
+    if source.width() <= limit && source.height() <= limit {
+        let mut result = source.clone();
+        result.asset_usage = bevy::asset::RenderAssetUsages::default();
+        let result = images.add(result);
+        cache.insert((handle.id(), quality), result.clone());
+        return result;
+    }
+    let Ok(dynamic) = source.clone().try_into_dynamic() else {
+        return handle.clone();
+    };
+    let scaled = dynamic.resize(limit, limit, image::imageops::FilterType::Triangle);
+    let mut result = Image::from_dynamic(
+        scaled,
+        source.texture_descriptor.format.is_srgb(),
+        bevy::asset::RenderAssetUsages::default(),
+    );
+    result.sampler = source.sampler.clone();
+    let result = images.add(result);
+    cache.insert((handle.id(), quality), result.clone());
+    result
+}
+
+/// Models replace the fallback atomically after their dependent meshes and textures are ready.
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
+pub fn sync_models(
+    mut commands: Commands,
+    sources: ModelSources,
+    mut state: ResMut<ModelState>,
+    mut material_assets: ResMut<Assets<StandardMaterial>>,
+    mut images: ResMut<Assets<Image>>,
+    cameras: Query<(&Camera, &GlobalTransform)>,
+    mut shown: Query<
+        (
+            Entity,
+            Option<&PresentedUnit>,
+            Option<&PresentedNode>,
+            &mut Transform,
+            Option<&ModelInstance>,
+        ),
+        Or<(With<PresentedUnit>, With<PresentedNode>)>,
+    >,
+) {
+    let Some(acquired) = sources.acquired.as_deref() else {
+        return;
+    };
+    let Some(source) = sources.source.as_deref() else {
+        return;
+    };
+    let presentation = &acquired.0.presentation;
+    if presentation.models.is_empty() {
+        return;
+    }
+    for (id, bytes) in &presentation.models {
+        if !state.handles.contains_key(id) {
+            let path = format!("{}.glb", id.replace(':', "/"));
+            source.0.insert_asset(Path::new(&path), bytes.clone());
+            let handle = sources
+                .server
+                .load_builder()
+                .with_settings(|settings: &mut GltfLoaderSettings| {
+                    settings.include_source = true;
+                    settings.load_animations = false;
+                    settings.load_materials = bevy::asset::RenderAssetUsages::MAIN_WORLD;
+                })
+                .load(format!("package://{path}"));
+            state.handles.insert(id.clone(), handle);
+        }
+    }
+    let now = sources.time.elapsed_secs_f64();
+    let handles: Vec<_> = state
+        .handles
+        .iter()
+        .map(|(id, h)| (id.clone(), h.clone()))
+        .collect();
+    for (id, handle) in handles {
+        if state.templates.contains_key(&id) || !sources.server.is_loaded_with_dependencies(&handle)
+        {
+            continue;
+        }
+        let delay = state.ready_delay_ms as f64 / 1000.;
+        let ready = *state.first_ready.entry(id.clone()).or_insert(now);
+        if now - ready < delay {
+            continue;
+        }
+        let Some(gltf) = sources.gltfs.get(&handle) else {
+            continue;
+        };
+        let Some(document) = gltf.source.as_ref() else {
+            continue;
+        };
+        let mut primitives = Vec::new();
+        let mut complete = true;
+        let scenes: Vec<_> = document
+            .default_scene()
+            .into_iter()
+            .chain(if document.default_scene().is_none() {
+                document.scenes().collect()
+            } else {
+                Vec::new()
+            })
+            .collect();
+        for scene in scenes {
+            for node in scene.nodes() {
+                if flatten(
+                    &gltf.nodes[node.index()],
+                    Transform::IDENTITY,
+                    &sources.nodes,
+                    &sources.meshes,
+                    &mut primitives,
+                )
+                .is_none()
+                {
+                    complete = false;
+                }
+            }
+        }
+        if complete && !primitives.is_empty() {
+            state.templates.insert(id, primitives);
+        }
+    }
+    let quality = sources.settings.quality;
+    for (entity, unit, node, mut transform, instance) in &mut shown {
+        let (id, content, pos, owner) = if let Some(unit) = unit {
+            let Some(replica) = sources
+                .replica
+                .replica
+                .as_ref()
+                .and_then(|r| r.units.get(&unit.0))
+            else {
+                continue;
+            };
+            let Some(presented) = sources.presented.units.iter().find(|p| p.unit_id == unit.0)
+            else {
+                continue;
+            };
+            (
+                unit.0,
+                replica.content_id.as_str(),
+                Vec2::new(presented.pos.x, presented.pos.y),
+                Some(replica.owner_slot),
+            )
+        } else if let Some(node) = node {
+            let Some(node) = sources
+                .replica
+                .replica
+                .as_ref()
+                .and_then(|r| r.nodes.values().find(|n| n.id.0 == node.0))
+            else {
+                continue;
+            };
+            (
+                node.id.0,
+                node.content_id.as_str(),
+                Vec2::new(node.pos.x, node.pos.y),
+                None,
+            )
+        } else {
+            continue;
+        };
+        let Some(model) = presentation.model_visuals.get(content) else {
+            continue;
+        };
+        let Some((min, max)) = presentation.model_bounds.get(&model.asset) else {
+            continue;
+        };
+        let height = (max[1] - min[1]) * model.scale;
+        let screen_height = cameras
+            .iter()
+            .next()
+            .and_then(|(camera, global)| {
+                let a = camera
+                    .world_to_viewport(global, Vec3::new(pos.x, 0., pos.y))
+                    .ok()?;
+                let b = camera
+                    .world_to_viewport(global, Vec3::new(pos.x, height, pos.y))
+                    .ok()?;
+                Some((a.y - b.y).abs() / camera.logical_viewport_size()?.y)
+            })
+            .unwrap_or(1.0);
+        let level = select_lod(
+            model,
+            screen_height,
+            quality,
+            instance.map_or(0, |i| i.level),
+        );
+        let wanted = if level == 0 {
+            &model.asset
+        } else {
+            &model.lods[level - 1].asset
+        };
+        // Keep the shown level until the requested level is ready.
+        let asset = if state.templates.contains_key(wanted) {
+            wanted
+        } else if instance.is_some() {
+            &instance.unwrap().asset
+        } else {
+            continue;
+        };
+        let Some(primitives) = state.templates.get(asset).cloned() else {
+            continue;
+        };
+        if instance.is_none_or(|i| i.asset != *asset || i.quality != quality) {
+            let handle = &state.handles[asset];
+            let Some(gltf) = sources.gltfs.get(handle) else {
+                continue;
+            };
+            let team = model
+                .team_material
+                .as_ref()
+                .and_then(|name| gltf.named_materials.get(name.as_str()))
+                .map(|h| h.id());
+            let mut children = Vec::new();
+            for primitive in primitives {
+                let slot = if team == Some(primitive.material.id()) {
+                    owner
+                } else {
+                    None
+                };
+                let key = (primitive.material.id(), slot, quality);
+                let material = if let Some(handle) = state.materials.get(&key) {
+                    handle.clone()
+                } else {
+                    let raw = sources
+                        .materials
+                        .get(&primitive.material)
+                        .cloned()
+                        .unwrap_or_default();
+                    let mut material = bevy::pbr::gltf::standard_material_from_gltf_material(&raw);
+                    if let Some(slot) = slot
+                        .and_then(|slot| sources.palette.0.get(slot as usize))
+                        .and_then(|h| material_assets.get(h))
+                    {
+                        material.base_color = slot.base_color;
+                    }
+                    for texture in [
+                        &mut material.base_color_texture,
+                        &mut material.normal_map_texture,
+                        &mut material.metallic_roughness_texture,
+                        &mut material.occlusion_texture,
+                        &mut material.emissive_texture,
+                    ] {
+                        if let Some(h) = texture.as_mut() {
+                            *h = limited_texture(h, quality, &mut images, &mut state.images);
+                        }
+                    }
+                    let handle = material_assets.add(material);
+                    state.materials.insert(key, handle.clone());
+                    handle
+                };
+                let mut local = primitive.transform;
+                local.translation *= model.scale;
+                local.scale *= model.scale;
+                local.translation.y -= acquired
+                    .0
+                    .content
+                    .shapes
+                    .get(content)
+                    .map_or(0.0, crate::render::mesh_lift);
+                let child = commands
+                    .spawn((
+                        Mesh3d(primitive.mesh),
+                        MeshMaterial3d(material),
+                        local,
+                        ChildOf(entity),
+                    ))
+                    .id();
+                children.push(child);
+            }
+            if let Some(instance) = instance {
+                for child in &instance.children {
+                    commands.entity(*child).despawn();
+                }
+            }
+            commands
+                .entity(entity)
+                .remove::<Mesh3d>()
+                .remove::<MeshMaterial3d<StandardMaterial>>()
+                .insert(ModelInstance {
+                    asset: asset.clone(),
+                    level,
+                    quality,
+                    children,
+                });
+        }
+        if unit.is_some() && owner.is_some() {
+            let mobile = turts_mod_api::ContentId::parse(content)
+                .ok()
+                .and_then(|id| acquired.0.content.catalog.units.get(&id))
+                .is_some_and(|u| u.movement.is_some());
+            if mobile {
+                let initial = transform.rotation.to_euler(EulerRot::YXZ).0;
+                let (previous, yaw) = state.facing.entry(id).or_insert((pos, initial));
+                let mut direction = pos - *previous;
+                if let Some(target) = sources
+                    .replica
+                    .replica
+                    .as_ref()
+                    .and_then(|r| r.weapons.iter().find(|w| w.unit.0 == id))
+                    .and_then(|w| w.last_target)
+                    .and_then(|target| {
+                        sources
+                            .presented
+                            .units
+                            .iter()
+                            .find(|u| u.unit_id == target.0)
+                    })
+                {
+                    direction = Vec2::new(target.pos.x, target.pos.y) - pos;
+                }
+                *yaw = turn_toward(*yaw, direction, sources.time.delta_secs());
+                *previous = pos;
+                transform.rotation = Quat::from_rotation_y(*yaw);
+            }
+        }
+    }
+}
+
+/// Only packages with models opt into new lighting. Older shape-only scenes stay unchanged.
+pub fn quality_lighting(
+    acquired: Option<Res<AcquiredPackages>>,
+    settings: Res<GraphicsSettings>,
+    mut lights: Query<(&mut DirectionalLight, &mut bevy::light::CascadeShadowConfig)>,
+    mut configured: Local<bool>,
+    mut shadow_map: ResMut<bevy::light::DirectionalLightShadowMap>,
+) {
+    if acquired.is_none_or(|a| a.0.presentation.models.is_empty()) {
+        return;
+    }
+    shadow_map.size = if settings.quality == Quality::High {
+        2048
+    } else {
+        1024
+    };
+    for (mut light, mut cascade) in &mut lights {
+        light.shadow_maps_enabled = settings.quality != Quality::Low;
+        if !*configured {
+            *cascade = bevy::light::CascadeShadowConfigBuilder {
+                num_cascades: 1,
+                maximum_distance: 180.0,
+                ..Default::default()
+            }
+            .build();
+        }
+    }
+    *configured = true;
+}
+
+#[derive(Component)]
+pub struct GroundSurface {
+    pub base: Option<Handle<Image>>,
+    pub normal: Option<Handle<Image>>,
+}
+pub fn sync_ground_quality(
+    settings: Res<GraphicsSettings>,
+    ground: Query<(&GroundSurface, &MeshMaterial3d<StandardMaterial>)>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut images: ResMut<Assets<Image>>,
+    mut state: ResMut<ModelState>,
+) {
+    if !settings.is_changed() {
+        return;
+    }
+    for (source, handle) in &ground {
+        if let Some(mut material) = materials.get_mut(&handle.0) {
+            material.base_color_texture = source
+                .base
+                .as_ref()
+                .map(|h| limited_texture(h, settings.quality, &mut images, &mut state.images));
+            material.normal_map_texture = source
+                .normal
+                .as_ref()
+                .map(|h| limited_texture(h, settings.quality, &mut images, &mut state.images));
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn md5_east_and_attack_facing_reach_target_within_half_second() {
+        for target in [Vec2::X, Vec2::NEG_X, Vec2::NEG_Y] {
+            let mut yaw = 0.;
+            for _ in 0..30 {
+                yaw = turn_toward(yaw, target, 1. / 60.);
+            }
+            let forward = Vec2::new(yaw.sin(), yaw.cos());
+            assert!(
+                forward.distance(target) < 0.0001,
+                "MD5: direction {target:?}, yaw {yaw}"
+            );
+        }
+    }
+    #[test]
+    fn md7_lod_responds_to_screen_height_and_has_hysteresis() {
+        let model = turts_mod_api::ModelDef {
+            asset: "test:full".into(),
+            team_material: None,
+            turret_node: None,
+            muzzle_node: None,
+            scale: 1.,
+            animations: None,
+            lods: vec![turts_mod_api::ModelLod {
+                asset: "test:low".into(),
+                below_screen_height: 0.08,
+            }],
+        };
+        assert_eq!(select_lod(&model, 0.1, Quality::High, 1), 0, "MD7 zoom in");
+        assert_eq!(
+            select_lod(&model, 0.05, Quality::High, 0),
+            1,
+            "MD7 zoom out"
+        );
+        assert_eq!(select_lod(&model, 0.08, Quality::High, 0), 0);
+        assert_eq!(select_lod(&model, 0.08, Quality::High, 1), 1);
+    }
+}

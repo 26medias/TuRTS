@@ -546,7 +546,7 @@ raw_case!(
 raw_case!(
     v1_models,
     "models",
-    "PRES-MODELS",
+    "",
     ASSETS,
     "models",
     &[(ASSETS, "cursors: [])", "cursors: [], models: [])")]
@@ -554,7 +554,7 @@ raw_case!(
 raw_case!(
     v2_model,
     "model",
-    "PRES-MODELS",
+    "",
     VISUAL,
     "model",
     &[(VISUAL, "shape:", "model: None, shape:")]
@@ -948,9 +948,9 @@ fn a_package_with_no_new_feature_is_accepted_at_both_requirements() {
 /// that requires `^0.2.3` still accepts the engine.
 #[test]
 fn the_engine_api_is_0_2_4() {
-    assert_eq!(ENGINE_API_VERSION, "0.2.4");
+    assert_eq!(ENGINE_API_VERSION, "0.2.5");
     assert_eq!(RELEASED_ENGINE_APIS.last(), Some(&"0.2.4"));
-    assert_eq!(RELEASED_ENGINE_APIS.len(), 6);
+    assert_eq!(RELEASED_ENGINE_APIS.len(), 7);
 }
 
 /// The order rules keep their `rally` list on the way through the archive reader (the raw rules

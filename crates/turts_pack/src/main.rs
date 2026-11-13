@@ -91,7 +91,8 @@ fn main() -> ExitCode {
 fn run(dir: &Path) -> Result<(String, Vec<String>), ModError> {
     let bytes = pack_checked(dir)?;
     let archive = PackageArchive::parse(&bytes)?;
-    let warnings = layout_warnings(&archive)?;
+    let mut warnings = layout_warnings(&archive)?;
+    warnings.extend(turts_mod_runtime::models::validate_models(&archive)?);
     let file = archive_path(dir)?;
     fs::write(&file, &bytes).map_err(|error| {
         ModError::new(

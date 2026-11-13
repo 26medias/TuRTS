@@ -208,8 +208,6 @@ pub(crate) const UNBUILT_FEATURES: &[UnbuiltLine] = &[
     line("Button.font", "UI2-MC"),
     line("Button.size", "UI2-MC"),
     // PRES-MODELS: `models` (V1), `model` (V2).
-    line("models", "PRES-MODELS"),
-    line("model", "PRES-MODELS"),
 ];
 
 /// The lines that run on the server path (`presentation` false) or on the client path (true): a
@@ -329,7 +327,6 @@ mod tests {
             ("L-FX-PRES", 3),
             ("FX2", 7),
             ("UI2-MC", 2),
-            ("PRES-MODELS", 2),
         ]);
         let mut got: BTreeMap<&str, usize> = BTreeMap::new();
         for line in UNBUILT_FEATURES {
@@ -365,6 +362,8 @@ mod tests {
             "target: ContentAtPoint",
             "behaviour Construct",
             "behaviour SetRally",
+            "model",
+            "models",
             "exports.match",
             // H3: the `states` texts are data, read by nobody yet.
             "states",

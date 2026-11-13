@@ -2312,6 +2312,11 @@ fn validate_order_operation(
             ));
         }
     }
+    if order.behaviour != turts_mod_api::Behaviour::SetRally
+        && order.behaviour != turts_mod_api::Behaviour::Remove
+    {
+        expected_orders.rally = before_orders.rally;
+    }
     if after_orders != expected_orders {
         return Err(format!(
             "accepted order operation {} for unit {unit_id} produced unexpected UnitOrders: expected {expected_orders:?}, actual {after_orders:?}",
@@ -8885,6 +8890,7 @@ mod tests {
             },
         );
         let map = MapDef {
+            ground: None,
             id: "field".into(),
             size: MapSize { x: 20.0, y: 20.0 },
             placements: vec![
@@ -9108,6 +9114,7 @@ mod tests {
             source_files: BTreeMap::new(),
         };
         let map = MapDef {
+            ground: None,
             id: "field".into(),
             size: MapSize { x: 16.0, y: 16.0 },
             placements: vec![
@@ -9949,6 +9956,7 @@ mod tests {
             source_files: BTreeMap::new(),
         };
         let map = MapDef {
+            ground: None,
             id: "field".into(),
             size: MapSize { x: 20.0, y: 20.0 },
             placements: vec![Placement {
@@ -10183,6 +10191,7 @@ mod tests {
             source_files: BTreeMap::new(),
         };
         let map = MapDef {
+            ground: None,
             id: "field".into(),
             size: MapSize { x: 20.0, y: 20.0 },
             placements: vec![Placement {
@@ -10474,6 +10483,7 @@ mod tests {
             source_files: BTreeMap::new(),
         };
         let map = MapDef {
+            ground: None,
             id: "field".into(),
             size: MapSize { x: 20.0, y: 20.0 },
             placements: vec![Placement {
@@ -10684,6 +10694,7 @@ mod tests {
             source_files: BTreeMap::new(),
         };
         let map = MapDef {
+            ground: None,
             id: "field".into(),
             size: MapSize { x: 20.0, y: 20.0 },
             placements: vec![Placement {
@@ -10881,6 +10892,7 @@ mod tests {
             source_files: BTreeMap::new(),
         };
         let map = MapDef {
+            ground: None,
             id: "field".into(),
             size: MapSize { x: 20.0, y: 20.0 },
             placements: vec![
@@ -13646,6 +13658,7 @@ mod tests {
             source_files: BTreeMap::new(),
         };
         let map = MapDef {
+            ground: None,
             id: "mixed-follow".into(),
             size: MapSize { x: 16.0, y: 16.0 },
             placements: vec![

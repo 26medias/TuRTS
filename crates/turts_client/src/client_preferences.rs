@@ -18,6 +18,7 @@ pub(crate) enum StoredHealthMode {
 #[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(default)]
 pub(crate) struct ControlSettings {
+    pub quality: crate::models::Quality,
     pub scroll_speed: f32,
     pub edge_scroll: bool,
     pub ui_scale: f32,
@@ -35,6 +36,7 @@ impl Default for ControlSettings {
     fn default() -> Self {
         let settings = ClientSettings::default();
         Self {
+            quality: settings.quality,
             scroll_speed: settings.scroll_speed,
             edge_scroll: settings.edge_scroll,
             ui_scale: settings.ui_scale,
@@ -70,6 +72,7 @@ impl ControlSettings {
     ) {
         if let Some(settings) = settings {
             *settings = ClientSettings {
+                quality: self.quality,
                 scroll_speed: self.scroll_speed,
                 edge_scroll: self.edge_scroll,
                 ui_scale: self.ui_scale,
@@ -100,6 +103,7 @@ impl ControlSettings {
     ) -> Self {
         let mut value = fallback.unwrap_or_default();
         if let Some(settings) = settings {
+            value.quality = settings.quality;
             value.scroll_speed = settings.scroll_speed;
             value.edge_scroll = settings.edge_scroll;
             value.ui_scale = settings.ui_scale;

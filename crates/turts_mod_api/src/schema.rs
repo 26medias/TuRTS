@@ -723,6 +723,9 @@ pub struct SlotEconomyInit {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct MapDef {
+    /// Optional ground presentation. It never participates in simulation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ground: Option<GroundDef>,
     pub id: String,
     pub size: MapSize,
     pub placements: Vec<Placement>,
@@ -772,9 +775,15 @@ pub struct VisualDef {
 }
 
 /// API 0.2.4, row V2: a 3D model for a visual. The three names default to `None`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ModelDef {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub lods: Vec<ModelLod>,
+    #[serde(default = "model_scale")]
+    pub scale: f32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub animations: Option<ModelAnimations>,
     pub asset: ContentRef,
     #[serde(default)]
     pub team_material: Option<String>,
@@ -782,6 +791,37 @@ pub struct ModelDef {
     pub turret_node: Option<String>,
     #[serde(default)]
     pub muzzle_node: Option<String>,
+}
+
+fn model_scale() -> f32 {
+    1.0
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ModelLod {
+    pub asset: ContentRef,
+    pub below_screen_height: f32,
+}
+
+/// Named clips reserved for stage 2. Stage 1 preserves these data and draws the bind pose.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(default, deny_unknown_fields)]
+pub struct ModelAnimations {
+    pub idle: Option<String>,
+    pub r#move: Option<String>,
+    pub attack: Option<String>,
+    pub death: Option<String>,
+    pub work: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GroundDef {
+    pub base_colour: ContentRef,
+    #[serde(default)]
+    pub normal: Option<ContentRef>,
+    pub tile_size: f32,
 }
 
 /// API 0.2.4, row V4: the effects of a unit visual, each a reference to an effect of the

@@ -50,7 +50,12 @@ fn note_entity(world: &mut World, entity: Entity) {
 }
 
 /// Replace the orders of a unit (insert them when the unit has none).
-pub(crate) fn set_unit_orders(world: &mut World, entity: Entity, new: UnitOrders) {
+pub(crate) fn set_unit_orders(world: &mut World, entity: Entity, mut new: UnitOrders) {
+    if new.rally.is_none() {
+        new.rally = world
+            .get::<UnitOrders>(entity)
+            .and_then(|orders| orders.rally);
+    }
     world.entity_mut(entity).insert(new);
     note_entity(world, entity);
 }
@@ -73,8 +78,22 @@ pub(crate) fn edit_unit_orders<R>(
 
 /// Remove the orders of a unit.
 pub(crate) fn clear_unit_orders(world: &mut World, entity: Entity) {
-    world.entity_mut(entity).remove::<UnitOrders>();
-    note_entity(world, entity);
+    if let Some(rally) = world
+        .get::<UnitOrders>(entity)
+        .and_then(|orders| orders.rally)
+    {
+        set_unit_orders(
+            world,
+            entity,
+            UnitOrders {
+                rally: Some(rally),
+                ..Default::default()
+            },
+        );
+    } else {
+        world.entity_mut(entity).remove::<UnitOrders>();
+        note_entity(world, entity);
+    }
 }
 
 /// Give a new unit empty orders. The unit is spawned in this tick, so the publish step sends its

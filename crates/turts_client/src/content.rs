@@ -6,6 +6,7 @@ use turts_mod_runtime::{archive::PackageArchive, visuals::visuals_by_content};
 pub struct ClientContent {
     pub catalog: ContentCatalog,
     pub shapes: HashMap<String, Shape>,
+    pub model_pick_shapes: HashMap<String, Shape>,
     pub input_map: InputMapDef,
     pub order_rules: OrderRulesDef,
     pub selection_priority: Vec<String>,
@@ -26,6 +27,7 @@ impl Default for ClientContent {
                 source_files: Default::default(),
             },
             shapes: HashMap::new(),
+            model_pick_shapes: HashMap::new(),
             input_map: InputMapDef {
                 actions: Vec::new(),
                 engine_overrides: Vec::new(),
@@ -159,6 +161,7 @@ impl ClientContent {
         Ok(Self {
             catalog,
             shapes,
+            model_pick_shapes: HashMap::new(),
             input_map,
             order_rules,
             selection_priority,
