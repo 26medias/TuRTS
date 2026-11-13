@@ -6,7 +6,7 @@ Work stays on `mp1/integration`. The user owns every merge and push of `main`.
 ## The player goal
 
 Open the browser. Build a base. Harvest resources. Train troops. Fight an enemy.
-The match ends with a clear win or loss. Restart from the result screen.
+The match ends with a clear win or loss.
 
 The default first opponent is a computer enemy. The user can choose two humans instead.
 This choice does not block construction, feedback, or match results.
@@ -19,7 +19,7 @@ This choice does not block construction, feedback, or match results.
 3. Connect construction to the existing harvest, production, and combat systems.
    Use the declared mod capabilities and shared placement rules. Keep the server authoritative.
    Build one small map with one resource, a base, a production building, a worker, and a combat unit.
-4. Add match defeat and victory. Show the result and a restart control.
+4. Add match defeat and victory. Show the result.
    Add the selected opponent through server orders. Do not give the client authority over outcomes.
 5. Apply the arrival rule to contested movement. The first arrival keeps the point.
    Later arrivals stop nearby without overlap. Unit ids must not choose a visible result.
@@ -36,6 +36,7 @@ Park the remaining slice work A2b2, A4, A3, REG, and TDN unless a playable failu
 Keep A2c's arrival rule in scope. Park Q2 unless the required movement change needs the frozen trace update.
 Park MC receipt consolidation and SEL4 timing work unless they block the actual player probes.
 Park ranked play, extra maps, extra factions, repair, rally controls, advanced lobby options, and final art.
+Park an in-game restart control until the first match works.
 Park supply, free income, and new payment policies for the first content package.
 Use the existing harvest income and payment policy. These cuts do not remove supported API behavior.
 Do not add fault registries, receipt ledgers, rulings, or new gates.
@@ -52,6 +53,8 @@ All 578 client tests passed. The full integration checks and acceptance passed.
 Two obsolete UI mutation records were removed after their executable checks passed.
 The Acme first-click probes passed at 1280x720 and 1024x768. The buttons probe passed at 1280x720.
 These are partial probe runs. The complete skirmish and full readiness run remain open.
+The prepared input build is `target/mc-evidence/first-minute-34295a32` in the main worktree.
+Its binaries, browser files, and package are byte-equal to the browser-tested build.
 
 Reuse `TuRTS-mp1-integration/target/mc-mp1-integration` for further builds.
 The finished branch caches were deleted. Keep `target/mc-evidence` and the source worktrees.
