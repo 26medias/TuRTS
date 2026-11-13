@@ -210,7 +210,7 @@ The Claude session stopped here. Two background runs were still active and finis
 
 | Lane | Branch and head | State | Your next step |
 | --- | --- | --- | --- |
-| Slice A1d | local merge 6e191618 in `TuRTS-pre-integration` (not pushed) | 17 gates green; acceptance red only in the HD1 native reference step, at load 15 | Run `bash scripts/hd1-native-reference.sh` (or acceptance) at low load. Green: push `pre-mp1/integration`. Red again: trace it. |
+| Slice A1d | **PUSHED**: `pre-mp1/integration` 6e191618 | 17 gates green; 8 browser cases red-restored, `"failed": []`; the HD1 native reference step passed 3 of 3 on the re-run (load 12 to 14) | Done. Open: the one HD1 red (`hd1.rs:237`, `accepted set for sequence 12`) is an unexplained flake, 1 red in 4 runs; the last acceptance step (`hd1_c195`) did not run on the merged tree (it passed on the builder head with equal product code). Put the flake on the bulk list. |
 | Slice A2b1 | `pre-mp1/a2b1-fallback` 820bfc57 | re-check PASS, follow-up PASS, CEO hold lifted | Merge integration into it after A1d is pushed (`tests/m2/refutations.json`: keep both row sets), run the gates one time, merge, push. |
 | Slice A2c | not started | waits for the design change to "arrive first" (section 3) | Design rework by `simulation-core-engineer` and `technical-director`, one gate, show the CEO the rule text. |
 | MP1 forward merge | `mp1/forward-mc` 37c41e70 | builder gates green; review running | On PASS: merge into `mp1/integration`, `mp1_gates.sh`, push. |
