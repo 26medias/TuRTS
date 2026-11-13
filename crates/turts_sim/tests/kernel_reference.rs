@@ -66,8 +66,8 @@ use turts_sim::Vec2;
 use turts_sim::movement::reference::reference_step_frame_preserving_resting;
 use turts_sim::movement::{
     FollowMoveOrigin, MoveProgress, MovementActivity, MovementFrame, MovementFrameOutput,
-    MovementFrameUnit, MovementInput, MovementPool, MovementStep, PhysicalEscape,
-    assign_fallback_pools, step, step_frame_with_fallbacks,
+    MovementFrameUnit, MovementInput, MovementPool, MovementStep, PhysicalEscape, SpreadMember,
+    StaticFootprint, assign_fallback_pools, spread_destinations, step, step_frame_with_fallbacks,
 };
 
 /// The seeds of a release run. A debug build runs the first 16 (see `seeds`).
@@ -817,6 +817,114 @@ fn anchors() -> Vec<(&'static str, MovementFrame, fn(&Seen) -> usize)> {
 /// the obstacle fallback, so most random seeds have a fallback within a few ticks (task A2b1).
 /// This chain keeps the pool, `Blocked`, resting, follow and escape units of the seed, with no new
 /// targets, so that the code that the two kernels share is compared on long chains.
+/// The chains of pools of one (the A2b1 re-check, finding M1). The live step builds no index for
+/// a pool with one primary slot or none, and builds it late, from the state of that moment, when
+/// its member looks for a free slot (`lazy_pool_index`). The reference copy keeps an index for
+/// each pool and refreshes it in each tick (the form of `f119dc39`). These chains hold only pools of
+/// one of orders (`fallback: None`, so both kernels follow the same rules) and no unit that moves
+/// with no pool, so they have no fallback and the harness compares them on all their ticks.
+///
+/// Each chain is a jam: the movers stand on a lattice round a small area, and the goal of each is
+/// in that area, so the members stall, look for a spare at the stall deadline, and some end
+/// `Blocked` while their bodies overlap (the two sites of the late index: the stall spare and the
+/// `Blocked` branch). Each pool comes from `spread_destinations` for the one member, so it has the
+/// slot and the spares of the ring rule.
+const POOL_OF_ONE_CHAINS: u64 = 16;
+
+fn pools_of_one_frame(chain: u64) -> MovementFrame {
+    let mut rng = Rng::new(chain ^ 0x0001_0001_0001);
+    let bounds = Vec2::new(60.0, 45.0);
+    let centre = Vec2::new(rng.range(20.0, 40.0), rng.range(15.0, 30.0));
+    let movers = if cfg!(debug_assertions) {
+        24
+    } else {
+        24 + (chain as usize % 5) * 16
+    };
+    let mut units = Vec::new();
+    let mut statics = Vec::new();
+    // Two static posts inside the goal area.
+    for (offset, id) in [(Vec2::new(0.6, -0.4), 1_u32), (Vec2::new(-0.8, 0.7), 2)] {
+        let position = centre + offset;
+        statics.push(StaticFootprint {
+            position,
+            radius: 0.5,
+        });
+        units.push(MovementFrameUnit {
+            unit_id: id,
+            owner_slot: 1,
+            unit_type: 9,
+            position,
+            radius: 0.5,
+            speed: None,
+            target: None,
+            progress: None,
+            plain_progress: None,
+            physical_escape: None,
+        });
+    }
+    let mut lattice: Vec<Vec2> = (-6..=6_i32)
+        .flat_map(|dx| (-6..=6_i32).map(move |dy| (dx, dy)))
+        .filter(|(dx, dy)| dx.abs() > 2 || dy.abs() > 2)
+        .map(|(dx, dy)| centre + Vec2::new(dx as f32, dy as f32) * 1.3)
+        .collect();
+    for index in (1..lattice.len()).rev() {
+        lattice.swap(index, rng.below(index as u64 + 1) as usize);
+    }
+    let mut pools = BTreeMap::new();
+    for (index, position) in lattice.into_iter().take(movers).enumerate() {
+        let unit_id = 10 + index as u32;
+        let goal = centre + Vec2::new(rng.range(-1.5, 1.5), rng.range(-1.5, 1.5));
+        let member = [SpreadMember {
+            id: unit_id,
+            position,
+            radius: 0.5,
+        }];
+        let (mut pool, assignments) = spread_destinations(&member, goal, &[], &statics, bounds);
+        let Some(&(_, slot)) = assignments.first() else {
+            continue;
+        };
+        let pool_id = u64::from(unit_id);
+        pool.pool_id = pool_id;
+        let blocked = rng.below(10) == 0;
+        units.push(MovementFrameUnit {
+            unit_id,
+            owner_slot: 0,
+            unit_type: 1,
+            position,
+            radius: 0.5,
+            speed: Some(rng.range(2.0, 5.0)),
+            target: Some(slot),
+            progress: Some(MoveProgress {
+                pool_id,
+                slot,
+                activity: if blocked {
+                    MovementActivity::Blocked
+                } else {
+                    MovementActivity::Moving
+                },
+                pass_mode: false,
+                stalling_on_group: false,
+                stalled_ticks: rng.below(20) as u16,
+                best_distance: position.distance(slot) + rng.range(0.0, 1.0),
+                claim_count: rng.below(3) as u8,
+                follow_origin: None,
+                gather_goal: None,
+                fallback: None,
+            }),
+            plain_progress: None,
+            physical_escape: None,
+        });
+        pools.insert(pool_id, pool);
+    }
+    units.sort_unstable_by_key(|unit| unit.unit_id);
+    MovementFrame {
+        bounds,
+        tick_hz: TICK_HZ,
+        units,
+        pools,
+    }
+}
+
 fn pooled_frame(frame: &MovementFrame) -> MovementFrame {
     let mut pooled = frame.clone();
     pooled.units.retain(|unit| {
@@ -1020,6 +1128,33 @@ fn kernel_matches_reference_bit_for_bit() {
         fallback_pooled.is_empty(),
         "a pooled chain has a fallback, so it is not compared on all its ticks: {fallback_pooled:?}"
     );
+    // The chains of pools of one: compared on all ticks, against the reference that keeps an
+    // index for each pool (M1). They must reach both sites of the late index.
+    let mut of_one = Seen::default();
+    for chain in 1..=POOL_OF_ONE_CHAINS {
+        let mut rng = Rng::new(chain ^ 0x0f0f);
+        let result = run_chain(
+            &format!("pools of one {chain}"),
+            pools_of_one_frame(chain),
+            &BTreeSet::new(),
+            TICKS,
+            &mut rng,
+            false,
+            &mut of_one,
+        );
+        assert_eq!(
+            result.first_fallback, None,
+            "pools of one {chain}: a chain of pools of one has a fallback, so it is not compared on \
+             all its ticks"
+        );
+        compared += result.compared;
+    }
+    println!("pools of one: {of_one:?}");
+    assert!(
+        of_one.phases[4] > 0 && of_one.blocked > 0,
+        "the chains of pools of one reach no stall deadline or no Blocked unit: {of_one:?}"
+    );
+    seen.merge(&of_one);
     // The anchor frames reach the branches that the random seeds do not. Each raises its own
     // count in its own run, so that a random seed cannot stand in for it.
     let anchors = anchors();
@@ -1050,7 +1185,9 @@ fn kernel_matches_reference_bit_for_bit() {
     // Each kind of unit and each phase must be reached, else the comparison proves nothing.
     assert_eq!(
         seen.frames,
-        2 * seeds() as usize * TICKS + anchor_count * ANCHOR_TICKS
+        2 * seeds() as usize * TICKS
+            + POOL_OF_ONE_CHAINS as usize * TICKS
+            + anchor_count * ANCHOR_TICKS
     );
     for (name, n) in [
         ("no-progress moving", seen.no_progress_moving),

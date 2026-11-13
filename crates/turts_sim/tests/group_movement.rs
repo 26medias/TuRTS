@@ -4254,3 +4254,45 @@ fn fallback_ends_when_the_gather_endpoint_changes() {
         at - empty_tick
     );
 }
+
+/// A pushed engine trip to a point inside the map edge inset (the A2b1 re-check, finding L1).
+/// Unit 1 at (10, 10) takes the engine trip (a `MoveTarget`, no order) to (0.2, 10); unit 2 is
+/// idle at (8.9, 10), on the line, so the first step projects unit 1 and the trip takes the
+/// fallback. The pool point is the goal after the clamp to the map inset (MC design 6.3 step 4):
+/// x in [r, width - r], y in [r, height - r], with r = 0.5. The test computes it, and unit 1 must
+/// rest there with no target.
+#[test]
+fn a_pushed_trip_to_an_edge_point_rests_on_the_clamped_point() {
+    let radius = 0.5_f32;
+    let size = 64.0_f32;
+    let goal = Vec2::new(0.2, 10.0);
+    let expected = Vec2::new(
+        goal.x.clamp(radius, size - radius),
+        goal.y.clamp(radius, size - radius),
+    );
+    let mut app = app_with_units_on(
+        &[(10.0, 10.0), (8.9, 10.0)],
+        &[0, 0],
+        MapSize { x: size, y: size },
+        radius,
+    );
+    let mover = unit_entity(&mut app, 1);
+    app.world_mut().entity_mut(mover).insert(MoveTarget(goal));
+    let mut took_fallback = false;
+    for _ in 0..400 {
+        app.update();
+        took_fallback |= app
+            .world()
+            .entity(mover)
+            .get::<turts_sim::movement::MoveProgress>()
+            .is_some_and(|progress| progress.is_fallback());
+    }
+    assert!(took_fallback, "the projected trip takes a fallback pool");
+    let entity = app.world().entity(mover);
+    assert_eq!(
+        entity.get::<turts_sim::Position>().unwrap().0,
+        expected,
+        "the trip rests on the clamped goal {expected:?}"
+    );
+    assert_eq!(entity.get::<MoveTarget>(), None, "the trip has ended");
+}
