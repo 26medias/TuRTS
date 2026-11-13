@@ -13,7 +13,7 @@
   (id: "building_progress", at: Some((anchor: TopLeft, offset: (4.0, 28.0), pivot: None)), size: (w: Px(292.0), h: Px(6.0)), widget: Bar(value: Item(Progress), max: Literal("1"), fill: Colour("#33dd66"), background: Colour("#12241b"), direction: Horizontal)),
  ])))),
 
- (id: "objective", at: Some((anchor: Top, offset: (0.0, 12.0), pivot: None)), size: (w: Px(560.0), h: Px(44.0)), widget: Text(text: Literal("Build Barracks. Select a worker. Right-click timber. Train soldiers. Destroy the enemy command centre."), font: None, size: 16, colour: "#ffffff", align: Centre, wrap: true)),
+ (id: "objective", at: Some((anchor: Top, offset: (0.0, 12.0), pivot: None)), size: (w: Px(640.0), h: Px(66.0)), widget: Text(text: Literal("Select your blue command centre to build Barracks. Select a worker and right-click timber. Select Barracks to train soldiers. Destroy the orange command centre."), font: None, size: 16, colour: "#ffffff", align: Centre, wrap: true)),
  (id: "credits", at: Some((anchor: TopRight, offset: (-16.0, 64.0), pivot: None)), size: (w: Px(180.0), h: Px(28.0)), widget: Text(text: Format("Credits: {0}", [Balance("skirmish:credits")]), font: None, size: 18, colour: "#ffffff", align: Right, wrap: false)),
  (id: "attack", at: Some((anchor: TopLeft, offset: (16.0, 420.0), pivot: None)), size: (w: Px(128.0), h: Px(28.0)), visible: [PrimaryOwned, PrimaryHas(Weapon)], widget: Button(icon: None, label: Some(Literal("Attack")), action: Order("skirmish:order_attack"), hotkey_label: true)),
 

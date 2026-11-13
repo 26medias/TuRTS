@@ -344,7 +344,7 @@ fn decide_inner(world: &mut World, bot: &mut ComputerPlayer) {
     }
     bot.assault
         .retain(|id| combatants.iter().any(|unit| unit.unit_id == *id));
-    if tick.saturating_sub(started) >= 75 * hz && tick >= bot.next_wave {
+    if tick.saturating_sub(started) >= 180 * hz && tick >= bot.next_wave {
         let mut available = combatants
             .iter()
             .copied()
@@ -426,6 +426,14 @@ mod tests {
         );
         tick(&mut app);
         assert!(app.world().resource::<ComputerPlayer>().started.is_some());
+        for _ in 0..(180 * 20 - 1) {
+            tick(&mut app);
+            assert!(app.world().resource::<ComputerPlayer>().assault.is_empty());
+        }
+        for _ in 0..20 {
+            tick(&mut app);
+        }
+        assert!(!app.world().resource::<ComputerPlayer>().assault.is_empty());
     }
     #[test]
     fn replaying_the_same_player_join_repeats_the_opponents_economy_and_fight() {
@@ -433,7 +441,7 @@ mod tests {
         for _ in 0..2 {
             let mut app = game();
             app.world_mut().resource_mut::<Slots>().claim(42).unwrap();
-            for _ in 0..3500 {
+            for _ in 0..6000 {
                 tick(&mut app);
             }
             states.push(turts_sim::audit_state(app.world_mut()));

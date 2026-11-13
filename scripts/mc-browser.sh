@@ -242,8 +242,16 @@ python3 - "$OUT/server-argv.json" "${SERVER_ARGS[@]}" <<'PYSERVERARGV'
 import json, pathlib, sys
 pathlib.Path(sys.argv[1]).write_text(json.dumps(sys.argv[2:], indent=2) + "\n")
 PYSERVERARGV
-"${SERVER_ARGS[@]}" >"$OUT/server.log" 2>&1 &
-SERVER_PID=$!
+LOCAL_SKIRMISH=false
+if [[ "$SERVE_ONLY" == true && "$PACKAGE_NAME" == skirmish && -n "${TURTS_COMPUTER_SLOT:-}" ]]; then
+    # This local host owns the server process, including a new match requested by its player.
+    python3 -B "$ROOT/scripts/skirmish_host.py" "$STATIC_PORT" "$DIST" "$OUT/server-argv.json" "$OUT" >"$OUT/static.log" 2>&1 &
+    SERVER_PID=$!
+    LOCAL_SKIRMISH=true
+else
+    "${SERVER_ARGS[@]}" >"$OUT/server.log" 2>&1 &
+    SERVER_PID=$!
+fi
 if [[ "${ROW_NAME:-}" == "SLOT1" ]]; then
     python3 - "$OUT/server-launch.json" "$SERVER_PID" "$OUT/server-stats.json.sessions.jsonl" "${SERVER_ARGS[@]}" <<'PYSERVERLAUNCH'
 import hashlib, json, pathlib, sys
@@ -255,8 +263,12 @@ pathlib.Path(path).write_text(json.dumps(record, sort_keys=True) + "\n")
 pathlib.Path(path).chmod(0o600)
 PYSERVERLAUNCH
 fi
-python3 -m http.server "$STATIC_PORT" --bind 127.0.0.1 --directory "$DIST" >"$OUT/static.log" 2>&1 &
-STATIC_PID=$!
+if [[ "$LOCAL_SKIRMISH" == false ]]; then
+    python3 -m http.server "$STATIC_PORT" --bind 127.0.0.1 --directory "$DIST" >"$OUT/static.log" 2>&1 &
+    STATIC_PID=$!
+else
+    STATIC_PID=""
+fi
 cleanup() {
     local rc=$?
     trap - EXIT INT TERM
@@ -275,7 +287,7 @@ trap 'exit 143' TERM
 ready=false
 for _ in $(seq 1 100); do
     if curl -fsS "http://127.0.0.1:$STATIC_PORT/" >/dev/null 2>&1 && curl -fsS "http://127.0.0.1:$HTTP_PORT/advertisement.json" >/dev/null 2>&1; then ready=true; break; fi
-    if ! kill -0 "$SERVER_PID" 2>/dev/null || ! kill -0 "$STATIC_PID" 2>/dev/null; then break; fi
+    if ! kill -0 "$SERVER_PID" 2>/dev/null || { [[ -n "$STATIC_PID" ]] && ! kill -0 "$STATIC_PID" 2>/dev/null; }; then break; fi
     sleep 0.1
 done
 [[ "$ready" == true ]] || { echo "harness services failed to become ready; evidence: $OUT" >&2; cat "$OUT/static.log" "$OUT/server.log" >&2; exit 1; }
