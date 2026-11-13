@@ -25,7 +25,7 @@
     "headed": false,
     "expected_red": "the default settings make no sound",
     "exit": 101,
-    "commit": "0623be2b",
+    "commit": "013ab687",
     "expected_selected": "the_sound_is_off_by_default_and_a_stored_profile_with_no_flag_reads_as_off"
   },
   {
@@ -54,7 +54,7 @@
     "headed": false,
     "expected_red": "the stored flag turns the sound on",
     "exit": 101,
-    "commit": "0623be2b",
+    "commit": "013ab687",
     "expected_selected": "a_stored_sound_on_flag_gives_sound_and_keeps_the_levels"
   },
   {
@@ -83,7 +83,7 @@
     "headed": false,
     "expected_red": "resets the audio settings to the defaults, as a bad level does",
     "exit": 101,
-    "commit": "0623be2b",
+    "commit": "013ab687",
     "expected_selected": "an_invalid_stored_sound_flag_falls_back_like_an_invalid_level"
   },
   {
@@ -112,7 +112,7 @@
     "headed": false,
     "expected_red": "left: Bool(false)",
     "exit": 101,
-    "commit": "0623be2b",
+    "commit": "013ab687",
     "expected_selected": "the_flag_is_written_into_the_audio_object_and_the_levels_and_other_fields_stay"
   },
   {
@@ -140,7 +140,7 @@
     "headed": false,
     "expected_red": "no sink starts while the sound is off",
     "exit": 101,
-    "commit": "0623be2b",
+    "commit": "013ab687",
     "expected_selected": "audio::control_settings_persistence_contract::with_the_sound_off_no_player_starts_and_a_request_is_not_queued_for_later"
   },
   {
@@ -168,7 +168,7 @@
     "headed": false,
     "expected_red": "off removes the live player",
     "exit": 101,
-    "commit": "0623be2b",
+    "commit": "013ab687",
     "expected_selected": "audio::control_settings_persistence_contract::turning_the_sound_off_stops_a_sound_that_is_playing"
   },
   {
@@ -196,7 +196,7 @@
     "headed": false,
     "expected_red": "assertion failed: !app.world().resource::<AudioFeed>().sound_on",
     "exit": 101,
-    "commit": "0623be2b",
+    "commit": "013ab687",
     "expected_selected": "audio::control_settings_persistence_contract::the_debug_audio_state_shows_the_sound_flag"
   },
   {
@@ -224,7 +224,7 @@
     "headed": false,
     "expected_red": "the switch is saved",
     "exit": 101,
-    "commit": "0623be2b",
+    "commit": "013ab687",
     "expected_selected": "audio::control_settings_persistence_contract::the_switch_is_saved_with_the_levels_and_survives_a_new_session"
   },
   {
@@ -252,7 +252,7 @@
     "headed": false,
     "expected_red": "the sound is off on purpose",
     "exit": 101,
-    "commit": "0623be2b",
+    "commit": "013ab687",
     "expected_selected": "client_shell::tests::no_sound_notice_shows_while_the_player_keeps_the_sound_off"
   },
   {
@@ -280,7 +280,7 @@
     "headed": false,
     "expected_red": "the default says off, in words",
     "exit": 101,
-    "commit": "0623be2b",
+    "commit": "013ab687",
     "expected_selected": "client_shell::tests::the_play_screen_has_one_sound_switch_that_says_off_by_default_and_one_click_turns_it_on"
   },
   {
@@ -308,7 +308,7 @@
     "headed": false,
     "expected_red": "no switch before the join",
     "exit": 101,
-    "commit": "0623be2b",
+    "commit": "013ab687",
     "expected_selected": "client_shell::tests::the_play_screen_switch_waits_for_the_join"
   },
   {
@@ -336,7 +336,7 @@
     "headed": false,
     "expected_red": "the sound switch never writes a level",
     "exit": 101,
-    "commit": "0623be2b",
+    "commit": "013ab687",
     "expected_selected": "client_shell::tests::the_switch_keeps_the_four_levels_across_off_and_on"
   },
   {
@@ -360,7 +360,7 @@
     "headed": false,
     "expected_red": "on fill channel 1",
     "exit": 1,
-    "commit": "0623be2b"
+    "commit": "013ab687"
   },
   {
     "row": "SOUND-OFF",
@@ -383,7 +383,7 @@
     "headed": false,
     "expected_red": "a 1 px outline is not a button",
     "exit": 1,
-    "commit": "0623be2b"
+    "commit": "013ab687"
   },
   {
     "row": "SOUND-OFF",
@@ -406,7 +406,7 @@
     "headed": false,
     "expected_red": "expected: /inside the rectangle/",
     "exit": 1,
-    "commit": "0623be2b"
+    "commit": "013ab687"
   },
   {
     "row": "SOUND-OFF",
@@ -429,7 +429,7 @@
     "headed": true,
     "expected_red": "SND1 no sink started while the switch was off",
     "exit": 1,
-    "commit": "0623be2b"
+    "commit": "013ab687"
   },
   {
     "row": "SOUND-OFF",
@@ -452,7 +452,7 @@
     "headed": true,
     "expected_red": "ORD7 observes the matching real response sink",
     "exit": 1,
-    "commit": "0623be2b"
+    "commit": "013ab687"
   },
   {
     "row": "SOUND-OFF",
@@ -479,7 +479,7 @@
     "headed": false,
     "expected_red": "its own switch is in its layout, the engine draws none",
     "exit": 101,
-    "commit": "0623be2b",
+    "commit": "013ab687",
     "expected_selected": "client_shell::tests::the_engine_draws_its_switch_only_when_the_interface_places_no_toggle_sound_button"
   },
   {
@@ -508,7 +508,7 @@
     "headed": false,
     "expected_red": "assertion failed: interface(Parts {",
     "exit": 101,
-    "commit": "0623be2b",
+    "commit": "013ab687",
     "expected_selected": "h25_sound_switch_names_and_the_placement_question"
   },
   {
@@ -537,7 +537,7 @@
     "headed": false,
     "expected_red": "called `Result::unwrap_err()` on an `Ok` value",
     "exit": 101,
-    "commit": "0623be2b",
+    "commit": "013ab687",
     "expected_selected": "h25_the_sound_switch_names_need_api_0_2_4_and_pack_at_0_2_4"
   },
   {
@@ -566,7 +566,7 @@
     "headed": false,
     "expected_red": "unknown input action `toggle_sond`",
     "exit": 101,
-    "commit": "0623be2b",
+    "commit": "013ab687",
     "expected_selected": "h25_the_sound_switch_names_need_api_0_2_4_and_pack_at_0_2_4"
   },
   {
@@ -594,7 +594,7 @@
     "headed": false,
     "expected_red": "the button turns the sound on",
     "exit": 101,
-    "commit": "0623be2b",
+    "commit": "013ab687",
     "expected_selected": "widgets::tests::toggle_sound_button_flips_the_switch_and_its_words_and_predicate_follow_the_state"
   },
   {
@@ -622,7 +622,7 @@
     "headed": false,
     "expected_red": "left: String(\"Sound: on\")",
     "exit": 101,
-    "commit": "0623be2b",
+    "commit": "013ab687",
     "expected_selected": "widgets::tests::toggle_sound_button_flips_the_switch_and_its_words_and_predicate_follow_the_state"
   },
   {
@@ -657,7 +657,7 @@
     "headed": false,
     "expected_red": "acme places a button with the action toggle_sound",
     "exit": 101,
-    "commit": "0623be2b",
+    "commit": "013ab687",
     "expected_selected": "the_shipped_packages_place_the_sound_switch_and_pack_at_0_2_4"
   },
   {
@@ -681,7 +681,7 @@
     "headed": false,
     "expected_red": "forge sound_switch_on fill #1f6138",
     "exit": 1,
-    "commit": "0623be2b"
+    "commit": "013ab687"
   },
   {
     "row": "SOUND-OFF",
@@ -708,7 +708,7 @@
     "headed": false,
     "expected_red": "Bevy gives no click for this release",
     "exit": 101,
-    "commit": "0623be2b",
+    "commit": "013ab687",
     "expected_selected": "press_release::tests::a_release_with_no_press_in_the_frame_is_left_to_bevy"
   },
   {
@@ -736,7 +736,7 @@
     "headed": false,
     "expected_red": "assertion `left == right` failed",
     "exit": 101,
-    "commit": "0623be2b",
+    "commit": "013ab687",
     "expected_selected": "press_release::tests::a_press_on_one_button_and_a_release_on_the_button_next_to_it_click_neither"
   },
   {
@@ -764,7 +764,7 @@
     "headed": false,
     "expected_red": "assertion `left == right` failed",
     "exit": 101,
-    "commit": "0623be2b",
+    "commit": "013ab687",
     "expected_selected": "press_release::tests::a_drag_that_comes_back_to_the_button_in_one_frame_is_not_a_click"
   },
   {
@@ -792,7 +792,7 @@
     "headed": false,
     "expected_red": "assertion `left == right` failed",
     "exit": 101,
-    "commit": "0623be2b",
+    "commit": "013ab687",
     "expected_selected": "press_release::tests::a_press_and_a_release_far_apart_on_one_button_are_not_a_click"
   },
   {
@@ -820,7 +820,7 @@
     "headed": false,
     "expected_red": "assertion `left == right` failed",
     "exit": 101,
-    "commit": "0623be2b",
+    "commit": "013ab687",
     "expected_selected": "press_release::tests::a_press_and_a_release_of_two_different_buttons_are_not_a_click"
   },
   {
@@ -848,7 +848,7 @@
     "headed": false,
     "expected_red": "assertion `left == right` failed",
     "exit": 101,
-    "commit": "0623be2b",
+    "commit": "013ab687",
     "expected_selected": "press_release::tests::a_drag_that_comes_back_to_the_button_in_one_frame_is_not_a_click"
   },
   {
@@ -876,7 +876,7 @@
     "headed": false,
     "expected_red": "assertion `left == right` failed",
     "exit": 101,
-    "commit": "0623be2b",
+    "commit": "013ab687",
     "expected_selected": "press_release::tests::a_drag_that_comes_back_to_the_button_in_one_frame_is_not_a_click"
   },
   {
@@ -904,8 +904,37 @@
     "headed": false,
     "expected_red": "one activation, not two",
     "exit": 101,
-    "commit": "0623be2b",
+    "commit": "013ab687",
     "expected_selected": "press_release::tests::a_button_that_was_hovered_before_is_clicked_once_by_bevy_not_twice"
+  },
+  {
+    "row": "SOUND-OFF",
+    "plant": "7k-core-distance-drifts",
+    "files": [
+      {
+        "file": "crates/turts_interaction/src/lib.rs",
+        "edit": {
+          "old": "        let dragged = dragged || start.distance(*px) > 4.0;",
+          "new": "        let dragged = dragged || start.distance(*px) > 5.0;"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_interaction",
+      "--locked",
+      "--test",
+      "click_drag_rule",
+      "the_core_uses_the_click_drag_distance"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "the core tells a drag from a click",
+    "exit": 101,
+    "commit": "013ab687",
+    "expected_selected": "the_core_uses_the_click_drag_distance"
   },
   {
     "row": "SOUND-OFF",
@@ -931,7 +960,7 @@
     "headed": true,
     "expected_red": "\"acted\":false",
     "exit": 1,
-    "commit": "0623be2b"
+    "commit": "013ab687"
   },
   {
     "row": "SOUND-OFF",
@@ -959,7 +988,7 @@
     "headed": false,
     "expected_red": "called `Result::unwrap_err()` on an `Ok` value",
     "exit": 101,
-    "commit": "0623be2b",
+    "commit": "013ab687",
     "expected_selected": "the_engine_action_menu_keeps_a_key_in_a_package_of_the_edition_0_2_4"
   },
   {
@@ -988,7 +1017,7 @@
     "headed": false,
     "expected_red": "called `Result::unwrap_err()` on an `Ok` value",
     "exit": 101,
-    "commit": "0623be2b",
+    "commit": "013ab687",
     "expected_selected": "the_engine_action_menu_keeps_a_key_in_a_package_of_the_edition_0_2_4"
   },
   {
@@ -1017,7 +1046,7 @@
     "headed": false,
     "expected_red": "unknown input action `toggle_sond`",
     "exit": 101,
-    "commit": "0623be2b",
+    "commit": "013ab687",
     "expected_selected": "the_hint_for_a_misspelt_action_offers_only_the_names_of_the_edition"
   },
   {
@@ -1046,7 +1075,7 @@
     "headed": false,
     "expected_red": "muster manifest.ron",
     "exit": 101,
-    "commit": "0623be2b",
+    "commit": "013ab687",
     "expected_selected": "the_edition_0_2_3_baseline_is_the_base_commit_form_of_each_shipped_package"
   },
   {
@@ -1075,7 +1104,7 @@
     "headed": false,
     "expected_red": "the bound key sends the shell action",
     "exit": 101,
-    "commit": "0623be2b",
+    "commit": "013ab687",
     "expected_selected": "a_key_bound_to_toggle_sound_sends_the_shell_action"
   },
   {
@@ -1103,7 +1132,7 @@
     "headed": false,
     "expected_red": "assertion failed",
     "exit": 101,
-    "commit": "0623be2b",
+    "commit": "013ab687",
     "expected_selected": "widgets::tests::the_shell_action_toggle_sound_flips_the_switch"
   },
   {
@@ -1132,7 +1161,7 @@
     "headed": false,
     "expected_red": "usage lacks `so a package may leave the play-screen switch out`",
     "exit": 101,
-    "commit": "0623be2b",
+    "commit": "013ab687",
     "expected_selected": "pack_cli_help_states_the_sound_switch_rule"
   }
 ]
