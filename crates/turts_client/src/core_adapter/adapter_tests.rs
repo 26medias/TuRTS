@@ -1371,9 +1371,13 @@ fn physical_binding_capture_suppresses_that_key_before_core_dispatch() {
 }
 
 #[test]
-fn pending_order_cursor_seam_tracks_real_core_target_and_cancellation() {
+fn pending_target_orders_show_a_named_prompt_until_cancellation() {
     let _guard = test_lock();
-    let (mut app, window, _) = acme_order_app();
+    let (mut app, window, _) = acme_order_app_with_widgets(true);
+    app.add_systems(
+        Update,
+        crate::client_shell::sync_client_notice.after(CoreAdapterSet),
+    );
     app.world_mut().despawn(window);
     app.update();
     app.world_mut().resource_mut::<CoreInputQueue>().0 = vec![
@@ -1389,6 +1393,17 @@ fn pending_order_cursor_seam_tracks_real_core_target_and_cancellation() {
         app.world().resource::<CoreRuntime>().pending_order_id(),
         Some("acme:order_move"),
         "the presentation seam reports the actual order awaiting its target"
+    );
+    let prompt = app
+        .world_mut()
+        .query_filtered::<&Text, With<crate::client_shell::ClientNotice>>()
+        .iter(app.world())
+        .map(|text| text.0.clone())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        prompt,
+        ["Move selected units: click the map. Right-click cancels."],
+        "an armed order must show its name and the next mouse action, even with an authored HUD"
     );
 
     app.world_mut().resource_mut::<CoreInputQueue>().0 = vec![
@@ -1408,6 +1423,14 @@ fn pending_order_cursor_seam_tracks_real_core_target_and_cancellation() {
         app.world().resource::<CoreRuntime>().pending_order_id(),
         None,
         "right-click cancellation clears the core state observed by the cursor"
+    );
+    assert_eq!(
+        app.world_mut()
+            .query_filtered::<Entity, With<crate::client_shell::ClientNotice>>()
+            .iter(app.world())
+            .count(),
+        0,
+        "cancelling the target order must remove its prompt"
     );
 }
 

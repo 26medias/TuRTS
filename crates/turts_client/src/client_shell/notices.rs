@@ -3,7 +3,7 @@
 
 use super::*;
 
-/// Engine-owned text row used only when a joined package has no authored interface.
+/// Engine-owned text for targeting, reconnection, and packages without an authored interface.
 #[derive(Component)]
 pub(crate) struct ClientNotice;
 
@@ -251,13 +251,18 @@ pub(super) fn sync_sound_switch(
     ));
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Each parameter declares Bevy resource or component access."
+)]
 pub(crate) fn sync_client_notice(
     state: Option<Res<ReplicaState>>,
     phase: Option<Res<Phase>>,
     acquired: Option<Res<AcquiredPackages>>,
+    runtime: Option<Res<crate::core_adapter::CoreRuntime>>,
     notices: Option<Res<NoticesFeed>>,
     rejoin: Option<Res<RejoinController>>,
-    mut rows: Query<(Entity, &mut Text), With<ClientNotice>>,
+    mut rows: Query<(Entity, &mut Text, &mut Node), With<ClientNotice>>,
     mut commands: Commands,
 ) {
     let rejoin_text = rejoin
@@ -270,18 +275,39 @@ pub(crate) fn sync_client_notice(
                     .as_deref()
                     .is_some_and(|phase| matches!(phase, Phase::Failed(_))))
         });
-    let active = rejoin_text.is_some()
-        || (phase
+    let joined = phase
+        .as_deref()
+        .is_some_and(|phase| matches!(phase, Phase::Joined { .. }))
+        && state
             .as_deref()
-            .is_some_and(|phase| matches!(phase, Phase::Joined { .. }))
-            && state
-                .as_deref()
-                .is_some_and(|state| state.welcome.is_some())
+            .is_some_and(|state| state.welcome.is_some());
+    let target_prompt = joined
+        .then(|| {
+            let id = runtime.as_deref()?.pending_order_id()?;
+            let packages = acquired.as_deref()?;
+            let id = turts_mod_api::ContentId::parse(id).ok()?;
+            let order = packages.0.content.catalog.orders.get(&id)?;
+            let target = match order.target {
+                turts_mod_api::TargetKind::Point
+                | turts_mod_api::TargetKind::PointOrUnit
+                | turts_mod_api::TargetKind::ContentAtPoint => "click the map",
+                turts_mod_api::TargetKind::Unit => "click a unit",
+                turts_mod_api::TargetKind::Node => "click a resource",
+                turts_mod_api::TargetKind::Job => "choose a job",
+                turts_mod_api::TargetKind::Content => "choose an item",
+                turts_mod_api::TargetKind::None => return None,
+            };
+            Some(format!("{}: {target}. Right-click cancels.", order.name))
+        })
+        .flatten();
+    let active = rejoin_text.is_some()
+        || target_prompt.is_some()
+        || (joined
             && acquired
                 .as_deref()
                 .is_some_and(|packages| packages.0.presentation.interface.is_none()));
     if !active {
-        for (entity, _) in &mut rows {
+        for (entity, _, _) in &mut rows {
             commands.entity(entity).despawn();
         }
         return;
@@ -292,29 +318,48 @@ pub(crate) fn sync_client_notice(
         .and_then(|notice| notice.get("text").or_else(|| notice.get("message")))
         .and_then(serde_json::Value::as_str)
         .unwrap_or("");
-    let text = rejoin_text.as_deref().unwrap_or(fallback_text);
+    let text = rejoin_text
+        .as_deref()
+        .or(target_prompt.as_deref())
+        .unwrap_or(fallback_text);
     if text.is_empty() {
-        for (entity, _) in &mut rows {
+        for (entity, _, _) in &mut rows {
             commands.entity(entity).despawn();
         }
         return;
     }
-    if let Some((_, mut existing)) = rows.iter_mut().next() {
+    let targeting = rejoin_text.is_none() && target_prompt.is_some();
+    let node = Node {
+        position_type: PositionType::Absolute,
+        left: if targeting {
+            Val::Percent(30.0)
+        } else {
+            Val::Px(16.0)
+        },
+        bottom: Val::Px(if targeting { 128.0 } else { 16.0 }),
+        width: if targeting {
+            Val::Percent(40.0)
+        } else {
+            Val::Px(420.0)
+        },
+        padding: UiRect::all(Val::Px(8.0)),
+        ..default()
+    };
+    if let Some((_, mut existing, mut current_node)) = rows.iter_mut().next() {
         if existing.0.as_str() != text {
             *existing = Text::new(text);
+        }
+        if *current_node != node {
+            *current_node = node;
         }
         return;
     }
     commands.spawn((
         ClientNotice,
-        Node {
-            position_type: PositionType::Absolute,
-            left: Val::Px(16.0),
-            bottom: Val::Px(16.0),
-            width: Val::Px(420.0),
-            padding: UiRect::all(Val::Px(8.0)),
-            ..default()
-        },
+        node,
+        bevy::picking::Pickable::IGNORE,
+        bevy::ui::FocusPolicy::Pass,
+        BackgroundColor(Color::srgba(0.04, 0.06, 0.08, 0.95)),
         Text::new(text),
         TextFont {
             font_size: FontSize::Px(16.0),
