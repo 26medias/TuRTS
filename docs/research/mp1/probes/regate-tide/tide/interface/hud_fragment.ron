@@ -1,0 +1,18 @@
+(start_selection: Some("tide:dock"),
+ hints: [
+   (id: "h_spire", kind: Step, text: "Build a Spire: press B, then click near your Dock.", starts: MatchStarted,
+    done: OwnUnits(units: ["tide:spire"], state: Any, at_least: 1)),
+   (id: "h_save", kind: Step, text: "Save 550 pearls for a second Spire.", starts: HintDone("h_spire"),
+    done: OwnUnits(units: ["tide:spire"], state: Any, at_least: 2)),
+   (id: "x_power", kind: Situation, text: "Your Spires are off: the Dock gives 50 current. Build fewer Spires.", starts: SupplyShort("tide:current"),
+    done: Not(SupplyShort("tide:current")))],
+ hint_fallback: Some("Train Divers at the Dock (D)."),
+ alerts: [
+   (id: "a_short", trigger: SupplyShort("tide:current"), kind: State, clear_after: Some(8.0), units: [], select_on_click: false,
+    sound: Some("tide_alert"), text: "Low current: Spires are off.", minimap_ping: true, cooldown: 45.0, priority: 2, coalesce_radius: 0.0),
+   (id: "a_funds", trigger: InsufficientFunds("tide:pearls"), kind: State, clear_after: Some(12.0), units: [], select_on_click: false,
+    sound: Some("tide_alert"), text: "Not enough pearls.", minimap_ping: false, cooldown: 90.0, priority: 1, coalesce_radius: 0.0),
+   (id: "a_done", trigger: ConstructionComplete, kind: Event, units: [], select_on_click: true,
+    sound: None, text: "{unit} complete.", minimap_ping: true, cooldown: 2.0, priority: 0, coalesce_radius: 6.0)],
+ states: {"waiting_for_funds": "On hold: no {resource}", "slowed": "Slowed: low current"},
+ result_widget_guess: (headline: Bind(Outcome), reason: Bind(OutcomeReason), leave: Input("leave_match")))

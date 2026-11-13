@@ -71,7 +71,12 @@ field that is reset; a -0.0; statics queried with reach `r` only; a merge that i
 - Files: `lib.rs`, `format.rs`, `clock.rs`, `slots.rs`, `balances.rs`, `inventories.rs`, `reservations.rs`,
   `production.rs`, `industry.rs`, `combat.rs`. The writer and the sink stay in `turts_server`.
 - The ledger oracle of the tests (`crates/turts_pack/tests/common/conservation.rs`) is the seed of the domain
-  files, and is then replaced by `turts_audit`, so one oracle remains.
+  files. It stays in the test tree as the independent source oracle: it reads the catalog from the source RON
+  of the package, and the ledger audit reads the catalog from the log, which the code under test writes. The
+  two rule sets stay apart on purpose: a fault that changes the installed catalog and the outcome together is
+  red only in the source oracle (row C6, `tests/m3/refutations.json:158`; A1d ruling
+  `docs/research/mp1/ruling-slice-a1d.md`). `turts_audit` holds one rule set, the ledger audit of a log. It
+  holds no source oracle and no package reader.
 - `AuditState` (`views.rs:374`) keeps all its fields in A1: the frozen stream compares the full `AuditState`
   before and after each operation (`m3_m2_stream.rs:119`). The log writes a new `LedgerAudit` view; a sim
   structure enters the log format only through an explicit edit of `LedgerAudit`.
@@ -276,3 +281,26 @@ A difference outside P3 stops A2c. A new ruling and a new run of the self-test a
 Gate status after revision 6 (Root): the plan gate is passed for the tasks up to and including A2a (G1, S2,
 S3, A1a to A1d, Q1a, Q1b, A2a). Task A2b1 gets a short re-check of its final text by the simulation lens
 before its builder starts; items 17 to 19 are that text.
+
+24. Classifier items for task Q1b (from the second review round of Q1a; the classifier is merged with these
+    open). (a) The rule "an allowed entry ends before the arrival tick" will very probably refuse the correct
+    A2c run through the `order` field: the old single `MoveTo` resets `UnitOrders` to the default
+    (`orders.rs:633-638`), so the old trace has `order` none on every tick; the operation at arrival + 1 is an
+    Orders operation (only `combat.rs:210` captures the post-movement phase), and Orders runs before Movement
+    (`plugin.rs:121-128`), so the new trace has an order at the arrival tick. Q1b probes a pooled single move
+    and reads `UnitOrders` at ticks 123 and 124. From that fact the rule becomes: last tick at or before
+    arrival for `order` (and for `pending_movement_orders` if the probe shows it), and before arrival for the
+    target, activity, state, pools and the two flags. The synthetic old trace uses `order` none. (b) One mutant
+    survives the self-test: the span check on the first tick, not the last. Q1b adds the plant that straddles
+    the arrival tick. (c) Format: the kind of `order` is the behaviour name (a content id holds a colon, which
+    the format reads as kind and stage); the stage comes from the gather stage and the format names it;
+    `pending_movement_orders` counts units, and Q1b names its source in `orders.rs:75-82`; `UnitOrders.queue`
+    and `last_failure` are added to the unit record.
+25. The A1d ruling (technical-director, 2026-11-12, `docs/research/mp1/ruling-slice-a1d.md`) replaces D
+    `:73-74` and the A1d exit "one oracle". There are two oracles with different trust roots: the ledger
+    audit of the log (`turts_audit`) and the source oracle of the tests (`conservation.rs`). Rule `DMG` and the
+    tick checks stay in the source oracle (rows C14 and C15). The four run constants that the log does not
+    hold (`bounds`, `resources`, `compiled_durations`, `unit_types`) are held by `assert_run_constants` for
+    sim code and by a writer scan in `turts_checks` for the production code of `turts_sim`, `turts_server` and
+    `turts_pack`. The log format does not change for them in the slice. A digest in the log is an option for
+    the M11 replay format (Proposed).

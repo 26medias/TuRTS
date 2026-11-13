@@ -1,0 +1,4 @@
+start 1200 | longest hold s: S1 0, S4 0, S5 25, S7 4, S8 30, L1b 21, L1 259 |  at 180s: credits 445
+start 1300 | longest hold s: S1 0, S4 0, S5 25, S7 0, S8 30, L1b 20, L1 224 |  at 180s: credits 545
+start 1400 | longest hold s: S1 0, S4 0, S5 25, S7 0, S8 30, L1b 17, L1 188 |  at 180s: credits 645
+start 1500 | longest hold s: S1 0, S4 0, S5 25, S7 0, S8 30, L1b 135, L1 135 |  at 180s: credits 745

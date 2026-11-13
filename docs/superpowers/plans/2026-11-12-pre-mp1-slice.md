@@ -29,6 +29,160 @@ the stricter assertion rule of section 1a (21); the source counts count code onl
 (23). Root accepts refinements R10, R11 (with item 20), R12 (with item 22) and R13 (with item 17). The plan
 gate is passed for the tasks up to and including A2a. A2b1 gets a short re-check before its builder starts.
 
+**From the A2b1 stop ruling (2026-11-12, technical-director; `docs/research/mp1/ruling-slice-a2b1-stop.md`).** Binding for A2b1 to A3 and for the orchestrator's gates:
+- CEO touch point 1 (section 6) was NOT sent before A2b1 started (an orchestrator fault). It is sent on 2026-11-12. A2b1 does not merge before the answer.
+- The two probe values of `scripts/qa/probe_neutral.sh` change at A2b1 by design (D 9.18 `:255-258`, D 9.8, D `:44`). Values at the A2b1 head f119dc39: `frame_chains=e6e4417f9cbe5fa5`, `muster_world=49fc63ffd1d8c57d` (before: d0d1b1c572163424, aa9db740578ed5c1). Each task compares with the values of its own base commit. A2b2 commit 1 and A2c may change them; A2b2 commit 2, A4 and A3 must keep them equal. The frozen stream sha256 is the only value that needs the CEO, at Q2.
+- The five test changes outside the A2b1 list (`plain_movement_tests.rs:187`, `:394`; `orders/tests.rs:2692`; `frame_hash.rs:211`; `probe_flags.rs:117`; `ledger_logs.rs:530`) are allowed observation changes or inversions under the D 9.21 conditions. The plan names them here.
+- From A2b2 on the 9.18 cut-off of `kernel_reference` is void: the live and reference fallback requests must be bit-equal and all ticks of all 128 chains are compared. The present harness fails at `kernel_reference.rs:904-917` when the reference is refreshed. `plain_movement_tests.rs:394` is a third port at A2b2.
+
+**CEO DECISION on touch point 1 (2026-11-12, in chat; Decided).** Binding for A2c and for every later movement task:
+- The rule is ARRIVE FIRST, not "ordered first". CEO words: "whoever got to the point first keeps the point, and whoever arrives later can get as close to the target point as possible without clipping into the unit who is at the actual point"; "We do 'arrive first' as that is the natural way units would work in real life."
+- This REPLACES the A2c rule of the design (`docs/superpowers/specs/2026-11-12-pre-mp1-slice-design.md:30`, `:156-157`, gate case S12: "unit 1 moves to P; unit 2 gets a move to P while unit 1 still moves; unit 1 rests on P"). S12 must be rewritten: the unit that REACHES P first rests on P; a unit that arrives later rests as close to P as the footprints allow, with no overlap. A far unit that was ordered first does not hold P against a near unit that arrives first.
+- The unit id must not decide a result that a player can see. CEO words: "Why involve unit id into it?" and, on the old behaviour as a leftover of the loop order, "is not good as that implies tech debt already". The id is allowed only as the tie-break for two arrivals in the same tick (the authoritative server needs one fixed result). A2c must carry a test that is red when the id decides any other case (for example: swap the ids of the two units; the result must follow the arrival, not the id).
+- A2c does NOT start before the design change is written and gated: the simulation-core-engineer and the technical-director rework design section 9 (the A2c rule, S12, the reservation at order time, the engine-trip rule, the 2,048 limit, which the CEO did not object to) and state the cost; an independent reviewer gates it; the CEO sees the changed rule text before the build.
+- A2b1 does not depend on this choice (its "nearest free place, no overlap" rule serves both forms; builder and reviewer proved that A2b1 does not change which unit gets a contested point). The hold on A2b1 for touch point 1 is lifted: A2b1 merges when its merge with A1d and its gates are green.
+- Owed audit (technical-director with the simulation-core-engineer): list every other place where iteration in unit-id order decides a player-visible result (movement, combat target choice, gather slot choice, queue order), with `path:line`, and a ruling for each: tie-break only, or debt to remove and in which task.
+
+**From the A2b1 re-check (2026-11-12, performance-architect; `docs/research/mp1/rereview-slice-a2b1.md`).** Binding for A2c:
+- Cost gate of A2c: the crowd of 1,000 and of 5,000 single `MoveTo`, 12 interleaved pairs against the A2c base. The p50 of ticks 2-41 and the p50 of ticks 42-301 must stay at or below 1.15 times the base. Lazy index builds for each tick must not exceed the members that are `Blocked` or at the stall deadline.
+- At A2b1 the unit that gets a contested point does not change (the lower id gives the point up, as before the slice). "The first unit keeps the point" comes at A2c. CEO touch point 1 therefore decides A2c.
+
+**From the A1d ruling (2026-11-12, technical-director; `docs/research/mp1/ruling-slice-a1d.md`; review `docs/research/mp1/review-slice-a1d.md`).** Binding for A1d and for the orchestrator's gates:
+- Ruling (ii). `crates/turts_pack/tests/common/conservation.rs` stays in the test tree as the independent source oracle. D `:73-74` is replaced by D section 9 item 25. The A1d exit "one oracle" is void.
+- A1d keeps from `a921096b`: `assert_run_constants` (`crates/turts_server/tests/economy.rs:138-156`) and its two call sites, the removal of the `bevy*` dependencies of `turts_audit`, the three `A1d-run-constants-*` rows (plants moved to real state), and their test in `tests/m2/test_refutations.py`.
+- A1d drops: `crates/turts_audit/src/source.rs`, `pub mod source`, `ron` in `turts_audit`, the `turts_audit` dev-dependency of `turts_pack`, and the import edits.
+- Review M1 is fixed in A1d by a writer scan in `turts_checks` for `MapBounds`, `ProductionDurations`, `UnitTypes` and the removal of the resources of `AuditResourcePresence`. The scan visitor gets a `ResMut<T>` / `Mut<T>` / `NonSendMut<T>` arm, and the movement writer scan gets the same arm. No log format change.
+- The no-content scan does not see compound names (`ore_items`): a recorded gap, owner `qa-lead`, before the first MP1 package with new content ids merges.
+- The `tests/m2/refutations.json` conflict with `pre-mp1/a2b1-fallback`: the task that merges second keeps both row sets.
+
+**From the A1c re-check (2026-11-12, qa-lead; A1c merged with 0 High; report `docs/research/mp1/rereview-slice-a1c.md`).** These bind A2b1 (its first steps) and A1d:
+- A2b1: the sweep test `movement::ecs::tests::the_movement_system_writes_only_movement_state` does not reach the physical-escape branch of the write loop (`crates/turts_sim/src/movement/ecs.rs:113-115`): the reviewer's plant S2 (a unit in a physical escape is given to slot 1) stays green there and is red only by chance in `group_movement.rs:2230`. Add a blocked plain move to the sweep scenario and a count that asserts that each branch of the write loop runs; show S2 red in the sweep.
+- A1d: read `docs/research/mp1/a1c-handover.md` on the slice branch (the log-based accounting oracle cannot see a change of `bounds`, `resources`, `compiled_durations`, `unit_types`; the E8 reorder; the unused `bevy*` dependencies of `turts_audit` with their three `Cargo.lock` lines).
+- The parallel registry runner `target/mc-evidence/root-regate/parallel_refutations.py` still uses the headed wrapper v4 by default (`:42`) and passes no `--mode` (`:274`). Until it is changed, a headed registry run goes through a shim that calls `mc_headed_v6.sh --mode pre-merge`. Owner `qa-lead`.
+
+**From the A2a review (2026-11-12, qa-lead, six own faults; 1 High in the harness reach, in repair; report `docs/research/mp1/review-slice-a2a.md`).** These bind A2b1, A2b2, A2c, A4, A3 and REG:
+- The fast form `cargo test -p turts_sim --locked` runs 0 tests of `kernel_reference` and of `probe_flags` (the `test-probes` feature is off). Each of these tasks runs `cargo test -p turts_sim --locked --features test-probes` and the release form of `kernel_reference` that its test header names; the merge gate of the orchestrator runs both.
+- `reference.rs` calls live helpers. A task that edits a movement helper must first keep the reference independent (the A2a repair says how).
+- From the A2a re-check (`docs/research/mp1/rereview-slice-a2a.md`; A2a merged with 0 High): the shared helper `angle` (`movement/mod.rs:123-125`, called through `spread.rs:236`) has no pin; a negated `angle` stays green in `kernel_reference` and in `group_movement`. The first step of A2b1: pin `fn angle` and `fn step` by item (a hash of each function text, not of the whole `mod.rs`), red first on a negated `angle`. In A2b1, A2b2, A4, A3 and REG: `git diff <task base> HEAD` on the pinned files and items is empty, or the same commit puts the old text under `movement/reference*` and makes the reference use it (A3 edits `grid.rs`, so A3 is the first task that copies a helper). The reviewer of each task checks this.
+- The `probe.rs` sha256 logged at plan `:80` (`aaa45aaa…`) is now `a0e861062cb9bebf7528dad354da1d5ef00bc108c05ec3e27dc7beb1b60a0295` after A2a; it changes again with the A2a repair. No checker pins it; the board log carries it.
+
+**From the A1b review (2026-11-12, qa-lead, five own faults; A1b merged with 0 High open; report `docs/research/mp1/review-slice-a1b.md`).** Task A1c must do these before it deletes the replay validator:
+- Ruling (orchestrator): add `pending_movement_orders` to `LedgerAudit` (`ledger_view.rs:38-46`); the sim names it audited command state (`orders/pending.rs:32`). A refused command that changes `next_pool_id` must be red in the ledger (the reviewer's probe F4 is the plant).
+- The movement-writers allow list (`crates/turts_checks/tests/movement_writers.rs:49-98`) pins the count of each (file, kind, type) entry, so a new writer in an allowed file is red (plant: a `get_mut::<Position>` write in `combat.rs`).
+- With the replay off, three replay self-checks are red with no plant: `economylog.rs:453` (delete; other tests keep the property), `economylog.rs:331`, `economy.rs:1145`. A1c moves or replaces all three, not only the 1-ulp test.
+- The field test in `ledger_view.rs:134-198` runs on a Forge `Tick` state, so a field that is empty in the small fixture is checked.
+- Plant (b) "remove facing" moves to A1c (the sink writes `AuditState` until then).
+- Validate one time for each poll result, not the whole prefix two times (`economy.rs:2455-2470`, `:2502-2503`, `:552-553`).
+- The run receipt records `TURTS_AUDIT_REPLAY`.
+- Owed from A1b: the 8 `ci-browser` cases (headed) and EL1 and E9 in release with the replay off.
+
+**From the A1a review (2026-11-12, qa-lead, two rounds; A1a merged with 0 High open).** Task A1b must do these:
+
+- The destination check of `queued_group_attack_spreads…` (`crates/turts_server/tests/mc_orders.rs`, `first_logged_destinations`)
+  uses a radius of 1.2 and does not see a shift below about 0.6. Also assert that the nearest destination is the order
+  point (slot zero, `movement.rs:293`), after a check that slot zero is free in this fixture.
+- The message of "gives every member a destination" must say that the destination comes from `raw_units.move_target`
+  and that a change of the movement model (part A2) means an update of the helper, not a sim defect.
+- `assert_sink_record_order` (`crates/turts_server/tests/economy.rs`) must also assert that the boundaries and the
+  operations of a batch come before its `Tick`.
+- Weak checks after the validator goes (leads): `mc_orders.rs:634` (pursuit and range: a focus target hit from any
+  range stays green today, with the validator on or off); `economy.rs:299` and `:547` (`decoded_*`); `economy.rs:3425`,
+  `:3780`, `:3925` (`replay_public_log`, which validates at `:1998`).
+- `read_live_complete_tick_prefix` still calls `validate_records`. Task A1c removes that call and runs the A1a plants again.
+- The A1a exit "E9 green five times in a row" moves to task D0p: one run in six was red at `economy.rs:2306` from the
+  gather-at-depletion defect, whose repair is not in the slice base before D0p.
+
+**From the S3 review (2026-11-12, technical-director; S3 merged, 0 High).**
+
+- Task S3 Step 4(b): the named test `forty_units_rest_with_no_overlap_and_no_blocked` stays green under the named plant on
+  both builds. The test that goes red is `second_group_same_point` (`crates/turts_sim/tests/group_movement.rs:1181`), with
+  the plant `let push = Vec2::ZERO;` at `movement/frame.rs:835`. Later tasks that reuse this fault (A2a, A2b2, A4) name
+  that test.
+- Task S3 Step 2: the count regex is `grep -cE '^(pub(\([a-z]+\))? )?(fn|struct) '` (it gives 3 on `plain.rs`).
+- Stale `movement.rs:NNN` citations stay in comments (`crates/turts_sim/tests/gmu_same_point.rs:6`,
+  `crates/turts_server/tests/mc_orders.rs:578`, `tests/m3/README.md:110`, `tests/m3/refreeze_classify.py:78`) and in the
+  A1b amendment above (`movement.rs:293` is now in `movement/spread.rs`). The next task that edits each file corrects it.
+- `step_frame_preserving_resting` is one function at `movement/frame.rs:60-1078`. A2a and A4 work in `frame.rs` only;
+  Q1b adds `movement/probe.rs`. The use-cycles frame/plain, frame/search and frame/pool_index come from
+  `MovementFrameUnit` and `MovementFrameOutput` in `frame.rs`; A4 can move those types to `mod.rs` (optional).
+
+**From the Q1b review (2026-11-12, simulation-core-engineer, two rounds; Q1b merged, 0 High).**
+
+- The plan text of Q1b Step 5 is void: the stream cannot see `separated`. The red instrument for the probe flags is
+  `crates/turts_sim/tests/probe_flags.rs`. The plan count "13/13 plants" is void: the classifier self-test has 74 plants.
+- `was_projected` is `Some(value)` in all three loops and `null` only for a unit that did not reach a projection loop
+  (this replaces "null for a pool unit"). `gather_stage` is a trace field (format /4).
+- Hashes to log before A2c (R6): `tests/m3/refreeze_allowed.json` a431dbd826cbbd3e130b9a8820911711c41fa4a8d7efa82dca90d49214165bc7;
+  the emitter `crates/turts_pack/tests/m2_trace.rs` e5152ece49414eaf46800e1c0d29f7144ef38c51531336bdb9b84a779988f924;
+  `crates/turts_sim/src/movement/probe.rs` aaa45aaad4d8deea4526311fba1d01c12cd660130345e6f8219356322c2a4cae.
+- After D0p merges, and before A2a starts: emit the base trace again and log its sha256. The depletion repair changes
+  `gather.rs`, and `gather_stage` may move at node depletion with the stream sha unchanged (NOT TRACED).
+- What the Q2 approval can rest on: single-unit moves, gather timing and the order of economy operations, bit for bit
+  (three packages byte-equal; acme differs only as listed, with equal positions). What it cannot rest on: crowds. On
+  the stream no unit separates, is projected, claims a slot or moves in a group. Those behaviours are held by the A2a
+  kernel reference, `probe_flags`, `group_movement`, `gmu_same_point`, `mc_group` and T7. The Q2 request to the CEO
+  gives both parts.
+- `scripts/qa/probe_neutral.sh` (CI step) holds the sim equal with the probe feature off and on; `scripts/boundary.sh`
+  has a no-probes row for the server and client binaries. A task that adds a gated probe line runs both.
+- Low, open: `per_unit` against `envelope` in `move_to_route` comes from the command shape; a gather carry error below
+  5 is invisible on the stream content.
+
+**From the re-check of MP1 plan revision 2 (2026-11-12, technical-director H-A and M-A; MP1 plan revision 3,
+rulings R-W and R-I).** Tasks A3, A2b1, A2b2 and A2c must do these:
+
+- **A3 builds stacked on A4** (TD option P-b). A3 branches from the head of `pre-mp1/a4-frame` when the A4 build ends,
+  before A4 merges (G1 is merged). This replaces "A4, G1" as plain inputs (section 3 row A3) and the Task A3 line "It rebases on
+  A2c": A3 takes A4 and A2c into its branch with merge commits, not with a rebase. A3 still merges only after Q2 and
+  at least 1 run after A4. If A4 must rebase after A3 branched (the R3 case: A2c edits a `movement/` file), A4 merges
+  `pre-mp1/integration` in place of the rebase, and A3 merges the new A4 head.
+- **A3 merges into `pre-mp1/integration` with a merge commit, not a rebase**, so the A3 commits keep their ids.
+- **Two MP1 tasks merge the A3 branch.** MP1 tasks `L-TGT` and `L-OBS` take A3 as a cross stack: each branches
+  from `mp1/integration` and merges `pre-mp1/a3-grids` into its own branch at the end of the A3 build. So a rebase
+  or a history rewrite of `pre-mp1/a3-grids` after the A3 build ends breaks those two lanes. A review repair of A3
+  goes on top as a new commit; the A3 builder tells Root, and Root tells the owners of `L-TGT` and `L-OBS`.
+- **The order writer rule (for A2b1, A2b2, A2c and A3).** MP1 adds one writer of `UnitOrders`,
+  `set_unit_orders` (MP1 plan, task `L0-WIRE`), and a check that is red on any other production write: a syn scan
+  (`crates/turts_checks/tests/order_writers.rs`) of `get_mut::<UnitOrders>()`, `remove::<UnitOrders>()`, `insert` of
+  a `UnitOrders` value, a field assignment, and a helper that takes `&mut UnitOrders` or `&mut Order`; and a
+  `test-probes` system in `SimSet::Collect` that compares `Changed<UnitOrders>` and `RemovedComponents<UnitOrders>`
+  with the change list. The slice does not have this code, so no slice gate changes. A slice task that adds or moves
+  a write of `UnitOrders` names each such line (`path:line`) in its report. At the forward merge, the MP1 owner
+  (`network-engineer`) routes it through `set_unit_orders` (about 1 run for each of A2b1, A2b2 and A2c).
+
+**From the D0p and S2 reviews (2026-11-12; both merged, 0 High).**
+
+- D0p: the plan block was out of date (three validator hunks, eleven test hunks, nine `economy.rs` hunks; one semantic
+  conflict that git merged without a mark: two names in `crates/turts_server/tests/economy.rs` that S1 had moved). The
+  port is verified hunk by hunk (16 of 16 found in `crates/turts_audit/src/replay.rs`; no extra edit). E9 was green six
+  times in a row after the repair, so the moved A1a exit is met.
+- A1b: the guard `!audited_gather_delivers_cargo` at `crates/turts_audit/src/replay.rs:3251` has no negative test: with
+  its helper forced to `false`, every test stays green. Add one test that edits a real depletion log so the order fails
+  while cargo is held, and assert that the audit rejects it. Keep this property in the ledger audit.
+- The base traces after D0p (and unchanged by S2), to compare before A2a: `base.jsonl`
+  d4c73ebee90e0aef84e58df4e31787ef3756b7e5d3a589ffdde2224ccfcdd7b2, `haul.jsonl`
+  805309b26e717dfe3daa0e5597ebd6f21adde7ef3f93ec71a3610bd97bff3148, `acme.jsonl`
+  19dcf9a3759096c312c11a8e89c2c0ac272dd3ccd868aacf9ac8a4357b91d1d2, `cedar.jsonl`
+  0db10e012cd1c3a41c68fb054a7ab39ec325451f4db4fb912f72dbddd5f33718. The 400-tick traces never reach a node depletion,
+  so they do not test the depletion repair; its own tests do.
+- S2 layout, for A2b1, A2b2 and A2c: the files are `orders/{mod, plain, pending, run, apply, tests}.rs` and
+  `orders/behaviours/{attack, follow, queue, mod}.rs`. `plain.rs` is what A2c deletes. Four functions are the meeting
+  points of the later tasks: `run_orders` (`run.rs:21-416`), `dispatch_pending_movement` (`pending.rs:775-1306`),
+  `apply_order` and `apply_unit_order` (`apply.rs`), `start_order` (`behaviours/queue.rs`). The use graph has one cycle
+  group {apply, pending, plain, queue, attack}: the A2c deletion of `plain.rs` edits pending, apply and queue together;
+  count it as one change.
+- S2, the review fault for later tasks: `return;` as the first statement of `start_next_queued_order`
+  (`orders/behaviours/queue.rs`) turns 12 tests of `turts_sim` red on both builds (4 in `orders::tests`, 6 in
+  `group_movement`, 2 in `tests/orders.rs`, with `queued_order_starts_in_the_tick_after_landing`).
+- S2, Low: `queue_movement_envelope` (`orders/pending.rs:295`) is `pub(crate)` with no re-export; the next task that
+  edits `pending.rs` makes it `pub(super)`. Stale comment citations of `orders.rs` stay in
+  `crates/turts_sim/tests/gmu_same_point.rs:198`, `crates/turts_sim/src/movement/probe.rs:127`, `tests/m3/README.md:103`,
+  `tests/m3/refreeze_classify.py:171`, `tests/m3/test_refreeze_classify.py:175`.
+- The MP1 branch carries a formula ratchet (`crates/turts_checks/tests/formula_ratchet.rs`) with a per-file table. A slice
+  task that moves or splits a counted file names the new rows in its report; the forward merge writes them.
+- The writer rule of MP1 lane 0 (one function `set_unit_orders` for order-state changes and a static check that forbids a
+  direct write of `UnitOrders` outside it) lands on the MP1 branch, not on the slice. A2b1, A2b2 and A2c keep their
+  direct writes on the slice; the MP1 owner of each forward merge moves the new writes into the writer function.
+
 ## 0. Line numbers
 
 - All `path:line` in this plan are at `431c3ad` (TuRTS-mp1), or at the commit that the line names.
@@ -631,13 +785,13 @@ Modes:
 
 **Branch / inputs:** `pre-mp1/a1d-conservation`; A1c. **Design:** D `:73-74`; TDI step 4.
 
-**Files:** `crates/turts_pack/tests/common/conservation.rs` (1,088 lines) is replaced by calls to `turts_audit`, which becomes a dev-dependency of `turts_pack`. `tests/m3/refutations.json` is not edited.
+**Files:** `crates/turts_pack/tests/common/conservation.rs` stays (A1d ruling). `crates/turts_server/tests/economy.rs` (`assert_run_constants`), `crates/turts_audit/Cargo.toml` (no `bevy*`), `tests/m2/refutations.json` and `tests/m2/test_refutations.py` (three `A1d-run-constants-*` rows), `crates/turts_checks/tests/` (the run-constant writer scan and the `ResMut` arm). `tests/m3/refutations.json` is not edited. `tests/m3/refutations.json` is not edited.
 
 - [ ] **Step 1: Text check first.** For each M3 case, `grep -F` its `expected_failure` in `conservation.rs`. Record the source line of each one. Each text must come out of `turts_audit` with the same bytes. If a text cannot keep its bytes, stop and report. A1d does not edit the registry (section 1a).
 - [ ] **Step 2: Replace.** `cargo test -p turts_pack --locked; echo exit=$?` gives `exit=0`.
 - [ ] **Step 3: Gate.** F-RUST, F-FROZEN, then `--set m3-all --workers 9 --alsa`. Expected: 17 of 17 red, `"failed": []`.
 
-**Exit:** one oracle, and the same 17 texts. **Runs: 2.**
+**Exit:** the same 17 M3 texts, `conservation.rs` byte-equal to `afb9c6de`, the A1c hand-over items closed, the run-constant writer scan red on its plants. **Runs: 2.**
 
 ### Task Q1b: trace emitter, probe API and allowed list
 

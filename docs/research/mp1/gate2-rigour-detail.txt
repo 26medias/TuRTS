@@ -1,0 +1,41 @@
+Gate 2 rigour detail (plan 24a18e1, design a9a5fea rev 6, slice head 7b23b37)
+
+R/Q classification (REF = plan refinement; DCH = change of a gated D statement, needs D edit + note)
+R1  REF  start points (D:2303-2304); no row change
+R2  REF  one relation fn (D:767)
+R3  REF  validation column in lane 0 (D:1388-1393)
+R4  REF  stub files
+R5  REF* moves lane-0 items (string-id parse, hot site 3) to feature lanes; D:2310-2317 lane text differs -> D note
+R6  REF  engine order source in L0b-ORD
+R7  REF  owner seats (D:2203)
+R8  DCH  D:2295 "a task starts when its inputs are merged"; also the run model charges 0 runs after merge (16 edges)
+R9  REF* batches vs D:2324 "each feature lane owns its own pixel rows"; owner kept, run moved -> D note
+R10 REF  integration branch
+R11 REF  Countdown lane move, both stage 2
+R12 REF  D:2571 allows "drops it with a reason"
+R13 REF  D:2576-2577 allows "moves it to M7 with the recorded numbers"
+R14 DCH  X14 stage-1 part (D:260, D:2347) gains Credited and "+N"; stage boundary of a scope item
+R15 STO1 REF (D:2424, D:2462 already split; only list D:2428 omits it); ALR2 DCH (D:2427 lists ALR2 in stage 1 whole)
+R16 REF* REG2/s1 "the fault sets" then holds no MP1 plant (registry only at I2-PIX)
+R17 REF* D:900-905 + F4 text: boot inserts config; plan: sim inserts by default, host removes -> D note
+Q1 = R15 STO1 REF; Q2 = ALR2 DCH; Q3 = R14 DCH
+Q4  DCH  exit item 5 D:82-83 vs D:91, D:281. Working answer (a) fixes the scenes only; MAT1 three-slot sim test (D:2447, stage 1) has no answer
+Q5, Q6 REF (scope mapping only)
+Q7  REF  fills a gap (D:1268 vs D:2346); one D line advised
+Q8, Q9(=R17), Q10 REF
+
+CEO decisions that change a lane-0 type or wire record (5.1 items 1-6):
+  P1 (V1, V2 types), P2 b/c (LobbyAction set_colour, colours, MatchConfig teams), P3 b-d (SetRally, CancelConstruction, Repair, UnitOrderRecord.rally),
+  P4 a (ChargeOverTime P1 row, job charged/Paid fields), D-A b/c (job record), P5 none (sound fields behind UNBUILT), P8 a (DisconnectedFor M1 variant),
+  D-B 2 (LobbyState/claim), D-E b (site records, CommittedTick fields), D-E2 b/c (K6 field), D-F b (M3 row), D-I b (whole table),
+  D-J b (UnitIndex, debug gate), D-K b (rematch record), D-L b (U7 row), Q1 b (named queues).
+Content or later lanes only: D-M (L0-API2 numbers, not frozen), P6, P7, P9 (L-OBS; T1 edition row stays), D-C, D-G, D-H, D-N, S1, 6.7.14 items 1 and 4, N1, Y1, MC hosted CI.
+Deletion answers can stay behind UNBUILT (no wire bump, 5.2 item 4). Additive answers (P2 c, D-K b, Q1 b, D-E b, D-I b) need a CR with rework above the 0-3 run CR budget.
+
+Merge-after edges where the task ends at the same offset as its merge-after input (0 own runs after merge):
+A4<-Q2, L-LOBBY-C1<-L-MATCH-SRV1, L-TGT<-A3, L-OBS<-A3, L-FX-WIRE<-A2b2, L-FX-PRES<-L-FX-WIRE, UI-PLACE<-L-CON1, UI-HINT<-UI-PLACE,
+UI-HUD<-L-PWR, UI-ALERT<-L-PWR, UI-RESULT<-L-LOBBY-C1, UI2-RESULT<-L-MATCH-SRV2, UI2-CONN<-L-MATCH-SRV2, PRES-ART<-PRES-MODELS, C2-CONTENT<-L-MATCH-SRV2, C2-CONTENT<-UI2-RESULT
+Models: plain inputs 61 (C1 41); plan model 52 (C1 35); +1 run per merge-after 54 (C1 37); A3 a real input of L-TGT and L-OBS 56 (C1 39).
+
+Citations: 46 checked at 7b23b37 (cites.py). Hold: 42. Off by one, item present: session_diagnostics.rs:384 (fn at 383), orders.rs:3056/:3085 (calls inside validate_target at 3028),
+gather.rs:1206 (fn find_unit at 1204), widgets/mod.rs:1517 (activate_widget On<Activate> at 1518). Stale: movement.rs:13-21 (file gone; counter now movement/mod.rs:32-37).

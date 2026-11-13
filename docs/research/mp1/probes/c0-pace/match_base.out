@@ -1,0 +1,49 @@
+old trip main 36.1 s = 332 credits/min per hauler
+old trip side 44.9 s = 267 credits/min per hauler
+old trip centre 68.9 s = 174 credits/min per hauler
+old E=1.4  A careful   vs B careful   (B skill 1.00, B 3rd hauler after   0 s): no end in 40 min       ore gone at 27.6 min
+old E=1.4  A careful   vs B careful   (B skill 0.95, B 3rd hauler after   0 s): no end in 40 min       ore gone at 27.6 min
+old E=1.4  A careful   vs B careful   (B skill 0.90, B 3rd hauler after   0 s): A wins at 11.8 min     ore gone at not in 40 min
+old E=1.4  A careful   vs B careful   (B skill 0.80, B 3rd hauler after   0 s): A wins at 11.6 min     ore gone at not in 40 min
+old E=1.4  A careful   vs B careful   (B skill 1.00, B 3rd hauler after 120 s): B wins at 3.6 min      ore gone at not in 40 min
+old E=1.4  A careful   vs B turtle    (B skill 1.00, B 3rd hauler after   0 s): A wins at 16.9 min     ore gone at not in 40 min
+old E=1.4  A aggressor vs B careful   (B skill 1.00, B 3rd hauler after   0 s): B wins at 16.9 min     ore gone at not in 40 min
+old E=1.4  A aggressor vs B turtle    (B skill 1.00, B 3rd hauler after   0 s): A wins at 2.9 min      ore gone at not in 40 min
+old E=1.4  A turtle    vs B turtle    (B skill 0.90, B 3rd hauler after   0 s): no end in 40 min       ore gone at 36.6 min
+old E=1.8  A careful   vs B careful   (B skill 1.00, B 3rd hauler after   0 s): no end in 40 min       ore gone at 27.6 min
+old E=1.8  A careful   vs B careful   (B skill 0.95, B 3rd hauler after   0 s): no end in 40 min       ore gone at 27.6 min
+old E=1.8  A careful   vs B careful   (B skill 0.90, B 3rd hauler after   0 s): A wins at 14.0 min     ore gone at not in 40 min
+old E=1.8  A careful   vs B careful   (B skill 0.80, B 3rd hauler after   0 s): A wins at 13.2 min     ore gone at not in 40 min
+old E=1.8  A careful   vs B careful   (B skill 1.00, B 3rd hauler after 120 s): B wins at 3.6 min      ore gone at not in 40 min
+old E=1.8  A careful   vs B turtle    (B skill 1.00, B 3rd hauler after   0 s): A wins at 16.9 min     ore gone at not in 40 min
+old E=1.8  A aggressor vs B careful   (B skill 1.00, B 3rd hauler after   0 s): B wins at 16.9 min     ore gone at not in 40 min
+old E=1.8  A aggressor vs B turtle    (B skill 1.00, B 3rd hauler after   0 s): A wins at 2.9 min      ore gone at not in 40 min
+old E=1.8  A turtle    vs B turtle    (B skill 0.90, B 3rd hauler after   0 s): no end in 40 min       ore gone at 36.6 min
+new trip main 34.7 s = 519 credits/min per hauler
+new trip side 42.0 s = 429 credits/min per hauler
+new trip centre 62.0 s = 290 credits/min per hauler
+new E=1.1  A careful   vs B careful   (B skill 1.00, B 3rd hauler after   0 s): no end in 40 min       ore gone at 30.4 min
+new E=1.1  A careful   vs B careful   (B skill 0.95, B 3rd hauler after   0 s): no end in 40 min       ore gone at 30.4 min
+new E=1.1  A careful   vs B careful   (B skill 0.90, B 3rd hauler after   0 s): A wins at 11.4 min     ore gone at not in 40 min
+new E=1.1  A careful   vs B careful   (B skill 0.80, B 3rd hauler after   0 s): A wins at 11.3 min     ore gone at not in 40 min
+new E=1.1  A careful   vs B careful   (B skill 1.00, B 3rd hauler after 120 s): A wins at 5.8 min      ore gone at not in 40 min
+new E=1.1  A careful   vs B turtle    (B skill 1.00, B 3rd hauler after   0 s): A wins at 20.2 min     ore gone at not in 40 min
+new E=1.1  A aggressor vs B careful   (B skill 1.00, B 3rd hauler after   0 s): B wins at 20.2 min     ore gone at not in 40 min
+new E=1.1  A aggressor vs B turtle    (B skill 1.00, B 3rd hauler after   0 s): A wins at 3.5 min      ore gone at not in 40 min
+new E=1.1  A turtle    vs B turtle    (B skill 0.90, B 3rd hauler after   0 s): no end in 40 min       ore gone at not in 40 min
+new E=1.3  A careful   vs B careful   (B skill 1.00, B 3rd hauler after   0 s): no end in 40 min       ore gone at 30.4 min
+new E=1.3  A careful   vs B careful   (B skill 0.95, B 3rd hauler after   0 s): no end in 40 min       ore gone at 30.4 min
+new E=1.3  A careful   vs B careful   (B skill 0.90, B 3rd hauler after   0 s): A wins at 11.4 min     ore gone at not in 40 min
+new E=1.3  A careful   vs B careful   (B skill 0.80, B 3rd hauler after   0 s): A wins at 11.3 min     ore gone at not in 40 min
+new E=1.3  A careful   vs B careful   (B skill 1.00, B 3rd hauler after 120 s): A wins at 6.1 min      ore gone at not in 40 min
+new E=1.3  A careful   vs B turtle    (B skill 1.00, B 3rd hauler after   0 s): A wins at 20.2 min     ore gone at not in 40 min
+new E=1.3  A aggressor vs B careful   (B skill 1.00, B 3rd hauler after   0 s): B wins at 20.2 min     ore gone at not in 40 min
+new E=1.3  A aggressor vs B turtle    (B skill 1.00, B 3rd hauler after   0 s): A wins at 3.5 min      ore gone at not in 40 min
+new E=1.3  A turtle    vs B turtle    (B skill 0.90, B 3rd hauler after   0 s): no end in 40 min       ore gone at not in 40 min
+--- log: new E=1.3 careful vs careful, B skill 0.9
+      655s A wins the field fight at the haulers of B: 1 haulers lost; army of A left 5405
+      660s A wins the field fight at the haulers of B: 1 haulers lost; army of A left 6072
+      665s A breaks the base of B (army 6172 vs defence 2691, 3 turrets); CC falls in 22 s
+--- log: old E=1.8 careful vs careful, B skill 0.9
+      465s A wins the field fight at the haulers of B: 3 haulers lost; army of A left 785
+      805s A breaks the base of B (army 4235 vs defence 3186, 3 turrets); CC falls in 36 s

@@ -1,0 +1,48 @@
+=== B (F: 3 Riflemen at 40 s): longest hold 7.2 s, spans [(57.2, 64.4)], "Not enough credits" sounds at [57]
+    t(s)  action                credits     income/s  hold
+     8.0  queue ps                 1223         11.6  - low-power
+    14.0  queue rifle              1166         11.6  - low-power
+    15.0  queue haul               1150         11.6  - low-power
+    28.0  DONE  rifle               933         11.6  - low-power
+    29.7  +300 delivery            1188         11.6  - low-power
+    32.0  DONE  ps                 1129         11.6  -
+    34.0  queue tur                1065         11.6  -
+    40.0  queue rifle               703         11.6  -
+    41.0  queue rifle               642         11.6  -
+    42.0  queue rifle               582         11.6  -
+    45.0  DONE  haul                403         20.3  -
+    52.0  DONE  rifle               115         20.3  -
+    54.0  DONE  tur                  35         20.3  -
+    57.2  HOLD starts                 1         20.3  HOLD
+    64.4  +300 delivery             299         20.3  -
+    64.4  HOLD ends (7.2 s)         299         20.3  -
+    64.7  DONE  rifle               297         20.3  -
+    71.7  DONE  rifle               220         20.3  -
+    74.7  +300 delivery             529         20.3  -
+    99.1  +300 delivery             903         20.3  -
+   109.4  +300 delivery            1233         20.3  -
+=== C (F: 2 Riflemen and a Tank): longest hold 14.5 s, spans [(57.2, 64.4), (84.1, 98.6)], "Not enough credits" sounds at [57]
+    t(s)  action                credits     income/s  hold
+     8.0  queue ps                 1223         11.6  - low-power
+    14.0  queue rifle              1166         11.6  - low-power
+    15.0  queue haul               1150         11.6  - low-power
+    28.0  DONE  rifle               933         11.6  - low-power
+    29.7  +300 delivery            1188         11.6  - low-power
+    32.0  DONE  ps                 1129         11.6  -
+    34.0  queue tur                1065         11.6  -
+    40.0  queue rifle               703         11.6  -
+    41.0  queue rifle               642         11.6  -
+    42.0  queue tank                582         11.6  -
+    45.0  DONE  haul                403         20.3  -
+    52.0  DONE  rifle               115         20.3  -
+    54.0  DONE  tur                  35         20.3  -
+    57.2  HOLD starts                 1         20.3  HOLD
+    64.4  +300 delivery             299         20.3  -
+    64.4  HOLD ends (7.2 s)         299         20.3  -
+    64.7  DONE  rifle               295         20.3  -
+    74.7  +300 delivery             299         20.3  -
+    84.1  HOLD starts                 3         20.3  HOLD
+    98.6  HOLD ends (14.5 s)          0         20.3  -
+    98.7  DONE  tank                  0         20.3  -
+    99.1  +300 delivery             302         20.3  -
+   109.4  +300 delivery             632         20.3  -
