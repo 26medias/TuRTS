@@ -469,7 +469,7 @@ fn the_existing_menu_exposes_binding_capture_and_reset_controls() {
 }
 
 #[test]
-fn focus_feed_loss_shows_a_capturing_click_to_play_overlay_and_recovery_removes_it() {
+fn focus_feed_loss_shows_a_nonblocking_click_to_play_overlay_and_recovery_removes_it() {
     let mut app = App::new();
     app.add_plugins(MinimalPlugins)
         .insert_resource(CoreEffects::default())
@@ -490,15 +490,15 @@ fn focus_feed_loss_shows_a_capturing_click_to_play_overlay_and_recovery_removes_
 
     {
         let world = app.world_mut();
-        let mut overlays = world.query_filtered::<Entity, With<UiCaptureRoot>>();
+        let mut overlays = world.query_filtered::<Entity, With<FocusOverlay>>();
         let overlay = overlays
             .single(world)
             .expect("FocusFeed(false) shows one click-to-play overlay");
-        assert!(world.entity(overlay).contains::<UiCaptureRoot>());
+        assert!(!world.entity(overlay).contains::<UiCaptureRoot>());
         assert_eq!(
             world.entity(overlay).get::<bevy::ui::FocusPolicy>(),
-            Some(&bevy::ui::FocusPolicy::Block),
-            "the focus overlay prevents clicks from reaching the game world"
+            Some(&bevy::ui::FocusPolicy::Pass),
+            "the first click reaches the visible game control under the overlay"
         );
         let mut labels = world.query::<&Text>();
         assert!(labels.iter(world).any(|text| text.0 == "Click to play"));
@@ -512,7 +512,7 @@ fn focus_feed_loss_shows_a_capturing_click_to_play_overlay_and_recovery_removes_
     app.update();
     let mut overlays = app
         .world_mut()
-        .query_filtered::<Entity, With<UiCaptureRoot>>();
+        .query_filtered::<Entity, With<FocusOverlay>>();
     assert_eq!(
         overlays.iter(app.world()).count(),
         0,
@@ -528,7 +528,7 @@ fn focus_feed_loss_shows_a_capturing_click_to_play_overlay_and_recovery_removes_
     app.update();
     let mut overlays = app
         .world_mut()
-        .query_filtered::<Entity, With<UiCaptureRoot>>();
+        .query_filtered::<Entity, With<FocusOverlay>>();
     let overlay = overlays
         .single(app.world())
         .expect("a locked browser audio context shows the click-to-play overlay");
@@ -544,7 +544,7 @@ fn focus_feed_loss_shows_a_capturing_click_to_play_overlay_and_recovery_removes_
     app.update();
     let mut overlays = app
         .world_mut()
-        .query_filtered::<Entity, With<UiCaptureRoot>>();
+        .query_filtered::<Entity, With<FocusOverlay>>();
     assert_eq!(
         overlays.iter(app.world()).count(),
         0,

@@ -37,7 +37,7 @@ pub(super) fn sync_focus_overlay(
     commands
         .spawn((
             FocusOverlay,
-            UiCaptureRoot,
+            bevy::picking::Pickable::IGNORE,
             Node {
                 position_type: PositionType::Absolute,
                 left: Val::Px(0.0),
@@ -51,12 +51,13 @@ pub(super) fn sync_focus_overlay(
                 ..default()
             },
             ZIndex(i32::MAX),
-            bevy::ui::FocusPolicy::Block,
+            bevy::ui::FocusPolicy::Pass,
             BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.55)),
         ))
         .with_children(|parent| {
             parent.spawn((
                 Text::new("Click to play"),
+                bevy::picking::Pickable::IGNORE,
                 TextFont {
                     font_size: FontSize::Px(24.0),
                     ..default()

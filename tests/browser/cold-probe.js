@@ -66,6 +66,7 @@ async function readWorld() {
     const noticeText = (notice) => (typeof notice === "string" ? notice : notice.text ?? notice.message ?? "");
     return {
         available: true, phase: debug.phase ?? null, slot: debug.slot ?? null, selection: Array.isArray(debug.selection) ? debug.selection : [],
+        pending_order_id: typeof debug.pending_order_id === "string" ? debug.pending_order_id : null,
         alerts: Array.isArray(debug.alerts) ? debug.alerts.length : 0,
         notices: (Array.isArray(debug.notices) ? debug.notices : []).map(noticeText),
         markers: Array.isArray(debug.markers_shown) ? debug.markers_shown.length : 0,
@@ -118,6 +119,15 @@ function buttonsOutsidePage(ui, viewport) {
 function orderButtons(ui, viewport) {
     const list = visibleButtons(ui, viewport).filter((widget) => widget.action && widget.action.kind === "order");
     return [...list.filter((w) => !DESTRUCTIVE.test(`${w.text} ${w.action.id}`)), ...list.filter((w) => DESTRUCTIVE.test(`${w.text} ${w.action.id}`))];
+}
+
+function armedOrderSeen(button, world) {
+    if (!button || button.kind !== "button" || !button.visible || button.enabled === false
+        || button.action?.kind !== "order" || world.pending_order_id !== button.action.id) return false;
+    const name = (button.text ?? "").replace(/\s*\[[^\]]*\]\s*$/, "").trim();
+    if (!name) return false;
+    return (world.ui ?? []).some((widget) => widget.kind === "client_notice" && widget.visible === true
+        && typeof widget.text === "string" && widget.text.startsWith(`${name}: `) && /\b(click|choose)\b/.test(widget.text));
 }
 
 // The record that a click is judged by: id to the state of the widget. Left out: the start overlay (it leaves on the
@@ -325,9 +335,11 @@ async function firstClick(session, options) {
 }
 
 async function selectUnit(session, unit) {
-    const fresh = (await session.readWorld()).units.find((entry) => entry.unit_id === unit.unit_id);
+    const current = await session.readWorld();
+    const fresh = current.units.find((entry) => entry.unit_id === unit.unit_id);
     if (!fresh || !inside(fresh.center, session.size)) return null;
     const [x, y] = fresh.center.map(Math.round);
+    if (current.selection.includes(unit.unit_id)) return { x, y, radius: fresh.pick_radius, world: current };
     const { world } = await clickKeeping(session, x, y, "left");
     return world.selection.includes(unit.unit_id) ? { x, y, radius: fresh.pick_radius, world } : null;
 }
@@ -353,7 +365,8 @@ async function orderPass(session, record, units) {
             const look = await lookBefore(session, "ord-", counter);
             const { file, world: after } = await clickKeeping(session, bx, by, "left", RESULT_MS);
             const result = seen(look, after, file, [mark.x, mark.y], mark.radius);
-            record.orders.push({ unit_id: unit.unit_id, content_id: unit.content_id, id: button.id, text: button.text, order: button.action.id, acted: result.visible_change || result.notice !== null,
+            const armed = armedOrderSeen(button, after);
+            record.orders.push({ unit_id: unit.unit_id, content_id: unit.content_id, id: button.id, text: button.text, order: button.action.id, acted: result.visible_change || result.notice !== null || armed, armed_order: armed,
                 changed_ids: result.changed_ids, notice: result.notice, box_changed: result.box_changed });
         }
     }
@@ -443,7 +456,8 @@ async function buttons(session, options) {
         const box = boxAround(x, y, Math.max(button.rect[2], button.rect[3]) / 2);
         const actedBox = !overlayLeft && changeStats(image(look.b), image(file), box).box_changed >= Math.max(MIN_BOX_PIXELS, 3 * changeStats(image(look.a), image(look.b), box).box_changed);
         const cameraMoved = medianShift(before, after) > 3;
-        return { n, id: button.id, text: button.text, point: [x, y], acted: changed.length > 0 || actedBox || cameraMoved, acted_ui: changed.length > 0, acted_box: actedBox,
+        const armed = armedOrderSeen(button, after);
+        return { n, id: button.id, text: button.text, point: [x, y], acted: changed.length > 0 || actedBox || cameraMoved || armed, acted_ui: changed.length > 0, acted_box: actedBox, armed_order: armed,
             camera_moved: cameraMoved, overlay_left: overlayLeft, changed_ids: changed };
     };
     // What changes by itself in 200 ms, with no input: it is not the effect of a click.
@@ -496,4 +510,4 @@ async function runProbe(session, kind, options = {}) {
 }
 
 module.exports = { SETTLE_MS, BUTTONS_SETTLE_MS, runProbe, readWorld, wordCount, ownUnitsOnScreen, visibleButtons, buttonsOutsidePage, orderButtons, normalisedUi, bigLayers,
-    center, medianShift, boxHalf, openGround, changedIds };
+    center, medianShift, boxHalf, openGround, changedIds, selectUnit, armedOrderSeen };

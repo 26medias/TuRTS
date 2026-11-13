@@ -20,7 +20,7 @@ const test = require("node:test");
 const { changeStats, nonflatShare } = require("./cold-pixels.js");
 const { decodePng } = require("./harness/png.js");
 const { ColdSession } = require("./cold-session.js");
-const { SETTLE_MS, BUTTONS_SETTLE_MS, runProbe, wordCount, ownUnitsOnScreen, visibleButtons, buttonsOutsidePage, orderButtons, normalisedUi, medianShift, boxHalf, openGround } = require("./cold-probe.js");
+const { SETTLE_MS, BUTTONS_SETTLE_MS, runProbe, wordCount, ownUnitsOnScreen, visibleButtons, buttonsOutsidePage, orderButtons, normalisedUi, medianShift, boxHalf, openGround, selectUnit, armedOrderSeen } = require("./cold-probe.js");
 const { fixtureGame } = require("./cold-fixture.js");
 const { silentEnv, SILENT_ARGS } = require("./harness/silent-chrome.js");
 
@@ -92,6 +92,36 @@ test("nonflatShare: an opaque layer with text is flat, a see-through layer is no
 test("the probes wait 8 s (first click) and watch 20 s (buttons, F6) by default", () => {
     assert.equal(SETTLE_MS, 8000);
     assert.equal(BUTTONS_SETTLE_MS, 20000);
+});
+
+test("the order probe keeps a selected moving unit instead of chasing it with a second click", async () => {
+    const unit = { unit_id: 1, center: [450, 250], pick_radius: 8 };
+    const world = { selection: [1], units: [unit] };
+    const session = {
+        size: { width: 1280, height: 720 },
+        readWorld: async () => world,
+        handle: async () => { throw new Error("a second click can miss the selected moving unit"); },
+    };
+    const selected = await selectUnit(session, unit);
+    assert.ok(selected, "the already selected mover remains available for order-button checks");
+    assert.deepEqual(selected.world.selection, [1]);
+});
+
+test("an armed order needs a visible named control and its visible target prompt", () => {
+    const button = { kind: "button", visible: true, enabled: true, text: "Move [M]", action: { kind: "order", id: "p:move" } };
+    const prompt = { kind: "client_notice", visible: true, text: "Move: click the map. Right-click cancels." };
+    const world = { pending_order_id: "p:move", ui: [prompt] };
+    assert.equal(armedOrderSeen(button, world), true, "the visible control and its matching prompt show what the next click does");
+    const cases = [
+        ["no control", null, world],
+        ["hidden control", { ...button, visible: false }, world],
+        ["unnamed control", { ...button, text: "[M]" }, world],
+        ["state flag alone", button, { ...world, ui: [] }],
+        ["hidden prompt", button, { ...world, ui: [{ ...prompt, visible: false }] }],
+        ["another order", button, { ...world, pending_order_id: "p:attack" }],
+        ["another notice", button, { ...world, ui: [{ ...prompt, text: "Cannot build here" }] }],
+    ];
+    for (const [reason, control, state] of cases) assert.equal(armedOrderSeen(control, state), false, reason);
 });
 
 test("orderButtons: visible enabled order buttons, the destructive ones last; boxHalf scales with the unit; medianShift sees a moved camera, not one walker", () => {
