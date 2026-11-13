@@ -77,8 +77,8 @@ Runner: `python3 /home/julien/Projects/TuRTS/target/mc-evidence/gate-runner/exec
 | Branch | Worktree | Pushed head | What |
 | --- | --- | --- | --- |
 | `codex/mc-integration` | `/home/julien/Projects/TuRTS-mc-integration` | 9d2ab86b | MC (player control), draft PR #2 |
-| `pre-mp1/integration` | `/home/julien/Projects/TuRTS-pre-integration` | afb9c6de (local merge 6e191618 of A1d, NOT pushed) | pre-MP1 slice, 12 of 21 tasks merged |
-| `mp1/integration` | `/home/julien/Projects/TuRTS-mp1-integration` | 4553acc4 | MP1 lane 0, 15 of 18 tasks merged |
+| `pre-mp1/integration` | `/home/julien/Projects/TuRTS-pre-integration` | 6e191618 (A1d is in) | pre-MP1 slice, 13 of 21 tasks merged |
+| `mp1/integration` | `/home/julien/Projects/TuRTS-mp1-integration` | 37c41e70 (the forward merge of MC is in) | MP1 lane 0, 15 of 18 tasks merged |
 | `mp1-design` | `/home/julien/Projects/TuRTS-mp1` | see `git log` | design, plans, all review and ruling reports |
 
 Documents (branch `mp1-design`):
@@ -197,11 +197,7 @@ reviewers `qa-lead` (instruments), `performance-architect` (cost), `technical-di
 The Claude session stopped here. Two background runs were still active and finish on their own.
 
 **Still running at handoff (read their results first):**
-- **The forward-merge review with headed rows** (agent, `qa-lead`). Its gates were done and the M2
-  headed cases were in work (`target/mc-evidence/fwd-rev-*`). Report: `docs/research/mp1/review-forward-mc.md`
-  in `/home/julien/Projects/TuRTS-mp1`, or `<scratch>/forward-mc-review/`. If no report exists,
-  the agent died with the session: read the `fwd-rev-*` receipts, run only the rows that have no
-  receipt, and decide the merge yourself (light path: one review, already mostly done).
+- (Finished after this was written: the forward-merge review is PASS and the merge is landed; see the table.)
 - **The 8 A1d browser cases** (`<scratch>/int-a1d-browser.out`; several cases already
   `RED-RESTORED`; the last line gives `"failed": [...]`). The chain then deletes
   `TuRTS-pre-integration/target/par-browser`.
@@ -213,7 +209,7 @@ The Claude session stopped here. Two background runs were still active and finis
 | Slice A1d | **PUSHED**: `pre-mp1/integration` 6e191618 | 17 gates green; 8 browser cases red-restored, `"failed": []`; the HD1 native reference step passed 3 of 3 on the re-run (load 12 to 14) | Done. Open: the one HD1 red (`hd1.rs:237`, `accepted set for sequence 12`) is an unexplained flake, 1 red in 4 runs; the last acceptance step (`hd1_c195`) did not run on the merged tree (it passed on the builder head with equal product code). Put the flake on the bulk list. |
 | Slice A2b1 | `pre-mp1/a2b1-fallback` 820bfc57 | re-check PASS, follow-up PASS, CEO hold lifted | Merge integration into it after A1d is pushed (`tests/m2/refutations.json`: keep both row sets), run the gates one time, merge, push. |
 | Slice A2c | not started | waits for the design change to "arrive first" (section 3) | Design rework by `simulation-core-engineer` and `technical-director`, one gate, show the CEO the rule text. |
-| MP1 forward merge | `mp1/forward-mc` 37c41e70 | builder gates green; review running | On PASS: merge into `mp1/integration`, `mp1_gates.sh`, push. |
+| MP1 forward merge | **LANDED**: `mp1/integration` fast-forwarded to 37c41e70 and pushed | review PASS, no High; all gates green at that commit; 30 of 30 headed runs pass, 0 resyncs (`docs/research/mp1/review-forward-mc.md`) | Done. Three Medium items are on the bulk list at the end of `errata-pending-6.3.md`. The review gives the exact conflict lines for the L0-STORE and sound-off merges. |
 | MP1 L0-STORE | `mp1/l0-store` d4c94308 | review PASS, follow-up done | After the forward merge: merge integration into it, gates, merge. No new review (light path). |
 | MP1 sound off | `mp1/sound-off-default` 3b9fe6fa | pass 4 native part PASS (`docs/research/mp1/sound-off-pass4-report.md`) | After the forward merge: merge integration (conflicts in `ci.yml`, `tests/browser/feedback-driver.js`, `feedback-oracle.js`), run the headed rows SND1, SND2, ORD6, ORD7, ALR1, HUD2, AUD1 one time, merge. |
 | MC SEL4 | `codex/mc-sel4-gap` 1119970d | pass 2 STOPPED on a measurement: with no frame hold the gap is 374 to 519 ms for `gap_ms` 250 | Decision of the orchestrator: take the builder's option 3 (`gap_ms` 100 for SEL4 and skip the post-eval between taps in `tapKey`), prove SEL4 two times quiet and two times under load, run the five local receipts again, merge into `codex/mc-integration` with `codex/mc-table-receipts`. Report: `target/mc-evidence/reviews/mc-sel4-gap.md`, "Pass 2". |
