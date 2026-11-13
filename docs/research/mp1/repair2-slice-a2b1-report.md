@@ -149,3 +149,66 @@ A2c (S12, plan `:1007`).
 - L4 (merge of `tests/m2/refutations.json` with A1d): not handled here; keep both row sets at the merge.
 - `refutations.py` runs of the new rows with their own build root (disk); proved in the lane.
 - CEO touch point 1 answer; T7 and browser cases.
+
+## Follow-up (re-check of 19187cb8, `docs/research/mp1/rereview-slice-a2b1.md`)
+
+FOLLOWUP=PASS
+
+New head `820bfc57` (pushed; not merged). Receipts `pre-a2b1-r3-*`.
+
+| Commit | Content |
+| --- | --- |
+| b719b47d | Tests: chains of pools of one in `kernel_reference` (M1); the pushed edge trip (L1) |
+| c9ef7c4e | The `Blocked` branch looks for a new escape only when the target cannot be kept (item 3) |
+| 820bfc57 | Registry rows `A2b1-lazy-index-no-refresh`, `A2b1-lazy-index-not-at-stall`, `A2b1-pushed-trip-keeps-goal` (72 rows) |
+
+**1. M1, the late index.** `kernel_reference.rs:832-930` (`POOL_OF_ONE_CHAINS`, `pools_of_one_frame`): 16 chains (300
+ticks each), each a jam of 24 to 88 movers with their own pool of one of an order (`fallback: None`; the pools from
+`spread_destinations` for one member) round a small goal area with two posts, no unit with no pool, no new targets.
+The test asserts that no chain has a fallback, so each is compared on all ticks against the reference copy, which
+builds and refreshes an index for each pool in each tick (the `f119dc39` form). Release: 273,600 compared unit frames,
+815 stall deadlines, 3,563 `Blocked` and 2,522 escape unit frames. Red proofs (debug CI form, then restore with
+`git checkout`, `git status --porcelain` empty):
+- LZ1 (the late build skips the clearance refresh, `0..0`): red "pools of one 1 tick 56 unit 33: field target: live
+  None reference Some([1108084480, 1102939156])" (`pre-a2b1-r3-plant-lz1-b`).
+- LZ2 (the stall spare does not use the late index, `.or(None)`): red, the same first difference (`-plant-lz2`).
+The plan rule that the 9.18 cut-off is void from A2b2 stays; these chains have no cut-off.
+
+**2. L1, the pushed edge trip.** `a_pushed_trip_to_an_edge_point_rests_on_the_clamped_point`
+(`group_movement.rs:4265`): unit 1 at (10, 10), engine trip to (0.2, 10), unit 2 idle at (8.9, 10). Expected rest point
+from the clamp rule in the test: (clamp(0.2, 0.5, 63.5), clamp(10, 0.5, 63.5)) = (0.5, 10); no target at the end; the
+trip took a fallback. F6 (`then_some(movement_target)` at the pushed branch): red "left: Vec2(1.6, 10.0) right:
+Vec2(0.5, 10.0)" (`-plant-f6`).
+
+**3. The cheaper form.** `frame.rs:461`: the late index, the pool escape and the outside escape run only inside
+`retained_escape.or_else`. Bit-equal to `19187cb8`: Muster 300 ticks `cmp` exit 0 (154,520 lines), the 1,000 crowd
+300 ticks `cmp` exit 0 (300,000 lines: position bits, pool id, slot bits, activity, fallback flag; release)
+(`-diff-new`, `-diff-old`); `probe_neutral` `e6e4417f9cbe5fa5` / `49fc63ffd1d8c57d`; release `kernel_reference` 3/3
+with the same counts on the old chains. The code stays.
+
+**4. Merge.** `origin/pre-mp1/integration` is still `afb9c6de` (fetched at the end of the follow-up). No merge.
+Note for the merge: this branch now holds 72 rows in `tests/m2/refutations.json` (69 + the 3 above), so with the A1d
+rows the merged file has more than 72 rows; keep both row sets with unique ids.
+
+**5. Gates (head 820bfc57)**
+
+| Gate | Exit | Note |
+| --- | --- | --- |
+| `cargo fmt --all --check` | 0 | |
+| clippy `--workspace --all-targets --locked -D warnings` | 0 | |
+| `cargo test -p turts_sim --locked` | 0 | 353 passed |
+| same `--features test-probes` | 0 | 363 passed |
+| release `kernel_reference` | 0 | 3/3, 77.7 s, 2,920,499 compared unit frames |
+| pack, audit, server, checks | 0 | 514 passed; `m2_operation_stream_matches_baseline` ok; `movement_writers` ok |
+| wasm32 check | 0 | |
+| `boundary.sh` | 0 | |
+| traces | — | `d4c73ebe…`, `805309b2…`, `19dcf9a3…`, `0db10e01…` (equal) |
+| stream sha256 | — | `bcbf72c2…e370b` unchanged |
+| classifier `--self-test`, `--p0`, `--counts` | 0, 0, 0 | 74/74; P0 PASS |
+| `probe_neutral.sh` | 0 | `e6e4417f9cbe5fa5`, `49fc63ffd1d8c57d` |
+| `test_refutations.py` | 0 | 72 rows |
+| `acceptance.sh` (`MC_JOBS=4`) | 0 | 777 s, load 5.9 at start; EL1 and DET1 ok; 0 FAILED |
+
+NOT TRACED (follow-up): the A1d merge and `run_constant_writers` on the merged tree (integration did not move); a
+boundary case with a refresh reach above about 40 map units (re-check bound); whether a production engine trip
+targets inside the edge inset.
