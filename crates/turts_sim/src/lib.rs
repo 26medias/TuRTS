@@ -12,7 +12,7 @@ pub mod map;
 pub mod match_config;
 pub mod movement;
 pub mod orders;
-mod outcome;
+pub mod outcome;
 pub mod plugin;
 pub mod registry;
 pub mod rules_adapter;

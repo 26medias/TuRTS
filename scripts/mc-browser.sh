@@ -226,6 +226,9 @@ EOF_RON
 # Every row starts the server with --stats: the oracles read tick_max_us (the longest compute time of one tick) to tell a
 # slow server tick from a host stall (checkpoint-lib.js assertConnectionHeld). SLOT1 also reads the session observer.
 SERVER_ARGS=("$SERVER_BIN" "$OUT/server.ron" --stats "$OUT/server-stats.json")
+if [[ -n "${TURTS_COMPUTER_SLOT:-}" ]]; then
+    SERVER_ARGS+=(--computer-slot "$TURTS_COMPUTER_SLOT")
+fi
 if [[ "$SYNTHETIC_SET" == true ]]; then
     SERVER_ARGS+=(--synthetic-units "$SYNTHETIC_UNITS")
 fi

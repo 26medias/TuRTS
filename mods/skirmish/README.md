@@ -1,7 +1,12 @@
 # First skirmish content
 
-This package uses simple shapes. Its first browser probe builds a barracks, trains a soldier,
-and delivers timber. The computer opponent and win/lose results are still in development.
+This package uses simple shapes. It has a computer opponent and server-owned win and loss results.
+Destroy the enemy command centre to win. Keep your command centre alive.
+The computer builds, harvests, and trains. Its first small attack starts after 75 seconds.
+
+Use `bash scripts/skirmish-play.sh --prepare DIR --silent` to build it.
+Use `bash scripts/skirmish-play.sh --prepared DIR --silent` to start a fresh game.
+The full browser readiness checks are still open. These commands are for development tests.
 
 Select the command centre. Click **Build Barracks**. Click a free point near the base.
 Select the completed barracks. Click **Train Soldier**.

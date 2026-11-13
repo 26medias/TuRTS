@@ -57,7 +57,7 @@ struct ClientBuckets {
 }
 
 impl RateLimitBuckets {
-    fn admit(&mut self, slot: u8, tick: u32, tick_hz: u16, units: usize) -> bool {
+    pub(crate) fn admit(&mut self, slot: u8, tick: u32, tick_hz: u16, units: usize) -> bool {
         let hz = u64::from(tick_hz.max(1));
         let envelope_capacity = 64 * hz;
         let unit_capacity = 16_384 * hz;
@@ -224,6 +224,7 @@ pub fn receive_hello(
     match_id: Res<crate::stats::MatchId>,
     live_sessions: Query<&Session>,
     mut diagnostics: Option<ResMut<SessionDiagnostics>>,
+    computer: Option<Res<crate::computer::ComputerPlayer>>,
 ) {
     let mut accepted_in_batch = BTreeSet::new();
     for (entity, mut receiver, has_session, pending_kick) in clients.iter_mut() {
@@ -235,9 +236,12 @@ pub fn receive_hello(
             }
             decided = true;
             stats.hellos += 1;
-            let has_live_session = live_sessions
-                .iter()
-                .any(|session| session.player_id == hello.player_id);
+            let has_live_session = computer
+                .as_ref()
+                .is_some_and(|bot| bot.player_id == hello.player_id)
+                || live_sessions
+                    .iter()
+                    .any(|session| session.player_id == hello.player_id);
             let accepted_in_batch_before = accepted_in_batch.contains(&hello.player_id);
             let owners_before = diagnostics.is_some().then(|| slots.owners());
             let already_claimed = slots.slot_of(hello.player_id).is_some();
@@ -445,7 +449,17 @@ pub fn admit_player_commands(world: &mut World) {
             );
             continue;
         }
-        if let Some(reason) = production_precheck(world, &staged) {
+        let match_refusal = if world
+            .get_resource::<turts_sim::outcome::MatchOutcomes>()
+            .is_some_and(|state| state.end_tick.is_some())
+        {
+            Some(CommandRejectReason::MatchOver)
+        } else if turts_sim::outcome::slot_defeated(world, staged.slot.0) {
+            Some(CommandRejectReason::SlotDefeated)
+        } else {
+            None
+        };
+        if let Some(reason) = match_refusal.or_else(|| production_precheck(world, &staged)) {
             let result = crate::orders::refusal(&staged.envelope, reason);
             record_admission_rejection(world, staged, tick, result, reason);
             continue;
@@ -1141,12 +1155,12 @@ pub(crate) fn assert_fixed_pre_update_is_totally_ordered(mut app: App) {
     #[derive(Resource, Default)]
     struct Probe(u32);
     app.init_resource::<Probe>();
-    for set in [SimSet::Supply, SimSet::Construction] {
-        app.add_systems(
-            FixedPreUpdate,
-            (|mut probe: ResMut<Probe>| probe.0 += 1).in_set(set),
-        );
-    }
+    // Construction now has a real exclusive system. It already detects a missing admission
+    // edge. A second probe in that same set would introduce an unrelated within-set conflict.
+    app.add_systems(
+        FixedPreUpdate,
+        (|mut probe: ResMut<Probe>| probe.0 += 1).in_set(SimSet::Supply),
+    );
     app.edit_schedule(FixedPreUpdate, |schedule| {
         schedule.set_build_settings(ScheduleBuildSettings {
             ambiguity_detection: LogLevel::Error,

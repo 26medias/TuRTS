@@ -1,1 +1,1 @@
-(open_sites_per_slot: Some(4))
+(open_sites_per_slot: Some(4), victory: Some(LastTeamStanding(defeat: [KeyUnitsLost(units: ["skirmish:base"])])))

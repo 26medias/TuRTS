@@ -198,6 +198,8 @@ fn refusals(units: &[UnitId], reason: CommandRejectReason) -> Vec<UnitRefusal> {
 fn wire_reason(reason: RejectReason) -> CommandRejectReason {
     use RejectReason as R;
     match reason {
+        R::MatchOver => CommandRejectReason::MatchOver,
+        R::SlotDefeated => CommandRejectReason::SlotDefeated,
         R::SiteOutsideMap => CommandRejectReason::SiteOutsideMap,
         R::SiteOutOfArea => CommandRejectReason::SiteOutOfArea,
         R::SiteBlocked => CommandRejectReason::SiteBlocked,

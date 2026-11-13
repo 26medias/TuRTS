@@ -8,6 +8,31 @@
 use turts_net_protocol::messages as wire;
 use turts_sim::CommittedTick;
 
-pub(super) fn match_state(_batch: &CommittedTick) -> Option<wire::MatchState> {
-    None
+pub(super) fn match_state(batch: &CommittedTick) -> Option<wire::MatchState> {
+    batch.match_outcomes.as_ref().map(state)
+}
+
+pub(super) fn state(outcomes: &turts_sim::outcome::MatchOutcomes) -> wire::MatchState {
+    use turts_sim::outcome::{Outcome, OutcomeReason};
+    wire::MatchState {
+        connections: Vec::new(),
+        outcomes: outcomes
+            .slots
+            .iter()
+            .map(|result| {
+                result.map(|result| wire::SlotOutcome {
+                    outcome: match result.outcome {
+                        Outcome::Victory => wire::Outcome::Victory,
+                        Outcome::Defeat => wire::Outcome::Defeat,
+                        Outcome::Draw => wire::Outcome::Draw,
+                    },
+                    reason: match result.reason {
+                        OutcomeReason::KeyUnitsLost => wire::OutcomeReason::KeyUnitsLost,
+                        OutcomeReason::OpponentsDefeated => wire::OutcomeReason::OpponentsDefeated,
+                    },
+                    tick: result.tick,
+                })
+            })
+            .collect(),
+    }
 }

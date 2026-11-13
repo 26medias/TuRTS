@@ -471,6 +471,8 @@ pub struct EconomyChangesView {
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct WorldView {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub match_outcomes: Option<crate::outcome::MatchOutcomes>,
     #[serde(
         default,
         skip_serializing_if = "super::construction::ConstructionState::is_empty"
@@ -645,6 +647,9 @@ pub fn world_view(world: &mut World) -> WorldView {
     unit_orders.sort_by_key(|record| record.unit_id);
     let m3 = super::views_m3::m3_world_view(world);
     let mut view = WorldView {
+        match_outcomes: world
+            .get_resource::<crate::outcome::MatchOutcomes>()
+            .cloned(),
         construction: world
             .get_resource::<super::construction::ConstructionState>()
             .cloned()

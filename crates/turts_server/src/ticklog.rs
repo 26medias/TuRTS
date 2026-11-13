@@ -103,6 +103,7 @@ mod tests {
 
     fn cli(tick_log: &Path, synthetic_units: u32) -> Cli {
         Cli {
+            computer_slot: None,
             config: PathBuf::from("server.ron"),
             tick_log: Some(tick_log.to_path_buf()),
             stats: None,

@@ -22,12 +22,19 @@ The replica commits these records together. A failed delta cannot partly update 
 The server owns match start, defeat, and victory. Losing the declared key units causes defeat.
 The surviving team wins. If both teams lose their last key units in one tick, the result is a draw.
 Send the declared match record through the existing export path. The client displays that record.
+Send the terminal state as one full snapshot per connection on the existing reliable channel.
+Do not send unreliable deltas for that frozen tick. A missing last delta cannot hide the result.
 The result screen cannot declare a winner from local unit counts.
 
-The proposed computer opponent submits ordinary validated orders for its own slot.
+The computer opponent submits ordinary validated orders for its own reserved slot.
 It cannot mutate the world or spend another slot's balance through a separate path.
 Its decisions use simulation ticks and explicit state. They do not use wall time or unseeded randomness.
 Keep the opponent separate from the simulation rules so that a second human can use the same slot later.
+Reserve the computer identity against network claims. The first human gets the remaining seat.
+Wait for the human before starting the opponent's clock. Decide once per simulation second.
+Harvest compatible resources, build one military factory, and train up to six mobile soldiers.
+Send two soldiers after 75 seconds, then send another group each minute. Defend against nearby enemies.
+Use content capabilities and geometry. Do not hardcode unit ids, mod ids, prices, or combat statistics.
 
 ## Contested movement
 
@@ -59,4 +66,9 @@ The first browser probe built a barracks, trained a soldier, and delivered timbe
 Resource selection now shows the node name and remaining amount.
 The first-click probes passed at 1280x720 and 1024x768. Each checked three own units,
 six order buttons, and all four extra interactions. The 1280x720 buttons probe passed.
-These are partial readiness checks. The opponent, match results, arrival rule, and full readiness remain open.
+These are partial readiness checks. The arrival rule and full readiness remain open.
+
+Match results and the opponent have one independent review with executed probes.
+It found a lost terminal delta and a map-derived seat count. Both are fixed.
+The terminal wire test checks the reliable channel. The API keeps its fixed two seats.
+The opponent test runs harvest, construction, training, fighting, and defeat through ordinary orders.

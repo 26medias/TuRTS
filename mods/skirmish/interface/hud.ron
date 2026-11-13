@@ -1,6 +1,13 @@
 (
     id: "hud_main",
     root: [
+ (id: "match_result", at: Some((anchor: Centre, offset: (0.0, 0.0), pivot: None)), size: (w: Px(520.0), h: Px(160.0)), layer: 100, visible: [MatchOver], widget: Box(fill: Some(Colour("#10251c")), border: None, children: [
+  (id: "result_title", at: Some((anchor: TopLeft, offset: (24.0, 20.0), pivot: None)), size: (w: Px(472.0), h: Px(52.0)), widget: Text(text: Bind(Outcome), font: None, size: 36, colour: "#ffffff", align: Centre, wrap: false)),
+  (id: "victory_detail", at: Some((anchor: TopLeft, offset: (24.0, 90.0), pivot: None)), size: (w: Px(472.0), h: Px(44.0)), visible: [OutcomeIs(Victory)], widget: Text(text: Literal("You destroyed the enemy command centre."), font: None, size: 16, colour: "#ffffff", align: Centre, wrap: true)),
+  (id: "defeat_detail", at: Some((anchor: TopLeft, offset: (24.0, 90.0), pivot: None)), size: (w: Px(472.0), h: Px(44.0)), visible: [OutcomeIs(Defeat)], widget: Text(text: Literal("The enemy destroyed your command centre."), font: None, size: 16, colour: "#ffffff", align: Centre, wrap: true)),
+  (id: "draw_detail", at: Some((anchor: TopLeft, offset: (24.0, 90.0), pivot: None)), size: (w: Px(472.0), h: Px(44.0)), visible: [OutcomeIs(Draw)], widget: Text(text: Literal("Both command centres are destroyed."), font: None, size: 16, colour: "#ffffff", align: Centre, wrap: true)),
+ ])),
+
  (id: "building_sites", at: Some((anchor: TopLeft, offset: (16.0, 470.0), pivot: None)), size: (w: Px(300.0), h: Px(88.0)), widget: List(source: Sites, direction: Vertical, gap: 6, max_items: 2, item: (id: "building_site", size: (w: Fill, h: Px(38.0)), widget: Box(fill: Some(Colour("#183127")), border: None, children: [
   (id: "building_status", at: Some((anchor: TopLeft, offset: (4.0, 2.0), pivot: None)), size: (w: Px(292.0), h: Px(24.0)), widget: Text(text: Format("Building {0}", [Item(Name)]), font: None, size: 14, colour: "#ffffff", align: Left, wrap: false)),
   (id: "building_progress", at: Some((anchor: TopLeft, offset: (4.0, 28.0), pivot: None)), size: (w: Px(292.0), h: Px(6.0)), widget: Bar(value: Item(Progress), max: Literal("1"), fill: Colour("#33dd66"), background: Colour("#12241b"), direction: Horizontal)),

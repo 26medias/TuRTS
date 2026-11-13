@@ -440,6 +440,8 @@ pub fn stage_package(
 pub fn install_package(world: &mut World, staged: StagedPackage) {
     world.insert_resource(crate::economy::construction::ConstructionState::default());
     world.remove_resource::<crate::economy::construction::ConstructionLimit>();
+    world.remove_resource::<crate::outcome::MatchRules>();
+    world.remove_resource::<crate::outcome::MatchOutcomes>();
     boot_m3::initialize_m3_resources(world);
     world.insert_resource(staged.types);
     world.insert_resource(staged.bounds);

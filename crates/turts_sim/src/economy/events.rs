@@ -200,6 +200,7 @@ pub enum EffectRow {
 
 #[derive(Resource, Debug, Clone, Default, PartialEq)]
 pub struct CommittedTick {
+    pub match_outcomes: Option<crate::outcome::MatchOutcomes>,
     pub tick: u32,
     pub spawned: Vec<UnitState>,
     pub removed: Vec<u32>,

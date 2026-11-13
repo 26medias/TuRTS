@@ -3,6 +3,7 @@
 
 mod boot;
 mod command_script;
+mod computer;
 mod config;
 mod economylog;
 mod export;
@@ -103,6 +104,7 @@ fn run() -> Result<(), String> {
     ));
 
     session::install(&mut app, advertised);
+    computer::install(&mut app, cli.computer_slot)?;
     command_script::install(&mut app, cli.command_script.as_deref())?;
     orderlog::install(&mut app, cli.order_log.as_deref())?;
     outbound::install(&mut app);

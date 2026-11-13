@@ -218,11 +218,11 @@ impl PackageArchive {
         let match_files = self.match_defs()?;
         // Site caps use match data now. Other lifecycle rules stay refused until the
         // authoritative match implementation supplies them.
-        if match_files.iter().any(|(_, definition)| {
-            definition.start != turts_mod_api::StartPolicy::Immediate
-                || definition.victory.is_some()
-        }) {
-            return Err(ModError::new(&self.manifest.id, "exports.match", "match start and victory rules are not built in this engine build; leave them out until an engine build supports them").with_file(MANIFEST_PATH));
+        if match_files
+            .iter()
+            .any(|(_, definition)| definition.start != turts_mod_api::StartPolicy::Immediate)
+        {
+            return Err(ModError::new(&self.manifest.id, "exports.match", "lobby start rules are not built in this engine build; leave them out until an engine build supports them").with_file(MANIFEST_PATH));
         }
         let resources = resource_files
             .iter()

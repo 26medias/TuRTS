@@ -1715,6 +1715,8 @@ fn owner_unit_orders_from_audit(
     fn reject_reason(reason: R) -> wire::CommandRejectReason {
         use wire::CommandRejectReason as W;
         match reason {
+            R::MatchOver => W::MatchOver,
+            R::SlotDefeated => W::SlotDefeated,
             R::SiteOutsideMap => W::SiteOutsideMap,
             R::SiteOutOfArea => W::SiteOutOfArea,
             R::SiteBlocked => W::SiteBlocked,

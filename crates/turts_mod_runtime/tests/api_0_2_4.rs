@@ -756,9 +756,9 @@ fn h7_value_variants_in_a_text_widget() {
             "UI-HUD",
         ),
         ("Bind(Connection)", "Value::Connection", "UI2-CONN"),
-        ("Bind(Outcome)", "Value::Outcome", "UI-RESULT"),
-        ("Bind(OutcomeReason)", "Value::OutcomeReason", "UI-RESULT"),
-        ("Bind(MatchClock)", "Value::MatchClock", "UI-RESULT"),
+        ("Bind(Outcome)", "Value::Outcome", ""),
+        ("Bind(OutcomeReason)", "Value::OutcomeReason", ""),
+        ("Bind(MatchClock)", "Value::MatchClock", ""),
         (
             "Bind(MatchStats(UnitsTrained))",
             "Value::MatchStats",
@@ -810,8 +810,8 @@ fn h7_value_variants_in_a_text_widget() {
 fn h10_predicates_in_a_visible_list() {
     for (predicate, feature, owner) in [
         ("Placing", "Predicate::Placing", "UI-PLACE"),
-        ("MatchOver", "Predicate::MatchOver", "UI-RESULT"),
-        ("OutcomeIs(Victory)", "Predicate::OutcomeIs", "UI-RESULT"),
+        ("MatchOver", "Predicate::MatchOver", ""),
+        ("OutcomeIs(Victory)", "Predicate::OutcomeIs", ""),
         ("HintShown", "Predicate::HintShown", "UI-HINT"),
         (
             r#"SupplyShort("cedar:wood")"#,

@@ -125,12 +125,16 @@ pub enum RejectReason {
     SiteNearBuilding,
     SiteNearResource,
     ConstructionQueueFull,
+    MatchOver,
+    SlotDefeated,
 }
 
 impl RejectReason {
     /// The stable name of the reason.
     pub fn as_str(self) -> &'static str {
         match self {
+            Self::MatchOver => "match_over",
+            Self::SlotDefeated => "slot_defeated",
             Self::SiteOutsideMap => "site_outside_map",
             Self::SiteOutOfArea => "site_out_of_area",
             Self::SiteBlocked => "site_blocked",
@@ -182,6 +186,24 @@ impl RejectReason {
 
 /// Apply one admitted command synchronously. Automatic simulation phases do not run here.
 pub fn apply_command(world: &mut World, command: &Command) -> CommandResult {
+    let refusal = if world
+        .get_resource::<crate::outcome::MatchOutcomes>()
+        .is_some_and(|state| state.end_tick.is_some())
+    {
+        Some(RejectReason::MatchOver)
+    } else if crate::outcome::slot_defeated(world, command.slot.0) {
+        Some(RejectReason::SlotDefeated)
+    } else {
+        None
+    };
+    if let Some(reason) = refusal {
+        return crate::economy::transaction::capture_command(world, command, |_| CommandResult {
+            slot: command.slot,
+            seq: command.seq,
+            outcome: Err(reason),
+            units: Default::default(),
+        });
+    }
     if let CommandKind::MoveTo { unit_ids, target } = &command.kind
         && unit_ids.len() > 1
     {

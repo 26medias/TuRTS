@@ -126,7 +126,8 @@ impl Plugin for SimPlugin {
                     SimSet::Commands,
                 )
                     .chain()
-                    .run_if(match_started),
+                    .run_if(match_started)
+                    .run_if(crate::outcome::match_running),
             )
             .configure_sets(
                 FixedUpdate,
@@ -145,7 +146,8 @@ impl Plugin for SimPlugin {
                     SimSet::Outcome,
                 )
                     .chain()
-                    .run_if(match_started),
+                    .run_if(match_started)
+                    .run_if(crate::outcome::match_running),
             )
             .configure_sets(FixedPostUpdate, SimSet::Collect.run_if(match_started))
             .add_systems(
@@ -327,6 +329,10 @@ fn publish_completed_tick(world: &mut World) {
         &completed.units,
     );
     let batch = CommittedTick {
+        match_outcomes: (completed.match_outcomes
+            != world.resource::<CompletedWorld>().0.match_outcomes)
+            .then(|| completed.match_outcomes.clone())
+            .flatten(),
         tick,
         spawned,
         removed,

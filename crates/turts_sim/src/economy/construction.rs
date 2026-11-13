@@ -81,7 +81,7 @@ fn circle(point: Vec2, radius: f32) -> Circle {
     }
 }
 
-fn check_placement(
+pub fn check_placement(
     world: &World,
     slot: SlotId,
     output: &turts_mod_api::ResolvedUnit,

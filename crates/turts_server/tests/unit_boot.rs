@@ -189,6 +189,7 @@ fn boot_refuses_a_root_with_a_dependency() {
 /// The options of a run with `count` synthetic units and nothing else.
 fn synthetic_cli(count: u32) -> config::Cli {
     config::Cli {
+        computer_slot: None,
         config: PathBuf::from("server.ron"),
         tick_log: None,
         stats: None,

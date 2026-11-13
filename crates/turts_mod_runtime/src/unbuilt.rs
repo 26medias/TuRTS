@@ -168,12 +168,6 @@ pub(crate) const UNBUILT_FEATURES: &[UnbuiltLine] = &[
     line("ItemField::Badge", "UI-HUD"),
     // UI-RESULT: `Value::Outcome`, `OutcomeReason`, `MatchClock`, `Predicate::MatchOver`,
     // `OutcomeIs`, `OutcomeReasonIs`, `{slot}` (H17, T4), `leave_match` (H23).
-    line("Value::Outcome", "UI-RESULT"),
-    line("Value::OutcomeReason", "UI-RESULT"),
-    line("Value::MatchClock", "UI-RESULT"),
-    line("Predicate::MatchOver", "UI-RESULT"),
-    line("Predicate::OutcomeIs", "UI-RESULT"),
-    line("Predicate::OutcomeReasonIs", "UI-RESULT"),
     use_line("placeholder {slot}", "UI-RESULT"),
     line("engine action leave_match", "UI-RESULT"),
     // UI2-RESULT: `Value::MatchStats` (H7).
@@ -331,7 +325,7 @@ mod tests {
             ("UI-PLACE", 6),
             ("UI-LABEL", 1),
             ("UI-HUD", 14),
-            ("UI-RESULT", 8),
+            ("UI-RESULT", 2),
             ("UI2-RESULT", 1),
             ("UI2-HUD", 12),
             ("L-FX-PRES", 3),
@@ -358,6 +352,12 @@ mod tests {
             .map(|row| row.name)
             .collect();
         let want = BTreeSet::from([
+            "Value::Outcome",
+            "Value::OutcomeReason",
+            "Value::MatchClock",
+            "Predicate::MatchOver",
+            "Predicate::OutcomeIs",
+            "Predicate::OutcomeReasonIs",
             "Source::Sites",
             "removal with a queue",
             "constructor",

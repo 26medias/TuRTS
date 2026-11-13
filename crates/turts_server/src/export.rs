@@ -156,7 +156,12 @@ pub fn snapshot_for(view: &WorldView, slot: SlotId) -> wire::Snapshot {
                 .collect(),
             // Every Snapshot carries `Some` (design 6.7.13, ruling for `L0-STORE`): the empty state
             // is the lane-0 value for "no match state yet"; `L-MATCH-SIM` fills it from the sim.
-            match_state: Some(wire::MatchState::default()),
+            match_state: Some(
+                view.match_outcomes
+                    .as_ref()
+                    .map(export_match::state)
+                    .unwrap_or_default(),
+            ),
             jobs: export_jobs::queue_job_records(
                 &owned_queues(&view.economy.queues, slot),
                 view.tick,
@@ -626,6 +631,8 @@ fn weapon_state(row: &RawWeaponAudit, tick: u32, view: &WorldView) -> wire::Weap
 fn command_reject_reason(reason: turts_sim::RejectReason) -> wire::CommandRejectReason {
     use turts_sim::RejectReason as R;
     match reason {
+        R::MatchOver => wire::CommandRejectReason::MatchOver,
+        R::SlotDefeated => wire::CommandRejectReason::SlotDefeated,
         R::SiteOutsideMap => wire::CommandRejectReason::SiteOutsideMap,
         R::SiteOutOfArea => wire::CommandRejectReason::SiteOutOfArea,
         R::SiteBlocked => wire::CommandRejectReason::SiteBlocked,

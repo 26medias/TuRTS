@@ -34,13 +34,51 @@ pub fn load_package(world: &mut World, archive: &PackageArchive) -> Result<(), M
         },
         tick_hz,
     )?;
-    let construction_limit = archive
-        .match_defs()?
+    let matches = archive.match_defs()?;
+    let construction_limit = matches
         .first()
         .and_then(|(_, definition)| definition.open_sites_per_slot);
+    let match_rules = matches
+        .first()
+        .and_then(|(_, definition)| definition.victory.as_ref())
+        .map(|victory| {
+            let turts_mod_api::VictoryRule::LastTeamStanding { defeat } = victory;
+            let key_groups = defeat
+                .iter()
+                .map(|clause| match clause {
+                    turts_mod_api::DefeatClause::KeyUnitsLost { units } => units
+                        .iter()
+                        .map(|id| {
+                            turts_mod_api::ContentId::parse(id).map_err(|message| {
+                                ModError::new(&archive.manifest.id, "victory", message)
+                            })
+                        })
+                        .collect(),
+                    turts_mod_api::DefeatClause::DisconnectedFor { .. } => Err(ModError::new(
+                        &archive.manifest.id,
+                        "victory",
+                        "disconnection defeat is not supported in this engine build",
+                    )),
+                })
+                .collect::<Result<Vec<Vec<_>>, _>>()?;
+            let participants = (0..turts_mod_api::SLOT_COUNT).collect();
+            Ok(turts_sim::outcome::MatchRules {
+                key_groups,
+                participants,
+            })
+        })
+        .transpose()?;
     install_package(world, staged);
     if let Some(limit) = construction_limit {
         world.insert_resource(turts_sim::economy::construction::ConstructionLimit(limit));
+    }
+    if let Some(rules) = match_rules {
+        world.insert_resource(turts_sim::outcome::MatchOutcomes {
+            slots: vec![None; usize::from(turts_mod_api::SLOT_COUNT)],
+            end_tick: None,
+        });
+        world.insert_resource(rules);
+        turts_sim::initialize_completed_world(world);
     }
     Ok(())
 }

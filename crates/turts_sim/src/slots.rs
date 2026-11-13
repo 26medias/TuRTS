@@ -61,6 +61,22 @@ impl Slots {
         self.owners.get(slot.0 as usize).copied().flatten()
     }
 
+    /// Reserve one configured slot, for a server-controlled player or an explicit seat.
+    pub fn claim_at(&mut self, slot: SlotId, player_id: u64) -> Result<SlotId, ClaimError> {
+        if self.owners.contains(&Some(player_id)) {
+            return Err(ClaimError::AlreadyClaimed);
+        }
+        let owner = self
+            .owners
+            .get_mut(usize::from(slot.0))
+            .ok_or(ClaimError::NoOpenSlot)?;
+        if owner.is_some() {
+            return Err(ClaimError::NoOpenSlot);
+        }
+        *owner = Some(player_id);
+        Ok(slot)
+    }
+
     pub fn owners(&self) -> Vec<Option<u64>> {
         self.owners.clone()
     }

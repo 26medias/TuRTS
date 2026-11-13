@@ -41,6 +41,8 @@ Options:
   --stats PATH    Rewrite PATH with one line of JSON statistics every second and at exit.
                   Also enable private session observations in the sibling PATH.sessions.jsonl (mode 0600).
                   This option is a local test hook; the file is not served over HTTP.
+  --computer-slot SLOT
+                  Start a computer player in this map slot. It uses normal game orders.
   --economy-log PATH
                   Write trusted economy audit JSONL to PATH. The file contains private data
                   for all players and is intended only for local test evidence.
@@ -123,6 +125,7 @@ pub fn read_config(path: &Path) -> Result<HostConfig, String> {
 #[allow(dead_code)] // Tasks 7b and 7c read the options that Task 7a does not.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Cli {
+    pub computer_slot: Option<u8>,
     pub config: PathBuf,
     pub tick_log: Option<PathBuf>,
     pub stats: Option<PathBuf>,
@@ -137,6 +140,7 @@ pub struct Cli {
 pub fn parse_cli(args: &[String]) -> Result<Cli, String> {
     let mut config = None;
     let mut cli = Cli {
+        computer_slot: None,
         config: PathBuf::new(),
         tick_log: None,
         stats: None,
@@ -153,6 +157,12 @@ pub fn parse_cli(args: &[String]) -> Result<Cli, String> {
                 .ok_or_else(|| format!("{name} needs a value\n{USAGE}"))
         };
         match arg.as_str() {
+            "--computer-slot" => {
+                cli.computer_slot = Some(
+                    u8::try_from(number(arg, value(arg)?)?)
+                        .map_err(|_| "--computer-slot must fit in a slot number".to_string())?,
+                )
+            }
             "--tick-log" => cli.tick_log = Some(PathBuf::from(value(arg)?)),
             "--stats" => cli.stats = Some(PathBuf::from(value(arg)?)),
             "--synthetic-units" => cli.synthetic_units = number(arg, value(arg)?)?,
