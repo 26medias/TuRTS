@@ -15,7 +15,8 @@
 # target/mc-evidence/<label>/receipt.json). When that folder exists on the machine, the check recomputes the hash, compares
 # expected_head and command_exit, and looks for the pass lines in command.log (`M2_CASE_PASS <case>`; for the leg
 # `<case>: RED assertion=` and `<case>: RESTORED GREEN`).
-# There is no local run for any case at this head yet, so the file has no rows and the check is red. That is correct.
+# A row is added after a green local run of its case (the case line in command.log, the receipt.json of the label). The check is red while a
+# case of tests/m2/local-only.tsv has no row, while its latest row is stale (see above), or while a hash or a pass line does not match.
 case	head_sha	label	result	date	receipt_sha256
 E9-browser-base-public-convergence	9d2ab86b4aaef55adc21bf5e8d40e1493e99bfcb	mctable-m2-base	pass	2026-11-12	923433503585aff622dda48e704b06e6c5efb63de4256863befeb85f0c66df50
 E9-browser-haul-public-convergence	9d2ab86b4aaef55adc21bf5e8d40e1493e99bfcb	mctable-m2-haul	pass	2026-11-12	cb6366cf0a6e05300d78d6dc06debb5cf49830b15d4bc2695950d304525ef9bb

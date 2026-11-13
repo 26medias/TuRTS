@@ -93,6 +93,30 @@ class McBrowserParamsTests(unittest.TestCase):
                 with self.subTest(row=name), self.assertRaisesRegex(ValueError, "limited to SLOT1|unknown fields"):
                     validate_task16_plan(row)
 
+    def test_sel4_double_tap_is_one_declared_step_with_a_bounded_gap(self) -> None:
+        root = pathlib.Path(__file__).resolve().parents[1]
+        row = json.loads((root / "browser/rows/SEL4.json").read_text())
+        actions = row["stages"]["task16"]["actions"]
+        taps = [a for a in actions if a["call"] == "key" and "taps" in a.get("options", {})]
+        self.assertEqual(len(taps), 1, "the double tap of SEL4 is one step, not two press steps")
+        self.assertEqual(taps[0]["options"], {"taps": 2, "gap_ms": 80, "window_ms": 400})
+        plain = [a for a in actions if a["call"] == "key" and a["code"] == "Digit1" and not a.get("modifiers") and "options" not in a]
+        self.assertEqual(len(plain), 2, "the recall before the tap and the recall after the reload stay single presses")
+        self.assertIsNotNone(validate_task16_plan(row))
+
+    def test_tap_options_are_bounded(self) -> None:
+        root = pathlib.Path(__file__).resolve().parents[1]
+        good = json.loads((root / "browser/rows/SEL4.json").read_text())
+        index = next(i for i, a in enumerate(good["stages"]["task16"]["actions"]) if "taps" in a.get("options", {}))
+        for options in ({"taps": 1, "gap_ms": 80, "window_ms": 400}, {"taps": 5, "gap_ms": 80, "window_ms": 400},
+                        {"taps": 2, "gap_ms": -1, "window_ms": 400}, {"taps": 2, "gap_ms": 80},
+                        {"taps": 2, "gap_ms": 80, "window_ms": 0}, {"taps": 2, "gap_ms": 80, "window_ms": 400, "action": "down"},
+                        {"taps": 2, "gap_ms": 80, "window_ms": 400, "key": "1"}, {"gap_ms": 80}):
+            row = json.loads(json.dumps(good))
+            row["stages"]["task16"]["actions"][index]["options"] = options
+            with self.subTest(options=options), self.assertRaises(ValueError):
+                validate_task16_plan(row)
+
 
 if __name__ == "__main__":
     unittest.main()

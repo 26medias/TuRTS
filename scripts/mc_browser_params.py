@@ -250,8 +250,19 @@ def validate_task16_plan(row: dict[str, Any]) -> dict[str, Any] | None:
             if "modifiers" in action and (not isinstance(action["modifiers"], list) or any(not isinstance(item, str) for item in action["modifiers"])):
                 raise ValueError(f"{row_id} action {index + 1} modifiers must be strings")
             options = action.get("options", {})
-            if not isinstance(options, dict) or set(options) - {"key", "hold_ms", "action"}:
+            if not isinstance(options, dict) or set(options) - {"key", "hold_ms", "action", "taps", "gap_ms", "window_ms"}:
                 raise ValueError(f"{row_id} action {index + 1} has invalid key options")
+            tap_fields = {"taps", "gap_ms", "window_ms"} & set(options)
+            if tap_fields:
+                # One tap gesture is one driver call (tests/browser/harness/driver-io.js tapKey): the row names the
+                # count, the fixed gap between the presses and the product window that the measured gap must stay in.
+                if tap_fields != {"taps", "gap_ms", "window_ms"}:
+                    raise ValueError(f"{row_id} action {index + 1} tap options need taps, gap_ms and window_ms together")
+                for name, low, high in (("taps", 2, 4), ("gap_ms", 0, 2_000), ("window_ms", 1, 2_000)):
+                    if type(options[name]) is not int or not low <= options[name] <= high:
+                        raise ValueError(f"{row_id} action {index + 1} key {name} must be an integer in {low}..{high}")
+                if "key" in options or options.get("action", "press") != "press":
+                    raise ValueError(f"{row_id} action {index + 1} taps need a physical press with no logical key")
             if "hold_ms" in options and (type(options["hold_ms"]) is not int or not 0 <= options["hold_ms"] <= 60_000):
                 raise ValueError(f"{row_id} action {index + 1} key hold_ms must be an integer in 0..60000")
             if "action" in options and (not isinstance(options["action"], str) or options["action"] not in {"press", "down", "up"}):

@@ -109,6 +109,68 @@ function createDriverIo(pages, { outputDir, inputLog = [], initialCursor = { x: 
         }
     }
     const noEvent = (operation) => async () => operation();
+    // A tap gesture (a double tap) is ONE driver call. The presses of one gesture must not be separated by the page
+    // round trips that every call adds (about 17 of them, 22 to 35 ms each on the test host: 300 to 444 ms between two
+    // single-press calls against the product window of 400 ms, MC table run at 9d2ab86b). The presses go out under the
+    // bounded frame hold, as the repeated click does, with a fixed gap of gap_ms. The page timestamps of the presses
+    // are the measure: the gaps go in the run record (entry.taps) and a gap over window_ms fails the call.
+    function tapOptions(opts, modifiers) {
+        const integer = (value, low, high) => Number.isInteger(value) && value >= low && value <= high;
+        if (!integer(opts.taps, 2, 4)) throw new RangeError("opts.taps must be an integer from 2 to 4");
+        if (!integer(opts.gap_ms, 0, 2000)) throw new RangeError("opts.gap_ms must be an integer from 0 to 2000");
+        if (!integer(opts.window_ms, 1, 2000)) throw new RangeError("opts.window_ms must be an integer from 1 to 2000");
+        if (opts.hold_ms !== undefined && !integer(opts.hold_ms, 0, 60000)) throw new RangeError("opts.hold_ms must be an integer from 0 to 60000");
+        if (typeof opts.key === "string") throw new TypeError("opts.taps cannot be combined with a logical key");
+        if (opts.action !== undefined && opts.action !== "press") throw new TypeError("opts.taps needs action press");
+        if (!Array.isArray(modifiers)) throw new TypeError("modifiers must be an array");
+        return { taps: opts.taps, gapMs: opts.gap_ms, windowMs: opts.window_ms, holdMs: opts.hold_ms || 0 };
+    }
+    async function tapKey(code, modifiers, opts) {
+        const { taps, gapMs, windowMs, holdMs } = tapOptions(opts, modifiers);
+        const windowIndex = state.selected;
+        const keyModifier = maybeModifierPhysicalKey(code);
+        const dispatchCode = keyModifier?.code || code;
+        await record("key", [code, modifiers, opts], ["keydown", "keyup"], async (send, entry) => {
+            await page().evaluate(() => {
+                if (typeof window.__turts_begin_bounded_input !== "function" || typeof window.__turts_end_bounded_input !== "function") {
+                    throw new Error("bounded input frame hold is unavailable");
+                }
+                window.__turts_begin_bounded_input();
+            });
+            entry.frame_hold = { requested: true, taps };
+            const temporary = [];
+            try {
+                for (const modifier of modifiers) {
+                    const physical = modifierPhysicalKey(modifier);
+                    if (heldModifiers[windowIndex].has(physical.code)) continue;
+                    await send("keydown", () => page().keyboard.down(physical.code), keyExpectation(modifier));
+                    setModifierHeld(physical, true, windowIndex);
+                    temporary.push(physical);
+                }
+                for (let tap = 0; tap < taps; tap += 1) {
+                    if (tap > 0) await page().waitForTimeout(gapMs);
+                    await send("keydown", () => page().keyboard.down(dispatchCode), keyExpectation(code));
+                    if (holdMs) await page().waitForTimeout(holdMs);
+                    await send("keyup", () => page().keyboard.up(dispatchCode), keyExpectation(code));
+                }
+            } finally {
+                for (const physical of [...temporary].reverse()) {
+                    if (!heldModifiers[windowIndex].has(physical.code)) continue;
+                    await send("keyup", () => page().keyboard.up(physical.code), keyExpectation(physical.code));
+                    setModifierHeld(physical, false, windowIndex);
+                }
+                const released = await page().evaluate(() => window.__turts_end_bounded_input());
+                entry.frame_hold = { requested: true, taps, ...released };
+            }
+        });
+        const entry = inputLog.at(-1);
+        const downs = (entry.actual_events || []).filter((event) => event.type === "keydown" && event.code === dispatchCode);
+        if (downs.length !== taps) throw new Error(`double tap: the browser saw ${downs.length} keydown events, expected ${taps}: instrument fault`);
+        const gaps = downs.slice(1).map((event, index) => event.wall_time_ms - downs[index].wall_time_ms);
+        entry.taps = { count: taps, requested_gap_ms: gapMs, window_ms: windowMs, measured_gaps_ms: gaps };
+        const over = gaps.find((gap) => !(gap <= windowMs));
+        if (over !== undefined) throw new Error(`double tap took ${over} ms, over the ${windowMs} ms window: host or driver fault`);
+    }
     const io = {
         async click(x, y, button = "left", options = undefined) {
             if (options !== undefined && (!options || typeof options !== "object" || Array.isArray(options) || Object.keys(options).some((key) => key !== "count"))) {
@@ -152,6 +214,7 @@ function createDriverIo(pages, { outputDir, inputLog = [], initialCursor = { x: 
             });
         },
         async key(code, modifiers = [], opts = {}) {
+            if (opts && opts.taps !== undefined) return tapKey(code, modifiers, opts);
             return record("key", [code, modifiers, opts], ["keydown", "keyup"], async (send) => {
                 const holdMs = Number(opts.hold_ms || 0);
                 const action = opts.action || "press";

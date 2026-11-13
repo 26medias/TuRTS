@@ -257,6 +257,28 @@ function frameForKey(capture, keydown, action) {
             dispatch.matched_action === action));
 }
 
+// The product window of a double tap of a group key (crates/turts_interaction/src/lib.rs:1626, double_click_ms).
+const SEL4_DOUBLE_TAP_WINDOW_MS = 400;
+
+// The double tap is one key step with options.taps (tests/browser/harness/driver-io.js tapKey). The harness fails the
+// call when the page-measured gap is over the window; this re-reads the page timestamps so that a slow tap names the
+// instrument ("host or driver fault"), never the product, and runs before any product clause.
+function sel4DoubleTapReceipt(input) {
+    const index = input.findIndex((entry) => entry.call === "key" && entry.args?.[0] === "Digit1" &&
+        JSON.stringify(entry.args?.[1] || []) === "[]" && entry.args?.[2]?.taps === 2);
+    assert(index >= 0, "SEL4 double tap step is absent from the input log: instrument fault");
+    const entry = input[index];
+    const windowMs = entry.args[2].window_ms;
+    assert.equal(windowMs, SEL4_DOUBLE_TAP_WINDOW_MS,
+        `SEL4 double tap window must be the product window of ${SEL4_DOUBLE_TAP_WINDOW_MS} ms, the row says ${windowMs}: instrument fault`);
+    const downs = (entry.actual_events || []).filter((event) => event.type === "keydown" && event.code === "Digit1");
+    assert(downs.length === 2, `double tap: the browser saw ${downs.length} keydown events, expected 2: instrument fault`);
+    const gap = downs[1].wall_time_ms - downs[0].wall_time_ms;
+    assert(Number.isFinite(gap) && gap >= 0, "double tap: the keydown times are not numbers: instrument fault");
+    if (!(gap <= windowMs)) throw new Error(`double tap took ${gap} ms, over the ${windowMs} ms window: host or driver fault`);
+    return { index, entry, gap_ms: gap };
+}
+
 async function judgeSel4(view, input, captures, decoded) {
     const assign = keyCall(input, "Digit1", ["Control"]);
     const beforeAssign = captureBefore(captures, input, assign.index, assign.entry);
@@ -313,25 +335,11 @@ async function judgeSel4(view, input, captures, decoded) {
 
     const reloadIndex = input.findIndex((entry) => entry.call === "reload");
     assert(reloadIndex >= 0, "SEL4 needs a real browser reload to check persisted group identity");
+    const doubleTap = sel4DoubleTapReceipt(input);
     judgeSel4DeathPrune(captures, input, reloadIndex, assignFrame, afterAssign, worker41, worker42);
 
-    const plainCalls = input.map((entry, index) => ({ entry, index })).filter(({ entry }) =>
-        entry.call === "key" && entry.args?.[0] === "Digit1" && JSON.stringify(entry.args?.[1] || []) === "[]");
-    const doubleTap = plainCalls.find(({ entry }, index) => {
-        const first = entry.actual_events.find((event) => event.type === "keydown" && event.code === "Digit1");
-        const prior = plainCalls[index - 1];
-        const priorDown = prior?.entry.actual_events.find((event) => event.type === "keydown" && event.code === "Digit1");
-        return first && priorDown && Number.isFinite(first.wall_time_ms) && Number.isFinite(priorDown.wall_time_ms) &&
-            first.wall_time_ms > priorDown.wall_time_ms && first.wall_time_ms - priorDown.wall_time_ms <= 400;
-    });
-    requireProduct(Boolean(doubleTap), "SEL4", "double-tap-centre", "two actual plain Digit1 presses did not occur within the real 400ms double-tap window");
-    const doubleIndex = doubleTap.index;
-    const doubleEntry = doubleTap.entry;
-    const doublePairIndex = plainCalls.findIndex(({ index }) => index === doubleIndex);
-    assert(doublePairIndex > 0, "SEL4 double-tap receipt lost its first physical key call");
-    const firstDouble = plainCalls[doublePairIndex - 1];
-    const beforeDouble = captureBefore(captures, input, firstDouble.index, firstDouble.entry);
-    const afterDouble = captureAfter(captures, input, doubleIndex, doubleEntry);
+    const beforeDouble = captureBefore(captures, input, doubleTap.index, doubleTap.entry);
+    const afterDouble = captureAfter(captures, input, doubleTap.index, doubleTap.entry);
     const group = afterDouble.checkpoint.debug.groups?.["1"];
     assert(Array.isArray(group) && group.length > 0, "SEL4 double-tap target group has no actual live members");
     const viewport = afterDouble.checkpoint.scene?.viewport_physical_rect;
@@ -2058,5 +2066,5 @@ async function judgeSlot1Evidence(view, input, captures, captureByName) {
 
 module.exports = {
     ROW_CHECKS, ROW_PHYSICAL_CHECKS, ROW_INPUT_CALLS, judge, judgeStartupOutcome,
-    sourceControls: { judgeKm1GuidePixels, per1GoldPixels, pixelGlyphShape, judgePer1NoticePixels, hasKeyBinding, frameNamedDispatches, verifiedRoot, compatibilityLine, judgeKm1, judgeKm1ReservedPack, judgePer1Storage, judgeSel4OldMatchPrune, judgeCam2, judgeCam2CursorPixels, judgeP1Attachment, judgeSh1MenuControls, judgeKm2FocusOverlay, judgeKm2OverlayPixels, assertRequiredPhysicalReceipts, assertSlotObserverRecordShapes, assertSlot1CapacityBoundary, assertSlot1CloneOwnerContinuity, assertSlot1DeadlineChecks, assertSlot1HelloTimes, assertSlot1TerminalPixels },
+    sourceControls: { sel4DoubleTapReceipt, judgeKm1GuidePixels, per1GoldPixels, pixelGlyphShape, judgePer1NoticePixels, hasKeyBinding, frameNamedDispatches, verifiedRoot, compatibilityLine, judgeKm1, judgeKm1ReservedPack, judgePer1Storage, judgeSel4OldMatchPrune, judgeCam2, judgeCam2CursorPixels, judgeP1Attachment, judgeSh1MenuControls, judgeKm2FocusOverlay, judgeKm2OverlayPixels, assertRequiredPhysicalReceipts, assertSlotObserverRecordShapes, assertSlot1CapacityBoundary, assertSlot1CloneOwnerContinuity, assertSlot1DeadlineChecks, assertSlot1HelloTimes, assertSlot1TerminalPixels },
 };

@@ -110,13 +110,12 @@
                     "call": "key",
                     "phase": "group-combat",
                     "code": "Digit1",
-                    "modifiers": []
-                },
-                {
-                    "call": "key",
-                    "phase": "group-combat",
-                    "code": "Digit1",
-                    "modifiers": []
+                    "modifiers": [],
+                    "options": {
+                        "taps": 2,
+                        "gap_ms": 80,
+                        "window_ms": 400
+                    }
                 },
                 {
                     "call": "wait",
@@ -359,205 +358,205 @@
                 {
                     "name": "centred-pair",
                     "phase": "group-combat",
-                    "after_action": 16,
+                    "after_action": 15,
                     "window": 1
                 },
                 {
                     "name": "death-start",
                     "phase": "group-combat",
-                    "after_action": 19,
+                    "after_action": 18,
                     "window": 1
                 },
                 {
                     "name": "death-sample-1",
                     "phase": "group-combat",
-                    "after_action": 20,
+                    "after_action": 19,
                     "window": 1
                 },
                 {
                     "name": "death-sample-2",
                     "phase": "group-combat",
-                    "after_action": 21,
+                    "after_action": 20,
                     "window": 1
                 },
                 {
                     "name": "death-sample-3",
                     "phase": "group-combat",
-                    "after_action": 22,
+                    "after_action": 21,
                     "window": 1
                 },
                 {
                     "name": "death-sample-4",
                     "phase": "group-combat",
-                    "after_action": 23,
+                    "after_action": 22,
                     "window": 1
                 },
                 {
                     "name": "death-sample-5",
                     "phase": "group-combat",
-                    "after_action": 24,
+                    "after_action": 23,
                     "window": 1
                 },
                 {
                     "name": "death-sample-6",
                     "phase": "group-combat",
-                    "after_action": 25,
+                    "after_action": 24,
                     "window": 1
                 },
                 {
                     "name": "death-sample-7",
                     "phase": "group-combat",
-                    "after_action": 26,
+                    "after_action": 25,
                     "window": 1
                 },
                 {
                     "name": "death-sample-8",
                     "phase": "group-combat",
-                    "after_action": 27,
+                    "after_action": 26,
                     "window": 1
                 },
                 {
                     "name": "death-sample-9",
                     "phase": "group-combat",
-                    "after_action": 28,
+                    "after_action": 27,
                     "window": 1
                 },
                 {
                     "name": "death-sample-10",
                     "phase": "group-combat",
-                    "after_action": 29,
+                    "after_action": 28,
                     "window": 1
                 },
                 {
                     "name": "death-sample-11",
                     "phase": "group-combat",
-                    "after_action": 30,
+                    "after_action": 29,
                     "window": 1
                 },
                 {
                     "name": "death-sample-12",
                     "phase": "group-combat",
-                    "after_action": 31,
+                    "after_action": 30,
                     "window": 1
                 },
                 {
                     "name": "death-sample-13",
                     "phase": "group-combat",
-                    "after_action": 32,
+                    "after_action": 31,
                     "window": 1
                 },
                 {
                     "name": "death-sample-14",
                     "phase": "group-combat",
-                    "after_action": 33,
+                    "after_action": 32,
                     "window": 1
                 },
                 {
                     "name": "death-sample-15",
                     "phase": "group-combat",
-                    "after_action": 34,
+                    "after_action": 33,
                     "window": 1
                 },
                 {
                     "name": "death-sample-16",
                     "phase": "group-combat",
-                    "after_action": 35,
+                    "after_action": 34,
                     "window": 1
                 },
                 {
                     "name": "death-sample-17",
                     "phase": "group-combat",
-                    "after_action": 36,
+                    "after_action": 35,
                     "window": 1
                 },
                 {
                     "name": "death-sample-18",
                     "phase": "group-combat",
-                    "after_action": 37,
+                    "after_action": 36,
                     "window": 1
                 },
                 {
                     "name": "death-sample-19",
                     "phase": "group-combat",
-                    "after_action": 38,
+                    "after_action": 37,
                     "window": 1
                 },
                 {
                     "name": "death-sample-20",
                     "phase": "group-combat",
-                    "after_action": 39,
+                    "after_action": 38,
                     "window": 1
                 },
                 {
                     "name": "death-sample-21",
                     "phase": "group-combat",
-                    "after_action": 40,
+                    "after_action": 39,
                     "window": 1
                 },
                 {
                     "name": "death-sample-22",
                     "phase": "group-combat",
-                    "after_action": 41,
+                    "after_action": 40,
                     "window": 1
                 },
                 {
                     "name": "death-sample-23",
                     "phase": "group-combat",
-                    "after_action": 42,
+                    "after_action": 41,
                     "window": 1
                 },
                 {
                     "name": "death-sample-24",
                     "phase": "group-combat",
-                    "after_action": 43,
+                    "after_action": 42,
                     "window": 1
                 },
                 {
                     "name": "death-sample-25",
                     "phase": "group-combat",
-                    "after_action": 44,
+                    "after_action": 43,
                     "window": 1
                 },
                 {
                     "name": "death-sample-26",
                     "phase": "group-combat",
-                    "after_action": 45,
+                    "after_action": 44,
                     "window": 1
                 },
                 {
                     "name": "death-sample-27",
                     "phase": "group-combat",
-                    "after_action": 46,
+                    "after_action": 45,
                     "window": 1
                 },
                 {
                     "name": "death-sample-28",
                     "phase": "group-combat",
-                    "after_action": 47,
+                    "after_action": 46,
                     "window": 1
                 },
                 {
                     "name": "death-sample-29",
                     "phase": "group-combat",
-                    "after_action": 48,
+                    "after_action": 47,
                     "window": 1
                 },
                 {
                     "name": "death-sample-30",
                     "phase": "group-combat",
-                    "after_action": 49,
+                    "after_action": 48,
                     "window": 1
                 },
                 {
                     "name": "reloaded",
                     "phase": "group-combat",
-                    "after_action": 51,
+                    "after_action": 50,
                     "window": 1
                 },
                 {
                     "name": "reload-recall",
                     "phase": "group-combat",
-                    "after_action": 53,
+                    "after_action": 52,
                     "window": 1
                 }
             ],
