@@ -2767,6 +2767,7 @@ fn owner_facts_are_kept_from_frame_to_frame() {
 fn browser_pixel_wheel_keeps_intermediate_zoom_levels() {
     let _guard = test_lock();
     let (mut app, window, _) = fixture_app_with_client_shell();
+    app.update();
     let height = |app: &App| {
         app.world()
             .resource::<CoreRuntime>()
