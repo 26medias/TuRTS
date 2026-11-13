@@ -43,12 +43,16 @@ client check it:
 
   - The sound switch rule (API 0.2.4, row H25): the engine action `toggle_sound` switches the
     sound, and the game is silent until the player turns it on. The engine draws its own switch on
-    the play screen only when the interface places no `Button` with `Input(\"toggle_sound\")`. A
-    package that places one owns the play-screen control: it may show it or hide it with `visible`,
-    so a package may leave the play-screen switch out. The settings menu always holds a switch and
-    opens with the engine action `menu`, so a package of the edition 0.2.4 keeps at least one key
-    on `menu` (F10 and Escape are the defaults; `engine_overrides` or an action named `menu` that
-    leaves it no key is refused).
+    the play screen in each frame in which no `Button` with `Input(\"toggle_sound\")` is visible.
+    A package that places a visible one owns the play-screen control: it may show it or hide it
+    with `visible`, so a package may leave the play-screen switch out. A button that is hidden, or
+    whose `visible` list can never hold, does not count, so the player never loses the switch.
+    The settings menu always holds a switch. F10 is reserved for the settings menu: the engine
+    reads a plain F10 for `menu` before any binding of the package or the player. turts-pack
+    refuses a package of the edition 0.2.4 that binds F10 to another action, that takes F10 away
+    from `menu` in `engine_overrides`, or that has an action named `menu`. A package of an
+    older edition is not checked; the engine still reads F10 first at run time. Escape opens the
+    menu through `cancel`, as before.
 
 On the first problem, turts-pack prints the package, the file, and the field to stderr,
 writes no archive, and exits with 2. On success it exits with 0.";

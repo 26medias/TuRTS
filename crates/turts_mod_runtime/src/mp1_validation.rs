@@ -1368,54 +1368,63 @@ impl Pack {
             .collect()
     }
 
-    /// The engine action `menu` keeps at least one key. The settings menu holds the sound switch that
-    /// every player can always reach (the CEO rule: silent by default, with a way back; a mod may leave
-    /// the play-screen switch out, design 6.10 row H25). The engine defaults are F10 and Escape; an
-    /// `engine_overrides` entry for `menu` replaces them, and so does an authored action named `menu`
-    /// (`turts_interaction::input_map::effective_actions` applies the overrides, then the authored actions).
-    fn menu_keeps_a_key(&self) -> Result<(), ModError> {
-        let keys = |bindings: &[Binding]| {
-            bindings
-                .iter()
-                .filter(|binding| matches!(binding, Binding::Key { .. }))
-                .count()
+    /// F10 is reserved for the settings menu (the engine action `menu`). The settings menu holds the
+    /// sound switch that every player must be able to reach (the CEO rule: silent by default, with a
+    /// way back; a mod may leave the play-screen switch out of its interface only because the engine
+    /// draws one, design 6.10 row H25). The engine reads a plain F10 for `menu` before any binding of
+    /// the mod or the player (`turts_interaction::bindings::RESERVED_MENU_KEY`). So a package of API
+    /// 0.2.4 may not bind F10 to another action, may not take F10 away from `menu` in
+    /// `engine_overrides`, and may not author an action named `menu`.
+    fn menu_keeps_f10(&self) -> Result<(), ModError> {
+        let is_f10 = |binding: &Binding| matches!(binding, Binding::Key { code, mods } if code == "F10" && mods.is_empty());
+        let reserved = |name: &str| {
+            format!(
+                "F10 is reserved for the settings menu (the engine action `menu`); bind another key to `{name}`"
+            )
         };
-        let mut last: Option<(usize, &str, String)> = None;
         for (file, input) in &self.inputs {
             for (index, over) in input.engine_overrides.iter().enumerate() {
                 if over.name == "menu" {
-                    last = Some((
-                        keys(&over.bindings),
+                    if !over.bindings.iter().any(is_f10) {
+                        return Err(self.fail(
+                            file,
+                            &format!("engine_overrides[{index}].bindings"),
+                            "the engine action `menu` must keep F10; F10 is reserved for the settings menu, which holds the sound switch that every player must be able to reach. Add `Key(code: \"F10\", mods: [])` to these bindings, or leave `menu` out of `engine_overrides`",
+                        ));
+                    }
+                    continue;
+                }
+                if let Some(at) = over.bindings.iter().position(is_f10) {
+                    return Err(self.fail(
                         file,
-                        format!("engine_overrides[{index}].bindings"),
+                        &format!("engine_overrides[{index}].bindings[{at}]"),
+                        reserved(&over.name),
                     ));
                 }
             }
-        }
-        for (file, input) in &self.inputs {
             for (index, action) in input.actions.iter().enumerate() {
                 if action.name == "menu" {
-                    last = Some((
-                        keys(&action.default),
+                    return Err(self.fail(
                         file,
-                        format!("actions[{index}].default"),
+                        &format!("actions[{index}].name"),
+                        "`menu` is an engine action; an authored action cannot have its name. Change its keys in `engine_overrides` (it keeps F10)",
+                    ));
+                }
+                if let Some(at) = action.default.iter().position(is_f10) {
+                    return Err(self.fail(
+                        file,
+                        &format!("actions[{index}].default[{at}]"),
+                        reserved(&action.name),
                     ));
                 }
             }
         }
-        match last {
-            Some((0, file, field)) => Err(self.fail(
-                file,
-                &field,
-                "the engine action `menu` has no key; the settings menu holds the sound switch that every player must be able to reach, so `menu` keeps at least one key: bind a key to it, or leave `menu` out of `engine_overrides` (the keys are F10 and Escape)",
-            )),
-            _ => Ok(()),
-        }
+        Ok(())
     }
 
     /// No two actions have the same default key (the check is global; there is no action scope).
     fn input_group(&self) -> Result<(), ModError> {
-        self.menu_keeps_a_key()?;
+        self.menu_keeps_f10()?;
         let mut seen: BTreeMap<String, &str> = BTreeMap::new();
         for (file, input) in &self.inputs {
             for (action_index, action) in input.actions.iter().enumerate() {

@@ -179,9 +179,9 @@ pub(super) fn sync_sound_status_label(
 }
 
 /// The fallback sound switch of the play screen: one visible button, bottom, right of the centre,
-/// with the state in words. It exists while the player is in the game and the active interface
-/// places no widget with the action `toggle_sound`. A mod that places one owns the control and
-/// its place (D67); the engine then draws nothing here.
+/// with the state in words. It exists while the player is in the game and no button with the action
+/// `toggle_sound` is visible. A mod that places a visible one owns the control and its place
+/// (D67); the engine then draws nothing here.
 #[derive(Component)]
 pub(crate) struct PlayScreenSoundSwitch;
 
@@ -196,7 +196,10 @@ const SOUND_SWITCH_FROM_BOTTOM: f32 = 8.0;
 
 pub(super) fn sync_sound_switch(
     phase: Option<Res<Phase>>,
-    acquired: Option<Res<AcquiredPackages>>,
+    mod_buttons: Query<(
+        &crate::widgets::primitives::WidgetButtonAction,
+        &InheritedVisibility,
+    )>,
     audio: Option<Res<crate::debug_feed::AudioFeed>>,
     volumes: Res<VolumeSettings>,
     existing: Query<Entity, With<PlayScreenSoundSwitch>>,
@@ -205,14 +208,20 @@ pub(super) fn sync_sound_switch(
     let joined = phase
         .as_deref()
         .is_some_and(|phase| matches!(phase, Phase::Joined { .. }));
-    // The engine draws its own switch only when the active interface places no widget with the
-    // action `toggle_sound` (design 6.10, row H25; D67: the play screen is the mod's). Then the
-    // silent default has a way back to sound in every mod.
-    let mod_places_one = acquired
-        .as_deref()
-        .and_then(|packages| packages.0.presentation.interface.as_ref())
-        .is_some_and(|interface| interface.places_input_button("toggle_sound"));
-    if !joined || mod_places_one {
+    // The engine draws its own switch in each frame in which no button with the action
+    // `toggle_sound` is visible (design 6.10, row H25; D67: the play screen is the mod's). A mod
+    // that places a visible switch owns the control. A switch that is hidden (a `visible` list that
+    // never holds, or a button that the layout puts away) does not count: a static check of the
+    // lists is not complete. So the silent default always has a way back to sound on the play
+    // screen, and F10 opens the settings menu, which holds the switch too.
+    let mod_switch_is_visible = mod_buttons.iter().any(|(button, visible)| {
+        visible.get()
+            && matches!(
+                &button.0,
+                crate::widgets::primitives::WidgetAction::Input { name } if name == "toggle_sound"
+            )
+    });
+    if !joined || mod_switch_is_visible {
         for entity in &existing {
             commands.entity(entity).despawn();
         }

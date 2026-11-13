@@ -1804,60 +1804,167 @@ fn the_edition_0_2_3_baseline_is_the_base_commit_form_of_each_shipped_package() 
     }
 }
 
-/// M2 of the re-review: the settings menu holds the sound switch that every player can reach, and it
-/// opens with the engine action `menu`, so a package of the edition 0.2.4 keeps at least one key on
-/// `menu`. Both ways to take the keys away are refused: an `engine_overrides` entry with no key, and
-/// an authored action named `menu` with no key. A key (F9) or a replacement is fine. An older edition
-/// is not checked (the rule is a 0.2.4 check).
+/// H1 of the re-check of pass 3 (ruling, option (b)): F10 is reserved for the settings menu. The
+/// settings menu holds the sound switch that every player must be able to reach, and the engine reads
+/// a plain F10 as `menu` before any binding (`crates/turts_interaction/tests/f10_reserved.rs`). A
+/// package of the edition 0.2.4 cannot take F10 away: `menu` in `engine_overrides` keeps F10 (the
+/// packages `a1` and `a5` of the re-check put `menu` on `KeyM` and on `ShiftLeft` and are refused), no
+/// other action binds F10, and no authored action is named `menu`. An older edition is not checked.
 #[test]
-fn the_engine_action_menu_keeps_a_key_in_a_package_of_the_edition_0_2_4() {
+fn f10_is_reserved_for_the_settings_menu_in_a_package_of_the_edition_0_2_4() {
     const BINDINGS: &str = "input/bindings.ron";
-    let with_override = |bindings: &'static str| -> [Edit<'static>; 1] {
+    let with_override = |entries: &'static str| -> [Edit<'static>; 1] {
         [(
             BINDINGS,
             "engine_overrides: []",
-            Box::leak(
-                format!(r#"engine_overrides: [(name: "menu", bindings: {bindings})]"#)
-                    .into_boxed_str(),
-            ),
+            Box::leak(format!("engine_overrides: [{entries}]").into_boxed_str()),
         )]
     };
-    let rule = "the engine action `menu` has no key; the settings menu holds the sound switch that every player must be able to reach, so `menu` keeps at least one key: bind a key to it, or leave `menu` out of `engine_overrides` (the keys are F10 and Escape)";
-    for (what, bindings) in [
-        ("empty", "[]"),
-        ("pointer only", "[Pointer(button: Middle, mods: [])]"),
+    let menu_text = |field: &str| {
+        format!(
+            "cedar/input/bindings.ron: {field}: the engine action `menu` must keep F10; F10 is reserved for the settings menu, which holds the sound switch that every player must be able to reach. Add `Key(code: \"F10\", mods: [])` to these bindings, or leave `menu` out of `engine_overrides`"
+        )
+    };
+    // a1: `menu` on KeyM, which key_move uses, and `cancel` unbound. a5: `menu` on ShiftLeft alone.
+    // And the empty and the pointer-only forms of the first pass.
+    for (what, entries) in [
+        (
+            "a1",
+            r#"(name: "menu", bindings: [Key(code: "KeyM", mods: [])]), (name: "cancel", bindings: [])"#,
+        ),
+        (
+            "a5",
+            r#"(name: "menu", bindings: [Key(code: "ShiftLeft", mods: [])]), (name: "cancel", bindings: [])"#,
+        ),
+        ("empty", r#"(name: "menu", bindings: [])"#),
+        (
+            "pointer only",
+            r#"(name: "menu", bindings: [Pointer(button: Middle, mods: [])])"#,
+        ),
+        (
+            "F9 without F10",
+            r#"(name: "menu", bindings: [Key(code: "F9", mods: [])])"#,
+        ),
     ] {
         assert_eq!(
-            cedar("^0.2.4", &with_override(bindings), &[])
+            cedar("^0.2.4", &with_override(entries), &[])
                 .content()
                 .unwrap_err()
                 .to_string(),
-            format!("cedar/input/bindings.ron: engine_overrides[0].bindings: {rule}"),
+            menu_text("engine_overrides[0].bindings"),
             "{what}"
         );
-        cedar("^0.2.3", &with_override(bindings), &[])
+        cedar("^0.2.3", &with_override(entries), &[])
             .content()
             .unwrap_or_else(|error| panic!("{what} at ^0.2.3 is not checked: {error}"));
     }
-    cedar(
-        "^0.2.4",
-        &with_override(r#"[Key(code: "F9", mods: [])]"#),
-        &[],
-    )
-    .content()
-    .expect("a key on menu is fine");
+    for ok in [
+        r#"(name: "menu", bindings: [Key(code: "F10", mods: [])])"#,
+        r#"(name: "menu", bindings: [Key(code: "F10", mods: []), Key(code: "F9", mods: [])])"#,
+    ] {
+        cedar("^0.2.4", &with_override(ok), &[])
+            .content()
+            .expect("menu keeps F10");
+    }
+    // F10 on another action: an engine action in `engine_overrides`, and an authored action.
+    assert_eq!(
+        cedar(
+            "^0.2.4",
+            &with_override(r#"(name: "zoom_in", bindings: [Key(code: "F10", mods: [])])"#),
+            &[]
+        )
+        .content()
+        .unwrap_err()
+        .to_string(),
+        "cedar/input/bindings.ron: engine_overrides[0].bindings[0]: F10 is reserved for the settings menu (the engine action `menu`); bind another key to `zoom_in`"
+    );
+    let own: [Edit; 1] = [(
+        BINDINGS,
+        r#"(name: "key_cancel", default: [Key(code: "KeyC", mods: [])])]"#,
+        r#"(name: "key_cancel", default: [Key(code: "KeyC", mods: [])]), (name: "key_own", default: [Key(code: "F10", mods: [])])]"#,
+    )];
+    assert_eq!(
+        cedar("^0.2.4", &own, &[])
+            .content()
+            .unwrap_err()
+            .to_string(),
+        "cedar/input/bindings.ron: actions[5].default[0]: F10 is reserved for the settings menu (the engine action `menu`); bind another key to `key_own`"
+    );
+    cedar("^0.2.3", &own, &[])
+        .content()
+        .expect("a 0.2.3 package may bind F10 (the engine reads F10 first at run time)");
+    // An authored action named `menu`.
     let authored: [Edit; 1] = [(
         BINDINGS,
         r#"(name: "key_cancel", default: [Key(code: "KeyC", mods: [])])]"#,
-        r#"(name: "key_cancel", default: [Key(code: "KeyC", mods: [])]), (name: "menu", default: [])]"#,
+        r#"(name: "key_cancel", default: [Key(code: "KeyC", mods: [])]), (name: "menu", default: [Key(code: "F10", mods: [])])]"#,
     )];
     assert_eq!(
         cedar("^0.2.4", &authored, &[])
             .content()
             .unwrap_err()
             .to_string(),
-        format!("cedar/input/bindings.ron: actions[5].default: {rule}")
+        "cedar/input/bindings.ron: actions[5].name: `menu` is an engine action; an authored action cannot have its name. Change its keys in `engine_overrides` (it keeps F10)"
     );
+}
+
+/// M2 of the re-check of pass 3: a key bound to `toggle_sound` (in `engine_overrides`, or as the name of
+/// an authored action) is a use of API 0.2.4 like the button action: a package of `^0.2.3` is refused.
+/// `leave_match` has the same gap (a `^0.2.3` package can bind a key to it and packs); it is not changed
+/// here, because the same rule would make the `UNBUILT` line of `UI-RESULT` refuse the override at
+/// `^0.2.4` too. It is recorded for `UI-RESULT` in `docs/research/mp1/errata-sound.md`.
+#[test]
+fn a_key_bound_to_toggle_sound_needs_api_0_2_4() {
+    const BINDINGS: &str = "input/bindings.ron";
+    let bound = |name: &'static str| -> [Edit<'static>; 1] {
+        [(
+            BINDINGS,
+            "engine_overrides: []",
+            Box::leak(format!(r#"engine_overrides: [(name: "{name}", bindings: [Key(code: "KeyT", mods: [])])]"#).into_boxed_str()),
+        )]
+    };
+    assert_eq!(
+        cedar("^0.2.3", &bound("toggle_sound"), &[])
+            .content()
+            .unwrap_err()
+            .to_string(),
+        "cedar/manifest.ron: engine_api: `engine action toggle_sound` needs engine api 0.2.4; `^0.2.3` admits 0.2.3 (written in input/bindings.ron: engine_overrides[0].name)"
+    );
+    cedar("^0.2.4", &bound("toggle_sound"), &[])
+        .content()
+        .expect("at ^0.2.4 a key may be bound to toggle_sound");
+    let authored: [Edit; 1] = [(
+        BINDINGS,
+        r#"(name: "key_cancel", default: [Key(code: "KeyC", mods: [])])]"#,
+        r#"(name: "key_cancel", default: [Key(code: "KeyC", mods: [])]), (name: "toggle_sound", default: [Key(code: "KeyT", mods: [])])]"#,
+    )];
+    assert_eq!(
+        cedar("^0.2.3", &authored, &[])
+            .content()
+            .unwrap_err()
+            .to_string(),
+        "cedar/manifest.ron: engine_api: `engine action toggle_sound` needs engine api 0.2.4; `^0.2.3` admits 0.2.3 (written in input/bindings.ron: actions[5].name)"
+    );
+    // The gap that is not closed here (UI-RESULT): leave_match.
+    cedar("^0.2.3", &bound("leave_match"), &[])
+        .content()
+        .expect("leave_match: known gap, owner UI-RESULT");
+}
+
+/// The six shipped packages and the test fixtures bind no F10 (the reserved key changes nothing for them).
+#[test]
+fn no_shipped_package_binds_f10() {
+    for name in ["muster", "forge", "base", "cedar", "haul", "acme"] {
+        let files = read_files(&package_dir(name));
+        for (path, bytes) in &files {
+            if path.starts_with("input/") {
+                assert!(
+                    !String::from_utf8_lossy(bytes).contains("F10"),
+                    "{name}/{path} binds F10"
+                );
+            }
+        }
+    }
 }
 
 /// L1 of the re-review: the hint of a misspelt action must not offer a name that the edition of the

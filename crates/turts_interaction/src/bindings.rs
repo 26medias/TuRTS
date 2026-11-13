@@ -2,6 +2,10 @@
 
 use super::*;
 
+/// The key that always opens the settings menu (the action `menu`), before any binding. A package of
+/// the edition 0.2.4 cannot bind it to anything else (`turts_mod_runtime`, `mp1_validation.rs`).
+pub const RESERVED_MENU_KEY: &str = "F10";
+
 fn modifiers_equal(a: &[Mod], b: &[Mod]) -> bool {
     a.len() == b.len() && a.iter().all(|modifier| b.contains(modifier))
 }
@@ -124,11 +128,16 @@ impl Core {
             .any(|actions| actions.iter().any(|held| held == action))
     }
     pub(super) fn action_for_key(&self, code: &str, world: &dyn WorldView) -> Option<String> {
+        let physical = modifiers_before_key(code, &self.physical_mods, &self.keys);
+        // F10 is reserved for the settings menu (the menu holds the sound switch that every player
+        // must be able to reach): a plain F10 is `menu` before any binding of the mod or the player.
+        if code == RESERVED_MENU_KEY && physical.is_empty() {
+            return Some("menu".into());
+        }
         let actions = input_map::effective_actions_with_runtime(
             world.input_map(),
             world.runtime_binding_overrides(),
         );
-        let physical = modifiers_before_key(code, &self.physical_mods, &self.keys);
         let exact = actions.iter().find_map(|(name, bindings)| bindings.iter().any(|binding| matches!(binding, turts_mod_api::Binding::Key { code: key, mods } if key == code && modifiers_equal(mods, &physical))).then_some(name.clone()));
         exact.or_else(|| {
             (self.physical_mods.len() == 1 && self.physical_mods.contains(&Mod::Shift)).then(|| actions.into_iter().find_map(|(name, bindings)| {

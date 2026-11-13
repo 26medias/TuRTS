@@ -219,9 +219,9 @@ fn pack_cli_without_a_directory_or_with_an_unknown_option_prints_the_usage() {
     assert!(stderr.contains("usage: turts-pack <dir>"), "{stderr}");
 }
 
-/// M2 of the re-review: the help states the rule of the sound switch where a modder meets the action
-/// name: the engine draws its own switch only when no widget has the action, a package may leave the
-/// play-screen switch out, and the settings menu (the action `menu`) keeps a key.
+/// M2 of the re-review and H1 of the third re-check: the help states the rule of the sound switch where
+/// a modder meets the action name: the engine draws its own switch in each frame in which no mod switch
+/// is visible, a package may leave the play-screen switch out, and F10 is reserved for the settings menu.
 #[test]
 fn pack_cli_help_states_the_sound_switch_rule() {
     let output = turts_pack(&[Path::new("--help")]);
@@ -229,9 +229,10 @@ fn pack_cli_help_states_the_sound_switch_rule() {
     let stdout = stdout.split_whitespace().collect::<Vec<_>>().join(" ");
     for text in [
         "the engine action `toggle_sound` switches the sound",
-        "only when the interface places no `Button` with `Input(\"toggle_sound\")`",
+        "in each frame in which no `Button` with `Input(\"toggle_sound\")` is visible",
         "so a package may leave the play-screen switch out",
-        "a package of the edition 0.2.4 keeps at least one key on `menu`",
+        "F10 is reserved for the settings menu",
+        "refuses a package of the edition 0.2.4 that binds F10 to another action",
     ] {
         assert!(stdout.contains(text), "usage lacks `{text}`:\n{stdout}");
     }

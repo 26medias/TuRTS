@@ -2897,35 +2897,89 @@ fn packages_with_interface(ron_text: &str) -> AcquiredPackages {
     packages
 }
 
-/// D67 (Decided): the play screen is the mod's. The engine draws its own sound switch only when the
-/// active interface places no widget with the action `toggle_sound`: with no interface, and with an
-/// interface that has none. A shipped package that places one hides the engine switch.
+/// A stand-in for a widget of the mod: a button with an action. `visible` is what the widget tree
+/// gives a widget that its `visible` list shows or hides (`InheritedVisibility`).
+fn mod_button(app: &mut App, action: &str, visible: bool) -> Entity {
+    app.world_mut()
+        .spawn((
+            crate::widgets::primitives::WidgetButtonAction(
+                crate::widgets::primitives::WidgetAction::Input {
+                    name: action.into(),
+                },
+            ),
+            if visible {
+                InheritedVisibility::VISIBLE
+            } else {
+                InheritedVisibility::HIDDEN
+            },
+        ))
+        .id()
+}
+
+/// D67 (Decided): the play screen is the mod's. Re-check of pass 3, M2 (ruling (c)): a mod switch that
+/// can never be visible (the `[GuideOpen, Not(GuideOpen)]` of the reviewer) must not turn off the
+/// engine switch. The honest rule, in the code: the engine draws its own sound switch in each frame
+/// in which no button with the action `toggle_sound` is visible. A static check of the `visible`
+/// lists is not complete, so the rule does not use it.
 #[test]
-fn the_engine_draws_its_switch_only_when_the_interface_places_no_toggle_sound_button() {
-    let fixture =
-        include_str!("../../../../tests/browser/fixtures/feedback/muster/interface/hud.ron");
+fn the_engine_draws_its_switch_in_each_frame_in_which_no_mod_switch_is_visible() {
+    // The interface places a switch (muster), but the widget is hidden: the engine switch shows.
+    let mut app = start_gate_app_with(running_audio(), VolumeSettings::default());
+    app.insert_resource(packages_with_interface(include_str!(
+        "../../../../mods/muster/interface/hud.ron"
+    )));
+    let hidden = mod_button(&mut app, "toggle_sound", false);
+    app.update();
+    assert_eq!(
+        switches(&mut app).len(),
+        1,
+        "a switch that is never visible leaves the player the engine switch"
+    );
+    // The mod switch becomes visible: the engine switch goes.
+    app.world_mut()
+        .entity_mut(hidden)
+        .insert(InheritedVisibility::VISIBLE);
+    app.update();
     assert!(
-        !fixture.contains("toggle_sound"),
-        "the fixture places no switch"
+        switches(&mut app).is_empty(),
+        "a visible mod switch: the engine draws none"
     );
-    let mut with_none = start_gate_app_with(running_audio(), VolumeSettings::default());
-    with_none.insert_resource(forge_acquired_packages());
-    with_none.update();
+    // And hidden again: the engine switch comes back in the next frame.
+    app.world_mut()
+        .entity_mut(hidden)
+        .insert(InheritedVisibility::HIDDEN);
+    app.update();
+    assert_eq!(switches(&mut app).len(), 1);
+}
+
+/// The two widgets of a package (`SoundOn` and `Not(SoundOn)`): one is visible, one hidden: no engine
+/// switch. A visible button with another action does not count. No widget at all: the engine switch.
+#[test]
+fn a_visible_mod_switch_of_a_pair_hides_the_engine_switch_and_another_action_does_not() {
+    let mut pair = start_gate_app_with(running_audio(), VolumeSettings::default());
+    mod_button(&mut pair, "toggle_sound", false);
+    mod_button(&mut pair, "toggle_sound", true);
+    pair.update();
+    assert!(switches(&mut pair).is_empty());
+
+    let mut other = start_gate_app_with(running_audio(), VolumeSettings::default());
+    mod_button(&mut other, "toggle_guide", true);
+    other.update();
     assert_eq!(
-        switches(&mut with_none).len(),
+        switches(&mut other).len(),
         1,
-        "no interface: the engine switch"
+        "a visible button with another action"
     );
 
-    let mut without = start_gate_app_with(running_audio(), VolumeSettings::default());
-    without.insert_resource(packages_with_interface(fixture));
-    without.update();
-    assert_eq!(
-        switches(&mut without).len(),
-        1,
-        "an interface with no switch: the engine switch"
-    );
+    let mut none = start_gate_app_with(running_audio(), VolumeSettings::default());
+    none.update();
+    assert_eq!(switches(&mut none).len(), 1, "no widget at all");
+}
 
+/// The six shipped packages place the switch in their layouts (the layout is the mod's), and with its
+/// widget visible the engine draws none.
+#[test]
+fn the_six_shipped_layouts_place_the_switch_and_a_visible_one_hides_the_engine_switch() {
     for package in ["muster", "forge", "base", "cedar", "haul", "acme"] {
         let text = std::fs::read_to_string(format!(
             "{}/../../mods/{package}/interface/hud.ron",
@@ -2937,20 +2991,11 @@ fn the_engine_draws_its_switch_only_when_the_interface_places_no_toggle_sound_bu
             "{package} places the switch"
         );
         let mut app = start_gate_app_with(running_audio(), VolumeSettings::default());
-        app.insert_resource(packages_with_interface(&text));
+        mod_button(&mut app, "toggle_sound", true);
         app.update();
         assert!(
             switches(&mut app).is_empty(),
-            "{package}: its own switch is in its layout, the engine draws none"
+            "{package}: its own switch is visible"
         );
     }
-    // The engine switch goes when the mod switch arrives (the interface is acquired after the join).
-    let mut late = start_gate_app_with(running_audio(), VolumeSettings::default());
-    late.update();
-    assert_eq!(switches(&mut late).len(), 1);
-    late.insert_resource(packages_with_interface(include_str!(
-        "../../../../mods/muster/interface/hud.ron"
-    )));
-    late.update();
-    assert!(switches(&mut late).is_empty());
 }

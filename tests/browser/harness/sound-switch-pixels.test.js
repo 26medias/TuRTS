@@ -216,3 +216,16 @@ test("the proof reads the button of a package as the switch, and refuses two swi
     const both = make(false, [placed("Sound: off"), { kind: "sound_switch", id: "sound_switch", rect: [1, 1, 1, 1], visible: true, capture_root: true, text: "Sound: off" }]);
     assert.throws(() => assertSwitchClick({ label: "p", before: both, after, click: CLICK, fromOn: false }), /exactly one sound switch/);
 });
+
+// Review L4 of the third re-check: the map-press check of the click probe cannot go red in the browser, so it is
+// marked "not evidence" and does not count in the exit code. A counted check that fails still gives 1.
+test("the click probe does not count the map-press check, and counts every other check", () => {
+    const { exitCode } = require("../click-without-hover-probe.js");
+    const mapPress = { name: "map press", expected: false, acted: true, evidence: false, can_fail: false };
+    const click = (acted) => ({ name: "click", expected: true, acted });
+    assert.equal(exitCode([mapPress, click(true)]), 0, "a map-press check that acted does not fail the run");
+    assert.equal(exitCode([mapPress, click(false)]), 1, "a click check that did not act fails the run");
+    assert.equal(exitCode([{ ...mapPress, evidence: undefined }, click(true)]), 1, "with no mark the same check counts");
+    const source = fs.readFileSync(path.join(REPO, "tests/browser/click-without-hover-probe.js"), "utf8");
+    assert.match(source, /expected: false, acted, within_ms: WAIT_MS, evidence: false, can_fail: false/, "the JSON entry carries the mark");
+});

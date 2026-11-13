@@ -90,7 +90,35 @@ pub(crate) fn collect(_manifest: &Manifest, content: &ParsedMcContent) -> Vec<Va
     for (file, definition) in &content.matches {
         match_uses(&mut uses, file, definition);
     }
+    for (file, input) in &content.input_maps {
+        input_uses(&mut uses, file, input);
+    }
     uses.list
+}
+
+/// A key bound to the engine action `toggle_sound` (in `engine_overrides`, or as the name of an
+/// authored action) is a use of API 0.2.4 like the button action. The row is the same one.
+/// `leave_match` has the same gap and is not closed here: its `UNBUILT` line (owner `UI-RESULT`)
+/// would then refuse the override at `^0.2.4` too (`docs/research/mp1/errata-sound.md`).
+fn input_uses(uses: &mut Uses, file: &str, input: &turts_mod_api::InputMapDef) {
+    for (index, over) in input.engine_overrides.iter().enumerate() {
+        if over.name == "toggle_sound" {
+            uses.push(
+                "engine action toggle_sound",
+                file,
+                format!("engine_overrides[{index}].name"),
+            );
+        }
+    }
+    for (index, action) in input.actions.iter().enumerate() {
+        if action.name == "toggle_sound" {
+            uses.push(
+                "engine action toggle_sound",
+                file,
+                format!("actions[{index}].name"),
+            );
+        }
+    }
 }
 
 fn relation(uses: &mut Uses, file: &str, slots: SlotRelation, path: &str) {

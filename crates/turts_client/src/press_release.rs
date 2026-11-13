@@ -35,7 +35,10 @@ use bevy::{
         pointer::{PointerAction, PointerButton, PointerId, PointerInput},
     },
     prelude::*,
-    ui::{CalculatedClip, ComputedNode, ComputedUiTargetCamera, Pressed, UiGlobalTransform},
+    ui::{
+        CalculatedClip, ComputedNode, ComputedUiTargetCamera, InteractionDisabled, Pressed,
+        UiGlobalTransform,
+    },
     ui_widgets::Button as UiButton,
 };
 use std::{collections::HashMap, time::Duration};
@@ -143,7 +146,7 @@ pub fn click_in_one_frame(
     previous: Res<PreviousHoverMap>,
     nodes: UiNodes,
     cameras: Query<&Camera>,
-    buttons: Query<(), With<UiButton>>,
+    states: Query<(Has<UiButton>, Has<InteractionDisabled>)>,
     mut commands: Commands,
 ) {
     for click in clicks_in_one_frame(inputs.read().cloned()) {
@@ -161,6 +164,11 @@ pub fn click_in_one_frame(
             {
                 continue;
             }
+            // Bevy never presses or clicks a disabled button (`bevy_ui_widgets-0.20.0/src/button.rs:91-94`).
+            let (is_button, is_disabled) = states.get(*entity).unwrap_or_default();
+            if is_disabled {
+                continue;
+            }
             if !node_hit(*entity, click.press_at, &nodes, &cameras)
                 || !node_hit(*entity, click.release_at, &nodes, &cameras)
             {
@@ -170,8 +178,9 @@ pub fn click_in_one_frame(
             // drag for Bevy: its drag end took `Pressed` off the button
             // (`bevy_ui_widgets-0.20.0/src/button.rs`, `button_on_pointer_drag_end`) before this
             // system ran. The click needs `Pressed`, as the press gave it, so give it back.
-            if buttons.contains(*entity) {
-                commands.entity(*entity).insert(Pressed);
+            // `try_insert`: the `Activate` of a first click in this frame can despawn the button.
+            if is_button {
+                commands.entity(*entity).try_insert(Pressed);
             }
             commands.trigger(PointerClick {
                 entity: *entity,
@@ -545,6 +554,100 @@ mod tests {
             true,
         );
         assert_eq!(count(&app, "activate"), 0);
+    }
+
+    /// Re-check of pass 3, L1: a button whose own `Activate` despawns it, clicked twice in one frame.
+    /// The second click found the entity gone, and `insert(Pressed)` panicked in Bevy's error handler.
+    #[test]
+    fn a_button_that_despawns_itself_on_activate_is_not_pressed_again_in_the_same_frame() {
+        let (mut app, a, _) = app();
+        app.add_observer(|activated: On<Activate>, mut commands: Commands| {
+            commands.entity(activated.entity).despawn();
+        });
+        frame(
+            &mut app,
+            &[],
+            &[a],
+            &[
+                (PRESS, ON_A),
+                (RELEASE, ON_A),
+                (PRESS, ON_A),
+                (RELEASE, ON_A),
+            ],
+            true,
+        );
+        assert_eq!(
+            count(&app, "activate"),
+            1,
+            "the first click acts; the button is gone"
+        );
+        assert!(
+            app.world().get_entity(a).is_err(),
+            "the button was despawned by its own action"
+        );
+    }
+
+    /// Re-check of pass 3, L2: a disabled button is never pressed by the repair (Bevy never presses
+    /// one, `bevy_ui_widgets-0.20.0/src/button.rs:91-94`), and no click is sent to it.
+    #[test]
+    fn a_disabled_button_is_left_alone_by_the_repair() {
+        let (mut app, a, _) = app();
+        app.world_mut()
+            .entity_mut(a)
+            .insert(bevy::ui::InteractionDisabled);
+        frame(&mut app, &[], &[a], &[(PRESS, ON_A), (RELEASE, ON_A)], true);
+        assert_eq!(count(&app, "activate"), 0);
+        assert_eq!(
+            count(&app, "click"),
+            0,
+            "no click is sent to a disabled button"
+        );
+        assert!(!pressed(&app, a), "a disabled button has no `Pressed`");
+    }
+
+    fn input(pointer: PointerId, action: PointerAction, at: Vec2) -> PointerInput {
+        PointerInput::new(pointer, location(at), action)
+    }
+
+    /// Re-check of pass 3, L3 (fault F3): a cancel between the press and the release ends the press.
+    #[test]
+    fn a_cancel_between_the_press_and_the_release_is_not_a_click() {
+        let found = clicks_in_one_frame([
+            input(PointerId::Mouse, PRESS, ON_A),
+            input(PointerId::Mouse, PointerAction::Cancel, ON_A),
+            input(PointerId::Mouse, RELEASE, ON_A),
+        ]);
+        assert!(found.is_empty(), "press, cancel, release: no click");
+        assert_eq!(
+            clicks_in_one_frame([
+                input(PointerId::Mouse, PRESS, ON_A),
+                input(PointerId::Mouse, RELEASE, ON_A)
+            ])
+            .len(),
+            1,
+            "the control: press and release are a click"
+        );
+    }
+
+    /// Re-check of pass 3, L3 (fault F4): presses are kept for each pointer. A touch press and a mouse
+    /// release are not one click; two pointers that click in turn give two clicks.
+    #[test]
+    fn the_presses_of_two_pointers_do_not_mix() {
+        let touch = PointerId::Touch(1);
+        let mixed = clicks_in_one_frame([
+            input(touch, PRESS, ON_A),
+            input(PointerId::Mouse, RELEASE, ON_A),
+        ]);
+        assert!(mixed.is_empty(), "a touch press and a mouse release");
+        let two = clicks_in_one_frame([
+            input(touch, PRESS, ON_A),
+            input(PointerId::Mouse, PRESS, ON_B),
+            input(touch, RELEASE, ON_A),
+            input(PointerId::Mouse, RELEASE, ON_B),
+        ]);
+        assert_eq!(two.len(), 2, "two clicks, interleaved");
+        assert_eq!(two[0].pointer.id, touch);
+        assert_eq!(two[1].pointer.id, PointerId::Mouse);
     }
 
     /// Review L4: a release with no press in the same frame is Bevy's business. A press on a button, a

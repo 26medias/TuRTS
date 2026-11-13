@@ -42,8 +42,9 @@ pub struct InterfaceDef {
 }
 impl InterfaceDef {
     /// True when the interface places a widget (at any depth) that is a button with the action
-    /// `Input(name)`. The engine asks it with `toggle_sound`: it draws its own sound switch only
-    /// when the answer is false.
+    /// `Input(name)`. It is a static answer: it does not look at `visible`. The engine does not use
+    /// it to decide whether to draw its sound switch; it draws that switch in each frame in which no
+    /// button with `Input("toggle_sound")` is visible.
     pub fn places_input_button(&self, name: &str) -> bool {
         fn walk(widget: &Widget, name: &str) -> bool {
             match &widget.widget {
@@ -180,11 +181,14 @@ pub enum ButtonAction {
     /// `Input("toggle_sound")` (API 0.2.4, row H25) switches the sound on or off. The game makes no
     /// sound until the player turns it on, so the switch is the way back to sound. The rule for a
     /// mod: the play screen is the mod's (D67). The engine draws its own sound switch on the play
-    /// screen only when the interface places no widget with this action. A mod that places one
-    /// owns the control and its place, and may show it or hide it with `visible`; a mod may leave the
-    /// play-screen switch out by hiding its button. Every player can always reach a switch in
-    /// the settings menu, which opens with the engine action `menu`: a package of the edition 0.2.4
-    /// keeps at least one key on `menu` (the packer refuses a package that takes them all away).
+    /// screen in each frame in which no button with this action is visible. A mod that places a
+    /// visible one owns the control and its place, and may show it or hide it with `visible`; a mod
+    /// may leave the play-screen switch out by hiding its button. A button that stays hidden (for
+    /// example a `visible` list that never holds) does not count. Every player can always reach a
+    /// switch in the settings menu, which opens with the engine action `menu`. F10 is reserved for
+    /// it: the engine reads a plain F10 for `menu` before any binding of the mod or the player, and
+    /// the packer refuses a package of the edition 0.2.4 that binds F10 to another action, takes F10
+    /// away from `menu` in `engine_overrides`, or authors an action named `menu`.
     /// An `engine_overrides` entry can bind `toggle_sound` to a key; the key switches the sound.
     Input(String),
 }
@@ -248,9 +252,9 @@ pub enum Value {
     Hint,
     /// API 0.2.4, row H25: the words of the sound switch, `Sound: on` or `Sound: off`. It reads
     /// `Sound: on` only when the player has switched the sound on and the browser lets audio run.
-    /// Put it in a `Button` label with the action `Input("toggle_sound")`. Engine fallback: a game
-    /// whose interface places no widget with the action `toggle_sound` gets the engine's own switch
-    /// (design 6.10, row H25), so the silent default always has a way back to sound.
+    /// Put it in a `Button` label with the action `Input("toggle_sound")`. Engine fallback: in each
+    /// frame in which no button with the action `toggle_sound` is visible, the engine draws its own
+    /// switch (design 6.10, row H25), so the silent default always has a way back to sound.
     SoundState,
 }
 

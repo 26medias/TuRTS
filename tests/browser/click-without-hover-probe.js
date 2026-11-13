@@ -25,11 +25,16 @@
 //   wrapper. Checks: the sound switch (the button of the package or the engine fallback) turns
 //   the sound on with one such click; with `--guide-close` the Close button of the open guide hides
 //   the guide with one such click (a second kind of engine button).
-// Output: one JSON object on stdout; each check has `expected` and `acted`. Exit 0: every check
-// came out as expected; 1: one did not.
+// Output: one JSON object on stdout; each check has `expected` and `acted`. A check with
+// `"evidence": false` (the map-press check: it cannot fail in this browser) is shown but is not
+// counted. Exit 0: every counted check came out as expected; 1: one did not.
 "use strict";
 
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
 const { chromium } = require("playwright-core");
+const { silentEnv, SILENT_ARGS } = require("./harness/silent-chrome.js");
 
 const WAIT_MS = 500;
 
@@ -61,10 +66,15 @@ function centre(row, scale) {
 async function run(url, wantGuide, mapPressFirst) {
     const chromeArgs = JSON.parse(process.env.MC_CHROME_ARGS_JSON || '["--enable-gpu","--use-angle=vulkan","--enable-features=Vulkan","--enable-unsafe-webgpu"]');
     if (!chromeArgs.some((arg) => arg.startsWith("--force-device-scale-factor"))) chromeArgs.push("--force-device-scale-factor=1");
+    // The Chrome of this probe is always silent (review M1 of the third re-check): the null ALSA device
+    // as an argument and the silent environment, whatever `MC_CHROME_ARGS_JSON` holds. The probe turns
+    // the sound ON on purpose, so a Chrome with no isolation would beep on the desktop of the operator.
+    const silentFolder = fs.mkdtempSync(path.join(os.tmpdir(), "click-probe-silent-"));
     const browser = await chromium.launch({
         executablePath: process.env.CHROME_BIN || "/usr/bin/google-chrome",
         headless: process.env.MC_BROWSER_HEADED !== "1",
-        args: chromeArgs,
+        args: [...chromeArgs.filter((arg) => !SILENT_ARGS.includes(arg)), ...SILENT_ARGS],
+        env: silentEnv(silentFolder),
         ignoreDefaultArgs: JSON.parse(process.env.MC_CHROME_IGNORE_DEFAULT_ARGS_JSON || '["--enable-unsafe-swiftshader"]'),
     });
     const result = { checks: [] };
@@ -111,7 +121,9 @@ async function run(url, wantGuide, mapPressFirst) {
                 acted = (await record(page)).audio?.sound_on === true;
             }
             await cdp.send("Emulation.setCPUThrottlingRate", { rate: 1 });
-            result.checks.push({ name: "press on the map, release over the sound switch, one frame (12 tries)", kind: sound.kind, expected: false, acted, within_ms: WAIT_MS });
+            // NOT EVIDENCE (review L4 of the third re-check): this check cannot go red in this browser (see
+            // LIMIT above), so it does not count in the exit code. It is shown in the JSON for the reader.
+            result.checks.push({ name: "press on the map, release over the sound switch, one frame (12 tries)", kind: sound.kind, expected: false, acted, within_ms: WAIT_MS, evidence: false, can_fail: false });
         }
         await quickClick(page, sx, sy);
         await page.waitForTimeout(WAIT_MS);
@@ -128,8 +140,14 @@ async function run(url, wantGuide, mapPressFirst) {
         }
     } finally {
         await browser.close().catch(() => {});
+        fs.rmSync(silentFolder, { recursive: true, force: true });
     }
     return result;
+}
+
+// The exit code: 0 when every counted check came out as expected. A check with `evidence: false` is shown, not counted.
+function exitCode(checks) {
+    return checks.filter((check) => check.evidence !== false).every((check) => check.acted === check.expected) ? 0 : 1;
 }
 
 async function main() {
@@ -140,8 +158,8 @@ async function main() {
     }
     const result = await run(url, flags.includes("--guide-close"), flags.includes("--map-press-first"));
     console.log(JSON.stringify(result));
-    process.exit(result.checks.every((check) => check.acted === check.expected) ? 0 : 1);
+    process.exit(exitCode(result.checks));
 }
 
 if (require.main === module) main().catch((error) => { console.error(error.stack || String(error)); process.exit(1); });
-module.exports = { quickClick, centre };
+module.exports = { quickClick, centre, exitCode };
