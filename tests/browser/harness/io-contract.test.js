@@ -335,7 +335,7 @@ test("view.serverLines streams the lines of a server file and refuses a path out
 
 // MC SEL4 repair: a double tap is ONE driver call. The recall presses of the table run at 9d2ab86b were 432 ms
 // apart (product window 400 ms, crates/turts_interaction/src/lib.rs:1626) because each press was its own call with
-// about 17 page round trips of instrument work. Both presses now go out inside one call under the bounded frame hold.
+// about 17 page round trips of instrument work. Both presses go out inside one call with a fixed wait and NO frame hold (a hold would put both presses in one product frame, where the product reads a gap of 0 ms).
 function tapEvents(times) {
     return times.flatMap((time, index) => [
         { type: "keydown", code: "Digit1", seq: 2 * index + 1, wall_time_ms: time },
@@ -356,7 +356,7 @@ function tapPage(trace, times) {
 }
 const TAP = { taps: 2, gap_ms: 80, window_ms: 400 };
 
-test("a double tap is one input-log entry with both presses under one frame hold and the recorded gap", async () => {
+test("a double tap is one input-log entry with both presses, a fixed wait, no frame hold and the recorded gap", async () => {
     const trace = [];
     const { io, inputLog } = createDriverIo([tapPage(trace, [1000, 1090])]);
     await io.key("Digit1", [], TAP);
@@ -366,13 +366,15 @@ test("a double tap is one input-log entry with both presses under one frame hold
     assert.deepEqual(inputLog[0].event_seq, [1, 2, 3, 4]);
     assert.deepEqual(inputLog[0].taps, { count: 2, requested_gap_ms: 80, window_ms: 400, measured_gaps_ms: [90] });
     const order = trace.filter((row) => ["frames-hold", "keyboard-down", "keyboard-up", "wait", "frames-release"].includes(row[1])).map((row) => row[1]);
-    assert.deepEqual(order, ["frames-hold", "keyboard-down", "keyboard-up", "wait", "keyboard-down", "keyboard-up", "frames-release"]);
+    assert.deepEqual(order, ["keyboard-down", "keyboard-up", "wait", "keyboard-down", "keyboard-up"], "no frame hold: the product must run frames between the presses");
+    assert.equal(inputLog[0].frame_hold, undefined);
     assert.deepEqual(trace.find((row) => row[1] === "wait").slice(2), [80]);
 });
 
 test("a double tap whose measured gap is over the window fails with the instrument text", async () => {
+    // A slow driver or host: the requested gap is 80 ms, the page measures 450 ms.
     const { io, inputLog } = createDriverIo([tapPage([], [1000, 1450])]);
-    await assert.rejects(io.key("Digit1", [], { ...TAP, gap_ms: 450 }),
+    await assert.rejects(io.key("Digit1", [], TAP),
         /^Error: double tap took 450 ms, over the 400 ms window: host or driver fault$/);
     assert.deepEqual(inputLog[0].taps.measured_gaps_ms, [450], "the failed gap is in the run record too");
 });
@@ -382,11 +384,13 @@ test("a double tap is refused when the browser saw a different number of presses
     await assert.rejects(io.key("Digit1", [], TAP), /double tap: the browser saw 1 keydown events, expected 2: instrument fault/);
 });
 
-test("the tap options are validated: window_ms is required, taps 2 to 4, no logical key, press only", async () => {
+test("the tap options are validated: window_ms is required, gap below the window, taps 2 to 4, no logical key, press only", async () => {
     const { io } = createDriverIo([fakePage("a", [])]);
     await assert.rejects(io.key("Digit1", [], { taps: 2, gap_ms: 80 }), /window_ms must be an integer from 1 to 2000/);
     await assert.rejects(io.key("Digit1", [], { taps: 5, gap_ms: 80, window_ms: 400 }), /taps must be an integer from 2 to 4/);
     await assert.rejects(io.key("Digit1", [], { ...TAP, key: "1" }), /taps cannot be combined with a logical key/);
     await assert.rejects(io.key("Digit1", [], { ...TAP, action: "down" }), /taps needs action press/);
     await assert.rejects(io.key("Digit1", [], { ...TAP, gap_ms: 2001 }), /gap_ms must be an integer from 0 to 2000/);
+    await assert.rejects(io.key("Digit1", [], { ...TAP, gap_ms: 400 }), /gap_ms must be below opts.window_ms/);
+    await assert.rejects(io.key("Digit1", [], { ...TAP, gap_ms: 450 }), /gap_ms must be below opts.window_ms/);
 });

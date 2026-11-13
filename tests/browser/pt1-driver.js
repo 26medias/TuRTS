@@ -75,6 +75,14 @@ async function hold(io, binding, ms) {
     await io.key(key.code, key.mods ?? [], { hold_ms: ms });
 }
 
+// A double tap of a group key is ONE tap step: both presses in one driver call with a fixed gap of 100 ms, measured in the
+// browser (tests/browser/harness/driver-io.js tapKey). Two calls with a wait between them gave gaps of 96 to 211 ms.
+async function tapBinding(io, binding, label) {
+    const key = binding?.Key;
+    if (!key || typeof key.code !== "string") throw new Error(`${label}: the effective binding is not a key: ${JSON.stringify(binding)}`);
+    await io.key(key.code, key.mods ?? [], { taps: 2, gap_ms: 100, window_ms: 400 });
+}
+
 async function wheelFor(io, binding, x, y) {
     await io.move(x, y);
     await io.wheel(binding?.Wheel === "Up" ? -240 : 240);
@@ -246,9 +254,7 @@ async function drive(io, params) {
     await series(io, "pt1-s13-cleared", 2, 250);
     await pressBinding(io, keys.recall1, "group_recall_1");
     await series(io, "pt1-s13-recalled", 2, 250);
-    await pressBinding(io, keys.recall1, "group_recall_1");
-    await io.wait(80);
-    await pressBinding(io, keys.recall1, "group_recall_1");
+    await tapBinding(io, keys.recall1, "group_recall_1");
     await series(io, "pt1-s13-centred", 3, 250);
 
     // Step 14: the menu; a faster scroll speed and a new Stop key; the guide Controls list.
@@ -294,9 +300,7 @@ async function drive(io, params) {
     await io.wait(400);
     await series(io, "pt1-s15-rejoined", 2, 250);
     await setGuide(io, keys.guide, false, "toggle_guide");
-    await pressBinding(io, keys.recall1, "group_recall_1");
-    await io.wait(80);
-    await pressBinding(io, keys.recall1, "group_recall_1");
+    await tapBinding(io, keys.recall1, "group_recall_1");
     await series(io, "pt1-s15-group-recalled", 3, 250);
 
     // Step 16: Shift and two right clicks away from the turret; the new Stop key stops the drone.

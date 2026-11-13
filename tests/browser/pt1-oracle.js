@@ -16,6 +16,7 @@ const assert = require("node:assert/strict");
 const { decodePng, pixelAt } = require("./harness/png.js");
 const { assertNoDriverStop, readCheckpoints, replicaUnit, unitTrack, widget, widgets } = require("./checkpoint-lib.js");
 const { unprojectGround } = require("./hud4-oracle.js");
+const { tapGapReceipt, retainedFrames, assertPressesInDifferentFrames } = require("./tap-receipt.js");
 const { project, visibleRingPixels } = require("./vis-full-oracle.js");
 
 const SLOT_RGB = [[0, 114, 178], [230, 159, 0]];
@@ -35,6 +36,17 @@ const TEXT = {
 
 function step(number, condition, message) {
     assert(condition, `PT1 step ${number}: ${message}`);
+}
+
+// The product window of a double tap of a group key (crates/turts_interaction/src/lib.rs:1626, double_click_ms).
+const PT1_DOUBLE_TAP_WINDOW_MS = 400;
+
+// Both double taps of the driver (step 13 and step 15) are tap steps (tests/browser/harness/driver-io.js tapKey). Their
+// page-measured gap must be inside the product window: a slow tap names the instrument, never the product.
+function judgeTapSteps(input) {
+    const taps = input.map((entry, index) => ({ entry, index })).filter(({ entry }) => entry.call === "key" && entry.args?.[2]?.taps === 2);
+    assert.equal(taps.length, 2, `PT1 needs exactly two double tap steps in the input log, found ${taps.length}: instrument fault`);
+    return new Map(taps.map(({ entry, index }) => [index, tapGapReceipt(entry, { code: entry.args[0], windowMs: PT1_DOUBLE_TAP_WINDOW_MS })]));
 }
 
 // ---- Labels of the rendered Controls rows --------------------------------------------------
@@ -247,6 +259,7 @@ async function judgeRun(view, params) {
     const labelsOf = (windowNumber) => layoutLabels(startup.find((item) => item.window === windowNumber && "keyboard_layout" in item)?.keyboard_layout);
     const A = 1;
     const B = 2;
+    const tapReceipts = judgeTapSteps(input);
 
     // Step 1: window A, the load screen shows each phase and a progress bar.
     judgeLoad(startup.filter((item) => item.window === A), 1, "window A");
@@ -440,13 +453,16 @@ async function judgeRun(view, params) {
     const recallPresses = presses(input, effectiveB(cleared).group_recall_1[0], B, cleared.input_call);
     step(13, recallPresses.some(({ index }) => JSON.stringify(ctx.first(B, () => true, index)?.debug.selection) === JSON.stringify([droneId])),
         "the group key does not select the drone again");
-    const centredAt = recallPresses.find(({ index }, position) => position > 0 && index - recallPresses[position - 1].index <= 3 &&
-        (() => {
-            const shot = ctx.first(B, () => true, index);
-            const drone = shot?.scene.units.find((unit) => unit.unit_id === droneId);
-            const [vx, vy, vw, vh] = shot?.scene.viewport_logical_rect ?? [];
-            return drone && Math.hypot(drone.ground_screen_center[0] - (vx + vw / 2), drone.ground_screen_center[1] - (vy + vh / 2)) <= 48;
-        })());
+    const tapPress = recallPresses.find(({ index }) => tapReceipts.has(index));
+    step(13, tapPress, "the driver sent no group key double tap step");
+    // The product reads its clock once for each frame: the two presses must reach it in different frames.
+    assertPressesInDifferentFrames(retainedFrames(ctx.first(B, () => true, tapPress.index)?.debug), tapReceipts.get(tapPress.index).downs);
+    const centredAt = (() => {
+        const shot = ctx.first(B, () => true, tapPress.index);
+        const drone = shot?.scene.units.find((unit) => unit.unit_id === droneId);
+        const [vx, vy, vw, vh] = shot?.scene.viewport_logical_rect ?? [];
+        return drone && Math.hypot(drone.ground_screen_center[0] - (vx + vw / 2), drone.ground_screen_center[1] - (vy + vh / 2)) <= 48 ? tapPress : null;
+    })();
     step(13, centredAt, "the group key twice does not centre the camera on the drone");
 
     // Step 14: the menu; a faster scroll speed (storage audit); a new Stop key (the stored map).
@@ -556,4 +572,4 @@ async function judge(view, params) {
     return result;
 }
 
-module.exports = { judge, actionLabel, assertControlsMatch, humanizeAction, layoutLabels, playerLabel, presses, rowText };
+module.exports = { judge, judgeTapSteps, actionLabel, assertControlsMatch, humanizeAction, layoutLabels, playerLabel, presses, rowText };

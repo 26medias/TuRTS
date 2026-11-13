@@ -261,6 +261,8 @@ def validate_task16_plan(row: dict[str, Any]) -> dict[str, Any] | None:
                 for name, low, high in (("taps", 2, 4), ("gap_ms", 0, 2_000), ("window_ms", 1, 2_000)):
                     if type(options[name]) is not int or not low <= options[name] <= high:
                         raise ValueError(f"{row_id} action {index + 1} key {name} must be an integer in {low}..{high}")
+                if options["gap_ms"] >= options["window_ms"]:
+                    raise ValueError(f"{row_id} action {index + 1} key gap_ms must be below window_ms")
                 if "key" in options or options.get("action", "press") != "press":
                     raise ValueError(f"{row_id} action {index + 1} taps need a physical press with no logical key")
             if "hold_ms" in options and (type(options["hold_ms"]) is not int or not 0 <= options["hold_ms"] <= 60_000):

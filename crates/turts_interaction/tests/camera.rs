@@ -2,7 +2,7 @@
 mod common;
 
 use common::{TestWorld, VIEW};
-use glam::vec2;
+use glam::{Vec2, vec2};
 use turts_interaction::projection::screen_to_world;
 use turts_interaction::{CameraState, Core, InputEvent, Viewport, camera::CameraOptions};
 use turts_mod_api::{CameraDef, CameraStart};
@@ -919,6 +919,61 @@ fn double_recall_centres_on_the_assigned_group() {
     assert!(
         core.camera_state().look_at.distance(expected) < 0.01,
         "double recall must centre the camera on the whole group at {expected:?}"
+    );
+}
+
+/// Two recalls of one group key, `gap_ms` apart: the camera look-at after the second.
+fn look_at_after_recall_pair(gap_ms: u64) -> (Vec2, Vec2) {
+    let world = world();
+    let mut core = Core::new(camera());
+    step(
+        &mut core,
+        &world,
+        &[InputEvent::RestoreGroups {
+            groups: vec![(1, vec![world.units[0].id, world.units[1].id])],
+        }],
+        0,
+    );
+    let first = 1_000;
+    for (time, up) in [(first, false), (first + 10, true), (first + gap_ms, false)] {
+        let event = if up {
+            InputEvent::KeyUp {
+                code: "Digit1".into(),
+            }
+        } else {
+            InputEvent::KeyDown {
+                code: "Digit1".into(),
+                mods: vec![],
+            }
+        };
+        step(&mut core, &world, &[event], time);
+    }
+    let centre = (world.units[0].position + world.units[1].position) / 2.0;
+    (core.camera_state().look_at, centre)
+}
+
+// The window of a double tap is `double_click_ms` = 400 (InteractionSettings::default) and the rule is
+// `now - last <= window` (camera.rs group_recall_centres): exactly 400 ms is a double tap, 401 ms is not.
+#[test]
+fn a_recall_pair_exactly_at_the_window_is_a_double_tap() {
+    let (look_at, centre) = look_at_after_recall_pair(400);
+    assert!(
+        look_at.distance(centre) < 0.01,
+        "two recalls 400 ms apart must centre the camera at {centre:?}, it is at {look_at:?}"
+    );
+}
+
+#[test]
+fn a_recall_pair_one_millisecond_outside_the_window_is_not_a_double_tap() {
+    let (look_at, centre) = look_at_after_recall_pair(401);
+    assert_eq!(
+        look_at,
+        camera().look_at,
+        "two recalls 401 ms apart must not move the camera"
+    );
+    assert!(
+        look_at.distance(centre) > 0.01,
+        "the start camera must not already sit on the group centre"
     );
 }
 

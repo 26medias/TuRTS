@@ -3,7 +3,7 @@
 
 const assert = require("node:assert/strict");
 const { test } = require("node:test");
-const { actionLabel, assertControlsMatch, humanizeAction, playerLabel } = require("./pt1-oracle.js");
+const { actionLabel, assertControlsMatch, humanizeAction, judgeTapSteps, playerLabel } = require("./pt1-oracle.js");
 const { freeLetterKey } = require("./pt1-driver.js");
 
 const actions = {
@@ -66,4 +66,29 @@ test("a press of a binding is found in the input log with its exact modifiers, i
     assert.deepEqual(presses(input, actions.group_assign_1[0], 2).map(({ index }) => index), [0]);
     assert.deepEqual(presses(input, actions.group_assign_1[0], 1).map(({ index }) => index), [2], "ControlLeft counts as Ctrl");
     assert.deepEqual(presses(input, actions.key_stop[0], 2), [], "a key-up is not a press");
+});
+
+const tap = (times, options = { taps: 2, gap_ms: 100, window_ms: 400 }) => ({
+    call: "key", args: ["Digit1", [], options], window: 2,
+    actual_events: times.flatMap((time, index) => [
+        { type: "keydown", code: "Digit1", seq: 2 * index + 1, wall_time_ms: time },
+        { type: "keyup", code: "Digit1", seq: 2 * index + 2, wall_time_ms: time + 20 },
+    ]),
+});
+
+test("both double taps of the driver are read from their page gaps", () => {
+    const receipts = judgeTapSteps([{ call: "wait", args: [10] }, tap([1000, 1105]), { call: "wait", args: [10] }, tap([9000, 9099])]);
+    assert.deepEqual([...receipts.keys()], [1, 3]);
+    assert.deepEqual([...receipts.values()].map((receipt) => receipt.gaps_ms), [[105], [99]]);
+});
+
+test("a slow double tap names the instrument, not the product", () => {
+    assert.throws(() => judgeTapSteps([tap([1000, 1105]), tap([9000, 9432])]),
+        /^Error: double tap took 432 ms, over the 400 ms window: host or driver fault$/);
+});
+
+test("the driver must send exactly two double taps and pin the window at 400 ms", () => {
+    assert.throws(() => judgeTapSteps([tap([1000, 1105])]), /PT1 needs exactly two double tap steps in the input log, found 1: instrument fault/);
+    assert.throws(() => judgeTapSteps([tap([1000, 1105]), tap([9000, 9100], { taps: 2, gap_ms: 100, window_ms: 2000 })]),
+        /window must be the product window of 400 ms/);
 });

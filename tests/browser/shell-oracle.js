@@ -10,6 +10,7 @@ const { judgeSh1Bindings } = require("./sh1-binding-oracle.js");
 const { evaluatePer1BrowserEvidence, validateOptionalNativePathDocument } = require("./per1-oracle-candidate.js");
 const { decodePng } = require("./harness/png.js");
 const { judgeSel4Pixels } = require("./harness/sel4-pixels.js");
+const { tapGapReceipt, retainedFrames: tapRetainedFrames, assertPressesInDifferentFrames } = require("./tap-receipt.js");
 const { readAuthoredCursorAssets, measureCursorPixels } = require("./harness/cursor-pixels.js");
 
 const ROW_CHECKS = Object.freeze({
@@ -262,24 +263,18 @@ const SEL4_DOUBLE_TAP_WINDOW_MS = 400;
 
 // The double tap is one key step with options.taps (tests/browser/harness/driver-io.js tapKey). The harness fails the
 // call when the page-measured gap is over the window; this re-reads the page timestamps so that a slow tap names the
-// instrument ("host or driver fault"), never the product, and runs before any product clause.
+// instrument ("host or driver fault"), never the product. judgeSel4 calls it first, before any clause.
 function sel4DoubleTapReceipt(input) {
     const index = input.findIndex((entry) => entry.call === "key" && entry.args?.[0] === "Digit1" &&
         JSON.stringify(entry.args?.[1] || []) === "[]" && entry.args?.[2]?.taps === 2);
     assert(index >= 0, "SEL4 double tap step is absent from the input log: instrument fault");
-    const entry = input[index];
-    const windowMs = entry.args[2].window_ms;
-    assert.equal(windowMs, SEL4_DOUBLE_TAP_WINDOW_MS,
-        `SEL4 double tap window must be the product window of ${SEL4_DOUBLE_TAP_WINDOW_MS} ms, the row says ${windowMs}: instrument fault`);
-    const downs = (entry.actual_events || []).filter((event) => event.type === "keydown" && event.code === "Digit1");
-    assert(downs.length === 2, `double tap: the browser saw ${downs.length} keydown events, expected 2: instrument fault`);
-    const gap = downs[1].wall_time_ms - downs[0].wall_time_ms;
-    assert(Number.isFinite(gap) && gap >= 0, "double tap: the keydown times are not numbers: instrument fault");
-    if (!(gap <= windowMs)) throw new Error(`double tap took ${gap} ms, over the ${windowMs} ms window: host or driver fault`);
-    return { index, entry, gap_ms: gap };
+    const receipt = tapGapReceipt(input[index], { code: "Digit1", windowMs: SEL4_DOUBLE_TAP_WINDOW_MS });
+    return { index, entry: input[index], gap_ms: receipt.gaps_ms[0], downs: receipt.downs };
 }
 
 async function judgeSel4(view, input, captures, decoded) {
+    // First, before any clause: a slow tap is a fault of the instrument, whatever the product did.
+    const doubleTap = sel4DoubleTapReceipt(input);
     const assign = keyCall(input, "Digit1", ["Control"]);
     const beforeAssign = captureBefore(captures, input, assign.index, assign.entry);
     const afterAssign = captureAfter(captures, input, assign.index, assign.entry);
@@ -335,11 +330,12 @@ async function judgeSel4(view, input, captures, decoded) {
 
     const reloadIndex = input.findIndex((entry) => entry.call === "reload");
     assert(reloadIndex >= 0, "SEL4 needs a real browser reload to check persisted group identity");
-    const doubleTap = sel4DoubleTapReceipt(input);
     judgeSel4DeathPrune(captures, input, reloadIndex, assignFrame, afterAssign, worker41, worker42);
 
     const beforeDouble = captureBefore(captures, input, doubleTap.index, doubleTap.entry);
     const afterDouble = captureAfter(captures, input, doubleTap.index, doubleTap.entry);
+    // The product reads its clock once for each frame: the two presses must have reached it in different frames.
+    assertPressesInDifferentFrames(tapRetainedFrames(afterDouble.checkpoint.debug), doubleTap.downs);
     const group = afterDouble.checkpoint.debug.groups?.["1"];
     assert(Array.isArray(group) && group.length > 0, "SEL4 double-tap target group has no actual live members");
     const viewport = afterDouble.checkpoint.scene?.viewport_physical_rect;
@@ -2066,5 +2062,5 @@ async function judgeSlot1Evidence(view, input, captures, captureByName) {
 
 module.exports = {
     ROW_CHECKS, ROW_PHYSICAL_CHECKS, ROW_INPUT_CALLS, judge, judgeStartupOutcome,
-    sourceControls: { sel4DoubleTapReceipt, judgeKm1GuidePixels, per1GoldPixels, pixelGlyphShape, judgePer1NoticePixels, hasKeyBinding, frameNamedDispatches, verifiedRoot, compatibilityLine, judgeKm1, judgeKm1ReservedPack, judgePer1Storage, judgeSel4OldMatchPrune, judgeCam2, judgeCam2CursorPixels, judgeP1Attachment, judgeSh1MenuControls, judgeKm2FocusOverlay, judgeKm2OverlayPixels, assertRequiredPhysicalReceipts, assertSlotObserverRecordShapes, assertSlot1CapacityBoundary, assertSlot1CloneOwnerContinuity, assertSlot1DeadlineChecks, assertSlot1HelloTimes, assertSlot1TerminalPixels },
+    sourceControls: { judgeSel4, sel4DoubleTapReceipt, judgeKm1GuidePixels, per1GoldPixels, pixelGlyphShape, judgePer1NoticePixels, hasKeyBinding, frameNamedDispatches, verifiedRoot, compatibilityLine, judgeKm1, judgeKm1ReservedPack, judgePer1Storage, judgeSel4OldMatchPrune, judgeCam2, judgeCam2CursorPixels, judgeP1Attachment, judgeSh1MenuControls, judgeKm2FocusOverlay, judgeKm2OverlayPixels, assertRequiredPhysicalReceipts, assertSlotObserverRecordShapes, assertSlot1CapacityBoundary, assertSlot1CloneOwnerContinuity, assertSlot1DeadlineChecks, assertSlot1HelloTimes, assertSlot1TerminalPixels },
 };

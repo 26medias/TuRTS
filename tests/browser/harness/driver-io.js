@@ -109,16 +109,19 @@ function createDriverIo(pages, { outputDir, inputLog = [], initialCursor = { x: 
         }
     }
     const noEvent = (operation) => async () => operation();
-    // A tap gesture (a double tap) is ONE driver call. The presses of one gesture must not be separated by the page
-    // round trips that every call adds (about 17 of them, 22 to 35 ms each on the test host: 300 to 444 ms between two
-    // single-press calls against the product window of 400 ms, MC table run at 9d2ab86b). The presses go out under the
-    // bounded frame hold, as the repeated click does, with a fixed gap of gap_ms. The page timestamps of the presses
-    // are the measure: the gaps go in the run record (entry.taps) and a gap over window_ms fails the call.
+    // A tap gesture (a double tap) is ONE driver call. The presses of one gesture must not be separated by other
+    // instrument work: the gap of two single-press calls was 300 to 444 ms on the test host (about 17 page round trips
+    // of 22 to 35 ms each between the presses, MC table run at 9d2ab86b), against the product window of 400 ms. The
+    // presses go out in one call with a fixed wait of gap_ms. Product frames keep running between them (no frame hold:
+    // a hold would put both presses in one frame, where the product reads a gap of 0 ms and never tests its window).
+    // The page timestamps of the presses are the measure: the gaps go in the run record (entry.taps) and a gap over
+    // window_ms fails the call. The oracle also checks that the presses were applied in different product frames.
     function tapOptions(opts, modifiers) {
         const integer = (value, low, high) => Number.isInteger(value) && value >= low && value <= high;
         if (!integer(opts.taps, 2, 4)) throw new RangeError("opts.taps must be an integer from 2 to 4");
         if (!integer(opts.gap_ms, 0, 2000)) throw new RangeError("opts.gap_ms must be an integer from 0 to 2000");
         if (!integer(opts.window_ms, 1, 2000)) throw new RangeError("opts.window_ms must be an integer from 1 to 2000");
+        if (opts.gap_ms >= opts.window_ms) throw new RangeError("opts.gap_ms must be below opts.window_ms");
         if (opts.hold_ms !== undefined && !integer(opts.hold_ms, 0, 60000)) throw new RangeError("opts.hold_ms must be an integer from 0 to 60000");
         if (typeof opts.key === "string") throw new TypeError("opts.taps cannot be combined with a logical key");
         if (opts.action !== undefined && opts.action !== "press") throw new TypeError("opts.taps needs action press");
@@ -130,14 +133,7 @@ function createDriverIo(pages, { outputDir, inputLog = [], initialCursor = { x: 
         const windowIndex = state.selected;
         const keyModifier = maybeModifierPhysicalKey(code);
         const dispatchCode = keyModifier?.code || code;
-        await record("key", [code, modifiers, opts], ["keydown", "keyup"], async (send, entry) => {
-            await page().evaluate(() => {
-                if (typeof window.__turts_begin_bounded_input !== "function" || typeof window.__turts_end_bounded_input !== "function") {
-                    throw new Error("bounded input frame hold is unavailable");
-                }
-                window.__turts_begin_bounded_input();
-            });
-            entry.frame_hold = { requested: true, taps };
+        await record("key", [code, modifiers, opts], ["keydown", "keyup"], async (send) => {
             const temporary = [];
             try {
                 for (const modifier of modifiers) {
@@ -159,8 +155,6 @@ function createDriverIo(pages, { outputDir, inputLog = [], initialCursor = { x: 
                     await send("keyup", () => page().keyboard.up(physical.code), keyExpectation(physical.code));
                     setModifierHeld(physical, false, windowIndex);
                 }
-                const released = await page().evaluate(() => window.__turts_end_bounded_input());
-                entry.frame_hold = { requested: true, taps, ...released };
             }
         });
         const entry = inputLog.at(-1);
