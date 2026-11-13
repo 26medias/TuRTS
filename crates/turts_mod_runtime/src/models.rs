@@ -160,6 +160,46 @@ pub fn inspect_glb(package: &str, file: &str, bytes: &[u8]) -> Result<ModelInfo,
             "{package}/{file}: cameras/lights: embedded cameras and lights are ignored"
         ));
     }
+    // Validate every node, including nodes outside the selected scene. Rig construction uses them.
+    let children: Vec<Vec<usize>> = glb
+        .nodes()
+        .map(|n| n.children().map(|c| c.index()).collect())
+        .collect();
+    let mut parents = vec![0_u32; children.len()];
+    for list in &children {
+        for child in list {
+            parents[*child] += 1;
+            if parents[*child] > 1 {
+                return Err(fail("nodes", "a node has multiple parents".into()));
+            }
+        }
+    }
+    fn visit(
+        node: usize,
+        children: &[Vec<usize>],
+        colour: &mut [u8],
+        depth: usize,
+    ) -> Result<(), &'static str> {
+        if depth > 128 {
+            return Err("model node hierarchy exceeds 128 levels");
+        }
+        if colour[node] == 1 {
+            return Err("model node hierarchy contains a cycle");
+        }
+        if colour[node] == 2 {
+            return Ok(());
+        }
+        colour[node] = 1;
+        for child in &children[node] {
+            visit(*child, children, colour, depth + 1)?;
+        }
+        colour[node] = 2;
+        Ok(())
+    }
+    let mut colour = vec![0; children.len()];
+    for node in 0..children.len() {
+        visit(node, &children, &mut colour, 0).map_err(|e| fail("nodes", e.into()))?;
+    }
     let mut triangles = 0usize;
     for mesh in glb.meshes() {
         for primitive in mesh.primitives() {

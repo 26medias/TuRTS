@@ -537,7 +537,19 @@ impl Plugin for UnitRenderPlugin {
             .init_resource::<crate::models::GraphicsSettings>()
             .init_resource::<crate::animation::AnimationLibrary>()
             .init_resource::<crate::animation::VisualEvents>()
-            .init_resource::<crate::animation::BodySerial>();
+            .init_resource::<crate::animation::BodySerial>()
+            .init_resource::<crate::animation::SharedPoses>();
+        app.add_systems(
+            PostUpdate,
+            (
+                crate::animation::group_crowd_poses
+                    .after(bevy::animation::advance_animations)
+                    .before(bevy::animation::animate_targets),
+                crate::animation::copy_crowd_poses
+                    .after(bevy::animation::animate_targets)
+                    .before(bevy::transform::TransformSystems::Propagate),
+            ),
+        );
         app.add_systems(
             Update,
             (

@@ -59,6 +59,7 @@ pub struct AnimationLibrary(pub HashMap<AssetId<Gltf>, ClipSet>);
 #[derive(Component)]
 pub struct UnitAnimation {
     pub player: Entity,
+    pub pose_nodes: Vec<Entity>,
     pub clips: ClipSet,
     pub mapping: ModelAnimations,
     pub current: Option<String>,
@@ -171,6 +172,9 @@ pub fn spawn_rig(
         let mut path = vec![Name::new(data.name.clone())];
         let mut cursor = node.index();
         while let Some(parent) = parents.get(&cursor) {
+            if path.len() > 128 {
+                return None;
+            }
             path.push(Name::new(nodes.get(&gltf.nodes[*parent])?.name.clone()));
             cursor = *parent;
         }
@@ -213,6 +217,7 @@ pub fn spawn_rig(
     }
     commands.entity(root).insert(UnitAnimation {
         player,
+        pose_nodes: (0..gltf.nodes.len()).map(|i| entities[&i]).collect(),
         clips: set,
         mapping: mapping.clone(),
         current: None,
@@ -341,15 +346,23 @@ pub fn animate_units(
             _ => 0.,
         };
         rig.pending_time += dt;
+        if moving
+            && !rig.dead
+            && !attacking
+            && let Some(stride) = settings.and_then(|s| s.stride)
+        {
+            rig.distance_loops += distance / stride;
+        }
         if let Some(active) = player.animation_mut(clip.node) {
             // Manual advancement supports culling and quality cadence without changing game time.
             active.resume().set_speed(0.);
-            if moving
+            if visible
+                && rig.pending_time >= cadence
+                && moving
                 && !rig.dead
                 && !attacking
-                && let Some(stride) = settings.and_then(|s| s.stride)
+                && settings.and_then(|s| s.stride).is_some()
             {
-                rig.distance_loops += distance / stride;
                 active.seek_to(((rig.phase + rig.distance_loops) % 1.) * clip.duration);
             } else if visible && rig.pending_time >= cadence {
                 let next = active.seek_time() + rig.pending_time;
@@ -434,6 +447,7 @@ mod tests {
                 Transform::default(),
                 UnitAnimation {
                     player,
+                    pose_nodes: Vec::new(),
                     clips: ClipSet {
                         graph: Handle::default(),
                         clips,
@@ -493,6 +507,108 @@ mod tests {
         assert_eq!(construction_offset(4., 0.5), -2.);
         assert_eq!(construction_offset(4., 1.), 0.);
         assert_eq!(construction_offset(4., 0.), -4.);
+    }
+    #[test]
+    fn review_offscreen_moving_unit_does_not_advance_pose() {
+        let (mut app, root, player) = fixture();
+        step(&mut app, 0.01, 0.016, Activity::Moving);
+        app.world_mut()
+            .get_mut::<UnitAnimation>(root)
+            .unwrap()
+            .visible = false;
+        let node = app.world().get::<UnitAnimation>(root).unwrap().clips.clips["Walk"].node;
+        let before = app
+            .world()
+            .get::<AnimationPlayer>(player)
+            .unwrap()
+            .animation(node)
+            .unwrap()
+            .seek_time();
+        step(&mut app, 0.02, 0.016, Activity::Moving);
+        let after = app
+            .world()
+            .get::<AnimationPlayer>(player)
+            .unwrap()
+            .animation(node)
+            .unwrap()
+            .seek_time();
+        assert_eq!(
+            before, after,
+            "offscreen motion must not evaluate a new pose"
+        );
+    }
+    #[test]
+    fn review_low_quality_far_motion_waits_for_animation_cadence() {
+        let (mut app, root, player) = fixture();
+        step(&mut app, 0.01, 0.016, Activity::Moving);
+        {
+            let mut rig = app.world_mut().get_mut::<UnitAnimation>(root).unwrap();
+            rig.quality = Quality::Low;
+            rig.screen_height = 0.01;
+        }
+        let node = app.world().get::<UnitAnimation>(root).unwrap().clips.clips["Walk"].node;
+        let before = app
+            .world()
+            .get::<AnimationPlayer>(player)
+            .unwrap()
+            .animation(node)
+            .unwrap()
+            .seek_time();
+        step(&mut app, 0.02, 0.016, Activity::Moving);
+        let after = app
+            .world()
+            .get::<AnimationPlayer>(player)
+            .unwrap()
+            .animation(node)
+            .unwrap()
+            .seek_time();
+        assert_eq!(
+            before, after,
+            "far low-quality motion must wait for the 10 Hz cadence"
+        );
+    }
+
+    #[test]
+    fn review_destroyed_live_root_becomes_unpickable_visual_body() {
+        let (mut app, root, _) = fixture();
+        let package = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../mods/skirmish");
+        let bytes = turts_mod_runtime::pack::pack_dir(&package).unwrap();
+        let archive = turts_mod_runtime::archive::PackageArchive::parse(&bytes).unwrap();
+        let acquired = crate::acquire::build_acquired(&[archive], String::new()).unwrap();
+        app.insert_resource(crate::join::AcquiredPackages(acquired))
+            .insert_resource(Assets::<Mesh>::default())
+            .init_resource::<crate::render::SlotMaterials>()
+            .init_resource::<BodySerial>()
+            .add_systems(Update, crate::render::sync_units.before(animate_units));
+        app.world_mut()
+            .resource_mut::<VisualEvents>()
+            .destroyed
+            .insert(1);
+        app.world_mut().resource_mut::<Presented>().units.clear();
+        app.world_mut()
+            .resource_mut::<Time>()
+            .advance_by(Duration::from_secs_f32(0.016));
+        app.update();
+        assert!(
+            app.world().get_entity(root).is_ok(),
+            "AN5: Destroyed must preserve a visual body"
+        );
+        assert!(
+            app.world().get::<VisualBody>(root).is_some(),
+            "AN5: body marker missing"
+        );
+        assert!(
+            app.world().get::<PresentedUnit>(root).is_none(),
+            "AN5: dead body must not be pickable as a unit"
+        );
+        assert_eq!(
+            app.world()
+                .get::<UnitAnimation>(root)
+                .unwrap()
+                .current
+                .as_deref(),
+            Some("Death")
+        );
     }
     #[test]
     fn an1_motion_selects_walk_and_a_stationary_move_order_selects_idle() {
@@ -650,6 +766,146 @@ mod tests {
                 .iter(app.world())
                 .count(),
             64
+        );
+    }
+}
+
+/// Evaluate equal crowd poses once, then copy local bone transforms to their instances.
+/// Phase buckets retain individual movement clocks and blend weights. No gameplay state is shared.
+#[derive(Resource, Default)]
+pub struct SharedPoses {
+    copies: Vec<(Entity, Entity)>,
+    pub evaluated_rigs: usize,
+    pub shared_rigs: usize,
+}
+#[allow(clippy::type_complexity)]
+pub fn group_crowd_poses(
+    rigs: Query<&UnitAnimation>,
+    players: Query<&AnimationPlayer>,
+    mut targets: Query<&mut AnimatedBy>,
+    mut poses: ResMut<SharedPoses>,
+) {
+    let mut groups: HashMap<(AssetId<AnimationGraph>, Vec<(usize, i32, i32)>), Vec<Entity>> =
+        HashMap::new();
+    poses.copies.clear();
+    poses.evaluated_rigs = 0;
+    poses.shared_rigs = 0;
+    for rig in &rigs {
+        let Ok(player) = players.get(rig.player) else {
+            continue;
+        };
+        if !rig.visible && !rig.dead {
+            for node in &rig.pose_nodes {
+                if let Ok(mut by) = targets.get_mut(*node) {
+                    by.0 = Entity::PLACEHOLDER;
+                }
+            }
+            continue;
+        }
+        let mut phases: Vec<_> = player
+            .playing_animations()
+            .map(|(node, active)| {
+                (
+                    node.index(),
+                    (active.seek_time() * 30.).round() as i32,
+                    (active.weight() * 32.).round() as i32,
+                )
+            })
+            .collect();
+        phases.sort_unstable();
+        let key = (rig.clips.graph.id(), phases);
+        if let Some(source) = groups.get(&key) {
+            poses.shared_rigs += 1;
+            for (node, master) in rig.pose_nodes.iter().zip(source) {
+                if let Ok(mut by) = targets.get_mut(*node) {
+                    by.0 = Entity::PLACEHOLDER;
+                }
+                poses.copies.push((*node, *master));
+            }
+        } else {
+            poses.evaluated_rigs += 1;
+            for node in &rig.pose_nodes {
+                if let Ok(mut by) = targets.get_mut(*node) {
+                    by.0 = rig.player;
+                }
+            }
+            groups.insert(key, rig.pose_nodes.clone());
+        }
+    }
+}
+/// Run after Bevy evaluates the master poses and before global transforms propagate.
+pub fn copy_crowd_poses(poses: Res<SharedPoses>, mut transforms: Query<&mut Transform>) {
+    for (target, source) in &poses.copies {
+        let Ok(value) = transforms.get(*source).copied() else {
+            continue;
+        };
+        if let Ok(mut transform) = transforms.get_mut(*target)
+            && *transform != value
+        {
+            *transform = value;
+        }
+    }
+}
+
+#[cfg(test)]
+mod crowd_tests {
+    use super::*;
+    #[test]
+    fn equal_phases_share_evaluation_and_copy_local_pose_without_copying_world_position() {
+        let mut app = App::new();
+        app.init_resource::<SharedPoses>()
+            .add_systems(Update, (group_crowd_poses, copy_crowd_poses).chain());
+        let graph = Handle::<AnimationGraph>::default();
+        let mut nodes = Vec::new();
+        for x in [1., 10.] {
+            let player = app
+                .world_mut()
+                .spawn((AnimationPlayer::default(), Transform::from_xyz(x, 0., 0.)))
+                .id();
+            let node = app
+                .world_mut()
+                .spawn((
+                    Transform::from_xyz(x, 1., 0.),
+                    AnimatedBy(player),
+                    ChildOf(player),
+                ))
+                .id();
+            nodes.push((player, node));
+            app.world_mut().spawn(UnitAnimation {
+                player,
+                pose_nodes: vec![node],
+                clips: ClipSet {
+                    graph: graph.clone(),
+                    clips: HashMap::new(),
+                },
+                mapping: ModelAnimations::default(),
+                current: None,
+                distance_loops: 0.,
+                previous: Vec2::ZERO,
+                shot_left: 0.,
+                dead: false,
+                screen_height: 1.,
+                quality: Quality::High,
+                visible: true,
+                yaw_offset: 0.,
+                phase: 0.,
+                pending_time: 0.,
+            });
+        }
+        app.update();
+        let poses = app.world().resource::<SharedPoses>();
+        assert_eq!((poses.evaluated_rigs, poses.shared_rigs), (1, 1));
+        assert_eq!(
+            app.world().get::<Transform>(nodes[0].1),
+            app.world().get::<Transform>(nodes[1].1)
+        );
+        assert_eq!(
+            app.world()
+                .get::<Transform>(nodes[1].0)
+                .unwrap()
+                .translation
+                .x,
+            10.
         );
     }
 }

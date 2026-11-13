@@ -484,6 +484,7 @@ fn publish_scene(
     animations: Query<(Option<&SceneUnit>, &turts_client::animation::UnitAnimation)>,
     animation_players: Query<&AnimationPlayer>,
     bodies: Query<&turts_client::animation::VisualBody>,
+    shared_poses: Option<Res<turts_client::animation::SharedPoses>>,
     model_instances: Query<(
         Option<&SceneUnit>,
         Option<&SceneNode>,
@@ -654,6 +655,8 @@ fn publish_scene(
         "unit_id":unit.map(|u|u.0),"clip":rig.current,"distance_loops":rig.distance_loops,"dead":rig.dead,"visible":rig.visible,
         "seek":rig.current.as_ref().and_then(|name|rig.clips.clips.get(name)).and_then(|clip| animation_players.get(rig.player).ok()?.animation(clip.node).map(|a|a.seek_time()))
     })).collect());
+    scene["crowd_poses"] =
+        serde_json::json!(shared_poses.map(|p| (p.evaluated_rigs, p.shared_rigs)));
     scene["body_count"] = serde_json::json!(bodies.iter().count());
     scene["widgets"] = serde_json::Value::Array(widget_rects);
     *SCENE.lock().unwrap() = scene.to_string();

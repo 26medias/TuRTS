@@ -8,11 +8,11 @@ use turts_mod_runtime::{
 };
 fn bytes(doc: &Value, blob: &[u8]) -> Vec<u8> {
     let mut json = serde_json::to_vec(doc).unwrap();
-    while json.len() % 4 != 0 {
+    while !json.len().is_multiple_of(4) {
         json.push(b' ');
     }
     let mut bin = blob.to_vec();
-    while bin.len() % 4 != 0 {
+    while !bin.len().is_multiple_of(4) {
         bin.push(0);
     }
     let mut out = Vec::new();
@@ -381,11 +381,11 @@ fn md4_accepts_jpeg_and_reports_non_power_of_two_images_and_cameras() {
         let mut image = Vec::new();
         if jpeg {
             image::codecs::jpeg::JpegEncoder::new(&mut image)
-                .write_image(&vec![150; 3 * 5 * 3], 3, 5, image::ExtendedColorType::Rgb8)
+                .write_image(&[150; 3 * 5 * 3], 3, 5, image::ExtendedColorType::Rgb8)
                 .unwrap();
         } else {
             image::codecs::png::PngEncoder::new(&mut image)
-                .write_image(&vec![150; 3 * 5 * 4], 3, 5, image::ExtendedColorType::Rgba8)
+                .write_image(&[150; 3 * 5 * 4], 3, 5, image::ExtendedColorType::Rgba8)
                 .unwrap();
         }
         let offset = blob.len();
@@ -473,4 +473,27 @@ fn animated_skirmish_idle_pose_keeps_the_original_footprint_fit() {
             <= 0.55 * 1.5
     );
     assert!((min[1] * model.scale).abs() <= 0.05, "ground pivot {min:?}");
+}
+
+#[test]
+fn unused_cycles_and_multiple_parent_nodes_are_refused_before_rig_loading() {
+    let (mut doc, blob) = sample();
+    doc["nodes"].as_array_mut().unwrap().extend([
+        json!({"name":"unused_a","children":[2]}),
+        json!({"name":"unused_b","children":[1]}),
+    ]);
+    let error = inspect_glb("test", "cycle.glb", &bytes(&doc, &blob))
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("cycle"), "{error}");
+    let (mut doc, blob) = sample();
+    doc["nodes"][0]["children"] = json!([1]);
+    doc["nodes"].as_array_mut().unwrap().extend([
+        json!({"name":"shared"}),
+        json!({"name":"other","children":[1]}),
+    ]);
+    let error = inspect_glb("test", "shared.glb", &bytes(&doc, &blob))
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("multiple parents"), "{error}");
 }
