@@ -34,9 +34,11 @@ async function drive(io) {
     await io.wait(300);
     let targets = null;
     let shots = 0;
+    let lastShot = null;
     for (let attempt = 0; attempt < FIND_ATTEMPTS && !targets; attempt += 1) {
         const shot = await io.screenshot();
         shots += 1;
+        lastShot = shot;
         const image = decodePng(shot);
         const unit = findScout(image);
         const ground = findGround(image);
@@ -47,7 +49,11 @@ async function drive(io) {
             await io.wait(FIND_WAIT_MS);
         }
     }
-    if (!targets) return stop(io, "no unit colour and open ground pixel at least 120 px apart in the screenshot");
+    if (!targets) {
+        // Keep the last screenshot, so a hosted failure shows what the finder saw.
+        if (lastShot) await io.save("t7-find-last.png", lastShot);
+        return stop(io, "no unit colour and open ground pixel at least 120 px apart in the screenshot");
+    }
     await io.save("t7-pixel-targets.json", Buffer.from(JSON.stringify({
         ...targets,
         method: "one connected unit-colour component and one ground-colour pixel, from screenshot pixels only",

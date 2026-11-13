@@ -63,10 +63,10 @@ pub struct SiteProgress {
 ///
 /// Store rule (ruling for `L0-STORE`): the store drops a `JobProgress` whose `(producer, job)` is no
 /// longer in the `QueueState` of the producer (the job completed or was cancelled), and one whose
-/// producer is removed. The replica does this today in `merge_job_progress`
-/// (`crates/turts_client/src/replica.rs`). The elapsed ticks of a job are
-/// `turts_rules::progress::value_at` of this record at the last applied tick: `JobState` has no
-/// `elapsed_ticks` since protocol 5.
+/// producer is removed. The side store of the replica does this
+/// (`crates/turts_client/src/replica_store.rs`, `held_jobs` and `RecordStore::apply`). The elapsed
+/// ticks of a job are `turts_rules::progress::value_at` of this record at the last applied tick,
+/// as ticks with `base_ticks_done`: `JobState` has no `elapsed_ticks` since protocol 5.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct JobProgress {
     /// The producer unit.

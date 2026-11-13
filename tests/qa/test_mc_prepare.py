@@ -489,7 +489,7 @@ class PrepareTests(unittest.TestCase):
 
     def test_build_environment_change_is_refused(self):
         cases = [("RUSTFLAGS", "-C opt-level=1"), ("CARGO_ENCODED_RUSTFLAGS", "-Cdebuginfo=2"),
-                 ("CARGO_PROFILE_RELEASE_LTO", "thin")]
+                 ("CARGO_PROFILE_RELEASE_LTO", "thin"), ("T7_SCOUT_SPEED", "1.5")]
         for name, value in cases:
             with self.subTest(name=name, case="set after prepare"):
                 prepared = self.fake.prepare(f"e-{name}", **{name: None})

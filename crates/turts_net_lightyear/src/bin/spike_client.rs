@@ -62,6 +62,8 @@ struct State {
     next_seq: u32,
     deltas: u64,
     deltas_in_order: bool,
+    /// Tick of each delta in arrival order (the P8 test reads it).
+    delta_ticks: Vec<u32>,
     first_tick: Option<u32>,
     last_tick: Option<u32>,
 }
@@ -97,6 +99,7 @@ fn main() {
         next_seq: 0,
         deltas: 0,
         deltas_in_order: true,
+        delta_ticks: Vec::new(),
         first_tick: None,
         last_tick: None,
     });
@@ -257,6 +260,7 @@ fn receive(
     for mut receiver in deltas.iter_mut() {
         for delta in receiver.receive() {
             state.deltas += 1;
+            state.delta_ticks.push(delta.tick);
             if let Some(last) = state.last_tick
                 && delta.tick <= last
             {
@@ -356,6 +360,7 @@ fn write_out(cfg: &Cfg, state: &State) {
         "typed_command_results": state.typed_command_results,
         "deltas": state.deltas,
         "deltas_in_order": state.deltas_in_order,
+        "delta_ticks": state.delta_ticks,
         "first_tick": state.first_tick,
         "last_tick": state.last_tick,
     });

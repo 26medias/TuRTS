@@ -32,7 +32,7 @@ use turts_client::{
     ingest::{CommandResults, ReplicaState, WelcomeInfo},
     join::{AcquiredPackages, Phase},
     present::Presented,
-    replica::{Replica, UnitReplica},
+    replica::{Replica, ReplicaContext, SnapshotOutcome, UnitReplica},
     ui_shared::Selection,
     widgets::{
         WidgetsPlugin,
@@ -41,12 +41,15 @@ use turts_client::{
     },
 };
 use turts_interaction::Viewport as InteractionViewport;
+use turts_mod_api::ResourceKind;
 use turts_mod_api::{
     ActionField, Anchor, ButtonAction, Dimension, Direction, ItemField, Primitive, Size, Source,
     TextValue, Widget,
 };
 use turts_mod_runtime::{archive::PackageArchive, pack::pack_dir};
-use turts_net_protocol::{BalanceState, JobId, JobStage, QueueState, UnitId};
+use turts_net_protocol::{
+    BalanceState, JobId, JobProgress, JobStage, QueueState, Snapshot, UnitId, UnitSnapshot,
+};
 
 const PRODUCER: u32 = 7;
 const FIRST_JOB: u64 = 101;
@@ -758,18 +761,45 @@ fn held_cancel_button_keeps_identity_through_progress_and_retired_rows_are_prune
     press(&mut app, window, camera, first, 1.0);
 
     {
-        // The job advances: protocol 5 carries the progress as a record.
+        // The job advances: protocol 5 carries the progress as a record, and the record reaches the
+        // store through a Snapshot, the one way in (no test seam writes the store).
         let mut state = app.world_mut().resource_mut::<ReplicaState>();
+        let content = state.content.clone().expect("the installed content");
         let replica = state.replica.as_mut().unwrap();
+        replica.set_context(ReplicaContext::new(content.clone(), 0));
         let queue = &replica.economy.queues[0];
         let (producer, job, total) = (
             queue.producer.0,
             queue.jobs[0].id.0,
             queue.jobs[0].duration_ticks,
         );
-        replica.job_progress.insert(
-            (producer, job),
-            turts_net_protocol::RateRecord {
+        let mut economy = replica.economy.clone();
+        economy.balances.retain(|balance| {
+            content.catalog.resources.iter().any(|(id, def)| {
+                id.to_string() == balance.resource && def.kind == ResourceKind::Balance
+            })
+        });
+        let mut snapshot = Snapshot {
+            tick: replica.last_applied_tick.unwrap_or(0) + 1,
+            units: replica
+                .units
+                .iter()
+                .map(|(id, unit)| UnitSnapshot {
+                    unit_id: UnitId(*id),
+                    content_id: unit.content_id.clone(),
+                    owner_slot: turts_net_protocol::SlotId(unit.owner_slot),
+                    facing: unit.facing,
+                    pos: unit.samples.back().expect("a sample").1,
+                    site: false,
+                })
+                .collect(),
+            economy,
+            ..Default::default()
+        };
+        snapshot.records.jobs = vec![JobProgress {
+            producer: UnitId(producer),
+            job: JobId(job),
+            progress: turts_net_protocol::RateRecord {
                 done: 1,
                 total,
                 per_tick: 0,
@@ -779,6 +809,10 @@ fn held_cancel_button_keeps_identity_through_progress_and_retired_rows_are_prune
                 held: false,
                 held_since_tick: 0,
             },
+        }];
+        assert_eq!(
+            replica.apply_snapshot(&snapshot, bevy::platform::time::Instant::now()),
+            SnapshotOutcome::Applied { replayed: 0 }
         );
     }
     app.update();

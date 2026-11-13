@@ -21,6 +21,7 @@ pub mod interp;
 pub mod join;
 pub mod minimap;
 pub mod options;
+pub mod pacing;
 pub mod palette;
 pub mod persist;
 pub mod present;
@@ -29,6 +30,7 @@ pub mod rejoin;
 mod relation;
 pub mod render;
 pub mod replica;
+pub mod replica_store;
 mod scenario;
 pub mod ui_shared;
 pub mod visuals;
@@ -295,7 +297,8 @@ fn window_plugin() -> WindowPlugin {
 }
 
 /// Builds the client app. Headless: `MinimalPlugins` at 60 Hz. Otherwise `DefaultPlugins` with
-/// the window, the scene and the click input. `--run-secs` ends the run with `AppExit`.
+/// the window, the scene, the click input and the default frame limits of `pacing.rs` (the
+/// stored player setting replaces them when it loads). `--run-secs` ends the run with `AppExit`.
 pub fn build_app(opts: ClientOptions) -> App {
     let mut app = App::new();
     let headless = opts.headless;
@@ -304,7 +307,8 @@ pub fn build_app(opts: ClientOptions) -> App {
             Duration::from_secs_f64(1.0 / 60.0),
         )));
     } else {
-        app.add_plugins(DefaultPlugins.set(window_plugin()));
+        app.add_plugins(DefaultPlugins.set(window_plugin()))
+            .insert_resource(pacing::default_winit_settings());
     }
     app.add_plugins(ClientPlugins {
         tick_duration: tick_duration(LINK_TICK_HZ),

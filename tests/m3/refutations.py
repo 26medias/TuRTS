@@ -209,6 +209,21 @@ def select_cases(cases, requested):
     return selected
 
 
+def shard_cases(selected, spec):
+    """Keep shard K of N (K from 1): the selected cases K, K + N, K + 2N, ... in registry order.
+
+    Hosted CI runs the N shards as parallel jobs; together they run each selected case once.
+    """
+    match = re.fullmatch(r"([1-9][0-9]*)/([1-9][0-9]*)", spec)
+    if not match or int(match.group(1)) > int(match.group(2)):
+        raise ValueError(f"--shard must be K/N with 1 <= K <= N, not {spec!r}")
+    index, count = int(match.group(1)), int(match.group(2))
+    part = selected[index - 1::count]
+    if not part:
+        raise ValueError(f"shard {spec} selects no refutation case")
+    return part
+
+
 def require_case_prefix(cases, prefix):
     if not cases:
         raise ValueError(f"no refutation cases selected for prefix {prefix}")
@@ -421,6 +436,7 @@ def source_provenance(root):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--case", required=True)
+    parser.add_argument("--shard", help="K/N: run only shard K of N of the selected cases")
     parser.add_argument(
         "--evidence-root",
         type=Path,
@@ -441,6 +457,8 @@ def main():
     if len(ids) != 17 or any(not isinstance(case_id, str) or not case_id.startswith(prefix) for case_id, prefix in zip(ids, EXPECTED_CASES, strict=True)):
         raise ValueError("registry must contain C1-C17 in SPEC order, exactly once")
     cases = select_cases(all_cases, args.case)
+    if args.shard:
+        cases = shard_cases(cases, args.shard)
     run_root = create_run_workspace(args.evidence_root, args.build_root)
     (run_root / "frozen-m2-baseline.json").write_text(json.dumps({"path": "tests/m3/m2_operation_stream.json", "sha256": fixture_hash}, indent=2) + "\n")
     (run_root / "source-provenance.json").write_text(json.dumps(source_provenance(ROOT), indent=2) + "\n")

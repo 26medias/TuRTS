@@ -164,6 +164,7 @@ fn base_app(content: Option<crate::content::ClientContent>, welcome: bool) -> Ap
         content: content.or(Some(full.clone())),
         config: Default::default(),
         match_start: None,
+        reorder_grace_override: None,
     };
     let acquired = Acquired {
         lockfile_hash: String::new(),

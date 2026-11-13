@@ -21,6 +21,10 @@
         "task16": {
             "status": "executable",
             "gpu_device_audit": true,
+            "client_settings": {
+                "frame_limit": 20,
+                "reason": "Three clients on one host. Host artefact, mostly: the copy of each frame to the virtual display (Xvfb). The Chrome GPU-process main thread spends 12.1 to 13.9 ms for each presented client frame; a clear-only page costs 7.9 to 10.7 ms for each present at 1280x720 and 2.28 ms at 640x360, the real client 12.3 ms (probe P-A). With two clients at the default (no limit) that thread runs at 93 to 96 % and the third WebGPU requestDevice waits 6 s to more than 30 s. Three windows at 30 fps need 109 to 125 % of that thread; at the stored limit 20 they need 73 to 83 % (docs/measurements/mc-gpu-process-saturation.md)."
+            },
             "phases": [
                 "capacity",
                 "copy-refusal",

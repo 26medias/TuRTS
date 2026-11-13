@@ -7,15 +7,17 @@
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 
 use bevy::platform::time::Instant;
-use turts_mod_api::{ContentId, CostSource, ResourceKind};
+use turts_mod_api::{ContentId, CostSource, ResourceKind, SupplySide};
 use turts_net_protocol::{
-    BeltPieceRecord, EconomyChanges, EconomyState, ExtractorRecord, HealthRecord, InserterRecord,
-    InventoryPort, JobId, NodeId, NodeState, Pos, ResearchRecord, Snapshot, UnitId,
-    UnitOrderRecord, UnitSnapshot, WeaponRecord, WorldDelta,
+    BeltPieceRecord, EconomyChanges, EconomyState, ExtractorRecord, HealthRecord, HeldOrder,
+    InserterRecord, InventoryPort, JobId, MatchState, NodeId, NodeState, Outcome, OutcomeReason,
+    Pos, RateRecord, ResearchRecord, SlotOutcome, Snapshot, UnitId, UnitOrderRecord, UnitSnapshot,
+    WeaponRecord, WorldDelta,
 };
-use turts_net_protocol::{JobProgress, RateRecord};
+use turts_rules::charge::{CancelCase, CancelRefunds};
 
-use crate::{content::ClientContent, interp};
+use crate::replica_store::{RecordStore, StoreStep, StoreUpdate};
+use crate::{content::ClientContent, interp, replica_store};
 
 /// One unit on the client.
 #[derive(Debug, Clone, PartialEq)]
@@ -56,16 +58,57 @@ pub enum SnapshotOutcome {
 /// window, the trace grows in each fight, and each delta clones it (`Replica::candidate`).
 pub const HEALTH_TRACE_WINDOW: usize = 64;
 
+/// Why the replica asked for a `Snapshot`. Each reason has its own counter in the debug state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ResyncReason {
+    /// A delta did not extend the chain and the predecessor did not arrive within the grace
+    /// (or the delta was malformed, or there was no baseline).
+    ChainBreak,
+    /// A delta that extends the chain failed validation (`stage_delta`).
+    ValidationFailure,
+    /// The replica waited for a `Snapshot`, no request was out, and the buffered span reached
+    /// `IDLE_RESYNC_SPAN_TICKS` (`ingest.rs`).
+    IdleSpan,
+    /// A `Snapshot` answer could not be published (stale, invalid, or its tail is not coherent).
+    Successor,
+}
+
+/// The longest virtual-time step of one server frame: `Time<Virtual>` clamps a frame to this
+/// (`bevy_time-0.20.0/src/virt.rs:85`, `DEFAULT_MAX_DELTA`). Pinned for the running server app by
+/// `crates/turts_server/src/main.rs` (test `server_frame_clamp_and_timestep_are_pinned`).
+pub const MAX_FRAME_DELTA: std::time::Duration = std::time::Duration::from_millis(250);
+
+/// The most fixed ticks that one server frame can run, so the most deltas that one flush can hold.
+///
+/// Bevy adds the clamped frame delta to the overstep and runs one tick for each whole timestep
+/// (`bevy_time-0.20.0/src/fixed.rs:216-226, 243-255`). The overstep left by the frame before is
+/// below one timestep `T`, so a frame runs at most `1 + floor((MAX_FRAME_DELTA - 1 ns) / T)` ticks
+/// (5 at 20 Hz). `T` is `tick_duration(hz)` (`turts_net_lightyear`), rounded down to whole
+/// nanoseconds, which is why `hz / 4` is one too small at some rates (12, 48, 52, 68 Hz ...).
+/// The test `catchup_bound.rs` computes the bound with a real Bevy app.
+pub fn max_catchup_ticks(tick_hz: u16) -> u32 {
+    let tick_ns = turts_net_lightyear::tick_duration(tick_hz.max(1))
+        .as_nanos()
+        .max(1);
+    let most = 1 + (MAX_FRAME_DELTA.as_nanos() - 1) / tick_ns;
+    u32::try_from(most).unwrap_or(u32::MAX)
+}
+
 /// Technical cap on retained batches while waiting for a reliable snapshot.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ReplicaConfig {
     pub max_buffered_batches: usize,
+    /// Reorder grace, in ticks of observed progress. A delta that is ahead of the chain is held;
+    /// a resync is asked for only when `highest_observed_tick - last_applied_tick` is above this
+    /// value. 0 means no hold: the first chain break asks at once (the M1 rule).
+    pub reorder_grace_ticks: u32,
 }
 
 impl Default for ReplicaConfig {
     fn default() -> Self {
         Self {
             max_buffered_batches: 256,
+            reorder_grace_ticks: 0,
         }
     }
 }
@@ -95,7 +138,6 @@ struct Candidate {
     healths: Vec<HealthRecord>,
     research: Vec<ResearchRecord>,
     unit_orders: HashMap<u32, UnitOrderRecord>,
-    job_progress: BTreeMap<(u32, u64), RateRecord>,
     health_trace: std::collections::BTreeMap<u32, Vec<HealthTraceEntry>>,
     tick: u32,
 }
@@ -122,10 +164,12 @@ pub struct Replica {
     pub research: Vec<ResearchRecord>,
     /// Owner-specific orders staged atomically with their unit snapshot and tick.
     pub unit_orders: HashMap<u32, UnitOrderRecord>,
-    /// The progress record of each job in `economy.queues`, by (producer, job). A record is
-    /// dropped when its producer's `QueueState` no longer holds the job, or when the producer is
-    /// removed. `L0-STORE` may move it to the side store of the 6.8 records.
-    pub job_progress: BTreeMap<(u32, u64), RateRecord>,
+    /// The side store of the 6.8 records (`replica_store`): it commits with the candidate and is
+    /// read through the getters below. It is not a field of the candidate.
+    store: RecordStore,
+    /// `Welcome.start.start_tick` (design 6.7.13): the tick that `MatchClock` counts from. Set by
+    /// `on_welcome` through `set_match_start`; 0 until then.
+    start_tick: u32,
     /// The recent health changes of each unit: at most [`HEALTH_TRACE_WINDOW`] entries, the
     /// newest last (row DBG1). The alert `OwnUnitDestroyed` reads the last entry of a unit that
     /// is gone, so the window always keeps the newest entry.
@@ -139,10 +183,23 @@ pub struct Replica {
     pub highest_observed_tick: Option<u32>,
     /// Number of bounded-tail overflows, copied into ingest diagnostics.
     pub buffer_overflows: u32,
+    /// Deltas that are ahead of the chain, sorted by tick, no duplicate tick. Their predecessor
+    /// may still arrive. At most `max_buffered_batches` and, by the grace rule, at most
+    /// `reorder_grace_ticks` of them (see `apply_delta`).
+    reorder: Vec<WorldDelta>,
+    /// Deltas that were held and then applied when their predecessor arrived.
+    pub reorder_recovered: u32,
+    /// Deltas that were held (a delta counts once).
+    pub reorder_held: u32,
+    /// The reason of the resync that the last `apply_delta` or `apply_snapshot` started.
+    pub last_resync_reason: Option<ResyncReason>,
     context: Option<ReplicaContext>,
     config: ReplicaConfig,
     gap_anchor: Option<u32>,
     gap_seen: bool,
+    /// The recovery tail lost data (an overflow, or a hole older than the grace): a snapshot must
+    /// then cover the high-water tick, and the `ahead` hold is refused.
+    tail_lost: bool,
 }
 
 impl Replica {
@@ -165,7 +222,8 @@ impl Replica {
             healths: Vec::new(),
             research: Vec::new(),
             unit_orders: HashMap::new(),
-            job_progress: BTreeMap::new(),
+            store: RecordStore::default(),
+            start_tick: 0,
             health_trace: std::collections::BTreeMap::new(),
             snapshot_tick: None,
             last_applied_tick: None,
@@ -173,17 +231,38 @@ impl Replica {
             resync: Some(Vec::new()),
             highest_observed_tick: None,
             buffer_overflows: 0,
+            reorder: Vec::new(),
+            reorder_recovered: 0,
+            reorder_held: 0,
+            last_resync_reason: None,
             context: None,
             config: ReplicaConfig {
                 max_buffered_batches: config.max_buffered_batches.max(1),
+                reorder_grace_ticks: config.reorder_grace_ticks,
             },
             gap_anchor: None,
             gap_seen: false,
+            tail_lost: false,
         }
+    }
+
+    /// Take the start tick of the match from `Welcome.start.start_tick` (`ingest::on_welcome`).
+    pub fn set_match_start(&mut self, start_tick: u32) {
+        self.start_tick = start_tick;
     }
 
     pub fn set_context(&mut self, context: ReplicaContext) {
         self.context = Some(context);
+    }
+
+    pub fn reorder_grace_ticks(&self) -> u32 {
+        self.config.reorder_grace_ticks
+    }
+
+    /// Set the reorder grace (ticks of observed progress). Live ingest sets
+    /// `max_catchup_ticks(tick_hz)` at `Welcome`.
+    pub fn set_reorder_grace_ticks(&mut self, ticks: u32) {
+        self.config.reorder_grace_ticks = ticks;
     }
 
     pub fn max_buffered_batches(&self) -> usize {
@@ -210,8 +289,14 @@ impl Replica {
         }
     }
 
+    /// Retained deltas: the recovery tail plus the held reorder window.
     pub fn buffered_batches(&self) -> usize {
-        self.resync.as_ref().map_or(0, Vec::len)
+        self.resync.as_ref().map_or(0, Vec::len) + self.reorder.len()
+    }
+
+    /// Deltas held for a late predecessor (not in resync).
+    pub fn held_deltas(&self) -> usize {
+        self.reorder.len()
     }
 
     pub fn resync_span_ticks(&self) -> Option<u32> {
@@ -235,9 +320,10 @@ impl Replica {
             return SnapshotOutcome::IgnoredStale;
         }
 
-        let Some(mut candidate) = self.stage_snapshot(snapshot) else {
+        let Some((mut candidate, mut staged_store)) = self.stage_snapshot(snapshot) else {
             self.mark_gap(snapshot.tick);
             self.resync.get_or_insert_with(Vec::new);
+            self.last_resync_reason = Some(ResyncReason::Successor);
             return SnapshotOutcome::Invalid;
         };
 
@@ -247,24 +333,48 @@ impl Replica {
         let original_retained = retained.clone();
         let mut replayed = 0;
         let mut remaining = Vec::new();
+        // Deltas that are ahead of the snapshot chain: the hole may close within the grace.
+        let mut ahead = Vec::new();
         let mut replay_failed = false;
         for delta in retained {
             if delta.tick <= candidate.tick {
                 continue;
             }
             if !self.chain_extends(candidate.tick, &delta) {
-                replay_failed = true;
-                remaining.push(delta);
+                if delta.base_tick > candidate.tick
+                    && delta.base_tick.checked_add(1) == Some(delta.tick)
+                {
+                    ahead.push(delta);
+                } else {
+                    replay_failed = true;
+                    remaining.push(delta);
+                }
                 continue;
             }
-            let Some(next) = self.stage_delta(&candidate, &delta) else {
+            // The store step applies to the staged store of the Snapshot, never to the live store.
+            let Some((next, step)) = self.stage_delta(&candidate, &staged_store, &delta) else {
                 self.mark_gap(delta.tick);
                 replay_failed = true;
                 remaining.push(delta);
                 continue;
             };
             candidate = next;
+            staged_store.apply(step);
             replayed += 1;
+        }
+        let high = self.highest_observed_tick.unwrap_or(candidate.tick);
+        // The deltas that are ahead may wait for their predecessor when the hole is inside the
+        // grace and the tail lost nothing. A hole in the retained tail that was already known as
+        // a loss does not block this: the snapshot covers it, and a new hole is judged here.
+        let ahead_ok = !ahead.is_empty()
+            && self.config.reorder_grace_ticks > 0
+            && !self.tail_lost
+            && ahead.len() <= self.config.max_buffered_batches
+            && high.saturating_sub(candidate.tick) <= self.config.reorder_grace_ticks;
+        if !ahead.is_empty() && !ahead_ok {
+            // The hole is older than the grace: the snapshot does not cover it.
+            replay_failed = true;
+            remaining.append(&mut ahead);
         }
 
         // A recovery response is published only if its entire proposed tail is coherent. In
@@ -274,21 +384,35 @@ impl Replica {
         let uncovered_high_water = self
             .highest_observed_tick
             .is_some_and(|high| candidate.tick < high);
-        let unresolved_gap = self.gap_seen && uncovered_high_water;
+        let unresolved_gap = self.gap_seen && uncovered_high_water && !ahead_ok;
         if replay_failed || !remaining.is_empty() || unresolved_gap {
             self.resync = Some(original_retained);
             self.gap_seen = true;
+            self.last_resync_reason = Some(ResyncReason::Successor);
             return SnapshotOutcome::ResyncRequested { replayed: 0 };
         }
 
-        self.commit(candidate, now);
+        self.commit(candidate, StoreUpdate::Replace(staged_store), now);
         self.snapshot_tick = Some(snapshot.tick);
         self.resync = None;
+        // The deltas that are ahead of the snapshot chain wait for their predecessor.
+        self.reorder_held = self.reorder_held.saturating_add(ahead.len() as u32);
+        self.reorder = ahead;
         self.gap_anchor = None;
         self.gap_seen = false;
+        self.tail_lost = false;
         SnapshotOutcome::Applied { replayed }
     }
 
+    /// Apply one delta of the unreliable, unordered `StateChannel`.
+    ///
+    /// The deltas of one server flush may arrive out of order (lightyear sends the fragments
+    /// first and the singles by ascending size; see `tests/spike.rs`, P8). A delta that is ahead
+    /// of the chain (`base_tick` above the last applied tick) is therefore held, and applied when
+    /// its predecessor arrives. A resync starts only when the observed progress
+    /// (`highest_observed_tick - last_applied_tick`) is above `reorder_grace_ticks`, so a truly
+    /// lost delta gives exactly one resync, at the grace. A duplicate or old delta is discarded.
+    /// Memory: at most `max_buffered_batches` held deltas, and a hold ends at the grace.
     pub fn apply_delta(&mut self, delta: &WorldDelta, now: Instant) -> DeltaOutcome {
         self.highest_observed_tick = Some(
             self.highest_observed_tick
@@ -305,26 +429,114 @@ impl Replica {
             return DeltaOutcome::Buffered;
         }
         let Some(tick) = self.last_applied_tick else {
-            self.mark_gap(delta.tick);
-            self.resync = Some(Vec::new());
-            self.buffer_delta(delta.clone());
+            self.start_resync(delta.clone(), ResyncReason::ChainBreak);
             return DeltaOutcome::ResyncRequested;
         };
-        if !self.chain_extends(tick, delta) {
-            self.mark_gap(delta.tick);
-            self.resync = Some(Vec::new());
-            self.buffer_delta(delta.clone());
-            return DeltaOutcome::ResyncRequested;
+        if self.chain_extends(tick, delta) {
+            if let Some(outcome) = self.apply_chained(delta, now) {
+                return outcome;
+            }
+            let outcome = self.drain_reorder(now);
+            if outcome != DeltaOutcome::Applied {
+                return outcome;
+            }
+            return self.check_grace();
         }
+        // Ahead of the chain: hold it while the grace lasts.
+        let ahead = delta.base_tick > tick && delta.base_tick.checked_add(1) == Some(delta.tick);
+        if ahead && self.config.reorder_grace_ticks > 0 {
+            if self.reorder.iter().any(|held| held.tick == delta.tick) {
+                return DeltaOutcome::Discarded;
+            }
+            if self.reorder.len() < self.config.max_buffered_batches {
+                self.reorder.push(delta.clone());
+                self.reorder.sort_by_key(|held| held.tick);
+                self.reorder_held = self.reorder_held.saturating_add(1);
+                return self.check_grace_buffered();
+            }
+        }
+        self.start_resync(delta.clone(), ResyncReason::ChainBreak);
+        DeltaOutcome::ResyncRequested
+    }
+
+    /// Stage and commit a delta that extends the chain. `None` when it applied; a resync outcome
+    /// when validation failed.
+    fn apply_chained(&mut self, delta: &WorldDelta, now: Instant) -> Option<DeltaOutcome> {
+        let tick = self.last_applied_tick?;
         let current = self.candidate_at(tick);
-        let Some(candidate) = self.stage_delta(&current, delta) else {
-            self.mark_gap(delta.tick);
-            self.resync = Some(Vec::new());
-            self.buffer_delta(delta.clone());
-            return DeltaOutcome::ResyncRequested;
+        let Some((candidate, step)) = self.stage_delta(&current, &self.store, delta) else {
+            self.start_resync(delta.clone(), ResyncReason::ValidationFailure);
+            return Some(DeltaOutcome::ResyncRequested);
         };
-        self.commit(candidate, now);
+        self.commit(candidate, StoreUpdate::Step(step), now);
+        None
+    }
+
+    /// Apply the held deltas that now extend the chain. Held deltas that are old are dropped.
+    fn drain_reorder(&mut self, now: Instant) -> DeltaOutcome {
+        loop {
+            let Some(applied) = self.last_applied_tick else {
+                return DeltaOutcome::Applied;
+            };
+            self.reorder.retain(|held| held.tick > applied);
+            let Some(index) = self
+                .reorder
+                .iter()
+                .position(|held| self.chain_extends(applied, held))
+            else {
+                return DeltaOutcome::Applied;
+            };
+            let held = self.reorder.remove(index);
+            if let Some(outcome) = self.apply_chained(&held, now) {
+                return outcome;
+            }
+            self.reorder_recovered = self.reorder_recovered.saturating_add(1);
+        }
+    }
+
+    /// After a hole closed: if held deltas remain beyond the grace, the next hole is a loss.
+    fn check_grace(&mut self) -> DeltaOutcome {
+        if self.grace_expired() {
+            return self.expire_hold();
+        }
         DeltaOutcome::Applied
+    }
+
+    fn check_grace_buffered(&mut self) -> DeltaOutcome {
+        if self.grace_expired() {
+            return self.expire_hold();
+        }
+        DeltaOutcome::Buffered
+    }
+
+    fn grace_expired(&self) -> bool {
+        let (Some(high), Some(applied)) = (self.highest_observed_tick, self.last_applied_tick)
+        else {
+            return false;
+        };
+        !self.reorder.is_empty() && high.saturating_sub(applied) > self.config.reorder_grace_ticks
+    }
+
+    /// The predecessor did not arrive within the grace: the held deltas go to the recovery tail.
+    fn expire_hold(&mut self) -> DeltaOutcome {
+        let mut held = std::mem::take(&mut self.reorder);
+        let first = held.remove(0);
+        self.start_resync(first, ResyncReason::ChainBreak);
+        for delta in held {
+            self.buffer_delta(delta);
+        }
+        DeltaOutcome::ResyncRequested
+    }
+
+    /// Enter resync. `delta` and the held deltas go to the bounded recovery tail.
+    fn start_resync(&mut self, delta: WorldDelta, reason: ResyncReason) {
+        self.mark_gap(delta.tick);
+        self.resync = Some(Vec::new());
+        self.last_resync_reason = Some(reason);
+        for held in std::mem::take(&mut self.reorder) {
+            self.buffer_delta(held);
+        }
+        self.buffer_delta(delta);
     }
 
     fn chain_extends(&self, current_tick: u32, delta: &WorldDelta) -> bool {
@@ -340,8 +552,17 @@ impl Replica {
         self.gap_seen = true;
     }
 
+    /// Keep a delta in the recovery tail (sorted, no duplicate tick, at most
+    /// `max_buffered_batches`).
+    ///
+    /// With a reorder grace, the tail keeps every component of the chain: a hole between two
+    /// components may be a late delta of the same flush. A component is dropped only when the
+    /// hole after it is older than the grace (`highest_observed - its last tick`): that is a loss,
+    /// and the snapshot must then cover the rest (`tail_lost`). With grace 0 (the M1 rule) only the
+    /// newest component stays.
     fn buffer_delta(&mut self, delta: WorldDelta) {
         let limit = self.config.max_buffered_batches;
+        let grace = self.config.reorder_grace_ticks;
         let buffer = self.resync.get_or_insert_with(Vec::new);
         if buffer.iter().any(|held| held.tick == delta.tick) {
             return;
@@ -350,6 +571,7 @@ impl Replica {
             buffer.clear();
             self.buffer_overflows = self.buffer_overflows.saturating_add(1);
             self.gap_seen = true;
+            self.tail_lost = true;
             if self.gap_anchor.is_none() {
                 self.gap_anchor = self.last_applied_tick.or(Some(delta.base_tick));
             }
@@ -376,21 +598,33 @@ impl Replica {
                 components.push(vec![held]);
             }
         }
-        if components.len() > 1 {
+        // The first component to keep: every earlier one has a hole after it that is a loss.
+        let keep_from = if grace == 0 {
+            components.len().saturating_sub(1)
+        } else {
+            let high = self.highest_observed_tick.unwrap_or(0);
+            (0..components.len().saturating_sub(1))
+                .rev()
+                .find(|&i| {
+                    let last = components[i].last().map_or(0, |d| d.tick);
+                    high.saturating_sub(last) > grace
+                })
+                .map_or(0, |i| i + 1)
+        };
+        if keep_from > 0 {
             self.gap_seen = true;
+            self.tail_lost = true;
             if self.gap_anchor.is_none() {
                 self.gap_anchor = components
                     .first()
                     .and_then(|component| component.first())
                     .map(|first| first.base_tick);
             }
-            *buffer = components.pop().unwrap_or_default();
-        } else {
-            *buffer = components.pop().unwrap_or_default();
         }
+        *buffer = components.into_iter().skip(keep_from).flatten().collect();
     }
 
-    fn stage_snapshot(&self, snapshot: &Snapshot) -> Option<Candidate> {
+    fn stage_snapshot(&self, snapshot: &Snapshot) -> Option<(Candidate, RecordStore)> {
         let context = self.context.as_ref()?;
         let mut units = HashMap::new();
         for unit in &snapshot.units {
@@ -425,17 +659,16 @@ impl Replica {
             healths: Vec::new(),
             research: snapshot.research.clone(),
             unit_orders: HashMap::new(),
-            job_progress: BTreeMap::new(),
             health_trace: self.health_trace.clone(),
             tick: snapshot.tick,
         };
         candidate.unit_orders =
             stage_unit_orders(context, &snapshot.unit_orders, &candidate.units)?;
-        candidate.job_progress = merge_job_progress(
-            BTreeMap::new(),
-            &snapshot.records.jobs,
+        let store = replica_store::stage_snapshot_store(
+            context,
+            snapshot,
+            &candidate.units,
             &candidate.economy,
-            &HashSet::new(),
         )?;
         if !valid_economy(
             context,
@@ -447,7 +680,7 @@ impl Replica {
         {
             return None;
         }
-        Some(candidate)
+        Some((candidate, store))
     }
 
     fn candidate_at(&self, tick: u32) -> Candidate {
@@ -462,13 +695,17 @@ impl Replica {
             healths: self.healths.clone(),
             research: self.research.clone(),
             unit_orders: self.unit_orders.clone(),
-            job_progress: self.job_progress.clone(),
             health_trace: self.health_trace.clone(),
             tick,
         }
     }
 
-    fn stage_delta(&self, current: &Candidate, delta: &WorldDelta) -> Option<Candidate> {
+    fn stage_delta(
+        &self,
+        current: &Candidate,
+        store: &RecordStore,
+        delta: &WorldDelta,
+    ) -> Option<(Candidate, StoreStep)> {
         let context = self.context.as_ref()?;
         let mut next = current.clone();
         let removed: HashSet<u32> = delta.removed.iter().map(|id| id.0).collect();
@@ -553,10 +790,14 @@ impl Replica {
             &next.units,
             &removed,
         )?;
-        next.job_progress = merge_job_progress(
-            std::mem::take(&mut next.job_progress),
-            &delta.records.jobs,
+        // The store change is staged next to the candidate: its step is applied by `commit` only
+        // (or to the staged store of a resync), never here.
+        let step = replica_store::stage_delta_step(
+            context,
+            store,
+            &next.units,
             &next.economy,
+            delta,
             &removed,
         )?;
         for id in &removed {
@@ -583,10 +824,10 @@ impl Replica {
             return None;
         }
         next.tick = delta.tick;
-        Some(next)
+        Some((next, step))
     }
 
-    fn commit(&mut self, candidate: Candidate, now: Instant) {
+    fn commit(&mut self, candidate: Candidate, store: StoreUpdate, now: Instant) {
         self.units = candidate.units;
         self.nodes = candidate.nodes;
         self.economy = candidate.economy;
@@ -597,7 +838,10 @@ impl Replica {
         self.healths = candidate.healths;
         self.research = candidate.research;
         self.unit_orders = candidate.unit_orders;
-        self.job_progress = candidate.job_progress;
+        match store {
+            StoreUpdate::Replace(staged) => self.store = staged,
+            StoreUpdate::Step(step) => self.store.apply(step),
+        }
         self.health_trace = candidate.health_trace;
         self.last_applied_tick = Some(candidate.tick);
         self.latest_receipt = Some(now);
@@ -618,11 +862,115 @@ impl Replica {
         }
     }
 
-    /// The elapsed ticks of a job at the tick of the last applied delta, from its progress record
-    /// (`turts_rules::progress::value_at`): never later than the last applied tick, so this is not
-    /// prediction. 0 when the replica holds no record of the job.
+    // The getters of the side store (`L0-STORE`): the one source of each value that reads a 6.8
+    // record. The interface reads these and keeps no storage of its own. A record is evaluated at
+    // the tick of the last applied message, never later, so this is not prediction.
+
+    /// The side store of the 6.8 records.
+    pub fn store(&self) -> &RecordStore {
+        &self.store
+    }
+
+    fn applied_tick(&self) -> u32 {
+        self.last_applied_tick.unwrap_or(0)
+    }
+
+    /// `Value::Supply`: the own supply of `resource`, provided or consumed. `None` when the
+    /// replica holds no record of it.
+    pub fn supply(&self, resource: &str, side: SupplySide) -> Option<u64> {
+        let slot = self.context.as_ref()?.slot;
+        let record = self.store.supply_record(slot, resource)?;
+        Some(match side {
+            SupplySide::Provided => record.provided,
+            SupplySide::Consumed => record.consumed,
+        })
+    }
+
+    /// `Predicate::SupplyShort`, `AlertTrigger::SupplyShort` and the offline mark: true when the own
+    /// consumed amount of `resource` is above the provided amount (design 6.2, "Computation";
+    /// `turts_rules::supply::is_short`). False when the replica holds no record of the resource.
+    /// The one place that derives it: no reader compares the two sides itself.
+    pub fn supply_short(&self, resource: &str) -> bool {
+        let Some(slot) = self.context.as_ref().map(|context| context.slot) else {
+            return false;
+        };
+        self.store
+            .supply_record(slot, resource)
+            .is_some_and(|record| turts_rules::supply::is_short(record.provided, record.consumed))
+    }
+
+    /// `Source::ConstructionQueue`: the held orders of an own constructor.
+    pub fn construction_queue(&self, constructor: u32) -> &[HeldOrder] {
+        self.store.construction_queue(constructor)
+    }
+
+    /// `Source::Sites`: the sites that exist, by unit id.
+    pub fn sites(&self) -> impl Iterator<Item = u32> + '_ {
+        self.store.sites()
+    }
+
+    pub fn is_site(&self, unit: u32) -> bool {
+        self.store.is_site(unit)
+    }
+
+    /// The progress record of an own site.
+    pub fn site_progress(&self, unit: u32) -> Option<&RateRecord> {
+        self.store.site_progress(unit)
+    }
+
+    /// The value of an own site in raw units of 1/Q tick at the last applied tick.
+    pub fn site_value(&self, unit: u32) -> Option<u64> {
+        let record = self.store.site_progress(unit)?;
+        Some(replica_store::record_value(record, self.applied_tick()))
+    }
+
+    /// The item field `Paid` of a site: `turts_rules::progress::paid_at`.
+    pub fn site_paid(&self, unit: u32, cost: u64) -> Option<u64> {
+        let record = self.store.site_progress(unit)?;
+        Some(replica_store::record_paid(
+            record,
+            cost,
+            self.applied_tick(),
+        ))
+    }
+
+    /// The item field `Refund` of a site: `turts_rules::progress::refund_at`.
+    pub fn site_refund(
+        &self,
+        unit: u32,
+        cost: u64,
+        case: CancelCase,
+        refunds: &CancelRefunds,
+    ) -> Option<u64> {
+        let record = self.store.site_progress(unit)?;
+        Some(replica_store::record_refund(
+            record,
+            cost,
+            case,
+            refunds,
+            self.applied_tick(),
+        ))
+    }
+
+    /// The progress record of a job (the item field `State` reads its `state` and `held`).
+    pub fn job_progress(&self, producer: u32, job: u64) -> Option<&RateRecord> {
+        self.store.job_progress(producer, job)
+    }
+
+    /// The value of a job in raw units of 1/Q tick at the last applied tick.
+    pub fn job_value(&self, producer: u32, job: u64) -> Option<u64> {
+        let record = self.store.job_progress(producer, job)?;
+        Some(replica_store::record_value(record, self.applied_tick()))
+    }
+
+    /// The elapsed ticks of a job at the tick of the last applied delta, from its progress record:
+    /// `done`, `total` and `per_tick` count raw units of 1/Q tick (`RateRecord`), so the value in
+    /// units (`turts_rules::progress::value_at`) becomes ticks of base time with
+    /// `base_ticks_done(units, duration_ticks, total)`, the duration read from the `JobState` of
+    /// the queue. At Q = 1 the units are the ticks. Never later than the last applied tick, so this
+    /// is not prediction. 0 when the replica holds no record of the job, or no queue holds the job.
     pub fn job_elapsed_ticks(&self, producer: u32, job: u64) -> u64 {
-        let Some(record) = self.job_progress.get(&(producer, job)) else {
+        let Some(record) = self.store.job_progress(producer, job) else {
             return 0;
         };
         let Some(duration_ticks) = self
@@ -636,19 +984,66 @@ impl Replica {
         else {
             return 0;
         };
-        // `done`, `total` and `per_tick` count raw units of 1/Q tick (`RateRecord`): the ticks are
-        // `base_ticks_done(units, duration_ticks, total)`. At Q = 1 the units are the ticks.
-        let units = turts_rules::progress::value_at(
-            &turts_rules::progress::RateRecord {
-                done: record.done,
-                total: record.total,
-                per_tick: record.per_tick,
-                at_tick: record.at_tick,
-                stalled: false,
-            },
-            self.last_applied_tick.unwrap_or(0),
-        );
+        let units = replica_store::record_value(record, self.applied_tick());
         turts_rules::progress::base_ticks_done(units, duration_ticks, record.total)
+    }
+
+    /// The item field `Paid` of a job: `turts_rules::progress::paid_at`.
+    pub fn job_paid(&self, producer: u32, job: u64, cost: u64) -> Option<u64> {
+        let record = self.store.job_progress(producer, job)?;
+        Some(replica_store::record_paid(
+            record,
+            cost,
+            self.applied_tick(),
+        ))
+    }
+
+    /// The item field `Refund` of a job: `turts_rules::progress::refund_at`.
+    pub fn job_refund(
+        &self,
+        producer: u32,
+        job: u64,
+        cost: u64,
+        case: CancelCase,
+        refunds: &CancelRefunds,
+    ) -> Option<u64> {
+        let record = self.store.job_progress(producer, job)?;
+        Some(replica_store::record_refund(
+            record,
+            cost,
+            case,
+            refunds,
+            self.applied_tick(),
+        ))
+    }
+
+    /// The public match state (the empty state until a message brings one).
+    pub fn match_state(&self) -> &MatchState {
+        self.store.match_state()
+    }
+
+    /// The outcome record of the receiving slot.
+    pub fn own_outcome(&self) -> Option<SlotOutcome> {
+        let slot = self.context.as_ref()?.slot;
+        replica_store::outcome_of(self.store.match_state(), slot)
+    }
+
+    /// `Value::Outcome`.
+    pub fn outcome(&self) -> Option<Outcome> {
+        self.own_outcome().map(|outcome| outcome.outcome)
+    }
+
+    /// `Value::OutcomeReason`.
+    pub fn outcome_reason(&self) -> Option<OutcomeReason> {
+        self.own_outcome().map(|outcome| outcome.reason)
+    }
+
+    /// `Value::MatchClock`: the ticks from the start tick of the match (`Welcome.start.start_tick`,
+    /// set by `set_match_start`) to the last applied tick. 0 before the start. The clock stops with no
+    /// store record: the server sends the `Snapshot` of the end tick and then no delta (design 6.7,
+    /// the Ended row), so the applied tick stops at the end tick.
+    pub fn match_clock_ticks(&self) -> u32 {
+        self.applied_tick().saturating_sub(self.start_tick)
     }
 
     /// `None` before the first snapshot.
@@ -796,33 +1191,6 @@ fn merge_unit_orders(
         table.remove(&unit.0);
     }
     table.extend(changed);
-    Some(table)
-}
-
-/// Merge the job progress records of a delta (or a Snapshot) into the table. A record names a job
-/// that the economy of this candidate holds, and a producer that the same message does not remove;
-/// a record of a job that the queues no longer hold is dropped (the job completed or was
-/// cancelled). `None` rejects the message.
-fn merge_job_progress(
-    mut table: BTreeMap<(u32, u64), RateRecord>,
-    records: &[JobProgress],
-    economy: &EconomyState,
-    removed: &HashSet<u32>,
-) -> Option<BTreeMap<(u32, u64), RateRecord>> {
-    let mut seen = HashSet::new();
-    for record in records {
-        let key = (record.producer.0, record.job.0);
-        if removed.contains(&key.0) || !seen.insert(key) {
-            return None;
-        }
-        table.insert(key, record.progress.clone());
-    }
-    table.retain(|(producer, job), _| {
-        !removed.contains(producer)
-            && economy.queues.iter().any(|queue| {
-                queue.producer.0 == *producer && queue.jobs.iter().any(|held| held.id.0 == *job)
-            })
-    });
     Some(table)
 }
 
@@ -1245,7 +1613,6 @@ fn validate_delta_m3(
         healths: vec![],
         research: vec![],
         unit_orders: HashMap::new(),
-        job_progress: BTreeMap::new(),
         health_trace: Default::default(),
         tick: delta.tick,
     };

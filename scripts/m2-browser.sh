@@ -89,6 +89,14 @@ if [[ $# -eq 1 && "$1" == "--list-cases" ]]; then
         E9-browser-cedar-public-convergence
     exit 0
 fi
+# M2_LOCAL_ONLY_CASES, M2_RECIPE_DURATION_SCALE and M2_RECIPE_DURATION_SCALE_CASES belong to the hosted job (ci.yml sets them, and the runner sets
+# GITHUB_ACTIONS=true). A local gate run must run every case with the true recipe times, so it refuses to start
+# when one of them is set: it would skip a case or change the package with no sign in the result.
+if [[ "${GITHUB_ACTIONS:-}" != "true" && ( -n "${M2_LOCAL_ONLY_CASES:-}" || -n "${M2_RECIPE_DURATION_SCALE:-}" || -n "${M2_RECIPE_DURATION_SCALE_CASES:-}" ) ]]; then
+    echo "scripts/m2-browser.sh: M2_LOCAL_ONLY_CASES, M2_RECIPE_DURATION_SCALE or M2_RECIPE_DURATION_SCALE_CASES is set and GITHUB_ACTIONS is not 'true'." >&2
+    echo "These three values are for the hosted job only. Unset them for a local gate run, which runs every case with the true recipe times." >&2
+    exit 2
+fi
 if [[ $# -eq 0 && -z "$PACKAGE" && -z "$CASE_ID" ]]; then
     case_list=$("$0" --list-cases)
     selected_count=$(wc -l <<<"$case_list" | tr -d ' ')
@@ -97,14 +105,33 @@ if [[ $# -eq 0 && -z "$PACKAGE" && -z "$CASE_ID" ]]; then
         exit 1
     fi
     build_once
+    # A red case must not hide the others (hosted run 43214215645 showed 4 of 15 cases). The case lines go to a
+    # log, so the summary below counts what the cases printed, also when a case is red.
+    suite_log=$(mktemp)
+    trap 'rm -f "$suite_log"' EXIT
+    suite_status=0
     for package in base haul acme cedar; do
-        "$0" --package "$package"
+        "$0" --package "$package" 2>&1 | tee -a "$suite_log" || suite_status=1
     done
     for loss_family in conversion charge refund spawn final_change; do
-        "$0" --case "E9-browser-base-loss-$loss_family"
+        "$0" --case "E9-browser-base-loss-$loss_family" 2>&1 | tee -a "$suite_log" || suite_status=1
     done
-    printf 'M2_DEFAULT_SUITE_SUMMARY {"selected_count":%s,"completed_count":%s,"passed_count":%s,"semantic_failed_count":0,"infrastructure_failed_count":0,"timeout_count":0}\n' \
-        "$selected_count" "$selected_count" "$selected_count"
+    count_lines() { grep -c "$1" "$suite_log" || true; }
+    passed_count=$(count_lines '^M2_CASE_PASS ')
+    semantic_count=$(count_lines '^M2_CASE_SEMANTIC_FAIL ')
+    infrastructure_count=$(count_lines '^M2_CASE_INFRA_FAIL ')
+    local_only_count=$(count_lines '^M2_CASE_LOCAL_ONLY ')
+    completed_count=$((passed_count + semantic_count + infrastructure_count))
+    printf 'M2_DEFAULT_SUITE_SUMMARY {"selected_count":%s,"completed_count":%s,"passed_count":%s,"semantic_failed_count":%s,"infrastructure_failed_count":%s,"timeout_count":0,"local_only_count":%s}\n' \
+        "$selected_count" "$completed_count" "$passed_count" "$semantic_count" "$infrastructure_count" "$local_only_count"
+    if [[ "$suite_status" != 0 ]]; then
+        echo "M2_DEFAULT_SUITE_FAILED: at least one case is red; read the M2_CASE_* lines above" >&2
+        exit 1
+    fi
+    if [[ "$passed_count" != "$((selected_count - local_only_count))" ]]; then
+        echo "M2_DEFAULT_SUITE_FAILED: $passed_count cases passed and $local_only_count are local-only, but $selected_count are registered" >&2
+        exit 1
+    fi
     exit 0
 fi
 while [[ $# -gt 0 ]]; do
@@ -152,6 +179,21 @@ if [[ -n "$CASE_ID" ]]; then
     case "$PACKAGE:$CASE_ID" in
         base:E9-browser-base-selection|base:E9-browser-base-economy|base:E9-browser-base-recovery|base:E9-browser-base-public-convergence|base:E9-browser-base-loss-conversion|base:E9-browser-base-loss-charge|base:E9-browser-base-loss-refund|base:E9-browser-base-loss-spawn|base:E9-browser-base-loss-final_change|haul:E9-browser-haul-economy|haul:E9-browser-haul-public-convergence|acme:E9-browser-acme-selection|acme:E9-browser-acme-public-convergence|cedar:E9-browser-cedar-economy|cedar:E9-browser-cedar-public-convergence) ;;
         *) echo "unknown browser case $CASE_ID for package $PACKAGE" >&2; exit 2 ;;
+    esac
+fi
+# A case listed in M2_LOCAL_ONLY_CASES needs a real GPU and runs in the local gate. The hosted job
+# says so in a plain line and in $GITHUB_STEP_SUMMARY (tests/m2/local_only.py); a case that is
+# listed but has no row in tests/m2/local-only.tsv is an error, never a skip.
+if [[ -n "$CASE_ID" ]]; then
+    local_only_status=0
+    python3 "$ROOT/tests/m2/local_only.py" --decide "$CASE_ID" || local_only_status=$?
+    case "$local_only_status" in
+        0) ;;
+        10)
+            printf 'M2_CASE_SUMMARY {"selected_count":1,"completed_count":0,"passed_count":0,"semantic_failed_count":0,"infrastructure_failed_count":0,"timeout_count":0,"local_only_count":1}\n'
+            exit 0
+            ;;
+        *) exit 2 ;;
     esac
 fi
 CHROME_BIN="${CHROME_BIN:-$(command -v google-chrome || command -v chromium || true)}"
@@ -315,6 +357,21 @@ else
     printf '{"package":"%s","case_id":"%s","offset_x":0,"map_translation":"none"}\n' \
         "$PACKAGE" "$CASE_ID" > "$ARTIFACT_DIR/map-fixture-translation.json"
 fi
+
+# M2_RECIPE_DURATION_SCALE (unset keeps the true recipe times, as the local GPU run does): lengthen
+# the recipe of the three economy cases in the packed copy only (scripts/t7.sh T7_SCOUT_SPEED is the
+# pattern). The hosted software renderer needs 8 to 10 s between Produce and Cancel (run 43214215645),
+# and the recipes last 5 and 6 s. The receipt is always written; m2-oracle.js reads it.
+python3 "$ROOT/tests/m2/recipe_duration.py" \
+    --source "$ROOT/mods/$PACKAGE" --packed "$ARTIFACT_DIR/pack/$PACKAGE" \
+    --package "$PACKAGE" --case "$CASE_ID" --scale "${M2_RECIPE_DURATION_SCALE:-1}" \
+    --case-scales "${M2_RECIPE_DURATION_SCALE_CASES:-}" \
+    --receipt "$ARTIFACT_DIR/recipe-duration.json" \
+    > "$ARTIFACT_DIR/recipe-duration.log" 2>&1 || {
+        cat "$ARTIFACT_DIR/recipe-duration.log" >&2
+        exit 1
+    }
+cat "$ARTIFACT_DIR/recipe-duration.log"
 
 "$PACKER_BIN" "$ARTIFACT_DIR/pack/$PACKAGE" > "$ARTIFACT_DIR/pack.log" 2>&1
 

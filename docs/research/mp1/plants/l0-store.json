@@ -1,0 +1,994 @@
+[
+  {
+    "row": "STORE1",
+    "plant": "(a) the store commits before the candidate is known to be good (a failed delta shows a new store with an old candidate)",
+    "files": [
+      {
+        "file": "crates/turts_client/src/replica.rs",
+        "edit": {
+          "old": "        let current = self.candidate_at(tick);\n        let Some((candidate, step)) = self.stage_delta(&current, &self.store, delta) else {\n",
+          "new": "        let current = self.candidate_at(tick);\n        if let Some(context) = self.context.as_ref() {\n            let removed: HashSet<u32> = delta.removed.iter().map(|id| id.0).collect();\n            if let Some(early) = replica_store::stage_delta_step(\n                context,\n                &self.store,\n                &current.units,\n                &current.economy,\n                delta,\n                &removed,\n            ) {\n                self.store.apply(early);\n            }\n        }\n        let Some((candidate, step)) = self.stage_delta(&current, &self.store, delta) else {\n"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "-p",
+      "turts_client",
+      "--test",
+      "mp1_store",
+      "a_failed_delta_leaves_both_the_candidate_and_the_store_at_the_old_tick",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "a failed delta: the store stays at the tick of the candidate",
+    "exit": 101,
+    "commit": "b1c22351d7031d0ed8e44f4d98cfd62e1e880873",
+    "expected_selected": "a_failed_delta_leaves_both_the_candidate_and_the_store_at_the_old_tick"
+  },
+  {
+    "row": "STORE1",
+    "plant": "(b) the store is cloned in candidate_at (the clone counter)",
+    "files": [
+      {
+        "file": "crates/turts_client/src/replica.rs",
+        "edit": {
+          "old": "    fn candidate_at(&self, tick: u32) -> Candidate {\n        Candidate {\n",
+          "new": "    fn candidate_at(&self, tick: u32) -> Candidate {\n        let _store_copy = self.store.clone();\n        Candidate {\n"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "-p",
+      "turts_client",
+      "--test",
+      "mp1_store",
+      "a_hundred_deltas_clone_the_store_zero_times",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "the apply path clones the store",
+    "exit": 101,
+    "commit": "b1c22351d7031d0ed8e44f4d98cfd62e1e880873",
+    "expected_selected": "a_hundred_deltas_clone_the_store_zero_times"
+  },
+  {
+    "row": "STORE1",
+    "plant": "(c) the store is applied for each replayed message, not through the staged chain (case 1: the store runs ahead of the candidate)",
+    "files": [
+      {
+        "file": "crates/turts_client/src/replica.rs",
+        "edit": {
+          "old": "            staged_store.apply(step);\n",
+          "new": "            self.store.apply(step);\n"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "-p",
+      "turts_client",
+      "--test",
+      "mp1_store",
+      "a_resync_where_a_retained_delta_fails_leaves_the_store_unchanged",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "case (1): the store stays at the tick of the candidate",
+    "exit": 101,
+    "commit": "b1c22351d7031d0ed8e44f4d98cfd62e1e880873",
+    "expected_selected": "a_resync_where_a_retained_delta_fails_leaves_the_store_unchanged"
+  },
+  {
+    "row": "STORE2",
+    "plant": "(a) a removed unit stays in `sites`",
+    "files": [
+      {
+        "file": "crates/turts_client/src/replica_store.rs",
+        "edit": {
+          "old": "        for unit in &step.removed {\n            self.sites.remove(unit);\n",
+          "new": "        for unit in &step.removed {\n"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "-p",
+      "turts_client",
+      "--test",
+      "mp1_store",
+      "each_table_drops_its_entry_when_its_unit_goes",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "sites: a removed unit stays",
+    "exit": 101,
+    "commit": "b1c22351d7031d0ed8e44f4d98cfd62e1e880873",
+    "expected_selected": "each_table_drops_its_entry_when_its_unit_goes"
+  },
+  {
+    "row": "STORE2",
+    "plant": "(b) a removed unit stays in `site_progress`",
+    "files": [
+      {
+        "file": "crates/turts_client/src/replica_store.rs",
+        "edit": {
+          "old": "            self.site_progress.remove(unit);\n            self.construction_queues.remove(unit);\n",
+          "new": "            self.construction_queues.remove(unit);\n"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "-p",
+      "turts_client",
+      "--test",
+      "mp1_store",
+      "each_table_drops_its_entry_when_its_unit_goes",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "site_progress: a removed unit stays",
+    "exit": 101,
+    "commit": "b1c22351d7031d0ed8e44f4d98cfd62e1e880873",
+    "expected_selected": "each_table_drops_its_entry_when_its_unit_goes"
+  },
+  {
+    "row": "STORE2",
+    "plant": "(c) a completed site stays in `sites`",
+    "files": [
+      {
+        "file": "crates/turts_client/src/replica_store.rs",
+        "edit": {
+          "old": "        for unit in &step.sites_completed {\n            self.sites.remove(unit);\n            self.site_progress.remove(unit);\n        }\n",
+          "new": "        for unit in &step.sites_completed {\n            self.site_progress.remove(unit);\n        }\n"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "-p",
+      "turts_client",
+      "--test",
+      "mp1_store",
+      "each_table_drops_its_entry_when_its_unit_goes",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "sites: a completed site stays",
+    "exit": 101,
+    "commit": "b1c22351d7031d0ed8e44f4d98cfd62e1e880873",
+    "expected_selected": "each_table_drops_its_entry_when_its_unit_goes"
+  },
+  {
+    "row": "STORE2",
+    "plant": "(d) the progress of a completed site stays in `site_progress`",
+    "files": [
+      {
+        "file": "crates/turts_client/src/replica_store.rs",
+        "edit": {
+          "old": "        for unit in &step.sites_completed {\n            self.sites.remove(unit);\n            self.site_progress.remove(unit);\n        }\n",
+          "new": "        for unit in &step.sites_completed {\n            self.sites.remove(unit);\n        }\n"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "-p",
+      "turts_client",
+      "--test",
+      "mp1_store",
+      "each_table_drops_its_entry_when_its_unit_goes",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "site_progress: a completed site stays",
+    "exit": 101,
+    "commit": "b1c22351d7031d0ed8e44f4d98cfd62e1e880873",
+    "expected_selected": "each_table_drops_its_entry_when_its_unit_goes"
+  },
+  {
+    "row": "STORE2",
+    "plant": "(e) a removed constructor stays in `construction_queues`",
+    "files": [
+      {
+        "file": "crates/turts_client/src/replica_store.rs",
+        "edit": {
+          "old": "            self.construction_queues.remove(unit);\n            self.drop_jobs_where(*unit, |_| true);\n",
+          "new": "            self.drop_jobs_where(*unit, |_| true);\n"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "-p",
+      "turts_client",
+      "--test",
+      "mp1_store",
+      "each_table_drops_its_entry_when_its_unit_goes",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "construction_queues: a removed constructor stays",
+    "exit": 101,
+    "commit": "b1c22351d7031d0ed8e44f4d98cfd62e1e880873",
+    "expected_selected": "each_table_drops_its_entry_when_its_unit_goes"
+  },
+  {
+    "row": "STORE2",
+    "plant": "(f) the job records of a removed producer stay in `job_progress`",
+    "files": [
+      {
+        "file": "crates/turts_client/src/replica_store.rs",
+        "edit": {
+          "old": "            self.drop_jobs_where(*unit, |_| true);\n",
+          "new": ""
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "-p",
+      "turts_client",
+      "--test",
+      "mp1_store",
+      "each_table_drops_its_entry_when_its_unit_goes",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "job_progress: the record of a removed producer stays",
+    "exit": 101,
+    "commit": "b1c22351d7031d0ed8e44f4d98cfd62e1e880873",
+    "expected_selected": "each_table_drops_its_entry_when_its_unit_goes"
+  },
+  {
+    "row": "STORE2",
+    "plant": "(g) a job that the queue no longer holds keeps its record",
+    "files": [
+      {
+        "file": "crates/turts_client/src/replica_store.rs",
+        "edit": {
+          "old": "        for (producer, held) in &step.queue_jobs {\n            self.drop_jobs_where(*producer, |job| !held.contains(&job));\n        }\n",
+          "new": ""
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "-p",
+      "turts_client",
+      "--test",
+      "mp1_store",
+      "each_table_drops_its_entry_when_its_unit_goes",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "job_progress: the record of a job that the queue no longer holds stays",
+    "exit": 101,
+    "commit": "b1c22351d7031d0ed8e44f4d98cfd62e1e880873",
+    "expected_selected": "each_table_drops_its_entry_when_its_unit_goes"
+  },
+  {
+    "row": "STORE2",
+    "plant": "(h) an empty construction record is stored (the Snapshot store and the chain store differ)",
+    "files": [
+      {
+        "file": "crates/turts_client/src/replica_store.rs",
+        "edit": {
+          "old": "            if orders.is_empty() {\n                self.construction_queues.remove(&constructor);",
+          "new": "            if false {\n                self.construction_queues.remove(&constructor);"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "-p",
+      "turts_client",
+      "--test",
+      "mp1_store",
+      "a_late_join_and_a_lossy_client_end_with_the_store_of_a_continuous_client",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "the store differs from the store of the continuous client",
+    "exit": 101,
+    "commit": "b1c22351d7031d0ed8e44f4d98cfd62e1e880873",
+    "expected_selected": "a_late_join_and_a_lossy_client_end_with_the_store_of_a_continuous_client"
+  },
+  {
+    "row": "STORE2",
+    "plant": "(i) a record for a job that no queue holds is kept",
+    "files": [
+      {
+        "file": "crates/turts_client/src/replica_store.rs",
+        "edit": {
+          "old": "        if held {\n            kept.push((key, record.progress.clone()));",
+          "new": "        if true {\n            kept.push((key, record.progress.clone()));"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "-p",
+      "turts_client",
+      "--test",
+      "mp1_store",
+      "a_job_record_for_a_job_that_no_queue_holds_is_dropped",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "job_progress: a record of a job that no queue holds stays",
+    "exit": 101,
+    "commit": "b1c22351d7031d0ed8e44f4d98cfd62e1e880873",
+    "expected_selected": "a_job_record_for_a_job_that_no_queue_holds_is_dropped"
+  },
+  {
+    "row": "STORE3",
+    "plant": "(a) the elapsed ticks are not derived with base_ticks_done (the Q ruling)",
+    "files": [
+      {
+        "file": "crates/turts_client/src/replica.rs",
+        "edit": {
+          "old": "        turts_rules::progress::base_ticks_done(units, duration_ticks, record.total)\n",
+          "new": "        units\n"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "-p",
+      "turts_client",
+      "--test",
+      "mp1_store",
+      "the_elapsed_ticks_of_a_job_are_derived_from_raw_units_of_one_over_q_tick",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "ticks of base time",
+    "exit": 101,
+    "commit": "b1c22351d7031d0ed8e44f4d98cfd62e1e880873",
+    "expected_selected": "the_elapsed_ticks_of_a_job_are_derived_from_raw_units_of_one_over_q_tick"
+  },
+  {
+    "row": "STORE3",
+    "plant": "(b) a held or waiting record advances",
+    "files": [
+      {
+        "file": "crates/turts_client/src/replica_store.rs",
+        "edit": {
+          "old": "        stalled: record.held || matches!(record.state, RecordState::WaitingForFunds(_)),",
+          "new": "        stalled: false,"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "-p",
+      "turts_client",
+      "--test",
+      "mp1_store",
+      "a_waiting_or_held_job_keeps_its_value",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "a waiting or held job keeps its value",
+    "exit": 101,
+    "commit": "b1c22351d7031d0ed8e44f4d98cfd62e1e880873",
+    "expected_selected": "a_waiting_or_held_job_keeps_its_value"
+  },
+  {
+    "row": "STORE4",
+    "plant": "(a) a Snapshot marks every unit as a site (the `site` flag ignored): a late joiner differs from a continuous client",
+    "files": [
+      {
+        "file": "crates/turts_client/src/replica_store.rs",
+        "edit": {
+          "old": "        .filter(|unit| unit.site)\n",
+          "new": ""
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "-p",
+      "turts_client",
+      "--test",
+      "mp1_store",
+      "a_late_join_and_a_lossy_client_end_with_the_store_of_a_continuous_client",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "the sites",
+    "exit": 101,
+    "commit": "b1c22351d7031d0ed8e44f4d98cfd62e1e880873",
+    "expected_selected": "a_late_join_and_a_lossy_client_end_with_the_store_of_a_continuous_client"
+  },
+  {
+    "row": "STORE4",
+    "plant": "(b) a site progress record for a unit that is not a site is accepted",
+    "files": [
+      {
+        "file": "crates/turts_client/src/replica_store.rs",
+        "edit": {
+          "old": "        if !own_unit(context, units, removed, unit) || !is_site(unit) {",
+          "new": "        if !own_unit(context, units, removed, unit) {"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "-p",
+      "turts_client",
+      "--test",
+      "mp1_store",
+      "a_record_that_names_a_gone_or_wrong_unit_is_refused",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "site progress of a unit that is not a site",
+    "exit": 101,
+    "commit": "b1c22351d7031d0ed8e44f4d98cfd62e1e880873",
+    "expected_selected": "a_record_that_names_a_gone_or_wrong_unit_is_refused"
+  },
+  {
+    "row": "STORE4",
+    "plant": "(c) a supply record of a resource that is not a Supply resource is accepted",
+    "files": [
+      {
+        "file": "crates/turts_client/src/replica_store.rs",
+        "edit": {
+          "old": "            .is_some_and(|resource| matches!(resource.kind, ResourceKind::Supply { .. }))",
+          "new": "            .is_some()"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "-p",
+      "turts_client",
+      "--test",
+      "mp1_store",
+      "a_record_that_names_a_gone_or_wrong_unit_is_refused",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "supply of a resource that is not a Supply resource",
+    "exit": 101,
+    "commit": "b1c22351d7031d0ed8e44f4d98cfd62e1e880873",
+    "expected_selected": "a_record_that_names_a_gone_or_wrong_unit_is_refused"
+  },
+  {
+    "row": "STORE4",
+    "plant": "(d) a record that names a unit that the same message removes is accepted",
+    "files": [
+      {
+        "file": "crates/turts_client/src/replica_store.rs",
+        "edit": {
+          "old": "    !removed.contains(&unit)\n        && units\n",
+          "new": "    true\n        && units\n"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "-p",
+      "turts_client",
+      "--test",
+      "mp1_store",
+      "a_record_that_names_a_gone_or_wrong_unit_is_refused",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "site progress of a removed site",
+    "exit": 101,
+    "commit": "b1c22351d7031d0ed8e44f4d98cfd62e1e880873",
+    "expected_selected": "a_record_that_names_a_gone_or_wrong_unit_is_refused"
+  },
+  {
+    "row": "STORE4",
+    "plant": "(e) a supply record of another slot is accepted",
+    "files": [
+      {
+        "file": "crates/turts_client/src/replica_store.rs",
+        "edit": {
+          "old": "    record.slot.0 == context.slot\n        && ContentId::parse(&record.resource)",
+          "new": "    ContentId::parse(&record.resource)"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "-p",
+      "turts_client",
+      "--test",
+      "mp1_store",
+      "a_record_that_names_a_gone_or_wrong_unit_is_refused",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "supply of another slot",
+    "exit": 101,
+    "commit": "b1c22351d7031d0ed8e44f4d98cfd62e1e880873",
+    "expected_selected": "a_record_that_names_a_gone_or_wrong_unit_is_refused"
+  },
+  {
+    "row": "STORE4",
+    "plant": "(f) two supply records for one resource in one message are accepted",
+    "files": [
+      {
+        "file": "crates/turts_client/src/replica_store.rs",
+        "edit": {
+          "old": "    if !unique(records, |record| (record.slot.0, record.resource.clone()))\n        || !records.iter().all(|record| valid_supply(context, record))\n    {",
+          "new": "    if !records.iter().all(|record| valid_supply(context, record)) {"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "-p",
+      "turts_client",
+      "--test",
+      "mp1_store",
+      "a_record_that_names_a_gone_or_wrong_unit_is_refused",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "supply twice",
+    "exit": 101,
+    "commit": "b1c22351d7031d0ed8e44f4d98cfd62e1e880873",
+    "expected_selected": "a_record_that_names_a_gone_or_wrong_unit_is_refused"
+  },
+  {
+    "row": "STORE5",
+    "plant": "(a) the Snapshot keeps an empty construction record (review F1)",
+    "files": [
+      {
+        "file": "crates/turts_client/src/replica_store.rs",
+        "edit": {
+          "old": "            .into_iter()\n            .filter(|(_, orders)| !orders.is_empty())\n            .collect();\n",
+          "new": "            .into_iter()\n            .collect();\n"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "-p",
+      "turts_client",
+      "--test",
+      "mp1_store",
+      "a_snapshot_with_an_empty_construction_record_stores_no_entry",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "the Snapshot kept an empty construction record",
+    "exit": 101,
+    "commit": "c92e6c28fc55803b7a17e015cf69444ac5d0a752",
+    "expected_selected": "a_snapshot_with_an_empty_construction_record_stores_no_entry"
+  },
+  {
+    "row": "STORE5",
+    "plant": "(b) a replayed delta is staged against the live store, not the staged store (review F3)",
+    "files": [
+      {
+        "file": "crates/turts_client/src/replica.rs",
+        "edit": {
+          "old": "self.stage_delta(&candidate, &staged_store, &delta)",
+          "new": "self.stage_delta(&candidate, &self.store, &delta)"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "-p",
+      "turts_client",
+      "--test",
+      "mp1_store",
+      "a_replayed_delta_stages_against_the_store_of_its_snapshot",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "the replay is staged against the store of the Snapshot",
+    "exit": 101,
+    "commit": "c92e6c28fc55803b7a17e015cf69444ac5d0a752",
+    "expected_selected": "a_replayed_delta_stages_against_the_store_of_its_snapshot"
+  },
+  {
+    "row": "STORE5",
+    "plant": "(c) values are evaluated at the highest observed tick: client prediction (review F4)",
+    "files": [
+      {
+        "file": "crates/turts_client/src/replica.rs",
+        "edit": {
+          "old": "    fn applied_tick(&self) -> u32 {\n        self.last_applied_tick.unwrap_or(0)\n",
+          "new": "    fn applied_tick(&self) -> u32 {\n        self.highest_observed_tick.or(self.last_applied_tick).unwrap_or(0)\n"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "-p",
+      "turts_client",
+      "--test",
+      "mp1_store",
+      "values_are_not_evaluated_past_the_applied_tick",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "a value is evaluated past the last applied tick",
+    "exit": 101,
+    "commit": "c92e6c28fc55803b7a17e015cf69444ac5d0a752",
+    "expected_selected": "values_are_not_evaluated_past_the_applied_tick"
+  },
+  {
+    "row": "STORE5",
+    "plant": "(d) a stale retained delta writes the staged store (review F6)",
+    "files": [
+      {
+        "file": "crates/turts_client/src/replica.rs",
+        "edit": {
+          "old": "            if delta.tick <= candidate.tick {\n                continue;\n            }\n",
+          "new": "            if delta.tick <= candidate.tick {\n                if let Some((_, step)) = self.stage_delta(&candidate, &staged_store, &delta) {\n                    staged_store.apply(step);\n                }\n                continue;\n            }\n"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "-p",
+      "turts_client",
+      "--test",
+      "mp1_store",
+      "a_retained_delta_that_is_not_newer_than_the_snapshot_does_not_write_the_staged_store",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "a stale retained delta wrote the staged store",
+    "exit": 101,
+    "commit": "c92e6c28fc55803b7a17e015cf69444ac5d0a752",
+    "expected_selected": "a_retained_delta_that_is_not_newer_than_the_snapshot_does_not_write_the_staged_store"
+  },
+  {
+    "row": "STORE5",
+    "plant": "(e) the replay does not apply its steps to the staged store: the lossy client of the model test",
+    "files": [
+      {
+        "file": "crates/turts_client/src/replica.rs",
+        "edit": {
+          "old": "            staged_store.apply(step);\n",
+          "new": ""
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "-p",
+      "turts_client",
+      "--test",
+      "mp1_store",
+      "a_late_join_and_a_lossy_client_end_with_the_store_of_a_continuous_client",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "lossy: store tick",
+    "exit": 101,
+    "commit": "c92e6c28fc55803b7a17e015cf69444ac5d0a752",
+    "expected_selected": "a_late_join_and_a_lossy_client_end_with_the_store_of_a_continuous_client"
+  },
+  {
+    "row": "STORE5",
+    "plant": "(f) a helper that the Snapshot path and the delta path share loses a held order: the truth oracle sees it",
+    "files": [
+      {
+        "file": "crates/turts_client/src/replica_store.rs",
+        "edit": {
+          "old": "        rows.push((record.constructor.0, record.orders.clone()));",
+          "new": "        rows.push((record.constructor.0, record.orders.iter().take(1).cloned().collect()));"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "-p",
+      "turts_client",
+      "--test",
+      "mp1_store",
+      "a_late_join_and_a_lossy_client_end_with_the_store_of_a_continuous_client",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "the held orders of unit 2",
+    "exit": 101,
+    "commit": "c92e6c28fc55803b7a17e015cf69444ac5d0a752",
+    "expected_selected": "a_late_join_and_a_lossy_client_end_with_the_store_of_a_continuous_client"
+  },
+  {
+    "row": "STORE5",
+    "plant": "(g) the replay does not apply its steps to the staged store: the lossy client of the real sim",
+    "files": [
+      {
+        "file": "crates/turts_client/src/replica.rs",
+        "edit": {
+          "old": "            staged_store.apply(step);\n",
+          "new": ""
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "-p",
+      "turts_client",
+      "--test",
+      "job_progress_clients",
+      "base_producer_jobs_equal_the_sim_through_disable_enable_cancel",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "the store tick",
+    "exit": 101,
+    "commit": "c92e6c28fc55803b7a17e015cf69444ac5d0a752",
+    "expected_selected": "base_producer_jobs_equal_the_sim_through_disable_enable_cancel"
+  },
+  {
+    "row": "STORE5",
+    "plant": "(h) the match clock ignores the start tick",
+    "files": [
+      {
+        "file": "crates/turts_client/src/replica.rs",
+        "edit": {
+          "old": "        self.applied_tick().saturating_sub(self.start_tick)\n",
+          "new": "        self.applied_tick()\n"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "-p",
+      "turts_client",
+      "--test",
+      "mp1_store",
+      "the_match_clock_counts_from_the_start_tick_and_stops_at_the_end_tick",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "the match clock counts from the start tick",
+    "exit": 101,
+    "commit": "c92e6c28fc55803b7a17e015cf69444ac5d0a752",
+    "expected_selected": "the_match_clock_counts_from_the_start_tick_and_stops_at_the_end_tick"
+  },
+  {
+    "row": "STORE5",
+    "plant": "(i) Welcome does not give the replica the start tick",
+    "files": [
+      {
+        "file": "crates/turts_client/src/ingest.rs",
+        "edit": {
+          "old": "    replica.set_match_start(welcome.start.start_tick);\n",
+          "new": ""
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "-p",
+      "turts_client",
+      "--test",
+      "ingest",
+      "welcome_gives_the_replica_the_start_tick_of_the_match_clock",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "the match clock counts from the start tick of Welcome",
+    "exit": 101,
+    "commit": "c92e6c28fc55803b7a17e015cf69444ac5d0a752",
+    "expected_selected": "welcome_gives_the_replica_the_start_tick_of_the_match_clock"
+  },
+  {
+    "row": "STORE5",
+    "plant": "(j) a supply that equals the provided amount is short",
+    "files": [
+      {
+        "file": "crates/turts_client/src/replica.rs",
+        "edit": {
+          "old": "turts_rules::supply::is_short(record.provided, record.consumed)",
+          "new": "record.consumed >= record.provided"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "-p",
+      "turts_client",
+      "--test",
+      "mp1_store",
+      "supply_short_is_consumed_above_provided_and_has_one_getter",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "100 used of 100 made",
+    "exit": 101,
+    "commit": "c92e6c28fc55803b7a17e015cf69444ac5d0a752",
+    "expected_selected": "supply_short_is_consumed_above_provided_and_has_one_getter"
+  },
+  {
+    "row": "STORE5",
+    "plant": "(k) a site progress record for a non-site is accepted: a delta with a valid position and a store refusal",
+    "files": [
+      {
+        "file": "crates/turts_client/src/replica_store.rs",
+        "edit": {
+          "old": "        if !own_unit(context, units, removed, unit) || !is_site(unit) {",
+          "new": "        if !own_unit(context, units, removed, unit) {"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "-p",
+      "turts_client",
+      "--test",
+      "mp1_store",
+      "a_store_refusal_keeps_the_old_tick_and_asks_one_resync",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "a delta with a record that a store rule refuses asks for a resync",
+    "exit": 101,
+    "commit": "c92e6c28fc55803b7a17e015cf69444ac5d0a752",
+    "expected_selected": "a_store_refusal_keeps_the_old_tick_and_asks_one_resync"
+  },
+  {
+    "row": "STORE5",
+    "plant": "(l) a supply record of a non-Supply resource is accepted: a replayed delta that a store rule refuses",
+    "files": [
+      {
+        "file": "crates/turts_client/src/replica_store.rs",
+        "edit": {
+          "old": "            .is_some_and(|resource| matches!(resource.kind, ResourceKind::Supply { .. }))",
+          "new": "            .is_some()"
+        }
+      }
+    ],
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "-p",
+      "turts_client",
+      "--test",
+      "mp1_store",
+      "a_replayed_delta_refused_by_a_store_rule_changes_nothing",
+      "--",
+      "--exact"
+    ],
+    "env": {},
+    "headed": false,
+    "expected_red": "a replayed delta that a store rule refuses fails the resync",
+    "exit": 101,
+    "commit": "c92e6c28fc55803b7a17e015cf69444ac5d0a752",
+    "expected_selected": "a_replayed_delta_refused_by_a_store_rule_changes_nothing"
+  }
+]

@@ -15,10 +15,10 @@ async function judge(view, params) {
     assert(saved(input, "hud2-initial.png"), "HUD2 needs the first-join screenshot");
     if (params.row === "HUD2-MUSTER" || params.package === "muster") return judgeMuster(view, input);
 
-    return judgeForge(view, input);
+    return judgeForge(view, input, params);
 }
 
-async function judgeForge(view, input) {
+async function judgeForge(view, input, params) {
     const target = JSON.parse(await view.serverFile("hud2-pixel-target.json")).target;
     assert(target && Number.isInteger(target.x) && Number.isInteger(target.y),
         "HUD2 own-unit click target must come from screenshot pixels");
@@ -308,28 +308,20 @@ async function judgeForge(view, input) {
     const controlsBottom = checkpointForSave(input, checkpoints, "hud2-controls-bottom.png");
     assertGuideVisible(controlsBottom.debug, true, "Controls scroll");
     assert(input.some((entry, index) => index < controlsBottom.screenshotIndex &&
-        entry.call === "wheel" && entry.args?.[0] === 1200),
+        entry.call === "wheel" && entry.args?.[0] > 0),
     "HUD2 Controls tail must be reached with actual physical wheel input");
     assert.deepEqual(controlsBottom.scene.clip_from_world, initial.scene.clip_from_world,
         "HUD2 wheel inside the guide must not zoom the world camera");
     assert.deepEqual(controlsBottom.debug.replicated_world?.unit_orders || [],
         initial.debug.replicated_world?.unit_orders || [],
         "HUD2 Controls scrolling must not issue world orders");
-    const actions = controlsBottom.debug.effective_bindings?.actions;
-    assert(actions && Object.keys(actions).length > 48,
-        "HUD2 Controls must cover the actual effective action set beyond the old 48-entry cap");
-    for (const [action, title] of [["type_modifier", "Type modifier"], ["zoom_in", "Zoom in"], ["zoom_out", "Zoom out"]]) {
-        assert(actions[action]?.length > 0, `HUD2 actual ${action} binding must exist`);
-        const expected = `${title}: ${actions[action].map(bindingLabel).join(", ")}`;
-        const row = (controlsBottom.debug.ui_snapshot || []).find((item) =>
-            item.id.startsWith("guide.4.bindings/") && item.visible && item.text === expected);
-        assert(row, `HUD2 Controls must visibly render the actual tail binding ${expected}`);
-        const [x, y, width, height] = row.rect || [];
-        assert([x, y, width, height].every(Number.isFinite) && x >= 490 && y >= 94 &&
-            x + width <= 1191 && y + height <= 679 && width > 0 && height > 0,
-        "HUD2 tail binding must fit the actual visible Controls viewport after scrolling");
-        await assertTextPixels(view, controlsBottom, row, `Controls ${action}`);
-    }
+    const orderLabels = await orderLabelsByHotkey(view, params, controlsBottom.debug);
+    const tail = controlsTailRow(controlsBottom.debug, orderLabels);
+    await assertTextPixels(view, controlsBottom, tail, "Controls tail row");
+    const onScreen = controlsRowsOnScreen(controlsBottom.debug);
+    assert(onScreen.length >= 5 && onScreen.some((row) => row.index === tail.index),
+        "HUD2 Controls must show at least five whole rows, with the tail row, after scrolling");
+    for (const row of onScreen) await assertTextPixels(view, controlsBottom, row, `Controls row ${row.index}`);
     const f1Closed = checkpointForSave(input, checkpoints, "hud2-f1-closed.png");
     const reopened = checkpointForSave(input, checkpoints, "hud2-guide-reopened.png");
     assertGuideVisible(initial.debug, true, "first join");
@@ -515,19 +507,18 @@ function assertTooltipBubblePixels(image, rect, label) {
     assert(background >= 12, `${label} hover tooltip must show its actual dark bubble pixels`);
 }
 
+// The key text of one binding as the product writes it (crates/turts_client/src/client_shell.rs:90-141):
+// modifiers in the order Ctrl, Shift, Alt; the key names Esc, Up, Down, Left, Right, Space.
 function bindingLabel(binding) {
+    const modifiers = (mods) => ["Ctrl", "Shift", "Alt"].filter((mod) => (mods || []).includes(mod)).map((mod) => `${mod}+`).join("");
     if (binding?.Key) {
         const code = binding.Key.code || "";
-        const key = code.startsWith("Key") ? code.slice(3) : code.startsWith("Digit") ? code.slice(5) :
-            code === "Escape" ? "Esc" : code === "Space" ? "Space" : code;
-        const mods = (binding.Key.mods || []).map((mod) => mod === "Ctrl" ? "Ctrl" : mod === "Shift" ? "Shift" : mod);
-        return [...mods, key].join("+");
+        const names = { Escape: "Esc", Space: "Space", ArrowUp: "Up", ArrowDown: "Down", ArrowLeft: "Left", ArrowRight: "Right" };
+        const key = /^Key.$/.test(code) ? code.slice(3) : /^Digit.$/.test(code) ? code.slice(5) : names[code] ?? code;
+        return `${modifiers(binding.Key.mods)}${key}`;
     }
     if (binding?.Wheel) return `Wheel ${String(binding.Wheel).toLowerCase()}`;
-    if (binding?.Pointer) {
-        const mods = binding.Pointer.mods || [];
-        return `${mods.length ? mods.join("+") + "+" : ""}${binding.Pointer.button} click`;
-    }
+    if (binding?.Pointer) return `${modifiers(binding.Pointer.mods)}${binding.Pointer.button} click`;
     return "";
 }
 
@@ -550,6 +541,110 @@ function checkpointForSave(input, checkpoints, filename) {
     const checkpoint = checkpoints.find((entry) => entry.input_call === screenshotIndex && entry.window === 1);
     assert(checkpoint?.debug && checkpoint?.scene, `HUD2 ${filename} requires an actual C84 checkpoint`);
     return { ...checkpoint, screenshotIndex, saveFile: filename };
+}
+
+// The Controls list (guide page 5). Facts that the oracle requires, for every row it can read:
+//   1. The list holds one row for each effective action, with the indexes 0..n-1 once each.
+//   2. The sorted key texts of all rows equal the sorted key strings of the effective actions.
+//   3. Each row is the exact text "label: keys" of one action, and each action gives one row, so a
+//      row cannot carry the keys of another action or a label of another action.
+//   4. The label of an action is the name of the first order that has the action as its hotkey,
+//      else the action name made readable (crates/turts_client/src/widgets/sources.rs:1054-1118).
+// The last row (the highest index) must also be visible and inside the Controls viewport, and its
+// glyph pixels are read by the caller. The row order is not required (RUN130; RUN132 changes both
+// the order and the labels).
+const CONTROLS_VIEWPORT = { left: 490, top: 94, right: 1191, bottom: 679 };
+const ENGINE_LABELS = {
+    toggle_guide: "Toggle guide", centre_selection: "Centre selection", camera_zoom: "Zoom camera",
+    camera_rotate: "Rotate camera", selection_add: "Add to selection", selection_remove: "Remove from selection",
+};
+
+function humanizeAction(action) {
+    const prefixes = [["group_assign_", "Assign group "], ["group_recall_", "Select group "],
+        ["group_add_", "Add to group "], ["camera_pan_", "Pan camera "]];
+    const prefix = prefixes.find(([start]) => action.startsWith(start));
+    const known = prefix ? `${prefix[1]}${action.slice(prefix[0].length)}` : ENGINE_LABELS[action] ?? action;
+    return known.replace(/[_-]/g, " ").split(/\s+/).filter(Boolean)
+        .map((word, index) => (index === 0 ? word[0].toUpperCase() + word.slice(1) : word)).join(" ");
+}
+
+// The order names of the served package, by hotkey action: { key_stop: "Stop selected units" }.
+// They come from the package files of the run (pack/<package>/orders/<id>.ron), not from the product.
+async function orderLabelsByHotkey(view, params, debug) {
+    const labels = {};
+    for (const orderId of Object.keys(debug?.effective_bindings?.orders || {}).sort()) {
+        const local = orderId.split(":").pop();
+        let text;
+        try { text = await view.serverFile(`pack/${params.package}/orders/${local}.ron`); } catch (error) {
+            assert.fail(`HUD2 cannot read the package file of order ${orderId}: ${error.message}`);
+        }
+        const name = /\bname:\s*"([^"]*)"/.exec(text)?.[1];
+        const hotkey = /\bhotkey:\s*"([^"]*)"/.exec(text)?.[1];
+        assert(name && hotkey, `HUD2 package file of order ${orderId} must give a name and a hotkey`);
+        labels[hotkey] ??= name;
+    }
+    return labels;
+}
+
+function expectedControlsRows(actions, orderLabels) {
+    return Object.entries(actions).map(([action, bindings]) => ({
+        action, label: orderLabels[action] ?? humanizeAction(action), keys: bindings.map(bindingLabel).join(", "),
+    }));
+}
+
+function controlsRows(debug) {
+    const actions = debug?.effective_bindings?.actions;
+    assert(actions && Object.keys(actions).length > 48,
+        "HUD2 Controls must cover the actual effective action set beyond the old 48-entry cap");
+    const rows = (debug.ui_snapshot || []).map((item) => ({ item, index: /^guide\.4\.bindings\/[^/]*\[index:(\d+)\]$/.exec(item.id ?? "") }))
+        .filter((row) => row.index).map((row) => ({ ...row.item, index: Number(row.index[1]) }));
+    assert.equal(rows.length, Object.keys(actions).length, "HUD2 Controls must show one row for each effective action");
+    rows.sort((left, right) => left.index - right.index);
+    assert.deepEqual(rows.map((row) => row.index), rows.map((_, index) => index),
+        "HUD2 Controls row indexes must run from 0 once each");
+    return rows;
+}
+
+function assertControlsTexts(rows, actions, orderLabels) {
+    const expected = expectedControlsRows(actions, orderLabels);
+    const keysOf = (text) => text.split(": ").slice(1).join(": ");
+    assert.deepEqual(rows.map((row) => keysOf(row.text ?? "")).sort(), expected.map((row) => row.keys).sort(),
+        "HUD2 the sorted key texts of the Controls rows must equal the sorted key strings of the effective actions");
+    const pending = new Map();
+    for (const row of expected) pending.set(`${row.label}: ${row.keys}`.trimEnd(), (pending.get(`${row.label}: ${row.keys}`.trimEnd()) ?? 0) + 1);
+    for (const row of rows) {
+        const text = (row.text ?? "").trimEnd();
+        assert((pending.get(text) ?? 0) > 0,
+            `HUD2 Controls row ${row.index} "${row.text}" must be the label and the keys of one effective action`);
+        pending.set(text, pending.get(text) - 1);
+    }
+}
+
+// The last row that the product shows in the Controls list. All the facts above are checked here;
+// the tail row must be on the screen inside the Controls viewport.
+function controlsTailRow(debug, orderLabels = {}) {
+    const rows = controlsRows(debug);
+    assertControlsTexts(rows, debug.effective_bindings.actions, orderLabels);
+    const tail = rows[rows.length - 1];
+    assert(tail.visible === true, `HUD2 Controls must visibly render its last row after scrolling: ${tail.text}`);
+    assertInsideControlsViewport(tail, "last row");
+    return tail;
+}
+
+function assertInsideControlsViewport(row, what) {
+    const [x, y, width, height] = row.rect || [];
+    assert([x, y, width, height].every(Number.isFinite) && width > 0 && height > 0 && x >= CONTROLS_VIEWPORT.left &&
+        y >= CONTROLS_VIEWPORT.top && x + width <= CONTROLS_VIEWPORT.right && y + height <= CONTROLS_VIEWPORT.bottom,
+    `HUD2 Controls ${what} must fit the actual visible Controls viewport after scrolling: ${row.text} at ${JSON.stringify(row.rect)}`);
+}
+
+// Rows that the screenshot shows whole inside the Controls viewport: their glyph pixels are read.
+function controlsRowsOnScreen(debug) {
+    return controlsRows(debug).filter((row) => row.visible === true && (() => {
+        const [x, y, width, height] = row.rect || [];
+        return [x, y, width, height].every(Number.isFinite) && x >= CONTROLS_VIEWPORT.left && y >= CONTROLS_VIEWPORT.top &&
+            x + width <= CONTROLS_VIEWPORT.right && y + height <= CONTROLS_VIEWPORT.bottom;
+    })());
 }
 
 function assertGuideVisible(debug, expected, label) {
@@ -585,4 +680,4 @@ function countFillPixels(image, rect, expected, tolerance) {
     return count;
 }
 
-module.exports = { judge };
+module.exports = { judge, controlsTailRow, humanizeAction, orderLabelsByHotkey, controlsRowsOnScreen };

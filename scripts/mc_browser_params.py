@@ -135,7 +135,7 @@ def validate_task16_plan(row: dict[str, Any]) -> dict[str, Any] | None:
     plan = stages["task16"]
     if not isinstance(plan, dict):
         raise ValueError(f"{row_id} stages.task16 must be an object")
-    allowed = {"status", "phases", "actions", "captures", "checks", "fixture", "gpu_device_audit", "startup_raf_probe"}
+    allowed = {"status", "phases", "actions", "captures", "checks", "fixture", "gpu_device_audit", "startup_raf_probe", "client_settings"}
     extra = set(plan) - allowed
     if extra:
         raise ValueError(f"{row_id} stages.task16 has unknown fields: {', '.join(sorted(extra))}")
@@ -152,6 +152,20 @@ def validate_task16_plan(row: dict[str, Any]) -> dict[str, Any] | None:
         raise ValueError(f"{row_id} stages.task16.startup_raf_probe must be a boolean")
     if startup_raf_probe and (row_id != "SLOT1" or status != "candidate" or not gpu_device_audit):
         raise ValueError("startup RAF probe is limited to guarded SLOT1 diagnostics with GPU device audit enabled")
+    # A stored player setting for every window of the row (tests/browser/harness/client-settings-seed.js).
+    # Only SLOT1 (three clients on one host) stores one; the value range is the client range (pacing.rs).
+    client_settings = plan.get("client_settings")
+    if client_settings is not None:
+        if row_id != "SLOT1":
+            raise ValueError("stored client settings are limited to SLOT1")
+        if not isinstance(client_settings, dict) or set(client_settings) != {"frame_limit", "reason"}:
+            raise ValueError("SLOT1 stages.task16.client_settings requires exactly frame_limit and reason")
+        frame_limit = client_settings["frame_limit"]
+        if type(frame_limit) is not int or not (frame_limit == 0 or 10 <= frame_limit <= 240):
+            raise ValueError("SLOT1 client_settings.frame_limit must be 0 or 10 to 240")
+        reason = client_settings["reason"]
+        if not isinstance(reason, str) or not reason.strip():
+            raise ValueError("SLOT1 client_settings.reason must be a nonempty text")
     actions = plan.get("actions", [])
     captures = plan.get("captures", [])
     checks = plan.get("checks", [])

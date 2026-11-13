@@ -19,7 +19,10 @@
 // Default flags give software rendering (SwiftShader). Performance runs on a dev machine pass
 // `--enable-gpu --use-angle=gl`. The two kinds of run are never compared (design 4.5).
 const { chromium } = require("playwright-core");
+const fs = require("node:fs");
 const os = require("node:os");
+const path = require("node:path");
+const { silentEnv, SILENT_ARGS } = require("./harness/silent-chrome.js");
 const { installWebGpuTelemetry } = require("./measure-webgpu-hook.js");
 const { buildVis2LaunchOptions } = require("./harness/measure-launch-options.js");
 const { adapterEvidence, vis2Ready: isVis2Ready } = require("./vis2-validation.js");
@@ -41,7 +44,9 @@ const percentile = (sorted, p) => sorted[Math.floor(p * (sorted.length - 1))];
     const launchOptions = vis2
         ? buildVis2LaunchOptions(executablePath, extra, process.env)
         : { executablePath, headless: true, args: extra };
-    const browser = await chromium.launch(launchOptions);
+    // The sound rule (CEO, 2026-11-12): the null ALSA device always, and the silent environment.
+    const quiet = fs.mkdtempSync(path.join(os.tmpdir(), "turts-measure-"));
+    const browser = await chromium.launch({ ...launchOptions, args: [...SILENT_ARGS, ...(launchOptions.args ?? [])], env: silentEnv(quiet, launchOptions.env ?? process.env) });
     const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
     if (vis2) await page.addInitScript(installWebGpuTelemetry);
     const logs = [];
