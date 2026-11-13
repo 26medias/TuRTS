@@ -24,6 +24,7 @@ tower-http = { workspace = true }
 postcard = { workspace = true }
 
 [dev-dependencies]
+libm = "=0.2.16"
 lightyear = { workspace = true, features = ["client"] }
 turts_net_lightyear = { path = "../turts_net_lightyear", features = ["client"] }
 ureq = { workspace = true }

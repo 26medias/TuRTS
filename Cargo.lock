@@ -8764,6 +8764,7 @@ dependencies = [
  "bevy",
  "bevy_app",
  "bevy_math",
+ "libm",
  "lightyear",
  "postcard",
  "ron",
