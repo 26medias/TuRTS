@@ -1080,3 +1080,98 @@ fn elapsed_time_scales_pan_distance() {
         "four times as much elapsed time must pan four times as far: {quarter} -> {full}"
     );
 }
+
+#[test]
+fn wheel_zoom_keeps_the_ground_under_the_pointer_in_place() {
+    let mut world = world();
+    world.map_size = Some(vec2(1024.0, 1024.0));
+    world.camera_options.edge_scroll = false;
+    for size in [vec2(1280.0, 720.0), vec2(1024.0, 768.0)] {
+        let view = Viewport { size, ..VIEW };
+        for yaw in [0.0, 1.2] {
+            for fraction in [vec2(0.25, 0.3), vec2(0.75, 0.7)] {
+                for delta in [-4.0, 4.0, -100_000.0, 100_000.0] {
+                    let pointer = size * fraction;
+                    let initial = CameraState {
+                        look_at: vec2(512.0, 512.0),
+                        yaw,
+                        ..camera()
+                    };
+                    let ground = screen_to_world(pointer, &view, initial).unwrap();
+                    let mut core = Core::new(initial);
+                    step_view(
+                        &mut core,
+                        &world,
+                        &view,
+                        &[
+                            InputEvent::PointerMove {
+                                px: pointer,
+                                over_widget: false,
+                            },
+                            InputEvent::Wheel { delta },
+                        ],
+                        0,
+                    );
+                    let projected = turts_interaction::projection::world_to_screen(
+                        ground,
+                        &view,
+                        core.camera_state(),
+                    )
+                    .unwrap();
+                    assert!(
+                        projected.distance(pointer) < 0.1,
+                        "ground moved under pointer: delta={delta}, yaw={yaw}, size={size:?}, pointer={pointer:?}, after={projected:?}"
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn wheel_zoom_does_not_reuse_a_pointer_that_left_the_window() {
+    let world = world();
+    let mut core = Core::new(camera());
+    step(
+        &mut core,
+        &world,
+        &[
+            InputEvent::PointerMove {
+                px: vec2(800.0, 400.0),
+                over_widget: false,
+            },
+            InputEvent::PointerLeft,
+            InputEvent::Wheel { delta: 1.0 },
+        ],
+        0,
+    );
+    assert!(core.camera_state().height < camera().height);
+    assert_eq!(core.camera_state().look_at, camera().look_at);
+}
+
+#[test]
+fn pointer_zoom_still_obeys_the_map_boundary() {
+    let world = world();
+    let initial = CameraState {
+        look_at: vec2(-5.0, -5.0),
+        ..camera()
+    };
+    let mut core = Core::new(initial);
+    step(
+        &mut core,
+        &world,
+        &[
+            InputEvent::PointerMove {
+                px: vec2(1000.0, 500.0),
+                over_widget: false,
+            },
+            InputEvent::Wheel { delta: -100_000.0 },
+        ],
+        0,
+    );
+    let state = core.camera_state();
+    assert!(state.look_at.is_finite());
+    assert!(state.look_at.cmpge(vec2(-5.0, -5.0)).all());
+    assert!(state.look_at.cmple(vec2(69.0, 69.0)).all());
+    assert_eq!(state.height, 80.0);
+}

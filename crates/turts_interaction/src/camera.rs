@@ -105,11 +105,29 @@ impl CameraController {
                 }
                 InputEvent::Wheel { delta } if delta.is_finite() && *delta != 0.0 => {
                     if let Some(direction) = wheel_action(world, *delta) {
-                        zoom_by_steps(
+                        let anchor = self
+                            .pointer
+                            .filter(|(px, eligible)| {
+                                *eligible
+                                    && px.is_finite()
+                                    && px.x >= 0.0
+                                    && px.y >= 0.0
+                                    && px.x <= view.size.x
+                                    && px.y <= view.size.y
+                            })
+                            .and_then(|(px, _)| {
+                                projection::screen_to_world(px, view, *camera)
+                                    .map(|ground| (px, ground))
+                            });
+                        if zoom_by_steps(
                             camera,
                             world,
                             if direction { delta.abs() } else { -delta.abs() },
-                        );
+                        ) && let Some((px, before)) = anchor
+                            && let Some(after) = projection::screen_to_world(px, view, *camera)
+                        {
+                            camera.look_at += before - after;
+                        }
                     }
                 }
                 _ => {}
