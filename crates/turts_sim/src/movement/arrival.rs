@@ -51,8 +51,16 @@ pub(super) fn prepare(units: &mut [MovementFrameUnit], dt: f32, bounds: Vec2) {
                 progress.activity = MovementActivity::Resting;
                 progress.slot = unit.position;
                 unit.target = None;
+                if let Some(cohort) = &mut unit.progress {
+                    cohort.slot = unit.position;
+                    cohort.activity = MovementActivity::Resting;
+                }
             } else {
                 unit.target = Some(progress.original_point);
+                if let Some(cohort) = &mut unit.progress {
+                    cohort.slot = progress.original_point;
+                    cohort.activity = MovementActivity::Moving;
+                }
                 unit.plain_progress = None;
             }
         }
@@ -157,7 +165,15 @@ pub(super) fn prepare(units: &mut [MovementFrameUnit], dt: f32, bounds: Vec2) {
 
 fn stop_goal(unit: &mut MovementFrameUnit, goal: Vec2, point: Vec2, temporary: bool) {
     unit.target = Some(point);
-    unit.progress = None;
+    if let Some(cohort) = &mut unit.progress {
+        cohort.slot = point;
+        cohort.activity = MovementActivity::Moving;
+        cohort.best_distance = unit.position.distance(point);
+        if !temporary {
+            unit.plain_progress = None;
+            return;
+        }
+    }
     unit.plain_progress = Some(PlainMoveProgress {
         arrival_yield: temporary,
         original_point: goal,

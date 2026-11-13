@@ -50,6 +50,7 @@ Near the point, the later approach can clear space while the earlier body advanc
 This yield is temporary. If the earlier unit leaves, the other unit resumes its original point.
 An obstructed short approach uses the real movement kernel to compare travel through that obstacle.
 Neutral stop points must fit inside the map and clear existing buildings.
+Keep group identity while a unit yields. Queued orders and attack moves must still finish.
 
 ## Evidence required before integration
 

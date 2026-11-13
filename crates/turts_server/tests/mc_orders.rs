@@ -613,11 +613,24 @@ fn queued_group_attack_spreads_and_strictly_replays() {
                  the order point {point:?}"
             );
         }
-        assert_ne!(
-            destinations[0].1, destinations[1].1,
-            "{order} spreads its members to different destinations: {destinations:?}"
-        );
+        // Queued members can activate on different ticks. Their plans may share a free
+        // point; physical arrivals decide who keeps it. Check the actual final bodies.
     }
+    let final_units = &turts_sim::completed_world(app.world()).units;
+    let positions = members
+        .iter()
+        .map(|id| {
+            final_units
+                .iter()
+                .find(|unit| unit.unit_id == *id)
+                .unwrap()
+                .pos
+        })
+        .collect::<Vec<_>>();
+    assert!(
+        positions[0].distance(positions[1]) >= 2.0 * radius - 1e-5,
+        "queued arrivals overlap: {positions:?}"
+    );
 }
 
 /// For each unit, the destination (`move_target`) at the first completed tick of the order log

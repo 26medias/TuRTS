@@ -6,7 +6,7 @@ The computer builds, harvests, and trains. Its first small attack starts after 7
 
 Use `bash scripts/skirmish-play.sh --prepare DIR --silent` to build it.
 Use `bash scripts/skirmish-play.sh --prepared DIR --silent` to start a fresh game.
-The full browser readiness checks are still open. These commands are for development tests.
+The readiness procedure is in `docs/qa/cold-play.md`. Every agent run must use `--silent`.
 
 Select the command centre. Click **Build Barracks**. Click a free point near the base.
 Select the completed barracks. Click **Train Soldier**.

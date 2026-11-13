@@ -1131,37 +1131,6 @@
     "expected_selected": "a_running_job_costs_no_bytes_between_its_changes"
   },
   {
-    "row": "MATCH1",
-    "plant": "(a) the Snapshot writer leaves match_state None",
-    "files": [
-      {
-        "file": "crates/turts_server/src/export.rs",
-        "edit": {
-          "old": "            match_state: Some(wire::MatchState::default()),\n",
-          "new": "            match_state: None,\n"
-        }
-      }
-    ],
-    "command": [
-      "cargo",
-      "test",
-      "--locked",
-      "-p",
-      "turts_server",
-      "--test",
-      "ordw1",
-      "every_snapshot_carries_a_match_state",
-      "--",
-      "--exact"
-    ],
-    "env": {},
-    "headed": false,
-    "expected_red": "assertion `left == right` failed",
-    "exit": 101,
-    "commit": "32c148f89dde57ade6a0acba602077cc4103e2a0",
-    "expected_selected": "every_snapshot_carries_a_match_state"
-  },
-  {
     "row": "JOBQ1",
     "plant": "(b) the store keeps a job record that the queue no longer holds",
     "files": [

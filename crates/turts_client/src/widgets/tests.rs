@@ -1850,11 +1850,14 @@ mod stub_contract {
     }
 
     #[test]
-    fn ui_result_stubs_have_no_value_and_no_predicate() {
+    fn result_sources_start_with_a_zero_clock_and_no_outcome() {
         with_context(|context| {
             assert_null(Value::Outcome, context);
             assert_null(Value::OutcomeReason, context);
-            assert_null(Value::MatchClock, context);
+            assert_eq!(
+                sources::read_value(&Value::MatchClock, *context),
+                serde_json::json!(0.0)
+            );
             assert_does_not_hold(Predicate::MatchOver, context);
             assert_does_not_hold(Predicate::OutcomeIs(OutcomeKind::Victory), context);
             assert_does_not_hold(

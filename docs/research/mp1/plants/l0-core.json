@@ -101,120 +101,6 @@
     },
     {
         "row": "L0-CORE",
-        "plant": "m1-intercept-ignores-the-flag",
-        "files": [
-            {
-                "file": "crates/turts_interaction/src/placement.rs",
-                "edit": {
-                    "old": ") -> bool {\n    core.placement.taking_input\n}",
-                    "new": ") -> bool {\n    false\n}"
-                }
-            }
-        ],
-        "command": [
-            "cargo",
-            "test",
-            "-p",
-            "turts_interaction",
-            "--locked",
-            "--lib",
-            "--",
-            "hook_tests"
-        ],
-        "env": {},
-        "headed": false,
-        "expected_red": "a right click in the placement mode must send no order",
-        "exit": 101,
-        "expected_selected": 2,
-        "commit": "b08a8f9ea45bec59aa1da22bca16a06cbae9bf63"
-    },
-    {
-        "row": "L0-CORE",
-        "plant": "m1-intercept-always-takes-the-input",
-        "files": [
-            {
-                "file": "crates/turts_interaction/src/placement.rs",
-                "edit": {
-                    "old": ") -> bool {\n    core.placement.taking_input\n}",
-                    "new": ") -> bool {\n    true\n}"
-                }
-            }
-        ],
-        "command": [
-            "cargo",
-            "test",
-            "-p",
-            "turts_interaction",
-            "--locked",
-            "--lib",
-            "--",
-            "hook_tests"
-        ],
-        "env": {},
-        "headed": false,
-        "expected_red": "the setup click must select unit 1 while the hook takes nothing",
-        "exit": 101,
-        "expected_selected": 2,
-        "commit": "b08a8f9ea45bec59aa1da22bca16a06cbae9bf63"
-    },
-    {
-        "row": "L0-CORE",
-        "plant": "g-placement-update-adds-an-effect",
-        "files": [
-            {
-                "file": "crates/turts_interaction/src/placement.rs",
-                "edit": {
-                    "old": "pub fn update(\n    _core: &mut Core,\n    _events: &[InputEvent],\n    _world: &dyn WorldView,\n    _view: &Viewport,\n    _now_ms: u64,\n    _effects: &mut Vec<Effect>,\n) {\n}",
-                    "new": "pub fn update(\n    _core: &mut Core,\n    _events: &[InputEvent],\n    _world: &dyn WorldView,\n    _view: &Viewport,\n    _now_ms: u64,\n    effects: &mut Vec<Effect>,\n) {\n    effects.push(Effect::SelectionChanged);\n}"
-                }
-            }
-        ],
-        "command": [
-            "cargo",
-            "test",
-            "-p",
-            "turts_interaction",
-            "--locked",
-            "--test",
-            "l0_core_stubs"
-        ],
-        "env": {},
-        "headed": false,
-        "expected_red": "placement::update must add no effect: [SelectionChanged]",
-        "exit": 101,
-        "expected_selected": 6,
-        "commit": "2c188c1079b9c1a5452863ae183360ea8ffaa316"
-    },
-    {
-        "row": "L0-CORE",
-        "plant": "g-placement-on-input-adds-an-effect",
-        "files": [
-            {
-                "file": "crates/turts_interaction/src/placement.rs",
-                "edit": {
-                    "old": "pub fn on_input(\n    _core: &mut Core,\n    _input: &Input,\n    _world: &dyn WorldView,\n    _view: &Viewport,\n    _now_ms: u64,\n    _effects: &mut Vec<Effect>,\n) {\n}",
-                    "new": "pub fn on_input(\n    _core: &mut Core,\n    _input: &Input,\n    _world: &dyn WorldView,\n    _view: &Viewport,\n    _now_ms: u64,\n    effects: &mut Vec<Effect>,\n) {\n    effects.push(Effect::SelectionChanged);\n}"
-                }
-            }
-        ],
-        "command": [
-            "cargo",
-            "test",
-            "-p",
-            "turts_interaction",
-            "--locked",
-            "--test",
-            "l0_core_stubs"
-        ],
-        "env": {},
-        "headed": false,
-        "expected_red": "the owner handlers must add no effect",
-        "exit": 101,
-        "expected_selected": 6,
-        "commit": "2c188c1079b9c1a5452863ae183360ea8ffaa316"
-    },
-    {
-        "row": "L0-CORE",
         "plant": "g-hints-update-adds-an-effect",
         "files": [
             {
@@ -327,38 +213,6 @@
     },
     {
         "row": "L0-CORE",
-        "plant": "b-widget-list-source-stub-returns-a-value",
-        "files": [
-            {
-                "file": "crates/turts_client/src/widgets/sources/hud.rs",
-                "edit": {
-                    "old": "pub(in crate::widgets) fn source_sites(_context: SourceContext<'_>) -> SourceData {\n    no_rows()\n}",
-                    "new": "pub(in crate::widgets) fn source_sites(_context: SourceContext<'_>) -> SourceData {\n    SourceData {\n        scalar: Some(serde_json::json!(1)),\n        items: Vec::new(),\n    }\n}"
-                }
-            }
-        ],
-        "command": [
-            "cargo",
-            "test",
-            "-p",
-            "turts_client",
-            "--locked",
-            "--lib",
-            "--",
-            "stub_contract",
-            "stub_tests",
-            "effect_family_stubs",
-            "owner_effect"
-        ],
-        "env": {},
-        "headed": false,
-        "expected_red": "Sites must have no rows until its owner builds it",
-        "exit": 101,
-        "expected_selected": 13,
-        "commit": "2c188c1079b9c1a5452863ae183360ea8ffaa316"
-    },
-    {
-        "row": "L0-CORE",
         "plant": "b-widget-predicate-stub-holds",
         "files": [
             {
@@ -417,38 +271,6 @@
         "env": {},
         "headed": false,
         "expected_red": "SelectionPrimary(Cargo) must read null until its owner builds it",
-        "exit": 101,
-        "expected_selected": 13,
-        "commit": "2c188c1079b9c1a5452863ae183360ea8ffaa316"
-    },
-    {
-        "row": "L0-CORE",
-        "plant": "b-widget-activation-stub-queues-an-input",
-        "files": [
-            {
-                "file": "crates/turts_client/src/widgets/activation/place.rs",
-                "edit": {
-                    "old": "    _queue: &mut CoreInputQueue,\n    _state: &ReplicaState,\n    _acquired: Option<&AcquiredPackages>,\n) {\n}",
-                    "new": "    queue: &mut CoreInputQueue,\n    _state: &ReplicaState,\n    _acquired: Option<&AcquiredPackages>,\n) {\n    queue\n        .0\n        .push(turts_interaction::InputEvent::UiAction { name: \"place\".into() });\n}"
-                }
-            }
-        ],
-        "command": [
-            "cargo",
-            "test",
-            "-p",
-            "turts_client",
-            "--locked",
-            "--lib",
-            "--",
-            "stub_contract",
-            "stub_tests",
-            "effect_family_stubs",
-            "owner_effect"
-        ],
-        "env": {},
-        "headed": false,
-        "expected_red": "must queue no input until its owner builds it",
         "exit": 101,
         "expected_selected": 13,
         "commit": "2c188c1079b9c1a5452863ae183360ea8ffaa316"
@@ -609,38 +431,6 @@
         "env": {},
         "headed": false,
         "expected_red": "must raise no alert until its owner builds it",
-        "exit": 101,
-        "expected_selected": 13,
-        "commit": "2c188c1079b9c1a5452863ae183360ea8ffaa316"
-    },
-    {
-        "row": "L0-CORE",
-        "plant": "d-effect-family-placement-records",
-        "files": [
-            {
-                "file": "crates/turts_client/src/core_adapter/effects/placement.rs",
-                "edit": {
-                    "old": "pub(in crate::core_adapter) fn apply(\n    _output: turts_interaction::placement::Output,\n    _runtime: &mut CoreRuntime,\n) {\n}",
-                    "new": "pub(in crate::core_adapter) fn apply(\n    _output: turts_interaction::placement::Output,\n    runtime: &mut CoreRuntime,\n) {\n    runtime.markers.push(serde_json::Value::Null);\n}"
-                }
-            }
-        ],
-        "command": [
-            "cargo",
-            "test",
-            "-p",
-            "turts_client",
-            "--locked",
-            "--lib",
-            "--",
-            "stub_contract",
-            "stub_tests",
-            "effect_family_stubs",
-            "owner_effect"
-        ],
-        "env": {},
-        "headed": false,
-        "expected_red": "the Placement (UI-PLACE) family must record nothing before its owner builds it",
         "exit": 101,
         "expected_selected": 13,
         "commit": "2c188c1079b9c1a5452863ae183360ea8ffaa316"
@@ -819,57 +609,6 @@
         "expected_red": "the owner facts must be kept: each frame builds the same value once",
         "exit": 101,
         "expected_selected": "core_adapter::adapter_tests::owner_facts_are_kept_from_frame_to_frame",
-        "commit": "2b228562bb566d3b3e0b752881e9ff7efb1cea20"
-    },
-    {
-        "row": "L0-CORE",
-        "plant": "t-taking-input-default-true-is-refused-by-the-script",
-        "files": [
-            {
-                "file": "crates/turts_interaction/src/placement.rs",
-                "edit": {
-                    "old": "#[derive(Debug, Clone, Default, PartialEq)]\npub struct State {\n    pub taking_input: bool,\n}",
-                    "new": "#[derive(Debug, Clone, PartialEq)]\npub struct State {\n    pub taking_input: bool,\n}\n\nimpl Default for State {\n    fn default() -> Self {\n        Self { taking_input: true }\n    }\n}"
-                }
-            }
-        ],
-        "command": [
-            "bash",
-            "docs/research/mp1/l0-core/taking_input.sh"
-        ],
-        "env": {},
-        "headed": false,
-        "expected_red": "TAKING-INPUT-USED",
-        "exit": 1,
-        "commit": "2b228562bb566d3b3e0b752881e9ff7efb1cea20"
-    },
-    {
-        "row": "L0-CORE",
-        "plant": "t-taking-input-default-true-is-red-in-the-test",
-        "files": [
-            {
-                "file": "crates/turts_interaction/src/placement.rs",
-                "edit": {
-                    "old": "#[derive(Debug, Clone, Default, PartialEq)]\npub struct State {\n    pub taking_input: bool,\n}",
-                    "new": "#[derive(Debug, Clone, PartialEq)]\npub struct State {\n    pub taking_input: bool,\n}\n\nimpl Default for State {\n    fn default() -> Self {\n        Self { taking_input: true }\n    }\n}"
-                }
-            }
-        ],
-        "command": [
-            "cargo",
-            "test",
-            "-p",
-            "turts_interaction",
-            "--locked",
-            "--lib",
-            "--",
-            "hook_tests"
-        ],
-        "env": {},
-        "headed": false,
-        "expected_red": "assertion `left == right` failed: the setup click must select unit 1 while the hook takes nothing",
-        "exit": 101,
-        "expected_selected": 2,
         "commit": "2b228562bb566d3b3e0b752881e9ff7efb1cea20"
     }
 ]

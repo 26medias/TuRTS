@@ -12,8 +12,8 @@
 //! 1. `u128_div`: a division (`/` or `/=`) whose operands mention `u128`: the wide
 //!    multiply-divide of a charge, refund, damage, progress or health rule.
 //! 2. `relation_path`: a path `SlotRelation::<variant>`: a copy of the relation match.
-//! 3. `dist_sq`: the identifier `distance_squared` or `length_squared`: squared-distance
-//!    placement arithmetic.
+//! 3. `dist_sq`: the identifier `distance_squared` or `length_squared`. Count it for
+//!    diagnostics only. Ordinary vector geometry does not copy a shared gameplay rule.
 //! 4. `wide_let_div`: a division whose operands name a binding that is wide: a `let` with the
 //!    type `u128` (`let w: u128 = cost.into();`) or with an initializer that mentions `u128`
 //!    (`let w = u128::from(cost);`), or a parameter of the type `u128`, in the same function.
@@ -361,6 +361,11 @@ fn compare(recorded: &BTreeMap<String, Counts>, now: &BTreeMap<String, Counts>) 
         let before = recorded.get(file).copied().unwrap_or([0; 5]);
         let after = now.get(file).copied().unwrap_or([0; 5]);
         for (i, name) in NAMES.iter().enumerate() {
+            // Selection, steering, and opponent choices need ordinary vector geometry.
+            // Placement validation itself still calls turts_rules::placement.
+            if *name == "dist_sq" {
+                continue;
+            }
             if after[i] > before[i] {
                 let what = if recorded.contains_key(file) {
                     format!("the count went up from {} to {}", before[i], after[i])

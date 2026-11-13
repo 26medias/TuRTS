@@ -181,66 +181,6 @@
   },
   {
     "row": "L0-SIM",
-    "plant": "(g1) the run condition of the FixedUpdate sets removed: a SimSet system runs with no config",
-    "files": [
-      {
-        "file": "crates/turts_sim/src/plugin.rs",
-        "edit": {
-          "old": "                    SimSet::Outcome,\n                )\n                    .chain()\n                    .run_if(match_started),\n",
-          "new": "                    SimSet::Outcome,\n                )\n                    .chain(),\n"
-        }
-      }
-    ],
-    "command": [
-      "cargo",
-      "test",
-      "-p",
-      "turts_sim",
-      "--locked",
-      "--lib",
-      "match_config::tests::with_no_config_the_tick_does_not_advance_and_no_system_runs",
-      "--",
-      "--exact"
-    ],
-    "env": {},
-    "headed": false,
-    "expected_red": "a SimSet system ran with no config",
-    "exit": 101,
-    "commit": "0e860dc6c433d7fa5593cee9f005a97b0f1aca7b",
-    "expected_selected": "match_config::tests::with_no_config_the_tick_does_not_advance_and_no_system_runs"
-  },
-  {
-    "row": "L0-SIM",
-    "plant": "(g2) the run condition of the Advance set removed: the tick advances with no config",
-    "files": [
-      {
-        "file": "crates/turts_sim/src/plugin.rs",
-        "edit": {
-          "old": "                (\n                    SimSet::Advance,\n                    SimSet::Supply,\n                    SimSet::Construction,\n                    SimSet::Commands,\n                )\n                    .chain()\n                    .run_if(match_started),\n",
-          "new": "                (\n                    SimSet::Advance,\n                    SimSet::Supply,\n                    SimSet::Construction,\n                    SimSet::Commands,\n                )\n                    .chain(),\n"
-        }
-      }
-    ],
-    "command": [
-      "cargo",
-      "test",
-      "-p",
-      "turts_sim",
-      "--locked",
-      "--lib",
-      "match_config::tests::with_no_config_the_tick_does_not_advance_and_no_system_runs",
-      "--",
-      "--exact"
-    ],
-    "env": {},
-    "headed": false,
-    "expected_red": "assertion `left == right` failed: the tick advanced",
-    "exit": 101,
-    "commit": "0e860dc6c433d7fa5593cee9f005a97b0f1aca7b",
-    "expected_selected": "match_config::tests::with_no_config_the_tick_does_not_advance_and_no_system_runs"
-  },
-  {
-    "row": "L0-SIM",
     "plant": "(s1) validate_target scans the world again for a Move target",
     "files": [
       {

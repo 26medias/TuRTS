@@ -105,6 +105,7 @@ pub fn derive_tokens(root: &Path) -> Result<TokenCatalog, ScanError> {
             ("asset-export", &a.manifest.exports.assets),
             ("recipe-export", &a.manifest.exports.recipes),
             ("technology-export", &a.manifest.exports.technologies),
+            ("match-export", &a.manifest.exports.match_files),
         ] {
             for path in xs {
                 exports.insert(path.clone());
@@ -282,6 +283,9 @@ pub fn derive_tokens(root: &Path) -> Result<TokenCatalog, ScanError> {
         ("field", "map id is an ordinary source identifier", false),
         ("Item", "resource kind is a common Rust type word", false),
         ("Balance", "resource kind is a common Rust type word", false),
+        ("Move", "engine behaviour name", false),
+        ("Attack", "engine behaviour name", false),
+        ("Stop", "engine behaviour name", false),
         (
             "log",
             "resource unit name is a common source identifier",

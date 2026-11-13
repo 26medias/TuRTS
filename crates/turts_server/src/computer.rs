@@ -185,12 +185,12 @@ fn decide_inner(world: &mut World, bot: &mut ComputerPlayer) {
         return;
     };
 
-    for worker in own
+    for gatherer in own
         .iter()
         .copied()
         .filter(|unit| definition(&catalog, unit).is_some_and(|def| def.gatherer.is_some()))
     {
-        let def = definition(&catalog, worker)
+        let def = definition(&catalog, gatherer)
             .unwrap()
             .gatherer
             .as_ref()
@@ -209,20 +209,20 @@ fn decide_inner(world: &mut World, bot: &mut ComputerPlayer) {
                 nearer(
                     Vec2::new(a.pos.x, a.pos.y),
                     Vec2::new(b.pos.x, b.pos.y),
-                    worker.pos,
+                    gatherer.pos,
                 )
             });
         if let Some(node) = node
             && !view
                 .orders
                 .iter()
-                .any(|order| order.unit == worker.unit_id && order.node == Some(node.id))
+                .any(|order| order.unit == gatherer.unit_id && order.node == Some(node.id))
         {
             issue(
                 world,
                 bot,
                 &catalog,
-                worker,
+                gatherer,
                 Behaviour::Gather,
                 OrderTarget::Node(turts_net_protocol::NodeId(node.id.0)),
             );
@@ -292,7 +292,7 @@ fn decide_inner(world: &mut World, bot: &mut ComputerPlayer) {
         }
     }
 
-    let soldiers = own
+    let combatants = own
         .iter()
         .copied()
         .filter(|unit| {
@@ -320,7 +320,7 @@ fn decide_inner(world: &mut World, bot: &mut ComputerPlayer) {
                 .filter_map(|id| catalog.production.get(id))
                 .find(|recipe| {
                     catalog.units.get(&recipe.output_unit).is_some_and(|def| {
-                        (def.weapon.is_some() && def.movement.is_some() && soldiers.len() < 6)
+                        (def.weapon.is_some() && def.movement.is_some() && combatants.len() < 6)
                             || (def.gatherer.is_some()
                                 && !own.iter().any(|unit| {
                                     definition(&catalog, unit)
@@ -343,9 +343,9 @@ fn decide_inner(world: &mut World, bot: &mut ComputerPlayer) {
         }
     }
     bot.assault
-        .retain(|id| soldiers.iter().any(|unit| unit.unit_id == *id));
+        .retain(|id| combatants.iter().any(|unit| unit.unit_id == *id));
     if tick.saturating_sub(started) >= 75 * hz && tick >= bot.next_wave {
-        let mut available = soldiers
+        let mut available = combatants
             .iter()
             .copied()
             .filter(|unit| !bot.assault.contains(&unit.unit_id))
@@ -355,22 +355,22 @@ fn decide_inner(world: &mut World, bot: &mut ComputerPlayer) {
             .extend(available.into_iter().take(2).map(|unit| unit.unit_id));
         bot.next_wave = tick.saturating_add(60 * hz);
     }
-    for soldier in soldiers {
+    for combatant in combatants {
         let nearby = enemies
             .iter()
             .copied()
-            .filter(|enemy| distance(enemy.pos, soldier.pos) < 12.0 * 12.0)
-            .min_by(|a, b| nearer(a.pos, b.pos, soldier.pos));
+            .filter(|enemy| distance(enemy.pos, combatant.pos) < 12.0 * 12.0)
+            .min_by(|a, b| nearer(a.pos, b.pos, combatant.pos));
         let target =
-            nearby.or_else(|| bot.assault.contains(&soldier.unit_id).then_some(enemy_base));
+            nearby.or_else(|| bot.assault.contains(&combatant.unit_id).then_some(enemy_base));
         if let Some(target) = target
-            && !matches!(current_target(&view,soldier.unit_id), Some(turts_sim::economy::views::UnitOrderTargetView::Unit(id)) if *id == target.unit_id)
+            && !matches!(current_target(&view,combatant.unit_id), Some(turts_sim::economy::views::UnitOrderTargetView::Unit(id)) if *id == target.unit_id)
         {
             issue(
                 world,
                 bot,
                 &catalog,
-                soldier,
+                combatant,
                 Behaviour::Attack,
                 OrderTarget::Unit(UnitId(target.unit_id)),
             );

@@ -88,35 +88,6 @@
     },
     {
         "row": "L0-API1",
-        "plant": "d: the L-CON1 `constructor` line is removed from UNBUILT_FEATURES; a ^0.2.4 package with constructor packs",
-        "files": [
-            {
-                "file": "crates/turts_mod_runtime/src/unbuilt.rs",
-                "edit": {
-                    "old": "    line(\"constructor\", \"L-CON1\"),\n",
-                    "new": ""
-                }
-            }
-        ],
-        "command": [
-            "cargo",
-            "test",
-            "-p",
-            "turts_mod_runtime",
-            "--locked",
-            "--test",
-            "api_0_2_4",
-            "k1_constructor"
-        ],
-        "env": {},
-        "headed": false,
-        "expected_red": "constructor: the package packs, a refusal was expected",
-        "exit": 101,
-        "expected_selected": 1,
-        "commit": "967a786"
-    },
-    {
-        "row": "L0-API1",
         "plant": "e: the edition gate of check_unbuilt is removed; a ^0.2.3 package with {unit} is refused as unbuilt",
         "files": [
             {

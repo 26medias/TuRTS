@@ -191,7 +191,9 @@ fn credit_exemption_applies_only_to_identifiers() {
     assert_eq!(
         hits.iter()
             .filter(|hit| hit.source.ends_with("literals.rs") && hit.token == "credit")
-            .count(),
+            .map(|hit| (hit.line, hit.column))
+            .collect::<std::collections::BTreeSet<_>>()
+            .len(),
         2,
         "both string and byte-string literals must remain visible"
     );

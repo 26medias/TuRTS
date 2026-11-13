@@ -2480,6 +2480,41 @@ fn validate_automatic_order_operation(
         ));
     }
 
+    let settled_plain = operation
+        .before
+        .plain_movement_progress
+        .iter()
+        .find(|row| row.unit_id == unit_id)
+        .is_some_and(|row| {
+            row.progress.activity == turts_sim::movement::MovementActivity::Resting
+                && (row.progress.claim_count > 0
+                    || row.progress.slot != row.progress.original_point)
+                && actor_target_before.is_none()
+                && row.progress.slot == bevy::math::Vec2::new(actor.pos.x, actor.pos.y)
+        });
+    let gathering = operation.before.raw_orders.iter().any(|row| {
+        row.unit == unit_id
+            && matches!(
+                row.stage,
+                turts_sim::GatherStage::MovingToNode | turts_sim::GatherStage::MovingToReceiver
+            )
+    });
+    let unit_follow = current.as_ref().is_some_and(|order| {
+        matches!(
+            order.behaviour,
+            turts_mod_api::Behaviour::Move | turts_mod_api::Behaviour::Attack
+        ) && matches!(order.target, turts_sim::OrderTargetSim::Unit(_))
+    });
+    if settled_plain && !gathering && !unit_follow && operation.events.is_empty() {
+        let mut cleanup = operation.before.clone();
+        cleanup
+            .plain_movement_progress
+            .retain(|row| row.unit_id != unit_id);
+        if cleanup == operation.after {
+            return Ok(());
+        }
+    }
+
     if let Some(order) = current.as_ref().filter(|order| {
         order.behaviour == turts_mod_api::Behaviour::Attack
             && matches!(order.target, turts_sim::OrderTargetSim::Unit(_))
