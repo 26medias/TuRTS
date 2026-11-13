@@ -47,8 +47,11 @@ A2b1 is pushed at `6ae97d9c`: all 17 checks and acceptance passed.
 The store and sound work is pushed at `5c757202`: all 24 checks, 433 browser helper tests,
 and seven headed sound rows passed. All seven rows reported zero resync requests.
 Acceptance passed after one stale Cedar version mutation was repaired and the remaining steps ran.
-The target prompt is local at `c113beb2`. All 578 client tests, Clippy, and the browser compile check passed.
-Its browser checks are in progress. No complete skirmish or readiness pass is claimed.
+The first-click and target prompt feature is pushed at `34295a32`.
+All 578 client tests passed. The full integration checks and acceptance passed.
+Two obsolete UI mutation records were removed after their executable checks passed.
+The Acme first-click probes passed at 1280x720 and 1024x768. The buttons probe passed at 1280x720.
+These are partial probe runs. The complete skirmish and full readiness run remain open.
 
 Reuse `TuRTS-mp1-integration/target/mc-mp1-integration` for further builds.
 The finished branch caches were deleted. Keep `target/mc-evidence` and the source worktrees.
