@@ -2762,3 +2762,41 @@ fn owner_facts_are_kept_from_frame_to_frame() {
         "the owner facts must be kept: each frame builds the same value once"
     );
 }
+
+#[test]
+fn browser_pixel_wheel_keeps_intermediate_zoom_levels() {
+    let _guard = test_lock();
+    let (mut app, window, _) = fixture_app_with_client_shell();
+    let height = |app: &App| {
+        app.world()
+            .resource::<CoreRuntime>()
+            .core()
+            .unwrap()
+            .camera_state()
+            .height
+    };
+    let start = height(&app);
+    let mut previous = start;
+    for _ in 0..5 {
+        app.world_mut()
+            .resource_mut::<Messages<WindowEvent>>()
+            .write(WindowEvent::MouseWheel(bevy::input::mouse::MouseWheel {
+                unit: bevy::input::mouse::MouseScrollUnit::Pixel,
+                x: 0.0,
+                y: 100.0,
+                window,
+                phase: bevy::input::touch::TouchPhase::Moved,
+            }));
+        app.update();
+        let current = height(&app);
+        assert!(
+            (current - previous / 1.1).abs() < 0.0001,
+            "One browser notch must change zoom by one step: {previous} -> {current}"
+        );
+        previous = current;
+    }
+    assert!(
+        previous > start * 0.6,
+        "Five notches must retain useful intermediate views"
+    );
+}

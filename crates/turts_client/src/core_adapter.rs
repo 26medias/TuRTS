@@ -989,7 +989,13 @@ fn drive_core_adapter(
                         .iter()
                         .any(|key| key.starts_with("Control"))
                 {
-                    events.push(InputEvent::Wheel { delta: value.y });
+                    // Browser wheels and touchpads report pixels, not wheel notches.
+                    // Keep fractional motion so small gestures give small zoom changes.
+                    let delta = match value.unit {
+                        bevy::input::mouse::MouseScrollUnit::Line => value.y,
+                        bevy::input::mouse::MouseScrollUnit::Pixel => value.y / 100.0,
+                    };
+                    events.push(InputEvent::Wheel { delta });
                 }
             }
             WindowEvent::WindowFocused(value) if Some(value.window) == primary => {
