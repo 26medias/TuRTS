@@ -577,12 +577,8 @@ impl Core {
         }
         self.pointer = Some((*px, *over_widget));
         if let Some((button, start, dragged, down_ms)) = self.pointer_down {
-            self.pointer_down = Some((
-                button,
-                start,
-                dragged || start.distance(*px) > CLICK_DRAG_PIXELS,
-                down_ms,
-            ));
+            self.pointer_down =
+                Some((button, start, dragged || start.distance(*px) > 4.0, down_ms));
         }
     }
 
@@ -633,7 +629,7 @@ impl Core {
         if *over_widget || down_button != *button {
             return;
         }
-        let dragged = dragged || start.distance(*px) > CLICK_DRAG_PIXELS;
+        let dragged = dragged || start.distance(*px) > 4.0;
         let pointer_action = self.action_for_pointer(down_button, world);
         if matches!(pointer_action.as_deref(), Some("select" | "box_select")) {
             self.complete_selection_gesture(start, *px, dragged, down_ms, world, view, effects);
@@ -1026,8 +1022,11 @@ pub enum UiOrderTarget {
 }
 
 /// A pointer that moves farther than this many pixels between its press and its release made a drag,
-/// not a click (the box select, and the `UiButton` click repair of the client:
-/// `crates/turts_client/src/press_release.rs`).
+/// not a click. The core writes the literal `4.0` in `on_pointer_move` and `on_pointer_up` (the L0-CORE
+/// proof `step_equal.py` compares `step` token by token with the code before the split, so those two
+/// lines keep the literal); the test `the_core_uses_the_click_drag_distance` pins the literal to this
+/// constant. The `UiButton` click repair of the client reads the constant
+/// (`crates/turts_client/src/press_release.rs`).
 pub const CLICK_DRAG_PIXELS: f32 = 4.0;
 
 #[derive(Debug, Clone, Copy, PartialEq)]

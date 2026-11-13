@@ -95,9 +95,12 @@ it sends the click that Bevy dropped (`Click`, then `Release`) to each hovered e
 
 - the same pointer and the same button, the press and the release in the frame's input, and a press in the frame (a
   release with no press in the frame is left to Bevy);
-- no drag by the rule of the interaction core: `CLICK_DRAG_PIXELS` = 4 px (`crates/turts_interaction/src/lib.rs`, the
-  rule that `:581` and `:632` use to tell a click from a box select; the client repair reads the same constant): no input
-  between the press and the release is farther than that from the press, and the release is not farther;
+- no drag by the rule of the interaction core: 4 px (`crates/turts_interaction/src/lib.rs:581` and `:632`, the literal
+  `> 4.0` that tells a click from a box select). The client repair reads the constant `CLICK_DRAG_PIXELS` (4.0) of the same
+  file. The core keeps its literal because the L0-CORE proof `step_equal.py` compares `step` token by token with the code
+  before the split (a first try that wrote the constant there made three L0-CORE plants non-green); the test
+  `the_core_uses_the_click_drag_distance` (`crates/turts_interaction/tests/click_drag_rule.rs`) pins the two literals to the
+  constant. No input between the press and the release is farther than that from the press, and the release is not farther;
 - a hit test of the press position and of the release position on the node of the entity (the way
   `bevy_ui-0.20.0/src/picking_backend.rs:205` hits a node), so a press on the map and a release over a button, or a
   press on button A and a release on button B, click nothing (red tests: the three cases of the re-review).
