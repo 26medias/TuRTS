@@ -4622,14 +4622,19 @@ fn e10_cedar_uses_public_pack_and_boot() {
     );
 
     let old_api_dir = support::test_dir("e10-cedar-old-engine-api");
-    let old_api_package = support::pack_with(
-        "cedar",
-        "manifest.ron",
-        &std::fs::read_to_string(support::mods_dir().join("cedar/manifest.ron"))
-            .unwrap()
-            .replace("engine_api: \"^0.2.3\"", "engine_api: \"^0.1\""),
-        &old_api_dir,
+    let manifest_text =
+        std::fs::read_to_string(support::mods_dir().join("cedar/manifest.ron")).unwrap();
+    let manifest: turts_mod_api::Manifest = ron::from_str(&manifest_text).unwrap();
+    let old_api_manifest = manifest_text.replace(
+        &format!("engine_api: {:?}", manifest.engine_api),
+        "engine_api: \"^0.1\"",
     );
+    assert_ne!(
+        old_api_manifest, manifest_text,
+        "the negative fixture must change Cedar's declared engine API"
+    );
+    let old_api_package =
+        support::pack_with("cedar", "manifest.ron", &old_api_manifest, &old_api_dir);
     let invalid_archive = std::fs::read(&old_api_package).unwrap();
     let parse_error = turts_mod_runtime::archive::PackageArchive::parse(&invalid_archive)
         .expect_err("container parses through to the unsupported engine_api field");
