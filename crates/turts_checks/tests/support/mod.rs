@@ -1,4 +1,5 @@
 #![allow(dead_code)]
+pub mod writers;
 use proc_macro2::{Literal, TokenTree};
 use std::{
     collections::{BTreeMap, BTreeSet},
