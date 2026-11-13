@@ -948,9 +948,9 @@ fn a_package_with_no_new_feature_is_accepted_at_both_requirements() {
 /// that requires `^0.2.3` still accepts the engine.
 #[test]
 fn the_engine_api_retains_0_2_4_and_adds_0_2_5() {
-    assert_eq!(ENGINE_API_VERSION, "0.2.5");
-    assert_eq!(RELEASED_ENGINE_APIS.last(), Some(&"0.2.5"));
-    assert_eq!(RELEASED_ENGINE_APIS.len(), 7);
+    assert_eq!(ENGINE_API_VERSION, "0.2.6");
+    assert_eq!(RELEASED_ENGINE_APIS.last(), Some(&"0.2.6"));
+    assert_eq!(RELEASED_ENGINE_APIS.len(), 8);
 }
 
 /// The order rules keep their `rally` list on the way through the archive reader (the raw rules

@@ -362,3 +362,37 @@ fn samples_are_pruned() {
         "samples not consecutive: {held:?}"
     );
 }
+
+#[test]
+fn an6_live_effects_commit_once_and_recovery_never_replays_deaths() {
+    let now = Instant::now();
+    let mut replica = replica();
+    assert!(matches!(
+        replica.apply_snapshot(&snapshot(10, &[(1, pos(0., 0.))]), now),
+        SnapshotOutcome::Applied { .. }
+    ));
+    let mut live = delta(11, 10, &[]);
+    live.records
+        .effects
+        .push(turts_net_protocol::Effect::Destroyed { unit: UnitId(999) });
+    assert_eq!(replica.apply_delta(&live, now), DeltaOutcome::Applied);
+    assert_eq!(replica.visual_events.len(), 1);
+    assert_eq!(replica.apply_delta(&live, now), DeltaOutcome::Discarded);
+    assert_eq!(replica.visual_events.len(), 1);
+    let mut lost = delta(13, 12, &[]);
+    lost.records
+        .effects
+        .push(turts_net_protocol::Effect::Destroyed { unit: UnitId(1) });
+    assert_eq!(
+        replica.apply_delta(&lost, now),
+        DeltaOutcome::ResyncRequested
+    );
+    assert!(matches!(
+        replica.apply_snapshot(&snapshot(12, &[(1, pos(0., 0.))]), now),
+        SnapshotOutcome::Applied { replayed: 1 }
+    ));
+    assert!(
+        replica.visual_events.is_empty(),
+        "AN6: snapshots and retained deltas must not create visual bodies"
+    );
+}

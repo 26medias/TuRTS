@@ -13,7 +13,7 @@ use bevy::{
             memory::{Dir, MemoryAssetReader},
         },
     },
-    gltf::{Gltf, GltfLoaderSettings, GltfMaterial, GltfMesh, GltfNode},
+    gltf::{Gltf, GltfLoaderSettings, GltfMaterial, GltfMesh, GltfNode, GltfSkin},
     prelude::*,
 };
 use std::{collections::HashMap, path::Path};
@@ -148,6 +148,8 @@ pub struct ModelSources<'w> {
     gltfs: Res<'w, Assets<Gltf>>,
     meshes: Res<'w, Assets<GltfMesh>>,
     nodes: Res<'w, Assets<GltfNode>>,
+    skins: Res<'w, Assets<GltfSkin>>,
+    clips: Res<'w, Assets<AnimationClip>>,
     materials: Res<'w, Assets<GltfMaterial>>,
     palette: Res<'w, SlotMaterials>,
     replica: Res<'w, ReplicaState>,
@@ -250,6 +252,8 @@ pub fn sync_models(
     sources: ModelSources,
     mut state: ResMut<ModelState>,
     bridge: Res<ModelGpuBridge>,
+    mut library: ResMut<crate::animation::AnimationLibrary>,
+    mut graphs: ResMut<Assets<AnimationGraph>>,
     mut material_assets: ResMut<Assets<StandardMaterial>>,
     mut images: ResMut<Assets<Image>>,
     cameras: Query<(&Camera, &GlobalTransform)>,
@@ -260,6 +264,7 @@ pub fn sync_models(
             Option<&PresentedNode>,
             &mut Transform,
             Option<&mut ModelInstance>,
+            Option<&mut crate::animation::UnitAnimation>,
         ),
         Or<(With<PresentedUnit>, With<PresentedNode>)>,
     >,
@@ -283,7 +288,7 @@ pub fn sync_models(
                 .load_builder()
                 .with_settings(|settings: &mut GltfLoaderSettings| {
                     settings.include_source = true;
-                    settings.load_animations = false;
+                    settings.load_animations = true;
                     settings.load_materials = bevy::asset::RenderAssetUsages::MAIN_WORLD;
                 })
                 .load(format!("package://{path}"));
@@ -292,10 +297,10 @@ pub fn sync_models(
     }
     let live_tickets: std::collections::HashSet<_> = shown
         .iter()
-        .filter_map(|(_, _, _, _, instance)| instance.map(|i| i.ticket))
+        .filter_map(|(_, _, _, _, instance, _)| instance.map(|i| i.ticket))
         .collect();
     let live_roots: std::collections::HashSet<_> =
-        shown.iter().map(|(entity, _, _, _, _)| entity).collect();
+        shown.iter().map(|(entity, _, _, _, _, _)| entity).collect();
     if let Ok(mut bridge) = bridge.0.lock() {
         bridge.pending.retain(|ticket, request| {
             live_roots.contains(&request.root) && live_tickets.contains(ticket)
@@ -357,7 +362,7 @@ pub fn sync_models(
         }
     }
     let quality = sources.settings.quality;
-    for (entity, unit, node, mut transform, mut instance) in &mut shown {
+    for (entity, unit, node, mut transform, mut instance, mut animation) in &mut shown {
         if let Some(instance) = instance.as_deref_mut()
             && !instance.ready
             && bridge
@@ -431,6 +436,30 @@ pub fn sync_models(
                 Some((a.y - b.y).abs() / camera.logical_viewport_size()?.y)
             })
             .unwrap_or(1.0);
+        if let Some(animation) = animation.as_deref_mut() {
+            animation.quality = quality;
+            animation.screen_height = screen_height;
+            animation.visible = cameras.iter().next().is_none_or(|(camera, global)| {
+                camera
+                    .world_to_viewport(global, Vec3::new(pos.x, height * 0.5, pos.y))
+                    .ok()
+                    .zip(camera.logical_viewport_size())
+                    .is_some_and(|(point, size)| {
+                        point.x >= -height
+                            && point.y >= -height
+                            && point.x <= size.x + height
+                            && point.y <= size.y + height
+                    })
+            });
+        }
+        if let Some(replica) = sources.replica.replica.as_ref()
+            && let Some(unit) = unit
+            && let Some(progress) = replica.site_progress(unit.0)
+        {
+            let fraction =
+                replica.site_value(unit.0).unwrap_or(0) as f32 / progress.total.max(1) as f32;
+            transform.translation.y -= -crate::animation::construction_offset(height, fraction);
+        }
         let level = select_lod(
             model,
             screen_height,
@@ -457,8 +486,8 @@ pub fn sync_models(
             .as_deref()
             .is_none_or(|i| i.asset != *asset || i.quality != quality)
         {
-            let handle = &state.handles[asset];
-            let Some(gltf) = sources.gltfs.get(handle) else {
+            let handle = state.handles[asset].clone();
+            let Some(gltf) = sources.gltfs.get(&handle) else {
                 continue;
             };
             let team = model
@@ -466,6 +495,8 @@ pub fn sync_models(
                 .as_ref()
                 .and_then(|name| gltf.named_materials.get(name.as_str()))
                 .map(|h| h.id());
+            let animated = model.animations.is_some() && !gltf.animations.is_empty();
+            let mut rig_materials = HashMap::new();
             let mut children = Vec::new();
             let mut gpu_children = Vec::new();
             for primitive in primitives {
@@ -505,6 +536,10 @@ pub fn sync_models(
                     state.materials.insert(key, handle.clone());
                     handle
                 };
+                rig_materials.insert(primitive.material.id(), material.clone());
+                if animated {
+                    continue;
+                }
                 let mut local = primitive.transform;
                 local.translation *= model.scale;
                 local.scale *= model.scale;
@@ -524,6 +559,36 @@ pub fn sync_models(
                     .id();
                 children.push(child);
                 gpu_children.push((child, primitive.mesh.id(), material.id()));
+            }
+            if animated {
+                if let Some((rig, gpu)) = crate::animation::spawn_rig(
+                    &mut commands,
+                    entity,
+                    id,
+                    pos,
+                    acquired
+                        .0
+                        .content
+                        .shapes
+                        .get(content)
+                        .map_or(0., crate::render::mesh_lift),
+                    model.scale,
+                    gltf,
+                    handle.id(),
+                    &sources.nodes,
+                    &sources.meshes,
+                    &sources.skins,
+                    &sources.clips,
+                    &mut graphs,
+                    &mut library,
+                    &rig_materials,
+                    model.animations.as_ref().unwrap(),
+                ) {
+                    children.push(rig);
+                    gpu_children = gpu;
+                } else {
+                    continue;
+                }
             }
             let mut retired_children = Vec::new();
             if let Some(instance) = instance.as_deref() {

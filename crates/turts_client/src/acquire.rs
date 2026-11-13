@@ -249,9 +249,14 @@ fn merge_asset_bytes(
         let info = turts_mod_runtime::models::inspect_glb(&archive.id().0, &model.path, bytes)
             .map_err(|e| e.to_string())?;
         let key = qualified_asset_id(&archive.id().0, &model.id);
-        presentation
-            .model_bounds
-            .insert(key.clone(), (info.min, info.max));
+        let bounds = presentation
+            .model_visuals
+            .values()
+            .find(|model| model.asset == key)
+            .map_or((info.min, info.max), |model| {
+                turts_mod_runtime::models::visual_bounds(&info, model)
+            });
+        presentation.model_bounds.insert(key.clone(), bounds);
         presentation.models.insert(key, bytes.to_vec());
     }
     for image in assets.images {

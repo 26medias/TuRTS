@@ -481,6 +481,9 @@ type SceneWidgetQuery<'w, 's> = Query<
 
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 fn publish_scene(
+    animations: Query<(Option<&SceneUnit>, &turts_client::animation::UnitAnimation)>,
+    animation_players: Query<&AnimationPlayer>,
+    bodies: Query<&turts_client::animation::VisualBody>,
     model_instances: Query<(
         Option<&SceneUnit>,
         Option<&SceneNode>,
@@ -647,6 +650,11 @@ fn publish_scene(
     scene["models"] = serde_json::Value::Array(model_instances.iter().map(|(unit,node,instance,transform)|serde_json::json!({
         "unit_id":unit.map(|u|u.0),"node_id":node.map(|n|n.0),"asset":instance.asset,"level":instance.level,"quality":instance.quality,"ready":instance.ready,"forward":(transform.rotation()*Vec3::Z).to_array()
     })).collect());
+    scene["animations"] = serde_json::Value::Array(animations.iter().map(|(unit,rig)| serde_json::json!({
+        "unit_id":unit.map(|u|u.0),"clip":rig.current,"distance_loops":rig.distance_loops,"dead":rig.dead,"visible":rig.visible,
+        "seek":rig.current.as_ref().and_then(|name|rig.clips.clips.get(name)).and_then(|clip| animation_players.get(rig.player).ok()?.animation(clip.node).map(|a|a.seek_time()))
+    })).collect());
+    scene["body_count"] = serde_json::json!(bodies.iter().count());
     scene["widgets"] = serde_json::Value::Array(widget_rects);
     *SCENE.lock().unwrap() = scene.to_string();
 }

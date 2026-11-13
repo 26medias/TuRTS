@@ -28,6 +28,8 @@ pub struct ModelInfo {
     pub materials: Vec<String>,
     pub nodes: Vec<String>,
     pub warnings: Vec<String>,
+    pub clips: Vec<String>,
+    pub clip_bounds: BTreeMap<String, ([f32; 3], [f32; 3])>,
 }
 fn error(package: &str, file: &str, field: &str, message: impl Into<String>) -> ModError {
     ModError::new(package, field, message).with_file(file)
@@ -128,6 +130,26 @@ pub fn inspect_glb(package: &str, file: &str, bytes: &[u8]) -> Result<ModelInfo,
             return Err(fail("skins.joints", "skin has more than 128 joints".into()));
         }
     }
+    if glb.animations().len() > 64 {
+        return Err(fail("animations", "model has more than 64 clips".into()));
+    }
+    for animation in glb.animations() {
+        for channel in animation.channels() {
+            let reader = channel.reader(|_| Some(blob));
+            let inputs = reader
+                .read_inputs()
+                .ok_or_else(|| fail("animations", "unreadable clip times".into()))?;
+            if inputs
+                .into_iter()
+                .any(|t| !t.is_finite() || !(0.0..=60.0).contains(&t))
+            {
+                return Err(fail(
+                    "animations.duration",
+                    "clip times must be finite and between 0 and 60 s".into(),
+                ));
+            }
+        }
+    }
     if glb.cameras().len() > 0
         || glb.nodes().any(|n| {
             n.extensions()
@@ -183,7 +205,19 @@ pub fn inspect_glb(package: &str, file: &str, bytes: &[u8]) -> Result<ModelInfo,
             "model has no finite visible geometry".into(),
         ));
     }
+    let clip_bounds = glb
+        .animations()
+        .filter_map(|animation| {
+            let name = animation.name()?.to_owned();
+            pose_bounds(&glb, blob, &animation).map(|bounds| (name, bounds))
+        })
+        .collect();
     Ok(ModelInfo {
+        clip_bounds,
+        clips: glb
+            .animations()
+            .filter_map(|a| a.name().map(str::to_owned))
+            .collect(),
         triangles,
         min,
         max,
@@ -253,6 +287,134 @@ fn bounds(
     }
     Ok(())
 }
+/// Bounds of the first authored frame, including skinning. A wide bind pose is not an idle body.
+fn pose_bounds(
+    glb: &gltf::Gltf,
+    blob: &[u8],
+    animation: &gltf::Animation<'_>,
+) -> Option<([f32; 3], [f32; 3])> {
+    let mut local: Vec<_> = glb
+        .nodes()
+        .map(|node| node.transform().decomposed())
+        .collect();
+    for channel in animation.channels() {
+        let reader = channel.reader(|_| Some(blob));
+        let node = channel.target().node().index();
+        match reader.read_outputs()? {
+            gltf::animation::util::ReadOutputs::Translations(mut values) => {
+                local[node].0 = values.next()?
+            }
+            gltf::animation::util::ReadOutputs::Rotations(values) => {
+                local[node].1 = values.into_f32().next()?
+            }
+            gltf::animation::util::ReadOutputs::Scales(mut values) => {
+                local[node].2 = values.next()?
+            }
+            _ => {}
+        }
+    }
+    let local: Vec<_> = local
+        .into_iter()
+        .map(|(translation, rotation, scale)| {
+            gltf::scene::Transform::Decomposed {
+                translation,
+                rotation,
+                scale,
+            }
+            .matrix()
+        })
+        .collect();
+    let mut world = vec![identity(); local.len()];
+    fn walk(
+        node: gltf::Node<'_>,
+        parent: [[f32; 4]; 4],
+        local: &[[[f32; 4]; 4]],
+        world: &mut [[[f32; 4]; 4]],
+    ) {
+        let matrix = multiply(parent, local[node.index()]);
+        world[node.index()] = matrix;
+        for child in node.children() {
+            walk(child, matrix, local, world);
+        }
+    }
+    for node in glb.nodes().filter(|node| {
+        !glb.nodes()
+            .any(|p| p.children().any(|c| c.index() == node.index()))
+    }) {
+        walk(node, identity(), &local, &mut world);
+    }
+    let mut min = [f32::INFINITY; 3];
+    let mut max = [f32::NEG_INFINITY; 3];
+    let transform = |matrix: [[f32; 4]; 4], p: [f32; 3]| -> [f32; 3] {
+        std::array::from_fn(|axis| {
+            matrix[0][axis] * p[0]
+                + matrix[1][axis] * p[1]
+                + matrix[2][axis] * p[2]
+                + matrix[3][axis]
+        })
+    };
+    for node in glb.nodes() {
+        let Some(mesh) = node.mesh() else { continue };
+        let skin = node.skin().map(|skin| {
+            let inverse: Vec<_> = skin
+                .reader(|_| Some(blob))
+                .read_inverse_bind_matrices()
+                .map(Iterator::collect)
+                .unwrap_or_else(|| vec![identity(); skin.joints().len()]);
+            skin.joints()
+                .zip(inverse)
+                .map(|(joint, inverse)| multiply(world[joint.index()], inverse))
+                .collect::<Vec<_>>()
+        });
+        for primitive in mesh.primitives() {
+            let reader = primitive.reader(|_| Some(blob));
+            let positions: Vec<_> = reader.read_positions()?.collect();
+            let joints = reader
+                .read_joints(0)
+                .map(|v| v.into_u16().collect::<Vec<_>>());
+            let weights = reader
+                .read_weights(0)
+                .map(|v| v.into_f32().collect::<Vec<_>>());
+            for (i, p) in positions.into_iter().enumerate() {
+                let point =
+                    if let (Some(skin), Some(joints), Some(weights)) = (&skin, &joints, &weights) {
+                        let mut point = [0.; 3];
+                        for k in 0..4 {
+                            let v = transform(*skin.get(joints.get(i)?[k] as usize)?, p);
+                            for axis in 0..3 {
+                                point[axis] += v[axis] * weights.get(i)?[k];
+                            }
+                        }
+                        point
+                    } else {
+                        transform(world[node.index()], p)
+                    };
+                for axis in 0..3 {
+                    if !point[axis].is_finite() {
+                        return None;
+                    }
+                    min[axis] = min[axis].min(point[axis]);
+                    max[axis] = max[axis].max(point[axis]);
+                }
+            }
+        }
+    }
+    min.into_iter()
+        .chain(max)
+        .all(f32::is_finite)
+        .then_some((min, max))
+}
+/// Use the authored idle pose for a skinned body's fit and picking bounds.
+pub fn visual_bounds(info: &ModelInfo, model: &ModelDef) -> ([f32; 3], [f32; 3]) {
+    model
+        .animations
+        .as_ref()
+        .and_then(|a| a.idle.as_ref())
+        .and_then(|idle| info.clip_bounds.get(idle.clip()))
+        .copied()
+        .unwrap_or((info.min, info.max))
+}
+
 fn check_name(
     package: &str,
     file: &str,
@@ -469,8 +631,53 @@ fn validate_visual_model(
             &model.muzzle_node,
             &info.nodes,
         )?;
-        let x = info.min[0].abs().max(info.max[0].abs()) * model.scale;
-        let z = info.min[2].abs().max(info.max[2].abs()) * model.scale;
+        // A static far LOD has no clips. Animated LODs must honour the same mappings.
+        if (level == 0 || !info.clips.is_empty())
+            && let Some(animations) = &model.animations
+        {
+            for (action, clip) in [
+                ("idle", &animations.idle),
+                ("move", &animations.r#move),
+                ("attack", &animations.attack),
+                ("death", &animations.death),
+                ("work", &animations.work),
+                ("hit", &animations.hit),
+            ] {
+                let Some(clip) = clip else { continue };
+                check_name(
+                    package,
+                    file,
+                    &format!("model.animations.{action}.clip"),
+                    &Some(clip.clip().to_owned()),
+                    &info.clips,
+                )?;
+                if let Some(settings) = clip.settings() {
+                    check_name(
+                        package,
+                        file,
+                        "model.animations.hold",
+                        &settings.hold,
+                        &info.clips,
+                    )?;
+                    if settings.stride.is_some_and(|v| !v.is_finite() || v <= 0.0)
+                        || settings
+                            .fire_at
+                            .is_some_and(|v| !v.is_finite() || !(0.0..=1.0).contains(&v))
+                        || !settings.yaw_offset_deg.is_finite()
+                    {
+                        return Err(error(
+                            package,
+                            file,
+                            "model.animations",
+                            "stride must be positive; fire_at must be in 0..1; all timing and yaw values must be finite",
+                        ));
+                    }
+                }
+            }
+        }
+        let (min, max) = visual_bounds(info, model);
+        let x = min[0].abs().max(max[0].abs()) * model.scale;
+        let z = min[2].abs().max(max[2].abs()) * model.scale;
         let ratio = x.hypot(z) / radius;
         if !(0.5..=1.5).contains(&ratio) {
             return Err(error(
@@ -485,7 +692,7 @@ fn validate_visual_model(
         if ratio > 1.2 {
             warnings.push(format!("{package}/{file}: model.bounds: LOD {level} radius is {ratio:.3} times the footprint"));
         }
-        if (info.min[1] * model.scale).abs() > 0.05 {
+        if (min[1] * model.scale).abs() > 0.05 {
             return Err(error(
                 package,
                 file,

@@ -149,9 +149,20 @@ pub struct HealthTraceEntry {
     pub current: u64,
 }
 
+/// A presentation event. Sequence numbers let independent visual systems consume it once.
+#[derive(Debug, Clone)]
+pub struct VisualEvent {
+    pub sequence: u64,
+    pub tick: u32,
+    pub effect: turts_net_protocol::Effect,
+}
+
 /// A replica keeps coherent samples and replaces on-wire absolute records atomically.
 #[derive(Debug, Clone)]
 pub struct Replica {
+    /// Bounded visual events from committed live deltas only. Never replayed by snapshots.
+    pub visual_events: VecDeque<VisualEvent>,
+    next_visual_event: u64,
     pub tick_hz: u16,
     pub units: HashMap<u32, UnitReplica>,
     pub nodes: HashMap<NodeId, NodeState>,
@@ -212,6 +223,8 @@ impl Replica {
     pub fn with_config(tick_hz: u16, config: ReplicaConfig) -> Self {
         Self {
             tick_hz,
+            visual_events: VecDeque::new(),
+            next_visual_event: 0,
             units: HashMap::new(),
             nodes: HashMap::new(),
             economy: empty_economy(),
@@ -393,6 +406,7 @@ impl Replica {
         }
 
         self.commit(candidate, StoreUpdate::Replace(staged_store), now);
+        self.visual_events.clear();
         self.snapshot_tick = Some(snapshot.tick);
         self.resync = None;
         // The deltas that are ahead of the snapshot chain wait for their predecessor.
@@ -469,6 +483,24 @@ impl Replica {
             return Some(DeltaOutcome::ResyncRequested);
         };
         self.commit(candidate, StoreUpdate::Step(step), now);
+        for effect in &delta.records.effects {
+            self.next_visual_event += 1;
+            self.visual_events.push_back(VisualEvent {
+                sequence: self.next_visual_event,
+                tick: delta.tick,
+                effect: effect.clone(),
+            });
+        }
+        while self.visual_events.len() > 4096 {
+            self.visual_events.pop_front();
+        }
+        while self
+            .visual_events
+            .front()
+            .is_some_and(|e| e.tick.saturating_add(4) < delta.tick)
+        {
+            self.visual_events.pop_front();
+        }
         None
     }
 

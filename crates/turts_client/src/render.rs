@@ -412,6 +412,9 @@ pub fn sync_units(
     palette: Res<SlotMaterials>,
     mut shown: Query<(Entity, &PresentedUnit, &mut Transform)>,
     mut assets: Local<UnitAssets>,
+    visual_events: Option<Res<crate::animation::VisualEvents>>,
+    mut serial: Option<ResMut<crate::animation::BodySerial>>,
+    mut animations: Query<&mut crate::animation::UnitAnimation>,
 ) {
     let Some(acquired) = acquired else { return };
     let mut entities: HashMap<u32, Entity> = HashMap::new();
@@ -484,7 +487,30 @@ pub fn sync_units(
     }
     for (unit_id, entity) in entities {
         if !kept.contains(&unit_id) {
-            commands.entity(entity).despawn();
+            if visual_events
+                .as_ref()
+                .is_some_and(|e| e.destroyed.contains(&unit_id))
+                && let Ok(mut animation) = animations.get_mut(entity)
+            {
+                animation.dead = true;
+                animation.current = None;
+                let ground_y = shown.get(entity).map_or(0., |(_, _, t)| t.translation.y);
+                let body_serial = if let Some(serial) = serial.as_deref_mut() {
+                    serial.0 += 1;
+                    serial.0
+                } else {
+                    0
+                };
+                commands.entity(entity).remove::<PresentedUnit>().insert(
+                    crate::animation::VisualBody {
+                        age: 0.,
+                        ground_y,
+                        serial: body_serial,
+                    },
+                );
+            } else {
+                commands.entity(entity).despawn();
+            }
         }
     }
 }
@@ -508,17 +534,23 @@ impl Plugin for UnitRenderPlugin {
         crate::models::register_gpu_readiness(app);
         app.init_resource::<SlotMaterials>()
             .init_resource::<crate::models::ModelState>()
-            .init_resource::<crate::models::GraphicsSettings>();
+            .init_resource::<crate::models::GraphicsSettings>()
+            .init_resource::<crate::animation::AnimationLibrary>()
+            .init_resource::<crate::animation::VisualEvents>()
+            .init_resource::<crate::animation::BodySerial>();
         app.add_systems(
             Update,
             (
                 setup_scene,
                 sync_slot_materials,
+                crate::animation::collect_events,
                 sync_units,
                 sync_nodes,
                 crate::models::sync_models,
                 crate::models::quality_lighting,
                 crate::models::sync_ground_quality,
+                crate::animation::animate_units,
+                crate::animation::age_bodies,
             )
                 .chain()
                 .after(update_presented),

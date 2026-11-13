@@ -1,5 +1,5 @@
 (
- id: "skirmish", version: "0.2.0", kind: Game, engine_api: "^0.2.5", dependencies: {},
+ id: "skirmish", version: "0.2.0", kind: Game, engine_api: "^0.2.6", dependencies: {},
  exports: (
   units: ["units/base.ron", "units/barracks.ron", "units/worker.ron", "units/soldier.ron"],
   maps: ["maps/field.ron"],

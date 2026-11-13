@@ -417,7 +417,7 @@ fn model_fields_require_api_0_2_5_and_absent_fields_keep_old_defaults() {
     files.insert("assets/test.glb".into(), bytes(&doc, &blob));
     let manifest = String::from_utf8(files["manifest.ron"].clone())
         .unwrap()
-        .replace("^0.2.5", "^0.2.4");
+        .replace("^0.2.6", "^0.2.4");
     files.insert("manifest.ron".into(), manifest.into_bytes());
     let archive = PackageArchive::parse(&pack_files(&files).unwrap()).unwrap();
     let error = archive.visuals().unwrap_err().to_string();
@@ -425,4 +425,52 @@ fn model_fields_require_api_0_2_5_and_absent_fields_keep_old_defaults() {
         error.contains("model.scale") && error.contains("0.2.5"),
         "new field version refusal: {error}"
     );
+}
+
+#[test]
+fn an8_clip_names_are_checked_and_legacy_names_still_parse() {
+    let old: turts_mod_api::ModelAnimations =
+        ron::from_str(r#"(idle:Some("Idle"),move:Some("Walking_A"))"#).unwrap();
+    assert_eq!(old.idle.unwrap().clip(), "Idle");
+    let rich: turts_mod_api::ModelAnimations = ron::from_str(
+        r#"(idle:Some((clip:"Idle")),move:Some((clip:"Walking_A",stride:Some(0.5))))"#,
+    )
+    .unwrap();
+    assert_eq!(rich.r#move.unwrap().settings().unwrap().stride, Some(0.5));
+    let mut files = files();
+    let (doc, blob) = sample();
+    files.insert("assets/test.glb".into(), bytes(&doc, &blob));
+    let visual = String::from_utf8(files["visuals/soldier.ron"].clone())
+        .unwrap()
+        .replace(
+            "scale: 1.0",
+            r#"scale: 1.0, animations: Some((idle:Some((clip:"Missing"))))"#,
+        );
+    files.insert("visuals/soldier.ron".into(), visual.into_bytes());
+    let archive = PackageArchive::parse(&pack_files(&files).unwrap()).unwrap();
+    let error = validate_models(&archive).unwrap_err().to_string();
+    assert!(
+        error.contains("Missing") && error.contains("names:"),
+        "AN8: {error}"
+    );
+}
+
+#[test]
+fn animated_skirmish_idle_pose_keeps_the_original_footprint_fit() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../mods/skirmish");
+    let bytes = std::fs::read(root.join("assets/models/soldier_anim.glb")).unwrap();
+    let info = inspect_glb("skirmish", "soldier_anim.glb", &bytes).unwrap();
+    let visual: turts_mod_api::VisualDef =
+        ron::from_str(&std::fs::read_to_string(root.join("visuals/soldier.ron")).unwrap()).unwrap();
+    let model = visual.model.unwrap();
+    let (min, max) = turts_mod_runtime::models::visual_bounds(&info, &model);
+    assert!(
+        min[0]
+            .abs()
+            .max(max[0].abs())
+            .hypot(min[2].abs().max(max[2].abs()))
+            * model.scale
+            <= 0.55 * 1.5
+    );
+    assert!((min[1] * model.scale).abs() <= 0.05, "ground pivot {min:?}");
 }

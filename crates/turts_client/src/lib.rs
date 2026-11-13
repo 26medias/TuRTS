@@ -2,6 +2,7 @@
 
 pub mod acquire;
 pub mod actions;
+pub mod animation;
 pub mod audio;
 pub mod camera;
 pub(crate) mod client_preferences;

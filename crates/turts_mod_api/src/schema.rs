@@ -804,15 +804,51 @@ pub struct ModelLod {
     pub below_screen_height: f32,
 }
 
-/// Named clips reserved for stage 2. Stage 1 preserves these data and draws the bind pose.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+/// A named clip, with optional timing and movement metadata. Legacy strings still load.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum AnimationClipDef {
+    Name(String),
+    Settings(AnimationClipSettings),
+}
+impl AnimationClipDef {
+    pub fn clip(&self) -> &str {
+        match self {
+            Self::Name(name) => name,
+            Self::Settings(settings) => &settings.clip,
+        }
+    }
+    pub fn settings(&self) -> Option<&AnimationClipSettings> {
+        match self {
+            Self::Name(_) => None,
+            Self::Settings(settings) => Some(settings),
+        }
+    }
+}
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AnimationClipSettings {
+    pub clip: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stride: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fire_at: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hold: Option<String>,
+    #[serde(default)]
+    pub yaw_offset_deg: f32,
+}
+/// Client animation selection. Missing actions fall back to idle, then the bind pose.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 #[serde(default, deny_unknown_fields)]
 pub struct ModelAnimations {
-    pub idle: Option<String>,
-    pub r#move: Option<String>,
-    pub attack: Option<String>,
-    pub death: Option<String>,
-    pub work: Option<String>,
+    pub idle: Option<AnimationClipDef>,
+    pub r#move: Option<AnimationClipDef>,
+    pub attack: Option<AnimationClipDef>,
+    pub death: Option<AnimationClipDef>,
+    pub work: Option<AnimationClipDef>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hit: Option<AnimationClipDef>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

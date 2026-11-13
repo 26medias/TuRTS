@@ -16,3 +16,9 @@ Changes made to the models (script: `source/prep.py`, run with Blender in backgr
 scale to the game footprint, pivot at ground level, parts removed (unused weapons and shields),
 one material renamed or split to `team` for the team colour, the people baked to one pose for
 the static files. Downloaded 2026-11-13.
+
+Stage P2 adds `soldier_anim.glb` and `worker_anim.glb` from the same supplied CC0 set.
+The files retain their skeletons and authored clips. No model was regenerated.
+
+The animated Crossbowman crossbow prop uses half its supplied local scale.
+This keeps the carried weapon above ground in the Idle clip. The body scale remains 0.88.
