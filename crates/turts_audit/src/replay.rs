@@ -4192,11 +4192,6 @@ fn validate_pending_movement_dispatch(
                     position: bevy::math::Vec2::new(raw.pos.x, raw.pos.y),
                     radius,
                 });
-            } else if let Some(target) = &raw.move_target {
-                reserved.push(ReservedFootprint {
-                    position: bevy::math::Vec2::new(target.x, target.y),
-                    radius,
-                });
             } else {
                 reserved.push(ReservedFootprint {
                     position: bevy::math::Vec2::new(raw.pos.x, raw.pos.y),
@@ -4793,11 +4788,6 @@ fn validate_pending_movement_failure(
                 position: bevy::math::Vec2::new(raw.pos.x, raw.pos.y),
                 radius,
             });
-        } else if let Some(target) = &raw.move_target {
-            reserved.push(ReservedFootprint {
-                position: bevy::math::Vec2::new(target.x, target.y),
-                radius,
-            });
         } else {
             reserved.push(ReservedFootprint {
                 position: bevy::math::Vec2::new(raw.pos.x, raw.pos.y),
@@ -4931,6 +4921,7 @@ fn validate_pending_movement_failure(
             turts_sim::economy::views::RawPlainMovementProgressAudit {
                 unit_id,
                 progress: turts_sim::movement::PlainMoveProgress {
+                    arrival_yield: false,
                     original_point: request.point,
                     slot: actor_position,
                     pool_slots: Vec::new(),
@@ -11745,6 +11736,7 @@ mod tests {
         let actor_position = bevy::math::Vec2::new(7.0, 8.0);
         let target_position = bevy::math::Vec2::new(8.0, 8.0);
         let progress = turts_sim::movement::PlainMoveProgress {
+            arrival_yield: false,
             original_point: target_position,
             slot: actor_position,
             pool_slots: vec![actor_position],

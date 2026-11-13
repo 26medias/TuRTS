@@ -42,6 +42,14 @@ The first unit to reach a point keeps it. Later units stop nearby without overla
 Compare arrival progress within a tick when necessary. Unit ids cannot choose a visible result.
 For an exact simultaneous tie, use a symmetric stop without overlap. Do not choose a winner by id.
 Changing ids alone must not change the visible arrival result.
+Keep destination plans separate from physical occupancy. A moving unit cannot reserve an empty point.
+Process reachable arrivals by their remaining travel time. Use geometry for collision sums and projections.
+For equal arrivals near the same point, give no unit the centre. Stop their bodies on a symmetric ring.
+Keep unit-id sorting only for record output. The movement kernel remains shared with audit replay.
+Near the point, the later approach can clear space while the earlier body advances.
+This yield is temporary. If the earlier unit leaves, the other unit resumes its original point.
+An obstructed short approach uses the real movement kernel to compare travel through that obstacle.
+Neutral stop points must fit inside the map and clear existing buildings.
 
 ## Evidence required before integration
 
@@ -72,3 +80,8 @@ Match results and the opponent have one independent review with executed probes.
 It found a lost terminal delta and a map-derived seat count. Both are fixed.
 The terminal wire test checks the reliable channel. The API keeps its fixed two seats.
 The opponent test runs harvest, construction, training, fighting, and defeat through ordinary orders.
+
+The arrival change has one independent review with executed probes.
+Its close-arrival and illegal-stop findings are fixed. The permanent tests include those reproductions.
+They also check a blocked route, an existing holder, fractional arrivals, and a cancelled approach.
+The real-package command test exchanges ids and command order. The visible positions remain equal.

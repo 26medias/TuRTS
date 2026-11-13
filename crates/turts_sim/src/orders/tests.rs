@@ -280,6 +280,7 @@ fn accepted_legacy_gather_clears_stale_movement_state_and_identity() {
             follow_origin: None,
         },
         crate::movement::PlainMoveProgress {
+            arrival_yield: false,
             original_point: Vec2::new(30.0, 30.0),
             slot: Vec2::new(30.0, 30.0),
             pool_slots: vec![],
@@ -903,8 +904,8 @@ fn production_dispatch_reuses_the_spatial_index_for_many_small_envelopes() {
         .collect();
     assert_eq!(
         assigned.len(),
-        128,
-        "every singleton receives a unique slot"
+        1,
+        "separate destination plans cannot reserve the point before arrival"
     );
 
     dispatch_pending_movement(app.world_mut());
@@ -2662,6 +2663,7 @@ fn authored_plain_blocked_identity_is_acknowledged_while_legacy_multi_waits() {
     app.world_mut().entity_mut(first).insert((
         UnitOrders::default(),
         crate::movement::PlainMoveProgress {
+            arrival_yield: false,
             original_point: Vec2::new(20.0, 20.0),
             slot: Vec2::new(8.0, 8.0),
             pool_slots: Vec::new(),

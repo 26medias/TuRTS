@@ -735,7 +735,7 @@ fn resolved_move_point(
 /// a queued Hold, changing its effective reservation from the old target to its
 /// current body position.
 fn refresh_spread_reservation(world: &mut World, unit_id: u32, entity: bevy_ecs::entity::Entity) {
-    let Some((tick, position, radius, target)) = (|| {
+    let Some((tick, position, radius)) = (|| {
         let tick = world.resource::<crate::world::Tick>().0;
         let entity_ref = world.get_entity(entity).ok()?;
         let id = entity_ref.get::<crate::world::UnitId>()?;
@@ -748,8 +748,7 @@ fn refresh_spread_reservation(world: &mut World, unit_id: u32, entity: bevy_ecs:
             .resource::<crate::registry::UnitTypes>()
             .get(unit_type)?;
         entry.movement.as_ref()?;
-        let target = entity_ref.get::<MoveTarget>().map(|target| target.0);
-        Some((tick, position, entry.radius, target))
+        Some((tick, position, entry.radius))
     })() else {
         return;
     };
@@ -762,10 +761,7 @@ fn refresh_spread_reservation(world: &mut World, unit_id: u32, entity: bevy_ecs:
     if let Some(context) = &mut cache.context {
         context.reserve_unit(
             unit_id,
-            crate::movement::ReservedFootprint {
-                position: target.unwrap_or(position),
-                radius,
-            },
+            crate::movement::ReservedFootprint { position, radius },
         );
     }
 }
@@ -830,9 +826,7 @@ pub(super) fn dispatch_pending_movement(world: &mut World) {
                 reserved.push((
                     Some(id.0),
                     ReservedFootprint {
-                        position: entity
-                            .get::<MoveTarget>()
-                            .map_or(position.0, |target| target.0),
+                        position: position.0,
                         radius: unit.radius,
                     },
                 ));
@@ -1168,6 +1162,7 @@ pub(super) fn dispatch_pending_movement(world: &mut World) {
                                 clear_gather(world, member.id);
                                 world.entity_mut(entity).insert(
                                     crate::movement::PlainMoveProgress {
+                                        arrival_yield: false,
                                         original_point: request.point,
                                         slot: member.position,
                                         pool_slots: Vec::new(),
@@ -1197,11 +1192,11 @@ pub(super) fn dispatch_pending_movement(world: &mut World) {
             let order_by_unit = request.member_orders.clone();
             let assignment_by_unit: BTreeMap<_, _> = assignments.into_iter().collect();
             for (_, member) in &members {
-                if let Some(target) = assignment_by_unit.get(&member.id) {
+                if assignment_by_unit.contains_key(&member.id) {
                     spread_context.reserve_unit(
                         member.id,
                         ReservedFootprint {
-                            position: *target,
+                            position: member.position,
                             radius: member.radius,
                         },
                     );

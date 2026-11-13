@@ -21,6 +21,7 @@ fn stalled_plain_frame(pool_slots: Vec<Vec2>) -> MovementFrame {
                 target: Some(point),
                 progress: None,
                 plain_progress: Some(PlainMoveProgress {
+                    arrival_yield: false,
                     original_point: point,
                     slot: point,
                     pool_slots,
@@ -107,6 +108,7 @@ fn retained_plain_progress_does_not_add_a_post_step_arrival_snap() {
             target: Some(target),
             progress: None,
             plain_progress: Some(PlainMoveProgress {
+                arrival_yield: false,
                 original_point: target,
                 slot: target,
                 pool_slots: vec![],
@@ -143,7 +145,7 @@ fn retained_plain_progress_does_not_add_a_post_step_arrival_snap() {
 }
 
 #[test]
-fn plain_move_respects_reserved_spacing_before_using_a_zero_primary_point() {
+fn plain_move_uses_physical_clearance_instead_of_a_future_reservation_buffer() {
     let target = Vec2::new(0.5, 1.2);
     let frame = MovementFrame {
         bounds: Vec2::splat(2.0),
@@ -179,14 +181,10 @@ fn plain_move_respects_reserved_spacing_before_using_a_zero_primary_point() {
 
     let output = step_frame(&frame, 0.05);
 
-    assert_eq!(output[0].position, Vec2::new(0.5, 0.5));
-    assert_eq!(output[0].target, None);
-    let progress = output[0]
-        .plain_progress
-        .as_ref()
-        .expect("reserved spacing activates the plain fallback");
-    assert_eq!(progress.activity, MovementActivity::Blocked);
-    assert!(progress.pool_slots.is_empty());
+    assert_eq!(output[0].position, Vec2::new(0.5, 0.65));
+    assert_eq!(output[0].target, Some(target));
+    assert!(output[0].plain_progress.is_none());
+    assert!(output[0].position.distance(output[1].position) >= 1.0);
 }
 
 #[test]
@@ -206,6 +204,7 @@ fn blocked_plain_unit_does_not_escape_for_reservation_spacing_alone() {
                 target: None,
                 progress: None,
                 plain_progress: Some(PlainMoveProgress {
+                    arrival_yield: false,
                     original_point: Vec2::new(20.0, 10.0),
                     slot: position,
                     pool_slots: vec![],
@@ -259,6 +258,7 @@ fn plain_stall_claims_nearest_spare_and_never_requeues_a_used_slot() {
     second_frame.units[0].position = first.position;
     second_frame.units[0].target = first.target;
     second_frame.units[0].plain_progress = Some(PlainMoveProgress {
+        arrival_yield: false,
         stalled_ticks: 19,
         best_distance: first.position.distance(Vec2::new(13.0, 10.0)),
         ..first_progress
@@ -283,7 +283,7 @@ fn plain_move_without_a_spare_blocks_on_the_first_one_second_deadline() {
 }
 
 #[test]
-fn independent_plain_pools_cannot_claim_the_same_reserved_spare() {
+fn independent_plain_pools_can_approach_a_spare_before_either_body_arrives() {
     let shared_spare = Vec2::new(13.0, 15.0);
     let make_mover = |unit_id, position: Vec2, target: Vec2, blocker: Vec2| {
         vec![
@@ -297,6 +297,7 @@ fn independent_plain_pools_cannot_claim_the_same_reserved_spare() {
                 target: Some(target),
                 progress: None,
                 plain_progress: Some(PlainMoveProgress {
+                    arrival_yield: false,
                     original_point: target,
                     slot: target,
                     pool_slots: vec![shared_spare],
@@ -348,10 +349,10 @@ fn independent_plain_pools_cannot_claim_the_same_reserved_spare() {
     let output = step_frame(&frame, 0.05);
     assert_eq!(output[0].target, Some(shared_spare));
     assert_eq!(output[0].plain_progress.as_ref().unwrap().claim_count, 1);
-    assert_eq!(output[1].target, None);
+    assert_eq!(output[1].target, Some(shared_spare));
     assert_eq!(
         output[1].plain_progress.as_ref().unwrap().activity,
-        MovementActivity::Blocked
+        MovementActivity::Moving
     );
 }
 

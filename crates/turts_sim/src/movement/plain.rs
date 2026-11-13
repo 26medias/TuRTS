@@ -4,6 +4,7 @@ use bevy_ecs::prelude::*;
 use bevy_math::Vec2;
 use serde::{Deserialize, Serialize};
 
+use super::arrival::SpatialNeighbors;
 use super::frame::{MovementFrameOutput, MovementFrameUnit};
 use super::search::{MovementSearch, body_overlaps_position};
 use super::spread::{SpreadContext, nearest_angle_order, spread_destinations_with_context};
@@ -13,6 +14,9 @@ use super::{MovementActivity, MovementInput, PhysicalEscape, PlainGatherGoal, Sp
 /// The candidate pool belongs to this unit; it deliberately has no shared pool ID.
 #[derive(Component, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PlainMoveProgress {
+    /// Temporary clearance for an approaching earlier arrival. Reconsider until it arrives.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub arrival_yield: bool,
     pub original_point: Vec2,
     pub slot: Vec2,
     pub pool_slots: Vec<Vec2>,
@@ -65,7 +69,7 @@ pub(super) fn step_plain_progress(
     }
     let step_limit = speed * dt;
     let body_occupied = |point: Vec2| {
-        grid.within(points, point, unit.radius + max_radius)
+        grid.nearby(points, point, unit.radius + max_radius)
             .into_iter()
             .any(|other_index| {
                 other_index != index
@@ -118,7 +122,12 @@ pub(super) fn step_plain_progress(
     let distance = unit.position.distance(movement_target);
     if (distance <= step_limit || distance <= 0.025) && !occupied(movement_target) {
         output.position = movement_target;
-        output.target = None;
+        output.target = progress.arrival_yield.then_some(movement_target);
+        if progress.arrival_yield {
+            progress.activity = MovementActivity::Moving;
+            output.plain_progress = Some(progress);
+            return output;
+        }
         if progress.claim_count > 0 || progress.slot != progress.original_point {
             progress.activity = MovementActivity::Resting;
             output.plain_progress = Some(progress);
@@ -131,7 +140,7 @@ pub(super) fn step_plain_progress(
     let desired = movement_target - unit.position;
     let mut velocity = desired.try_normalize().unwrap_or(Vec2::ZERO) * step_limit;
     let mut separated = false;
-    for other_index in grid.within(
+    for other_index in grid.nearby(
         points,
         unit.position,
         unit.radius + max_radius + 0.05 + step_limit * 1.2,
@@ -175,7 +184,7 @@ pub(super) fn step_plain_progress(
     let mut was_projected = false;
     for _ in 0..8 {
         let mut projected = false;
-        for other_index in grid.within(
+        for other_index in grid.nearby(
             points,
             position,
             unit.radius + max_radius + step_limit * 1.2,
@@ -190,10 +199,8 @@ pub(super) fn step_plain_progress(
             if separation < limit {
                 let direction = if separation > 1.0e-8 {
                     offset / separation
-                } else if unit.unit_id < other.unit_id {
-                    Vec2::X
                 } else {
-                    -Vec2::X
+                    super::arrival::separation_direction(unit, other)
                 };
                 position += direction * (limit - separation);
                 projected = true;
@@ -221,6 +228,12 @@ pub(super) fn step_plain_progress(
     let next_distance = position.distance(movement_target);
     if position == movement_target && !occupied(movement_target) {
         output.position = position;
+        if progress.arrival_yield {
+            output.target = Some(movement_target);
+            progress.activity = MovementActivity::Moving;
+            output.plain_progress = Some(progress);
+            return output;
+        }
         output.target = None;
         if progress.claim_count > 0 || progress.slot != progress.original_point {
             progress.activity = MovementActivity::Resting;
@@ -297,6 +310,7 @@ pub(super) fn make_plain_progress(
     let slot = pool.slots.first().copied().unwrap_or(original_point);
     let pool_slots = pool.slots.into_iter().skip(1).take(6).collect();
     PlainMoveProgress {
+        arrival_yield: false,
         original_point,
         slot,
         pool_slots,

@@ -107,13 +107,13 @@ impl SpreadContext {
             .within(
                 &self.reserved_points,
                 candidate,
-                radius + self.max_reserved_radius + 0.1,
+                radius + self.max_reserved_radius,
             )
             .into_iter()
             .any(|index| {
                 self.reserved_units[index] != Some(excluded_unit)
                     && candidate.distance(self.reserved[index].position)
-                        < radius + self.reserved[index].radius + 0.1 - 1.0e-5
+                        < radius + self.reserved[index].radius - 1.0e-5
             })
     }
 }
@@ -274,7 +274,14 @@ pub fn spread_destinations_with_context(
         .collect();
 
     let primary = &slots[..members.len()];
-    let centroid = members
+    let mut spatial_members = members.iter().collect::<Vec<_>>();
+    spatial_members.sort_by(|a, b| {
+        a.position
+            .x
+            .total_cmp(&b.position.x)
+            .then(a.position.y.total_cmp(&b.position.y))
+    });
+    let centroid = spatial_members
         .iter()
         .fold(Vec2::ZERO, |sum, unit| sum + unit.position)
         / members.len() as f32;
@@ -284,7 +291,8 @@ pub fn spread_destinations_with_context(
     unit_order.sort_by(|a, b| {
         (b.position.dot(direction))
             .total_cmp(&a.position.dot(direction))
-            .then_with(|| a.id.cmp(&b.id))
+            .then_with(|| a.position.x.total_cmp(&b.position.x))
+            .then_with(|| a.position.y.total_cmp(&b.position.y))
     });
     let mut slot_order: Vec<_> = primary.iter().copied().enumerate().collect();
     slot_order.sort_by(|(_, a), (_, b)| {
@@ -302,7 +310,8 @@ pub fn spread_destinations_with_context(
             a.position
                 .dot(lateral)
                 .total_cmp(&b.position.dot(lateral))
-                .then_with(|| a.id.cmp(&b.id))
+                .then_with(|| a.position.x.total_cmp(&b.position.x))
+                .then_with(|| a.position.y.total_cmp(&b.position.y))
         });
         let mut destinations = slot_order[start..end].to_vec();
         destinations.sort_by(|(_, a), (_, b)| {

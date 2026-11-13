@@ -142,6 +142,7 @@ fn contact_correction_does_not_add_a_post_step_arrival_snap() {
         (
             None,
             Some(PlainMoveProgress {
+                arrival_yield: false,
                 original_point: target,
                 slot: target,
                 pool_slots: vec![],

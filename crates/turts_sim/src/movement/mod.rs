@@ -5,6 +5,7 @@ use bevy_math::Vec2;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+mod arrival;
 mod ecs;
 mod frame;
 mod plain;

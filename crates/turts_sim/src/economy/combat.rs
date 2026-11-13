@@ -2956,6 +2956,7 @@ mod tests {
         activity: crate::movement::MovementActivity,
     ) -> crate::movement::PlainMoveProgress {
         crate::movement::PlainMoveProgress {
+            arrival_yield: false,
             original_point: bevy_math::Vec2::new(30.0, 30.0),
             slot: bevy_math::Vec2::new(30.0, 30.0),
             pool_slots: Vec::new(),

@@ -3,6 +3,7 @@
 use bevy_math::Vec2;
 use std::collections::BTreeMap;
 
+use super::arrival::SpatialNeighbors;
 use super::plain::{PlainMoveProgress, make_plain_progress, step_plain_progress};
 use super::pool_index::{
     MovementPoolIndex, add_pool_slot_claim, refresh_nearby_pool_slot_clearances,
@@ -66,7 +67,7 @@ pub fn step_frame_preserving_resting(
     preserve_resting_units: &std::collections::BTreeSet<u32>,
 ) -> Vec<MovementFrameOutput> {
     let mut units = frame.units.clone();
-    units.sort_unstable_by_key(|unit| unit.unit_id);
+    super::arrival::prepare(&mut units, dt, frame.bounds);
     let mut points: Vec<_> = units
         .iter()
         .map(|unit| crate::grid::GridPoint {
@@ -93,10 +94,17 @@ pub fn step_frame_preserving_resting(
             });
             continue;
         }
+        if unit
+            .plain_progress
+            .as_ref()
+            .is_some_and(|progress| progress.arrival_yield)
+        {
+            continue;
+        }
         plain_reserved.push((
             Some(unit.unit_id),
             ReservedFootprint {
-                position: unit.target.unwrap_or(unit.position),
+                position: unit.position,
                 radius: unit.radius,
             },
         ));
@@ -177,11 +185,16 @@ pub fn step_frame_preserving_resting(
     for index in 0..units.len() {
         if index > 0 {
             let previous = &units[index - 1];
-            if previous.speed.is_some() {
+            if previous.speed.is_some()
+                && !previous
+                    .plain_progress
+                    .as_ref()
+                    .is_some_and(|progress| progress.arrival_yield)
+            {
                 plain_spread_context.reserve_unit(
                     previous.unit_id,
                     ReservedFootprint {
-                        position: previous.target.unwrap_or(previous.position),
+                        position: previous.position,
                         radius: previous.radius,
                     },
                 );
@@ -345,7 +358,7 @@ pub fn step_frame_preserving_resting(
                 continue;
             };
             let occupied = grid
-                .within(&points, unit.position, unit.radius + max_radius)
+                .nearby(&points, unit.position, unit.radius + max_radius)
                 .into_iter()
                 .any(|other_index| {
                     other_index != index
@@ -374,7 +387,7 @@ pub fn step_frame_preserving_resting(
                 continue;
             }
             let is_free = |slot: Vec2| {
-                grid.within(&points, slot, unit.radius + max_radius)
+                grid.nearby(&points, slot, unit.radius + max_radius)
                     .into_iter()
                     .all(|other_index| {
                         other_index == index
@@ -391,7 +404,7 @@ pub fn step_frame_preserving_resting(
                 target_claims.get(&target_key(target)).copied().unwrap_or(0) > 1
             });
             let target_is_blocked_by_stationary = unit.target.is_some_and(|target| {
-                grid.within(&points, target, unit.radius + max_radius)
+                grid.nearby(&points, target, unit.radius + max_radius)
                     .into_iter()
                     .any(|other_index| {
                         if other_index == index {
@@ -559,10 +572,14 @@ pub fn step_frame_preserving_resting(
             let target_occupied =
                 plain_spread_context.conflicts_with_reserved(target, unit.radius, unit.unit_id)
                     || grid
-                        .within(&points, target, unit.radius + max_radius)
+                        .nearby(&points, target, unit.radius + max_radius)
                         .into_iter()
                         .any(|other_index| {
                             other_index != index
+                                && !units[other_index]
+                                    .plain_progress
+                                    .as_ref()
+                                    .is_some_and(|progress| progress.arrival_yield)
                                 && target.distance(units[other_index].position)
                                     < unit.radius + units[other_index].radius - 1.0e-5
                         });
@@ -610,7 +627,7 @@ pub fn step_frame_preserving_resting(
             let desired = destination - unit.position;
             let step_limit = speed * dt;
             let destination_free = grid
-                .within(&points, destination, unit.radius + max_radius)
+                .nearby(&points, destination, unit.radius + max_radius)
                 .into_iter()
                 .all(|other_index| {
                     other_index == index
@@ -649,7 +666,7 @@ pub fn step_frame_preserving_resting(
             };
             let mut separated = false;
             let reach = unit.radius + max_radius + 0.05 + max_step;
-            for other_index in grid.within(&points, unit.position, reach) {
+            for other_index in grid.nearby(&points, unit.position, reach) {
                 if other_index == index {
                     continue;
                 }
@@ -686,7 +703,7 @@ pub fn step_frame_preserving_resting(
             for _ in 0..8 {
                 let mut projected = false;
                 for other_index in
-                    grid.within(&points, position, unit.radius + max_radius + max_step)
+                    grid.nearby(&points, position, unit.radius + max_radius + max_step)
                 {
                     if other_index == index {
                         continue;
@@ -698,10 +715,8 @@ pub fn step_frame_preserving_resting(
                     if separation < limit {
                         let direction = if separation > 1.0e-8 {
                             offset / separation
-                        } else if unit.unit_id < other.unit_id {
-                            Vec2::X
                         } else {
-                            -Vec2::X
+                            super::arrival::separation_direction(&unit, other)
                         };
                         position += direction * (limit - separation);
                         projected = true;
@@ -773,7 +788,7 @@ pub fn step_frame_preserving_resting(
         let distance = position.distance(movement_target);
         if distance <= speed * dt || distance <= 0.025 {
             let occupied = grid
-                .within(&points, movement_target, unit.radius + max_radius)
+                .nearby(&points, movement_target, unit.radius + max_radius)
                 .into_iter()
                 .any(|other_index| {
                     let other = &units[other_index];
@@ -813,7 +828,7 @@ pub fn step_frame_preserving_resting(
         let desired = movement_target - position;
         let mut velocity = desired.try_normalize().unwrap_or(Vec2::ZERO) * speed * dt;
         let reach = unit.radius + max_radius + 0.05 + max_step;
-        let neighbours = grid.within(&points, position, reach);
+        let neighbours = grid.nearby(&points, position, reach);
         let mut near_same_group = false;
         let mut separated = false;
         for other_index in neighbours {
@@ -877,7 +892,7 @@ pub fn step_frame_preserving_resting(
         let mut was_projected = false;
         for _ in 0..8 {
             let mut projected = false;
-            for other_index in grid.within(&points, position, broad_reach) {
+            for other_index in grid.nearby(&points, position, broad_reach) {
                 if other_index == index {
                     continue;
                 }
@@ -896,10 +911,8 @@ pub fn step_frame_preserving_resting(
                 if separation < limit {
                     let direction = if separation > 1.0e-8 {
                         offset / separation
-                    } else if unit.unit_id < other.unit_id {
-                        Vec2::X
                     } else {
-                        -Vec2::X
+                        super::arrival::separation_direction(&unit, other)
                     };
                     position += direction * (limit - separation);
                     projected = true;
@@ -927,7 +940,7 @@ pub fn step_frame_preserving_resting(
         let next_distance = position.distance(movement_target);
         if position == movement_target {
             let occupied = grid
-                .within(&points, movement_target, unit.radius + max_radius)
+                .nearby(&points, movement_target, unit.radius + max_radius)
                 .into_iter()
                 .any(|other_index| {
                     let other = &units[other_index];
@@ -995,7 +1008,7 @@ pub fn step_frame_preserving_resting(
                             let key = (progress.pool_id, slot.x.to_bits(), slot.y.to_bits());
                             key != old_slot_key
                                 && grid
-                                    .within(&points, slot, unit.radius + max_radius)
+                                    .nearby(&points, slot, unit.radius + max_radius)
                                     .into_iter()
                                     .all(|other_index| {
                                         other_index == index
@@ -1100,5 +1113,6 @@ pub fn step_frame_preserving_resting(
             output.progress = None;
         }
     }
+    outputs.sort_unstable_by_key(|output| output.unit_id);
     outputs
 }
