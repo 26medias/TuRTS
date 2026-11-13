@@ -53,3 +53,46 @@ Two setup attempts ended before a complete measurement. The first fixture lacked
 construction-site limit. The second rejected the supplied soldier at scale 1.0.
 The final run used the valid fixture and scale 0.88. No failed frame sample was discarded.
 The detailed models are test assets. They are not part of `mods/skirmish`.
+
+## Stage P2: animated crowds
+
+Date: 2026-11-13. Tested game source: `1a6febb7`. Same machine and browser as stage 1.
+The client uses shared bone poses for matching clip phases and blend weights.
+Each unit keeps its own movement clock, world transform, and skin.
+High quality updates every visible unit. The reference phase buckets are 1/30 s wide.
+
+| Scene | Initial units | Frame p50, ms | Frame p95, ms | Mean FPS | Wasm high-water, MiB |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| All walking | 200 | 16.70 | 16.80 | 57.81 | 148.9 |
+| All walking | 400 | 33.30 | 33.40 | 39.07 | 180.4 |
+| Mixed movement and idle; 20 scripted removals each second | 400 | 16.70 | 33.40 | 41.43 | 178.6 |
+| All walking | 1000 | 50.00 | 66.70 | 17.81 | 278.1 |
+
+All walking scenes kept every unit moving and visible throughout the samples.
+The mixed scene starts with 200 moving and 200 idle units. The fixed-tick server script
+removes one idle unit each tick for 200 ticks. Those real committed destruction events
+exercise the death presentation at 20 deaths each second. Bodies peak at the required limit of 64.
+These removals isolate presentation cost. They do not measure battle AI or targeting.
+
+The fixture soldiers move at 0.4 map units each second to keep walking through the sample.
+They use the supplied full skinned Crossbowman, with no LOD. The map stays plain.
+After five seconds of animated warm-up, each row records ten seconds of RAF presentation intervals.
+No compiler ran during the final timing run. All rows use high quality and the real WebGPU adapter.
+Every scene uses a fresh Chrome profile and `--alsa-output-device=null`.
+
+The 400-unit walking and mixed scenes exceed 30 FPS. The 1,000-unit stress row is 17.81 FPS.
+The 1,000-unit row is recorded, not accepted as a smooth gameplay target.
+No isolated frame-work timer, draw-call counter, or GPU-memory counter was available in this harness.
+
+The first method ran each skeleton independently. Its 400-unit sample reached 21.13 FPS.
+That run also had native compilers present. It is not an isolated comparison of algorithms.
+An intermediate shared-pose sample reached 37.08 FPS, but 31 units stopped at occupied destinations.
+That fixture failed its movement check. The final fixture puts goals beyond the whole formation.
+
+Evidence under `target/mc-evidence/`:
+- `p2-final-measurement/result.json`: raw frame intervals, adapter, memory, visible counts, and walking counts.
+- `codex-p2-final-measure/receipt.json`: completed; command 0, wrapper 0, source unchanged.
+- `p2-measurement/result.json`: initial cost failure.
+- `p2-shared-measurement/result.json`: rejected intermediate movement fixture.
+- `p2-stride.json`: stride measured from 241 samples of each walking clip.
+- `scripts/qa/animation/measure_stride.py`: the stride measurement tool.
