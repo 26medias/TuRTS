@@ -8,8 +8,8 @@ Work stays on `mp1/integration`. The user owns every merge and push of `main`.
 Open the browser. Build a base. Harvest resources. Train troops. Fight an enemy.
 The match ends with a clear win or loss. Restart from the result screen.
 
-The proposed first opponent is a computer enemy. The user can choose two humans instead.
-This choice is pending. It does not block construction, feedback, or match results.
+The default first opponent is a computer enemy. The user can choose two humans instead.
+This choice does not block construction, feedback, or match results.
 
 ## The shortest path
 
@@ -42,6 +42,13 @@ Do not add fault registries, receipt ledgers, rulings, or new gates.
 
 ## Current evidence
 
-At takeover, construction and match export still have empty implementations.
-No complete skirmish or readiness pass is claimed by this document.
-The integration checks and seven sound rows are running separately from this plan.
+Construction and match export still have empty implementations.
+A2b1 is pushed at `6ae97d9c`: all 17 checks and acceptance passed.
+The store and sound work is pushed at `5c757202`: all 24 checks, 433 browser helper tests,
+and seven headed sound rows passed. All seven rows reported zero resync requests.
+Acceptance passed after one stale Cedar version mutation was repaired and the remaining steps ran.
+The target prompt is local at `c113beb2`. All 578 client tests, Clippy, and the browser compile check passed.
+Its browser checks are in progress. No complete skirmish or readiness pass is claimed.
+
+Reuse `TuRTS-mp1-integration/target/mc-mp1-integration` for further builds.
+The finished branch caches were deleted. Keep `target/mc-evidence` and the source worktrees.

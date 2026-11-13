@@ -6,7 +6,7 @@ Use the existing API 0.2.4 and protocol 5 shapes. Keep unsupported features refu
 ## Construction
 
 The server accepts construction only from the owner of a declared constructor.
-The building must belong to that constructor's declared building list.
+The construction recipe must belong to that constructor's declared building list.
 Use `turts_rules::placement` for map bounds, build area, footprints, resource clearance, and queue capacity.
 The client uses the same rules for its preview. The server checks the request again.
 A refusal changes no balance, queue, unit, or site. It reveals no hidden blocker.
