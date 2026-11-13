@@ -28,9 +28,20 @@ const FORGE_MAP_TARGETS = [
     { slot: 0, seed: { x: 712, y: 416 }, source: "forge:turret at (17,12)" },
 ];
 
+// The first join shows the "Click to play" overlay until a gesture unlocks the audio
+// (crates/turts_client/src/client_shell.rs sync_focus_overlay, since 3d0cf2f); it blocks all
+// input. This point is on the plain guide background, left of the Controls list.
+const OVERLAY_CLICK = { x: 200, y: 600 };
+// The Controls list region (hud.ron guide page 5) and the wheel step that scrolls it.
+const CONTROLS_REGION = { x: 490, y: 94, width: 700, height: 584 };
+const WHEEL_STEP = 300;
+const MAX_WHEEL_STEPS = 40;
+
 async function drive(io, params) {
     const initial = Buffer.from(await io.screenshot());
     await saveScreenshot(io, "hud2-initial", initial);
+    await io.click(OVERLAY_CLICK.x, OVERLAY_CLICK.y, "left");
+    await io.wait(300);
 
     if (params.row === "HUD2-MUSTER" || params.package === "muster") {
         await io.key("F1");
@@ -42,11 +53,12 @@ async function drive(io, params) {
 
     // Inspect the Controls list with physical wheel input inside its authored region.
     // The initial screenshot precedes this literal UI target; the driver reads no semantics.
+    // Scroll in steps until two screenshots in a row show the same list region, so the list end
+    // is reached whatever the row count is (RUN130: one fixed wheel of 1200 stopped short).
     await io.move(850, 500);
-    await io.wheel(1200);
-    await io.wait(200);
-    await saveScreenshot(io, "hud2-controls-bottom", Buffer.from(await io.screenshot()));
-    await io.wheel(-1200);
+    const { tail, steps } = await scrollToEnd(io);
+    await saveScreenshot(io, "hud2-controls-bottom", tail);
+    await io.wheel(-WHEEL_STEP * steps);
     await io.wait(150);
 
     // The first join opens the mod guide. Close it through the physical F1 binding
@@ -216,6 +228,39 @@ async function drive(io, params) {
         method: "Forge lab/turret placements seed localized current-PNG slot-colour searches; foreign candidates come from current-PNG slot-colour components; no package, bridge, or debug reads",
     }, null, 2) + "\n"));
     await io.save("hud2-order-tooltip-targets.json", Buffer.from(JSON.stringify(tooltipEvidence, null, 2) + "\n"));
+}
+
+// The end is two wheel steps in a row that leave the list text unchanged (one late frame cannot stop
+// the scroll early). The guide is see-through: drones and belt items move behind the Controls list, and
+// a full-colour compare never settles once they move (RUN142 plants-B: 37 wheel steps, 24 s, and the
+// turret that the oracle needs empty had shells). The compare reads only the near-white text pixels:
+// the moving world is blue, brown or dark, and a scroll step moves thousands of text pixels.
+async function scrollToEnd(io) {
+    let previous = Buffer.from(await io.screenshot());
+    let still = 0;
+    for (let step = 1; step <= MAX_WHEEL_STEPS; step += 1) {
+        await io.wheel(WHEEL_STEP);
+        await io.wait(200);
+        const current = Buffer.from(await io.screenshot());
+        still = sameRegion(decodePng(previous), decodePng(current), CONTROLS_REGION) ? still + 1 : 0;
+        previous = current;
+        if (still === 2) return { tail: current, steps: step };
+    }
+    return { tail: previous, steps: MAX_WHEEL_STEPS };
+}
+
+const TEXT_MIN_CHANNEL = 200;
+const TEXT_PIXELS_ALLOWED_TO_DIFFER = 40;
+function sameRegion(left, right, rect) {
+    let different = 0;
+    for (let y = rect.y; y < rect.y + rect.height; y += 1) {
+        for (let x = rect.x; x < rect.x + rect.width; x += 1) {
+            const offset = (y * left.width + x) * 4;
+            const bright = (image) => Math.min(image.rgba[offset], image.rgba[offset + 1], image.rgba[offset + 2]) > TEXT_MIN_CHANNEL;
+            if (bright(left) !== bright(right)) different += 1;
+        }
+    }
+    return different <= TEXT_PIXELS_ALLOWED_TO_DIFFER;
 }
 
 async function saveScreenshot(io, label, screenshot) {

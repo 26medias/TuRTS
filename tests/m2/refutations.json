@@ -1106,8 +1106,8 @@
         "tests/browser"
       ]
     ],
-    "anchor": "        if buffer.len() >= limit {\n            buffer.clear();\n            self.buffer_overflows = self.buffer_overflows.saturating_add(1);\n            self.gap_seen = true;\n            if self.gap_anchor.is_none() {\n                self.gap_anchor = self.last_applied_tick.or(Some(delta.base_tick));\n            }\n            // Task 12 policy: discard the triggering batch as well as the old tail.\n            return;\n        }",
-    "replacement": "        if buffer.len() > limit {\n            self.buffer_overflows = self.buffer_overflows.saturating_add(1);\n            self.gap_seen = true;\n            if self.gap_anchor.is_none() {\n                self.gap_anchor = self.last_applied_tick.or(Some(delta.base_tick));\n            }\n            // Task 12 policy: discard the triggering batch as well as the old tail.\n            return;\n        }",
+    "anchor": "        if buffer.len() >= limit {\n            buffer.clear();\n            self.buffer_overflows = self.buffer_overflows.saturating_add(1);\n            self.gap_seen = true;\n            self.tail_lost = true;\n            if self.gap_anchor.is_none() {\n                self.gap_anchor = self.last_applied_tick.or(Some(delta.base_tick));\n            }\n            // Task 12 policy: discard the triggering batch as well as the old tail.\n            return;\n        }",
+    "replacement": "        if buffer.len() > limit {\n            self.buffer_overflows = self.buffer_overflows.saturating_add(1);\n            self.gap_seen = true;\n            self.tail_lost = true;\n            if self.gap_anchor.is_none() {\n                self.gap_anchor = self.last_applied_tick.or(Some(delta.base_tick));\n            }\n            // Task 12 policy: discard the triggering batch as well as the old tail.\n            return;\n        }",
     "plant_note": "MC task 21: the plant stays; the expected failure text is an assert of m2-oracle.js judgeRecovery."
   },
   {
@@ -1117,8 +1117,8 @@
     "plant_path": "crates/turts_client/src/ingest.rs",
     "replacements": [
       {
-        "anchor": "    if hooks.outstanding_request {\n        return Vec::new();\n    }\n    if replica\n        .resync_span_ticks()",
-        "replacement": "    if hooks.outstanding_request && counters.resync_requests_sent > 1 {\n        return Vec::new();\n    }\n    if replica\n        .resync_span_ticks()"
+        "anchor": "    if hooks.outstanding_request || !replica.in_resync() {\n        return Vec::new();\n    }\n    if replica\n        .resync_span_ticks()",
+        "replacement": "    if (hooks.outstanding_request && counters.resync_requests_sent > 1) || !replica.in_resync() {\n        return Vec::new();\n    }\n    if replica\n        .resync_span_ticks()"
       },
       {
         "anchor": "    if hooks.outstanding_request {\n        return None;\n    }\n    hooks.outstanding_request = true;",
@@ -1183,5 +1183,34 @@
       ]
     ],
     "plant_note": "MC task 21: the plant stays; the expected failure text is an assert of m2-oracle.js judgeRecovery."
+  },
+  {
+    "id": "E9-browser-convergence-owner-offset",
+    "kind": "browser",
+    "runtime": "browser",
+    "plant_path": "crates/turts_client/src/replica.rs",
+    "anchor": "                    samples: VecDeque::from([(snapshot.tick, unit.pos)]),",
+    "replacement": "                    samples: VecDeque::from([(snapshot.tick, if context.slot == 1 && unit.owner_slot.0 == 0 { turts_net_protocol::Pos { x: unit.pos.x + 0.5, y: unit.pos.y } } else { unit.pos })]),",
+    "command": [
+      "/bin/bash",
+      "-c",
+      "M2_CARGO_TARGET_DIR=\"$CARGO_TARGET_DIR\" bash scripts/m2-browser.sh --case E9-browser-base-public-convergence"
+    ],
+    "browser_case_ids": [
+      "E9-browser-base-public-convergence"
+    ],
+    "expected_selected": 1,
+    "expected_failure": "public world projections differ between owners at a shared coherent tick",
+    "restore_check": "planted source hash is restored and the same Chrome case returns PASS",
+    "pre_commands": [
+      [
+        "npm",
+        "ci",
+        "--offline",
+        "--prefix",
+        "tests/browser"
+      ]
+    ],
+    "plant_note": "MC repair of the hosted CI (review RUN142): the second owner window shifts the units of slot 0 by 0.5 in x at a snapshot. The two public projections then differ at every shared tick, and waitForSharedTick (m2-oracle.js) must end the wait with the named failure at its limit: about 10 s in the gate profile (180 s only when TURTS_M2_CONVERGENCE_LIMIT_MS is set)."
   }
 ]

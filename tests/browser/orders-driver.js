@@ -21,23 +21,27 @@ async function drive(io, params) {
         steps.actions.push({ label, call: "screenshot", window: 1 });
         return decodePng(bytes);
     }
-    async function click(label, point, button = "right") {
+    async function click(label, point, button = "right", settleMs = 150) {
         await io.click(point[0], point[1], button);
         steps.actions.push({ label, call: "click", point, button });
-        await io.wait(150);
+        if (settleMs > 0) await io.wait(settleMs);
     }
-    async function key(label, code, modifiers = [], options = {}) {
+    async function key(label, code, modifiers = [], options = {}, settleMs = 100) {
         await io.key(code, modifiers, options);
         steps.actions.push({ label, call: "key", code, modifiers, options });
-        await io.wait(100);
+        if (settleMs > 0) await io.wait(settleMs);
     }
-    async function minimap(label, world, button = "right") {
+    async function minimap(label, world, button = "right", settleMs = 150) {
         const point = screen(world);
         steps.actions.push({ label, call: "click", world, point, button, local: [world[0] / params.map_size[0], 1 - world[1] / params.map_size[1]] });
         await io.click(point[0], point[1], button);
-        await io.wait(150);
+        if (settleMs > 0) await io.wait(settleMs);
         return point;
     }
+    // The first join shows the "Click to play" overlay, which dims the scene until a gesture
+    // (client_shell.rs sync_focus_overlay, since 3d0cf2f). A keydown is the gesture
+    // (crates/turts_client_web/index.html:39-40); F9 has no binding. It is not an order step.
+    await io.key("F9");
     await io.wait(350);
     let image = await shot("before");
     if (row === "ORD5") {
@@ -109,7 +113,9 @@ async function driveOrd3(io, params, steps, minimap, shot, click, key) {
     await minimap("queue-start", queueBase);
     await io.wait(200);
     await key("overflow-shift-down", "ShiftLeft", [], { action: "down" });
-    for (let i = 0; i < 17; i += 1) await minimap(`queue-overflow-${i + 1}`, targets.queue[1 + (i % (targets.queue.length - 1))]);
+    // No wait between the 17 appends: each click already takes 0.3 to 0.9 s on a loaded host, and the
+    // active point must stay unreached until the last of them (RUN130: 17.8 s against a 15.9 s walk).
+    for (let i = 0; i < 17; i += 1) await minimap(`queue-overflow-${i + 1}`, targets.queue[1 + (i % (targets.queue.length - 1))], "right", 0);
     await key("overflow-shift-up", "ShiftLeft", [], { action: "up" });
     await shot("queue-overflow-final");
 
@@ -120,8 +126,12 @@ async function driveOrd3(io, params, steps, minimap, shot, click, key) {
         await key("gather-order", "KeyG");
         const node = oreNodePixel(image);
         steps.pixels.node = node;
-        await click("gather-node", [node.x, node.y], "left");
-        await key("gather-shift-down", "ShiftLeft", [], { action: "down" });
+        // The Gather order lasts about 5.3 s in the full ORD3 scene: 106 ticks at 20 Hz until node_depleted
+        // (crates/turts_pack/tests/mc_order_rows.rs:1088-1091, the full-scene test; 105 ticks in the browser
+        // run hud2-review-ord3-a). The held-Shift Append must reach the server inside that time, so no wait
+        // sits between the node click and it (RUN130: 2.05 s on a loaded host, with the waits).
+        await click("gather-node", [node.x, node.y], "left", 0);
+        await key("gather-shift-down", "ShiftLeft", [], { action: "down" }, 0);
         await minimap("append-behind-gather", targets.queue[0]);
         await key("gather-shift-up", "ShiftLeft", [], { action: "up" });
         await shot("gather-accepted");

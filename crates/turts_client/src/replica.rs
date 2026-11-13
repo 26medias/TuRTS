@@ -58,16 +58,57 @@ pub enum SnapshotOutcome {
 /// window, the trace grows in each fight, and each delta clones it (`Replica::candidate`).
 pub const HEALTH_TRACE_WINDOW: usize = 64;
 
+/// Why the replica asked for a `Snapshot`. Each reason has its own counter in the debug state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ResyncReason {
+    /// A delta did not extend the chain and the predecessor did not arrive within the grace
+    /// (or the delta was malformed, or there was no baseline).
+    ChainBreak,
+    /// A delta that extends the chain failed validation (`stage_delta`).
+    ValidationFailure,
+    /// The replica waited for a `Snapshot`, no request was out, and the buffered span reached
+    /// `IDLE_RESYNC_SPAN_TICKS` (`ingest.rs`).
+    IdleSpan,
+    /// A `Snapshot` answer could not be published (stale, invalid, or its tail is not coherent).
+    Successor,
+}
+
+/// The longest virtual-time step of one server frame: `Time<Virtual>` clamps a frame to this
+/// (`bevy_time-0.20.0/src/virt.rs:85`, `DEFAULT_MAX_DELTA`). Pinned for the running server app by
+/// `crates/turts_server/src/main.rs` (test `server_frame_clamp_and_timestep_are_pinned`).
+pub const MAX_FRAME_DELTA: std::time::Duration = std::time::Duration::from_millis(250);
+
+/// The most fixed ticks that one server frame can run, so the most deltas that one flush can hold.
+///
+/// Bevy adds the clamped frame delta to the overstep and runs one tick for each whole timestep
+/// (`bevy_time-0.20.0/src/fixed.rs:216-226, 243-255`). The overstep left by the frame before is
+/// below one timestep `T`, so a frame runs at most `1 + floor((MAX_FRAME_DELTA - 1 ns) / T)` ticks
+/// (5 at 20 Hz). `T` is `tick_duration(hz)` (`turts_net_lightyear`), rounded down to whole
+/// nanoseconds, which is why `hz / 4` is one too small at some rates (12, 48, 52, 68 Hz ...).
+/// The test `catchup_bound.rs` computes the bound with a real Bevy app.
+pub fn max_catchup_ticks(tick_hz: u16) -> u32 {
+    let tick_ns = turts_net_lightyear::tick_duration(tick_hz.max(1))
+        .as_nanos()
+        .max(1);
+    let most = 1 + (MAX_FRAME_DELTA.as_nanos() - 1) / tick_ns;
+    u32::try_from(most).unwrap_or(u32::MAX)
+}
+
 /// Technical cap on retained batches while waiting for a reliable snapshot.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ReplicaConfig {
     pub max_buffered_batches: usize,
+    /// Reorder grace, in ticks of observed progress. A delta that is ahead of the chain is held;
+    /// a resync is asked for only when `highest_observed_tick - last_applied_tick` is above this
+    /// value. 0 means no hold: the first chain break asks at once (the M1 rule).
+    pub reorder_grace_ticks: u32,
 }
 
 impl Default for ReplicaConfig {
     fn default() -> Self {
         Self {
             max_buffered_batches: 256,
+            reorder_grace_ticks: 0,
         }
     }
 }
@@ -142,10 +183,23 @@ pub struct Replica {
     pub highest_observed_tick: Option<u32>,
     /// Number of bounded-tail overflows, copied into ingest diagnostics.
     pub buffer_overflows: u32,
+    /// Deltas that are ahead of the chain, sorted by tick, no duplicate tick. Their predecessor
+    /// may still arrive. At most `max_buffered_batches` and, by the grace rule, at most
+    /// `reorder_grace_ticks` of them (see `apply_delta`).
+    reorder: Vec<WorldDelta>,
+    /// Deltas that were held and then applied when their predecessor arrived.
+    pub reorder_recovered: u32,
+    /// Deltas that were held (a delta counts once).
+    pub reorder_held: u32,
+    /// The reason of the resync that the last `apply_delta` or `apply_snapshot` started.
+    pub last_resync_reason: Option<ResyncReason>,
     context: Option<ReplicaContext>,
     config: ReplicaConfig,
     gap_anchor: Option<u32>,
     gap_seen: bool,
+    /// The recovery tail lost data (an overflow, or a hole older than the grace): a snapshot must
+    /// then cover the high-water tick, and the `ahead` hold is refused.
+    tail_lost: bool,
 }
 
 impl Replica {
@@ -177,12 +231,18 @@ impl Replica {
             resync: Some(Vec::new()),
             highest_observed_tick: None,
             buffer_overflows: 0,
+            reorder: Vec::new(),
+            reorder_recovered: 0,
+            reorder_held: 0,
+            last_resync_reason: None,
             context: None,
             config: ReplicaConfig {
                 max_buffered_batches: config.max_buffered_batches.max(1),
+                reorder_grace_ticks: config.reorder_grace_ticks,
             },
             gap_anchor: None,
             gap_seen: false,
+            tail_lost: false,
         }
     }
 
@@ -193,6 +253,16 @@ impl Replica {
 
     pub fn set_context(&mut self, context: ReplicaContext) {
         self.context = Some(context);
+    }
+
+    pub fn reorder_grace_ticks(&self) -> u32 {
+        self.config.reorder_grace_ticks
+    }
+
+    /// Set the reorder grace (ticks of observed progress). Live ingest sets
+    /// `max_catchup_ticks(tick_hz)` at `Welcome`.
+    pub fn set_reorder_grace_ticks(&mut self, ticks: u32) {
+        self.config.reorder_grace_ticks = ticks;
     }
 
     pub fn max_buffered_batches(&self) -> usize {
@@ -219,8 +289,14 @@ impl Replica {
         }
     }
 
+    /// Retained deltas: the recovery tail plus the held reorder window.
     pub fn buffered_batches(&self) -> usize {
-        self.resync.as_ref().map_or(0, Vec::len)
+        self.resync.as_ref().map_or(0, Vec::len) + self.reorder.len()
+    }
+
+    /// Deltas held for a late predecessor (not in resync).
+    pub fn held_deltas(&self) -> usize {
+        self.reorder.len()
     }
 
     pub fn resync_span_ticks(&self) -> Option<u32> {
@@ -247,6 +323,7 @@ impl Replica {
         let Some((mut candidate, mut staged_store)) = self.stage_snapshot(snapshot) else {
             self.mark_gap(snapshot.tick);
             self.resync.get_or_insert_with(Vec::new);
+            self.last_resync_reason = Some(ResyncReason::Successor);
             return SnapshotOutcome::Invalid;
         };
 
@@ -256,14 +333,22 @@ impl Replica {
         let original_retained = retained.clone();
         let mut replayed = 0;
         let mut remaining = Vec::new();
+        // Deltas that are ahead of the snapshot chain: the hole may close within the grace.
+        let mut ahead = Vec::new();
         let mut replay_failed = false;
         for delta in retained {
             if delta.tick <= candidate.tick {
                 continue;
             }
             if !self.chain_extends(candidate.tick, &delta) {
-                replay_failed = true;
-                remaining.push(delta);
+                if delta.base_tick > candidate.tick
+                    && delta.base_tick.checked_add(1) == Some(delta.tick)
+                {
+                    ahead.push(delta);
+                } else {
+                    replay_failed = true;
+                    remaining.push(delta);
+                }
                 continue;
             }
             // The store step applies to the staged store of the Snapshot, never to the live store.
@@ -277,6 +362,20 @@ impl Replica {
             staged_store.apply(step);
             replayed += 1;
         }
+        let high = self.highest_observed_tick.unwrap_or(candidate.tick);
+        // The deltas that are ahead may wait for their predecessor when the hole is inside the
+        // grace and the tail lost nothing. A hole in the retained tail that was already known as
+        // a loss does not block this: the snapshot covers it, and a new hole is judged here.
+        let ahead_ok = !ahead.is_empty()
+            && self.config.reorder_grace_ticks > 0
+            && !self.tail_lost
+            && ahead.len() <= self.config.max_buffered_batches
+            && high.saturating_sub(candidate.tick) <= self.config.reorder_grace_ticks;
+        if !ahead.is_empty() && !ahead_ok {
+            // The hole is older than the grace: the snapshot does not cover it.
+            replay_failed = true;
+            remaining.append(&mut ahead);
+        }
 
         // A recovery response is published only if its entire proposed tail is coherent. In
         // particular, do not expose a valid prefix while a later retained batch is invalid or
@@ -285,21 +384,35 @@ impl Replica {
         let uncovered_high_water = self
             .highest_observed_tick
             .is_some_and(|high| candidate.tick < high);
-        let unresolved_gap = self.gap_seen && uncovered_high_water;
+        let unresolved_gap = self.gap_seen && uncovered_high_water && !ahead_ok;
         if replay_failed || !remaining.is_empty() || unresolved_gap {
             self.resync = Some(original_retained);
             self.gap_seen = true;
+            self.last_resync_reason = Some(ResyncReason::Successor);
             return SnapshotOutcome::ResyncRequested { replayed: 0 };
         }
 
         self.commit(candidate, StoreUpdate::Replace(staged_store), now);
         self.snapshot_tick = Some(snapshot.tick);
         self.resync = None;
+        // The deltas that are ahead of the snapshot chain wait for their predecessor.
+        self.reorder_held = self.reorder_held.saturating_add(ahead.len() as u32);
+        self.reorder = ahead;
         self.gap_anchor = None;
         self.gap_seen = false;
+        self.tail_lost = false;
         SnapshotOutcome::Applied { replayed }
     }
 
+    /// Apply one delta of the unreliable, unordered `StateChannel`.
+    ///
+    /// The deltas of one server flush may arrive out of order (lightyear sends the fragments
+    /// first and the singles by ascending size; see `tests/spike.rs`, P8). A delta that is ahead
+    /// of the chain (`base_tick` above the last applied tick) is therefore held, and applied when
+    /// its predecessor arrives. A resync starts only when the observed progress
+    /// (`highest_observed_tick - last_applied_tick`) is above `reorder_grace_ticks`, so a truly
+    /// lost delta gives exactly one resync, at the grace. A duplicate or old delta is discarded.
+    /// Memory: at most `max_buffered_batches` held deltas, and a hold ends at the grace.
     pub fn apply_delta(&mut self, delta: &WorldDelta, now: Instant) -> DeltaOutcome {
         self.highest_observed_tick = Some(
             self.highest_observed_tick
@@ -316,26 +429,114 @@ impl Replica {
             return DeltaOutcome::Buffered;
         }
         let Some(tick) = self.last_applied_tick else {
-            self.mark_gap(delta.tick);
-            self.resync = Some(Vec::new());
-            self.buffer_delta(delta.clone());
+            self.start_resync(delta.clone(), ResyncReason::ChainBreak);
             return DeltaOutcome::ResyncRequested;
         };
-        if !self.chain_extends(tick, delta) {
-            self.mark_gap(delta.tick);
-            self.resync = Some(Vec::new());
-            self.buffer_delta(delta.clone());
-            return DeltaOutcome::ResyncRequested;
+        if self.chain_extends(tick, delta) {
+            if let Some(outcome) = self.apply_chained(delta, now) {
+                return outcome;
+            }
+            let outcome = self.drain_reorder(now);
+            if outcome != DeltaOutcome::Applied {
+                return outcome;
+            }
+            return self.check_grace();
         }
+        // Ahead of the chain: hold it while the grace lasts.
+        let ahead = delta.base_tick > tick && delta.base_tick.checked_add(1) == Some(delta.tick);
+        if ahead && self.config.reorder_grace_ticks > 0 {
+            if self.reorder.iter().any(|held| held.tick == delta.tick) {
+                return DeltaOutcome::Discarded;
+            }
+            if self.reorder.len() < self.config.max_buffered_batches {
+                self.reorder.push(delta.clone());
+                self.reorder.sort_by_key(|held| held.tick);
+                self.reorder_held = self.reorder_held.saturating_add(1);
+                return self.check_grace_buffered();
+            }
+        }
+        self.start_resync(delta.clone(), ResyncReason::ChainBreak);
+        DeltaOutcome::ResyncRequested
+    }
+
+    /// Stage and commit a delta that extends the chain. `None` when it applied; a resync outcome
+    /// when validation failed.
+    fn apply_chained(&mut self, delta: &WorldDelta, now: Instant) -> Option<DeltaOutcome> {
+        let tick = self.last_applied_tick?;
         let current = self.candidate_at(tick);
         let Some((candidate, step)) = self.stage_delta(&current, &self.store, delta) else {
-            self.mark_gap(delta.tick);
-            self.resync = Some(Vec::new());
-            self.buffer_delta(delta.clone());
-            return DeltaOutcome::ResyncRequested;
+            self.start_resync(delta.clone(), ResyncReason::ValidationFailure);
+            return Some(DeltaOutcome::ResyncRequested);
         };
         self.commit(candidate, StoreUpdate::Step(step), now);
+        None
+    }
+
+    /// Apply the held deltas that now extend the chain. Held deltas that are old are dropped.
+    fn drain_reorder(&mut self, now: Instant) -> DeltaOutcome {
+        loop {
+            let Some(applied) = self.last_applied_tick else {
+                return DeltaOutcome::Applied;
+            };
+            self.reorder.retain(|held| held.tick > applied);
+            let Some(index) = self
+                .reorder
+                .iter()
+                .position(|held| self.chain_extends(applied, held))
+            else {
+                return DeltaOutcome::Applied;
+            };
+            let held = self.reorder.remove(index);
+            if let Some(outcome) = self.apply_chained(&held, now) {
+                return outcome;
+            }
+            self.reorder_recovered = self.reorder_recovered.saturating_add(1);
+        }
+    }
+
+    /// After a hole closed: if held deltas remain beyond the grace, the next hole is a loss.
+    fn check_grace(&mut self) -> DeltaOutcome {
+        if self.grace_expired() {
+            return self.expire_hold();
+        }
         DeltaOutcome::Applied
+    }
+
+    fn check_grace_buffered(&mut self) -> DeltaOutcome {
+        if self.grace_expired() {
+            return self.expire_hold();
+        }
+        DeltaOutcome::Buffered
+    }
+
+    fn grace_expired(&self) -> bool {
+        let (Some(high), Some(applied)) = (self.highest_observed_tick, self.last_applied_tick)
+        else {
+            return false;
+        };
+        !self.reorder.is_empty() && high.saturating_sub(applied) > self.config.reorder_grace_ticks
+    }
+
+    /// The predecessor did not arrive within the grace: the held deltas go to the recovery tail.
+    fn expire_hold(&mut self) -> DeltaOutcome {
+        let mut held = std::mem::take(&mut self.reorder);
+        let first = held.remove(0);
+        self.start_resync(first, ResyncReason::ChainBreak);
+        for delta in held {
+            self.buffer_delta(delta);
+        }
+        DeltaOutcome::ResyncRequested
+    }
+
+    /// Enter resync. `delta` and the held deltas go to the bounded recovery tail.
+    fn start_resync(&mut self, delta: WorldDelta, reason: ResyncReason) {
+        self.mark_gap(delta.tick);
+        self.resync = Some(Vec::new());
+        self.last_resync_reason = Some(reason);
+        for held in std::mem::take(&mut self.reorder) {
+            self.buffer_delta(held);
+        }
+        self.buffer_delta(delta);
     }
 
     fn chain_extends(&self, current_tick: u32, delta: &WorldDelta) -> bool {
@@ -351,8 +552,17 @@ impl Replica {
         self.gap_seen = true;
     }
 
+    /// Keep a delta in the recovery tail (sorted, no duplicate tick, at most
+    /// `max_buffered_batches`).
+    ///
+    /// With a reorder grace, the tail keeps every component of the chain: a hole between two
+    /// components may be a late delta of the same flush. A component is dropped only when the
+    /// hole after it is older than the grace (`highest_observed - its last tick`): that is a loss,
+    /// and the snapshot must then cover the rest (`tail_lost`). With grace 0 (the M1 rule) only the
+    /// newest component stays.
     fn buffer_delta(&mut self, delta: WorldDelta) {
         let limit = self.config.max_buffered_batches;
+        let grace = self.config.reorder_grace_ticks;
         let buffer = self.resync.get_or_insert_with(Vec::new);
         if buffer.iter().any(|held| held.tick == delta.tick) {
             return;
@@ -361,6 +571,7 @@ impl Replica {
             buffer.clear();
             self.buffer_overflows = self.buffer_overflows.saturating_add(1);
             self.gap_seen = true;
+            self.tail_lost = true;
             if self.gap_anchor.is_none() {
                 self.gap_anchor = self.last_applied_tick.or(Some(delta.base_tick));
             }
@@ -387,18 +598,30 @@ impl Replica {
                 components.push(vec![held]);
             }
         }
-        if components.len() > 1 {
+        // The first component to keep: every earlier one has a hole after it that is a loss.
+        let keep_from = if grace == 0 {
+            components.len().saturating_sub(1)
+        } else {
+            let high = self.highest_observed_tick.unwrap_or(0);
+            (0..components.len().saturating_sub(1))
+                .rev()
+                .find(|&i| {
+                    let last = components[i].last().map_or(0, |d| d.tick);
+                    high.saturating_sub(last) > grace
+                })
+                .map_or(0, |i| i + 1)
+        };
+        if keep_from > 0 {
             self.gap_seen = true;
+            self.tail_lost = true;
             if self.gap_anchor.is_none() {
                 self.gap_anchor = components
                     .first()
                     .and_then(|component| component.first())
                     .map(|first| first.base_tick);
             }
-            *buffer = components.pop().unwrap_or_default();
-        } else {
-            *buffer = components.pop().unwrap_or_default();
         }
+        *buffer = components.into_iter().skip(keep_from).flatten().collect();
     }
 
     fn stage_snapshot(&self, snapshot: &Snapshot) -> Option<(Candidate, RecordStore)> {

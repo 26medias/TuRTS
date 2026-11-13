@@ -60,6 +60,7 @@ test("the T7 driver stops with a record, not a throw, when no unit is in view", 
     const fake = fakeIo(() => null);
     await drive(fake.io);
     assert.ok(fake.calls.includes("save:t7-driver-stop.json"));
+    assert.ok(fake.calls.includes("save:t7-find-last.png"), "the stop keeps the last screenshot for diagnosis");
     assert.deepEqual(fake.calls.filter((call) => call.startsWith("click")), ["click:left"], "only the overlay click");
 });
 

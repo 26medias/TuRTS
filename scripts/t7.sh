@@ -64,6 +64,26 @@ else
     mkdir -p "$OUT/pack"
     # `turts-pack` writes `<dir>.tar` next to the directory, so pack a copy: `mods/` stays clean.
     cp -r mods/acme "$OUT/pack/acme"
+    # T7_SCOUT_SPEED (units a second; unset keeps the speed of mods/acme): slow the scout in the packed
+    # copy only. On the software renderer one screenshot takes 2 to 3.4 s (local 4-core run: 2.1 s),
+    # and each screenshot is one frame record. At speed 6 the move lasts 6.8 s, so the browser records
+    # 3 frames between the start and the end (2 in hosted run 43174011989), and the oracle needs 3
+    # (MIN_MOVING_FRAMES, t7_oracle.rs). A slower scout gives a slow renderer more frames in the move.
+    # The oracle requirement and the unit logic stay as they are. The edit fails when the copy has no
+    # `speed: 6.0`, so it cannot be a silent no-op.
+    if [[ -n "${T7_SCOUT_SPEED:-}" ]]; then
+        python3 - "$OUT/pack/acme/units/scout.ron" "$T7_SCOUT_SPEED" <<'PYSPEED'
+import re, sys
+path, speed = sys.argv[1:]
+if not re.fullmatch(r"[0-9]+\.[0-9]+", speed):
+    sys.exit(f"T7_SCOUT_SPEED must look like 1.5, got {speed!r}")
+text = open(path).read()
+if text.count("speed: 6.0") != 1:
+    sys.exit(f"{path}: expected exactly one `speed: 6.0`")
+open(path, "w").write(text.replace("speed: 6.0", f"speed: {speed}"))
+PYSPEED
+        echo "T7_SCOUT_SPEED=$T7_SCOUT_SPEED (scout speed in the packed copy; mods/acme is unchanged)"
+    fi
     cargo run --release --quiet -p turts_pack --bin turts-pack -- "$OUT/pack/acme"
 fi
 if [[ -n "$PREPARE_DIR" ]]; then

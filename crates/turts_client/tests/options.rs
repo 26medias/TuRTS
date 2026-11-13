@@ -267,3 +267,18 @@ fn wants_help_finds_both_spellings() {
     assert!(wants_help(&args(&["--server", "x", "-h"])));
     assert!(!wants_help(&args(&["--server", "x"])));
 }
+
+#[test]
+fn reorder_grace_hook_is_read_from_the_command_line_and_defaults_to_none() {
+    let base = ["--server", "http://h:7000", "--ws", "ws://h:7001"];
+    assert_eq!(parse_cli(&args(&base)).unwrap().reorder_grace_ticks, None);
+    let mut with = base.to_vec();
+    with.extend(["--reorder-grace-ticks", "0"]);
+    assert_eq!(
+        parse_cli(&args(&with)).unwrap().reorder_grace_ticks,
+        Some(0)
+    );
+    let mut bad = base.to_vec();
+    bad.extend(["--reorder-grace-ticks", "x"]);
+    assert!(parse_cli(&args(&bad)).is_err());
+}

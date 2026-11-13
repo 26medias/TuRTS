@@ -11,7 +11,9 @@ use std::{path::PathBuf, sync::OnceLock};
 
 use bevy::platform::time::Instant;
 use turts_client::content::ClientContent;
-use turts_client::replica::{DeltaOutcome, Replica, ReplicaContext, SnapshotOutcome};
+use turts_client::replica::{
+    DeltaOutcome, Replica, ReplicaContext, SnapshotOutcome, max_catchup_ticks,
+};
 use turts_mod_runtime::{archive::PackageArchive, pack::pack_dir};
 use turts_net_protocol::{
     Activity, OrderSummary, OrderTarget, Pos, SlotId, Snapshot, UnitDelta, UnitId, UnitOrderRecord,
@@ -307,4 +309,88 @@ fn a_content_at_point_record_needs_a_finite_point() {
         delta.unit_orders = vec![with_point(bad)];
         assert_eq!(r.apply_delta(&delta, now), DeltaOutcome::ResyncRequested);
     }
+}
+
+/// The MC reorder window (`Replica::apply_delta`) on the protocol 5 wire: the order table is a
+/// merge in chain order (design 6.8), so a held delta must apply after its predecessor and never
+/// in arrival order. One server flush arrives in reverse (P8: lightyear sends the singles by
+/// ascending size). Tick 11 sets a new record for unit 1, tick 12 clears it, tick 13 changes unit 2.
+/// Arrival order 13, 12, 11 must give the chain result: no record for unit 1, and no resync.
+#[test]
+fn a_reordered_flush_merges_the_order_records_in_chain_order() {
+    let now = Instant::now();
+    let mut r = running();
+    r.set_reorder_grace_ticks(max_catchup_ticks(20));
+    let mut set = delta(11, 10);
+    set.unit_orders = vec![record(1, 8.0)];
+    let mut clear = delta(12, 11);
+    clear.records.orders_cleared = vec![UnitId(1)];
+    let mut change = delta(13, 12);
+    change.unit_orders = vec![record(2, 9.0)];
+    assert_eq!(r.apply_delta(&change, now), DeltaOutcome::Buffered);
+    assert_eq!(r.apply_delta(&clear, now), DeltaOutcome::Buffered);
+    assert_eq!(
+        r.unit_orders[&1].current.as_ref().unwrap().target,
+        OrderTarget::Point(pos(5.0, 1.0)),
+        "a held delta changes nothing before its predecessor arrives"
+    );
+    assert_eq!(r.apply_delta(&set, now), DeltaOutcome::Applied);
+    assert_eq!(r.last_applied_tick, Some(13));
+    assert_eq!(r.reorder_recovered, 2);
+    assert!(!r.in_resync(), "a reordered flush costs no resync");
+    assert!(
+        !r.unit_orders.contains_key(&1),
+        "tick 12 cleared the record that tick 11 set: chain order, not arrival order"
+    );
+    assert_eq!(
+        r.unit_orders[&2].current.as_ref().unwrap().target,
+        OrderTarget::Point(pos(9.0, 1.0))
+    );
+}
+
+/// A lost delta on the protocol 5 wire: the window holds the deltas that are ahead while the
+/// observed progress is at most the grace (5 ticks at 20 Hz), and the order table keeps the last
+/// chained state. The first delta beyond the grace asks for one resync; the `Snapshot` then gives
+/// the table.
+#[test]
+fn a_lost_delta_holds_the_order_records_up_to_the_grace_then_asks_once() {
+    let now = Instant::now();
+    let mut r = running();
+    let grace = max_catchup_ticks(20);
+    assert_eq!(grace, 5);
+    r.set_reorder_grace_ticks(grace);
+    // Tick 11 (it clears unit 1) is lost. Ticks 12 to 15 are ahead: 15 - 10 = 5 is the grace.
+    for tick in 12..=15 {
+        let mut ahead = delta(tick, tick - 1);
+        ahead.unit_orders = vec![record(2, tick as f32)];
+        assert_eq!(
+            r.apply_delta(&ahead, now),
+            DeltaOutcome::Buffered,
+            "tick {tick} is inside the grace"
+        );
+    }
+    assert!(!r.in_resync());
+    assert_eq!(r.last_applied_tick, Some(10));
+    assert!(
+        r.unit_orders.contains_key(&1),
+        "the chained table is unchanged"
+    );
+    assert_eq!(
+        r.unit_orders[&2].current.as_ref().unwrap().target,
+        OrderTarget::Point(pos(6.0, 1.0))
+    );
+    // Tick 16: 16 - 10 = 6 is above the grace, so the hold ends with one request.
+    assert_eq!(
+        r.apply_delta(&delta(16, 15), now),
+        DeltaOutcome::ResyncRequested
+    );
+    assert!(r.in_resync());
+    let mut answer = snapshot(16);
+    answer.unit_orders = vec![record(2, 15.0)];
+    assert_eq!(
+        r.apply_snapshot(&answer, now),
+        SnapshotOutcome::Applied { replayed: 0 }
+    );
+    assert!(!r.unit_orders.contains_key(&1));
+    assert_eq!(r.last_applied_tick, Some(16));
 }

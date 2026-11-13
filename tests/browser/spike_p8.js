@@ -6,6 +6,10 @@
 // and waits up to 20 s for window.spike_state === "welcomed". Exit 0 on "welcomed".
 // Otherwise (timeout or "rejected") it prints the console logs and exits 1.
 const { chromium } = require("playwright-core");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+const { silentEnv, SILENT_ARGS } = require("./harness/silent-chrome.js");
 
 const WAIT_MS = 20000;
 const POLL_MS = 100;
@@ -19,7 +23,8 @@ const POLL_MS = 100;
     const url = new URL(pageUrl);
     url.searchParams.set("ws", ws);
     const executablePath = process.env.CHROME_BIN || "/usr/bin/google-chrome";
-    const browser = await chromium.launch({ executablePath, headless: true });
+    const quiet = fs.mkdtempSync(path.join(os.tmpdir(), "turts-spike-p8-"));
+    const browser = await chromium.launch({ executablePath, headless: true, args: SILENT_ARGS, env: silentEnv(quiet) });
     const page = await browser.newPage();
     const logs = [];
     page.on("console", (m) => logs.push(m.type() + ": " + m.text()));

@@ -160,7 +160,7 @@ test("GM40 order-log opt-in forwards only the actual server log path and readonl
     assert.equal(params.capture_order_log, true);
     assert.equal(params.order_log_file, "server-order.log");
     assert.deepEqual(launcherServerArgv("false", "", "true"), [
-        "/fixture/target/release/turts_server", "<OUT>/server.ron",
+        "/fixture/target/release/turts_server", "<OUT>/server.ron", "--stats", "<OUT>/server-stats.json",
         "--tick-log", "<OUT>/server-tick.log", "--order-log", "<OUT>/server-order.log",
     ]);
 });
@@ -171,12 +171,12 @@ test("GM40 order-log opt-in rejects wrong row, wrong type, and missing scene che
     assert.throws(() => launchParams({ row: "GM40", capture_scene_checkpoints: false, capture_order_log: true }), /requires capture_scene_checkpoints=true/);
 });
 
-test("rows without the GM40 order-log opt-in preserve the exact previous server argv and params", () => {
+test("rows without the GM40 order-log opt-in preserve the exact previous server argv and params (every row now also starts the server with --stats, M2 of the rows6 re-check)", () => {
     const before = launchParams({ row: "CAM1", capture_scene_checkpoints: true, windows: 1 });
     const after = launchParams({ row: "CAM1", capture_scene_checkpoints: true, windows: 1, capture_order_log: false });
     assert.equal(after.bytes, before.bytes);
     assert.equal(Object.hasOwn(after.params, "order_log_file"), false);
-    assert.deepEqual(launcherServerArgv("false", ""), ["/fixture/target/release/turts_server", "<OUT>/server.ron", "--tick-log", "<OUT>/server-tick.log"]);
+    assert.deepEqual(launcherServerArgv("false", ""), ["/fixture/target/release/turts_server", "<OUT>/server.ron", "--stats", "<OUT>/server-stats.json", "--tick-log", "<OUT>/server-tick.log"]);
 });
 
 test("launcher retains a declared synthetic count in oracle params", () => {
@@ -242,8 +242,8 @@ test("the production params generator is byte-identical when synthetic_units is 
 
 test("the production synthetic argument helper forwards 4485 as exactly two argv elements", () => {
     assert.equal(launcherSyntheticUnits({ row: "VIS2", synthetic_units: 4485 }), "4485");
-    assert.deepEqual(launcherServerArgv("true", "4485"), ["/fixture/target/release/turts_server", "<OUT>/server.ron", "--synthetic-units", "4485"]);
-    assert.deepEqual(launcherServerArgv("false", ""), ["/fixture/target/release/turts_server", "<OUT>/server.ron", "--tick-log", "<OUT>/server-tick.log"]);
+    assert.deepEqual(launcherServerArgv("true", "4485"), ["/fixture/target/release/turts_server", "<OUT>/server.ron", "--stats", "<OUT>/server-stats.json", "--synthetic-units", "4485"]);
+    assert.deepEqual(launcherServerArgv("false", ""), ["/fixture/target/release/turts_server", "<OUT>/server.ron", "--stats", "<OUT>/server-stats.json", "--tick-log", "<OUT>/server-tick.log"]);
 });
 
 test("synthetic_units rejects booleans, non-integers, negatives, and overflow", () => {
@@ -254,7 +254,7 @@ test("synthetic_units rejects booleans, non-integers, negatives, and overflow", 
 
 test("synthetic_units accepts the full unsigned 32-bit integer endpoints", () => {
     assert.equal(launcherSyntheticUnits({ synthetic_units: 0 }), "0");
-    assert.deepEqual(launcherServerArgv("true", "0"), ["/fixture/target/release/turts_server", "<OUT>/server.ron", "--synthetic-units", "0", "--tick-log", "<OUT>/server-tick.log"]);
+    assert.deepEqual(launcherServerArgv("true", "0"), ["/fixture/target/release/turts_server", "<OUT>/server.ron", "--stats", "<OUT>/server-stats.json", "--synthetic-units", "0", "--tick-log", "<OUT>/server-tick.log"]);
     assert.equal(launcherSyntheticUnits({ synthetic_units: 4294967295 }), "4294967295");
 });
 

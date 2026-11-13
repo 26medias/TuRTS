@@ -4,7 +4,10 @@ use std::{collections::BTreeMap, path::PathBuf, sync::OnceLock};
 
 use bevy::platform::time::Instant;
 use turts_client::content::ClientContent;
-use turts_client::replica::{DeltaOutcome, Replica, ReplicaContext, SnapshotOutcome};
+use turts_client::replica::{
+    DeltaOutcome, Replica, ReplicaConfig, ReplicaContext, ResyncReason, SnapshotOutcome,
+    max_catchup_ticks,
+};
 use turts_mod_runtime::{archive::PackageArchive, pack::pack_dir};
 use turts_net_protocol::{Pos, SlotId, Snapshot, UnitDelta, UnitId, UnitSnapshot, WorldDelta};
 
@@ -74,6 +77,19 @@ fn delta(tick: u32, base_tick: u32) -> WorldDelta {
 }
 
 fn replica() -> Replica {
+    replica_with(ReplicaConfig::default())
+}
+
+/// A replica as live ingest builds it: the reorder grace is the catch-up limit of the server
+/// (5 ticks at 20 Hz).
+fn graced_replica(max_buffered_batches: usize) -> Replica {
+    replica_with(ReplicaConfig {
+        max_buffered_batches,
+        reorder_grace_ticks: max_catchup_ticks(20),
+    })
+}
+
+fn replica_with(config: ReplicaConfig) -> Replica {
     static CONTENT: OnceLock<ClientContent> = OnceLock::new();
     let content = CONTENT
         .get_or_init(|| {
@@ -83,7 +99,7 @@ fn replica() -> Replica {
             ClientContent::from_archives(&[archive]).expect("resolve base")
         })
         .clone();
-    let mut replica = Replica::new(20);
+    let mut replica = Replica::with_config(20, config);
     replica.set_context(ReplicaContext::new(content, 0));
     replica
 }
@@ -177,12 +193,15 @@ fn t8_broken_chain_during_replay_starts_one_new_resync() {
 /// held, but arrives 0 or 2 ticks late; answer snapshots are held 0 or 3 ticks.
 /// Ingest order per tick: release held snapshots, then arriving snapshots, then the delta.
 fn run_model(hold: u32, welcome_lag: u32) -> (u32, Replica) {
+    run_model_with(hold, welcome_lag, replica())
+}
+
+fn run_model_with(hold: u32, welcome_lag: u32, mut r: Replica) -> (u32, Replica) {
     const W: u32 = 100;
     const END: u32 = 300;
     const RTT: u32 = 1;
     let drops = [110, 190];
     let now = Instant::now();
-    let mut r = replica();
     let mut held: Vec<(u32, u32)> = Vec::new();
     let mut requests = 0;
     let mut snaps: BTreeMap<u32, (u32, bool)> = BTreeMap::new();
@@ -232,6 +251,22 @@ fn t8_model_scenarios_match_python_model() {
     }
 }
 
+/// T8 keeps its meaning with the reorder grace: each loss gives exactly one request, now at the
+/// grace (5 ticks after the hole), and the replica converges on the final tick.
+#[test]
+fn t8_model_with_reorder_grace_still_gives_one_request_per_loss() {
+    for hold in [0, 3] {
+        for welcome_lag in [0, 2] {
+            let (requests, r) = run_model_with(hold, welcome_lag, graced_replica(256));
+            let label = format!("grace, hold {hold}, welcome late by {welcome_lag}");
+            assert_eq!(requests, 2, "{label}");
+            assert_eq!(r.last_applied_tick, Some(299), "{label}");
+            assert!(!r.in_resync(), "{label}");
+            assert_eq!(r.held_deltas(), 0, "{label}");
+        }
+    }
+}
+
 #[test]
 fn delta_with_unknown_unit_requests_resync() {
     let now = Instant::now();
@@ -276,4 +311,339 @@ fn delta_with_unknown_unit_requests_resync() {
         DeltaOutcome::Buffered,
         "one request only"
     );
+}
+
+// ---- Reorder window (R1): a delta that is ahead of the chain is held for a bounded grace ----
+
+fn at_snapshot_10(max_buffered_batches: usize) -> Replica {
+    let mut r = graced_replica(max_buffered_batches);
+    assert_eq!(
+        r.apply_snapshot(&snapshot(10), Instant::now()),
+        SnapshotOutcome::Applied { replayed: 0 }
+    );
+    r
+}
+
+#[test]
+fn reorder_grace_is_5_ticks_at_20_hz() {
+    // The bound at every rate is computed from a real Bevy app in `catchup_bound.rs`.
+    assert_eq!(max_catchup_ticks(20), 5);
+}
+
+#[test]
+fn reorder_probe_a_fresh_replica_gets_13_11_12_then_snapshot_10_with_no_request() {
+    let now = Instant::now();
+    let mut r = graced_replica(256);
+    for (tick, base) in [(13, 12), (11, 10), (12, 11)] {
+        assert_eq!(
+            r.apply_delta(&delta(tick, base), now),
+            DeltaOutcome::Buffered,
+            "delta {tick}"
+        );
+    }
+    assert_eq!(
+        buffered_ticks(&r),
+        vec![11, 12, 13],
+        "the tail keeps the reordered deltas"
+    );
+    assert_eq!(
+        r.apply_snapshot(&snapshot(10), now),
+        SnapshotOutcome::Applied { replayed: 3 }
+    );
+    assert_eq!(r.last_applied_tick, Some(13));
+    assert!(!r.in_resync());
+    assert_eq!(r.last_resync_reason, None);
+}
+
+#[test]
+fn reorder_probe_b_a_burst_while_waiting_for_the_answer_costs_no_second_request() {
+    let now = Instant::now();
+    let mut r = at_snapshot_10(256);
+    // 11 is lost; the request starts at delta 16.
+    for tick in 12..=15 {
+        assert_eq!(
+            r.apply_delta(&delta(tick, tick - 1), now),
+            DeltaOutcome::Buffered
+        );
+    }
+    assert_eq!(
+        r.apply_delta(&delta(16, 15), now),
+        DeltaOutcome::ResyncRequested
+    );
+    // One reordered burst arrives while the replica waits for the answer.
+    for tick in [19, 21, 17, 18, 20] {
+        assert_eq!(
+            r.apply_delta(&delta(tick, tick - 1), now),
+            DeltaOutcome::Buffered,
+            "delta {tick}"
+        );
+    }
+    assert_eq!(buffered_ticks(&r), (12..=21).collect::<Vec<u32>>());
+    assert_eq!(
+        r.apply_snapshot(&snapshot(11), now),
+        SnapshotOutcome::Applied { replayed: 10 }
+    );
+    assert_eq!(r.last_applied_tick, Some(21));
+}
+
+#[test]
+fn reorder_snapshot_answer_before_the_end_of_a_burst_holds_the_ahead_deltas() {
+    let now = Instant::now();
+    let mut r = at_snapshot_10(256);
+    for tick in 12..=15 {
+        r.apply_delta(&delta(tick, tick - 1), now);
+    }
+    assert_eq!(
+        r.apply_delta(&delta(16, 15), now),
+        DeltaOutcome::ResyncRequested
+    );
+    // 17 has not arrived; 18 to 20 have. The answer (tick 16) leaves a hole inside the grace.
+    for tick in [19, 20, 18] {
+        assert_eq!(
+            r.apply_delta(&delta(tick, tick - 1), now),
+            DeltaOutcome::Buffered
+        );
+    }
+    assert_eq!(
+        r.apply_snapshot(&snapshot(11), now),
+        SnapshotOutcome::Applied { replayed: 5 }
+    );
+    assert_eq!(r.last_applied_tick, Some(16));
+    assert_eq!(r.held_deltas(), 3);
+    assert_eq!(r.apply_delta(&delta(17, 16), now), DeltaOutcome::Applied);
+    assert_eq!(r.last_applied_tick, Some(20));
+    assert!(!r.in_resync());
+}
+
+#[test]
+fn reorder_tail_drops_a_hole_older_than_the_grace() {
+    // A real loss inside the tail: 15 never arrives. The older component expires at the grace.
+    let now = Instant::now();
+    let mut r = at_snapshot_10(256);
+    for tick in 12..=15 {
+        r.apply_delta(&delta(tick, tick - 1), now);
+    }
+    assert_eq!(
+        r.apply_delta(&delta(16, 15), now),
+        DeltaOutcome::ResyncRequested
+    );
+    for tick in 18..=23 {
+        assert_eq!(
+            r.apply_delta(&delta(tick, tick - 1), now),
+            DeltaOutcome::Buffered
+        );
+    }
+    assert_eq!(
+        buffered_ticks(&r),
+        vec![18, 19, 20, 21, 22, 23],
+        "the old component is gone"
+    );
+    // The answer predates the hole at 17: it cannot be published.
+    assert_eq!(
+        r.apply_snapshot(&snapshot(11), now),
+        SnapshotOutcome::ResyncRequested { replayed: 0 }
+    );
+    assert_eq!(r.last_resync_reason, Some(ResyncReason::Successor));
+}
+
+#[test]
+fn reorder_pair_12_then_11_applies_both_with_no_request() {
+    let now = Instant::now();
+    let mut r = at_snapshot_10(256);
+    assert_eq!(r.apply_delta(&delta(12, 11), now), DeltaOutcome::Buffered);
+    assert_eq!(r.last_applied_tick, Some(10));
+    assert_eq!(r.apply_delta(&delta(11, 10), now), DeltaOutcome::Applied);
+    assert_eq!(r.last_applied_tick, Some(12));
+    assert!(!r.in_resync());
+    assert_eq!(r.held_deltas(), 0);
+    assert_eq!((r.reorder_held, r.reorder_recovered), (1, 1));
+    assert_eq!(r.last_resync_reason, None);
+    let ticks: Vec<u32> = r.units[&1].samples.iter().map(|&(t, _)| t).collect();
+    assert_eq!(
+        ticks,
+        vec![10, 11, 12],
+        "samples stay ascending and consecutive"
+    );
+    assert_eq!(
+        r.sample(1, 12.0).expect("unit").pos,
+        Pos { x: 12.0, y: 0.0 }
+    );
+}
+
+#[test]
+fn reorder_three_out_of_order_13_11_12_apply_all() {
+    let now = Instant::now();
+    let mut r = at_snapshot_10(256);
+    assert_eq!(r.apply_delta(&delta(13, 12), now), DeltaOutcome::Buffered);
+    assert_eq!(r.apply_delta(&delta(11, 10), now), DeltaOutcome::Applied);
+    assert_eq!(r.last_applied_tick, Some(11));
+    assert_eq!(r.held_deltas(), 1);
+    assert_eq!(r.apply_delta(&delta(12, 11), now), DeltaOutcome::Applied);
+    assert_eq!(r.last_applied_tick, Some(13));
+    assert!(!r.in_resync());
+    assert_eq!(r.held_deltas(), 0);
+}
+
+#[test]
+fn reorder_a_full_catchup_flush_in_reverse_needs_no_request() {
+    // The worst case of one flush: 5 deltas, the newest first.
+    let now = Instant::now();
+    let mut r = at_snapshot_10(256);
+    for tick in (11..=15).rev().take(4) {
+        assert_eq!(
+            r.apply_delta(&delta(tick, tick - 1), now),
+            DeltaOutcome::Buffered
+        );
+    }
+    assert_eq!(r.apply_delta(&delta(11, 10), now), DeltaOutcome::Applied);
+    assert_eq!(r.last_applied_tick, Some(15));
+    assert!(!r.in_resync());
+    assert_eq!(r.last_resync_reason, None);
+}
+
+#[test]
+fn reorder_lost_predecessor_gives_exactly_one_request_at_the_grace() {
+    let now = Instant::now();
+    let mut r = at_snapshot_10(256);
+    let grace = r.reorder_grace_ticks();
+    assert_eq!(grace, 5);
+    // 11 is lost. 12 to 15 are held (the span from 10 is 2 to 5: not above the grace).
+    for tick in 12..=15 {
+        assert_eq!(
+            r.apply_delta(&delta(tick, tick - 1), now),
+            DeltaOutcome::Buffered,
+            "delta {tick}"
+        );
+        assert!(!r.in_resync(), "delta {tick}");
+    }
+    assert_eq!(r.held_deltas(), 4);
+    // 16 makes the span 6, above the grace: one request.
+    assert_eq!(
+        r.apply_delta(&delta(16, 15), now),
+        DeltaOutcome::ResyncRequested
+    );
+    assert_eq!(r.last_resync_reason, Some(ResyncReason::ChainBreak));
+    assert!(r.in_resync());
+    assert_eq!(r.held_deltas(), 0);
+    assert_eq!(buffered_ticks(&r), vec![12, 13, 14, 15, 16]);
+    // No second request while in resync; the tail replays on the answer.
+    assert_eq!(r.apply_delta(&delta(17, 16), now), DeltaOutcome::Buffered);
+    assert_eq!(r.last_applied_tick, Some(10), "the display stays coherent");
+    assert_eq!(
+        r.apply_snapshot(&snapshot(11), now),
+        SnapshotOutcome::Applied { replayed: 6 }
+    );
+    assert_eq!(r.last_applied_tick, Some(17));
+}
+
+#[test]
+fn reorder_duplicate_delta_is_ignored() {
+    let now = Instant::now();
+    let mut r = at_snapshot_10(256);
+    assert_eq!(r.apply_delta(&delta(12, 11), now), DeltaOutcome::Buffered);
+    assert_eq!(r.apply_delta(&delta(12, 11), now), DeltaOutcome::Discarded);
+    assert_eq!(r.held_deltas(), 1);
+    assert_eq!(r.apply_delta(&delta(11, 10), now), DeltaOutcome::Applied);
+    assert_eq!(r.apply_delta(&delta(11, 10), now), DeltaOutcome::Discarded);
+    assert_eq!(r.apply_delta(&delta(12, 11), now), DeltaOutcome::Discarded);
+    assert_eq!(r.last_applied_tick, Some(12));
+    assert_eq!(r.reorder_recovered, 1);
+}
+
+#[test]
+fn reorder_across_a_snapshot_boundary_closes_the_hole() {
+    let now = Instant::now();
+    // Welcome: the replica waits for the first snapshot. Delta 12 arrives before delta 11 and
+    // before the snapshot of tick 10.
+    let mut r = graced_replica(256);
+    assert_eq!(r.apply_delta(&delta(12, 11), now), DeltaOutcome::Buffered);
+    assert_eq!(
+        r.apply_snapshot(&snapshot(10), now),
+        SnapshotOutcome::Applied { replayed: 0 },
+        "the hole is inside the grace: the snapshot is published"
+    );
+    assert!(!r.in_resync());
+    assert_eq!(r.held_deltas(), 1);
+    assert_eq!(r.apply_delta(&delta(11, 10), now), DeltaOutcome::Applied);
+    assert_eq!(r.last_applied_tick, Some(12));
+    assert_eq!(r.held_deltas(), 0);
+}
+
+#[test]
+fn reorder_snapshot_with_a_hole_older_than_the_grace_asks_for_a_successor() {
+    let now = Instant::now();
+    let mut r = graced_replica(256);
+    assert_eq!(r.apply_delta(&delta(18, 17), now), DeltaOutcome::Buffered);
+    assert_eq!(
+        r.apply_snapshot(&snapshot(10), now),
+        SnapshotOutcome::ResyncRequested { replayed: 0 }
+    );
+    assert_eq!(r.last_resync_reason, Some(ResyncReason::Successor));
+    assert!(r.in_resync());
+}
+
+#[test]
+fn reorder_buffer_is_bounded() {
+    let now = Instant::now();
+    // The configured cap (3) is below the grace (5): the 4th held delta is an overflow.
+    let mut r = at_snapshot_10(3);
+    for tick in 12..=14 {
+        assert_eq!(
+            r.apply_delta(&delta(tick, tick - 1), now),
+            DeltaOutcome::Buffered
+        );
+        assert!(r.buffered_batches() <= 3);
+    }
+    assert_eq!(
+        r.apply_delta(&delta(15, 14), now),
+        DeltaOutcome::ResyncRequested
+    );
+    assert!(r.buffered_batches() <= 3, "{}", r.buffered_batches());
+    // With a large cap, the grace bounds the hold: at most `grace` held deltas ever.
+    let mut r = at_snapshot_10(256);
+    let mut most = 0;
+    for tick in 12..=40 {
+        r.apply_delta(&delta(tick, tick - 1), now);
+        most = most.max(r.held_deltas());
+    }
+    assert!(most <= 5, "held at most {most}");
+}
+
+#[test]
+fn reorder_grace_zero_keeps_the_m1_rule() {
+    let now = Instant::now();
+    let mut r = replica();
+    r.apply_snapshot(&snapshot(10), now);
+    assert_eq!(
+        r.apply_delta(&delta(12, 11), now),
+        DeltaOutcome::ResyncRequested
+    );
+    assert_eq!(r.last_resync_reason, Some(ResyncReason::ChainBreak));
+}
+
+#[test]
+fn reorder_malformed_delta_does_not_hold() {
+    // base_tick is not tick - 1: it can never join the chain.
+    let now = Instant::now();
+    let mut r = at_snapshot_10(256);
+    assert_eq!(
+        r.apply_delta(&delta(13, 11), now),
+        DeltaOutcome::ResyncRequested
+    );
+    assert_eq!(r.last_resync_reason, Some(ResyncReason::ChainBreak));
+}
+
+#[test]
+fn reorder_held_delta_that_fails_validation_starts_a_validation_resync() {
+    let now = Instant::now();
+    let mut r = at_snapshot_10(256);
+    let mut bad = delta(12, 11);
+    bad.positions[0].unit_id = UnitId(9);
+    assert_eq!(r.apply_delta(&bad, now), DeltaOutcome::Buffered);
+    assert_eq!(
+        r.apply_delta(&delta(11, 10), now),
+        DeltaOutcome::ResyncRequested
+    );
+    assert_eq!(r.last_resync_reason, Some(ResyncReason::ValidationFailure));
+    assert_eq!(r.last_applied_tick, Some(11));
 }

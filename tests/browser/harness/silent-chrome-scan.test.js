@@ -67,6 +67,45 @@ test("every test that starts a Chrome gives it the sound isolation", () => {
     assert.deepEqual(bad, []);
 });
 
+// The scope of the scan (forward merge of MC, 2026-11-12). The test above reads only `*.test.js`, so it never saw a Chrome that
+// a harness, an instrument or a probe starts: harness/run.js and the MC GPU probes started Chrome with no null device. This
+// test reads every JavaScript file under tests/browser, scripts and docs/measurements/probes, and every shell script under
+// scripts and docs/measurements/probes.
+const REPO_ROOT = path.resolve(__dirname, "../../..");
+const SCOPE = ["tests/browser", "scripts", "docs/measurements/probes"];
+function scopeFiles(pattern) {
+    const walk = (directory) => fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+        if (entry.name === "node_modules" || entry.name === "target") return [];
+        const full = path.join(directory, entry.name);
+        if (entry.isDirectory()) return walk(full);
+        return pattern.test(entry.name) ? [full] : [];
+    });
+    return SCOPE.flatMap((dir) => walk(path.join(REPO_ROOT, dir)))
+        .filter((file) => !file.endsWith("silent-chrome-scan.test.js") && !file.endsWith(`harness${path.sep}silent-chrome.js`));
+}
+
+// The problems of every file in scope: `[relative path, problem]`. `read(file)` gives the source (a test can plant one).
+function scopeProblems(read = (file) => fs.readFileSync(file, "utf8")) {
+    const js = scopeFiles(/\.(?:js|mjs|cjs)$/).flatMap((file) => unsilenced(read(file)).map((what) => [path.relative(REPO_ROOT, file), what]));
+    const sh = scopeFiles(/\.sh$/).flatMap((file) => scriptProblems(read(file)).map((what) => [path.relative(REPO_ROOT, file), what]));
+    return [...js, ...sh];
+}
+
+test("every file under tests/browser, scripts and docs/measurements/probes that starts a Chrome has the sound isolation", () => {
+    const files = scopeFiles(/\.(?:js|mjs|cjs|sh)$/).map((file) => path.relative(REPO_ROOT, file));
+    for (const known of ["tests/browser/harness/run.js", "docs/measurements/probes/mc-gpu-process/probe-a/probe-a.js", "scripts/mp1-play.sh"]) {
+        assert.ok(files.includes(known), `${known} is in the scope`);
+    }
+    assert.deepEqual(scopeProblems(), []);
+});
+
+test("the wide scan is red on a planted file in scope: the launch of harness/run.js before the merge repair", () => {
+    const runJs = path.join(REPO_ROOT, "tests/browser/harness/run.js");
+    const old = "const browser = await chromium.launch({\n    executablePath: process.env.CHROME_BIN || undefined,\n    headless,\n    args: chromeArgs,\n});\n";
+    const found = scopeProblems((file) => (file === runJs ? old : fs.readFileSync(file, "utf8")));
+    assert.deepEqual(found, [["tests/browser/harness/run.js", ".launch( has no silentEnv and SILENT_ARGS"]]);
+});
+
 test("the scan finds a Chrome start with no isolation, in each form, and passes one that has it", () => {
     assert.equal(unsilenced("spawn(CHROME, [`--user-data-dir=${p}`, '--headless=new'], { stdio: 'ignore' });").length, 1);
     assert.equal(unsilenced("spawn(CHROME, [...SILENT_ARGS, 'x'], { env: process.env });").length, 1, "args alone are not enough");

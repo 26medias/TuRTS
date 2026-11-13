@@ -6,6 +6,10 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export CARGO_TARGET_DIR
 export CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0
 export CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-4}"
+# Plain cargo output. With CARGO_TERM_COLOR=always (hosted runners, rust-cache) an escape code sits
+# between "Finished" and "`release` profile", and hd1_reference.py rejects the server build log
+# ("locked release server build did not complete successfully", exit 2; hosted run 43174011989).
+export CARGO_TERM_COLOR=never
 [[ "$CARGO_BUILD_JOBS" =~ ^[1-4]$ ]] || { echo "CARGO_BUILD_JOBS must be 1..4" >&2; exit 2; }
 cd "$ROOT"
 CARGO_TARGET_DIR="$(PYTHONDONTWRITEBYTECODE=1 python3 scripts/hd1_reference.py target "$ROOT")"

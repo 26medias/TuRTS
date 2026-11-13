@@ -206,6 +206,21 @@ def select_cases(cases, requested):
     return selected
 
 
+def shard_cases(selected, spec):
+    """Keep shard K of N (K from 1): the selected cases K, K + N, K + 2N, ... in registry order.
+
+    Hosted CI runs the N shards as parallel jobs; together they run each selected case once.
+    """
+    match = re.fullmatch(r"([1-9][0-9]*)/([1-9][0-9]*)", spec)
+    if not match or int(match.group(1)) > int(match.group(2)):
+        raise ValueError(f"--shard must be K/N with 1 <= K <= N, not {spec!r}")
+    index, count = int(match.group(1)), int(match.group(2))
+    part = selected[index - 1::count]
+    if not part:
+        raise ValueError(f"shard {spec} selects no refutation case")
+    return part
+
+
 def require_case_prefix(cases, prefix):
     if not cases:
         raise ValueError(f"no refutation cases selected for prefix {prefix}")
@@ -392,6 +407,7 @@ def run_case(case, scratch, build_dir, evidence_dir):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--case", required=True)
+    parser.add_argument("--shard", help="K/N: run only shard K of N of the selected cases")
     parser.add_argument(
         "--evidence-root",
         type=Path,
@@ -404,6 +420,8 @@ def main():
     )
     args = parser.parse_args()
     cases = select_cases(json.loads(REGISTRY.read_text()), args.case)
+    if args.shard:
+        cases = shard_cases(cases, args.shard)
     run_root = create_run_workspace(args.evidence_root, args.build_root)
     build_root = Path((run_root / "build-root.txt").read_text().strip())
     (run_root / "selection.json").write_text(json.dumps([case["id"] for case in cases], indent=2) + "\n")

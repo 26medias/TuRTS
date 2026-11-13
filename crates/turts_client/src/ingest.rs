@@ -18,7 +18,8 @@ use turts_net_protocol::{
 };
 
 use crate::replica::{
-    DeltaOutcome, Replica, ReplicaConfig, ReplicaContext, SnapshotOutcome, replace_keyed,
+    DeltaOutcome, Replica, ReplicaConfig, ReplicaContext, ResyncReason, SnapshotOutcome,
+    max_catchup_ticks, replace_keyed,
 };
 use crate::scenario::{DropWorldChange, parse_drop_world_changes};
 use crate::{ClientOpts, content::ClientContent, join::AcquiredPackages};
@@ -77,6 +78,8 @@ pub struct ReplicaState {
     /// Cloned once from accepted packages before the first Welcome is processed.
     pub content: Option<ClientContent>,
     pub config: ReplicaConfig,
+    /// From `--reorder-grace-ticks` (test hook). `None`: the catch-up limit of one server frame.
+    pub reorder_grace_override: Option<u32>,
 }
 
 /// A strictly validated browser-only ingest control. It changes the existing replica hooks;
@@ -237,6 +240,23 @@ pub struct IngestCounters {
     pub max_outstanding_requests: usize,
     pub buffer_overflows: u32,
     pub successor_requests: u32,
+    /// `ResyncRequest` messages by reason. They add up to `resync_requests_sent`.
+    pub resync_by_chain_break: u32,
+    pub resync_by_validation: u32,
+    pub resync_by_idle_span: u32,
+    pub resync_by_successor: u32,
+}
+
+impl IngestCounters {
+    fn count_reason(&mut self, reason: ResyncReason) {
+        let slot = match reason {
+            ResyncReason::ChainBreak => &mut self.resync_by_chain_break,
+            ResyncReason::ValidationFailure => &mut self.resync_by_validation,
+            ResyncReason::IdleSpan => &mut self.resync_by_idle_span,
+            ResyncReason::Successor => &mut self.resync_by_successor,
+        };
+        *slot = slot.saturating_add(1);
+    }
 }
 
 /// What the server said about each command, in arrival order.
@@ -395,6 +415,12 @@ fn on_welcome(hooks: &mut IngestHooks, state: &mut ReplicaState, welcome: &Welco
         return;
     }
     let mut replica = Replica::with_config(welcome.tick_hz, state.config);
+    // The reorder grace is the most ticks one server frame can run (`max_catchup_ticks`).
+    replica.set_reorder_grace_ticks(
+        state
+            .reorder_grace_override
+            .unwrap_or_else(|| max_catchup_ticks(welcome.tick_hz)),
+    );
     if let Some(content) = state.content.clone() {
         replica.set_context(ReplicaContext::new(content, welcome.slot_id.0));
     }
@@ -466,7 +492,11 @@ fn on_deltas(
     } else {
         let before_overflows = replica.buffer_overflows;
         if replica.apply_delta(&deltas, now) == DeltaOutcome::ResyncRequested {
-            out.extend(request_resync(hooks, counters));
+            let reason = replica
+                .last_resync_reason
+                .take()
+                .unwrap_or(ResyncReason::ChainBreak);
+            out.extend(request_resync(hooks, counters, reason));
         }
         counters.max_buffered_batches = counters
             .max_buffered_batches
@@ -794,7 +824,9 @@ fn apply_snapshot(
                 if was_outstanding {
                     counters.successor_requests = counters.successor_requests.saturating_add(1);
                 }
-                request_resync(hooks, counters).into_iter().collect()
+                request_resync(hooks, counters, ResyncReason::Successor)
+                    .into_iter()
+                    .collect()
             } else {
                 Vec::new()
             }
@@ -803,13 +835,17 @@ fn apply_snapshot(
             if was_outstanding {
                 counters.successor_requests = counters.successor_requests.saturating_add(1);
             }
-            request_resync(hooks, counters).into_iter().collect()
+            request_resync(hooks, counters, ResyncReason::Successor)
+                .into_iter()
+                .collect()
         }
         SnapshotOutcome::Invalid => {
             if was_outstanding {
                 counters.successor_requests = counters.successor_requests.saturating_add(1);
             }
-            request_resync(hooks, counters).into_iter().collect()
+            request_resync(hooks, counters, ResyncReason::Successor)
+                .into_iter()
+                .collect()
         }
     }
 }
@@ -849,26 +885,34 @@ fn idle_resync(
     counters: &mut IngestCounters,
     replica: &Replica,
 ) -> Vec<Outgoing> {
-    if hooks.outstanding_request {
+    // A hold of the reorder window is not a wait for a `Snapshot`: it has its own grace.
+    if hooks.outstanding_request || !replica.in_resync() {
         return Vec::new();
     }
     if replica
         .resync_span_ticks()
         .is_some_and(|span| span >= IDLE_RESYNC_SPAN_TICKS)
     {
-        request_resync(hooks, counters).into_iter().collect()
+        request_resync(hooks, counters, ResyncReason::IdleSpan)
+            .into_iter()
+            .collect()
     } else {
         Vec::new()
     }
 }
 
 /// One `ResyncRequest`, unless one is outstanding already.
-fn request_resync(hooks: &mut IngestHooks, counters: &mut IngestCounters) -> Option<Outgoing> {
+fn request_resync(
+    hooks: &mut IngestHooks,
+    counters: &mut IngestCounters,
+    reason: ResyncReason,
+) -> Option<Outgoing> {
     if hooks.outstanding_request {
         return None;
     }
     hooks.outstanding_request = true;
     counters.resync_requests_sent = counters.resync_requests_sent.saturating_add(1);
+    counters.count_reason(reason);
     counters.max_outstanding_requests = counters.max_outstanding_requests.max(1);
     Some(Outgoing::ResyncRequest)
 }
@@ -895,6 +939,7 @@ pub fn ingest_messages(
 ) {
     let real_now_secs = time.elapsed_secs_f64();
     state.config.max_buffered_batches = options.0.resync_buffer_batches.max(1);
+    state.reorder_grace_override = options.0.reorder_grace_ticks;
     if state.content.is_none()
         && state.replica.is_none()
         && let Some(acquired) = acquired
@@ -1608,10 +1653,13 @@ mod receipt_tests {
         let mut hooks = IngestHooks::default();
         let mut counters = IngestCounters::default();
         assert_eq!(
-            request_resync(&mut hooks, &mut counters),
+            request_resync(&mut hooks, &mut counters, ResyncReason::ChainBreak),
             Some(Outgoing::ResyncRequest)
         );
-        assert_eq!(request_resync(&mut hooks, &mut counters), None);
+        assert_eq!(
+            request_resync(&mut hooks, &mut counters, ResyncReason::ChainBreak),
+            None
+        );
         assert!(hooks.outstanding_request);
         assert_eq!(counters.resync_requests_sent, 1);
         assert_eq!(counters.max_outstanding_requests, 1);
