@@ -56,6 +56,14 @@ fn read_param(pools: Res<MovementPools>) -> usize {
     pools.0.len()
 }
 
+fn pools_or_init(world: &mut World) {
+    world.get_resource_or_init::<MovementPools>().0.clear();
+}
+
+fn pools_or_insert(world: &mut World) {
+    world.get_resource_or_insert_with::<MovementPools>(Default::default);
+}
+
 #[cfg(test)]
 mod tests {
     fn test_write(world: &mut World) {

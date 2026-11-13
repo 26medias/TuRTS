@@ -19,8 +19,9 @@
 //! decision, not an edit of a count: it needs the sentence that says why the field is still
 //! constant in a run (it is set at boot, or it is restored by a rollback).
 //!
-//! Methods beyond the `WRITE_METHODS` of `movement_writers.rs`: `remove_resource`
-//! (A1d ruling) and `resource_scope` (added here: it gives a `Mut<T>` of a resource).
+//! Methods beyond the `WRITE_METHODS` of `movement_writers.rs`: `remove_resource` (A1d ruling),
+//! `resource_scope`, `get_resource_or_init` and `get_resource_or_insert_with` (added here: each
+//! gives a `Mut<T>` of a resource; the last two are in `movement_writers.rs` too).
 //!
 //! Known gap: a value that a file receives and inserts with no `&mut T`, no `ResMut<T>`, no
 //! turbofish and no constructor is not seen. Code review must catch it. Example: the three
@@ -42,7 +43,7 @@ use support::writers::{Write, production_writes as scan_production, scan_file as
 /// The resources that hold the four fields that the log does not hold (`bounds`,
 /// `compiled_durations`, `unit_types`).
 const RUN_CONSTANTS: [&str; 3] = ["MapBounds", "ProductionDurations", "UnitTypes"];
-const WRITE_METHODS: [&str; 9] = [
+const WRITE_METHODS: [&str; 11] = [
     "get_mut",
     "remove",
     "take",
@@ -52,6 +53,8 @@ const WRITE_METHODS: [&str; 9] = [
     "init_resource",
     "resource_scope",
     "remove_resource",
+    "get_resource_or_init",
+    "get_resource_or_insert_with",
 ];
 /// The type of each field of `AuditResourcePresence` (`economy/views.rs`): a resource that can
 /// be present or absent. A `remove_resource::<T>()` of one of them changes the `resources` field.
@@ -162,6 +165,10 @@ fn scan_finds_every_planted_write() {
         (25, "method", "UnitTypes".into()),
         (29, "remove_resource", "SimClock".into()),
         (33, "construct", "MapBounds".into()),
+        (43, "method", "UnitTypes".into()),
+        (47, "construct", "MapBounds".into()),
+        (47, "method", "MapBounds".into()),
+        (50, "&mut", "MapBounds".into()),
     ];
     assert_eq!(
         found, expected,

@@ -10,7 +10,8 @@
 //! A write is the kind of write of the shared visitor (`support/writers.rs`: `&mut T`, `ResMut<T>`
 //! `Mut<T>` and `NonSendMut<T>` (arm added in A1d), a method with the turbofish `T` and a writing
 //! name, a value of `T` that the code makes). The methods here are `get_mut`, `remove`, `take`,
-//! `resource_mut`, `get_resource_mut`, `insert_resource` and `init_resource`.
+//! `resource_mut`, `get_resource_mut`, `insert_resource`, `init_resource`,
+//! `get_resource_or_init` and `get_resource_or_insert_with` (the last two give a `Mut<T>`).
 //!
 //! Known gap: a value of `T` that a file receives and inserts with no `&mut T`, no `ResMut<T>`,
 //! no turbofish and no constructor is not seen. Code review must catch it.
@@ -31,7 +32,7 @@ const WRITTEN: [&str; 7] = [
     "MovementPool",
     "MovementPools",
 ];
-const WRITE_METHODS: [&str; 7] = [
+const WRITE_METHODS: [&str; 9] = [
     "get_mut",
     "remove",
     "take",
@@ -39,6 +40,8 @@ const WRITE_METHODS: [&str; 7] = [
     "get_resource_mut",
     "insert_resource",
     "init_resource",
+    "get_resource_or_init",
+    "get_resource_or_insert_with",
 ];
 
 /// The production writes of movement state, pinned as a multiset. An entry is a file, or a
@@ -176,6 +179,8 @@ fn scan_finds_every_planted_write() {
             (43, "mut-param", "MovementPools"),
             (47, "mut-param", "Position"),
             (51, "mut-param", "MovementPools"),
+            (60, "method", "MovementPools"),
+            (64, "method", "MovementPools"),
         ],
         "the scan misses a planted write, or finds a read or test code"
     );

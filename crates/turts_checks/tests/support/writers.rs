@@ -11,8 +11,20 @@
 //! - kind `construct`: a value of `T` that the code makes: `T(..)`, `T { .. }` or a call of a
 //!   `T::` function (spawn and insert bundles hold such values).
 //!
-//! Known gap: a value of `T` that a file receives and inserts with no `&mut T`, no `ResMut<T>`,
-//! no turbofish and no constructor is not seen. Code review must catch it.
+//! Known gap (A1d re-check, `docs/research/mp1/rereview-slice-a1d.md` section 3). The scan is
+//! syntactic and sees a type only by its written name. It does NOT see:
+//! - a value of `T` that a file receives and inserts with no `&mut T`, no `ResMut<T>`, no
+//!   turbofish and no constructor;
+//! - a copy that is changed and inserted again: `let mut b = *world.resource::<T>();` then
+//!   `world.insert_resource(b)`, also through `Commands` (`commands.insert_resource(next)`). This
+//!   is the natural form for a `Copy` type such as `MapBounds`;
+//! - a type alias (`type A = T;` then `get_resource_mut::<A>()`);
+//! - a rename of the import (`use ... T as A;` then `ResMut<A>`);
+//! - a write in the body of a `macro_rules!` macro (the scan does not expand macros).
+//!
+//! Today code review is the only cover for these forms. A runtime guard (a system after boot that
+//! reads the Bevy change ticks of the run constants and the presence set) would see every form;
+//! it is an OPEN item, owner: technical-director decision. It is not built.
 
 use std::path::Path;
 

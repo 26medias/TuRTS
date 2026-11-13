@@ -39,6 +39,18 @@ fn read_only(world: &World) -> usize {
     world.resource::<ProductionDurations>().0.len() + world.get_resource::<MapBounds>().is_some() as usize
 }
 
+fn types_or_init(world: &mut World) {
+    world.get_resource_or_init::<UnitTypes>().clear();
+}
+
+fn bounds_or_insert(world: &mut World) {
+    world.get_resource_or_insert_with::<MapBounds>(|| MapBounds { size: Vec2::ONE });
+}
+
+fn bounds_ref(bounds: &mut MapBounds) {
+    bounds.size.y += 1.0;
+}
+
 #[cfg(test)]
 mod tests {
     fn test_write(world: &mut World) {
