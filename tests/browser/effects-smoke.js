@@ -1,0 +1,26 @@
+// First live P3 check. Uses the shipped command path and fresh silent Chrome.
+const fs=require('fs'),path=require('path'),net=require('net'),{spawn,spawnSync}=require('child_process');
+const {chromium}=require('playwright-core');
+const [prepared,out]=process.argv.slice(2);if(!out)throw Error('Usage: node tests/browser/effects-smoke.js PREPARED OUTPUT');
+fs.mkdirSync(out,{recursive:true});const fixture=out+'/fixture';fs.cpSync(prepared+'/pack/skirmish',fixture,{recursive:true});
+fs.writeFileSync(fixture+'/maps/field.ron','(id:"field",size:(x:40.0,y:30.0),placements:[(unit:"skirmish:base",owner_slot:0,pos:(x:10.0,y:15.0),contents:[]),(unit:"skirmish:worker",owner_slot:0,pos:(x:13.0,y:8.0),contents:[]),(unit:"skirmish:soldier",owner_slot:0,pos:(x:16.0,y:20.0),contents:[]),(unit:"skirmish:soldier",owner_slot:1,pos:(x:21.0,y:20.0),contents:[])],nodes:[(node:"skirmish:trees",pos:(x:16.0,y:8.0),remaining:2000)],slot_economy:[(slot:0,balances:[(balance:"skirmish:credits",amount:10000)])])');
+fs.writeFileSync(fixture+'/match.ron','(start:Immediate,victory:None,open_sites_per_slot:Some(4))');
+const sleep=ms=>new Promise(r=>setTimeout(r,ms)),port=()=>new Promise(r=>{const s=net.createServer();s.listen(0,'127.0.0.1',()=>{const p=s.address().port;s.close(()=>r(p))})});
+function project(s,v){const m=s.clip_from_world,c=[0,1,2,3].map(r=>[...v,1].reduce((a,x,k)=>a+m[k*4+r]*x,0));return[(c[0]/c[3]+1)*640,(1-c[1]/c[3])*360]}
+(async()=>{let server,context;const profile=fs.mkdtempSync('/tmp/turts-p3-smoke-');const result={status:'RUNNING',frames:[],errors:[]};try{
+const pack=spawnSync(prepared+'/bin/turts-pack',[fixture],{encoding:'utf8'});fs.writeFileSync(out+'/pack.log',pack.stdout+pack.stderr);if(pack.status!==0)throw Error('pack failed '+pack.stderr);
+const http=await port(),ws=await port(),url=`http://127.0.0.1:${http}`;fs.writeFileSync(out+'/server.ron',`(game_package:"${fixture}.tar",http_listen:"127.0.0.1:${http}",ws_listen:"127.0.0.1:${ws}",public_url:"${url}",tick_hz:20,static_dir:"${prepared}/dist")`);
+const fd=fs.openSync(out+'/server.log','w');server=spawn(prepared+'/bin/turts_server',[out+'/server.ron'],{stdio:['ignore',fd,fd],env:{...process.env,TURTS_COMPUTER_SLOT:''}});fs.closeSync(fd);
+for(let i=0;i<200;i++){try{if((await fetch(url+'/advertisement.json')).ok)break}catch{}await sleep(50)}
+context=await chromium.launchPersistentContext(profile,{executablePath:'/usr/bin/google-chrome',headless:false,viewport:{width:1280,height:720},ignoreDefaultArgs:['--enable-unsafe-swiftshader'],args:['--enable-gpu','--alsa-output-device=null','--enable-unsafe-webgpu','--enable-features=Vulkan','--use-angle=vulkan','--disable-vulkan-surface','--no-first-run','--no-default-browser-check']});
+const page=context.pages()[0];page.on('pageerror',e=>result.errors.push(String(e)));page.on('console',m=>{if(m.type()==='error')result.errors.push(m.text())});
+await page.goto(url+'/?server='+encodeURIComponent(url)+'&ws='+encodeURIComponent(`ws://127.0.0.1:${ws}`));const read=()=>page.evaluate(()=>typeof turts_scene==='function'&&turts_scene()?JSON.parse(turts_scene()):null);let scene;
+for(let i=0;i<1800;i++){scene=await read();if(scene?.units?.length===4&&scene.models?.every(m=>m.ready)&&scene.animations?.length===3)break;await sleep(50)}
+if(scene?.units?.length!==4||!scene?.models?.every(m=>m.ready))throw Error('models not ready');
+await page.mouse.click(640,360);await page.mouse.move(...project(scene,[18,0,20]));for(let i=0;i<7;i++){await page.mouse.wheel(0,-100);await sleep(70)}
+scene=await read();let own=scene.units.find(u=>u.unit_id===3),enemy=scene.units.find(u=>u.unit_id===4);
+await page.mouse.click(...project(scene,[own.translation[0],.75,own.translation[2]]));await page.mouse.click(...project(scene,[enemy.translation[0],.75,enemy.translation[2]]),{button:'right'});
+for(let i=0;i<100;i++){const capture=await page.evaluate(()=>({scene:JSON.parse(turts_scene()),png:document.querySelector('canvas').toDataURL('image/png').split(',')[1]}));scene=capture.scene;result.frames.push({index:i,effects:scene.effects,units:scene.units.length});if(scene.effects?.pool?.active>0||i%10===0)fs.writeFileSync(out+`/frame-${i}.png`,Buffer.from(capture.png,'base64'));await sleep(30)}
+result.maxParticles=Math.max(...result.frames.map(f=>f.effects?.pool?.active||0));result.pendingSeen=result.frames.some(f=>f.effects?.combat?.pending_impacts?.length);result.flashSeen=result.frames.some(f=>f.effects?.combat?.flashes?.length);result.removed=scene.units.length<4;
+if(!result.maxParticles||!result.pendingSeen)throw Error('shot effects not observed');if(result.errors.some(e=>/shader|panicked|validation error/i.test(e)))throw Error('GPU validation failure');result.status='PASS';console.log(JSON.stringify({status:result.status,maxParticles:result.maxParticles,pendingSeen:result.pendingSeen,flashSeen:result.flashSeen,removed:result.removed}));
+}catch(e){result.status='FAIL';result.error=String(e.stack||e);console.error(e);process.exitCode=1}finally{fs.writeFileSync(out+'/result.json',JSON.stringify(result,null,2));if(context)await context.close();if(server&&server.exitCode===null){server.kill('SIGTERM');await new Promise(r=>server.once('exit',r))}fs.rmSync(profile,{recursive:true,force:true})}})();

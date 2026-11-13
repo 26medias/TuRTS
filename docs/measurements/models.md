@@ -96,3 +96,38 @@ Evidence under `target/mc-evidence/`:
 - `p2-shared-measurement/result.json`: rejected intermediate movement fixture.
 - `p2-stride.json`: stride measured from 241 samples of each walking clip.
 - `scripts/qa/animation/measure_stride.py`: the stride measurement tool.
+
+
+## P3 initial combat measurement: performance stop
+
+2026-11-13. Engine `6d5a92a0`. This development build is incomplete.
+The launcher still opens the accepted P2 build.
+
+RTX 3080, i9-14900K, Chrome 157, WebGPU, 1280×720, High quality.
+Fresh browser profile and null ALSA output for each row. No compiler ran during sampling.
+Five seconds of shooting warm-up, then ten seconds of RAF intervals.
+The fixture uses high health and longer weapon range to sustain shooting.
+These are render workloads, not gameplay balance tests.
+
+| Scene | Quality | FPS | Frame p50 ms | Frame p95 ms | Peak sampled particles | WASM high-water MiB |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| 100 against 100 | High | 50.12 | 16.70 | 33.40 | 1,800 | 156.4 |
+| 200 against 200 | High | **26.67** | 33.30 | 83.30 | 3,200 | 196.1 |
+
+All 400 soldiers stayed visible and in their ranged attack state throughout the second row.
+The run stopped at the CEO's 30 FPS limit. No optimization or further feature work followed.
+Low quality and 400 against 400 were not measured.
+
+The attempted burning-building row is **rejected**. It measured 51.02 FPS, but six of ten
+buildings had died. Only four remained at 95/500 health. Repair the fixture before reuse.
+The P3 section 6 table and FX13 remain incomplete.
+
+Evidence under `target/mc-evidence/`:
+
+- `p3-first-measurement/result.json`: raw intervals, unit counts, effects, adapter, and memory.
+- `p3-first-effects-measure/receipt.json`: exit 3 at the performance limit; source unchanged;
+  no compiler at start.
+- `p3-first-measurement/battle400-high.png`: the 400-unit scene.
+- `skirmish-effects-first-prepared/manifest.json`: build inputs and artifact hashes.
+
+Drivers: `scripts/qa/effects/generate_benchmark.py` and `tests/browser/effects-measure.js`.
