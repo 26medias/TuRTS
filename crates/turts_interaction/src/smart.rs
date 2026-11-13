@@ -42,6 +42,13 @@ impl Core {
         world: &dyn WorldView,
         effects: &mut Vec<Effect>,
     ) {
+        let producers_only = self.selected.iter().all(|id| {
+            world
+                .units()
+                .iter()
+                .find(|u| u.id == *id)
+                .is_some_and(|u| u.capabilities.contains(&Capability::Producer))
+        });
         let mut grouped: Vec<(String, OrderTarget, Vec<UnitId>)> = Vec::new();
         let mut omitted = Vec::new();
         for id in &self.selected {
@@ -88,11 +95,12 @@ impl Core {
                         .iter()
                         .find(|order| order.id == rule.order)
                         .is_some_and(|order| {
-                            order.units.is_empty()
-                                || order
-                                    .units
-                                    .iter()
-                                    .any(|allowed| allowed == &unit.content_id)
+                            (order.behaviour != Behaviour::SetRally || producers_only)
+                                && (order.units.is_empty()
+                                    || order
+                                        .units
+                                        .iter()
+                                        .any(|allowed| allowed == &unit.content_id))
                         })
                     && world
                         .orders()

@@ -729,7 +729,10 @@ fn unit_order_state(record: &turts_sim::economy::views::UnitOrderView) -> wire::
                 reason: command_reject_reason(failure.reason),
                 tick: failure.tick,
             }),
-        rally: None,
+        rally: record
+            .rally
+            .as_ref()
+            .map(|p| wire::RallyTarget::Point(wire::Pos { x: p.x, y: p.y })),
     }
 }
 

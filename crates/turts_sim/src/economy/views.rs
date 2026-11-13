@@ -185,6 +185,8 @@ pub enum UnitOrderActivityView {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct UnitOrderView {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rally: Option<WorldPos>,
     pub unit_id: u32,
     pub owner_slot: u8,
     pub activity: UnitOrderActivityView,
@@ -584,6 +586,7 @@ pub fn world_view(world: &mut World) -> WorldView {
                     return None;
                 };
                 return Some(UnitOrderView {
+                    rally: None,
                     unit_id,
                     owner_slot,
                     activity,
@@ -624,6 +627,8 @@ pub fn world_view(world: &mut World) -> WorldView {
                 UnitOrderActivityView::Idle
             };
             Some(UnitOrderView {
+                rally: crate::economy::production::rally_target(world, unit_id)
+                    .map(|p| WorldPos { x: p.x, y: p.y }),
                 unit_id,
                 owner_slot,
                 activity,

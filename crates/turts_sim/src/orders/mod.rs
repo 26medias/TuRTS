@@ -119,6 +119,8 @@ pub struct Order {
 /// Orders currently assigned to one unit.
 #[derive(Component, Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct UnitOrders {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rally: Option<Vec2>,
     pub current: Option<Order>,
     pub queue: VecDeque<Order>,
     pub last_failure: Option<OrderFailure>,

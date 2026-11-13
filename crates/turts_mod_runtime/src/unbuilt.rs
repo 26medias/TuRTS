@@ -101,10 +101,8 @@ pub(crate) const UNBUILT_FEATURES: &[UnbuiltLine] = &[
     line("behaviour CancelConstruction", "L-CON3"),
     // L-RLY: `SetRally` (O3), `rally` (O7), `ground_rally: ApplyFirst` (U8), smart `Ground` with
     // `needs: Producer` (O6).
-    line("behaviour SetRally", "L-RLY"),
     line("rally", "L-RLY"),
     use_line("ground_rally: ApplyFirst", "L-RLY"),
-    use_line("smart Ground with needs: Producer", "L-RLY"),
     // L-REP: `repairer` (R1), `Repair` (O4), `OwnDamaged`, `needs: Repairer` (O6).
     line("repairer", "L-REP"),
     line("behaviour Repair", "L-REP"),
@@ -317,7 +315,7 @@ mod tests {
             ("L-LOBBY2-SRV", 2),
             ("L-MATCH-SIM2", 2),
             ("L-CON3", 1),
-            ("L-RLY", 4),
+            ("L-RLY", 2),
             ("L-REP", 4),
             ("UI-HINT", 5),
             ("UI-ALERT", 13),
@@ -366,6 +364,7 @@ mod tests {
             "production with a static output",
             "target: ContentAtPoint",
             "behaviour Construct",
+            "behaviour SetRally",
             "exports.match",
             // H3: the `states` texts are data, read by nobody yet.
             "states",

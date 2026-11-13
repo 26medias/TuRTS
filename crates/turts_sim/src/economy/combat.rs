@@ -2898,6 +2898,7 @@ mod tests {
     fn the_first_tick_lists_every_record_when_nothing_was_published_before() {
         let before: Vec<crate::economy::views::UnitOrderView> = vec![];
         let record = |unit_id: u32| crate::economy::views::UnitOrderView {
+            rally: None,
             unit_id,
             owner_slot: 0,
             activity: crate::economy::views::UnitOrderActivityView::Idle,

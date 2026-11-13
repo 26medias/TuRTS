@@ -484,6 +484,7 @@ fn accepted_plain_move_replace_and_append_project_current_waypoint() {
         .unwrap()
         .id();
     app.world_mut().entity_mut(entity).insert(UnitOrders {
+        rally: None,
         current: Some(Order {
             order: ContentId::parse("fixture:authoritative").unwrap(),
             behaviour: turts_mod_api::Behaviour::Hold,
@@ -885,6 +886,7 @@ fn append_behind_hold_or_gather_is_not_queueable() {
         turts_mod_api::Behaviour::Gather,
     ] {
         app.world_mut().entity_mut(entity).insert(UnitOrders {
+            rally: None,
             current: Some(Order {
                 order: ContentId::parse("fixture:current").unwrap(),
                 behaviour,
@@ -920,6 +922,7 @@ fn append_rejects_when_hold_or_gather_is_queued() {
         turts_mod_api::Behaviour::Gather,
     ] {
         app.world_mut().entity_mut(entity).insert(UnitOrders {
+            rally: None,
             current: Some(Order {
                 order: ContentId::parse("fixture:current").unwrap(),
                 behaviour: turts_mod_api::Behaviour::Move,

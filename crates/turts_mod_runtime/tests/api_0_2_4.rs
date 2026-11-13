@@ -673,7 +673,7 @@ order_case!(
 order_case!(
     o3_set_rally,
     "behaviour SetRally",
-    "L-RLY",
+    "",
     "SetRally",
     "Point",
     r#"["cedar:depot"]"#,

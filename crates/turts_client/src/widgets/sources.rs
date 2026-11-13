@@ -673,7 +673,11 @@ fn production_queue(context: SourceContext<'_>) -> SourceData {
             // The elapsed ticks come from the progress record of the job (design 6.8).
             let elapsed = context.replica.job_elapsed_ticks(selected, job.id.0);
             let mut item = ItemData::default();
-            let name = job_name(context, &job.recipe);
+            let name = if job.stage == turts_net_protocol::JobStage::OutputBlocked {
+                "Exit blocked".to_string()
+            } else {
+                job_name(context, &job.recipe)
+            };
             item.set(ItemField::Name, name);
             item.set(
                 ItemField::Progress,
@@ -719,6 +723,7 @@ fn capability_matches(order: &turts_mod_api::OrderDef, unit: &turts_mod_api::Res
             _ => false,
         },
         Behaviour::Gather => unit.gatherer.is_some(),
+        Behaviour::SetRally => unit.producer.is_some(),
         Behaviour::Produce => unit.producer.is_some() || unit.research.is_some(),
         Behaviour::CancelProduction => match order.target {
             TargetKind::Job => {
@@ -742,7 +747,6 @@ fn capability_matches(order: &turts_mod_api::OrderDef, unit: &turts_mod_api::Res
         // API 0.2.4: no unit is capable of a new behaviour until its lane builds it.
         Behaviour::Construct
         | Behaviour::CancelConstruction
-        | Behaviour::SetRally
         | Behaviour::Repair
         | Behaviour::Surrender => false,
     }

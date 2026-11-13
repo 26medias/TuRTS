@@ -21,6 +21,7 @@ fn unit_order(
     activity: turts_sim::economy::views::UnitOrderActivityView,
 ) -> turts_sim::economy::views::UnitOrderView {
     turts_sim::economy::views::UnitOrderView {
+        rally: None,
         unit_id,
         owner_slot: 0,
         activity,

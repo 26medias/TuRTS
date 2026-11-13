@@ -11,6 +11,8 @@ publish.workspace = true
 test-probes = []
 
 [dependencies]
+# Software trigonometry keeps exit-ring coordinates identical on native and wasm.
+libm = "=0.2.16"
 turts_mod_api = { path = "../turts_mod_api" }
 turts_rules = { path = "../turts_rules" }
 bevy_app = { workspace = true }

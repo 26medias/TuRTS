@@ -488,6 +488,31 @@ enum OutputAttempt {
     Blocked,
 }
 
+/// The owner's rally point, including the engine default for a producer.
+pub(crate) fn rally_target(world: &World, producer: u32) -> Option<bevy_math::Vec2> {
+    let entity = unit_entity(world, producer)?;
+    let kind = world.get::<UnitType>(entity)?.0;
+    let entry = world.get_resource::<UnitTypes>()?.get(kind)?;
+    let id = ContentId::parse(&entry.content_id).ok()?;
+    world
+        .get_resource::<InstalledCatalog>()?
+        .0
+        .units
+        .get(&id)?
+        .producer
+        .as_ref()?;
+    if let Some(point) = world
+        .get::<crate::orders::UnitOrders>(entity)
+        .and_then(|orders| orders.rally)
+    {
+        return Some(point);
+    }
+    let pos = world.get::<crate::Position>(entity)?.0;
+    let centre = world.get_resource::<crate::MapBounds>()?.size * 0.5;
+    let direction = (centre - pos).try_normalize().unwrap_or(bevy_math::Vec2::Y);
+    Some(pos + direction * (entry.radius + 4.0))
+}
+
 fn try_output(
     world: &mut World,
     producer: u32,
@@ -549,6 +574,8 @@ fn try_output(
         .get_resource::<crate::MapBounds>()
         .copied()
         .ok_or(RejectReason::ArithmeticOverflow)?;
+    let rally = rally_target(world, producer).ok_or(RejectReason::MissingCapability)?;
+    let producer_radius = type_entry.radius;
     let mut circles = Vec::new();
     for e in world.iter_entities() {
         let (Some(id), Some(position), Some(kind)) = (
@@ -568,22 +595,63 @@ fn try_output(
         .get_resource::<crate::economy::SurfaceNodes>()
         .cloned()
         .unwrap_or_default();
-    let candidate = offsets
+    // Build the existing spatial index once per attempt, never scan every unit per point.
+    let points: Vec<_> = circles
         .iter()
-        .map(|off| bevy_math::Vec2::new(pos.x + off.x, pos.y + off.y))
-        .find(|point| {
-            point.x - radius >= 0.0
-                && point.y - radius >= 0.0
-                && point.x + radius <= bounds.size.x
-                && point.y + radius <= bounds.size.y
-                && circles
-                    .iter()
-                    .all(|(_, p, r)| point.distance(*p) >= radius + *r)
-                && nodes.0.iter().filter(|n| n.remaining > 0).all(|n| {
-                    point.distance(n.position.0)
-                        >= radius + catalog.nodes.get(&n.content_id).map_or(0.0, |d| d.radius)
-                })
-        });
+        .map(|(id, position, _)| crate::grid::GridPoint {
+            id: *id,
+            position: *position,
+        })
+        .collect();
+    let max_radius = circles.iter().map(|(_, _, r)| *r).fold(radius, f32::max);
+    let grid = crate::grid::UniformGrid::new(&points, (max_radius + radius).max(1.0));
+    let free = |point: bevy_math::Vec2| {
+        point.x - radius >= 0.0
+            && point.y - radius >= 0.0
+            && point.x + radius <= bounds.size.x
+            && point.y + radius <= bounds.size.y
+            && grid
+                .within(&points, point, radius + max_radius)
+                .into_iter()
+                .all(|i| point.distance(circles[i].1) >= radius + circles[i].2)
+            && nodes.0.iter().filter(|n| n.remaining > 0).all(|n| {
+                point.distance(n.position.0)
+                    >= radius + catalog.nodes.get(&n.content_id).map_or(0.0, |d| d.radius)
+            })
+    };
+    let mut candidate = offsets
+        .iter()
+        .map(|off| pos + bevy_math::Vec2::new(off.x, off.y))
+        .find(|p| free(*p));
+    let direction = (rally - pos).try_normalize().unwrap_or(bevy_math::Vec2::Y);
+    let mut ring = 1;
+    while candidate.is_none() {
+        let distance = producer_radius + radius + ring as f32 * (2.0 * radius);
+        if distance > producer_radius + 12.0 {
+            break;
+        }
+        let count = ((std::f32::consts::TAU * distance / (2.0 * radius)).floor() as usize).max(8);
+        for i in 0..count {
+            // 0, left 1, right 1, left 2, right 2, ...
+            let step = if i % 2 == 1 {
+                i.div_ceil(2) as f32
+            } else {
+                -(i as f32 / 2.0)
+            };
+            let angle = step * std::f32::consts::TAU / count as f32;
+            let (sin, cos) = libm::sincosf(angle);
+            let point = pos
+                + bevy_math::Vec2::new(
+                    direction.x * cos - direction.y * sin,
+                    direction.x * sin + direction.y * cos,
+                ) * distance;
+            if free(point) {
+                candidate = Some(point);
+                break;
+            }
+        }
+        ring += 1;
+    }
     let Some(point) = candidate else {
         return Ok(OutputAttempt::Blocked);
     };
@@ -598,7 +666,7 @@ fn try_output(
     let binding =
         crate::boot_m3::resolve_spawn_capability_binding(world, output, point, owner.0, None)?;
     let capability_rows = crate::boot_m3::install_capability_rows(output, binding);
-    transaction::transact(world, |tx| {
+    let spawned = transaction::transact(world, |tx| {
         let mut queues = tx.queues();
         let queue = queues
             .0
@@ -639,7 +707,21 @@ fn try_output(
             },
         )?;
         Ok(OutputAttempt::Spawned(id))
-    })
+    })?;
+    if let OutputAttempt::Spawned(id) = spawned
+        && output.movement.is_some()
+    {
+        // The same engine move command as player movement, including arrival reservations.
+        crate::command::apply_legacy_unit(
+            world,
+            owner,
+            crate::CommandKind::MoveTo {
+                unit_ids: vec![id],
+                target: rally,
+            },
+        )?;
+    }
+    Ok(spawned)
 }
 
 fn event_cost_line(line: &ReservationLine) -> CostLine {
@@ -868,6 +950,255 @@ mod m3_disabled_legacy_producer_tests {
             }],
         );
         app
+    }
+
+    fn exit_app() -> bevy_app::App {
+        let mut app = producer_app(1, 1);
+        app.insert_resource(crate::MapBounds {
+            size: Vec2::splat(64.0),
+        });
+        let producer = unit_entity(app.world(), 7).unwrap();
+        app.world_mut()
+            .entity_mut(producer)
+            .insert(Position(Vec2::splat(20.0)));
+        app.world_mut()
+            .resource_mut::<crate::IdAllocators>()
+            .set_next_values(100, 1, 2);
+        app.world_mut()
+            .resource_mut::<ProductionQueues>()
+            .0
+            .get_mut(&7)
+            .unwrap()[0]
+            .stage = JobStage::OutputBlocked;
+        app
+    }
+
+    fn attempt(app: &mut bevy_app::App) -> OutputAttempt {
+        try_output(app.world_mut(), 7, JobId(1)).unwrap()
+    }
+
+    fn blocker(app: &mut bevy_app::App, id: u32, point: Vec2) -> bevy_ecs::entity::Entity {
+        let kind = app
+            .world()
+            .resource::<UnitTypes>()
+            .find("test:product")
+            .unwrap();
+        app.world_mut()
+            .spawn((
+                UnitId(id),
+                UnitType(kind),
+                Owner(SlotId(0)),
+                Position(point),
+            ))
+            .id()
+    }
+
+    #[test]
+    fn ex1_full_authored_exits_use_first_ring_point() {
+        let mut app = exit_app();
+        let centre = Vec2::splat(20.0);
+        let offsets = vec![
+            turts_mod_api::WorldPos { x: 1.5, y: 0.0 },
+            turts_mod_api::WorldPos { x: -1.5, y: 0.0 },
+            turts_mod_api::WorldPos { x: 0.0, y: 1.5 },
+            turts_mod_api::WorldPos { x: 0.0, y: -1.5 },
+        ];
+        app.world_mut()
+            .resource_mut::<InstalledCatalog>()
+            .0
+            .units
+            .get_mut(&ContentId::parse("test:producer").unwrap())
+            .unwrap()
+            .producer
+            .as_mut()
+            .unwrap()
+            .spawn_offsets = offsets.clone();
+        for (i, p) in offsets.iter().enumerate() {
+            blocker(&mut app, 10 + i as u32, centre + Vec2::new(p.x, p.y));
+        }
+        assert_eq!(attempt(&mut app), OutputAttempt::Spawned(100));
+        let entity = unit_entity(app.world(), 100).unwrap();
+        let expected = centre + Vec2::ONE.normalize() * 1.25;
+        assert!(
+            app.world()
+                .get::<Position>(entity)
+                .unwrap()
+                .0
+                .distance(expected)
+                < 0.0001,
+            "EX1: first ring point"
+        );
+    }
+
+    #[test]
+    fn ex3_enclosed_output_waits_then_uses_freed_ground() {
+        let mut app = exit_app();
+        let package = PackageId::parse("wall").unwrap();
+        let wall = UnitDef {
+            id: "wall".into(),
+            name: "Producer".into(),
+            footprint: Footprint::Circle { radius: 20.0 },
+            movement: None,
+            inventory: None,
+            gatherer: None,
+            drop_off: None,
+            producer: None,
+            output_inventory: None,
+            extractor: None,
+            conveyor: None,
+            inserter: None,
+            machine: None,
+            research: None,
+            health: None,
+            weapon: None,
+            removal: None,
+            armour: None,
+            acquire: None,
+            provides: Vec::new(),
+            consumes: Vec::new(),
+            income: None,
+            spawn_order: None,
+            constructor: None,
+            placement: None,
+            build_area: None,
+            repairer: None,
+        };
+        let kind = app
+            .world_mut()
+            .resource_mut::<UnitTypes>()
+            .register_unit_type(&package, wall)
+            .unwrap();
+        let blocked = app
+            .world_mut()
+            .spawn((
+                UnitId(50),
+                UnitType(kind),
+                Owner(SlotId(0)),
+                Position(Vec2::splat(20.0)),
+            ))
+            .id();
+        assert_eq!(
+            attempt(&mut app),
+            OutputAttempt::Blocked,
+            "EX3: enclosure must block"
+        );
+        assert_eq!(
+            app.world().resource::<ProductionQueues>().0[&7][0].stage,
+            JobStage::OutputBlocked
+        );
+        app.world_mut().despawn(blocked);
+        assert_eq!(
+            attempt(&mut app),
+            OutputAttempt::Spawned(100),
+            "EX3: resume next attempt"
+        );
+    }
+
+    #[test]
+    fn rl2_rally_checks_owner_and_map_bounds() {
+        use crate::orders::{OrderCommand, OrderTargetSim, QueueMode};
+        let mut app = exit_app();
+        for (slot, point, expected) in [
+            (0, Vec2::new(30.0, 25.0), None),
+            (1, Vec2::new(30.0, 25.0), Some(RejectReason::NotOwner)),
+            (0, Vec2::new(100.0, 25.0), Some(RejectReason::TargetInvalid)),
+            (
+                0,
+                Vec2::new(f32::NAN, 25.0),
+                Some(RejectReason::TargetNotFinite),
+            ),
+        ] {
+            let command = Command {
+                slot: SlotId(slot),
+                seq: 1,
+                kind: CommandKind::Order(Box::new(OrderCommand {
+                    order: ContentId::parse("test:rally").unwrap(),
+                    behaviour: turts_mod_api::Behaviour::SetRally,
+                    target_kind: turts_mod_api::TargetKind::Point,
+                    policy: None,
+                    units: vec![7],
+                    target: OrderTargetSim::Point(point),
+                    queue: QueueMode::Replace,
+                    group: 0,
+                    allowed_units: vec![],
+                    queue_depth: 16,
+                })),
+            };
+            assert_eq!(
+                apply_command(app.world_mut(), &command).outcome.err(),
+                expected,
+                "RL2: slot {slot}, point {point}"
+            );
+        }
+        assert_eq!(rally_target(app.world(), 7), Some(Vec2::new(30.0, 25.0)));
+    }
+
+    fn train_thirty() -> Vec<Vec<(u32, Vec2)>> {
+        let mut app = exit_app();
+        let template = app.world().resource::<ProductionQueues>().0[&7][0].clone();
+        let mut traces = Vec::new();
+        for n in 0..30 {
+            if n > 0 {
+                app.world_mut()
+                    .resource_mut::<ProductionQueues>()
+                    .0
+                    .get_mut(&7)
+                    .unwrap()
+                    .push(template.clone());
+            }
+            assert!(
+                matches!(attempt(&mut app), OutputAttempt::Spawned(_)),
+                "EX2: production stopped at {n}"
+            );
+            for _ in 0..150 {
+                app.update();
+                let states = crate::world::snapshot(app.world_mut());
+                for (i, a) in states.iter().enumerate() {
+                    for b in &states[i + 1..] {
+                        let min = if a.unit_id == 7 || b.unit_id == 7 {
+                            0.75
+                        } else {
+                            0.5
+                        };
+                        assert!(
+                            a.pos.distance(b.pos) >= min - 0.0001,
+                            "EX2: overlap {} {}",
+                            a.unit_id,
+                            b.unit_id
+                        );
+                    }
+                }
+                traces.push(states.iter().map(|s| (s.unit_id, s.pos)).collect());
+            }
+            if n == 0 {
+                let entity = unit_entity(app.world(), 100).unwrap();
+                assert!(
+                    app.world()
+                        .get::<Position>(entity)
+                        .unwrap()
+                        .0
+                        .distance(rally_target(app.world(), 7).unwrap())
+                        < 1.5,
+                    "RL1: spawned unit did not walk to default rally"
+                );
+            }
+        }
+        assert_eq!(
+            crate::world::snapshot(app.world_mut()).len(),
+            31,
+            "EX2: all thirty exist"
+        );
+        traces
+    }
+
+    #[test]
+    fn ex2_rl1_thirty_outputs_move_without_overlap() {
+        train_thirty();
+    }
+
+    #[test]
+    fn ex4_rally_positions_are_deterministic_each_tick() {
+        assert_eq!(train_thirty(), train_thirty(), "EX4: positions differ");
     }
 
     #[test]

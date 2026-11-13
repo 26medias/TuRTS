@@ -565,6 +565,7 @@ fn order_capability(order: &OrderDef, unit: &turts_mod_api::ResolvedUnit) -> boo
             _ => unit.weapon.is_some(),
         },
         Behaviour::Gather => unit.gatherer.is_some(),
+        Behaviour::SetRally => unit.producer.is_some(),
         Behaviour::Produce => unit.producer.is_some() || unit.research.is_some(),
         Behaviour::CancelProduction => {
             unit.producer.is_some()
@@ -587,7 +588,6 @@ fn order_capability(order: &OrderDef, unit: &turts_mod_api::ResolvedUnit) -> boo
         // API 0.2.4: no unit is capable of a new behaviour until its lane builds it.
         Behaviour::Construct
         | Behaviour::CancelConstruction
-        | Behaviour::SetRally
         | Behaviour::Repair
         | Behaviour::Surrender => false,
     }

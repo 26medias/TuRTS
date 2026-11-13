@@ -1,4 +1,5 @@
 (queue_depth: 16, smart: [
+ (target: Ground, needs: Producer, order: "skirmish:order_rally"),
  (target: Ground, needs: Movement, order: "skirmish:order_move"),
  (target: ForeignUnitWeaponTarget, needs: Weapon, order: "skirmish:order_attack"),
  (target: ResourceNodeAccepted, needs: Gatherer, order: "skirmish:order_gather"),

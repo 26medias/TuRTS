@@ -1183,10 +1183,10 @@ fn expected_order_refusal(
         }
         turts_mod_api::Behaviour::Remove => capability.is_some_and(|entry| entry.removable),
         turts_mod_api::Behaviour::SetEnabled(_) => capability.is_some_and(|entry| entry.toggleable),
+        turts_mod_api::Behaviour::SetRally => capability.is_some_and(|entry| entry.producer),
         // API 0.2.4: no unit has a capability for a behaviour that its lane has not built.
         turts_mod_api::Behaviour::Construct
         | turts_mod_api::Behaviour::CancelConstruction
-        | turts_mod_api::Behaviour::SetRally
         | turts_mod_api::Behaviour::Repair
         | turts_mod_api::Behaviour::Surrender => false,
     };
@@ -1225,6 +1225,16 @@ fn expected_order_refusal(
         return Ok(Some(R::TargetInvalid));
     }
     match (&order.behaviour, &order.target) {
+        (turts_mod_api::Behaviour::SetRally, turts_sim::OrderTargetSim::Point(point)) => {
+            if !point.is_finite() {
+                return Ok(Some(R::TargetNotFinite));
+            }
+            if let Some(bounds) = &before.bounds {
+                if point.x < 0.0 || point.y < 0.0 || point.x > bounds.x || point.y > bounds.y {
+                    return Ok(Some(R::TargetInvalid));
+                }
+            }
+        }
         (turts_mod_api::Behaviour::Move, turts_sim::OrderTargetSim::Point(point))
             if !point.is_finite() =>
         {
@@ -1446,6 +1456,7 @@ fn expected_order_refusal(
     if matches!(
         order.behaviour,
         turts_mod_api::Behaviour::Produce
+            | turts_mod_api::Behaviour::SetRally
             | turts_mod_api::Behaviour::CancelProduction
             | turts_mod_api::Behaviour::Remove
             | turts_mod_api::Behaviour::SetEnabled(_)
@@ -1939,6 +1950,7 @@ fn validate_order_policy(command: &CommandAudit) -> Result<(), String> {
             policy.target == turts_mod_api::TargetKind::None
         }
         turts_mod_api::Behaviour::Gather => policy.target == turts_mod_api::TargetKind::Node,
+        turts_mod_api::Behaviour::SetRally => policy.target == turts_mod_api::TargetKind::Point,
         turts_mod_api::Behaviour::Produce => policy.target == turts_mod_api::TargetKind::Content,
         turts_mod_api::Behaviour::CancelProduction => {
             policy.target == turts_mod_api::TargetKind::Job
@@ -1946,7 +1958,6 @@ fn validate_order_policy(command: &CommandAudit) -> Result<(), String> {
         // API 0.2.4: a policy for a new behaviour is not accepted until its lane builds it.
         turts_mod_api::Behaviour::Construct
         | turts_mod_api::Behaviour::CancelConstruction
-        | turts_mod_api::Behaviour::SetRally
         | turts_mod_api::Behaviour::Repair
         | turts_mod_api::Behaviour::Surrender => false,
     };
@@ -2133,6 +2144,12 @@ fn validate_order_operation(
     let mut expected_orders = before_orders.clone();
     let mut expected_target = before_target.clone();
     match order.behaviour {
+        turts_mod_api::Behaviour::SetRally => {
+            let turts_sim::OrderTargetSim::Point(point) = order.target else {
+                return Err("rally target is not a point".into());
+            };
+            expected_orders.rally = Some(point);
+        }
         turts_mod_api::Behaviour::Move => {
             let point = match &order.target {
                 turts_sim::OrderTargetSim::Point(point) => *point,
@@ -2287,7 +2304,6 @@ fn validate_order_operation(
         // API 0.2.4: no replay rule until the lane of the behaviour builds one.
         turts_mod_api::Behaviour::Construct
         | turts_mod_api::Behaviour::CancelConstruction
-        | turts_mod_api::Behaviour::SetRally
         | turts_mod_api::Behaviour::Repair
         | turts_mod_api::Behaviour::Surrender => {
             return Err(format!(
@@ -12092,6 +12108,7 @@ mod tests {
         for unit_id in [1, 2] {
             app.world_mut().entity_mut(entities[&unit_id]).insert((
                 turts_sim::UnitOrders {
+                    rally: None,
                     current: Some(prior.clone()),
                     queue: std::collections::VecDeque::from([turts_sim::Order {
                         order: turts_mod_api::ContentId::parse("fixture:old-future").unwrap(),
@@ -15962,6 +15979,7 @@ mod tests {
             group: 77,
         };
         let mut orders = turts_sim::UnitOrders {
+            rally: None,
             current: Some(move_order.clone()),
             queue: std::collections::VecDeque::from([turts_sim::Order {
                 order: turts_mod_api::ContentId::parse("fixture:hold").unwrap(),

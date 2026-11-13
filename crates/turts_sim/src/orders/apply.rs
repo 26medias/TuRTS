@@ -29,11 +29,10 @@ pub(crate) fn unit_order_capable(world: &World, kind: turts_mod_api::UnitTypeId)
         || world
             .get_resource::<crate::bootstrap::InstalledCatalog>()
             .is_some_and(|catalog| {
-                catalog
-                    .0
-                    .units
-                    .values()
-                    .any(|unit| unit.id.to_string() == entry.content_id && unit.weapon.is_some())
+                catalog.0.units.values().any(|unit| {
+                    unit.id.to_string() == entry.content_id
+                        && (unit.weapon.is_some() || unit.producer.is_some())
+                })
             })
 }
 
@@ -87,6 +86,7 @@ pub(crate) fn apply_order(
         command.behaviour,
         Behaviour::Produce
             | Behaviour::Construct
+            | Behaviour::SetRally
             | Behaviour::CancelProduction
             | Behaviour::Remove
             | Behaviour::SetEnabled(_)
@@ -162,10 +162,8 @@ pub(crate) fn apply_order(
             // API 0.2.4: no unit is capable of a new behaviour until its lane builds it (the
             // packer refuses these orders with `UNBUILT_FEATURES` until then).
             Behaviour::Construct => definition.is_some_and(|unit| unit.constructor.is_some()),
-            Behaviour::CancelConstruction
-            | Behaviour::SetRally
-            | Behaviour::Repair
-            | Behaviour::Surrender => false,
+            Behaviour::SetRally => definition.is_some_and(|unit| unit.producer.is_some()),
+            Behaviour::CancelConstruction | Behaviour::Repair | Behaviour::Surrender => false,
         };
         if !capable {
             let reason = match command.behaviour {
@@ -504,6 +502,17 @@ fn validate_target(
         return Err(R::TargetInvalid);
     }
     match (&command.behaviour, &command.target) {
+        (Behaviour::SetRally, OrderTargetSim::Point(point)) => {
+            if !point.is_finite() {
+                return Err(R::TargetNotFinite);
+            }
+            let bounds = world.resource::<crate::MapBounds>().size;
+            if point.x < 0.0 || point.y < 0.0 || point.x > bounds.x || point.y > bounds.y {
+                return Err(R::TargetInvalid);
+            }
+            Ok(())
+        }
+        (Behaviour::SetRally, _) => Err(R::TargetInvalid),
         (Behaviour::Construct, OrderTargetSim::ContentAtPoint { point, .. })
             if point.is_finite() =>
         {
@@ -929,10 +938,18 @@ fn apply_unit_order(
             };
             crate::economy::construction::construct(world, slot, unit_id, content, point)
         }
-        Behaviour::CancelConstruction
-        | Behaviour::SetRally
-        | Behaviour::Repair
-        | Behaviour::Surrender => Err(R::NotApplicable),
+        Behaviour::SetRally => {
+            let OrderTargetSim::Point(point) = order.target else {
+                return Err(R::TargetInvalid);
+            };
+            let mut orders = world.get::<UnitOrders>(entity).cloned().unwrap_or_default();
+            orders.rally = Some(point);
+            set_unit_orders(world, entity, orders);
+            Ok(None)
+        }
+        Behaviour::CancelConstruction | Behaviour::Repair | Behaviour::Surrender => {
+            Err(R::NotApplicable)
+        }
     }
 }
 

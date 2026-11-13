@@ -1114,6 +1114,13 @@ impl Pack {
     }
 
     fn order(&self, file: &str, order: &OrderDef) -> Result<(), ModError> {
+        if order.behaviour == Behaviour::SetRally && order.target != TargetKind::Point {
+            return Err(self.fail(
+                file,
+                "target",
+                "this engine supports ground rally points only; use `Point`",
+            ));
+        }
         if order.target == TargetKind::ContentAtPoint && order.behaviour != Behaviour::Construct {
             return Err(self.fail(
                 file,
