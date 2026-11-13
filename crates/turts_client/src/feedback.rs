@@ -144,6 +144,8 @@ fn update_feedback(
     settings: Option<Res<VolumeSettings>>,
     selection: Option<Res<SelectionFeed>>,
     core: Option<Res<CoreRuntime>>,
+    mut input: Option<ResMut<crate::core_adapter::CoreInputQueue>>,
+    cameras: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
 ) {
     frame.notices.clear();
     frame.alerts.clear();
@@ -365,6 +367,48 @@ fn update_feedback(
             && let Some(replica) = state.replica.as_ref()
         {
             let previous = runtime.previous.take();
+            let visible =
+                cameras
+                    .iter()
+                    .find(|(camera, _)| camera.is_active)
+                    .map(|(camera, transform)| {
+                        replica
+                            .units
+                            .iter()
+                            .filter_map(|(&id, unit)| {
+                                let pos = unit.samples.back()?.1;
+                                {
+                                    let height = acquired
+                                        .0
+                                        .presentation
+                                        .model_visuals
+                                        .get(&unit.content_id)
+                                        .and_then(|model| {
+                                            acquired
+                                                .0
+                                                .presentation
+                                                .model_bounds
+                                                .get(&model.asset)
+                                                .map(|(min, max)| (max[1] - min[1]) * model.scale)
+                                        })
+                                        .unwrap_or(1.6);
+                                    camera
+                                        .world_to_viewport(
+                                            transform,
+                                            crate::render::world_to_scene(pos)
+                                                + Vec3::Y * height * 0.5,
+                                        )
+                                        .ok()
+                                        .filter(|p| {
+                                            camera
+                                                .logical_viewport_rect()
+                                                .is_some_and(|r| r.contains(*p))
+                                        })
+                                        .map(|_| id)
+                                }
+                            })
+                            .collect::<BTreeSet<u32>>()
+                    });
             let events = collect_alert_events(
                 replica,
                 previous.as_ref(),
@@ -373,8 +417,20 @@ fn update_feedback(
                 interface.alerts.as_slice(),
                 now,
                 &mut runtime,
+                visible.as_ref(),
             );
             for event in events {
+                if let Some(position) = event.position
+                    && let Some(input) = input.as_deref_mut()
+                {
+                    input.0.push(turts_interaction::InputEvent::AlertAnnounced(
+                        turts_interaction::alerts::Input {
+                            x: position.x,
+                            y: position.y,
+                            unit: None,
+                        },
+                    ));
+                }
                 frame.alerts.push(serde_json::json!({"id":event.rule_id,"text":event.text,"unit":event.unit,"position":event.position}));
                 alert_feed.0.push(serde_json::json!({"id":event.rule_id,"text":event.text,"message":event.text,"unit":event.unit,"position":event.position}));
                 if let Some(position) = event.position
@@ -628,6 +684,7 @@ fn collect_alert_events(
     rules: &[turts_mod_api::AlertDef],
     now: f64,
     runtime: &mut FeedbackRuntime,
+    visible: Option<&BTreeSet<u32>>,
 ) -> Vec<AlertEvent> {
     let mut events = Vec::new();
     for rule in rules {
@@ -635,6 +692,18 @@ fn collect_alert_events(
         match &rule.trigger {
             AlertTrigger::OwnUnitDamaged => {
                 if let Some(previous) = previous {
+                    for (&id, unit) in &previous.units {
+                        if unit.owner_slot == slot
+                            && !current.units.contains_key(&id)
+                            && current
+                                .health_trace
+                                .get(&id)
+                                .and_then(|trace| trace.last())
+                                .is_some_and(|h| h.current == 0)
+                        {
+                            units.push(id);
+                        }
+                    }
                     for health in &current.healths {
                         let owned = current
                             .units
@@ -873,7 +942,10 @@ fn collect_alert_events(
                 current, previous, slot, rule, runtime,
             )),
         }
-        if !matches!(&rule.trigger, AlertTrigger::OwnUnitDestroyed) {
+        if !matches!(
+            &rule.trigger,
+            AlertTrigger::OwnUnitDestroyed | AlertTrigger::OwnUnitDamaged
+        ) {
             units.retain(|unit| {
                 current
                     .units
@@ -881,6 +953,16 @@ fn collect_alert_events(
                     .is_some_and(|record| record.owner_slot == slot)
             });
         }
+        units.retain(|id| {
+            let unit = current
+                .units
+                .get(id)
+                .or_else(|| previous.and_then(|old| old.units.get(id)));
+            let matches_type = rule.units.is_empty()
+                || unit.is_some_and(|unit| rule.units.contains(&unit.content_id));
+            matches_type
+                && (!rule.offscreen_only || visible.is_some_and(|visible| !visible.contains(id)))
+        });
         if units.is_empty() {
             continue;
         }
@@ -1171,6 +1253,7 @@ mod stub_tests {
 
     fn rule(trigger: AlertTrigger) -> AlertDef {
         AlertDef {
+            offscreen_only: false,
             id: "stub".into(),
             trigger,
             sound: None,
@@ -1209,6 +1292,7 @@ mod stub_tests {
             &rules,
             10.0,
             &mut FeedbackRuntime::default(),
+            None,
         );
         assert!(
             events.is_empty(),

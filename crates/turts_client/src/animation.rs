@@ -14,11 +14,13 @@ use turts_mod_api::{AnimationClipDef, ModelAnimations};
 
 #[derive(Resource, Default)]
 pub struct VisualEvents {
+    pub raw: Vec<crate::replica::VisualEvent>,
     pub fired: HashSet<u32>,
     pub destroyed: HashSet<u32>,
     sequence: u64,
 }
 pub fn collect_events(state: Res<ReplicaState>, mut events: ResMut<VisualEvents>) {
+    events.raw.clear();
     events.fired.clear();
     events.destroyed.clear();
     let Some(replica) = state.replica.as_ref() else {
@@ -32,6 +34,7 @@ pub fn collect_events(state: Res<ReplicaState>, mut events: ResMut<VisualEvents>
         if event.tick.saturating_add(4) < replica.last_applied_tick.unwrap_or(0) {
             continue;
         }
+        events.raw.push(event.clone());
         match event.effect {
             turts_net_protocol::Effect::Fired { unit, .. } => {
                 events.fired.insert(unit.0);

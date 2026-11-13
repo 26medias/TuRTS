@@ -530,6 +530,7 @@ fn production_completion_needs_output_evidence_and_does_not_treat_job_removal_as
         .unwrap()
         .alerts
         .push(AlertDef {
+            offscreen_only: false,
             id: "production_done_test".into(),
             trigger: AlertTrigger::ProductionComplete,
             sound: None,

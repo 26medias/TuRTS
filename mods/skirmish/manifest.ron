@@ -1,8 +1,9 @@
 (
- id: "skirmish", version: "0.2.0", kind: Game, engine_api: "^0.2.6", dependencies: {},
+ id: "skirmish", version: "0.2.0", kind: Game, engine_api: "^0.2.7", dependencies: {},
  exports: (
   units: ["units/base.ron", "units/barracks.ron", "units/worker.ron", "units/soldier.ron"],
   maps: ["maps/field.ron"],
+  visual_effects: ["effects/combat.ron"],
   visuals: ["visuals/base.ron", "visuals/barracks.ron", "visuals/worker.ron", "visuals/soldier.ron", "visuals/trees.ron"],
   resources: ["resources/wood.ron", "resources/credits.ron"], nodes: ["nodes/trees.ron"],
   production: ["production/barracks.ron", "production/worker.ron", "production/soldier.ron"],

@@ -16,6 +16,7 @@ pub mod debug_feed;
 pub mod feedback;
 pub mod fetch;
 pub mod framelog;
+pub mod fx;
 pub mod ingest;
 pub mod input;
 pub mod interp;

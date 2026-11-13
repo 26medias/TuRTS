@@ -485,6 +485,8 @@ fn publish_scene(
     animation_players: Query<&AnimationPlayer>,
     bodies: Query<&turts_client::animation::VisualBody>,
     shared_poses: Option<Res<turts_client::animation::SharedPoses>>,
+    fx: Option<Res<turts_client::fx::CombatPresentation>>,
+    particles: Option<Res<turts_client::fx::particles::ParticlePool>>,
     model_instances: Query<(
         Option<&SceneUnit>,
         Option<&SceneNode>,
@@ -657,6 +659,10 @@ fn publish_scene(
     })).collect());
     scene["crowd_poses"] =
         serde_json::json!(shared_poses.map(|p| (p.evaluated_rigs, p.shared_rigs)));
+    scene["effects"] = serde_json::json!({
+        "pool":particles.map(|p|serde_json::json!({"active":p.active(),"limit":p.limit,"peak":p.peak,"dropped":p.dropped})),
+        "combat":fx.map(|fx|serde_json::json!({"now":fx.now,"health":fx.displayed_health,"held":fx.held_health.keys().collect::<Vec<_>>(),"flashes":fx.flashes.keys().collect::<Vec<_>>(),"pending_impacts":fx.impacts.iter().map(|hit|serde_json::json!({"target":hit.target,"at":hit.at,"position":hit.position.to_array()})).collect::<Vec<_>>()})),
+    });
     scene["body_count"] = serde_json::json!(bodies.iter().count());
     scene["widgets"] = serde_json::Value::Array(widget_rects);
     *SCENE.lock().unwrap() = scene.to_string();

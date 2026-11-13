@@ -614,6 +614,9 @@ pub struct WorldHealthBarStyle {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AlertDef {
+    /// Announce owned damage only when the body centre is outside the camera view.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub offscreen_only: bool,
     pub id: String,
     pub trigger: AlertTrigger,
     pub sound: Option<String>,

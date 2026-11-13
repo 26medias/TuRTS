@@ -19,6 +19,8 @@ pub(crate) enum StoredHealthMode {
 #[serde(default)]
 pub(crate) struct ControlSettings {
     pub quality: crate::models::Quality,
+    pub damage_flashes: bool,
+    pub camera_shake: crate::fx::flash::Shake,
     pub scroll_speed: f32,
     pub edge_scroll: bool,
     pub ui_scale: f32,
@@ -37,6 +39,8 @@ impl Default for ControlSettings {
         let settings = ClientSettings::default();
         Self {
             quality: settings.quality,
+            damage_flashes: settings.damage_flashes,
+            camera_shake: settings.camera_shake,
             scroll_speed: settings.scroll_speed,
             edge_scroll: settings.edge_scroll,
             ui_scale: settings.ui_scale,
@@ -73,6 +77,8 @@ impl ControlSettings {
         if let Some(settings) = settings {
             *settings = ClientSettings {
                 quality: self.quality,
+                damage_flashes: self.damage_flashes,
+                camera_shake: self.camera_shake,
                 scroll_speed: self.scroll_speed,
                 edge_scroll: self.edge_scroll,
                 ui_scale: self.ui_scale,
@@ -104,6 +110,8 @@ impl ControlSettings {
         let mut value = fallback.unwrap_or_default();
         if let Some(settings) = settings {
             value.quality = settings.quality;
+            value.damage_flashes = settings.damage_flashes;
+            value.camera_shake = settings.camera_shake;
             value.scroll_speed = settings.scroll_speed;
             value.edge_scroll = settings.edge_scroll;
             value.ui_scale = settings.ui_scale;

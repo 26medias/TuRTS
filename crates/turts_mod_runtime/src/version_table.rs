@@ -19,6 +19,10 @@ pub(crate) enum Detect {
         group: RawGroup,
         path: &'static [&'static str],
     },
+    RawSequence {
+        group: RawGroup,
+        path: &'static [&'static str],
+    },
     /// The parsed value. Use it for a VAR row (the parsed value holds the new variant, and no
     /// default makes a new variant), for a COMBO row (a combination of written fields on one
     /// parsed unit), and for a field that every file writes, so that a key walk cannot tell its
@@ -72,6 +76,10 @@ pub(crate) fn locate(
                 path: path.join("."),
             })
         }
+        Detect::RawSequence { group, path } => Some(Located {
+            file: raw.sequence_written(*group, path)?.to_owned(),
+            path: path.join("."),
+        }),
         Detect::Parsed(present) => present(manifest, content?).then(|| Located {
             file: String::new(),
             path: String::new(),
@@ -159,6 +167,50 @@ const fn variant_0_2_4(name: &'static str) -> VersionTableRow {
 /// detection kind that its design row names, and nowhere else. The order is the order of the
 /// first refusal when one package has several problems.
 pub(crate) const VERSION_TABLE: &[VersionTableRow] = &[
+    raw(
+        "effects.layers",
+        "0.2.7",
+        RawGroup::VisualEffects,
+        &["effects", "layers"],
+    ),
+    raw(
+        "effects.cost",
+        "0.2.7",
+        RawGroup::VisualEffects,
+        &["effects", "cost"],
+    ),
+    raw(
+        "effects.projectile",
+        "0.2.7",
+        RawGroup::Visuals,
+        &["effects", "projectile"],
+    ),
+    raw(
+        "effects.work",
+        "0.2.7",
+        RawGroup::Visuals,
+        &["effects", "work"],
+    ),
+    raw(
+        "effects.site",
+        "0.2.7",
+        RawGroup::Visuals,
+        &["effects", "site"],
+    ),
+    VersionTableRow {
+        name: "effects.damaged list",
+        since_api: "0.2.7",
+        detect: Detect::RawSequence {
+            group: RawGroup::Visuals,
+            path: &["effects", "damaged"],
+        },
+    },
+    raw(
+        "alerts.offscreen_only",
+        "0.2.7",
+        RawGroup::Interface,
+        &["alerts", "offscreen_only"],
+    ),
     raw("model.lods", "0.2.5", RawGroup::Visuals, &["model", "lods"]),
     raw(
         "model.scale",
@@ -683,7 +735,7 @@ pub(crate) const VERSION_TABLE: &[VersionTableRow] = &[
 impl Detect {
     /// True for a RAW detector on a file that only the client reads.
     pub(crate) fn is_presentation(&self) -> bool {
-        matches!(self, Detect::Raw { group, .. } if group.is_presentation())
+        matches!(self, Detect::Raw { group, .. } | Detect::RawSequence {group,..} if group.is_presentation())
     }
 }
 
@@ -699,7 +751,7 @@ pub(crate) fn rows_for(presentation: bool) -> Vec<VersionTableRow> {
 /// The groups that the RAW rows of `rows` read.
 pub(crate) fn raw_groups(rows: &[VersionTableRow]) -> impl Iterator<Item = RawGroup> + '_ {
     rows.iter().filter_map(|row| match row.detect {
-        Detect::Raw { group, .. } => Some(group),
+        Detect::Raw { group, .. } | Detect::RawSequence { group, .. } => Some(group),
         Detect::Parsed(_) | Detect::Variant(_) => None,
     })
 }

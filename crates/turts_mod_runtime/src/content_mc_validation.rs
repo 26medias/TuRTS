@@ -1537,6 +1537,7 @@ const ENGINE_ACTION_NAMES: &[&str] = &[
     "zoom_in",
     "zoom_out",
     "centre_selection",
+    "jump_to_alert",
     "cancel",
     "menu",
     "toggle_guide",

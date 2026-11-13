@@ -6,6 +6,8 @@ use super::*;
 #[derive(Component, Clone, Copy)]
 pub(super) enum SettingsToggle {
     Quality,
+    DamageFlashes,
+    CameraShake,
     EdgeScroll,
     CursorLock,
     HealthBars,
@@ -29,6 +31,8 @@ pub(super) enum SettingsSlider {
 #[derive(Resource, Clone, Copy, Debug, PartialEq)]
 pub(crate) struct ClientSettings {
     pub quality: crate::models::Quality,
+    pub damage_flashes: bool,
+    pub camera_shake: crate::fx::flash::Shake,
     pub scroll_speed: f32,
     pub edge_scroll: bool,
     pub ui_scale: f32,
@@ -44,6 +48,8 @@ impl Default for ClientSettings {
     fn default() -> Self {
         Self {
             quality: crate::models::Quality::High,
+            damage_flashes: true,
+            camera_shake: crate::fx::flash::Shake::Half,
             scroll_speed: 1.0,
             edge_scroll: true,
             ui_scale: 1.0,
@@ -61,11 +67,16 @@ pub(crate) fn apply_client_settings(
     settings: Res<ClientSettings>,
     mut camera: Option<ResMut<crate::camera::CameraConfiguration>>,
     mut graphics: Option<ResMut<crate::models::GraphicsSettings>>,
+    mut effects: Option<ResMut<crate::fx::flash::EffectSettings>>,
     mut ui_scale: Option<ResMut<bevy::ui::UiScale>>,
     mut window_modes: Option<ResMut<bevy::winit::WinitSettings>>,
 ) {
     if !settings.is_changed() {
         return;
+    }
+    if let Some(effects) = effects.as_deref_mut() {
+        effects.flashes = settings.damage_flashes;
+        effects.shake = settings.camera_shake;
     }
     if let Some(graphics) = graphics.as_deref_mut() {
         graphics.quality = settings.quality;
@@ -325,6 +336,18 @@ pub(super) fn toggle_settings_menu(
             settings.quality.label(),
             SettingsToggle::Quality,
         );
+        spawn_settings_toggle(
+            panel,
+            "Damage flashes",
+            on_off(settings.damage_flashes),
+            SettingsToggle::DamageFlashes,
+        );
+        spawn_settings_toggle(
+            panel,
+            "Camera shake",
+            settings.camera_shake.label(),
+            SettingsToggle::CameraShake,
+        );
         spawn_settings_slider(
             panel,
             "Scroll speed",
@@ -514,6 +537,8 @@ pub(super) fn on_settings_toggle_activated(
     };
     match toggle {
         SettingsToggle::Quality => settings.quality = settings.quality.next(),
+        SettingsToggle::DamageFlashes => settings.damage_flashes = !settings.damage_flashes,
+        SettingsToggle::CameraShake => settings.camera_shake = settings.camera_shake.next(),
         SettingsToggle::EdgeScroll => settings.edge_scroll = !settings.edge_scroll,
         SettingsToggle::CursorLock => {
             settings.cursor_lock = !settings.cursor_lock;
@@ -586,6 +611,8 @@ pub(super) fn sync_settings_toggle_labels(
     for (state, mut text) in &mut states {
         let value = match state.0 {
             SettingsToggle::Quality => settings.quality.label().to_string(),
+            SettingsToggle::DamageFlashes => on_off(settings.damage_flashes).to_string(),
+            SettingsToggle::CameraShake => settings.camera_shake.label().to_string(),
             SettingsToggle::EdgeScroll => on_off(settings.edge_scroll).to_string(),
             SettingsToggle::CursorLock => on_off(settings.cursor_lock).to_string(),
             SettingsToggle::HealthBars => health

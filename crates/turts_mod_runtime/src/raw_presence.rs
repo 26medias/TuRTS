@@ -121,6 +121,28 @@ impl RawDocuments {
             .find(|(g, _, value)| *g == group && has_path(value, path))
             .map(|(_, file, _)| file.as_str())
     }
+    /// A list is a new spelling when a legacy field accepted one struct.
+    pub(crate) fn sequence_written(&self, group: RawGroup, path: &[&str]) -> Option<&str> {
+        fn walk(value: &Value, path: &[&str]) -> bool {
+            if let Value::Option(Some(inner)) = value {
+                return walk(inner, path);
+            }
+            let Some((first, rest)) = path.split_first() else {
+                return matches!(value, Value::Seq(_));
+            };
+            match value {
+                Value::Seq(items) => items.iter().any(|item| walk(item, path)),
+                Value::Map(map) => map.iter().any(|(key, child)| {
+                    matches!(key,Value::String(name) if name==first) && walk(child, rest)
+                }),
+                _ => false,
+            }
+        }
+        self.documents
+            .iter()
+            .find(|(g, _, value)| *g == group && walk(value, path))
+            .map(|(_, file, _)| file.as_str())
+    }
 }
 
 /// The name in a path that stands for any key of a map (`units.*.role`: the `role` of each

@@ -874,7 +874,13 @@ pub struct VisualEffectRefs {
     #[serde(default)]
     pub death: Option<ContentRef>,
     #[serde(default)]
-    pub damaged: Option<DamagedEffect>,
+    pub damaged: Option<crate::effects::DamagedEffects>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub projectile: Option<ContentRef>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub work: Option<ContentRef>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub site: Option<ContentRef>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -895,10 +901,18 @@ pub struct VisualEffectsDef {
 #[serde(deny_unknown_fields)]
 pub struct VisualEffectDef {
     pub id: String,
+    #[serde(default)]
     pub kind: EffectKind,
+    #[serde(default = "effect_white")]
     pub colour: String,
+    #[serde(default = "effect_size")]
     pub size: f32,
+    #[serde(default = "effect_ms")]
     pub ms: u32,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub layers: Vec<crate::effects::EffectLayer>,
+    #[serde(default, skip_serializing_if = "crate::effects::EffectCost::is_small")]
+    pub cost: crate::effects::EffectCost,
     #[serde(default)]
     pub sound: Option<String>,
 }
@@ -911,6 +925,21 @@ pub enum EffectKind {
     Tracer,
     Burst,
     Smoke,
+}
+
+impl Default for EffectKind {
+    fn default() -> Self {
+        Self::Flash
+    }
+}
+fn effect_white() -> String {
+    "#ffffff".into()
+}
+fn effect_size() -> f32 {
+    1.
+}
+fn effect_ms() -> u32 {
+    100
 }
 
 /// API 0.2.4, rows C1 to C4: the file of `exports.combat`, the damage table of a match. It has

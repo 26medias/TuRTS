@@ -121,7 +121,6 @@ pub(crate) const UNBUILT_FEATURES: &[UnbuiltLine] = &[
     // `GathererIdle` (H4).
     line("alerts.kind", "UI-ALERT"),
     line("alerts.clear_after", "UI-ALERT"),
-    line("alerts.units", "UI-ALERT"),
     line("alerts.select_on_click", "UI-ALERT"),
     use_line("placeholder {unit}", "UI-ALERT"),
     line("alerts.focus", "UI-ALERT"),
@@ -192,14 +191,9 @@ pub(crate) const UNBUILT_FEATURES: &[UnbuiltLine] = &[
     // (plan "Task L-FX-PRES") renders the "+N" float (X14, R14) but names no style. So the line
     // goes to `L-FX-PRES`, the task that draws the float, until the orchestrator gives the style to
     // another task; the task that reads the style deletes the line.
-    line("exports.visual_effects", "L-FX-PRES"),
-    line("effects", "L-FX-PRES"),
     line("world.float_text", "L-FX-PRES"),
     // FX2: `hit`, `hit_reduced`, `damaged` (V4), the effect `sound` (V3), the `world.float_text`
     // sound (H11), `effects_voices`, `audible_range` (H16).
-    line("effects.hit", "FX2"),
-    line("effects.hit_reduced", "FX2"),
-    line("effects.damaged", "FX2"),
     line("visual effect sound", "FX2"),
     line("world.float_text.sound", "FX2"),
     line("effects_voices", "FX2"),

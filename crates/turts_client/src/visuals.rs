@@ -95,6 +95,7 @@ struct VisualInputs<'w> {
     runtime: Res<'w, CoreRuntime>,
     selected: Res<'w, SelectionFeed>,
     display: Res<'w, HealthDisplay>,
+    combat: Option<Res<'w, crate::fx::CombatPresentation>>,
     marker_feed: ResMut<'w, OrderMarkerFeed>,
     results: Res<'w, CommandResults>,
     palette: Res<'w, SlotMaterials>,
@@ -320,6 +321,7 @@ fn draw_world_visuals(
         runtime,
         selected,
         display,
+        combat,
         mut marker_feed,
         results,
         palette,
@@ -438,6 +440,7 @@ fn draw_world_visuals(
         &visuals,
         &mut desired,
         &mut health_fractions,
+        combat.as_deref(),
     );
 
     draw_order_markers(

@@ -266,6 +266,11 @@ impl Core {
                 InputEvent::Hint(input) => {
                     hints::on_input(self, input, world, view, now_ms, &mut effects);
                 }
+                InputEvent::AlertAnnounced(input) => {
+                    if input.x.is_finite() && input.y.is_finite() {
+                        self.alerts.latest = Some(input.clone());
+                    }
+                }
                 InputEvent::Alert(input) => {
                     alerts::on_input(self, input, world, view, now_ms, &mut effects);
                 }
@@ -872,6 +877,17 @@ impl Core {
                 Some(&order.id),
             );
             self.dispatch_order(order, world, effects);
+        } else if action == "jump_to_alert" {
+            self.record_named_dispatch(
+                source.input_index,
+                source.origin,
+                source.code,
+                action,
+                None,
+            );
+            if let Some(alert) = self.alerts.latest.clone() {
+                alerts::focus(self, &alert, world, effects);
+            }
         } else if action == "centre_selection" {
             self.record_named_dispatch(
                 source.input_index,
@@ -1021,6 +1037,7 @@ pub enum InputEvent {
     Hint(hints::Input),
     /// The core action `FocusAlert` (`UI-ALERT`; the type is in `alerts.rs`).
     Alert(alerts::Input),
+    AlertAnnounced(alerts::Input),
 }
 
 #[derive(Debug, Clone, PartialEq)]

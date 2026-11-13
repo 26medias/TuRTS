@@ -415,6 +415,7 @@ pub fn sync_units(
     visual_events: Option<Res<crate::animation::VisualEvents>>,
     mut serial: Option<ResMut<crate::animation::BodySerial>>,
     mut animations: Query<&mut crate::animation::UnitAnimation>,
+    combat: Option<Res<crate::fx::CombatPresentation>>,
 ) {
     let Some(acquired) = acquired else { return };
     let mut entities: HashMap<u32, Entity> = HashMap::new();
@@ -487,6 +488,21 @@ pub fn sync_units(
     }
     for (unit_id, entity) in entities {
         if !kept.contains(&unit_id) {
+            if let Some(combat) = combat.as_deref()
+                && let Some(&at) = if animations.get(entity).is_ok() {
+                    combat.death_at.get(&unit_id)
+                } else {
+                    combat.model_remove_at.get(&unit_id)
+                }
+                && at > combat.now
+            {
+                let remove_model = animations.get(entity).is_err();
+                commands
+                    .entity(entity)
+                    .remove::<PresentedUnit>()
+                    .insert(crate::fx::PendingDeath { at, remove_model });
+                continue;
+            }
             if visual_events
                 .as_ref()
                 .is_some_and(|e| e.destroyed.contains(&unit_id))
@@ -532,11 +548,16 @@ pub struct UnitRenderPlugin;
 impl Plugin for UnitRenderPlugin {
     fn build(&self, app: &mut App) {
         crate::models::register_gpu_readiness(app);
+        crate::fx::particles::register(app);
         app.init_resource::<SlotMaterials>()
             .init_resource::<crate::models::ModelState>()
             .init_resource::<crate::models::GraphicsSettings>()
             .init_resource::<crate::animation::AnimationLibrary>()
             .init_resource::<crate::animation::VisualEvents>()
+            .init_resource::<crate::fx::flash::EffectSettings>()
+            .init_resource::<crate::fx::flash::FlashMaterials>()
+            .init_resource::<crate::fx::CombatPresentation>()
+            .init_resource::<crate::fx::emitters::Emitters>()
             .init_resource::<crate::animation::BodySerial>()
             .init_resource::<crate::animation::SharedPoses>();
         app.add_systems(
@@ -556,13 +577,19 @@ impl Plugin for UnitRenderPlugin {
                 setup_scene,
                 sync_slot_materials,
                 crate::animation::collect_events,
+                crate::fx::update_combat,
                 sync_units,
                 sync_nodes,
                 crate::models::sync_models,
                 crate::models::quality_lighting,
                 crate::models::sync_ground_quality,
+                crate::fx::release_deaths,
                 crate::animation::animate_units,
                 crate::animation::age_bodies,
+                crate::fx::emitters::emit_effects,
+                crate::fx::particles::update_particles,
+                crate::fx::emitters::draw_lines,
+                crate::fx::flash::flash_models,
             )
                 .chain()
                 .after(update_presented),

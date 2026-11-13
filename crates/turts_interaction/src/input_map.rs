@@ -79,6 +79,10 @@ pub fn engine_defaults() -> Vec<ActionDef> {
     ] {
         actions.push(key(name.into(), code.into(), vec![]));
     }
+    actions.push(ActionDef {
+        name: "jump_to_alert".into(),
+        default: vec![],
+    });
     actions.extend([
         ActionDef {
             name: "zoom_in".into(),

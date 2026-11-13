@@ -70,10 +70,15 @@ pub(crate) fn validate_presentation(archive: &PackageArchive) -> Result<(), ModE
     if !is_edition_0_2_4(&archive.manifest.engine_api) {
         return Ok(());
     }
+    crate::effects::validate(archive)?;
     let pack = Pack::read(archive)?;
     let effect_files = archive.visual_effect_defs()?;
     let mut effect_ids = BTreeSet::new();
-    let sounds = pack.sound_ids();
+    let sounds: Vec<String> = pack
+        .sound_ids()
+        .into_iter()
+        .map(|id| pack.qualified(id))
+        .collect();
     for (file, definition) in &effect_files {
         for (index, effect) in definition.effects.iter().enumerate() {
             let path = format!("effects[{index}]");
@@ -85,16 +90,14 @@ pub(crate) fn validate_presentation(archive: &PackageArchive) -> Result<(), ModE
                 ));
             }
             pack.colour(file, &format!("{path}.colour"), &effect.colour)?;
-            if let Some(sound) = &effect.sound
-                && !sounds.contains(sound.as_str())
-            {
-                return Err(pack.unknown(
+            if let Some(sound) = &effect.sound {
+                pack.lookup(
                     file,
                     &format!("{path}.sound"),
                     "sound asset",
                     sound,
-                    sounds.iter().map(|name| name.to_string()).collect(),
-                ));
+                    &sounds,
+                )?;
             }
         }
     }
@@ -108,10 +111,9 @@ pub(crate) fn validate_presentation(archive: &PackageArchive) -> Result<(), ModE
             ("hit", effects.hit.as_ref()),
             ("hit_reduced", effects.hit_reduced.as_ref()),
             ("death", effects.death.as_ref()),
-            (
-                "damaged.effect",
-                effects.damaged.as_ref().map(|damaged| &damaged.effect),
-            ),
+            ("projectile", effects.projectile.as_ref()),
+            ("work", effects.work.as_ref()),
+            ("site", effects.site.as_ref()),
         ];
         for (name, reference) in refs {
             let Some(reference) = reference else {
@@ -126,7 +128,16 @@ pub(crate) fn validate_presentation(archive: &PackageArchive) -> Result<(), ModE
             )?;
         }
         if let Some(damaged) = &effects.damaged {
-            pack.ratio(&file, "effects.damaged.below", damaged.below)?;
+            for condition in damaged.as_slice() {
+                pack.lookup(
+                    &file,
+                    "effects.damaged.effect",
+                    "effect",
+                    &condition.effect,
+                    &locals,
+                )?;
+                pack.ratio(&file, "effects.damaged.below", condition.below)?;
+            }
         }
     }
     Ok(())

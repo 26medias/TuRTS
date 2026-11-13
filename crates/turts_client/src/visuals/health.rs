@@ -129,10 +129,19 @@ pub(super) fn collect_health_bars(
     visuals: &VisualState,
     desired: &mut DesiredVisuals,
     health_fractions: &mut HashMap<u32, f32>,
+    combat: Option<&crate::fx::CombatPresentation>,
 ) {
+    let mut healths = replica.healths.clone();
+    if let Some(combat) = combat {
+        for health in &mut healths {
+            if let Some(value) = combat.displayed_health.get(&health.unit.0) {
+                health.current = *value;
+            }
+        }
+    }
     sync_health_bars(
         HealthBarSync {
-            healths: &replica.healths,
+            healths: &healths,
             presented: presented_by_id,
             catalog: &content.catalog,
             selected: selected_ids,

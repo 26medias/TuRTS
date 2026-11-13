@@ -43,6 +43,8 @@ pub struct VerifiedRootMod {
 /// Authored interface and its accepted package-local image/font payloads.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct PresentationContent {
+    pub effects: BTreeMap<String, turts_mod_api::VisualEffectDef>,
+    pub effect_visuals: BTreeMap<String, turts_mod_api::VisualEffectRefs>,
     pub models: BTreeMap<String, Vec<u8>>,
     pub model_visuals: BTreeMap<String, turts_mod_api::ModelDef>,
     pub model_bounds: BTreeMap<String, ([f32; 3], [f32; 3])>,
@@ -190,12 +192,100 @@ fn presentation_from_archives(archives: &[PackageArchive]) -> Result<Presentatio
     let mut presentation = PresentationContent::default();
     for archive in archives {
         for (_, visual) in archive.visuals().map_err(|e| e.to_string())? {
+            let target = match visual.target {
+                turts_mod_api::VisualTarget::Unit(id) | turts_mod_api::VisualTarget::Node(id) => id,
+            };
             if let Some(model) = visual.model {
-                let target = match visual.target {
-                    turts_mod_api::VisualTarget::Unit(id)
-                    | turts_mod_api::VisualTarget::Node(id) => id,
+                presentation.model_visuals.insert(target.clone(), model);
+            }
+            if let Some(mut effects) = visual.effects {
+                let qualify = |id: &mut String| {
+                    if !id.contains(':') {
+                        *id = format!("{}:{id}", archive.id().0);
+                    }
                 };
-                presentation.model_visuals.insert(target, model);
+                for id in [
+                    &mut effects.fire,
+                    &mut effects.hit,
+                    &mut effects.hit_reduced,
+                    &mut effects.death,
+                    &mut effects.projectile,
+                    &mut effects.work,
+                    &mut effects.site,
+                ]
+                .into_iter()
+                .flatten()
+                {
+                    qualify(id);
+                }
+                if let Some(damaged) = effects.damaged.as_mut() {
+                    match damaged {
+                        turts_mod_api::DamagedEffects::Single(condition) => {
+                            qualify(&mut condition.effect)
+                        }
+                        turts_mod_api::DamagedEffects::Multiple(conditions) => {
+                            for condition in conditions {
+                                qualify(&mut condition.effect);
+                            }
+                        }
+                    }
+                }
+                presentation.effect_visuals.insert(target, effects);
+            }
+        }
+        for (_, group) in archive
+            .visual_effect_defs()
+            .map_err(|error| error.to_string())?
+        {
+            for mut effect in group.effects {
+                let qualify = |id: &mut String| {
+                    if !id.contains(':') {
+                        *id = format!("{}:{id}", archive.id().0);
+                    }
+                };
+                if let Some(sound) = effect.sound.as_mut() {
+                    qualify(sound);
+                }
+                for layer in &mut effect.layers {
+                    if let Some(image) = layer.image.as_mut() {
+                        qualify(image);
+                    }
+                    match &mut layer.kind {
+                        turts_mod_api::EffectLayerKind::Debris { model, image, .. } => {
+                            if let Some(model) = model {
+                                qualify(model);
+                            }
+                            if let Some(image) = image {
+                                qualify(image);
+                            }
+                        }
+                        turts_mod_api::EffectLayerKind::Projectile {
+                            model,
+                            image,
+                            trail,
+                            ..
+                        } => {
+                            if let Some(model) = model {
+                                qualify(model);
+                            }
+                            if let Some(image) = image {
+                                qualify(image);
+                            }
+                            if let Some(trail) = trail {
+                                qualify(trail);
+                            }
+                        }
+                        turts_mod_api::EffectLayerKind::Decal { image, .. } => {
+                            if let Some(image) = image {
+                                qualify(image);
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                presentation
+                    .effects
+                    .insert(qualified_asset_id(&archive.id().0, &effect.id), effect);
             }
         }
         if presentation.ground.is_none() {
