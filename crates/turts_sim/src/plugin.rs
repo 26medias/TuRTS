@@ -347,6 +347,7 @@ fn publish_completed_tick(world: &mut World) {
         healths,
         research: m3_changes.research,
         enabled: m3_changes.enabled,
+        effects: crate::economy::events::visual_effects(&events),
         events,
         unit_orders: order_list.records,
         orders_cleared: order_list.cleared,

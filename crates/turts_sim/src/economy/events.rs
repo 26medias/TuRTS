@@ -307,3 +307,63 @@ pub fn record_committed_event(
         });
     Ok(ordinal)
 }
+
+/// Export cosmetic facts from committed transactions. This does not perform gameplay writes.
+pub(crate) fn visual_effects(events: &[EconomyEvent]) -> Vec<EffectRow> {
+    events
+        .iter()
+        .filter_map(|event| match &event.kind {
+            EconomyEventKind::Fired { weapon, target, .. } => Some(EffectRow::Fired {
+                unit: *weapon,
+                target: *target,
+                weapon: 0,
+            }),
+            EconomyEventKind::Destroyed { unit, .. } => Some(EffectRow::Destroyed { unit: *unit }),
+            _ => None,
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod visual_effect_tests {
+    use super::*;
+    #[test]
+    fn committed_shot_and_death_keep_transaction_order_and_unit_ids() {
+        let events = vec![
+            EconomyEvent {
+                tick: 5,
+                ordinal: 0,
+                owner_slot: 0,
+                kind: EconomyEventKind::Fired {
+                    weapon: 7,
+                    target: 9,
+                    item: None,
+                    ammo: 0,
+                    damage: 20,
+                    applied: 20,
+                },
+            },
+            EconomyEvent {
+                tick: 5,
+                ordinal: 1,
+                owner_slot: 1,
+                kind: EconomyEventKind::Destroyed {
+                    unit: 9,
+                    cause: RemoveCause::Killed { by: 7 },
+                    items: vec![],
+                },
+            },
+        ];
+        assert_eq!(
+            visual_effects(&events),
+            vec![
+                EffectRow::Fired {
+                    unit: 7,
+                    target: 9,
+                    weapon: 0
+                },
+                EffectRow::Destroyed { unit: 9 }
+            ]
+        );
+    }
+}

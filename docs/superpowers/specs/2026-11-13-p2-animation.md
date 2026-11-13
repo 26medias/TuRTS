@@ -184,3 +184,15 @@ One reviewer, after the build. The reviewer runs AN1 to AN10 and plants three fa
 Turret and muzzle node aim for vehicles (with the first vehicle), animation events authored in
 the file, inverse kinematics, ragdolls, facial animation, building idle animation, the hit
 reaction in the skirmish.
+
+## Implementation notes (2026-11-13)
+
+- The wire had `Fired` and `Destroyed`, but no simulation writer filled them.
+  The completed tick now derives them from committed shot and destruction transactions.
+  No damage rule or wire field changes. Recovery never replays these visual events.
+- Clip entries accept both legacy strings and metadata records. The metadata fields require
+  API 0.2.6. Existing string mappings and packages remain valid.
+- Animated models use their authored idle pose for footprint and body-picking bounds.
+  The bind pose is too wide to describe a standing body. Static-model bounds stay unchanged.
+- The supplied Crossbowman prop penetrated the ground in Idle. Its local crossbow scale is
+  halved. The body stays at scale 0.88 and the collision footprint stays unchanged.
