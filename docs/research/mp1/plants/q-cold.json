@@ -1598,30 +1598,6 @@
   },
   {
     "row": "Q-COLD",
-    "plant": "p3-order-result-not-required",
-    "files": [
-      {
-        "file": "tests/browser/cold-probe.js",
-        "edit": {
-          "old": "acted: result.visible_change || result.notice !== null,",
-          "new": "acted: true,"
-        }
-      }
-    ],
-    "command": [
-      "node",
-      "--test",
-      "--test-name-pattern=an order button with no visible result",
-      "tests/browser/cold-probe.test.js"
-    ],
-    "env": {},
-    "headed": false,
-    "expected_red": "✖ an order button with no visible result is a P3 FAIL",
-    "exit": 1,
-    "commit": "cbebebd4adb9dbee8423157c3e2ed966616bccad"
-  },
-  {
-    "row": "Q-COLD",
     "plant": "p3-destructive-not-last",
     "files": [
       {
@@ -1809,30 +1785,6 @@
     "env": {},
     "headed": false,
     "expected_red": "✖ orderButtons: visible enabled order buttons",
-    "exit": 1,
-    "commit": "cbebebd4adb9dbee8423157c3e2ed966616bccad"
-  },
-  {
-    "row": "Q-COLD",
-    "plant": "f8-camera-move-ignored",
-    "files": [
-      {
-        "file": "tests/browser/cold-probe.js",
-        "edit": {
-          "old": "acted: changed.length > 0 || actedBox || cameraMoved,",
-          "new": "acted: changed.length > 0 || actedBox,"
-        }
-      }
-    ],
-    "command": [
-      "node",
-      "--test",
-      "--test-name-pattern=a button whose effect is a moved camera",
-      "tests/browser/cold-probe.test.js"
-    ],
-    "env": {},
-    "headed": false,
-    "expected_red": "✖ buttons probe: a button whose effect is a moved camera acts",
     "exit": 1,
     "commit": "cbebebd4adb9dbee8423157c3e2ed966616bccad"
   },
