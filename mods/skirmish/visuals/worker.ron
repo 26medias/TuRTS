@@ -1,1 +1,1 @@
-(target: Unit("skirmish:worker"), shape: Capsule(radius: 0.3, height: 1.1))
+(target: Unit("skirmish:worker"), shape: Cuboid(x: 0.6, y: 0.6, z: 0.9))
