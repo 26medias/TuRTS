@@ -1775,5 +1775,72 @@
     "expected_failure": "the tied ring points give the one with the smallest angle",
     "restore_check": "sha256(source)==baseline and selected test is green",
     "plant_note": "A2b1 review L2 (fault F3): the fallback takes the second pool slot. The tie case of five ring slots is red."
+  },
+  {
+    "id": "A2b1-lazy-index-no-refresh",
+    "plant_path": "crates/turts_sim/src/movement/frame.rs",
+    "anchor": "    let mut index = MovementPoolIndex::new(pool, frame.bounds);\n    for slot_index in 0..index.points.len() {\n",
+    "replacement": "    let mut index = MovementPoolIndex::new(pool, frame.bounds);\n    for slot_index in 0..0 {\n",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_sim",
+      "--features",
+      "test-probes",
+      "--test",
+      "kernel_reference",
+      "kernel_matches_reference_bit_for_bit",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "pools of one",
+    "restore_check": "sha256(source)==baseline and selected test is green",
+    "plant_note": "A2b1 re-check M1 (fault LZ1): the late index of a pool of one skips the clearance refresh. The chains of pools of one in kernel_reference, compared on all ticks with the reference that keeps an index for each pool, are red."
+  },
+  {
+    "id": "A2b1-lazy-index-not-at-stall",
+    "plant_path": "crates/turts_sim/src/movement/frame.rs",
+    "anchor": "                        let spare = pool_indexes\n                            .get(&progress.pool_id)\n                            .or(lazy.as_ref())\n",
+    "replacement": "                        let _ = &lazy;\n                        let spare = pool_indexes\n                            .get(&progress.pool_id)\n                            .or(None)\n",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_sim",
+      "--features",
+      "test-probes",
+      "--test",
+      "kernel_reference",
+      "kernel_matches_reference_bit_for_bit",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "pools of one",
+    "restore_check": "sha256(source)==baseline and selected test is green",
+    "plant_note": "A2b1 re-check M1 (fault LZ2): the stall spare of a pool of one does not use the late index. The chains of pools of one in kernel_reference are red."
+  },
+  {
+    "id": "A2b1-pushed-trip-keeps-goal",
+    "plant_path": "crates/turts_sim/src/movement/frame.rs",
+    "anchor": "                new_target =\n                    (fallback.activity != MovementActivity::Blocked).then_some(fallback.slot);\n                progress = Some(fallback);\n",
+    "replacement": "                new_target =\n                    (fallback.activity != MovementActivity::Blocked).then_some(movement_target);\n                progress = Some(fallback);\n",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "turts_sim",
+      "--test",
+      "group_movement",
+      "a_pushed_trip_to_an_edge_point_rests_on_the_clamped_point",
+      "--",
+      "--exact",
+      "--nocapture"
+    ],
+    "expected_failure": "the trip rests on the clamped goal",
+    "restore_check": "sha256(source)==baseline and selected test is green",
+    "plant_note": "A2b1 re-check L1 (fault F6): the pushed fallback keeps the unclamped goal as its target in place of its slot. The edge trip rests at another place."
   }
 ]
