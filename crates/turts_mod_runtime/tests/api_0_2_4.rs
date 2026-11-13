@@ -947,9 +947,9 @@ fn a_package_with_no_new_feature_is_accepted_at_both_requirements() {
 /// The bump of design D:2280-2286: the engine is 0.2.4, the list is ascending, and a package
 /// that requires `^0.2.3` still accepts the engine.
 #[test]
-fn the_engine_api_is_0_2_4() {
+fn the_engine_api_retains_0_2_4_and_adds_0_2_5() {
     assert_eq!(ENGINE_API_VERSION, "0.2.5");
-    assert_eq!(RELEASED_ENGINE_APIS.last(), Some(&"0.2.4"));
+    assert_eq!(RELEASED_ENGINE_APIS.last(), Some(&"0.2.5"));
     assert_eq!(RELEASED_ENGINE_APIS.len(), 7);
 }
 

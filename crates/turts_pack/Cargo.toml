@@ -16,6 +16,7 @@ name = "turts-pack"
 path = "src/main.rs"
 
 [dev-dependencies]
+libm = "0.2.16"
 turts_sim = { path = "../turts_sim", features = ["test-probes"] }
 serde_json = { workspace = true }
 serde = { workspace = true }

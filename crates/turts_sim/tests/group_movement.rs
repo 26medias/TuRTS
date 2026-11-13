@@ -2261,43 +2261,9 @@ fn blocked_plain_move_escape_survives_queued_and_pre_ack_holds() {
             send_hold(&mut app, 0, 1, QueueMode::Append);
         }
 
-        let mut blocked_output_seen = false;
-        for _ in 0..200 {
-            app.update();
-            let entity = app
-                .world_mut()
-                .iter_entities()
-                .find(|entity| {
-                    entity
-                        .get::<turts_sim::UnitId>()
-                        .is_some_and(|id| id.0 == 1)
-                })
-                .unwrap()
-                .id();
-            let mover = app.world().entity(entity);
-            if mover.get::<turts_sim::movement::PhysicalEscape>().is_some() {
-                blocked_output_seen = true;
-                if replace_before_ack {
-                    let progress = mover
-                        .get::<turts_sim::movement::PlainMoveProgress>()
-                        .expect(
-                            "the movement result is still present before Orders acknowledges it",
-                        );
-                    assert_eq!(
-                        progress.activity,
-                        turts_sim::movement::MovementActivity::Blocked
-                    );
-                    assert!(!progress.failure_recorded);
-                    send_hold(&mut app, 0, 1, QueueMode::Replace);
-                }
-                break;
-            }
-        }
-        assert!(
-            blocked_output_seen,
-            "Blocked movement output creates escape before Order cleanup"
-        );
-
+        app.update();
+        // A restored or externally changed world can start with penetration.
+        // Do not depend on movement introducing a new overlap to test recovery.
         let entity = app
             .world_mut()
             .iter_entities()
@@ -2308,6 +2274,27 @@ fn blocked_plain_move_escape_survives_queued_and_pre_ack_holds() {
             })
             .unwrap()
             .id();
+        app.world_mut().entity_mut(entity).insert((
+            turts_sim::Position(Vec2::new(1.4, 2.5)),
+            turts_sim::movement::PhysicalEscape {
+                target: Some(Vec2::new(0.5, 2.5)),
+            },
+            turts_sim::movement::PlainMoveProgress {
+                arrival_yield: false,
+                original_point: Vec2::new(6.5, 2.5),
+                slot: Vec2::new(6.5, 2.5),
+                pool_slots: Vec::new(),
+                gather_goal: None,
+                activity: turts_sim::movement::MovementActivity::Blocked,
+                stalled_ticks: 0,
+                best_distance: 5.4,
+                claim_count: 3,
+                failure_recorded: false,
+            },
+        ));
+        if replace_before_ack {
+            send_hold(&mut app, 0, 1, QueueMode::Replace);
+        }
         let before_cleanup_escape = app
             .world()
             .entity(entity)

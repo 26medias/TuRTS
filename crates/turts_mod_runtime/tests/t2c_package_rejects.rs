@@ -55,7 +55,10 @@ fn t2c_engine_api_mismatch() {
     let error = refused(&bytes, "engine_api");
     assert!(error.message.contains("`^0.1`"), "{error}");
     // The engine of this tree is 0.2.4 (task L0-API1: the bump; the test said 0.2.3).
-    assert!(error.message.contains("0.2.4"), "{error}");
+    assert!(
+        error.message.contains(turts_mod_api::ENGINE_API_VERSION),
+        "{error}"
+    );
 }
 
 #[test]

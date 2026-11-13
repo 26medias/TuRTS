@@ -319,6 +319,7 @@ fn parse_hex(value: &str) -> Color {
 }
 
 /// `Update`: on the first frame in `Phase::Joined`, spawn the camera, the light and the ground.
+#[allow(clippy::too_many_arguments)]
 pub fn setup_scene(
     mut commands: Commands,
     phase: Res<Phase>,
@@ -495,6 +496,7 @@ pub struct UnitRenderPlugin;
 
 impl Plugin for UnitRenderPlugin {
     fn build(&self, app: &mut App) {
+        crate::models::register_gpu_readiness(app);
         app.init_resource::<SlotMaterials>()
             .init_resource::<crate::models::ModelState>()
             .init_resource::<crate::models::GraphicsSettings>();

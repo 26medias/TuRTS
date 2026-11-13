@@ -62,6 +62,9 @@ pub fn visuals_by_content(archives: &[PackageArchive]) -> Result<HashMap<String,
     {
         return Err(ModError::new(package, "exports.visuals", format!("{kind} `{target}` has no visual; add a file under visuals/ for it and list the file in exports.visuals")).with_file(MANIFEST_PATH));
     }
+    for archive in archives {
+        crate::models::validate_models(archive)?;
+    }
     Ok(found
         .into_iter()
         .map(|(id, (_, shape))| (id, shape))

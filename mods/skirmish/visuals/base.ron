@@ -1,1 +1,1 @@
-(target: Unit("skirmish:base"), shape: Cuboid(x: 3.4, y: 3.4, z: 2.5))
+(target: Unit("skirmish:base"), shape: Cuboid(x: 3.4, y: 3.4, z: 2.5), model: Some((asset: "skirmish:base_glb", team_material: Some("team"), scale: 1.0, lods: [], animations: None)))

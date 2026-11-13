@@ -272,6 +272,28 @@ fn md4_accepts_skin_and_animation_without_a_format_change() {
     };
     let times = accessor(&[0., 1.], "SCALAR", 2);
     let translations = accessor(&[0., 0., 0., 0., 0., 0.], "VEC3", 2);
+    let weights = accessor(&[1., 0., 0., 0., 1., 0., 0., 0., 1., 0., 0., 0.], "VEC4", 3);
+    let joints = doc["accessors"].as_array().unwrap().len();
+    let view = doc["bufferViews"].as_array().unwrap().len();
+    let offset = blob.len();
+    blob.extend([0_u8; 24]);
+    doc["bufferViews"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({"buffer":0,"byteOffset":offset,"byteLength":24}));
+    doc["accessors"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({"bufferView":view,"componentType":5123,"count":3,"type":"VEC4"}));
+    doc["meshes"][0]["primitives"][0]["attributes"]["JOINTS_0"] = json!(joints);
+    doc["meshes"][0]["primitives"][0]["attributes"]["WEIGHTS_0"] = json!(weights);
+    doc["accessors"][times]["min"] = json!([0.0]);
+    doc["accessors"][times]["max"] = json!([1.0]);
+    doc["scenes"][0]["nodes"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!(1));
+
     doc["nodes"]
         .as_array_mut()
         .unwrap()
@@ -281,4 +303,126 @@ fn md4_accepts_skin_and_animation_without_a_format_change() {
     doc["animations"] = json!([{"name":"Idle","samplers":[{"input":times,"output":translations}],"channels":[{"sampler":0,"target":{"node":1,"path":"translation"}}]}]);
     doc["buffers"][0]["byteLength"] = json!(blob.len());
     validate(&doc, &blob, None).expect("MD4 valid animated model packs");
+}
+
+#[test]
+fn md4_refuses_a_lod_with_more_triangles() {
+    let (doc, blob) = sample();
+    let mut larger = doc.clone();
+    let primitive = larger["meshes"][0]["primitives"][0].clone();
+    larger["meshes"][0]["primitives"]
+        .as_array_mut()
+        .unwrap()
+        .push(primitive);
+    let mut files = files();
+    files.insert("assets/test.glb".into(), bytes(&doc, &blob));
+    files.insert("assets/more.glb".into(), bytes(&larger, &blob));
+    let mut assets: turts_mod_api::AssetsDef =
+        ron::de::from_bytes(&files["assets/assets.ron"]).unwrap();
+    assets.models.push(turts_mod_api::FileAsset {
+        id: "more".into(),
+        path: "assets/more.glb".into(),
+    });
+    files.insert(
+        "assets/assets.ron".into(),
+        ron::ser::to_string(&assets).unwrap().into_bytes(),
+    );
+    let visual = String::from_utf8(files["visuals/soldier.ron"].clone())
+        .unwrap()
+        .replace(
+            "scale: 1.0",
+            "scale: 1.0, lods: [(asset: \"skirmish:more\", below_screen_height: 0.1)]",
+        );
+    files.insert("visuals/soldier.ron".into(), visual.into_bytes());
+    let archive = PackageArchive::parse(&pack_files(&files).unwrap()).unwrap();
+    assert!(
+        validate_models(&archive)
+            .unwrap_err()
+            .to_string()
+            .contains("more triangles"),
+        "MD4: increasing LOD geometry must be refused"
+    );
+}
+#[test]
+fn md4_refuses_total_model_bytes_above_512_mib() {
+    let (mut doc, mut blob) = sample();
+    blob.resize(24 * 1024 * 1024, 0);
+    doc["buffers"][0]["byteLength"] = json!(blob.len());
+    let model = bytes(&doc, &blob);
+    let mut files = files();
+    let mut assets: turts_mod_api::AssetsDef =
+        ron::de::from_bytes(&files["assets/assets.ron"]).unwrap();
+    assets.models.clear();
+    for i in 0..22 {
+        let name = if i == 0 {
+            "test".to_owned()
+        } else {
+            format!("m{i}")
+        };
+        let path = format!("assets/{name}.glb");
+        files.insert(path.clone(), model.clone());
+        assets
+            .models
+            .push(turts_mod_api::FileAsset { id: name, path });
+    }
+    files.insert(
+        "assets/assets.ron".into(),
+        ron::ser::to_string(&assets).unwrap().into_bytes(),
+    );
+    let archive = PackageArchive::parse(&pack_files(&files).unwrap()).unwrap();
+    let error = validate_models(&archive).unwrap_err().to_string();
+    assert!(error.contains("512 MiB"), "MD4 total model limit: {error}");
+}
+#[test]
+fn md4_accepts_jpeg_and_reports_non_power_of_two_images_and_cameras() {
+    use image::ImageEncoder;
+    for jpeg in [false, true] {
+        let (mut doc, mut blob) = sample();
+        let mut image = Vec::new();
+        if jpeg {
+            image::codecs::jpeg::JpegEncoder::new(&mut image)
+                .write_image(&vec![150; 3 * 5 * 3], 3, 5, image::ExtendedColorType::Rgb8)
+                .unwrap();
+        } else {
+            image::codecs::png::PngEncoder::new(&mut image)
+                .write_image(&vec![150; 3 * 5 * 4], 3, 5, image::ExtendedColorType::Rgba8)
+                .unwrap();
+        }
+        let offset = blob.len();
+        blob.extend(image);
+        doc["bufferViews"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!({"buffer":0,"byteOffset":offset,"byteLength":blob.len()-offset}));
+        doc["buffers"][0]["byteLength"] = json!(blob.len());
+        doc["images"] = json!([{"bufferView":1,"mimeType":if jpeg{"image/jpeg"}else{"image/png"}}]);
+        doc["cameras"] = json!([{"type":"perspective","perspective":{"yfov":0.7,"znear":0.1}}]);
+        let warnings = validate(&doc, &blob, None).unwrap();
+        assert!(warnings.iter().any(|w| w.contains("not a power of two")));
+        assert!(
+            warnings
+                .iter()
+                .any(|w| w.contains("cameras and lights are ignored"))
+        );
+    }
+}
+#[test]
+fn model_fields_require_api_0_2_5_and_absent_fields_keep_old_defaults() {
+    let visual:turts_mod_api::VisualDef=ron::from_str("(target: Unit(\"x:y\"),shape: Capsule(radius: 0.4,height: 1.6),model: Some((asset: \"x:model\")))").unwrap();
+    let model = visual.model.unwrap();
+    assert_eq!(model.scale, 1.0);
+    assert!(model.lods.is_empty() && model.animations.is_none());
+    let (doc, blob) = sample();
+    let mut files = files();
+    files.insert("assets/test.glb".into(), bytes(&doc, &blob));
+    let manifest = String::from_utf8(files["manifest.ron"].clone())
+        .unwrap()
+        .replace("^0.2.5", "^0.2.4");
+    files.insert("manifest.ron".into(), manifest.into_bytes());
+    let archive = PackageArchive::parse(&pack_files(&files).unwrap()).unwrap();
+    let error = archive.visuals().unwrap_err().to_string();
+    assert!(
+        error.contains("model.scale") && error.contains("0.2.5"),
+        "new field version refusal: {error}"
+    );
 }

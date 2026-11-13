@@ -2653,5 +2653,18 @@ mod tests {
             queued[0].get(ItemField::CancelAction),
             Some(&serde_json::json!({"kind":"cancel_production","producer":6,"job":55}))
         );
+        replica.economy.queues[0].jobs[0].stage = JobStage::OutputBlocked;
+        let blocked = read_source(
+            &Source::ProductionQueue,
+            context(
+                &replica, &content, &selection, &groups, &alerts, &bindings, &input, &guide,
+            ),
+        )
+        .items;
+        assert_eq!(
+            blocked[0].get(ItemField::Name),
+            Some(&serde_json::json!("Exit blocked")),
+            "HUD1: a blocked exit must be visible in the production row"
+        );
     }
 }

@@ -42,13 +42,14 @@ impl Core {
         world: &dyn WorldView,
         effects: &mut Vec<Effect>,
     ) {
-        let producers_only = self.selected.iter().all(|id| {
-            world
-                .units()
-                .iter()
-                .find(|u| u.id == *id)
-                .is_some_and(|u| u.capabilities.contains(&Capability::Producer))
-        });
+        let producers_only = self.selected.len() == 1
+            && self.selected.iter().all(|id| {
+                world
+                    .units()
+                    .iter()
+                    .find(|u| u.id == *id)
+                    .is_some_and(|u| u.capabilities.contains(&Capability::Producer))
+            });
         let mut grouped: Vec<(String, OrderTarget, Vec<UnitId>)> = Vec::new();
         let mut omitted = Vec::new();
         for id in &self.selected {

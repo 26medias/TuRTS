@@ -1758,6 +1758,17 @@ fn e6_cancel_refund_matrix_covers_both_policies_and_all_stages() {
                 "[(x: 0.0, y: 4.0), (x: 0.0, y: -4.0)]",
                 "[(x: 0.0, y: 0.0)]",
             );
+            // Enclose the full exit search, rather than only authored offsets.
+            let oversized = files["units/worker.ron"]
+                .replace("id: \"worker\"", "id: \"oversized\"")
+                .replace("Circle(radius: 0.5)", "Circle(radius: 50.0)");
+            files.insert("units/oversized.ron".into(), oversized);
+            let manifest = files.get_mut("manifest.ron").unwrap();
+            *manifest = manifest.replace("units: [", "units: [\"units/oversized.ron\", ");
+            for path in ["production/train.ron", "production/hire.ron"] {
+                let recipe = files.get_mut(path).unwrap();
+                *recipe = recipe.replace("probe:worker", "probe:oversized");
+            }
         }
         let mut app = scenario_with(files, 20);
         trail(&mut app).enable();

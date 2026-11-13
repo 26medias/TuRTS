@@ -349,7 +349,7 @@ fn tie_destinations(
         })
         .map(|(_, unit)| unit)
         .collect::<Vec<_>>();
-    let mut best: Option<(f32, Vec<Vec2>)> = None;
+    let mut best: Option<(f32, f32, Vec<Vec2>)> = None;
     for turn in 0..65 {
         let angle = if turn == 0 {
             phase
@@ -402,15 +402,22 @@ fn tie_destinations(
                 .iter()
                 .map(|point| point.distance_squared(goal))
                 .sum::<f32>();
-            if best
-                .as_ref()
-                .is_none_or(|(previous, _)| cost < *previous - 1e-5)
-            {
-                best = Some((cost, points));
+            // Equal-distance slots must not send tied bodies through one another.
+            // Prefer the assignment with less travel, using geometry alone.
+            let travel = ordered
+                .iter()
+                .zip(&points)
+                .map(|(index, point)| units[*index].position.distance_squared(*point))
+                .sum::<f32>();
+            if best.as_ref().is_none_or(|(previous, previous_travel, _)| {
+                cost < *previous - 1e-5
+                    || ((cost - *previous).abs() <= 1e-5 && travel < *previous_travel - 1e-5)
+            }) {
+                best = Some((cost, travel, points));
             }
         }
     }
-    best.map(|(_, points)| points)
+    best.map(|(_, _, points)| points)
 }
 
 /// Collision sums and projections use spatial order. The grid's general id ordering is

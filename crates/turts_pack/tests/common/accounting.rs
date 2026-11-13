@@ -2816,13 +2816,22 @@ impl AccountingOracle {
             .2;
         let radius = output_def.radius;
         let bounds = b.bounds.as_ref().ok_or("map bounds missing")?;
-        let candidate = offsets
+        let origin = bevy_math::Vec2::new(producer_pos.x, producer_pos.y);
+        let rally = b
+            .unit_orders
             .iter()
-            .map(|offset| turts_mod_api::WorldPos {
-                x: producer_pos.x + offset.x,
-                y: producer_pos.y + offset.y,
-            })
-            .find(|p| {
+            .find(|row| row.unit_id == producer)
+            .and_then(|row| row.orders.rally)
+            .unwrap_or_else(|| {
+                let centre = bevy_math::Vec2::new(bounds.x, bounds.y) * 0.5;
+                origin
+                    + (centre - origin)
+                        .try_normalize()
+                        .unwrap_or(bevy_math::Vec2::Y)
+                        * (producer_def.radius + 4.0)
+            });
+        let free =
+            |p: &turts_mod_api::WorldPos| {
                 p.x - radius >= 0.0
                     && p.y - radius >= 0.0
                     && p.x + radius <= bounds.x
@@ -2847,7 +2856,45 @@ impl AccountingOracle {
                         let dy = p.y - n.pos.y;
                         dx * dx + dy * dy >= (radius + nr) * (radius + nr)
                     })
-            });
+            };
+        let mut candidate = offsets
+            .iter()
+            .map(|offset| turts_mod_api::WorldPos {
+                x: producer_pos.x + offset.x,
+                y: producer_pos.y + offset.y,
+            })
+            .find(&free);
+        let direction = (rally - origin)
+            .try_normalize()
+            .unwrap_or(bevy_math::Vec2::Y);
+        let mut ring = 1;
+        while candidate.is_none() {
+            let distance = producer_def.radius + radius + ring as f32 * (2.0 * radius);
+            if distance > producer_def.radius + 12.0 {
+                break;
+            }
+            let count =
+                ((std::f32::consts::TAU * distance / (2.0 * radius)).floor() as usize).max(8);
+            for i in 0..count {
+                let step = if i % 2 == 1 {
+                    i.div_ceil(2) as f32
+                } else {
+                    -(i as f32 / 2.0)
+                };
+                let (sin, cos) = libm::sincosf(step * std::f32::consts::TAU / count as f32);
+                let p = origin
+                    + bevy_math::Vec2::new(
+                        direction.x * cos - direction.y * sin,
+                        direction.x * sin + direction.y * cos,
+                    ) * distance;
+                let p = turts_mod_api::WorldPos { x: p.x, y: p.y };
+                if free(&p) {
+                    candidate = Some(p);
+                    break;
+                }
+            }
+            ring += 1;
+        }
         let can_commit = candidate.is_some()
             && b.allocators.next_values().0.checked_add(1).is_some()
             && b.next_event_ordinal.is_some();
@@ -2920,7 +2967,10 @@ impl AccountingOracle {
                 unit_type: type_id,
                 owner_slot: owner,
                 pos: candidate.clone(),
-                move_target: None,
+                move_target: output_def.movement_speed.map(|_| turts_mod_api::WorldPos {
+                    x: rally.x.clamp(radius, bounds.x - radius),
+                    y: rally.y.clamp(radius, bounds.y - radius),
+                }),
             });
         expected.raw_units.sort_by_key(|u| u.unit_id);
         if let Some((capacity, accepts)) = &output_def.inventory {

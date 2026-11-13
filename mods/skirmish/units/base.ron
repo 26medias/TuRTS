@@ -1,4 +1,4 @@
-(id: "base", name: "Command centre", footprint: Circle(radius: 2.0), movement: None,
+(id: "base", name: "Castle", footprint: Circle(radius: 2.0), movement: None,
  inventory: None, gatherer: None,
  drop_off: Some((rules: [(item: "skirmish:wood", effect: Convert(balance: "skirmish:credits", per_item: 1))])),
  producer: Some((recipes: ["skirmish:train_worker"], queue_capacity: 5, spawn_offsets: [(x: 0.0, y: 4.0), (x: 4.0, y: 0.0), (x: 0.0, y: -4.0)])),

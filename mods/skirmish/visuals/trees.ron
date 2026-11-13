@@ -1,1 +1,1 @@
-(target: Node("skirmish:trees"), shape: Cuboid(x: 2.2, y: 2.2, z: 2.0))
+(target: Node("skirmish:trees"), shape: Cuboid(x: 2.2, y: 2.2, z: 2.0), model: Some((asset: "skirmish:trees_glb", team_material: None, scale: 1.0, lods: [], animations: None)))

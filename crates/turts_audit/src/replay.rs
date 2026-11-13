@@ -2488,6 +2488,28 @@ fn validate_automatic_order_operation(
     let current = orders_before.current.clone();
     let actor_target_before = raw_move_target(&operation.before, unit_id);
     let actor_target_after = raw_move_target(&operation.after, unit_id);
+    // A legal body can stop after projection fails in a crowded cohort. The
+    // server acknowledges that terminal movement state before other behaviours.
+    let cohort_blocked = operation.before.movement_progress.iter().any(|row| {
+        row.unit_id == unit_id
+            && row.progress.activity == turts_sim::movement::MovementActivity::Blocked
+    }) && actor_target_before.is_none();
+    if cohort_blocked && let Some(current) = current.as_ref() {
+        orders_after.current = None;
+        orders_after.last_failure = Some(turts_sim::OrderFailure {
+            order: current.order.clone(),
+            reason: turts_sim::RejectReason::Blocked,
+            tick,
+        });
+        start_next_audited_order_if_not_pending(&mut expected, unit_id, &mut orders_after)?;
+        store_audited_unit_orders(&mut expected, unit_id, orders_after);
+        if !operation.events.is_empty() || expected != operation.after {
+            return Err(format!(
+                "cohort Blocked acknowledgement for unit {unit_id} differs from its independently modeled transition"
+            ));
+        }
+        return Ok(());
+    }
 
     if operation.phase == turts_sim::economy::transaction::AuditPhase::PostMovementOrders
         && !current.as_ref().is_some_and(|order| {

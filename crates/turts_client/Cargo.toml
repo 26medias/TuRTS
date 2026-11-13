@@ -13,7 +13,7 @@ turts_rules = { path = "../turts_rules" }
 turts_mod_runtime = { path = "../turts_mod_runtime" }
 turts_interaction = { path = "../turts_interaction" }
 turts_net_lightyear = { path = "../turts_net_lightyear", features = ["client"] }
-bevy = { workspace = true, features = ["3d", "ui", "default_font", "bevy_audio", "vorbis"] }
+bevy = { workspace = true, features = ["3d", "ui", "default_font", "bevy_audio", "vorbis", "jpeg"] }
 lightyear = { workspace = true, features = ["client"] }
 serde = { workspace = true }
 serde_json = { workspace = true }

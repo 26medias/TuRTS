@@ -323,7 +323,6 @@ impl PackageArchive {
     /// calls this.
     pub fn visuals(&self) -> Result<Vec<(String, VisualDef)>, ModError> {
         self.check_presentation_versions()?;
-        crate::models::validate_models(self)?;
         self.visuals_unchecked()
     }
 

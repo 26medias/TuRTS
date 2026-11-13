@@ -101,6 +101,9 @@ struct Primitive {
 }
 #[derive(Component)]
 pub struct ModelInstance {
+    pub ready: bool,
+    ticket: u64,
+    retired_children: Vec<Entity>,
     pub asset: String,
     pub level: usize,
     pub quality: Quality,
@@ -108,6 +111,7 @@ pub struct ModelInstance {
 }
 #[derive(Resource, Default)]
 pub struct ModelState {
+    next_gpu_ticket: u64,
     handles: HashMap<String, Handle<Gltf>>,
     templates: HashMap<String, Vec<Primitive>>,
     materials: HashMap<(AssetId<GltfMaterial>, Option<u8>, Quality), Handle<StandardMaterial>>,
@@ -237,6 +241,7 @@ pub fn sync_models(
     mut commands: Commands,
     sources: ModelSources,
     mut state: ResMut<ModelState>,
+    bridge: Res<ModelGpuBridge>,
     mut material_assets: ResMut<Assets<StandardMaterial>>,
     mut images: ResMut<Assets<Image>>,
     cameras: Query<(&Camera, &GlobalTransform)>,
@@ -246,7 +251,7 @@ pub fn sync_models(
             Option<&PresentedUnit>,
             Option<&PresentedNode>,
             &mut Transform,
-            Option<&ModelInstance>,
+            Option<&mut ModelInstance>,
         ),
         Or<(With<PresentedUnit>, With<PresentedNode>)>,
     >,
@@ -276,6 +281,20 @@ pub fn sync_models(
                 .load(format!("package://{path}"));
             state.handles.insert(id.clone(), handle);
         }
+    }
+    let live_tickets: std::collections::HashSet<_> = shown
+        .iter()
+        .filter_map(|(_, _, _, _, instance)| instance.map(|i| i.ticket))
+        .collect();
+    let live_roots: std::collections::HashSet<_> =
+        shown.iter().map(|(entity, _, _, _, _)| entity).collect();
+    if let Ok(mut bridge) = bridge.0.lock() {
+        bridge.pending.retain(|ticket, request| {
+            live_roots.contains(&request.root) && live_tickets.contains(ticket)
+        });
+        bridge
+            .ready
+            .retain(|ticket, root| live_roots.contains(root) && live_tickets.contains(ticket));
     }
     let now = sources.time.elapsed_secs_f64();
     let handles: Vec<_> = state
@@ -330,7 +349,23 @@ pub fn sync_models(
         }
     }
     let quality = sources.settings.quality;
-    for (entity, unit, node, mut transform, instance) in &mut shown {
+    for (entity, unit, node, mut transform, mut instance) in &mut shown {
+        if let Some(instance) = instance.as_deref_mut()
+            && !instance.ready
+            && bridge
+                .0
+                .lock()
+                .is_ok_and(|mut b| b.ready.remove(&instance.ticket).is_some())
+        {
+            instance.ready = true;
+            commands
+                .entity(entity)
+                .remove::<Mesh3d>()
+                .remove::<MeshMaterial3d<StandardMaterial>>();
+            for child in instance.retired_children.drain(..) {
+                commands.entity(child).despawn();
+            }
+        }
         let (id, content, pos, owner) = if let Some(unit) = unit {
             let Some(replica) = sources
                 .replica
@@ -392,7 +427,7 @@ pub fn sync_models(
             model,
             screen_height,
             quality,
-            instance.map_or(0, |i| i.level),
+            instance.as_deref().map_or(0, |i| i.level),
         );
         let wanted = if level == 0 {
             &model.asset
@@ -403,14 +438,17 @@ pub fn sync_models(
         let asset = if state.templates.contains_key(wanted) {
             wanted
         } else if instance.is_some() {
-            &instance.unwrap().asset
+            &instance.as_deref().unwrap().asset
         } else {
             continue;
         };
         let Some(primitives) = state.templates.get(asset).cloned() else {
             continue;
         };
-        if instance.is_none_or(|i| i.asset != *asset || i.quality != quality) {
+        if instance
+            .as_deref()
+            .is_none_or(|i| i.asset != *asset || i.quality != quality)
+        {
             let handle = &state.handles[asset];
             let Some(gltf) = sources.gltfs.get(handle) else {
                 continue;
@@ -421,6 +459,7 @@ pub fn sync_models(
                 .and_then(|name| gltf.named_materials.get(name.as_str()))
                 .map(|h| h.id());
             let mut children = Vec::new();
+            let mut gpu_children = Vec::new();
             for primitive in primitives {
                 let slot = if team == Some(primitive.material.id()) {
                     owner
@@ -469,29 +508,40 @@ pub fn sync_models(
                     .map_or(0.0, crate::render::mesh_lift);
                 let child = commands
                     .spawn((
-                        Mesh3d(primitive.mesh),
-                        MeshMaterial3d(material),
+                        Mesh3d(primitive.mesh.clone()),
+                        MeshMaterial3d(material.clone()),
                         local,
                         ChildOf(entity),
                     ))
                     .id();
                 children.push(child);
+                gpu_children.push((child, primitive.mesh.id(), material.id()));
             }
-            if let Some(instance) = instance {
-                for child in &instance.children {
-                    commands.entity(*child).despawn();
-                }
+            let mut retired_children = Vec::new();
+            if let Some(instance) = instance.as_deref() {
+                retired_children.extend(instance.children.iter().copied());
+                retired_children.extend(instance.retired_children.iter().copied());
             }
-            commands
-                .entity(entity)
-                .remove::<Mesh3d>()
-                .remove::<MeshMaterial3d<StandardMaterial>>()
-                .insert(ModelInstance {
-                    asset: asset.clone(),
-                    level,
-                    quality,
-                    children,
-                });
+            state.next_gpu_ticket += 1;
+            let ticket = state.next_gpu_ticket;
+            if let Ok(mut bridge) = bridge.0.lock() {
+                bridge.pending.insert(
+                    ticket,
+                    GpuRequest {
+                        root: entity,
+                        children: gpu_children,
+                    },
+                );
+            }
+            commands.entity(entity).insert(ModelInstance {
+                asset: asset.clone(),
+                level,
+                quality,
+                children,
+                retired_children,
+                ticket,
+                ready: false,
+            });
         }
         if unit.is_some() && owner.is_some() {
             let mobile = turts_mod_api::ContentId::parse(content)
@@ -624,5 +674,63 @@ mod tests {
         );
         assert_eq!(select_lod(&model, 0.08, Quality::High, 0), 0);
         assert_eq!(select_lod(&model, 0.08, Quality::High, 1), 1);
+    }
+}
+
+/// A render-world acknowledgement keeps the shape until the model can draw.
+#[derive(Resource, Clone, Default)]
+pub struct ModelGpuBridge(std::sync::Arc<std::sync::Mutex<ModelGpuRequests>>);
+#[derive(Default)]
+struct ModelGpuRequests {
+    pending: HashMap<u64, GpuRequest>,
+    ready: HashMap<u64, Entity>,
+}
+struct GpuRequest {
+    root: Entity,
+    children: Vec<(Entity, AssetId<Mesh>, AssetId<StandardMaterial>)>,
+}
+
+pub fn register_gpu_readiness(app: &mut App) {
+    let bridge = ModelGpuBridge::default();
+    app.insert_resource(bridge.clone());
+    if let Some(render) = app.get_sub_app_mut(bevy::render::RenderApp) {
+        render.insert_resource(bridge).add_systems(
+            bevy::render::Render,
+            acknowledge_models.in_set(bevy::render::RenderSystems::Cleanup),
+        );
+    }
+}
+fn acknowledge_models(
+    bridge: Res<ModelGpuBridge>,
+    meshes: Res<bevy::render::render_asset::RenderAssets<bevy::render::mesh::RenderMesh>>,
+    materials: Res<
+        bevy::render::erased_render_asset::ErasedRenderAssets<bevy::pbr::PreparedMaterial>,
+    >,
+    instances: Res<bevy::pbr::RenderMeshInstances>,
+    pipelines: Res<bevy::render::render_resource::PipelineCache>,
+) {
+    if pipelines.waiting_pipelines().next().is_some() {
+        return;
+    }
+    let Ok(mut bridge) = bridge.0.lock() else {
+        return;
+    };
+    let ready: Vec<_> = bridge
+        .pending
+        .iter()
+        .filter(|(_, request)| {
+            request.children.iter().all(|(entity, mesh, material)| {
+                meshes.get(*mesh).is_some()
+                    && materials.get(*material).is_some()
+                    && instances.mesh_asset_id(bevy::render::sync_world::MainEntity::from(*entity))
+                        == Some(*mesh)
+            })
+        })
+        .map(|(ticket, _)| *ticket)
+        .collect();
+    for ticket in ready {
+        if let Some(request) = bridge.pending.remove(&ticket) {
+            bridge.ready.insert(ticket, request.root);
+        }
     }
 }

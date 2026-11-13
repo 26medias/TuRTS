@@ -479,11 +479,13 @@ type SceneWidgetQuery<'w, 's> = Query<
     ),
 >;
 
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
 fn publish_scene(
     model_instances: Query<(
         Option<&SceneUnit>,
         Option<&SceneNode>,
         &turts_client::models::ModelInstance,
+        &GlobalTransform,
     )>,
     units: Query<
         (&SceneUnit, &GlobalTransform),
@@ -642,8 +644,8 @@ fn publish_scene(
         })
         .collect::<Vec<_>>();
     widget_rects.sort_by(|left, right| left["id"].as_str().cmp(&right["id"].as_str()));
-    scene["models"] = serde_json::Value::Array(model_instances.iter().map(|(unit,node,instance)|serde_json::json!({
-        "unit_id":unit.map(|u|u.0),"node_id":node.map(|n|n.0),"asset":instance.asset,"level":instance.level,"quality":instance.quality
+    scene["models"] = serde_json::Value::Array(model_instances.iter().map(|(unit,node,instance,transform)|serde_json::json!({
+        "unit_id":unit.map(|u|u.0),"node_id":node.map(|n|n.0),"asset":instance.asset,"level":instance.level,"quality":instance.quality,"ready":instance.ready,"forward":(transform.rotation()*Vec3::Z).to_array()
     })).collect());
     scene["widgets"] = serde_json::Value::Array(widget_rects);
     *SCENE.lock().unwrap() = scene.to_string();

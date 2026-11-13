@@ -260,19 +260,19 @@ fn check_name(
     name: &Option<String>,
     names: &[String],
 ) -> Result<(), ModError> {
-    if let Some(name) = name {
-        if !names.contains(name) {
-            let hint = names
-                .iter()
-                .min_by_key(|n| edit_distance(name, n))
-                .map_or(String::new(), |n| format!("; did you mean `{n}`?"));
-            return Err(error(
-                package,
-                file,
-                field,
-                format!("unknown name `{name}`{hint}; names: {}", names.join(", ")),
-            ));
-        }
+    if let Some(name) = name
+        && !names.contains(name)
+    {
+        let hint = names
+            .iter()
+            .min_by_key(|n| edit_distance(name, n))
+            .map_or(String::new(), |n| format!("; did you mean `{n}`?"));
+        return Err(error(
+            package,
+            file,
+            field,
+            format!("unknown name `{name}`{hint}; names: {}", names.join(", ")),
+        ));
     }
     Ok(())
 }
@@ -301,6 +301,8 @@ pub fn validate_models(archive: &PackageArchive) -> Result<Vec<String>, ModError
             images.insert(format!("{package}:{}", image.id));
         }
         for asset in assets.models {
+            turts_mod_api::ContentId::parse(&format!("{package}:{}", asset.id))
+                .map_err(|e| error(package, &file, "models.id", e))?;
             if models.contains_key(&asset.id) {
                 return Err(error(
                     package,

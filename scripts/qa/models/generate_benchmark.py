@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Generate reproducible model load fixtures. Art stays outside the shipped skirmish."""
 from pathlib import Path
-import argparse,json,math,struct,shutil,io
+import argparse,json,math,struct,shutil,io,re
 from PIL import Image
 
 def glb(path,lat,lon,textures):
@@ -55,24 +55,25 @@ def main():
         shutil.copytree(args.root/'mods/skirmish',package)
         manifest=(package/'manifest.ron').read_text().replace('^0.2.4','^0.2.5')
         (package/'manifest.ron').write_text(manifest)
+        for visual in (package/'visuals').glob('*.ron'):
+            text=visual.read_text()
+            if ', model:' in text:visual.write_text(text.split(', model:',1)[0]+')\n')
         modelassets=[]
         if name=='lowpoly':
             shutil.copy2(args.root/'mods/skirmish/assets/models/soldier.glb',package/'assets/soldier.glb');modelassets=[('bench','soldier.glb')]
         elif name!='shapes':
             for asset in ['detail','lod1','lod2']:shutil.copy2(out/(asset+'.glb'),package/'assets'/(asset+'.glb'));modelassets.append((asset,asset+'.glb'))
-        assets=(package/'assets/assets.ron').read_text().rstrip().removesuffix(')')
+        assets=re.sub(r',\s*models:\s*\[[^\]]*\]', '', (package/'assets/assets.ron').read_text()).rstrip().removesuffix(')')
         assets+=', models: ['+','.join(f'(id: "{id}", path: "assets/{file}")'for id,file in modelassets)+'])\n';(package/'assets/assets.ron').write_text(assets)
         if modelassets:
             model='bench'if name=='lowpoly'else'detail';lods='[(asset: "skirmish:lod1", below_screen_height: 0.08),(asset: "skirmish:lod2", below_screen_height: 0.03)]'if 'lod'in name else'[]'
-            (package/'visuals/soldier.ron').write_text(f'(target: Unit("skirmish:soldier"), shape: Capsule(radius: 0.4, height: 1.6), model: Some((asset: "skirmish:{model}", team_material: Some("team"), lods: {lods}, scale: 1.0)))\n')
+            (package/'visuals/soldier.ron').write_text(f'(target: Unit("skirmish:soldier"), shape: Capsule(radius: 0.4, height: 1.6), model: Some((asset: "skirmish:{model}", team_material: Some("team"), lods: {lods}, scale: {0.88 if name=="lowpoly" else 1.0})))\n')
         # Idle units isolate client model costs. No computer runs in these fixtures.
         cols=math.ceil(math.sqrt(count));rows=math.ceil(count/cols);width=cols*1.4+4;depth=rows*1.4+4
         placements=','.join(f'(unit: "skirmish:soldier", owner_slot: 0, pos: (x: {2+x%cols*1.4:.4f}, y: {2+x//cols*1.4:.4f}), contents: [])'for x in range(count))
         (package/'maps/field.ron').write_text(f'(id: "field", size: (x: {width:.4f}, y: {depth:.4f}), placements: [{placements}], nodes: [], slot_economy: [(slot: 0, balances: [(balance: "skirmish:credits", amount: 10000)])])\n')
         # Remove win/loss rules: this is a rendering fixture, not a skirmish match.
-        match=(package/'match.ron').read_text();import re
-        match=re.sub(r'victory: Some\(.*', 'victory: None,)',match,flags=re.S)
         # Preserve valid match syntax through an explicit fixture definition.
-        (package/'match.ron').write_text('(start: Immediate, victory: None)\n')
+        (package/'match.ron').write_text('(start: Immediate, victory: None, open_sites_per_slot: Some(4))\n')
     print(out)
 if __name__=='__main__':main()

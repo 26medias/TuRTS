@@ -437,7 +437,7 @@ mod tests {
             check_unbuilt(&manifest, None, &raw, UNBUILT_FEATURES, VERSION_TABLE)
                 .unwrap_or_else(|error| panic!("{}, absent: {error}", line.feature));
         }
-        assert_eq!(tested, 52, "the RAW lines");
+        assert_eq!(tested, 50, "the RAW lines after model support");
         let _ = RawDocuments::default();
     }
 

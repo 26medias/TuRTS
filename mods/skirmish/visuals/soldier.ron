@@ -1,1 +1,1 @@
-(target: Unit("skirmish:soldier"), shape: Capsule(radius: 0.4, height: 1.6))
+(target: Unit("skirmish:soldier"), shape: Capsule(radius: 0.4, height: 1.6), model: Some((asset: "skirmish:soldier_glb", team_material: Some("team"), scale: 0.88, lods: [], animations: None)))
