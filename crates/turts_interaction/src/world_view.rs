@@ -30,6 +30,13 @@ pub struct NodeView {
 pub trait WorldView {
     fn units(&self) -> &[UnitView];
     fn nodes(&self) -> &[NodeView];
+    /// The visible body and its scene yaw. Missing presentation keeps footprint picking.
+    fn unit_pick_shape(&self, _unit: &UnitView) -> Option<(&turts_mod_api::Shape, f32)> {
+        None
+    }
+    fn node_pick_shape(&self, _node: &NodeView) -> Option<&turts_mod_api::Shape> {
+        None
+    }
     fn own_slot(&self) -> SlotId;
     fn orders(&self) -> &[OrderDef];
     fn order_rules(&self) -> &OrderRulesDef;

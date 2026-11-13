@@ -53,35 +53,14 @@ impl Core {
         now: u64,
         effects: &mut Vec<Effect>,
     ) {
-        let ground = projection::screen_to_world(px, view, self.camera);
-        let hit = ground.and_then(|point| {
-            world
-                .units()
-                .iter()
-                .filter_map(|unit| {
-                    let distance = unit.position.distance(point);
-                    (distance <= unit.footprint_radius.max(0.0)).then_some((unit, distance))
-                })
-                .min_by(|a, b| a.1.total_cmp(&b.1))
-                .map(|(unit, _)| unit)
-        });
+        let hit = super::smart::nearest_unit(px, view, self.camera, world);
         self.selected_node = None;
         let Some(unit) = hit else {
             if !self.has_modifier_action("add_modifier") {
                 self.selected.clear();
                 self.last_click = None;
-                self.selected_node = ground.and_then(|point| {
-                    world
-                        .nodes()
-                        .iter()
-                        .filter_map(|node| {
-                            let distance = node.position.distance_squared(point);
-                            (distance <= node.radius.max(0.0).powi(2))
-                                .then_some((node.id, distance))
-                        })
-                        .min_by(|a, b| a.1.total_cmp(&b.1))
-                        .map(|(id, _)| id)
-                });
+                self.selected_node =
+                    super::smart::nearest_node(px, view, self.camera, world).map(|node| node.id);
                 effects.push(Effect::SelectionChanged);
             }
             return;

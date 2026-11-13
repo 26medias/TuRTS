@@ -8,6 +8,7 @@ pub mod groups;
 pub mod hints;
 pub mod input_map;
 pub mod minimap;
+pub mod picking;
 pub mod placement;
 pub mod projection;
 pub mod selection;

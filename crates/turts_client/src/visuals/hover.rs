@@ -12,6 +12,7 @@ pub(super) fn resolve_hover(
     camera_transform: &GlobalTransform,
     presented: &Presented,
     content: &ClientContent,
+    replica: &Replica,
     visuals: &mut VisualState,
     now: Instant,
 ) -> Option<u32> {
@@ -21,6 +22,33 @@ pub(super) fn resolve_hover(
         .flatten()
         .and_then(|cursor| {
             let ray = camera.viewport_to_world(camera_transform, cursor).ok()?;
+            let body = presented
+                .units
+                .iter()
+                .filter_map(|unit| {
+                    let shape = content.shapes.get(&unit.content_id)?;
+                    let yaw = replica
+                        .units
+                        .get(&unit.unit_id)
+                        .and_then(|unit| unit.facing)
+                        .map_or(0.0, |facing| {
+                            crate::render::facing_rotation(facing)
+                                .to_euler(EulerRot::YXZ)
+                                .0
+                        });
+                    turts_interaction::picking::shape_hit(
+                        ray.origin,
+                        *ray.direction,
+                        Vec2::new(unit.pos.x, unit.pos.y),
+                        shape,
+                        yaw,
+                    )
+                    .map(|distance| (unit.unit_id, distance))
+                })
+                .min_by(|a, b| a.1.total_cmp(&b.1));
+            if let Some((id, _)) = body {
+                return Some(id);
+            }
             let distance = ray.intersect_plane(Vec3::ZERO, InfinitePlane3d::new(Dir3::Y))?;
             let point = ray.get_point(distance);
             presented

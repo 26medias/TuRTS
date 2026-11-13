@@ -57,6 +57,15 @@ async function readWorld() {
     const ui = typeof window.turts_ui === "function" ? parse(window.turts_ui()) : null;
     const entries = new Map(((scene && scene.units) || []).map((unit) => [unit.unit_id, unit]));
     const replica = (debug.replicated_world && debug.replicated_world.units) || debug.units || [];
+    const bodyCenter = (entry) => {
+        const matrix = scene?.clip_from_world;
+        const position = entry?.translation;
+        if (!Array.isArray(matrix) || matrix.length !== 16 || !Array.isArray(position) || position.length !== 3) return entry?.ground_screen_center ?? null;
+        const value = [...position, 1];
+        const clip = [0, 1, 2, 3].map(row => value.reduce((sum, item, column) => sum + matrix[column * 4 + row] * item, 0));
+        if (!clip.every(Number.isFinite) || clip[3] <= 0) return null;
+        return [(clip[0] / clip[3] + 1) * window.innerWidth / 2, (1 - clip[1] / clip[3]) * window.innerHeight / 2];
+    };
     const compact = (widget) => ({
         id: widget.id, kind: widget.kind ?? null, rect: widget.rect ?? null, text: typeof widget.text === "string" ? widget.text.slice(0, 4000) : null,
         visible: widget.visible === true, enabled: widget.enabled !== false, capture_root: widget.capture_root === true,
@@ -71,8 +80,8 @@ async function readWorld() {
         notices: (Array.isArray(debug.notices) ? debug.notices : []).map(noticeText),
         markers: Array.isArray(debug.markers_shown) ? debug.markers_shown.length : 0,
         units: replica.map((unit) => ({ unit_id: unit.unit_id, owner_slot: unit.owner_slot ?? null, content_id: unit.content_id ?? null,
-            center: (entries.get(unit.unit_id) || {}).ground_screen_center ?? null, pick_radius: (entries.get(unit.unit_id) || {}).pick_radius ?? null })),
-        nodes: ((scene && scene.nodes) || []).map((node) => ({ node_id: node.node_id, center: node.ground_screen_center ?? null, pick_radius: node.pick_radius ?? null })),
+            center: bodyCenter(entries.get(unit.unit_id)), ground_center: (entries.get(unit.unit_id) || {}).ground_screen_center ?? null, pick_radius: (entries.get(unit.unit_id) || {}).pick_radius ?? null })),
+        nodes: ((scene && scene.nodes) || []).map((node) => ({ node_id: node.node_id, center: bodyCenter(node), ground_center: node.ground_screen_center ?? null, pick_radius: node.pick_radius ?? null })),
         ui: Array.isArray(ui) ? ui.map(compact) : [],
     };
 }

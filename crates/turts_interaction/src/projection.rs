@@ -42,6 +42,24 @@ pub fn world_to_screen(_point: Vec2, _viewport: &Viewport, _camera: CameraState)
 ///
 /// Task 9 preparation stub. The production implementation is shared by picking and the adapter.
 pub fn screen_to_world(_point: Vec2, _viewport: &Viewport, _camera: CameraState) -> Option<Vec2> {
+    let (origin, direction) = screen_ray(_point, _viewport, _camera)?;
+    if direction.y.abs() < 1e-6 {
+        return None;
+    }
+    let distance = -origin.y / direction.y;
+    if distance < 0.0 || !distance.is_finite() {
+        return None;
+    }
+    let point = origin + direction * distance;
+    Some(Vec2::new(point.x, point.z))
+}
+
+/// Scene ray for a logical pointer position. The direction uses the same unprojection as ground orders.
+pub fn screen_ray(
+    _point: Vec2,
+    _viewport: &Viewport,
+    _camera: CameraState,
+) -> Option<(glam::Vec3, glam::Vec3)> {
     let (view, projection) = matrices(_viewport, _camera)?;
     let x = 2.0 * _point.x / _viewport.size.x - 1.0;
     let y = 1.0 - 2.0 * _point.y / _viewport.size.y;
@@ -57,15 +75,10 @@ pub fn screen_to_world(_point: Vec2, _viewport: &Viewport, _camera: CameraState)
     let origin = near.truncate() / near.w;
     let end = far.truncate() / far.w;
     let direction = end - origin;
-    if !direction.is_finite() || direction.y.abs() < 1.0e-6 {
+    if !direction.is_finite() || direction.length_squared() < 1e-12 {
         return None;
     }
-    let distance = -origin.y / direction.y;
-    if distance < 0.0 || !distance.is_finite() {
-        return None;
-    }
-    let point = origin + direction * distance;
-    Some(Vec2::new(point.x, point.z))
+    Some((origin, direction))
 }
 
 fn matrices(viewport: &Viewport, camera: CameraState) -> Option<(Mat4, Mat4)> {

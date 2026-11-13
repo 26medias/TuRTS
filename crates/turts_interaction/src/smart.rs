@@ -13,7 +13,13 @@ impl Core {
         let Some(point) = projection::screen_to_world(px, view, self.camera) else {
             return;
         };
-        self.smart_command_at_world_point(point, world, effects);
+        self.smart_command_with_targets(
+            point,
+            nearest_unit(px, view, self.camera, world),
+            nearest_node(px, view, self.camera, world),
+            world,
+            effects,
+        );
     }
 
     /// Applies the same authored smart-order rules used by pointer commands to a world-space point.
@@ -25,6 +31,17 @@ impl Core {
     ) {
         let target_unit = nearest_unit_at(point, world);
         let target_node = nearest_node_at(point, world);
+        self.smart_command_with_targets(point, target_unit, target_node, world, effects);
+    }
+
+    fn smart_command_with_targets(
+        &mut self,
+        point: Vec2,
+        target_unit: Option<&UnitView>,
+        target_node: Option<&NodeView>,
+        world: &dyn WorldView,
+        effects: &mut Vec<Effect>,
+    ) {
         let mut grouped: Vec<(String, OrderTarget, Vec<UnitId>)> = Vec::new();
         let mut omitted = Vec::new();
         for id in &self.selected {
@@ -199,6 +216,20 @@ pub(super) fn nearest_unit<'a>(
     camera: CameraState,
     world: &'a dyn WorldView,
 ) -> Option<&'a UnitView> {
+    if let Some((origin, direction)) = projection::screen_ray(px, view, camera) {
+        let hit = world
+            .units()
+            .iter()
+            .filter_map(|unit| {
+                let (shape, yaw) = world.unit_pick_shape(unit)?;
+                crate::picking::shape_hit(origin, direction, unit.position, shape, yaw)
+                    .map(|distance| (unit, distance))
+            })
+            .min_by(|a, b| a.1.total_cmp(&b.1));
+        if let Some((unit, _)) = hit {
+            return Some(unit);
+        }
+    }
     let point = projection::screen_to_world(px, view, camera)?;
     nearest_unit_at(point, world)
 }
@@ -220,6 +251,20 @@ pub(super) fn nearest_node<'a>(
     camera: CameraState,
     world: &'a dyn WorldView,
 ) -> Option<&'a NodeView> {
+    if let Some((origin, direction)) = projection::screen_ray(px, view, camera) {
+        let hit = world
+            .nodes()
+            .iter()
+            .filter_map(|node| {
+                let shape = world.node_pick_shape(node)?;
+                crate::picking::shape_hit(origin, direction, node.position, shape, 0.0)
+                    .map(|distance| (node, distance))
+            })
+            .min_by(|a, b| a.1.total_cmp(&b.1));
+        if let Some((node, _)) = hit {
+            return Some(node);
+        }
+    }
     let point = projection::screen_to_world(px, view, camera)?;
     nearest_node_at(point, world)
 }

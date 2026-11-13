@@ -267,7 +267,15 @@ class ColdSession {
     }
 
     // The three bridges as one record (cold-probe.js). Used by the probes and the UI records; never sent to an agent.
-    readWorld() { return this.page.evaluate(readWorld); }
+    async readWorld() {
+        const world = await this.page.evaluate(readWorld);
+        // This positive control isolates closing the old overlay. Its ground clicks do not
+        // certify visible-body picking in the reference client.
+        if (this.control === "close-layer") {
+            for (const entry of [...(world.units ?? []), ...(world.nodes ?? [])]) entry.center = entry.ground_center ?? entry.center;
+        }
+        return world;
+    }
 
     // One UI record: the widgets, the alert lines, and for each layer of more than half of the page whether the
     // world shows through it. `file` is a screenshot that was just taken; with none, a picture is taken for the measure.

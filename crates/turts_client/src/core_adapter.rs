@@ -245,6 +245,7 @@ pub type FrameFeeds = crate::debug_feed::FramesFeed;
 
 #[derive(Clone)]
 struct DenseUnit {
+    shape: Option<turts_mod_api::Shape>,
     index: u32,
     footprint_radius: f32,
     capabilities: Vec<Capability>,
@@ -253,6 +254,7 @@ struct DenseUnit {
 }
 #[derive(Clone)]
 struct DenseNode {
+    shape: Option<turts_mod_api::Shape>,
     index: u32,
     radius: f32,
     item: u32,
@@ -265,6 +267,7 @@ struct ContentIndex {
 }
 
 struct FrameWorld {
+    facings: HashMap<u32, turts_net_protocol::Facing>,
     units: Vec<UnitView>,
     nodes: Vec<NodeView>,
     own_slot: SlotId,
@@ -282,6 +285,19 @@ struct FrameWorld {
     facts: facts::OwnerFacts,
 }
 impl WorldView for FrameWorld {
+    fn unit_pick_shape(&self, unit: &UnitView) -> Option<(&turts_mod_api::Shape, f32)> {
+        let shape = self.index.units.get(&unit.content_id)?.shape.as_ref()?;
+        let yaw = self.facings.get(&unit.id.0).map_or(0.0, |facing| {
+            crate::render::facing_rotation(*facing)
+                .to_euler(EulerRot::YXZ)
+                .0
+        });
+        Some((shape, yaw))
+    }
+    fn node_pick_shape(&self, node: &NodeView) -> Option<&turts_mod_api::Shape> {
+        self.index.nodes.get(&node.content_id)?.shape.as_ref()
+    }
+
     fn units(&self) -> &[UnitView] {
         &self.units
     }
@@ -413,6 +429,7 @@ fn content_index(state: &ReplicaState, acquired: Option<&AcquiredPackages>) -> C
             (
                 id.to_string(),
                 DenseUnit {
+                    shape: content.shapes.get(&id.to_string()).cloned(),
                     index: index as u32,
                     footprint_radius: radius,
                     capabilities,
@@ -432,6 +449,7 @@ fn content_index(state: &ReplicaState, acquired: Option<&AcquiredPackages>) -> C
                 (
                     id.to_string(),
                     DenseNode {
+                        shape: content.shapes.get(&id.to_string()).cloned(),
                         index: index as u32,
                         radius: node.radius,
                         item: *item,
@@ -544,6 +562,11 @@ fn frame_world(
         })
         .collect();
     Some(FrameWorld {
+        facings: replica
+            .units
+            .iter()
+            .filter_map(|(id, unit)| unit.facing.map(|facing| (*id, facing)))
+            .collect(),
         units,
         nodes,
         own_slot: SlotId(welcome.slot),

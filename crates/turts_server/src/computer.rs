@@ -361,8 +361,11 @@ fn decide_inner(world: &mut World, bot: &mut ComputerPlayer) {
             .copied()
             .filter(|enemy| distance(enemy.pos, combatant.pos) < 12.0 * 12.0)
             .min_by(|a, b| nearer(a.pos, b.pos, combatant.pos));
-        let target =
-            nearby.or_else(|| bot.assault.contains(&combatant.unit_id).then_some(enemy_base));
+        let target = nearby.or_else(|| {
+            bot.assault
+                .contains(&combatant.unit_id)
+                .then_some(enemy_base)
+        });
         if let Some(target) = target
             && !matches!(current_target(&view,combatant.unit_id), Some(turts_sim::economy::views::UnitOrderTargetView::Unit(id)) if *id == target.unit_id)
         {

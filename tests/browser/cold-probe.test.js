@@ -20,7 +20,7 @@ const test = require("node:test");
 const { changeStats, nonflatShare } = require("./cold-pixels.js");
 const { decodePng } = require("./harness/png.js");
 const { ColdSession } = require("./cold-session.js");
-const { SETTLE_MS, BUTTONS_SETTLE_MS, runProbe, wordCount, ownUnitsOnScreen, visibleButtons, buttonsOutsidePage, orderButtons, normalisedUi, medianShift, boxHalf, openGround, selectUnit, armedOrderSeen } = require("./cold-probe.js");
+const { readWorld, SETTLE_MS, BUTTONS_SETTLE_MS, runProbe, wordCount, ownUnitsOnScreen, visibleButtons, buttonsOutsidePage, orderButtons, normalisedUi, medianShift, boxHalf, openGround, selectUnit, armedOrderSeen } = require("./cold-probe.js");
 const { fixtureGame } = require("./cold-fixture.js");
 const { silentEnv, SILENT_ARGS } = require("./harness/silent-chrome.js");
 
@@ -532,4 +532,22 @@ test("checker verdict: NOT-READY when a probe fails or a part is missing; a cont
     assert.equal(ctl.status, 0, ctl.out);
     assert.match(ctl.out, /CONTROL-PASS/);
     assert.doesNotMatch(ctl.out, /FAIL F3|FAIL F9/, "a control run is judged on the probe only");
+});
+
+
+test("the player probe clicks the visible body instead of its ground shadow", async () => {
+    const previous = global.window;
+    global.window = {
+        innerWidth: 1280, innerHeight: 720,
+        turts_debug: () => ({ phase: "Joined", slot: 0, replicated_world: { units: [{ unit_id: 1, owner_slot: 0, content_id: "fixture:actor" }] } }),
+        turts_scene: () => ({ clip_from_world: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1], units: [{ unit_id: 1, translation: [0, 0.5, 0], ground_screen_center: [640, 360], pick_radius: 1 }], nodes: [] }),
+        turts_ui: () => [],
+    };
+    try {
+        const candidate = await readWorld();
+        assert.deepEqual(candidate.units[0].center, [640, 180]);
+        assert.deepEqual(candidate.units[0].ground_center, [640, 360]);
+        const control = await ColdSession.prototype.readWorld.call({ page: { evaluate: fn => fn() }, control: "close-layer" });
+        assert.deepEqual(control.units[0].center, [640, 360], "the overlay-only reference control keeps its ground click");
+    } finally { global.window = previous; }
 });

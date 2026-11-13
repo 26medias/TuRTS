@@ -389,6 +389,7 @@ fn draw_world_visuals(
         camera_transform,
         &presented,
         content,
+        replica,
         &mut visuals,
         now,
     );

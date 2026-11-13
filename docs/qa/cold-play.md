@@ -56,7 +56,7 @@ debug and UI bridges for this. The page is "ready" when the UI record, the repli
 
 - **Watch and start.** The probe records the UI each 1 s for 8 s with no input, then makes ONE click to start: the centre
   of the text of the start control that the UI record shows (`focus_overlay`), or the page centre when there is none.
-- **P1, the units** (condition M1). One left click at the screen centre of each own unit on screen (one of each content id
+- **P1, the units** (condition M1). One left click at the projected centre of the visible body of each own unit on screen (one of each content id
   first, at most 60). No key. Each click is **seen** only when there is a pixel change in a box around the unit (half
   side = the larger of 48 px and 1.5 times the projected `pick_radius`, so the box scales with the object) or a change of a
   panel in the UI record (a widget that is not an alert line, not a tooltip and not what changes by itself in the 200 ms
@@ -75,7 +75,7 @@ debug and UI bridges for this. The page is "ready" when the UI record, the repli
 - **P5, a control outside the page.** A visible button whose centre is outside the page, or a Close-like button that the
   UI record marks as not visible because its place is outside the page (the client clips it), is a FAIL. At 1024x768 the
   "Close" of the forge guide has a fixed offset of 1176 px and is outside.
-- **The positive control** (`--control close-layer`). After the start click the tool closes the layer that met it, by the
+- **The positive control** (`--control close-layer`). This overlay-only control uses ground centres. It does not certify visible-body picking in the old reference client. After the start click the tool closes the layer that met it, by the
   visible button whose text is Close, Dismiss, OK or the like (at most 3 clicks). The control is judged on the layer
   only (`PC`): the units must pass; the orders and extra clicks are shown (`INFO`), not judged. It must PASS on the build
   where the plain probe fails: this shows that the probe can pass. A control whose close button is outside the page is a
