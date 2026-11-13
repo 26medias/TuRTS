@@ -105,3 +105,66 @@ The body files are compared with `cmp` (`trace-base-bodies.txt`, `trace-after-bo
 - That lightyear puts all fragments of one large delta in one flush (the grace assumes reorder only inside one flush).
 - The hosted CI run of this branch.
 - That the 270 ms gate poll finds a shared tick in 10 s on a real GPU.
+
+## Follow-up
+
+FOLLOWUP=PASS
+
+- New head: `37c41e70c8b0521af53d70ac82c229ed8fe228c2` (one commit on `f4020d1f`). Branch `mp1/forward-mc` is pushed.
+- No browser was started. The probes were not run.
+
+### Finding 1 (ruling b): the two MC probes
+
+- `docs/measurements/probes/mc-gpu-process/pacing-probe/probe.js:14,230-231` and `probe-a/probe-a.js:15,159-160`. Each probe imports `tests/browser/harness/silent-chrome.js`. The launch always has `...SILENT_ARGS` (`--alsa-output-device=null`) as an argument and `env: silentEnv(work)` (`PULSE_SERVER=unix:/nonexistent/mc-tests-no-pulse`, `ALSA_CONFIG_PATH` set to a null configuration).
+- New sums: `probe.js` `35a84c07aaaaa9c4642bb2b595625dcd51b0e43db81233c2737c2ac5f9ce1489`, `probe-a.js` `fe16213845c4cfbe5fafc85602ede7c75fb0f86db05516581d59bd240f061f71`. `sha256sum -c` passes in both folders.
+- The note `docs/measurements/mc-gpu-process-saturation.md:8` says why the files changed, and gives the old sums of the measured files: `probe.js` `c395df41...a7049868`, `probe-a.js` `4e071efa...9f57036`.
+
+### Finding 2: `harness/run.js` and the scan
+
+- Why the scan did not see `run.js`: the scan test read only `*.test.js` under `tests/browser` (`testFiles`, `silent-chrome-scan.test.js:54-61`). Harness, instrument and probe files were outside its scope, and `docs/measurements/probes` was not read at all.
+- The extended scan is `silent-chrome-scan.test.js:66-108`. It reads every `.js`, `.mjs` and `.cjs` file under `tests/browser`, `scripts` and `docs/measurements/probes`, and every `.sh` file under `scripts` and `docs/measurements/probes`. It uses the existing rules (`unsilenced`, `scriptProblems`). It also checks that `harness/run.js`, `probe-a.js` and `scripts/mp1-play.sh` are in its scope.
+- The wider scan found three more files with the same defect. I repaired them:
+    - `tests/browser/egpu-run.js:35,145-146`
+    - `tests/browser/measure.js:22,24-25,47-49`
+    - `tests/browser/spike_p8.js:9-12,26-27`
+- Lines touched in `run.js`, kept small because of the `mp1/sound-off-default` lane: `:12` (the require), `:137` (the default list holds `SILENT_ARGS`), `:156-158` (the comment, `args` always with the null device, `env: silentEnv(options.outDir)`).
+- Scan proof:
+    - Old `run.js` in place: red. `[['tests/browser/harness/run.js', '.launch( has no silentEnv and SILENT_ARGS']]`
+    - Old `pacing-probe/probe.js` in place: red. `[['docs/measurements/probes/mc-gpu-process/pacing-probe/probe.js', '.launch( has no silentEnv and SILENT_ARGS']]`
+    - Both files restored (`cmp` equal): green, 7 of 7.
+    - The test at `:102` keeps a planted copy of the old launch as a permanent red case.
+    - Logs: `/tmp/claude-1000/-home-julien-Projects-TuRTS/bf418660-b272-4bb3-8628-8d9ef2677d1d/scratchpad/forward-mc/scan-red-runjs.log`, `scan-red-probe.log`, `scan-green.log`.
+
+### Finding 3: `scripts/mc_prepare.py`
+
+- `scripts/mc_prepare.py:49-50`: `ENV_NAMES` includes `T7_SCOUT_SPEED`. A prepared folder made with another scout speed is refused (`build environment differs`).
+- I added one case to `tests/qa/test_mc_prepare.py:492`. With the name removed from `ENV_NAMES`, the case was red (`a stale prepared run started its services`). After restore it was green (37 tests OK).
+
+### Gate table (head `37c41e70`, label prefix `fwd-mc-g3-`, one run of each; every wrapper exit 0)
+
+| Gate | Exit |
+| --- | --- |
+| fmt | 0 |
+| clippy `-D warnings` | 0 |
+| `cargo test --workspace --locked` (2106 passed, 0 failed, 40 ignored) | 0 |
+| `turts_sim --features test-probes` | 0 |
+| wasm32 check | 0 |
+| boundary | 0 |
+| acceptance (on this head; `a_server_stall_of_0_6_s_makes_no_resync`, `p8_one_flush_reorders_deltas_by_size`, `a_client_updated_each_100_ms_keeps_pace_with_the_server`, `ordered_attack_kill_...`, `t5_convergence` ok) | 0 |
+| yardstick; completeness self-test and enforce; driver rule self-test and run | 0 each |
+| node unit list (421 tests, 421 pass) | 0 |
+| Python list check and the 10 other Python commands of CI | 0 each |
+| plants `--check --all` (428, 0 stale), `--self-test` | 0, 0 |
+| plants of the follow-up files (`--files`, 21 plants of `mc_prepare.py`: 21 red-restored, 0 failed) | 0 |
+| `local_only.py --check` | 0 |
+| `probe_neutral.sh` | 0 |
+| m2 trace emitter | 0 |
+
+### Frozen values at `37c41e70`
+
+The stream sha256 is `bcbf72c2206251f635a7c7f5b6c8f573d69a5fc05a5bd77716e98ebfb08e370b` (unchanged). The four trace bodies are equal to the base (`cmp` of `trace-base-bodies.txt` and `trace-final-bodies.txt`). The `probe_neutral` lines `frame_chains=d0d1b1c572163424 plain_unit_frames=71543 pooled_unit_frames=34093` and `muster_world=aa9db740578ed5c1` are unchanged.
+
+### NOT TRACED (follow-up)
+
+- The two probes and the four repaired instruments were not run with a browser. Only `node --check`, the scan and the node unit list ran.
+- The silent environment on a headed `run.js` row: the headed wrapper sets the same values. No headed row ran.

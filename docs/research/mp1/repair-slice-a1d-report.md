@@ -118,3 +118,55 @@ Equal values:
 ## What I changed
 
 On `pre-mp1/a1d-oracle` (diff of the new commit vs `a921096b` is the revert, the L1 rows and test, the scan files and the `no_content.rs` header). This report file, not committed.
+
+# Follow-up (re-check findings M1, L1, M2 text, L3; 2026-11-12)
+
+FOLLOWUP=PASS
+
+New head `28e551d9e9d4096e3fb4cd67d366d28d125dce33` on `pre-mp1/a1d-oracle` (one commit on `e2ba109c`, [skip ci]), pushed. Evidence labels `pre-a1d-f-*`. Test-only change in `crates/turts_checks/tests/`; no production code.
+
+`git diff --stat e2ba109c..HEAD`:
+
+```
+ .../tests/fixtures/movement_writers/planted.rs           |  8 ++++++++
+ .../tests/fixtures/run_constant_writers/planted.rs       | 12 ++++++++++++
+ crates/turts_checks/tests/movement_writers.rs            |  9 +++++++--
+ crates/turts_checks/tests/run_constant_writers.rs        | 13 ++++++++++---
+ crates/turts_checks/tests/support/writers.rs             | 16 ++++++++++++++--
+ 5 files changed, 51 insertions(+), 7 deletions(-)
+```
+
+## 1. M1: two more methods
+
+- `get_resource_or_init` and `get_resource_or_insert_with` are now in `WRITE_METHODS` of `run_constant_writers.rs` (11 names) and of `movement_writers.rs` (9 names).
+- Fixture lines: `fixtures/run_constant_writers/planted.rs:43` (`get_resource_or_init::<UnitTypes>()`) and `:47` (`get_resource_or_insert_with::<MapBounds>(..)`); `fixtures/movement_writers/planted.rs:60` and `:64` (the same two names on `MovementPools`). The method hit is on the line of the call.
+- Red first, with the names missing from the lists (`pre-a1d-f-fix-red`): both `scan_finds_every_planted_write` tests failed; `left` lacked the `(43, "method", "UnitTypes")`, `(47, "method", "MapBounds")` hits and the two movement hits. Green with the names in the lists (`pre-a1d-f-fix-green2`, `cargo test -p turts_checks --locked`: exit 0). One expected line number of mine was wrong in the first green try (59 and 63 instead of 60 and 64); I fixed the numbers, not the scan.
+
+## 2. L1: `&mut` line in the run-constant fixture
+
+- `fixtures/run_constant_writers/planted.rs:50`: `fn bounds_ref(bounds: &mut MapBounds)`; expected hit `(50, "&mut", "MapBounds")`.
+- Mutant W1 (`node.mutability.is_some()` to `is_none()` at `support/writers.rs:106`, the `&mut` arm) on the committed tree (`pre-a1d-f-w1`): `run_constant_writers::scan_finds_every_planted_write` FAILED (it was green under W1 before), `movement_writers::scan_finds_every_planted_write` FAILED, and both pinned tests FAILED. Restored with `git checkout`; `git status --porcelain` empty.
+
+## 3. M2 text: known gaps
+
+`crates/turts_checks/tests/support/writers.rs` header ("Known gap (A1d re-check ...)") now lists the forms that the scan does not see: a value received and inserted with no `&mut`/`ResMut`/turbofish/constructor; a copy that is changed and inserted again (`let mut b = *world.resource::<T>()` then `insert_resource(b)`, also through `Commands`); a type alias; `use ... as`; a write in a `macro_rules!` body. It says that code review is the only cover today, and that a runtime guard (change ticks of the run constants and the presence set) is an OPEN item, owner: technical-director decision. The guard is not built.
+
+## 4. L3: correction to section 3 of this report
+
+The report cited `economy/transaction.rs:1104-1105` as the test module of the four `remove_resource` calls. That is a different module. The calls (`transaction.rs:1807-1822`) are in `#[cfg(test)] mod raw_audit_capture_tests` (`transaction.rs:1638-1639`, ends `:1828`), as the re-check says. The conclusion (the scan does not read them) is unchanged. No code change.
+
+## 5. The real tree with the new method names
+
+Both pinned tests are green at `28e551d9` (`run_constant_writers_match_the_pinned_multiset`, `movement_state_writers_match_the_pinned_multiset`; `pre-a1d-f-gate-checks`: 38 tests passed in `turts_checks`). The scan lists a hit as a difference from the pins, so a real use of the new names would be red. Real hits of `get_resource_or_init` or `get_resource_or_insert_with` on a run constant or on a movement type: 0. No legal existing use, so nothing to stop on and nothing pinned.
+
+## 6. Gates (each `wrapper_exit` 0)
+
+| Gate | Label | Result |
+| --- | --- | --- |
+| `cargo test -p turts_checks --locked` | `pre-a1d-f-gate-checks` | exit 0, 38 passed |
+| `cargo test -p turts_audit -p turts_sim -p turts_server -p turts_pack -p turts_checks -p turts_client --locked --no-fail-fast` | `pre-a1d-f-gate-tests` | exit 0, 1300 passed, 33 ignored |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | `pre-a1d-f-clippy` | exit 0 |
+| `cargo fmt --all --check` | `pre-a1d-f-fmt-final` | exit 0 |
+| `bash scripts/boundary.sh` | `pre-a1d-f-boundary` | exit 0 |
+
+No `acceptance.sh` run: the change is test-only in `turts_checks` and touches no simulation, server or log code. The earlier acceptance run (`pre-a1d-r-acceptance`, exit 0 at `e2ba109c`) still stands for the other code.
