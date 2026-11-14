@@ -331,3 +331,56 @@ Final build `cecc9a96`, refreshed fixtures from the shipped package, 400-unit pa
 | Low | 49.02 | 16.70 | 33.40 | 209846272 |
 
 Evidence: `target/mc-evidence/p4-environment/final-400-pan/result.json`. All 400 remain visible and take damage.
+
+## Large-army rendering, 2026-11-14
+
+Engine: `a608d9e0`. Final browser driver correction: `325c5386`.
+Same RTX 3080, i9-14900K, Linux, Chrome WebGPU, and 1280x720 viewport as the environment measurements.
+Every test browser uses a fresh profile and `--alsa-output-device=null`. No compiler or other test browser runs during samples.
+All required quality features stay enabled. Low retains its existing cheaper path.
+The sustained mixed battle keeps every actor visible and checks damage on every actor.
+The default timing protocol now reads scene state every 500 ms. It records every RAF interval.
+Each row records `scene_sampling_interval_ms`. The earlier environment rows read scene state every RAF.
+
+| Units | Camera | Quality | FPS | Frame p50 ms | Frame p95 ms | WASM high-water bytes |
+| ---: | --- | --- | ---: | ---: | ---: | ---: |
+| 400 | stationary | High | 59.40 | 16.70 | 16.80 | 208601088 |
+| 400 | stationary | Low | 59.50 | 16.70 | 16.80 | 185532416 |
+| 2000 | stationary | High | 21.49 | 50.00 | 66.70 | 452853760 |
+| 2000 | stationary | Low | 28.05 | 33.30 | 50.00 | 414318592 |
+| 400 | pan | High | 59.70 | 16.70 | 16.70 | 208732160 |
+| 400 | pan | Low | 59.40 | 16.70 | 16.70 | 185663488 |
+
+Evidence: `target/mc-evidence/large-army-performance/{final-400,final-2000,final-400-pan}/result.json`.
+The pan row sends actual Arrow inputs and checks distinct camera matrices.
+The 2,000-unit battle remains below 30 FPS. It is a stress result, not a smooth-gameplay claim.
+
+Paired High comparisons use the same 2,000-unit fixture and server:
+
+| Scene-read protocol | Previous environment build | Optimized build | Evidence |
+| --- | ---: | ---: | --- |
+| Every 500 ms | 4.24 FPS | 21.49 FPS | `baseline-2000-new-poll/`, `final-2000/` |
+| Every RAF | 5.08 FPS | 19.40 FPS | Previous `p4-environment/2000-measure/`, current `final-2000-legacy-poll/` |
+
+The 500 ms comparison improves High by 5.06 times. Both builds use that protocol in this comparison.
+The legacy row compares separate runs. All raw intervals remain available.
+
+The original static model workload was also rerun on the final release.
+The test model still has 20,000 triangles and 2048 px base-colour, normal, and metallic-roughness maps.
+High uses the same quality settings and 2048 px shadow map. The ground stays plain to isolate model cost.
+The models are idle. This is different from the sustained animated battle above.
+
+| Scene | Units | FPS | Frame p50 ms | Frame p95 ms | WASM high-water bytes | LOD counts |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| shapes | 400 | 59.30 | 16.70 | 16.80 | 79429632 | {} |
+| lowpoly | 400 | 58.90 | 16.70 | 16.80 | 106627072 | {'0': 400} |
+| detail | 400 | 58.61 | 16.70 | 16.80 | 350814208 | {'0': 400} |
+| detail_lod | 400 | 59.30 | 16.70 | 16.70 | 418185216 | {'2': 400} |
+| detail_lod_2000 | 2000 | 58.90 | 16.70 | 16.80 | 426311680 | {'2': 2000} |
+
+Evidence: `target/mc-evidence/large-army-performance/final-models/result.json`.
+The copied driver and isolated fixture copies remain in the same evidence folder. The original evidence was not modified.
+Both 400-unit detailed scenes pass 30 FPS. LOD 2 is actually selected in the LOD scenes.
+The browser and GPU details, screenshots, raw intervals, and linear-memory samples are retained.
+Draw-call counts and GPU-memory counters remain unavailable. `draw_meshes` counts entities, not draw calls.
+The display limits these runs to about 60 FPS. The rows do not measure maximum GPU throughput.
