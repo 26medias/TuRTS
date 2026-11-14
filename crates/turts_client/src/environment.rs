@@ -219,6 +219,82 @@ mod tests {
         assert_eq!(points[2], Vec3::new(64.0, 0.02, 48.0));
     }
 
+    fn ground_vertices(margin: f32, tile_size: f32) -> Vec<([f32; 3], [f32; 2])> {
+        let mut acquired = build_acquired(&[package("skirmish")], String::new()).unwrap();
+        let mut env = definition();
+        env.ground_margin = margin;
+        acquired.presentation.environment = Some(env);
+        acquired.presentation.ground.as_mut().unwrap().tile_size = tile_size;
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins)
+            .insert_resource(AcquiredPackages(acquired))
+            .insert_resource(crate::join::Phase::Joined { slot: 0 })
+            .init_resource::<Assets<Mesh>>()
+            .init_resource::<Assets<StandardMaterial>>()
+            .init_resource::<Assets<Image>>()
+            .init_resource::<GraphicsSettings>()
+            .init_resource::<crate::models::ModelState>()
+            .add_systems(Update, crate::render::setup_scene);
+        app.update();
+        let (handle, transform) = app
+            .world_mut()
+            .query_filtered::<(&Mesh3d, &Transform), With<crate::models::GroundSurface>>()
+            .single(app.world())
+            .unwrap();
+        let mesh = app
+            .world()
+            .resource::<Assets<Mesh>>()
+            .get(&handle.0)
+            .unwrap();
+        let bevy::mesh::VertexAttributeValues::Float32x3(positions) =
+            mesh.attribute(Mesh::ATTRIBUTE_POSITION).unwrap()
+        else {
+            panic!("positions")
+        };
+        let bevy::mesh::VertexAttributeValues::Float32x2(uvs) =
+            mesh.attribute(Mesh::ATTRIBUTE_UV_0).unwrap()
+        else {
+            panic!("uvs")
+        };
+        positions
+            .iter()
+            .zip(uvs)
+            .map(|(position, uv)| {
+                (
+                    transform.transform_point(Vec3::from(*position)).to_array(),
+                    *uv,
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn independent_fractional_margin_preserves_world_texture_phase() {
+        let sample = |vertices: &[([f32; 3], [f32; 2])], axis: usize, world: f32| {
+            let lo = vertices
+                .iter()
+                .min_by(|a, b| a.0[axis].total_cmp(&b.0[axis]))
+                .unwrap();
+            let hi = vertices
+                .iter()
+                .max_by(|a, b| a.0[axis].total_cmp(&b.0[axis]))
+                .unwrap();
+            let uv_axis = if axis == 0 { 0 } else { 1 };
+            lo.1[uv_axis]
+                + (hi.1[uv_axis] - lo.1[uv_axis]) * (world - lo.0[axis]) / (hi.0[axis] - lo.0[axis])
+        };
+        let original = ground_vertices(0.0, 8.0);
+        let extended = ground_vertices(3.25, 8.0);
+        for axis in [0, 2] {
+            for world in [0.0, 7.5, 24.0, 48.0] {
+                assert!(
+                    (sample(&original, axis, world) - sample(&extended, axis, world)).abs() < 1e-5,
+                    "phase changed at axis {axis}, world {world}"
+                );
+            }
+        }
+    }
+
     #[test]
     fn verified_root_map_wins_over_an_extra_package_map() {
         let extra = std::collections::BTreeMap::from([

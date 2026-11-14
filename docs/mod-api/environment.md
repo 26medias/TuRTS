@@ -17,6 +17,8 @@ Colours use opaque #RRGGBB values. Ground margin is finite, from 0 to 10000 worl
 The margin adds decorative ground outside each edge. It does not change the map bounds.
 The boundary line uses the original map dimensions. Units and buildings obey those dimensions.
 The existing ground texture keeps its world scale and origin when the margin changes.
+The margin, map size, and tile size must produce finite UV coordinates.
+Both content and model validation reject an overflowing combination.
 
 Fog distances are finite world units. They satisfy 0 <= start < end <= 10000.
 Opacity is finite, from 0 to 1. Its default is 0.2.

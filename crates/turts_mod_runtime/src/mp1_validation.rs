@@ -1223,6 +1223,7 @@ impl Pack {
     fn maps_group(&self) -> Result<(), ModError> {
         for (file, map) in &self.maps {
             if let Some(environment) = &map.environment {
+                crate::models::validate_environment_ground(&self.package.0, file, map)?;
                 self.colour(file, "environment.background", &environment.background)?;
                 self.at_least_zero(file, "environment.ground_margin", environment.ground_margin)?;
                 if environment.ground_margin > 10_000.0 {

@@ -44,7 +44,7 @@ Do not change the authoritative map dimensions or placements.
 | Row | Check |
 | --- | --- |
 | ENV1 | An old package without environment loads. Its presentation defaults stay unchanged. Environment fields fail below API 0.2.10 and pass at that version. |
-| ENV2 | Invalid colours, nonfinite values, negative margins, reversed fog distances, excessive distances, and out-of-range opacity fail validation. |
+| ENV2 | Invalid colours, nonfinite values, negative margins, reversed fog distances, excessive distances, out-of-range opacity, and overflowing expanded UV ranges fail validation. |
 | ENV3 | Decorative ground extends past all four boundaries. The visible boundary uses the original map dimensions. Units cannot move or build outside those dimensions. |
 | ENV4 | The real browser shows the new background, textured ground, boundary, and light haze. Models and unit colours stay readable. |
 | ENV5 | Switching High to Low and back toggles fog and FXAA. A package without environment keeps its existing camera behavior. No duplicate post-process is installed. |

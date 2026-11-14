@@ -497,6 +497,40 @@ fn edit_distance(a: &str, b: &str) -> usize {
 }
 
 /// Model checks are client/pack checks. The server never needs visual geometry.
+/// Reject extended terrain whose texture coordinates cannot be represented by the renderer.
+pub(crate) fn validate_environment_ground(
+    package: &str,
+    file: &str,
+    map: &turts_mod_api::MapDef,
+) -> Result<(), ModError> {
+    let (Some(environment), Some(ground)) = (&map.environment, &map.ground) else {
+        return Ok(());
+    };
+    if !ground.tile_size.is_finite() || ground.tile_size <= 0.0 {
+        return Err(error(
+            package,
+            file,
+            "ground.tile_size",
+            "tile size must be finite and positive",
+        ));
+    }
+    let margin = environment.ground_margin;
+    let coordinates = [
+        margin / ground.tile_size,
+        (map.size.x + 2.0 * margin) / ground.tile_size,
+        (map.size.y + 2.0 * margin) / ground.tile_size,
+    ];
+    if coordinates.into_iter().any(|value| !value.is_finite()) {
+        return Err(error(
+            package,
+            file,
+            "environment.ground_margin",
+            "extended ground UV range must be finite for ground.tile_size",
+        ));
+    }
+    Ok(())
+}
+
 pub fn validate_models(archive: &PackageArchive) -> Result<Vec<String>, ModError> {
     let package = &archive.id().0;
     let mut images = std::collections::BTreeSet::new();
@@ -546,6 +580,7 @@ pub fn validate_models(archive: &PackageArchive) -> Result<Vec<String>, ModError
         }
     }
     for (file, map) in archive.maps()? {
+        validate_environment_ground(package, &file, &map)?;
         if let Some(ground) = map.ground {
             if !ground.tile_size.is_finite() || ground.tile_size <= 0.0 {
                 return Err(error(

@@ -113,3 +113,50 @@ fn accepted_boundary_values_and_optional_effects_are_portable() {
     value.antialiasing = Antialiasing::Off;
     archive(Some(value), "^0.2.10").content().unwrap();
 }
+
+#[test]
+fn independent_extreme_ground_values_are_rejected_before_rendering() {
+    let mut files = common::read_files(&common::package_dir("skirmish"));
+    let manifest_text = String::from_utf8(files["manifest.ron"].clone()).unwrap();
+    let manifest: turts_mod_api::Manifest = ron::from_str(&manifest_text).unwrap();
+    files.insert(
+        "manifest.ron".into(),
+        manifest_text
+            .replace(&manifest.engine_api, "^0.2.10")
+            .into_bytes(),
+    );
+    let mut map: MapDef =
+        ron::from_str(std::str::from_utf8(&files["maps/field.ron"]).unwrap()).unwrap();
+    let mut env = environment();
+    env.ground_margin = 10000.0;
+    map.environment = Some(env);
+    map.ground.as_mut().unwrap().tile_size = 1e-35;
+    files.insert(
+        "maps/field.ron".into(),
+        ron::ser::to_string(&map).unwrap().into_bytes(),
+    );
+    let package = PackageArchive::parse(&pack_files(&files).unwrap()).unwrap();
+    let content_error = package
+        .content()
+        .expect_err("expanded UV overflow must be rejected")
+        .to_string();
+    assert!(
+        content_error.contains("environment.ground_margin"),
+        "{content_error}"
+    );
+    let model_error = turts_mod_runtime::models::validate_models(&package)
+        .expect_err("model path must reject expanded UV overflow")
+        .to_string();
+    assert!(
+        model_error.contains("environment.ground_margin"),
+        "{model_error}"
+    );
+    map.environment = None;
+    files.insert(
+        "maps/field.ron".into(),
+        ron::ser::to_string(&map).unwrap().into_bytes(),
+    );
+    let legacy = PackageArchive::parse(&pack_files(&files).unwrap()).unwrap();
+    legacy.content().unwrap();
+    turts_mod_runtime::models::validate_models(&legacy).unwrap();
+}
