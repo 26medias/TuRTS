@@ -138,7 +138,7 @@ impl CameraController {
             .last_step_ms
             .replace(now_ms)
             .map_or(0.0, |last| now_ms.saturating_sub(last) as f32 / 1_000.0);
-        let (horizontal, vertical) = self.pan_axes(&options, view, held_actions);
+        let (horizontal, vertical) = self.pan_axes(&options, view, held_actions, world, *camera);
         self.pan_context = pan_context(horizontal, vertical);
         if elapsed > 0.0 {
             let right = Vec2::new(camera.yaw.cos(), -camera.yaw.sin());
@@ -167,6 +167,8 @@ impl CameraController {
         options: &CameraOptions,
         view: &Viewport,
         held_actions: &[String],
+        world: &dyn WorldView,
+        camera: CameraState,
     ) -> (f32, f32) {
         let has_action = |name: &str| held_actions.iter().any(|action| action == name);
         let mut horizontal = axis(
@@ -186,6 +188,10 @@ impl CameraController {
             && point.y >= 0.0
             && point.x <= view.size.x
             && point.y <= view.size.y
+            && (point.x < 8.0 || point.x >= view.size.x - 8.0 || point.y < 8.0 || point.y >= view.size.y - 8.0)
+            // Use the same visible-body picking as clicks. Do not move a target out from under the pointer.
+            && crate::smart::nearest_unit(point, view, camera, world).is_none()
+            && crate::smart::nearest_node(point, view, camera, world).is_none()
         {
             if point.x < 8.0 {
                 horizontal -= 1.0;

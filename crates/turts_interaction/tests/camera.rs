@@ -1175,3 +1175,104 @@ fn pointer_zoom_still_obeys_the_map_boundary() {
     assert!(state.look_at.cmple(vec2(69.0, 69.0)).all());
     assert_eq!(state.height, 80.0);
 }
+
+#[test]
+fn edge_unit_hover_stays_still_for_a_click_and_open_edge_resumes_pan() {
+    let mut world = world();
+    world.map_size = Some(vec2(128., 128.));
+    let edge = vec2(VIEW.size.x - 8.0, VIEW.size.y * 0.5);
+    world.units[0].position = screen_to_world(edge, &VIEW, camera()).unwrap();
+    let unit = world.units[0].id;
+    let mut core = Core::new(camera());
+    let before = core.camera_state();
+    step(
+        &mut core,
+        &world,
+        &[InputEvent::PointerMove {
+            px: edge,
+            over_widget: false,
+        }],
+        0,
+    );
+    step(&mut core, &world, &[], 1_000);
+    assert_eq!(
+        core.camera_state(),
+        before,
+        "hovering an edge unit must not move it away from a click"
+    );
+    step(
+        &mut core,
+        &world,
+        &[InputEvent::PointerDown {
+            button: turts_interaction::Button::Left,
+            px: edge,
+            over_widget: false,
+        }],
+        1_010,
+    );
+    step(
+        &mut core,
+        &world,
+        &[InputEvent::PointerUp {
+            button: turts_interaction::Button::Left,
+            px: edge,
+            over_widget: false,
+        }],
+        1_020,
+    );
+    assert_eq!(core.selected_units(), &[unit]);
+    let open_edge = vec2(edge.x, edge.y - 150.);
+    step(
+        &mut core,
+        &world,
+        &[InputEvent::PointerMove {
+            px: open_edge,
+            over_widget: false,
+        }],
+        1_030,
+    );
+    step(&mut core, &world, &[], 2_030);
+    assert!(
+        core.camera_state().look_at.x > before.look_at.x + 0.1,
+        "open edge must still pan"
+    );
+}
+
+#[test]
+fn edge_resource_hover_stays_still_but_keyboard_pan_still_works() {
+    let mut world = world();
+    world.map_size = Some(vec2(128., 128.));
+    let edge = vec2(VIEW.size.x - 8.0, VIEW.size.y * 0.5);
+    world.nodes[0].position = screen_to_world(edge, &VIEW, camera()).unwrap();
+    let mut core = Core::new(camera());
+    let before = core.camera_state();
+    step(
+        &mut core,
+        &world,
+        &[InputEvent::PointerMove {
+            px: edge,
+            over_widget: false,
+        }],
+        0,
+    );
+    step(&mut core, &world, &[], 1_000);
+    assert_eq!(
+        core.camera_state(),
+        before,
+        "hovering an edge resource must not move it away from a click"
+    );
+    step(
+        &mut core,
+        &world,
+        &[InputEvent::KeyDown {
+            code: "ArrowRight".into(),
+            mods: Vec::new(),
+        }],
+        1_010,
+    );
+    step(&mut core, &world, &[], 2_010);
+    assert!(
+        core.camera_state().look_at.x > before.look_at.x + 0.1,
+        "explicit keyboard panning must work over a target"
+    );
+}

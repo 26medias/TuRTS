@@ -1,8 +1,8 @@
-// Real rendered combat and warning probes. Every run owns a fresh silent browser.
+// Real rendered combat, warning, and camera probes. Every run owns a fresh silent browser.
 const fs=require('node:fs'),net=require('node:net'),{spawn,spawnSync}=require('node:child_process');
 const {chromium}=require('playwright-core');
 const {decodePng,pixelAt}=require('./harness/png');
-const [prepared,out,mode='pixels']=process.argv.slice(2);if(!out)throw Error('PREPARED OUTPUT [pixels|warnings|victory]');
+const [prepared,out,mode='pixels']=process.argv.slice(2);if(!out)throw Error('PREPARED OUTPUT [pixels|warnings|victory|hash|camera]');
 fs.mkdirSync(out,{recursive:true});const fixture=out+'/fixture';fs.cpSync(prepared+'/pack/skirmish',fixture,{recursive:true});
 const placement=(unit,slot,x,y)=>`(unit:"skirmish:${unit}",owner_slot:${slot},pos:(x:${x}.0,y:${y}.0),contents:[])`;
 const placements=mode==='warnings'?[placement('base',0,10,20),placement('worker',0,15,25),placement('soldier',0,12,38),placement('soldier',1,15,20)]:mode==='victory'?[placement('base',0,10,12),placement('worker',0,12,9),placement('soldier',0,20,20),placement('base',1,30,20)]:[placement('base',0,10,15),placement('worker',0,13,8),placement('soldier',0,16,20),placement('soldier',1,24,20)];
@@ -39,7 +39,18 @@ const page=context.pages()[0];page.on('pageerror',e=>result.errors.push(String(e
 await page.goto(url+'/?server='+encodeURIComponent(url)+'&ws='+encodeURIComponent(`ws://127.0.0.1:${ws}`));const read=()=>page.evaluate(()=>typeof turts_scene==='function'&&turts_scene()?JSON.parse(turts_scene()):null);
 const wait=async(fn,label,ms=60000)=>{const end=Date.now()+ms;while(Date.now()<end){const s=await read();if(s&&fn(s))return s;if(result.errors.some(e=>/panicked|shader|validation error/i.test(e)))throw Error(result.errors.join('\n'));await sleep(25)}throw Error(label+' timeout')};
 let scene=await wait(s=>s.units?.length===4&&s.models?.every(m=>m.ready),'models ready');await page.mouse.click(640,360);
-if(mode==='hash'){
+if(mode==='camera'){
+scene=await read();const unit=scene.units.find(u=>u.unit_id===3);
+await page.mouse.click(...project(scene,[unit.translation[0],.75,unit.translation[2]]));
+await page.waitForFunction(()=>JSON.parse(turts_ui()).some(w=>w.id==='attack'&&w.visible),null,{timeout:5000});
+scene=await read();const before=project(scene,[unit.translation[0],0,unit.translation[2]]);
+await page.keyboard.down('ArrowRight');await sleep(300);await page.keyboard.up('ArrowRight');await sleep(80);
+const panned=await read(),after=project(panned,[unit.translation[0],0,unit.translation[2]]);
+result.pan_pixels=before[0]-after[0];if(result.pan_pixels<40)throw Error('camera pan is too slow');
+await page.keyboard.press('Space');await sleep(150);const centered=await read(),point=project(centered,[unit.translation[0],0,unit.translation[2]]);
+if(Math.abs(point[0]-640)>10||Math.abs(point[1]-360)>10)throw Error('Space did not return to selection');
+result.before=scene;result.panned=panned;result.centered=centered;await page.screenshot({path:out+'/camera.png'});
+}else if(mode==='hash'){
 const samples=[];while(server.exitCode===null){scene=await read();if(scene?.effects?.pool?.active>0)samples.push({pool:scene.effects.pool,health:scene.effects.combat.health});await sleep(40)}
 if(server.exitCode!==0||!samples.length)throw Error('hash match failed or effects never drew');
 const records=fs.readFileSync(out+'/audit.jsonl','utf8').trim().split('\n').map(JSON.parse);const tick=records.filter(r=>r.record==='tick').map(r=>r.data).find(r=>r?.tick===240);if(!tick)throw Error('no tick240 state');

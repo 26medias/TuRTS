@@ -1,13 +1,10 @@
-//! L0-CORE: the stubs of `Core::step` hooks (`placement`, `hints`, `alerts`). Each hook is empty
-//! until its owner task builds it: it adds no effect and changes no state of the core. The owner
-//! task replaces its test here with its own (the contract of the stub ends with the stub).
+//! Inactive placement and hint inputs leave the core alone.
+//! Alerts have real input behavior and separate semantic tests. Their idle update is passive.
 
 mod common;
 use common::*;
 use glam::vec2;
-use turts_interaction::{
-    Button, Core, Effect, InputEvent, Viewport, WorldView, alerts, hints, placement,
-};
+use turts_interaction::{Button, Core, Effect, InputEvent, Viewport, WorldView, hints, placement};
 use turts_net_protocol::UnitId;
 
 type Hook = fn(&mut Core, &[InputEvent], &dyn WorldView, &Viewport, u64, &mut Vec<Effect>);
@@ -52,24 +49,17 @@ fn hints_hook_is_empty_until_ui_hint_builds_it() {
 }
 
 #[test]
-fn alerts_hook_is_empty_until_ui_alert_builds_it() {
+fn idle_alert_updates_do_not_change_the_core() {
     assert_hook_is_a_stub(turts_interaction::alerts::update, "alerts");
 }
 
-/// The inputs that the owner types carry reach the owner handler through `Core::step`; until the
-/// owner builds the handler, a step with one adds no effect and changes no state. (A step with no
-/// owner input is the contract of the older tests of this crate.)
+/// Inactive placement and hint inputs leave the ordinary input path unchanged.
 #[test]
-fn owner_inputs_through_step_add_no_effect_and_change_no_state() {
+fn inactive_inputs_through_step_add_no_effect_and_change_no_state() {
     let world = TestWorld::default();
     let inputs = [
         InputEvent::Placement(placement::Input::default()),
         InputEvent::Hint(hints::Input::default()),
-        InputEvent::Alert(alerts::Input {
-            x: 3.0,
-            y: 4.0,
-            unit: Some(1),
-        }),
     ];
     for input in inputs {
         // The same core, once with the owner input and once with no event: the two must agree.
@@ -88,9 +78,9 @@ fn owner_inputs_through_step_add_no_effect_and_change_no_state() {
     }
 }
 
-/// The owner handlers of the owner inputs are empty until their owner builds them.
+/// Default placement and hint inputs have no active interaction to change.
 #[test]
-fn owner_input_handlers_are_empty_until_their_owner_builds_them() {
+fn inactive_place_and_hint_handlers_leave_the_core_unchanged() {
     let world = TestWorld::default();
     let mut core = Core::default();
     select_world_point(&mut core, &world, UnitId(1), 10);
@@ -107,14 +97,6 @@ fn owner_input_handlers_are_empty_until_their_owner_builds_them() {
     hints::on_input(
         &mut core,
         &hints::Input::default(),
-        &world,
-        &VIEW,
-        1,
-        &mut effects,
-    );
-    alerts::on_input(
-        &mut core,
-        &alerts::Input::default(),
         &world,
         &VIEW,
         1,
