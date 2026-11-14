@@ -266,8 +266,15 @@ pathlib.Path(path).chmod(0o600)
 PYSERVERLAUNCH
 fi
 if [[ "$LOCAL_SKIRMISH" == false ]]; then
-    python3 -m http.server "$STATIC_PORT" --bind 127.0.0.1 --directory "$DIST" >"$OUT/static.log" 2>&1 &
-    STATIC_PID=$!
+    if [[ "$PACKAGE_NAME" == skirmish && -n "${TURTS_HUMAN_SKIRMISH:-}" ]]; then
+        # The native server already serves the client with gzip. Both players use this origin.
+        STATIC_PORT="$HTTP_PORT"
+        STATIC_PID=""
+        : >"$OUT/static.log"
+    else
+        python3 -m http.server "$STATIC_PORT" --bind 127.0.0.1 --directory "$DIST" >"$OUT/static.log" 2>&1 &
+        STATIC_PID=$!
+    fi
 else
     STATIC_PID=""
 fi

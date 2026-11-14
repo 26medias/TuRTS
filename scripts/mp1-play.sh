@@ -182,6 +182,12 @@ if ! chrome_ready; then
     exit 1
 fi
 echo "URL: $URL"
+if [[ -n "${TURTS_HUMAN_SKIRMISH:-}" && "$mode" == --prepared ]]; then
+    echo "MODE: two human players on this computer"
+    echo "JOIN_URL: $URL"
+    printf 'JOIN_COMMAND: bash %q --url %q --silent\n' "$ROOT/scripts/mp1-play.sh" "$URL"
+    echo "The first player can act before the second player joins. Keep this host window open."
+fi
 echo "SOUND: $SOUND"
 echo "CHROME_ARGS: ${ARGS[*]}"
 echo "DEBUG_PORT: $PORT"
