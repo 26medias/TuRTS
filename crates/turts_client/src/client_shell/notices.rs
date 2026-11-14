@@ -8,12 +8,23 @@ use super::*;
 pub(crate) struct ClientNotice;
 
 pub(super) fn sync_focus_overlay(
+    phase: Option<Res<Phase>>,
     focus: Option<Res<crate::debug_feed::FocusFeed>>,
     audio: Option<Res<crate::debug_feed::AudioFeed>>,
     windows: Query<&Window, With<PrimaryWindow>>,
     overlays: Query<Entity, With<FocusOverlay>>,
     mut commands: Commands,
 ) {
+    // The lobby is already an interactive start screen. Do not darken its colour choices.
+    if phase
+        .as_deref()
+        .is_some_and(|phase| matches!(phase, Phase::Lobby))
+    {
+        for entity in &overlays {
+            commands.entity(entity).despawn();
+        }
+        return;
+    }
     let Some(focus) = focus else {
         return;
     };

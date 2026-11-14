@@ -600,6 +600,29 @@ fn shows_text(app: &mut App, wanted: &str) -> bool {
     texts.iter(app.world()).any(|text| text.0 == wanted)
 }
 
+#[test]
+fn the_lobby_replaces_the_click_to_play_overlay_before_the_first_gesture() {
+    let mut app = start_gate_app(crate::debug_feed::AudioFeed {
+        context_states: vec!["suspended".into()],
+        gesture_seen: false,
+        ..default()
+    });
+    app.update();
+    assert_eq!(focus_overlays(&mut app), 1);
+    app.insert_resource(Phase::Lobby);
+    app.update();
+    assert_eq!(focus_overlays(&mut app), 0);
+    app.update();
+    assert_eq!(focus_overlays(&mut app), 0);
+    app.insert_resource(Phase::Joined { slot: 0 });
+    app.update();
+    assert_eq!(
+        focus_overlays(&mut app),
+        1,
+        "ordinary game startup still requests its first gesture"
+    );
+}
+
 /// Design 10.1 with ruling O15: the start overlay waits for the first gesture only. When
 /// audio stays locked after it, input works and a notice shows for 8 s.
 #[test]
