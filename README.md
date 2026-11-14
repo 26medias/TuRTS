@@ -30,7 +30,7 @@ From a source-built prepared folder, use `python3 -I -B scripts/skirmish_share.p
 Full local two-browser matches and public HTTPS/WSS orders pass scripted checks.
 Fast reload keeps the same army and slot. Human games wait in a ready lobby with colour choices and a cancellable three-second countdown.
 A full match played by two people and the full MP1 roster remain open.
-The simple opponent does not complete the general MP2 bot framework.
+The computer now trains a paid mixed army of Crossbowmen and Swordsmen. It does not complete the general MP2 bot framework.
 Terrain, fog, broader lifecycle features, and large-scale performance remain later work.
 
 The older Forge industrial demonstration remains available below. It proves extraction, conveyors, inserters, recipes, research, and ammunition combat through the public mod API. Its two-slot and restart restrictions describe that demonstration.
