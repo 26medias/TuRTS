@@ -242,7 +242,7 @@ fn match_uses(uses: &mut Uses, file: &str, definition: &MatchDef) {
         StartPolicy::AllSeated { countdown_secs } if countdown_secs > 0 => {
             uses.push("AllSeated with countdown_secs above 0", file, "start");
         }
-        StartPolicy::AllSeated { .. } => {}
+        StartPolicy::AllSeated { .. } => uses.push("AllSeated", file, "start"),
         StartPolicy::AllSeatedReady { .. } => uses.push("AllSeatedReady", file, "start"),
     }
     if let Some(turts_mod_api::VictoryRule::LastTeamStanding { defeat }) = &definition.victory {
@@ -841,8 +841,9 @@ mod tests {
         };
         let uses = found(&content);
         assert!(
-            !uses.iter().any(|(_, f, _)| f == "match/a.ron"),
-            "countdown 0 is built"
+            uses.iter()
+                .any(|(name, file, _)| *name == "AllSeated" && *file == "match/a.ron"),
+            "countdown 0 also needs the newly released lobby API"
         );
         one(
             &content,

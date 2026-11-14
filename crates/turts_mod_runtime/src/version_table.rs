@@ -167,6 +167,21 @@ const fn variant_0_2_4(name: &'static str) -> VersionTableRow {
 /// detection kind that its design row names, and nowhere else. The order is the order of the
 /// first refusal when one package has several problems.
 pub(crate) const VERSION_TABLE: &[VersionTableRow] = &[
+    VersionTableRow {
+        name: "AllSeated",
+        detect: Detect::Variant("AllSeated"),
+        since_api: "0.2.9",
+    },
+    VersionTableRow {
+        name: "AllSeated with countdown_secs above 0",
+        detect: Detect::Variant("AllSeated with countdown_secs above 0"),
+        since_api: "0.2.9",
+    },
+    VersionTableRow {
+        name: "AllSeatedReady",
+        detect: Detect::Variant("AllSeatedReady"),
+        since_api: "0.2.9",
+    },
     raw(
         "weapon.range_mode",
         "0.2.8",

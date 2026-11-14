@@ -9,7 +9,7 @@ async function launch(args,name){const log=out+'/'+name+'.log',fd=fs.openSync(lo
 for(let i=0;i<600;i++){text=fs.readFileSync(log,'utf8');port=/DEBUG_PORT: (\d+)/.exec(text)?.[1];if(port)break;if(child.exitCode!==null)throw Error(name+' exited '+child.exitCode);await sleep(100)}
 if(!port||!text.includes('--alsa-output-device=null'))throw Error(name+' missing silent Chrome');const profile=/^PROFILE: (.+)$/m.exec(text)?.[1];if(!profile?.startsWith('/tmp/turts-play-profile.'))throw Error('unexpected profile');result.profiles.push(profile);
 const browser=await chromium.connectOverCDP('http://127.0.0.1:'+port);browsers.push(browser);const page=browser.contexts()[0].pages().find(p=>p.url().startsWith('http://127.0.0.1:'));if(!page)throw Error('page missing');pages.push(page);page.on('pageerror',e=>result.errors.push(String(e)));return text}
-async function read(i){return pages[i].evaluate(async()=>{if(typeof turts_scene!=='function'||!turts_scene())return null;const d=JSON.parse(await turts_debug_request());return{scene:JSON.parse(turts_scene()),ui:JSON.parse(turts_ui()),world:d.replicated_world,slot:d.slot,match:d.match_id_decimal,selection:d.selection}})}
+async function read(i){return pages[i].evaluate(async()=>{if(typeof turts_debug_request!=='function'||typeof turts_ui!=='function')return null;const value=await turts_debug_request();if(!value)return null;const d=JSON.parse(value),scene=typeof turts_scene==='function'?turts_scene():null;return{lobby:d.lobby,scene:scene?JSON.parse(scene):{models:[],units:[],widgets:[]},ui:JSON.parse(turts_ui()),world:d.replicated_world||{units:[]},slot:d.slot,match:d.match_id_decimal,selection:d.selection}})}
 async function wait(i,fn,label,ms=30000){const end=Date.now()+ms;while(Date.now()<end){const s=await read(i);if(s?.world?.units&&fn(s))return s;if(result.errors.length)throw Error(result.errors.join('\n'));await sleep(150)}throw Error(label+' timeout')}
 async function click(i,p,label,button='left'){result.actions.push({player:i,label,point:p,button});await pages[i].mouse.click(...p,{button});await sleep(150)}
 async function look(i,x,y){const s=await read(i),r=s.scene.widgets.find(w=>w.id==='skirmish_minimap').rect;await click(i,[r[0]+x/64*r[2],r[1]+(1-y/48)*r[3]],'look on map');await sleep(200)}
@@ -20,6 +20,10 @@ async function button(i,text){const s=await wait(i,s=>s.ui.some(w=>w.kind==='but
 (async()=>{try{
 const host=await launch([root+'/scripts/skirmish-play.sh','--prepared',prepared,'--human','--silent'],'host'),url=/^JOIN_URL: (.+)$/m.exec(host)?.[1];if(!url||!host.includes('JOIN_COMMAND:'))throw Error('join instructions absent');result.url=url;
 await launch([root+'/scripts/mp1-play.sh','--url',url,'--silent'],'join');
+for(let i=0;i<2;i++){
+ const opening=await wait(i,s=>s.lobby||s.scene.models.length>0,'lobby or game',90000);
+ if(opening.lobby){const w=opening.ui.find(w=>w.id==='lobby.ready'&&w.visible&&w.enabled);if(!w)throw Error('Ready button absent');await pages[i].mouse.click(w.rect[0]+w.rect[2]/2,w.rect[1]+w.rect[3]/2);await wait(i,s=>s.lobby?.seats.find(seat=>seat.index===s.lobby.you)?.ready||s.scene.models.length>0,'Ready accepted');}
+}
 const ready=s=>s.scene.models.length>0&&s.scene.models.every(m=>m.ready)&&s.world.units.length===6;
 result.initial=[await wait(0,ready,'host ready',90000),await wait(1,ready,'join ready',90000)];
 if(result.initial[0].slot!==0||result.initial[1].slot!==1||result.initial[0].match!==result.initial[1].match)throw Error('slots or match differ');if(result.profiles[0]===result.profiles[1])throw Error('profiles shared');

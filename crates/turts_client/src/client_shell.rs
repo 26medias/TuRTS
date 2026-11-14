@@ -95,7 +95,22 @@ impl Plugin for ClientShellPlugin {
                 .run_if(resource_exists::<bevy::picking::hover::HoverMap>)
                 .run_if(resource_exists::<Messages<bevy::picking::pointer::PointerInput>>),
         );
-        app.init_resource::<ClientSettings>()
+        app.init_resource::<crate::lobby::LobbyUi>()
+            .init_resource::<crate::lobby::ClientLobby>()
+            .add_systems(
+                Update,
+                crate::lobby::sync_ui
+                    .after(crate::join::update_phase)
+                    .before(UiPresentationSet),
+            )
+            .add_systems(
+                Update,
+                crate::lobby::update_ui
+                    .after(crate::lobby::sync_ui)
+                    .before(UiPresentationSet),
+            )
+            .add_observer(crate::lobby::activate)
+            .init_resource::<ClientSettings>()
             .init_resource::<CorePreferences>()
             .init_resource::<BindingEditorState>()
             .init_resource::<BindingInputTimeline>()

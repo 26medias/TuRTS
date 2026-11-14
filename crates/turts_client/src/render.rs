@@ -275,9 +275,18 @@ pub struct SlotMaterials(pub Vec<Handle<StandardMaterial>>);
 fn sync_slot_materials(
     mut slots: ResMut<SlotMaterials>,
     acquired: Option<Res<AcquiredPackages>>,
+    phase: Option<Res<Phase>>,
+    state: Option<Res<ReplicaState>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
     if !slots.0.is_empty() {
+        return;
+    }
+    // Wait for Welcome before creating shared body and ring colours in a live client.
+    let start = state
+        .as_deref()
+        .and_then(|state| state.match_start.as_ref());
+    if phase.is_some() && start.is_none() {
         return;
     }
     let Some(acquired) = acquired else { return };
@@ -290,11 +299,16 @@ fn sync_slot_materials(
     slots.0 = crate::palette::SLOT_RGB
         .iter()
         .enumerate()
-        .map(|(index, fallback)| {
-            let colour = authored.and_then(|colours| colours.get(index)).map_or_else(
-                || Color::srgb_u8(fallback[0], fallback[1], fallback[2]),
-                |hex| parse_hex(hex),
-            );
+        .map(|(index, _)| {
+            let colour_index = crate::palette::colour_index(index as u8, start);
+            let fallback =
+                &crate::palette::SLOT_RGB[colour_index.min(crate::palette::SLOT_RGB.len() - 1)];
+            let colour = authored
+                .and_then(|colours| colours.get(colour_index))
+                .map_or_else(
+                    || Color::srgb_u8(fallback[0], fallback[1], fallback[2]),
+                    |hex| parse_hex(hex),
+                );
             materials.add(StandardMaterial {
                 base_color: colour,
                 unlit: true,

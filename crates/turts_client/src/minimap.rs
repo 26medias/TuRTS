@@ -94,13 +94,18 @@ fn sync_minimap(world: &mut World) {
         .as_ref()
         .map(|interface| interface.slot_colours.clone())
         .unwrap_or_default();
+    let match_start = world
+        .get_resource::<ReplicaState>()
+        .and_then(|state| state.match_start.as_ref());
     let slot_colours = (0..crate::palette::SLOT_RGB.len())
         .map(|index| {
+            let colour_index = crate::palette::colour_index(index as u8, match_start);
             slot_colours
-                .get(index)
+                .get(colour_index)
                 .and_then(|hex| crate::widgets::primitives::parse_colour(hex))
                 .unwrap_or_else(|| {
-                    let [r, g, b] = crate::palette::SLOT_RGB[index];
+                    let [r, g, b] = crate::palette::SLOT_RGB
+                        [colour_index.min(crate::palette::SLOT_RGB.len() - 1)];
                     Color::srgb_u8(r, g, b)
                 })
         })

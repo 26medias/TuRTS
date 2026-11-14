@@ -18,7 +18,7 @@ usage: turts_server <server.ron> [options]
 Run the headless authoritative server. It loads the game package that server.ron names,
 serves the package to clients over HTTP, and runs the match over WebSocket.
 
-server.ron is one RON record. Every field is required, except static_dir:
+server.ron is one RON record. Every field is required, except static_dir and start_policy:
   game_package  Path of the package archive that turts-pack wrote.
   http_listen   Address of the HTTP listener, for example \"127.0.0.1:7000\".
   ws_listen     Address of the WebSocket listener, for example \"127.0.0.1:7001\".
@@ -26,6 +26,7 @@ server.ron is one RON record. Every field is required, except static_dir:
                 The lockfile and the advertisement build their URLs from it.
   tick_hz       Simulation ticks per second. It must be above 0.
   static_dir    A folder that the HTTP listener also serves, for the browser page.
+  start_policy  Optional override: Immediate, AllSeated, or AllSeatedReady with countdown_secs.
 
 HTTP endpoints (GET):
   /advertisement.json            The package name and version, the engine and protocol
@@ -79,6 +80,8 @@ pub struct HostConfig {
     pub tick_hz: u16,
     #[serde(default)]
     pub static_dir: Option<String>,
+    #[serde(default)]
+    pub start_policy: Option<turts_mod_api::StartPolicy>,
 }
 
 impl HostConfig {
@@ -90,6 +93,19 @@ impl HostConfig {
             .with_default_extension(ron::extensions::Extensions::IMPLICIT_SOME)
             .from_str(text)
             .map_err(|error| format!("server.ron: {error}"))?;
+        if config
+            .start_policy
+            .as_ref()
+            .is_some_and(|policy| match policy {
+                turts_mod_api::StartPolicy::Immediate => false,
+                turts_mod_api::StartPolicy::AllSeated { countdown_secs }
+                | turts_mod_api::StartPolicy::AllSeatedReady { countdown_secs } => {
+                    *countdown_secs > 30
+                }
+            })
+        {
+            return Err("server.ron: start_policy countdown_secs must be 0 to 30".into());
+        }
         if config.tick_hz == 0 {
             return Err("server.ron: tick_hz must be above 0".to_string());
         }

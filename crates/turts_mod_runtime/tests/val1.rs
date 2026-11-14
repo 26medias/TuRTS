@@ -106,7 +106,16 @@ fn the_package_val1_passes_the_validation_column() {
 /// reason: the old validation, the version table and the new column all passed before it.
 #[test]
 fn content_refuses_the_package_val1_only_as_unbuilt() {
-    let error = val1(&[], &[]).content().unwrap_err();
+    let error = val1(
+        &[(
+            "manifest.ron",
+            r#"engine_api: "^0.2.4""#,
+            r#"engine_api: "^0.2.9""#,
+        )],
+        &[],
+    )
+    .content()
+    .unwrap_err();
     assert_eq!(
         error.to_string(),
         "val1/manifest.ron: exports.combat: `exports.combat` is not built in this engine build; leave it out until an engine build supports it"

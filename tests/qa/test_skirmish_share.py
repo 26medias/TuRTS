@@ -45,7 +45,7 @@ while True: time.sleep(.1)
 import json, pathlib, re, sys
 from http.server import BaseHTTPRequestHandler, HTTPServer
 text=pathlib.Path(sys.argv[1]).read_text()
-values={key:json.loads(value) for key,value in re.findall(r'  (\\w+): (.+),',text)}
+values={key:json.loads(value) for key,value in re.findall(r'  (\\w+): (.+),',text) if key != 'start_policy'}
 class Handler(BaseHTTPRequestHandler):
  def log_message(self,*args): pass
  def do_GET(self):

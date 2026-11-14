@@ -4,15 +4,41 @@ const [root,prepared,out]=process.argv.slice(2);if(!out)throw Error('ROOT PREPAR
 const sleep=ms=>new Promise(r=>setTimeout(r,ms)),children=[],browsers=[],pages=[],result={status:'RUNNING',profiles:[],errors:[],networks:[]};
 function child(args,name){const fd=fs.openSync(out+'/'+name+'.log','w'),p=spawn(args[0],args.slice(1),{detached:true,stdio:['ignore',fd,fd]});fs.closeSync(fd);children.push(p);return p}
 async function line(name,pattern,p,ms=180000){const end=Date.now()+ms;while(Date.now()<end){const text=fs.readFileSync(out+'/'+name+'.log','utf8'),match=pattern.exec(text);if(match)return{match,text};if(p.exitCode!==null)throw Error(name+' exited '+p.exitCode+': '+text);await sleep(100)}throw Error(name+' startup timeout')}
-async function read(i){return pages[i].evaluate(async()=>{if(typeof turts_scene!=='function'||!turts_scene())return null;const d=JSON.parse(await turts_debug_request());return{scene:JSON.parse(turts_scene()),world:d.replicated_world,slot:d.slot,match:d.match_id_decimal,selection:d.selection,secure:isSecureContext}})}
-async function wait(i,fn,label,ms=90000){const end=Date.now()+ms;while(Date.now()<end){const s=await read(i);if(s?.world?.units&&fn(s))return s;if(result.errors.length)throw Error(result.errors.join('\n'));await sleep(150)}throw Error(label+' timeout')}
+async function read(i){return pages[i].evaluate(async()=>{
+ if(typeof turts_debug_request!=='function'||typeof turts_ui!=='function')return null;
+ const value=await turts_debug_request();if(!value)return null;const d=JSON.parse(value),scene=typeof turts_scene==='function'?turts_scene():null;
+ return{scene:scene?JSON.parse(scene):{models:[],units:[],widgets:[]},ui:JSON.parse(turts_ui()),lobby:d.lobby,start:d.match_start,colours:d.slot_colours,
+ world:d.replicated_world||{units:[]},slot:d.slot,match:d.match_id_decimal,selection:d.selection,secure:isSecureContext};
+})}
+async function wait(i,fn,label,ms=90000){const end=Date.now()+ms;while(Date.now()<end){const s=await read(i);if(s&&fn(s))return s;if(result.errors.length)throw Error(result.errors.join('\n'));await sleep(150)}throw Error(label+' timeout')}
+async function clickWidget(i,id){const s=await wait(i,s=>s.ui.some(w=>w.id===id&&w.visible&&w.enabled),'widget '+id),w=s.ui.find(w=>w.id===id&&w.visible&&w.enabled);await pages[i].mouse.click(w.rect[0]+w.rect[2]/2,w.rect[1]+w.rect[3]/2)}
+const modelReady=s=>s.scene.models.length>0&&s.scene.models.every(m=>m.ready);
+const ownSeat=s=>s.lobby?.seats.find(seat=>seat.index===s.lobby.you);
 function project(s,v){const m=s.clip_from_world,c=[0,1,2,3].map(r=>[...v,1].reduce((a,x,k)=>a+m[k*4+r]*x,0)),[x,y,w,h]=s.viewport_logical_rect;return[x+(c[0]/c[3]+1)*w/2,y+(1-c[1]/c[3])*h/2]}
 (async()=>{try{
 const host=child(['python3','-I','-B',root+'/scripts/skirmish_share.py','--prepared',prepared,'--out',out+'/services'],'host');const{match}=await line('host',/^URL: (https:\/\/.+)$/m,host);result.url=match[1];result.services=JSON.parse(fs.readFileSync(out+'/services/hosting.json','utf8'));
 for(let i=0;i<2;i++){
  const name='player-'+i,p=child(['bash',root+'/scripts/mp1-play.sh','--join',result.url,'--silent'],name),{match:port,text}=await line(name,/^DEBUG_PORT: (\d+)$/m,p,90000);if(!text.includes('--alsa-output-device=null'))throw Error('missing null sound');const profile=/^PROFILE: (.+)$/m.exec(text)?.[1];if(!profile?.startsWith('/tmp/turts-play-profile.'))throw Error('unexpected profile');result.profiles.push(profile);
  const b=await chromium.connectOverCDP('http://127.0.0.1:'+port[1]);browsers.push(b);const context=b.contexts()[0],page=context.pages().find(p=>p.url().startsWith('https://'));if(!page)throw Error('HTTPS page absent');pages.push(page);page.on('pageerror',e=>result.errors.push(String(e)));
- const first=await wait(i,s=>s.scene.models.length>0&&s.scene.models.every(m=>m.ready),'initial public join');
+ const opening=await wait(i,s=>s.lobby||modelReady(s),'lobby or game');
+ if(opening.lobby){
+  if(i===0&&process.env.TURTS_LOBBY_CHECK==='1'){
+   result.waiting=opening;await pages[i].screenshot({path:out+'/waiting.png'});await sleep(2000);
+   if(!(await read(i)).lobby||modelReady(await read(i)))throw Error('solo human started without a second player');
+   await clickWidget(i,'lobby.colour.1');await wait(i,s=>ownSeat(s)?.colour===1,'choose orange');
+  }
+  await clickWidget(i,'lobby.ready');await wait(i,s=>ownSeat(s)?.ready,'first-click Ready');
+  if(i===1&&process.env.TURTS_LOBBY_CHECK==='1'){
+   await wait(i,s=>s.lobby?.start?.Countdown,'countdown');await pages[i].screenshot({path:out+'/countdown.png'});
+   await clickWidget(i,'lobby.ready');await wait(i,s=>ownSeat(s)?.ready===false&&s.lobby.start==='Waiting','cancel countdown');
+   await sleep(3500);result.cancelled=await read(i);if(modelReady(result.cancelled)||result.cancelled.lobby?.start!=='Waiting')throw Error('cancelled countdown started');
+   await pages[i].screenshot({path:out+'/cancelled.png'});await clickWidget(i,'lobby.ready');
+  }
+ }
+}
+for(let i=0;i<2;i++){
+ const context=browsers[i].contexts()[0],page=pages[i];
+ const first=await wait(i,s=>s.scene.models.length>0&&s.scene.models.every(m=>m.ready),'shared match start');
  if(process.env.TURTS_REJOIN_CHECK==='1'){
   const id=first.slot?6:3,x=first.slot?46:18,u=first.scene.units.find(u=>u.unit_id===id),[vx,vy,vw,vh]=first.scene.viewport_logical_rect;
   await page.mouse.click(vx+vw/2,vy+vh*.65);await page.mouse.click(...project(first.scene,u.translation));await wait(i,s=>s.selection.includes(id),'selection before reload');await page.mouse.click(...project((await read(i)).scene,[x,0,30]),{button:'right'});
@@ -22,7 +48,7 @@ for(let i=0;i<2;i++){
  const session=await context.newCDPSession(page),network={websockets:[],packages:[]};result.networks.push(network);await session.send('Network.enable');session.on('Network.webSocketCreated',e=>network.websockets.push(e.url));session.on('Network.responseReceived',e=>{if(e.response.url.includes('/packages/'))network.packages.push({url:e.response.url,status:e.response.status})});
  const reloadStarted=Date.now();await page.reload({waitUntil:'domcontentloaded'});await wait(i,s=>s.scene.models.length>0&&s.scene.models.every(m=>m.ready),'reloaded public join');network.reload_ms=Date.now()-reloadStarted;if(process.env.TURTS_REJOIN_CHECK==='1'){const id=i?6:3,x=i?46:18;await wait(i,s=>{const u=s.world.units.find(u=>u.unit_id===id);return Math.hypot(u.pos[0]-x,u.pos[1]-30)<.25},'admitted order survives reload',10000);network.admitted_order_preserved=true;}if(process.env.TURTS_REJOIN_CHECK==='1'&&network.websockets.length>2)throw Error('rejoin opened repeated WebSockets: '+network.websockets.length);if(!network.websockets.includes(result.services.ws))throw Error('WSS endpoint not used: '+JSON.stringify(network));if(!network.packages.some(r=>r.url.startsWith(result.services.http+'/packages/')&&r.status===200))throw Error('public package did not load: '+JSON.stringify(network));
 }
-result.initial=[await read(0),await read(1)];if(result.initial[0].slot!==0||result.initial[1].slot!==1||result.initial[0].match!==result.initial[1].match||result.initial.some(s=>!s.secure))throw Error('secure shared slots or match differ');
+result.initial=[await read(0),await read(1)];if(process.env.TURTS_LOBBY_CHECK==='1'&&result.initial.some(s=>JSON.stringify(s.start?.colours)!=='[1,0]'))throw Error('chosen colours did not survive match start and reload');if(result.initial[0].slot!==0||result.initial[1].slot!==1||result.initial[0].match!==result.initial[1].match||result.initial.some(s=>!s.secure))throw Error('secure shared slots or match differ');
 for(let i=0;i<2;i++){
  const s=await read(i),id=i?6:3,u=s.scene.units.find(u=>u.unit_id===id),x=i?48:16;const [vx,vy,vw,vh]=s.scene.viewport_logical_rect;await pages[i].mouse.click(vx+vw/2,vy+vh*.65);await pages[i].mouse.click(...project(s.scene,u.translation));await wait(i,s=>s.selection.includes(id),'selection');await pages[i].mouse.click(...project((await read(i)).scene,[x,0,30]),{button:'right'});
  for(let observer=0;observer<2;observer++)await wait(observer,s=>{const u=s.world.units.find(u=>u.unit_id===id);return Math.hypot(u.pos[0]-x,u.pos[1]-30)<.25},'both see public move',15000);

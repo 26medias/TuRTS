@@ -47,6 +47,7 @@ fn config(package: &Path) -> HostConfig {
         public_url: PUBLIC_URL.to_string(),
         tick_hz: 20,
         static_dir: None,
+        start_policy: None,
     }
 }
 

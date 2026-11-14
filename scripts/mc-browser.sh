@@ -215,6 +215,8 @@ finally:
     for sock in sockets: sock.close()
 PYPORTS
 )
+START_POLICY_RON=""
+if [[ -n "${TURTS_HUMAN_SKIRMISH:-}" ]]; then START_POLICY_RON="start_policy: AllSeatedReady(countdown_secs: 3),"; fi
 cat >"$OUT/server.ron" <<EOF_RON
 (
     game_package: "$PACK/$PACKAGE_NAME.tar",
@@ -223,6 +225,7 @@ cat >"$OUT/server.ron" <<EOF_RON
     public_url: "http://127.0.0.1:$HTTP_PORT",
     tick_hz: 20,
     static_dir: "$DIST",
+    $START_POLICY_RON
 )
 EOF_RON
 # Every row starts the server with --stats: the oracles read tick_max_us (the longest compute time of one tick) to tell a

@@ -63,11 +63,12 @@ pub use schema::{
 pub use written::Written;
 
 /// Version of the engine API that this crate defines.
-pub const ENGINE_API_VERSION: &str = "0.2.8";
+pub const ENGINE_API_VERSION: &str = "0.2.9";
 
 /// Engine API versions released by the project, in ascending order.
 pub const RELEASED_ENGINE_APIS: &[&str] = &[
     "0.1.0", "0.2.0", "0.2.1", "0.2.2", "0.2.3", "0.2.4", "0.2.5", "0.2.6", "0.2.7", "0.2.8",
+    "0.2.9",
 ];
 
 /// The number of player slots of a match, which is the number of seats that the lobby offers
@@ -94,8 +95,8 @@ mod tests {
     /// Design D:2280-2286: 0.2.4 is the one API step of MP1, released with its first row.
     #[test]
     fn the_api_step_of_mp1_is_0_2_4() {
-        assert_eq!(ENGINE_API_VERSION, "0.2.8");
-        assert_eq!(RELEASED_ENGINE_APIS.len(), 10);
+        assert_eq!(ENGINE_API_VERSION, "0.2.9");
+        assert_eq!(RELEASED_ENGINE_APIS.len(), 11);
         assert_eq!(RELEASED_ENGINE_APIS[4], "0.2.3");
     }
 

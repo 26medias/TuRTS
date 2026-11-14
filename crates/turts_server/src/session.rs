@@ -115,6 +115,7 @@ pub fn install(app: &mut App, advertised: Advertised) {
         .init_resource::<ReliableTraffic>()
         .init_resource::<RateLimitBuckets>();
     app.add_observer(retire_disconnected_session);
+    app.add_observer(crate::lobby::retire_connection);
     app.add_systems(
         FixedPreUpdate,
         admit_player_commands
@@ -125,6 +126,9 @@ pub fn install(app: &mut App, advertised: Advertised) {
         PreUpdate,
         (
             receive_hello,
+            crate::lobby::reject_gameplay,
+            crate::lobby::receive_actions,
+            crate::lobby::drive,
             receive_player_commands,
             receive_resync,
             send_snapshots,
@@ -216,6 +220,7 @@ type HelloClients<'w, 's> = Query<
         &'static mut MessageReceiver<Hello>,
         Has<Session>,
         Has<PendingKick>,
+        Has<crate::lobby::LobbyMember>,
     ),
     (With<ClientOf>, Without<Disconnected>),
 >;
@@ -244,10 +249,11 @@ pub fn receive_hello(
     live_sessions: Query<&Session, Without<Disconnected>>,
     mut diagnostics: Option<ResMut<SessionDiagnostics>>,
     computer: Option<Res<crate::computer::ComputerPlayer>>,
+    mut lobby: Option<ResMut<crate::lobby::HostedLobby>>,
 ) {
     let mut accepted_in_batch = BTreeSet::new();
-    for (entity, mut receiver, has_session, pending_kick) in clients.iter_mut() {
-        let mut decided = has_session || pending_kick;
+    for (entity, mut receiver, has_session, pending_kick, lobby_member) in clients.iter_mut() {
+        let mut decided = has_session || pending_kick || lobby_member;
         for hello in receiver.receive() {
             traffic.record(entity);
             if decided {
@@ -255,6 +261,32 @@ pub fn receive_hello(
             }
             decided = true;
             stats.hellos += 1;
+            if let Some(lobby) = lobby.as_mut().filter(|lobby| lobby.waiting()) {
+                let result = if hello.protocol_version != NET_PROTOCOL_VERSION {
+                    Err(REASON_PROTOCOL)
+                } else if hello.lockfile_hash != advertised.lockfile_hash {
+                    Err(REASON_LOCKFILE)
+                } else {
+                    lobby.join(entity, hello.player_id)
+                };
+                match result {
+                    Ok(()) => {
+                        commands.entity(entity).insert(crate::lobby::LobbyMember);
+                    }
+                    Err(reason) => {
+                        if let Ok(mut sender) = replies.rejections.get_mut(entity) {
+                            sender.send::<ReliableChannel>(JoinRejected {
+                                reason: reason.into(),
+                            });
+                        }
+                        commands.entity(entity).insert(PendingKick {
+                            at: Instant::now() + KICK_DELAY,
+                        });
+                    }
+                }
+                continue;
+            }
+
             let has_live_session = computer
                 .as_ref()
                 .is_some_and(|bot| bot.player_id == hello.player_id)
@@ -294,6 +326,11 @@ pub fn receive_hello(
             }
             match result {
                 Ok(slot) => {
+                    if let Some(lobby) = lobby.as_mut() {
+                        lobby
+                            .join(entity, hello.player_id)
+                            .expect("durable session rejoin matches the room claim");
+                    }
                     if !already_claimed && let Some(log) = economy_log.as_mut() {
                         log.write_claim(tick.0, hello.player_id, slot.0);
                     }
@@ -315,7 +352,10 @@ pub fn receive_hello(
                             tick: tick.0,
                             tick_hz: advertised.tick_hz,
                             match_id: match_id.0,
-                            start: immediate_match_start(),
+                            start: lobby
+                                .as_ref()
+                                .and_then(|lobby| lobby.start.clone())
+                                .unwrap_or_else(immediate_match_start),
                         });
                         traffic.record(entity);
                     }
@@ -809,6 +849,12 @@ mod tests {
                 Link::default(),
                 sender_transport,
                 MessageSender::<Hello>::default(),
+                MessageSender::<LobbyAction>::default(),
+                MessageSender::<PlayerCommand>::default(),
+                MessageReceiver::<LobbyState>::default(),
+                MessageReceiver::<LobbyRefused>::default(),
+                MessageReceiver::<OrderResult>::default(),
+                MessageReceiver::<CommandAck>::default(),
                 RemoteId(PeerId::Server),
                 Linked,
                 Connected,
@@ -826,6 +872,12 @@ mod tests {
                 MessageReceiver::<Hello>::default(),
                 MessageSender::<Welcome>::default(),
                 MessageSender::<JoinRejected>::default(),
+                MessageSender::<LobbyState>::default(),
+                MessageSender::<LobbyRefused>::default(),
+                MessageReceiver::<LobbyAction>::default(),
+                MessageReceiver::<PlayerCommand>::default(),
+                MessageSender::<CommandAck>::default(),
+                MessageSender::<OrderResult>::default(),
             ))
             .id();
         (sender, receiver)
@@ -885,6 +937,283 @@ mod tests {
         app.update();
     }
 
+    #[derive(Resource, Default)]
+    struct LobbyRepliesCaptured {
+        orders: Vec<OrderResult>,
+        refusals: Vec<LobbyRefused>,
+    }
+    fn capture_lobby_replies(
+        mut orders: Query<&mut MessageReceiver<OrderResult>>,
+        mut refusals: Query<&mut MessageReceiver<LobbyRefused>>,
+        mut captured: ResMut<LobbyRepliesCaptured>,
+    ) {
+        for mut reader in &mut orders {
+            captured.orders.extend(reader.receive());
+        }
+        for mut reader in &mut refusals {
+            captured.refusals.extend(reader.receive());
+        }
+    }
+
+    fn lobby_app() -> App {
+        let mut app = hello_test_app();
+        app.init_resource::<LobbyRepliesCaptured>().add_systems(
+            PreUpdate,
+            capture_lobby_replies
+                .after(MessageSystems::Receive)
+                .before(receive_hello),
+        );
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../mods/skirmish");
+        let archive = turts_mod_runtime::archive::PackageArchive::parse(
+            &turts_mod_runtime::pack::pack_dir(&path).unwrap(),
+        )
+        .unwrap();
+        turts_pack::load_package(app.world_mut(), &archive).unwrap();
+        app.insert_resource(crate::orders::ServerCatalog(archive.content().unwrap()));
+        app.world_mut().remove_resource::<turts_sim::MatchConfig>();
+        app.insert_resource(crate::lobby::HostedLobby::new(
+            turts_mod_api::StartPolicy::AllSeatedReady { countdown_secs: 3 },
+            2,
+        ));
+        turts_sim::initialize_completed_world(app.world_mut());
+        app
+    }
+
+    fn relay_test_packets(app: &mut App, source: Entity, client: Entity) {
+        app.update();
+        let packets = {
+            let mut link = app.world_mut().get_mut::<Link>(source).unwrap();
+            let mut packets = Vec::new();
+            while let Some(packet) = link.send.pop() {
+                packets.push(packet);
+            }
+            packets
+        };
+        assert!(!packets.is_empty());
+        for packet in packets {
+            app.world_mut()
+                .get_mut::<Link>(client)
+                .unwrap()
+                .recv
+                .push_raw(lightyear::link::recv_payload_from_bytes(packet));
+        }
+        app.update();
+    }
+
+    fn lobby_action(app: &mut App, source: Entity, client: Entity, action: LobbyActionKind) {
+        let revision = app
+            .world()
+            .resource::<crate::lobby::HostedLobby>()
+            .room
+            .seats()
+            .revision();
+        app.world_mut()
+            .get_mut::<MessageSender<LobbyAction>>(source)
+            .unwrap()
+            .send::<ReliableChannel>(LobbyAction { revision, action });
+        relay_test_packets(app, source, client);
+    }
+
+    fn advance_lobby(app: &mut App, seconds: f64) {
+        app.insert_resource(bevy::time::TimeUpdateStrategy::ManualDuration(
+            Duration::from_secs_f64(seconds),
+        ));
+        app.update();
+        app.insert_resource(bevy::time::TimeUpdateStrategy::ManualDuration(
+            Duration::ZERO,
+        ));
+    }
+
+    #[test]
+    fn all_seated_zero_starts_when_the_second_human_joins() {
+        let mut app = lobby_app();
+        app.insert_resource(crate::lobby::HostedLobby::new(
+            turts_mod_api::StartPolicy::AllSeated { countdown_secs: 0 },
+            8,
+        ));
+        let (a, ca) = spawn_hello_peers(&mut app, 1);
+        deliver_hello(&mut app, a, ca, good(7));
+        assert!(!app.world().contains_resource::<turts_sim::MatchConfig>());
+        let (b, cb) = spawn_hello_peers(&mut app, 2);
+        deliver_hello(&mut app, b, cb, good(8));
+        assert!(app.world().contains_resource::<turts_sim::MatchConfig>());
+        assert_eq!(
+            app.world().resource::<Slots>().owners(),
+            vec![Some(7), Some(8)]
+        );
+        assert!(app.world().get::<Session>(ca).is_some());
+        assert!(app.world().get::<Session>(cb).is_some());
+    }
+
+    #[test]
+    fn lobby_waits_cancels_and_claims_once_with_authoritative_colours() {
+        let mut app = lobby_app();
+        let before = turts_sim::audit_state(app.world_mut());
+        let (a, ca) = spawn_hello_peers(&mut app, 1);
+        deliver_hello(&mut app, a, ca, good(7));
+        assert!(app.world().get::<Session>(ca).is_none());
+        assert!(app.world().get::<crate::lobby::LobbyMember>(ca).is_some());
+        advance_lobby(&mut app, 20.0);
+        assert_eq!(
+            turts_sim::audit_state(app.world_mut()),
+            before,
+            "a waiting lobby changed gameplay state"
+        );
+        lobby_action(&mut app, a, ca, LobbyActionKind::SetColour(1));
+        lobby_action(&mut app, a, ca, LobbyActionKind::SetReady(true));
+        let (b, cb) = spawn_hello_peers(&mut app, 2);
+        deliver_hello(&mut app, b, cb, good(8));
+        lobby_action(&mut app, b, cb, LobbyActionKind::SetReady(true));
+        assert_eq!(
+            app.world()
+                .resource::<crate::lobby::HostedLobby>()
+                .room
+                .state(),
+            crate::room::RoomState::Countdown
+        );
+        advance_lobby(&mut app, 1.0);
+        lobby_action(&mut app, b, cb, LobbyActionKind::SetReady(false));
+        advance_lobby(&mut app, 4.0);
+        assert_eq!(
+            turts_sim::audit_state(app.world_mut()),
+            before,
+            "a cancelled countdown started gameplay"
+        );
+        lobby_action(&mut app, b, cb, LobbyActionKind::SetReady(true));
+        advance_lobby(&mut app, 1.0);
+        app.world_mut().entity_mut(cb).insert(Unlinked {
+            reason: UnlinkReason::ByPeer("left lobby".into()),
+        });
+        app.update();
+        advance_lobby(&mut app, 4.0);
+        assert_eq!(app.world().resource::<Slots>().owners(), vec![None, None]);
+        let (c, cc) = spawn_hello_peers(&mut app, 3);
+        deliver_hello(&mut app, c, cc, good(9));
+        lobby_action(&mut app, c, cc, LobbyActionKind::SetReady(true));
+        advance_lobby(&mut app, 2.0);
+        assert_eq!(app.world().resource::<SimTick>().0, 0);
+        advance_lobby(&mut app, 1.1);
+        assert!(app.world().contains_resource::<turts_sim::MatchConfig>());
+        assert_eq!(
+            app.world().resource::<Slots>().owners(),
+            vec![Some(7), Some(9)]
+        );
+        assert_eq!(app.world().get::<Session>(ca).unwrap().slot.0, 0);
+        assert_eq!(app.world().get::<Session>(cc).unwrap().slot.0, 1);
+        assert_eq!(
+            app.world()
+                .resource::<crate::lobby::HostedLobby>()
+                .start
+                .as_ref()
+                .unwrap()
+                .colours,
+            vec![1, 0]
+        );
+    }
+
+    #[test]
+    fn lobby_rejects_stale_actions_and_prestart_gameplay() {
+        let mut app = lobby_app();
+        let (a, ca) = spawn_hello_peers(&mut app, 1);
+        deliver_hello(&mut app, a, ca, good(7));
+        let stale = app
+            .world()
+            .resource::<crate::lobby::HostedLobby>()
+            .room
+            .seats()
+            .revision();
+        let (b, cb) = spawn_hello_peers(&mut app, 2);
+        deliver_hello(&mut app, b, cb, good(8));
+        app.world_mut()
+            .get_mut::<MessageSender<LobbyAction>>(a)
+            .unwrap()
+            .send::<ReliableChannel>(LobbyAction {
+                revision: stale,
+                action: LobbyActionKind::SetReady(true),
+            });
+        relay_test_packets(&mut app, a, ca);
+        assert!(
+            !app.world()
+                .resource::<crate::lobby::HostedLobby>()
+                .room
+                .seats()
+                .seat(0)
+                .unwrap()
+                .ready
+        );
+        lobby_action(&mut app, a, ca, LobbyActionKind::SetColour(1));
+        assert_eq!(
+            app.world()
+                .resource::<crate::lobby::HostedLobby>()
+                .room
+                .seats()
+                .seat(0)
+                .unwrap()
+                .colour,
+            0
+        );
+        lobby_action(&mut app, a, ca, LobbyActionKind::SetColour(250));
+        assert_eq!(
+            app.world()
+                .resource::<crate::lobby::HostedLobby>()
+                .room
+                .seats()
+                .seat(0)
+                .unwrap()
+                .colour,
+            0
+        );
+        app.world_mut()
+            .get_mut::<MessageSender<PlayerCommand>>(a)
+            .unwrap()
+            .send::<ReliableChannel>(PlayerCommand {
+                seq: 1,
+                order: OrderEnvelope {
+                    order: "skirmish:move".into(),
+                    units: vec![UnitId(3)],
+                    target: OrderTarget::Point(Pos { x: 18.0, y: 30.0 }),
+                    queue: QueueMode::Replace,
+                    group: 0,
+                },
+            });
+        relay_test_packets(&mut app, a, ca);
+        assert!(app.world().resource::<StagedPlayerCommands>().0.is_empty());
+        assert!(app.world().resource::<CommandQueue>().0.is_empty());
+        assert_eq!(app.world().resource::<SimTick>().0, 0);
+        relay_test_packets(&mut app, ca, a);
+        let replies = app.world().resource::<LobbyRepliesCaptured>();
+        assert!(
+            replies.orders.iter().any(|reply| reply.seq == 1
+                && reply.envelope == Some(CommandRejectReason::MatchNotStarted))
+        );
+        assert!(
+            replies
+                .refusals
+                .iter()
+                .any(|reply| reply.reason == LobbyRefusal::LobbyChanged)
+        );
+        assert!(
+            replies
+                .refusals
+                .iter()
+                .any(|reply| reply.reason == LobbyRefusal::ColourTaken)
+        );
+        assert!(
+            replies
+                .refusals
+                .iter()
+                .any(|reply| reply.reason == LobbyRefusal::ColourUnknown)
+        );
+        let (_, duplicate) = spawn_hello_peers(&mut app, 3);
+        // The pure room also rejects the same live identity before permanent claims exist.
+        assert!(
+            app.world_mut()
+                .resource_mut::<crate::lobby::HostedLobby>()
+                .join(duplicate, 7)
+                .is_err()
+        );
+    }
+
     #[test]
     fn judge_accepts_a_matching_hello_and_claims_the_first_open_slot() {
         let mut slots = Slots::new(2);
@@ -927,14 +1256,16 @@ mod tests {
     /// Protocol 5 refuses a client of protocol 4 with the clear reason, and the client of 4 sees
     /// "protocol version mismatch" (`client_screens.rs` maps it to a text).
     #[test]
-    fn protocol_4_hello_is_refused_with_the_mismatch_reason() {
-        assert_eq!(turts_net_protocol::NET_PROTOCOL_VERSION, 5);
+    fn older_protocols_are_refused_before_a_slot_is_claimed() {
+        assert_eq!(turts_net_protocol::NET_PROTOCOL_VERSION, 6);
         let mut slots = Slots::new(2);
-        assert_eq!(
-            judge_hello(&hello(7, 4, HASH), &advertised(), &mut slots, false),
-            Err("protocol version mismatch")
-        );
-        assert_eq!(slots.slot_of(7), None, "a refused Hello takes no slot");
+        for version in [4, 5] {
+            assert_eq!(
+                judge_hello(&hello(7, version, HASH), &advertised(), &mut slots, false),
+                Err("protocol version mismatch")
+            );
+            assert_eq!(slots.slot_of(7), None, "a refused Hello takes no slot");
+        }
     }
 
     /// Under `Immediate` the `Welcome` carries the `MatchStart` (design 6.7.5): start tick 1, one

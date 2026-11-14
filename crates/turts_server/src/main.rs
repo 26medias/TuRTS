@@ -8,6 +8,7 @@ mod config;
 mod economylog;
 mod export;
 mod http;
+mod lobby;
 mod net;
 mod orderlog;
 mod orders;
@@ -77,15 +78,49 @@ fn run() -> Result<(), String> {
     let mut app = base_app(cfg.tick_hz);
 
     let booted = boot::boot(app.world_mut(), &cfg, &bytes).map_err(|error| error.to_string())?;
-    // The sim does not tick without a `MatchConfig` (design 6.7.5, rule R17). The only start
-    // policy of this build is `Immediate`: the boot inserts the config before the first step.
-    app.insert_resource(turts_sim::MatchConfig::immediate(cfg.tick_hz));
     let server_catalog = booted
         .archive
         .content()
         .map_err(|error| error.to_string())?;
     app.insert_resource(orders::ServerCatalog(server_catalog));
     app.insert_resource(stats::generate_match_id());
+    let policy = cfg.start_policy.unwrap_or_else(|| {
+        booted
+            .archive
+            .match_defs()
+            .expect("boot validated match definitions")
+            .first()
+            .map_or(turts_mod_api::StartPolicy::Immediate, |(_, definition)| {
+                definition.start
+            })
+    });
+    if policy == turts_mod_api::StartPolicy::Immediate {
+        app.insert_resource(turts_sim::MatchConfig::immediate(cfg.tick_hz));
+    } else {
+        if cli.computer_slot.is_some() {
+            return Err("computer players require the Immediate start policy in this build".into());
+        }
+        let palettes = booted
+            .archive
+            .interfaces()
+            .map_err(|error| error.to_string())?;
+        let colours = palettes
+            .first()
+            .map(|(_, interface)| &interface.slot_colours)
+            .ok_or("a lobby needs an interface palette")?;
+        if colours.len() < usize::from(turts_mod_api::SLOT_COUNT)
+            || colours.len() > usize::from(u8::MAX)
+            || colours
+                .iter()
+                .map(|colour| colour.to_ascii_lowercase())
+                .collect::<std::collections::BTreeSet<_>>()
+                .len()
+                != colours.len()
+        {
+            return Err("a lobby needs 2 to 255 distinct interface colours".into());
+        }
+        app.insert_resource(lobby::HostedLobby::new(policy, colours.len() as u8));
+    }
     let package = &booted.archive.manifest;
     eprintln!(
         "turts_server: package {} {}, lockfile {}",

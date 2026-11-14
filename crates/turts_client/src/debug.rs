@@ -375,7 +375,7 @@ pub fn debug_json(world: &World) -> String {
             })
         })
         .unwrap_or(Value::Null);
-    json!({
+    let mut result = json!({
         "debug_builds": world.get_resource::<DebugRequest>().map_or(0, DebugRequest::builds),
         "effects": world.get_resource::<crate::fx::particles::ParticlePool>().map(|pool|json!({"active":pool.active(),"limit":pool.limit,"peak":pool.peak,"dropped":pool.dropped,"dropped_by_cost":pool.dropped_by_cost})),
         "phase": phase,
@@ -415,7 +415,31 @@ pub fn debug_json(world: &World) -> String {
         "rendered_ui_nodes": rendered_ui_nodes,
         "ingest": ingest,
         "replicated_world": replicated_world,
-    }).to_string()
+    });
+    result["lobby"] = json!(
+        world
+            .get_resource::<crate::lobby::ClientLobby>()
+            .and_then(|lobby| lobby.state.as_ref())
+    );
+    result["match_start"] = json!(
+        world
+            .get_resource::<ReplicaState>()
+            .and_then(|state| state.match_start.as_ref())
+    );
+    result["slot_colours"] = json!(
+        world
+            .get_resource::<crate::render::SlotMaterials>()
+            .zip(world.get_resource::<Assets<StandardMaterial>>())
+            .map(|(slots, materials)| slots
+                .0
+                .iter()
+                .map(|handle| materials.get(handle).map(|material| {
+                    let c = material.base_color.to_srgba();
+                    [c.red, c.green, c.blue, c.alpha]
+                }))
+                .collect::<Vec<_>>())
+    );
+    result.to_string()
 }
 
 fn binding_observation(

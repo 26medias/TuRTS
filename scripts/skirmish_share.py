@@ -81,7 +81,7 @@ class SharedHost:
                    "public_url": public_http, "tick_hz": 20, "static_dir": str(self.prepared / "dist")}
             config = self.output / "server.ron"
             config.write_text("(\n" + "".join(f"  {key}: {json.dumps(value, ensure_ascii=False)},\n"
-                                              for key, value in cfg.items()) + ")\n")
+                                              for key, value in cfg.items()) + "  start_policy: AllSeatedReady(countdown_secs: 3),\n)\n")
             for listener in sockets:
                 listener.close()
             self.start_child("server", [str(self.prepared / "bin/turts_server"), str(config)])

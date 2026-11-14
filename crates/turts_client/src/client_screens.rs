@@ -155,7 +155,7 @@ fn sync_product_screen(
     } else {
         match phase.as_deref() {
             Some(Phase::Failed(_)) => Some(ProductScreenKind::Rejection),
-            Some(Phase::Joined { .. }) | None => None,
+            Some(Phase::Joined { .. } | Phase::Lobby) | None => None,
             Some(_) => Some(ProductScreenKind::Load),
         }
     };
@@ -357,7 +357,7 @@ fn load_copy(
                 ratio(verified, total)
             }),
         ),
-        Phase::Joined { .. } | Phase::Failed(_) => (String::new(), None),
+        Phase::Joined { .. } | Phase::Failed(_) | Phase::Lobby => (String::new(), None),
     };
     ScreenCopy {
         heading: "Loading game".to_owned(),

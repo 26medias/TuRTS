@@ -42,6 +42,7 @@ pub enum Phase {
     VerifyPackage { left: usize },
     Connecting,
     Joining,
+    Lobby,
     Joined { slot: u8 },
     Failed(String),
 }
@@ -106,7 +107,7 @@ impl Acquisition {
 /// The phase after `Welcome`: `Joined` once ingest stored the `Welcome`. `None` means no change.
 pub fn advance_phase(phase: &Phase, state: &ReplicaState) -> Option<Phase> {
     match (phase, state.welcome) {
-        (Phase::Connecting | Phase::Joining, Some(welcome)) => {
+        (Phase::Connecting | Phase::Joining | Phase::Lobby, Some(welcome)) => {
             Some(Phase::Joined { slot: welcome.slot })
         }
         _ => None,
@@ -504,7 +505,7 @@ pub fn on_disconnected(
 ) {
     if rejoin.on_disconnected(trigger.entity.to_bits()) {
         join.on_disconnected();
-        if matches!(*phase, Phase::Joined { .. }) {
+        if matches!(*phase, Phase::Joined { .. } | Phase::Lobby) {
             send_status.reconnect_required = true;
         }
     }
@@ -562,7 +563,7 @@ pub fn advance_rejoin(
     mut rejoin: ResMut<RejoinController>,
 ) {
     let joined = state.welcome.is_some() && matches!(*phase, Phase::Joined { .. });
-    if joined {
+    if joined || matches!(*phase, Phase::Lobby) {
         rejoin.advance_to(time.elapsed_secs_f64(), true);
         return;
     }

@@ -78,6 +78,7 @@ pub enum StartPolicy {
     Immediate,
     /// The start step runs in the frame in which the last seat fills.
     AllSeated,
+    AllSeatedReady,
 }
 
 /// What a connecting id already holds (the columns of the table in design 6.7.5).
@@ -197,6 +198,7 @@ pub struct Seat {
     /// An index into the interface palette `slot_colours` (design 6.7.4, 6.7.6).
     pub colour: u8,
     /// True after the start step claimed the slot with this index.
+    pub ready: bool,
     pub claimed: bool,
     /// True after `LeaveMatch` (design 6.7.5, row Ended).
     pub left_match: bool,
@@ -303,6 +305,7 @@ impl SeatTable {
             player_id,
             connection: Some(connection),
             colour,
+            ready: false,
             claimed: false,
             left_match: false,
         });
@@ -467,7 +470,7 @@ impl Room {
         };
         let step = match policy {
             StartPolicy::Immediate => RoomStep::BootToRunning,
-            StartPolicy::AllSeated => RoomStep::BootToLobby,
+            StartPolicy::AllSeated | StartPolicy::AllSeatedReady => RoomStep::BootToLobby,
         };
         Self {
             state: RoomState::Boot
@@ -581,18 +584,22 @@ impl Room {
     /// The start condition of `AllSeated(0)`: every slot has a seated connection. There is no
     /// minimum-player rule, no auto-fill and no deadline (D23).
     pub fn start_due(&self) -> bool {
-        self.state == RoomState::Lobby
-            && self.policy == StartPolicy::AllSeated
+        matches!(self.state, RoomState::Lobby | RoomState::Countdown)
+            && self.policy != StartPolicy::Immediate
             && self.seats.all_seated()
+            && (self.policy != StartPolicy::AllSeatedReady
+                || self.seats.seats.iter().flatten().all(|seat| seat.ready))
     }
 
     /// The start step, room part: mark every seat claimed, go to Running and return the claims
     /// in index order. The caller applies them with `StartPlan::claim_in`.
     pub fn start(&mut self) -> Result<StartPlan, StartError> {
-        if self.state != RoomState::Lobby || self.policy != StartPolicy::AllSeated {
+        if !matches!(self.state, RoomState::Lobby | RoomState::Countdown)
+            || self.policy == StartPolicy::Immediate
+        {
             return Err(StartError::NotInLobby);
         }
-        if !self.seats.all_seated() {
+        if !self.start_due() {
             return Err(StartError::NotAllSeated);
         }
         let claims = self
@@ -615,9 +622,74 @@ impl Room {
         }
         self.state = self
             .state
-            .next(RoomStep::Start)
+            .next(if self.state == RoomState::Countdown {
+                RoomStep::CountdownToRunning
+            } else {
+                RoomStep::Start
+            })
             .expect("the table has the start edge");
         Ok(StartPlan { claims })
+    }
+
+    pub fn begin_countdown(&mut self) -> bool {
+        if !self.start_due() || self.state != RoomState::Lobby {
+            return false;
+        }
+        self.state = RoomState::Countdown;
+        true
+    }
+
+    pub fn set_ready(&mut self, connection: ConnectionKey, ready: bool) -> bool {
+        if !matches!(self.state, RoomState::Lobby | RoomState::Countdown) {
+            return false;
+        }
+        let Some(index) = self.seats.seat_of_connection(connection) else {
+            return false;
+        };
+        let seat = self.seats.seats[usize::from(index)].as_mut().unwrap();
+        if seat.ready == ready {
+            return false;
+        }
+        seat.ready = ready;
+        self.seats.revision = self.seats.revision.wrapping_add(1);
+        if self.state == RoomState::Countdown {
+            self.state = RoomState::Lobby;
+        }
+        true
+    }
+
+    pub fn set_colour(
+        &mut self,
+        connection: ConnectionKey,
+        colour: u8,
+    ) -> Result<bool, turts_net_protocol::LobbyRefusal> {
+        use turts_net_protocol::LobbyRefusal;
+        if !matches!(self.state, RoomState::Lobby | RoomState::Countdown) {
+            return Err(LobbyRefusal::NotInLobby);
+        }
+        let index = self
+            .seats
+            .seat_of_connection(connection)
+            .ok_or(LobbyRefusal::NotInLobby)?;
+        if colour >= self.seats.palette_len {
+            return Err(LobbyRefusal::ColourUnknown);
+        }
+        if self.seats.seats.iter().enumerate().any(|(i, seat)| {
+            i != usize::from(index) && seat.as_ref().is_some_and(|seat| seat.colour == colour)
+        }) {
+            return Err(LobbyRefusal::ColourTaken);
+        }
+        let seat = self.seats.seats[usize::from(index)].as_mut().unwrap();
+        if seat.colour == colour {
+            return Ok(false);
+        }
+        seat.colour = colour;
+        seat.ready = false;
+        self.seats.revision = self.seats.revision.wrapping_add(1);
+        if self.state == RoomState::Countdown {
+            self.state = RoomState::Lobby;
+        }
+        Ok(true)
     }
 
     /// Every slot has an outcome: Running goes to Ended. `false` in any other state.

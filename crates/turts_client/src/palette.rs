@@ -18,3 +18,28 @@ pub const SLOT_RGB: [[u8; 3]; 8] = [
 pub fn slot_rgb(slot: u8) -> [u8; 3] {
     SLOT_RGB[usize::from(slot).min(SLOT_RGB.len() - 1)]
 }
+
+/// Palette entry chosen for this slot by the authoritative match start.
+pub(crate) fn colour_index(slot: u8, start: Option<&turts_net_protocol::MatchStart>) -> usize {
+    start
+        .and_then(|start| start.colours.get(usize::from(slot)))
+        .copied()
+        .unwrap_or(slot) as usize
+}
+
+#[cfg(test)]
+mod lobby_colour_tests {
+    use super::*;
+    #[test]
+    fn match_colours_map_slots_without_changing_their_owners() {
+        let start = turts_net_protocol::MatchStart {
+            start_tick: 1,
+            teams: vec![0, 1],
+            colours: vec![1, 0],
+        };
+        assert_eq!(colour_index(0, Some(&start)), 1);
+        assert_eq!(colour_index(1, Some(&start)), 0);
+        assert_eq!(colour_index(2, Some(&start)), 2);
+        assert_eq!(colour_index(0, None), 0);
+    }
+}

@@ -21,6 +21,7 @@ pub mod ingest;
 pub mod input;
 pub mod interp;
 pub mod join;
+pub mod lobby;
 pub mod minimap;
 pub mod models;
 pub mod options;
@@ -125,17 +126,25 @@ impl Plugin for ClientPlugin {
             .init_resource::<PendingCommands>()
             .init_resource::<CommandSequence>()
             .init_resource::<CommandSendStatus>()
-            .init_resource::<ReceiptWitnesses>();
+            .init_resource::<ReceiptWitnesses>()
+            .init_resource::<crate::lobby::ClientLobby>();
         app.add_observer(on_connected).add_observer(on_disconnected);
         app.add_systems(
             PreUpdate,
-            (receive_rejection, ingest_messages).after(MessageSystems::Receive),
+            (
+                receive_rejection,
+                crate::lobby::receive_states,
+                ingest_messages,
+            )
+                .chain()
+                .after(MessageSystems::Receive),
         );
         app.add_systems(
             Update,
             (
                 drive_acquisition,
                 update_phase,
+                crate::lobby::send_intent,
                 advance_rejoin,
                 start_connection,
                 update_presented,

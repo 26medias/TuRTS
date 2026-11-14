@@ -39,7 +39,7 @@
     camera: (pitch: 0.7, yaw: 0.0, field_of_view: 60.0, minimum: 10.0, maximum: 100.0,
         start: OwnedCentre, height: 36.0, margin: 0.0, pan_speed: 100.0, edge_band: true),
     light: None,
-    slot_colours: [],
+    slot_colours: ["#0072B2", "#E69F00", "#009E73", "#D55E00", "#56B4E9", "#CC79A7", "#F0E442", "#000000"],
     world: (ground: "#243b2c", grid: "#354b3c", selection: "#ffffff", health: "#00ff00",
         range: "#ffffff", show_range: true,
         tooltip: (background: "#000000", colour: "#ffffff", font: None, size: 12),

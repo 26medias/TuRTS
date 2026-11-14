@@ -92,8 +92,6 @@ pub(crate) const UNBUILT_FEATURES: &[UnbuiltLine] = &[
     line("spawn_order", "L-STO"),
     // L-MATCH-SRV1: `exports.match` (A2) with `AllSeated(countdown_secs: 0)` and `KeyUnitsLost`.
     // L-LOBBY2-SRV: `AllSeated` above 0, `AllSeatedReady` (M2).
-    use_line("AllSeated with countdown_secs above 0", "L-LOBBY2-SRV"),
-    use_line("AllSeatedReady", "L-LOBBY2-SRV"),
     // L-MATCH-SIM2: `DisconnectedFor` (M1), `Surrender` (O9).
     use_line("DisconnectedFor", "L-MATCH-SIM2"),
     line("behaviour Surrender", "L-MATCH-SIM2"),
