@@ -1,6 +1,6 @@
 # Shared skin palettes
 
-Status: final release checks and scripted player probes pass. Launcher verification follows.
+Status: delivered on the presentation integration branch. Final release checks, scripted player probes, and the actual launcher pass.
 
 The client shares bone matrices between units that already share an evaluated pose.
 Each unit keeps its own transform, clock, facing, animation cadence, material, and named anchors.
@@ -109,6 +109,7 @@ The final web tests pass all five checks. Strict client and web Clippy passes fo
 | One independent code-running review | PASS, no actionable finding | `../review/review.md` |
 | Scripted first-click probes at both sizes | PASS | `player/cold-1280/`; `player/cold-1024/` |
 | Scripted buttons probe | PASS | `player/cold-buttons/` |
+| Actual global launcher | PASS, decoded hash and live scene checked | `launcher/result.json` |
 
 The complete final batch command and wrapper return 0. Source stays unchanged.
 Receipt: `target/mc-evidence/shared-skins-final-checks/receipt.json`.
@@ -121,6 +122,12 @@ The same release with the reference renderer reaches 27.21 FPS High.
 That paired High result improves by about 16 percent.
 High p95 remains 50 ms. Some stress frames remain slow.
 Complete frame percentiles, memory, and protocol details are in `docs/measurements/models.md`.
+
+The global `target/mc-evidence/play-skirmish.sh` starts this prepared build.
+The launcher serves 15,049,118 gzip bytes for 60,687,818 decoded WASM bytes.
+The browser receives 15,049,363 wire bytes. Its fresh test profile is removed.
+The stable play checkout and all three launcher paths select this release.
+Only the single-player launcher runs again for this client-only change.
 
 ## Limits
 
