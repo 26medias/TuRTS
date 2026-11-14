@@ -24,7 +24,9 @@ for(let i=0;i<2;i++){
  const opening=await wait(i,s=>s.lobby||modelReady(s),'lobby or game');
  if(opening.lobby){
   if(i===0&&process.env.TURTS_LOBBY_CHECK==='1'){
-   result.waiting=opening;await pages[i].screenshot({path:out+'/waiting.png'});await sleep(2000);
+   result.waiting=opening;
+   const palette=[[0,114,178],[230,159,0],[0,158,115],[213,94,0],[86,180,233],[204,121,167],[240,228,66],[0,0,0]],png=decodePng(await pages[i].screenshot({path:out+'/waiting.png'}));
+   result.lobby_palette_pixels=palette.map((rgb,index)=>{const w=opening.ui.find(w=>w.id==='lobby.colour.'+index&&w.visible&&w.enabled);if(!w)throw Error('lobby colour choice missing '+index);const p=pixelAt(png,Math.floor(w.rect[0]+w.rect[2]/2),Math.floor(w.rect[1]+w.rect[3]/2));if(!p||rgb.some((v,k)=>Math.abs(v-p[k])>2))throw Error('lobby colour choice is not its displayed colour: '+index+' '+p);return p});await sleep(2000);
    if(!(await read(i)).lobby||modelReady(await read(i)))throw Error('solo human started without a second player');
    await clickWidget(i,'lobby.colour.1');await wait(i,s=>ownSeat(s)?.colour===1,'choose orange');
   }

@@ -1489,6 +1489,52 @@ fn normal_hovered_pressed_and_disabled_buttons_receive_distinct_states() {
 }
 
 #[test]
+fn colour_buttons_retain_their_palette_under_normal_hovered_and_pressed_states() {
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins)
+        .add_systems(Update, update_widget_button_states);
+    let palette = [Color::srgb_u8(0, 114, 178), Color::srgb_u8(230, 159, 0)];
+    for colour in palette {
+        let button = app
+            .world_mut()
+            .spawn((
+                Button,
+                primitives::WidgetEnabled(true),
+                primitives::WidgetButtonColour(colour),
+                BackgroundColor(Color::NONE),
+            ))
+            .id();
+        app.update();
+        assert_eq!(
+            app.world().get::<BackgroundColor>(button).unwrap().0,
+            colour
+        );
+        app.world_mut()
+            .entity_mut(button)
+            .insert(bevy::picking::hover::Hovered(true));
+        app.update();
+        assert_eq!(
+            app.world().get::<BackgroundColor>(button).unwrap().0,
+            colour
+        );
+        app.world_mut().entity_mut(button).insert(bevy::ui::Pressed);
+        app.update();
+        assert_eq!(
+            app.world().get::<BackgroundColor>(button).unwrap().0,
+            colour
+        );
+        app.world_mut()
+            .entity_mut(button)
+            .insert(primitives::WidgetEnabled(false));
+        app.update();
+        assert_eq!(
+            app.world().get::<BackgroundColor>(button).unwrap().0,
+            colour.with_alpha(0.35)
+        );
+    }
+}
+
+#[test]
 fn bar_refresh_tracks_bound_progress_without_replacing_fill_entity() {
     let mut world = World::new();
     let replica = crate::replica::Replica::new(20);

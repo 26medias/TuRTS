@@ -18,6 +18,7 @@ type ButtonVisualQuery<'w, 's> = Query<
         Option<&'static bevy::ui::Pressed>,
         Option<&'static bevy::picking::hover::Hovered>,
         &'static primitives::WidgetEnabled,
+        Option<&'static primitives::WidgetButtonColour>,
         &'static mut BackgroundColor,
     ),
     With<Button>,
@@ -35,8 +36,10 @@ type ButtonActionQuery<'w, 's> = Query<
 >;
 
 pub(super) fn update_widget_button_states(mut buttons: ButtonVisualQuery<'_, '_>) {
-    for (pressed, hovered, enabled, mut background) in &mut buttons {
-        *background = BackgroundColor(if !enabled.0 {
+    for (pressed, hovered, enabled, colour, mut background) in &mut buttons {
+        *background = BackgroundColor(if let Some(colour) = colour {
+            colour.0.with_alpha(if enabled.0 { 1.0 } else { 0.35 })
+        } else if !enabled.0 {
             Color::srgb(0.20, 0.20, 0.20)
         } else if pressed.is_some() {
             Color::srgb(0.10, 0.30, 0.36)

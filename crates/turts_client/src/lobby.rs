@@ -378,6 +378,7 @@ pub(crate) fn sync_ui(
                                             },
                                         ),
                                         BackgroundColor(colour),
+                                        crate::widgets::primitives::WidgetButtonColour(colour),
                                     ));
                                     if !enabled {
                                         button.insert(bevy::ui::InteractionDisabled);

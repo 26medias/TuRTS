@@ -57,6 +57,10 @@ pub struct WidgetTooltip(pub String);
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WidgetEnabled(pub bool);
 
+/// A button that displays a colour choice keeps that colour under pointer state changes.
+#[derive(Component, Debug, Clone, Copy, PartialEq)]
+pub struct WidgetButtonColour(pub Color);
+
 #[derive(Component, Debug, Clone, PartialEq)]
 pub struct WidgetFill(pub Option<Fill>);
 
