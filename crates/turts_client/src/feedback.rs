@@ -441,6 +441,7 @@ fn update_feedback(
                     runtime.next_ping_id = runtime.next_ping_id.saturating_add(1);
                     pings.0.push(serde_json::json!({
                         "id":runtime.next_ping_id,
+                        "at":now,
                         "alert_id":&event.rule_id,
                         "tick":replica.last_applied_tick,
                         "unit":event.unit,

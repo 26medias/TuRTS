@@ -17,6 +17,8 @@ Select your army. Right-click an enemy to attack it.
 
 Use the Arrow keys or an open screen edge to pan. Space centers the selection.
 J returns to the latest offscreen attack warning. F10 opens settings.
+Use the lower-right map to look around with a left-click or drag.
+Right-click the map to send selected units there. A red cross marks an offscreen attack for two seconds.
 After a match ends, click **New skirmish** to start again.
 
 The package has low-poly models, textures, walking and attack clips, and combat effects.

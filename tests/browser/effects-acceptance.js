@@ -16,6 +16,13 @@ const sleep=ms=>new Promise(r=>setTimeout(r,ms)),port=()=>new Promise(r=>{const 
 function project(s,v){const m=s.clip_from_world,c=[0,1,2,3].map(r=>[...v,1].reduce((a,x,k)=>a+m[k*4+r]*x,0));return[(c[0]/c[3]+1)*640,(1-c[1]/c[3])*360]}
 const offscreen=p=>p[0]<-40||p[0]>1320||p[1]<-40||p[1]>760;
 const onscreen=p=>p[0]>10&&p[0]<1270&&p[1]>10&&p[1]<710;
+function minimapPingPixels(png,scene){
+ const rect=scene.widgets.find(w=>w.id==='skirmish_minimap')?.rect;
+ if(!rect)throw Error('map widget missing');
+ const pos=scene.effects.warning.position,point=[rect[0]+pos[0]/100*rect[2],rect[1]+(1-pos[2]/60)*rect[3]];
+ let pixels=0;for(let y=Math.floor(point[1]-7);y<=point[1]+7;y++)for(let x=Math.floor(point[0]-7);x<=point[0]+7;x++){const p=pixelAt(png,x,y);if(p&&p[0]>200&&p[1]<100&&p[2]<120)pixels++}
+ return {point,pixels};
+}
 function pulsePixels(png,scene){
  const warning=scene.effects.warning,position=warning.position;
  const projected=project(scene,position),d=[projected[0]-640,projected[1]-360];
@@ -65,9 +72,11 @@ scene=await wait(warning,'offscreen warning',5000);result.warning=scene;result.u
 if(!JSON.stringify(result.ui).includes('Your castle is under attack'))throw Error('warning text missing');
 // Check rendered edge pixels and their disappearance with the same camera.
 await sleep(80);scene=await read();const beforePng=await page.screenshot({path:out+'/edge-on.png'});
+if(process.env.TURTS_MINIMAP_CHECK==='1'){result.mapPingOn=minimapPingPixels(decodePng(beforePng),scene);if(result.mapPingOn.pixels<16)throw Error('MAP4 attack ping pixels missing');}
 result.edgeOn=pulsePixels(decodePng(beforePng),scene);if(result.edgeOn.pixels<64)throw Error('FX9 edge pulse pixels missing');
 await sleep(2100);const afterPng=await page.screenshot({path:out+'/edge-off.png'});result.edgeOff=pulsePixels(decodePng(afterPng),scene);
 if(result.edgeOn.pixels-result.edgeOff.pixels<64)throw Error('FX9 edge pulse did not disappear');
+if(process.env.TURTS_MINIMAP_CHECK==='1'){result.mapPingOff=minimapPingPixels(decodePng(afterPng),scene);if(result.mapPingOff.pixels>2)throw Error('MAP4 attack ping did not expire');}
 
 
 await page.keyboard.press('j');scene=await wait(s=>onscreen(project(s,[10,2,20])),'jump returns camera',3000);result.jump=scene;

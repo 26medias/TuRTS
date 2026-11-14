@@ -27,12 +27,19 @@ struct MinimapChildren {
     frame: Vec<Entity>,
 }
 
-fn ping_markers(pings: &AlertPingsFeed, map_size: Vec2) -> Vec<PingMarker> {
+fn ping_markers(pings: &AlertPingsFeed, map_size: Vec2, now: f64) -> Vec<PingMarker> {
     pings
         .0
         .iter()
         .filter_map(|value| {
             let id = value.get("id")?.as_u64()?;
+            // The feed retains recent alerts for diagnostics. Their map pictures expire.
+            if let Some(at) = value.get("at") {
+                let at = at.as_f64()?;
+                if !(at..at + 2.0).contains(&now) || !at.is_finite() {
+                    return None;
+                }
+            }
             let x = value.get("x")?.as_f64()? as f32;
             let y = value.get("y")?.as_f64()? as f32;
             let position = Vec2::new(x, y);
@@ -65,16 +72,9 @@ impl Plugin for MinimapPlugin {
 
 fn sync_minimap(world: &mut World) {
     let roots = world
-        .iter_entities()
-        .filter_map(|entity| {
-            let config = entity.get::<MinimapViewConfig>()?;
-            let node = entity.get::<ComputedNode>()?;
-            Some((
-                entity.id(),
-                *config,
-                node.size() * node.inverse_scale_factor,
-            ))
-        })
+        .query::<(Entity, &MinimapViewConfig, &ComputedNode)>()
+        .iter(world)
+        .map(|(entity, config, node)| (entity, *config, node.size() * node.inverse_scale_factor))
         .collect::<Vec<_>>();
     if roots.is_empty() {
         return;
@@ -133,9 +133,12 @@ fn sync_minimap(world: &mut World) {
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();
+    let now = world
+        .get_resource::<Time>()
+        .map_or(0.0, Time::elapsed_secs_f64);
     let pings = world
         .get_resource::<AlertPingsFeed>()
-        .map_or_else(Vec::new, |feed| ping_markers(feed, map_size));
+        .map_or_else(Vec::new, |feed| ping_markers(feed, map_size, now));
     let frame_corners = camera_ground_corners(world);
 
     for (root, config, size) in roots {
@@ -360,11 +363,13 @@ fn sync_square_markers<K: Copy + Eq + std::hash::Hash>(
             entity
         };
         let half = marker_size / 2.0;
-        world.entity_mut(entity).insert((
+        update_marker(
+            world,
+            entity,
             marker_node(point.x - half, point.y - half, marker_size, marker_size),
-            BackgroundColor(color),
-            ZIndex(2),
-        ));
+            color,
+            2,
+        );
     }
 }
 
@@ -401,16 +406,20 @@ fn sync_ping_markers(
             existing.insert(ping.id, pair);
             pair
         };
-        world.entity_mut(entities[0]).insert((
+        update_marker(
+            world,
+            entities[0],
             marker_node(point.x - 5.0, point.y - 1.0, 10.0, 2.0),
-            BackgroundColor(color),
-            ZIndex(4),
-        ));
-        world.entity_mut(entities[1]).insert((
+            color,
+            4,
+        );
+        update_marker(
+            world,
+            entities[1],
             marker_node(point.x - 1.0, point.y - 5.0, 2.0, 10.0),
-            BackgroundColor(color),
-            ZIndex(4),
-        ));
+            color,
+            4,
+        );
     }
 }
 
@@ -430,11 +439,26 @@ fn sync_frame_points(
         existing.push(spawn_marker(world, root));
     }
     for (entity, point) in existing.iter().copied().zip(desired) {
-        world.entity_mut(entity).insert((
+        update_marker(
+            world,
+            entity,
             marker_node(point.x - 1.0, point.y - 1.0, 2.0, 2.0),
-            BackgroundColor(color),
-            ZIndex(3),
-        ));
+            color,
+            3,
+        );
+    }
+}
+
+// Avoid forcing a full UI layout when a stationary marker has no visible change.
+fn update_marker(world: &mut World, entity: Entity, node: Node, color: Color, z: i32) {
+    if let Some(mut current) = world.get_mut::<Node>(entity) {
+        current.set_if_neq(node);
+    }
+    if let Some(mut current) = world.get_mut::<BackgroundColor>(entity) {
+        current.set_if_neq(BackgroundColor(color));
+    }
+    if let Some(mut current) = world.get_mut::<ZIndex>(entity) {
+        current.set_if_neq(ZIndex(z));
     }
 }
 
@@ -494,7 +518,7 @@ mod tests {
             "text": "Unit damaged",
         })]);
 
-        let markers = ping_markers(&feed, Vec2::new(64.0, 48.0));
+        let markers = ping_markers(&feed, Vec2::new(64.0, 48.0), 0.0);
 
         assert_eq!(
             markers.len(),
@@ -506,6 +530,55 @@ mod tests {
     }
 
     #[test]
+    fn timed_attack_ping_disappears_after_two_seconds() {
+        let feed = AlertPingsFeed(vec![serde_json::json!({"id":1,"x":10.0,"y":20.0,"at":5.0})]);
+        let map = Vec2::new(64.0, 48.0);
+        assert!(ping_markers(&feed, map, 4.99).is_empty());
+        assert_eq!(ping_markers(&feed, map, 5.0).len(), 1);
+        assert_eq!(ping_markers(&feed, map, 6.99).len(), 1);
+        assert!(ping_markers(&feed, map, 7.0).is_empty());
+        assert!(ping_markers(&feed, map, 100.0).is_empty());
+    }
+
+    #[test]
+    fn stationary_marker_does_not_request_another_layout() {
+        let mut world = World::new();
+        let root = world.spawn_empty().id();
+        let entity = spawn_marker(&mut world, root);
+        update_marker(
+            &mut world,
+            entity,
+            marker_node(20.0, 30.0, 4.0, 4.0),
+            Color::WHITE,
+            2,
+        );
+        world.clear_trackers();
+        update_marker(
+            &mut world,
+            entity,
+            marker_node(20.0, 30.0, 4.0, 4.0),
+            Color::WHITE,
+            2,
+        );
+        assert!(!world.entity(entity).get_ref::<Node>().unwrap().is_changed());
+        assert!(
+            !world
+                .entity(entity)
+                .get_ref::<BackgroundColor>()
+                .unwrap()
+                .is_changed()
+        );
+        update_marker(
+            &mut world,
+            entity,
+            marker_node(21.0, 30.0, 4.0, 4.0),
+            Color::WHITE,
+            2,
+        );
+        assert!(world.entity(entity).get_ref::<Node>().unwrap().is_changed());
+    }
+
+    #[test]
     fn malformed_or_out_of_map_alert_pings_do_not_make_minimap_markers() {
         let feed = AlertPingsFeed(vec![
             Value::Null,
@@ -513,7 +586,7 @@ mod tests {
             serde_json::json!({ "id": 9, "x": 12.0, "y": f32::NAN }),
         ]);
 
-        assert!(ping_markers(&feed, Vec2::new(64.0, 48.0)).is_empty());
+        assert!(ping_markers(&feed, Vec2::new(64.0, 48.0), 0.0).is_empty());
     }
 
     #[test]
