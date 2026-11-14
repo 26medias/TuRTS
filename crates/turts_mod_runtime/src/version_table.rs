@@ -167,6 +167,11 @@ const fn variant_0_2_4(name: &'static str) -> VersionTableRow {
 /// detection kind that its design row names, and nowhere else. The order is the order of the
 /// first refusal when one package has several problems.
 pub(crate) const VERSION_TABLE: &[VersionTableRow] = &[
+    VersionTableRow {
+        name: "engine action jump_to_alert",
+        detect: Detect::Variant("engine action jump_to_alert"),
+        since_api: "0.2.7",
+    },
     raw(
         "effects.layers",
         "0.2.7",
@@ -1014,19 +1019,16 @@ mod tests {
     #[test]
     fn every_variant_row_names_a_use_that_the_collector_lists() {
         let collector = include_str!("variants.rs");
-        let mut tested = 0;
         for row in VERSION_TABLE {
             if let Detect::Variant(name) = row.detect {
-                tested += 1;
                 assert_eq!(name, row.name, "a row finds the use of its own name");
                 assert!(
                     collector.contains(&format!("\"{name}\"")),
                     "`{name}` is not listed by variants.rs"
                 );
-                assert_eq!(row.since_api, "0.2.4");
+                assert!(turts_mod_api::RELEASED_ENGINE_APIS.contains(&row.since_api));
             }
         }
-        assert_eq!(tested, 60, "the number of VAR and COMBO rows of 0.2.4");
     }
 
     /// With no parsed value yet, a parsed row is skipped and a RAW row still fires. With the

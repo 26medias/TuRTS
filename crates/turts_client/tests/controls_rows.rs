@@ -92,7 +92,8 @@ fn mod_actions_come_first_then_camera_and_selection_then_groups() {
         .iter()
         .map(|(label, _)| label.as_str())
         .collect::<Vec<_>>();
-    assert_eq!(labels.len(), 51, "{labels:?}");
+    assert_eq!(labels.len(), 52, "{labels:?}");
+    assert!(labels.contains(&"Jump to alert"), "{labels:?}");
     let mut orders = forge()
         .catalog
         .orders

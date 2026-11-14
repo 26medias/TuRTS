@@ -91,13 +91,23 @@ pub(crate) fn validate_presentation(archive: &PackageArchive) -> Result<(), ModE
             }
             pack.colour(file, &format!("{path}.colour"), &effect.colour)?;
             if let Some(sound) = &effect.sound {
-                pack.lookup(
-                    file,
-                    &format!("{path}.sound"),
-                    "sound asset",
-                    sound,
-                    &sounds,
-                )?;
+                if sound.contains(':') {
+                    pack.lookup(
+                        file,
+                        &format!("{path}.sound"),
+                        "sound asset",
+                        sound,
+                        &sounds,
+                    )?;
+                } else if !pack.sound_ids().contains(sound.as_str()) {
+                    return Err(pack.unknown(
+                        file,
+                        &format!("{path}.sound"),
+                        "sound asset",
+                        sound,
+                        pack.sound_ids().iter().map(|id| id.to_string()).collect(),
+                    ));
+                }
             }
         }
     }

@@ -194,7 +194,6 @@ pub(crate) const UNBUILT_FEATURES: &[UnbuiltLine] = &[
     line("world.float_text", "L-FX-PRES"),
     // FX2: `hit`, `hit_reduced`, `damaged` (V4), the effect `sound` (V3), the `world.float_text`
     // sound (H11), `effects_voices`, `audible_range` (H16).
-    line("visual effect sound", "FX2"),
     line("world.float_text.sound", "FX2"),
     line("effects_voices", "FX2"),
     line("audible_range", "FX2"),

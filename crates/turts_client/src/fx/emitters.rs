@@ -9,12 +9,48 @@ pub struct Line {
     pub target: Vec3,
     pub colour: Color,
     pub until: f64,
+    pub starts: f64,
+    pub width: f32,
+    pub projectile: bool,
+    pub arc: f32,
+    pub trail_seconds: f32,
+    pub target_unit: Option<u32>,
 }
+#[derive(Clone)]
+pub struct Decal {
+    pub id: u64,
+    pub until: f64,
+    pub position: Vec3,
+    pub size: f32,
+    pub colour: Color,
+    pub image: Option<String>,
+}
+#[derive(Clone)]
+pub struct ShakePulse {
+    pub starts: f64,
+    pub until: f64,
+    pub strength: f32,
+}
+#[derive(Clone)]
+pub struct FlashLight {
+    pub id: u64,
+    pub starts: f64,
+    pub until: f64,
+    pub position: Vec3,
+    pub radius: f32,
+    pub colour: Color,
+}
+#[derive(Resource, Default)]
+pub struct EffectSounds(pub Vec<crate::debug_feed::StartedSound>);
 #[derive(Resource, Default)]
 pub struct Emitters {
     pub lines: VecDeque<Line>,
-    pub decals: VecDeque<(f64, Vec3, f32, Color)>,
+    pub decals: VecDeque<Decal>,
+    decal_serial: u64,
+    loop_seen: HashMap<(String, u32), f64>,
     serial: u64,
+    pub shakes: VecDeque<ShakePulse>,
+    pub lights: VecDeque<FlashLight>,
 }
 fn layers(effect: &turts_mod_api::VisualEffectDef) -> Vec<EffectLayer> {
     if !effect.layers.is_empty() {
@@ -64,6 +100,8 @@ pub fn emit_effects(
     camera: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
     mut pool: ResMut<ParticlePool>,
     mut emitters: ResMut<Emitters>,
+    mut sounds: ResMut<EffectSounds>,
+    volume: Option<Res<crate::volume_settings::VolumeSettings>>,
 ) {
     let Some(acquired) = acquired else {
         return;
@@ -74,24 +112,56 @@ pub fn emit_effects(
     };
     let viewport = camera.logical_viewport_rect();
     for emission in &fx.emissions {
-        let visible = [emission.source, emission.target].iter().any(|p| {
-            camera
-                .world_to_viewport(transform, *p)
-                .ok()
-                .is_some_and(|p| viewport.is_some_and(|r| r.contains(p)))
-        });
-        if !visible {
-            continue;
-        }
         let Some(effect) = acquired.0.presentation.effects.get(&emission.effect) else {
             continue;
         };
-        let distance = transform.translation().distance_squared(emission.source);
+        let travel = effect.kind == EffectKind::Tracer
+            || effect.layers.iter().any(|layer| {
+                matches!(
+                    layer.kind,
+                    Kind::Projectile { .. } | Kind::Tracer { .. } | Kind::Trail { .. }
+                )
+            });
+        let in_view = |point| {
+            camera
+                .world_to_viewport(transform, point)
+                .ok()
+                .is_some_and(|point| viewport.is_some_and(|rect| rect.contains(point)))
+        };
+        if !in_view(emission.source) && !(travel && in_view(emission.target)) {
+            continue;
+        }
+        let steady = if let Some(anchor) = emission.anchor {
+            emitters
+                .loop_seen
+                .insert((emission.effect.clone(), anchor), fx.now)
+                .is_none_or(|last| fx.now - last > 0.5)
+        } else {
+            false
+        };
+        let centre = viewport
+            .and_then(|viewport| camera.viewport_to_world(transform, viewport.center()).ok())
+            .filter(|ray| ray.direction.y.abs() > 0.001)
+            .map(|ray| ray.origin + *ray.direction * (-ray.origin.y / ray.direction.y))
+            .unwrap_or_else(|| transform.translation());
+        let distance = centre.distance_squared(emission.source);
+        if emission.window.is_none()
+            && volume.as_deref().is_some_and(|volume| volume.sound_on)
+            && let Some(sound) = &effect.sound
+            && sounds.0.len() < 64
+        {
+            sounds.0.push(crate::debug_feed::StartedSound {
+                id: sound.clone(),
+                category: "effects".into(),
+                priority: 0,
+            });
+        }
         let quality_scale = match settings.quality {
             crate::models::Quality::Low => 0.25,
             crate::models::Quality::Medium => 0.5,
             crate::models::Quality::High => 1.,
         };
+        let mut effect_particles = Vec::new();
         for layer in layers(effect) {
             emitters.serial = emitters.serial.wrapping_add(1);
             let seed = emitters.serial;
@@ -104,7 +174,21 @@ pub fn emit_effects(
             );
             let mut particles = Vec::new();
             match &layer.kind {
-                Kind::Flash { radius, .. } => {
+                Kind::Flash { radius, light } => {
+                    if *light && settings.quality == crate::models::Quality::High {
+                        while emitters.lights.len() >= 8 {
+                            emitters.lights.pop_front();
+                        }
+                        let id = emitters.serial;
+                        emitters.lights.push_back(FlashLight {
+                            id,
+                            starts: fx.now + f64::from(layer.delay_ms) / 1000.,
+                            until: fx.now + f64::from(layer.delay_ms + layer.ms) / 1000.,
+                            position: base.position,
+                            radius: *radius,
+                            colour: Color::from(base.colour),
+                        });
+                    }
                     let mut p = base;
                     p.size = radius * 2.;
                     p.end_size = radius * 2.5;
@@ -155,7 +239,7 @@ pub fn emit_effects(
                     count,
                     speed,
                     image,
-                    ..
+                    model,
                 } => {
                     for i in 0..((*count as f32 * quality_scale).ceil() as u16).max(1) {
                         let mut p = base.clone();
@@ -165,6 +249,7 @@ pub fn emit_effects(
                         p.gravity = 9.;
                         p.spin = 3. + v * 5.;
                         p.image = image.clone().or(p.image);
+                        p.model = model.clone();
                         particles.push(p);
                     }
                 }
@@ -174,19 +259,42 @@ pub fn emit_effects(
                     } else {
                         0.25
                     };
-                    let count = (*rate
-                        * emission.window.unwrap_or(layer.ms as f32 / 1000.)
-                        * quality_scale)
-                        .ceil()
-                        .clamp(1., 64.) as u16;
+                    let expected = *rate
+                        * if steady {
+                            layer.ms as f32 / 1000.
+                        } else {
+                            emission.window.unwrap_or(layer.ms as f32 / 1000.)
+                        }
+                        * quality_scale;
+                    let count = if steady {
+                        expected.ceil()
+                    } else {
+                        expected.floor() + f32::from(noise(seed, 0).0 < expected.fract())
+                    }
+                    .clamp(0., 64.) as u16;
                     for i in 0..count {
                         let mut p = base.clone();
                         let (u, v) = noise(seed, i);
                         let angle = u * std::f32::consts::TAU;
                         p.position += Vec3::new(angle.cos(), 0., angle.sin()) * spread * v;
-                        p.velocity = Vec3::Y * *rise;
+                        let speed = if matches!(layer.kind, Kind::Fire { .. }) {
+                            *rise / p.life.max(0.001)
+                        } else {
+                            *rise
+                        };
+                        p.velocity = Vec3::Y * speed;
                         p.end_size = layer.end_size.unwrap_or(layer.size * 2.);
-                        p.delay += i as f32 / (*rate * quality_scale).max(0.1);
+                        if steady {
+                            p.delay = 0.;
+                            p.age = u * p.life;
+                            p.position += p.velocity * p.age;
+                        } else {
+                            let delay = i as f32 / (*rate * quality_scale).max(0.1);
+                            p.delay += delay;
+                            if emission.window.is_none() {
+                                p.life = (p.life - delay).max(0.001);
+                            }
+                        }
                         particles.push(p);
                     }
                 }
@@ -194,77 +302,116 @@ pub fn emit_effects(
                     speed,
                     arc_height,
                     image,
-                    ..
+                    trail,
+                    model,
                 } => {
                     let mut p = base;
-                    p.life =
-                        flight_seconds(emission.source.distance(emission.target), *speed) as f32;
+                    p.life = flight_seconds(p.start.distance(emission.target), *speed) as f32;
                     p.target = Some(emission.target);
+                    p.follow = emission.target_unit;
                     p.arc = *arc_height;
                     p.image = image.clone().or(p.image);
+                    p.model = model.clone();
                     particles.push(p);
-                    // The line remains readable during the sprite pipeline's first compilation and at budget exhaustion.
+                    let (width, trail_seconds, colour) = trail
+                        .as_ref()
+                        .and_then(|id| acquired.0.presentation.effects.get(id))
+                        .and_then(|effect| {
+                            effect.layers.iter().find_map(|layer| match layer.kind {
+                                Kind::Trail { width, ms } => Some((
+                                    width,
+                                    ms as f32 / 1000.,
+                                    Color::from(super::particles::colour(&layer.colour)),
+                                )),
+                                _ => None,
+                            })
+                        })
+                        .unwrap_or((0.06, 0.035, Color::srgb(0.75, 0.62, 0.38)));
+                    // A moving ribbon also keeps the shot readable while the sprite pipeline warms.
                     emitters.lines.push_back(Line {
-                        source: emission.source,
+                        source: particles[0].start,
                         target: emission.target,
-                        colour: Color::srgb(0.85, 0.78, 0.55),
+                        colour,
                         until: fx.now + f64::from(particles[0].life),
+                        starts: fx.now,
+                        width,
+                        projectile: true,
+                        arc: *arc_height,
+                        trail_seconds,
+                        target_unit: emission.target_unit,
                     });
                 }
-                Kind::Tracer { .. } | Kind::Trail { .. } => {
+                Kind::Tracer { width } | Kind::Trail { width, .. } => {
                     emitters.lines.push_back(Line {
                         source: emission.source,
                         target: emission.target,
                         colour: Color::from(base.colour),
-                        until: fx.now + f64::from(base.life),
+                        until: fx.now
+                            + f64::from(layer.delay_ms) / 1000.
+                            + match layer.kind {
+                                Kind::Trail { ms, .. } => f64::from(ms) / 1000.,
+                                _ => f64::from(base.life),
+                            },
+                        starts: fx.now + f64::from(layer.delay_ms) / 1000.,
+                        width: *width,
+                        projectile: false,
+                        arc: 0.,
+                        trail_seconds: 0.,
+                        target_unit: None,
                     });
                 }
-                Kind::Decal { size, ms, .. } => {
+                Kind::Decal { size, ms, image } => {
                     while emitters.decals.len() >= 128 {
                         emitters.decals.pop_front();
                     }
-                    emitters.decals.push_back((
-                        fx.now + f64::from(*ms) / 1000.,
-                        emission.source,
-                        *size,
-                        Color::from(base.colour),
-                    ));
+                    emitters.decal_serial = emitters.decal_serial.wrapping_add(1);
+                    let id = emitters.decal_serial;
+                    emitters.decals.push_back(Decal {
+                        id,
+                        until: fx.now + f64::from(*ms) / 1000.,
+                        position: emission.source + Vec3::from_array(layer.offset),
+                        size: *size,
+                        colour: Color::from(base.colour),
+                        image: image.clone().or(layer.image.clone()),
+                    });
                 }
-                Kind::Shake { .. } => {}
+                Kind::Shake { strength, ms } => {
+                    if emitters.shakes.len() >= 16 {
+                        emitters.shakes.pop_front();
+                    }
+                    emitters.shakes.push_back(ShakePulse {
+                        starts: fx.now + f64::from(layer.delay_ms) / 1000.,
+                        until: fx.now + f64::from(layer.delay_ms + ms) / 1000.,
+                        strength: strength.min(0.5) / (1. + distance / 100.),
+                    });
+                }
             }
-            let mut accepted = false;
-            for p in particles {
-                accepted |= pool.spawn(p);
-            }
-            if emission.critical
-                && !accepted
-                && !matches!(
-                    layer.kind,
-                    Kind::Projectile { .. } | Kind::Tracer { .. } | Kind::Trail { .. }
-                )
-            {
-                // Batched cross marks are the emergency information path, separate from cosmetic particles.
-                let position = emission.source;
-                emitters.lines.push_back(Line {
-                    source: position - Vec3::X * 0.1,
-                    target: position + Vec3::X * 0.1,
-                    colour: Color::WHITE,
-                    until: fx.now + 0.1,
-                });
-                emitters.lines.push_back(Line {
-                    source: position - Vec3::Y * 0.1,
-                    target: position + Vec3::Y * 0.1,
-                    colour: Color::WHITE,
-                    until: fx.now + 0.1,
-                });
-            }
+            effect_particles.extend(particles);
+        }
+        let accepted = pool.spawn_batch(effect_particles);
+        if emission.critical && !accepted {
+            emitters.lines.push_back(Line {
+                source: emission.source,
+                target: emission.source,
+                colour: Color::WHITE,
+                starts: fx.now,
+                until: fx.now + 0.1,
+                width: 0.3,
+                projectile: false,
+                arc: 0.,
+                trail_seconds: 0.,
+                target_unit: None,
+            });
         }
     }
+    emitters.loop_seen.retain(|_, last| fx.now - *last < 5.);
+    emitters.shakes.retain(|shake| shake.until > fx.now);
+    emitters.lights.retain(|light| light.until > fx.now);
     emitters.lines.retain(|line| line.until > fx.now);
     while emitters.lines.len() > 4096 {
         emitters.lines.pop_front();
     }
-    emitters.decals.retain(|(until, ..)| *until > fx.now);
+    emitters.decals.retain(|decal| decal.until > fx.now);
 }
 fn noise(seed: u64, index: u16) -> (f32, f32) {
     let a = seed
@@ -275,8 +422,80 @@ fn noise(seed: u64, index: u16) -> (f32, f32) {
         a as u32 as f32 / u32::MAX as f32,
     )
 }
-pub fn draw_lines(emitters: Res<Emitters>, mut gizmos: Gizmos) {
-    for line in &emitters.lines {
-        gizmos.line(line.source, line.target, line.colour);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        acquire::{Acquired, PresentationContent},
+        content::ClientContent,
+    };
+    use std::time::Duration;
+    fn app() -> App {
+        let mut presentation = PresentationContent::default();
+        let effects: turts_mod_api::VisualEffectsDef =
+            ron::from_str("(effects:[(id:\"scorch\",layers:[(kind:Decal(size:2.0,ms:1000))])])")
+                .unwrap();
+        presentation
+            .effects
+            .insert("test:scorch".into(), effects.effects[0].clone());
+        let acquired = Acquired {
+            lockfile_hash: "test".into(),
+            visuals: HashMap::new(),
+            map_size: (40., 30.),
+            unit_names: HashMap::new(),
+            content: ClientContent::default(),
+            presentation,
+            verified_root_mod: None,
+        };
+        let mut app = App::new();
+        app.insert_resource(Time::<()>::default())
+            .insert_resource(AcquiredPackages(acquired))
+            .init_resource::<CombatPresentation>()
+            .init_resource::<ParticlePool>()
+            .init_resource::<Emitters>()
+            .init_resource::<EffectSounds>()
+            .init_resource::<crate::models::GraphicsSettings>()
+            .add_systems(Update, emit_effects);
+        let mut camera = Camera::default();
+        camera.computed.target_info = Some(bevy::camera::RenderTargetInfo {
+            physical_size: UVec2::new(1280, 720),
+            scale_factor: 1.,
+        });
+        camera.computed.clip_from_view = Mat4::IDENTITY;
+        app.world_mut()
+            .spawn((Camera3d::default(), camera, GlobalTransform::IDENTITY));
+        app
+    }
+    #[test]
+    fn fx6_real_emitter_caps_decals_and_expires_them() {
+        let mut app = app();
+        app.world_mut()
+            .resource_mut::<CombatPresentation>()
+            .emissions = (0..129)
+            .map(|_| Emission {
+                effect: "test:scorch".into(),
+                source: Vec3::new(0., 0., 0.5),
+                target: Vec3::ZERO,
+                critical: false,
+                window: None,
+                anchor: None,
+                target_unit: None,
+            })
+            .collect();
+        app.update();
+        let decals = &app.world().resource::<Emitters>().decals;
+        assert_eq!(decals.len(), 128);
+        assert_eq!(decals.front().unwrap().id, 2);
+        {
+            let mut fx = app.world_mut().resource_mut::<CombatPresentation>();
+            fx.emissions.clear();
+            fx.now = 1.001;
+        }
+        app.world_mut()
+            .resource_mut::<Time>()
+            .advance_by(Duration::from_millis(1001));
+        app.update();
+        assert!(app.world().resource::<Emitters>().decals.is_empty());
     }
 }

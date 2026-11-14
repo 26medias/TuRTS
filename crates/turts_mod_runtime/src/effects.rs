@@ -75,6 +75,13 @@ pub(crate) fn validate(archive: &PackageArchive) -> Result<(), ModError> {
     for (file, group) in &files {
         for effect in &group.effects {
             let field = format!("effects.{}", effect.id);
+            if effect.id.contains(':') {
+                return Err(fail(
+                    file,
+                    &field,
+                    "an effect id must be a local name".into(),
+                ));
+            }
             turts_mod_api::ContentId::parse(&qualified(&effect.id))
                 .map_err(|message| fail(file, &format!("{field}.id"), message))?;
             let invalid = |message: &str| fail(file, &field, message.into());
@@ -207,6 +214,11 @@ pub(crate) fn validate(archive: &PackageArchive) -> Result<(), ModError> {
                         image,
                         trail,
                     } => {
+                        if layer.delay_ms != 0 {
+                            return Err(error(
+                                "a projectile starts at Fired; delay_ms must be zero",
+                            ));
+                        }
                         if !speed.is_finite() || *speed <= 0. || !scalar(*arc_height, false) {
                             return Err(error(
                                 "projectile speed must be finite and positive; arc height must be finite and nonnegative",
@@ -252,7 +264,11 @@ pub(crate) fn validate(archive: &PackageArchive) -> Result<(), ModError> {
                 }
                 peak = peak.saturating_add(count);
                 if !matches!(layer.kind, Kind::Decal { .. } | Kind::Shake { .. }) {
-                    longest = longest.max(layer.ms);
+                    let duration = match layer.kind {
+                        Kind::Trail { ms, .. } => ms,
+                        _ => layer.ms,
+                    };
+                    longest = longest.max(layer.delay_ms.saturating_add(duration));
                 }
             }
             let (count, duration) = match effect.cost {

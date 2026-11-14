@@ -309,6 +309,7 @@ fn presentation_from_archives(archives: &[PackageArchive]) -> Result<Presentatio
             merge_asset_bytes(archive, assets, &mut presentation)?;
         }
     }
+    crate::fx::validate::resolved_effects(&presentation)?;
     if let Some(interface) = presentation.interface.as_ref() {
         let interface_package = presentation
             .interface_package

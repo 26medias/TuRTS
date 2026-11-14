@@ -479,14 +479,22 @@ type SceneWidgetQuery<'w, 's> = Query<
     ),
 >;
 
+#[derive(bevy::ecs::system::SystemParam)]
+struct FxSceneSources<'w> {
+    fx: Option<Res<'w, turts_client::fx::CombatPresentation>>,
+    particles: Option<Res<'w, turts_client::fx::particles::ParticlePool>>,
+    pictures: Option<Res<'w, turts_client::fx::model_particles::ModelPictures>>,
+    emitters: Option<Res<'w, turts_client::fx::emitters::Emitters>>,
+    warning: Option<Res<'w, turts_client::fx::warnings::WarningPulse>>,
+}
+
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 fn publish_scene(
     animations: Query<(Option<&SceneUnit>, &turts_client::animation::UnitAnimation)>,
     animation_players: Query<&AnimationPlayer>,
     bodies: Query<&turts_client::animation::VisualBody>,
     shared_poses: Option<Res<turts_client::animation::SharedPoses>>,
-    fx: Option<Res<turts_client::fx::CombatPresentation>>,
-    particles: Option<Res<turts_client::fx::particles::ParticlePool>>,
+    fx_scene: FxSceneSources,
     model_instances: Query<(
         Option<&SceneUnit>,
         Option<&SceneNode>,
@@ -507,6 +515,13 @@ fn publish_scene(
     state: Res<ReplicaState>,
     adapter_info: Option<Res<RenderAdapterInfo>>,
 ) {
+    let FxSceneSources {
+        fx,
+        particles,
+        pictures,
+        emitters,
+        warning,
+    } = fx_scene;
     let active: Vec<_> = cameras
         .iter()
         .filter(|(_, camera, _, _)| camera.is_active)
@@ -660,7 +675,10 @@ fn publish_scene(
     scene["crowd_poses"] =
         serde_json::json!(shared_poses.map(|p| (p.evaluated_rigs, p.shared_rigs)));
     scene["effects"] = serde_json::json!({
-        "pool":particles.map(|p|serde_json::json!({"active":p.active(),"limit":p.limit,"peak":p.peak,"dropped":p.dropped})),
+        "model_particles":pictures.map(|pictures|pictures.ready),
+        "decals":emitters.map(|emitters|emitters.decals.len()),
+        "warning":warning.map(|warning|serde_json::json!({"position":warning.position.map(|p|p.to_array()),"started":warning.started,"until":warning.until})),
+        "pool":particles.map(|p|serde_json::json!({"active":p.active(),"limit":p.limit,"peak":p.peak,"dropped":p.dropped,"dropped_by_cost":p.dropped_by_cost})),
         "combat":fx.map(|fx|serde_json::json!({"now":fx.now,"health":fx.displayed_health,"held":fx.held_health.keys().collect::<Vec<_>>(),"flashes":fx.flashes.keys().collect::<Vec<_>>(),"pending_impacts":fx.impacts.iter().map(|hit|serde_json::json!({"target":hit.target,"at":hit.at,"position":hit.position.to_array()})).collect::<Vec<_>>()})),
     });
     scene["body_count"] = serde_json::json!(bodies.iter().count());

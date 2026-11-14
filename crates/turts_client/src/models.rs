@@ -122,6 +122,10 @@ pub struct ModelState {
     first_ready: HashMap<String, f64>,
 }
 impl ModelState {
+    pub(crate) fn effect_model(&self, id: &str) -> Option<Handle<Gltf>> {
+        self.handles.get(id).cloned()
+    }
+
     pub(crate) fn texture(
         &mut self,
         source: &Handle<Image>,
@@ -289,6 +293,8 @@ pub fn sync_models(
                 .with_settings(|settings: &mut GltfLoaderSettings| {
                     settings.include_source = true;
                     settings.load_animations = true;
+                    settings.load_cameras = false;
+                    settings.load_lights = false;
                     settings.load_materials = bevy::asset::RenderAssetUsages::MAIN_WORLD;
                 })
                 .load(format!("package://{path}"));
@@ -560,6 +566,23 @@ pub fn sync_models(
                 children.push(child);
                 gpu_children.push((child, primitive.mesh.id(), material.id()));
             }
+            if !animated
+                && let Some(name) = model.muzzle_node.as_deref()
+                && let Some(mut local) = named_node_transform(gltf, name)
+            {
+                local.translation *= model.scale;
+                local.scale *= model.scale;
+                local.translation.y -= acquired
+                    .0
+                    .content
+                    .shapes
+                    .get(content)
+                    .map_or(0., crate::render::mesh_lift);
+                let anchor = commands
+                    .spawn((local, ChildOf(entity), crate::fx::UnitMuzzle(id)))
+                    .id();
+                children.push(anchor);
+            }
             if animated {
                 if let Some((rig, gpu)) = crate::animation::spawn_rig(
                     &mut commands,
@@ -583,6 +606,7 @@ pub fn sync_models(
                     &mut library,
                     &rig_materials,
                     model.animations.as_ref().unwrap(),
+                    model.muzzle_node.as_deref(),
                 ) {
                     children.push(rig);
                     gpu_children = gpu;
@@ -706,6 +730,34 @@ pub fn sync_ground_quality(
                 .map(|h| limited_texture(h, settings.quality, &mut images, &mut state.images));
         }
     }
+}
+
+fn named_node_transform(gltf: &Gltf, name: &str) -> Option<Transform> {
+    let source = gltf.source.as_ref()?;
+    let node = source.nodes().find(|node| node.name() == Some(name))?;
+    let mut parents = HashMap::new();
+    let mut matrices = HashMap::new();
+    for node in source.nodes() {
+        matrices.insert(
+            node.index(),
+            Mat4::from_cols_array_2d(&node.transform().matrix()),
+        );
+        for child in node.children() {
+            parents.insert(child.index(), node.index());
+        }
+    }
+    let mut cursor = node.index();
+    let mut matrix = matrices[&cursor];
+    let mut depth = 0;
+    while let Some(parent) = parents.get(&cursor) {
+        depth += 1;
+        if depth > 128 {
+            return None;
+        }
+        matrix = matrices[parent] * matrix;
+        cursor = *parent;
+    }
+    Some(Transform::from_matrix(matrix))
 }
 
 #[cfg(test)]

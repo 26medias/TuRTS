@@ -377,7 +377,7 @@ pub fn debug_json(world: &World) -> String {
         .unwrap_or(Value::Null);
     json!({
         "debug_builds": world.get_resource::<DebugRequest>().map_or(0, DebugRequest::builds),
-        "effects": world.get_resource::<crate::fx::particles::ParticlePool>().map(|pool|json!({"active":pool.active(),"limit":pool.limit,"peak":pool.peak,"dropped":pool.dropped})),
+        "effects": world.get_resource::<crate::fx::particles::ParticlePool>().map(|pool|json!({"active":pool.active(),"limit":pool.limit,"peak":pool.peak,"dropped":pool.dropped,"dropped_by_cost":pool.dropped_by_cost})),
         "phase": phase,
         "rejoin": rejoin,
         "tick_hz": tick_hz,

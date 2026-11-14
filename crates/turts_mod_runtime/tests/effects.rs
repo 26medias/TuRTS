@@ -84,3 +84,55 @@ fn effect_layers_require_api_0_2_7_even_when_empty() {
     let error = check(&files).unwrap_err().to_string();
     assert!(error.contains("needs engine api 0.2.7"), "{error}");
 }
+
+#[test]
+fn local_effect_images_obey_the_pack_limit() {
+    use image::ImageEncoder;
+    let mut files = files("(id:\"hit\",layers:[(kind:Flash(),image:Some(\"acme:large\"))])");
+    let mut png = Vec::new();
+    image::codecs::png::PngEncoder::new(&mut png)
+        .write_image(&vec![255; 513 * 4], 513, 1, image::ExtendedColorType::Rgba8)
+        .unwrap();
+    let mut assets: turts_mod_api::AssetsDef =
+        ron::de::from_bytes(&files["assets/assets.ron"]).unwrap();
+    assets.images.push(turts_mod_api::ImageAsset {
+        id: "large".into(),
+        path: "assets/large.png".into(),
+        nine_slice: None,
+    });
+    files.insert(
+        "assets/assets.ron".into(),
+        ron::ser::to_string(&assets).unwrap().into_bytes(),
+    );
+    files.insert("assets/large.png".into(), png);
+    let error = check(&files).unwrap_err().to_string();
+    assert!(error.contains("513x1 exceeds 512 px"), "{error}");
+}
+#[test]
+fn a_damage_list_and_the_alert_jump_key_require_api_0_2_7() {
+    for kind in ["damaged", "jump"] {
+        let mut files = files("(id:\"hit\",layers:[])");
+        // Keep this version probe independent from the effect-layer version row.
+        files.insert("effects.ron".into(), b"(effects:[])".to_vec());
+        if kind == "damaged" {
+            files.insert("visuals/scout.ron".into(),b"(target:Unit(\"acme:scout\"),shape:Cuboid(x:1.0,y:0.8,z:1.4),effects:Some((damaged:Some([]))))".to_vec());
+        } else {
+            let text = String::from_utf8(files["input/bindings.ron"].clone()).unwrap();
+            let mut input: turts_mod_api::InputMapDef = ron::from_str(&text).unwrap();
+            input.engine_overrides.push(turts_mod_api::EngineOverride {
+                name: "jump_to_alert".into(),
+                bindings: vec![],
+            });
+            files.insert(
+                "input/bindings.ron".into(),
+                ron::ser::to_string(&input).unwrap().into_bytes(),
+            );
+        }
+        let text = String::from_utf8(files["manifest.ron"].clone())
+            .unwrap()
+            .replace("^0.2.7", "^0.2.6");
+        files.insert("manifest.ron".into(), text.into_bytes());
+        let error = check(&files).unwrap_err().to_string();
+        assert!(error.contains("needs engine api 0.2.7"), "{kind}: {error}");
+    }
+}

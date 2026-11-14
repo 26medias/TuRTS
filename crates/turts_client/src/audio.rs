@@ -408,15 +408,21 @@ fn load_sound_assets(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn spawn_requested_sounds(
     mut commands: Commands,
     feedback: Res<FrameFeedback>,
+    mut effects: Option<ResMut<crate::fx::emitters::EffectSounds>>,
     catalog: Res<SoundCatalog>,
     settings: Res<VolumeSettings>,
     _feed: Res<AudioFeed>,
     frames: Option<Res<crate::core_adapter::FrameFeeds>>,
     active: Query<(Entity, &AudioCategoryPlayer)>,
 ) {
+    let effect_requests = effects
+        .as_deref_mut()
+        .map(|effects| std::mem::take(&mut effects.0))
+        .unwrap_or_default();
     // The sound switch is off by default (CEO decision). A request that comes while it is off is
     // dropped here, not queued: the sound is not requested later, and no sink exists to play it
     // when the player turns the switch on. The alert line and the minimap ping are not affected:
@@ -441,7 +447,7 @@ fn spawn_requested_sounds(
             (category.0 == VolumeCategory::Alerts).then_some((entity, category.1))
         })
         .collect();
-    for sound in &feedback.audio_started {
+    for sound in feedback.audio_started.iter().chain(&effect_requests) {
         let Some(handle) = catalog.0.get(&sound.id) else {
             continue;
         };

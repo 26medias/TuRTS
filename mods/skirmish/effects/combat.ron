@@ -11,8 +11,8 @@
   (kind:Decal(size:4.0,ms:60000),colour:"#30271d",ms:1000),
   (kind:Shake(strength:0.15,ms:350),ms:350),
  ],cost:Large),
- (id:"damage_smoke",layers:[(kind:Smoke(rate:5.0,rise:0.8,spread:0.5),colour:"#74716b",size:0.5,end_size:Some(1.2),offset:(0.0,1.5,0.0),ms:1500,looping:true)],cost:Medium),
- (id:"damage_fire",layers:[(kind:Fire(rate:8.0,height:1.3),colour:"#ff8b27",end_colour:Some("#df291000"),size:0.45,end_size:Some(0.05),offset:(0.0,0.8,0.0),ms:700,looping:true,blend:Add)],cost:Small),
+ (id:"damage_smoke",layers:[(kind:Smoke(rate:5.0,rise:0.8,spread:0.5),colour:"#74716b",size:0.5,end_size:Some(1.2),offset:(0.0,0.1,0.0),ms:1500,looping:true)],cost:Medium),
+ (id:"damage_fire",layers:[(kind:Fire(rate:8.0,height:1.3),colour:"#ff8b27",end_colour:Some("#df291000"),size:0.45,end_size:Some(0.05),offset:(0.0,-0.35,0.0),ms:700,looping:true,blend:Add)],cost:Small),
  (id:"chop",layers:[(kind:Sparks(count:4,speed:1.8,spread_deg:160.0,gravity:5.0),colour:"#c59a62",size:0.1,ms:400)],cost:Small),
  (id:"site_dust",layers:[(kind:Smoke(rate:3.0,rise:0.2,spread:1.5),colour:"#b6a17b",size:0.4,end_size:Some(0.8),ms:800,looping:true)],cost:Small),
 ])

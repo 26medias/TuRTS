@@ -63,6 +63,7 @@ pub struct Particle {
     pub velocity: Vec3,
     pub gravity: f32,
     pub age: f32,
+    pub fresh: bool,
     pub delay: f32,
     pub life: f32,
     pub size: f32,
@@ -73,6 +74,8 @@ pub struct Particle {
     pub distance: f32,
     pub critical: bool,
     pub image: Option<String>,
+    pub model: Option<String>,
+    pub follow: Option<u32>,
     pub additive: bool,
     pub target: Option<Vec3>,
     pub start: Vec3,
@@ -81,24 +84,50 @@ pub struct Particle {
     pub spin: f32,
 }
 #[derive(Default)]
-struct Slot {
-    entity: Option<Entity>,
-    particle: Option<Particle>,
+pub(super) struct Slot {
+    pub(super) entity: Option<Entity>,
+    pub(super) particle: Option<Particle>,
 }
 #[derive(Resource, Default)]
 pub struct ParticlePool {
-    slots: Vec<Slot>,
+    pub(super) slots: Vec<Slot>,
     pub limit: usize,
     active_count: usize,
+    free: Vec<usize>,
     pub dropped: u64,
+    pub dropped_by_cost: [u64; 3],
     pub peak: usize,
-    mesh: Option<Handle<Mesh>>,
-    colours: Option<Handle<ShaderBuffer>>,
-    dot: Option<Handle<Image>>,
-    images: HashMap<String, Handle<Image>>,
+    pub(super) mesh: Option<Handle<Mesh>>,
+    pub(super) colours: Option<Handle<ShaderBuffer>>,
+    pub(super) dot: Option<Handle<Image>>,
+    pub(super) images: HashMap<String, Handle<Image>>,
+    image_source: Option<String>,
     materials: HashMap<(Option<String>, bool), Handle<ParticleMaterial>>,
 }
 impl ParticlePool {
+    pub(super) fn material(
+        &mut self,
+        image: Option<String>,
+        additive: bool,
+        materials: &mut Assets<ParticleMaterial>,
+    ) -> Handle<ParticleMaterial> {
+        let key = (image, additive);
+        if let Some(handle) = self.materials.get(&key) {
+            return handle.clone();
+        }
+        let material = materials.add(ParticleMaterial {
+            image: key
+                .0
+                .as_ref()
+                .and_then(|id| self.images.get(id))
+                .unwrap_or(self.dot.as_ref().unwrap())
+                .clone(),
+            colours: self.colours.as_ref().unwrap().clone(),
+            additive,
+        });
+        self.materials.insert(key, material.clone());
+        material
+    }
     pub fn capacity(quality: crate::models::Quality) -> usize {
         match quality {
             crate::models::Quality::Low => 512,
@@ -109,8 +138,56 @@ impl ParticlePool {
     pub fn active(&self) -> usize {
         self.active_count
     }
+    fn cost_rank(cost: EffectCost) -> usize {
+        match cost {
+            EffectCost::Small => 0,
+            EffectCost::Medium => 1,
+            EffectCost::Large => 2,
+        }
+    }
+    fn may_replace(old: &Particle, new: &Particle) -> bool {
+        !old.critical
+            && (new.critical
+                || Self::cost_rank(old.cost) > Self::cost_rank(new.cost)
+                || (old.cost == new.cost && old.distance > new.distance))
+    }
+    /// Reserve a whole particle composition before changing any live slot.
+    pub fn spawn_batch(&mut self, particles: Vec<Particle>) -> bool {
+        let Some(first) = particles.first() else {
+            return true;
+        };
+        let free = self.limit.saturating_sub(self.active_count);
+        let needed = particles.len().saturating_sub(free);
+        let replaceable = if needed == 0 {
+            0
+        } else {
+            self.slots
+                .iter()
+                .filter(|slot| {
+                    slot.particle
+                        .as_ref()
+                        .is_some_and(|old| Self::may_replace(old, first))
+                })
+                .take(needed)
+                .count()
+        };
+        if free + replaceable < particles.len() {
+            self.dropped += 1;
+            self.dropped_by_cost[Self::cost_rank(first.cost)] += 1;
+            return false;
+        }
+        for particle in particles {
+            let accepted = self.spawn(particle);
+            debug_assert!(accepted);
+        }
+        true
+    }
     pub fn spawn(&mut self, particle: Particle) -> bool {
-        let free = self.slots.iter().position(|slot| slot.particle.is_none());
+        let free = self.free.pop().filter(|index| {
+            *index < self.slots.len()
+                && *index < self.limit
+                && self.slots[*index].particle.is_none()
+        });
         let index = free.or_else(|| {
             if self.slots.len() < self.limit {
                 self.slots.push(Slot::default());
@@ -121,8 +198,11 @@ impl ParticlePool {
                     .enumerate()
                     .filter_map(|(i, slot)| {
                         let old = slot.particle.as_ref()?;
-                        (!old.critical && (particle.critical || old.cost == EffectCost::Large))
-                            .then_some((i, old.cost == EffectCost::Large, old.distance))
+                        Self::may_replace(old, &particle).then_some((
+                            i,
+                            Self::cost_rank(old.cost),
+                            old.distance,
+                        ))
                     })
                     .max_by(|a, b| a.1.cmp(&b.1).then(a.2.total_cmp(&b.2)))
                     .map(|(i, _, _)| i)
@@ -141,7 +221,7 @@ impl ParticlePool {
         }
     }
 }
-fn dot_image() -> Image {
+pub(super) fn dot_image() -> Image {
     let mut bytes = Vec::with_capacity(64 * 64 * 4);
     for y in 0..64 {
         for x in 0..64 {
@@ -169,6 +249,9 @@ pub fn register(app: &mut App) {
 #[allow(clippy::too_many_arguments)]
 pub fn update_particles(
     time: Res<Time>,
+    acquired: Option<Res<AcquiredPackages>>,
+    decals: Res<super::emitters::Emitters>,
+    combat: Res<CombatPresentation>,
     settings: Res<crate::models::GraphicsSettings>,
     mut commands: Commands,
     mut pool: ResMut<ParticlePool>,
@@ -202,14 +285,45 @@ pub fn update_particles(
         pool.dot = Some(images.add(dot_image()));
     }
     if pool.colours.is_none() {
-        pool.colours = Some(buffers.add(ShaderBuffer::from(vec![[0_f32; 4]; 8192])));
+        pool.colours = Some(buffers.add(ShaderBuffer::from(vec![[0_f32; 4]; 8320])));
     }
-    let mut colours = vec![[0_f32; 4]; 8192];
+    if let Some(acquired) = acquired
+        && pool.image_source.as_ref() != Some(&acquired.0.lockfile_hash)
+    {
+        pool.images.clear();
+        pool.materials.clear();
+        for (id, image) in &acquired.0.presentation.images {
+            if let Ok(decoded) = image::load_from_memory(&image.bytes) {
+                let rgba = decoded.to_rgba8();
+                let (width, height) = rgba.dimensions();
+                if width <= 512 && height <= 512 {
+                    let handle = images.add(Image::new(
+                        Extent3d {
+                            width,
+                            height,
+                            depth_or_array_layers: 1,
+                        },
+                        TextureDimension::D2,
+                        rgba.into_raw(),
+                        TextureFormat::Rgba8UnormSrgb,
+                        RenderAssetUsages::default(),
+                    ));
+                    pool.images.insert(id.clone(), handle);
+                }
+            }
+        }
+        pool.image_source = Some(acquired.0.lockfile_hash.clone());
+    }
+    let mut colours = vec![[0_f32; 4]; 8320];
     let delta = time.delta_secs();
     for (index, tint) in colours.iter_mut().enumerate().take(pool.slots.len()) {
         let mut slot = std::mem::take(&mut pool.slots[index]);
         if let Some(p) = slot.particle.as_mut() {
-            p.age += delta;
+            if p.fresh {
+                p.fresh = false;
+            } else {
+                p.age += delta;
+            }
             if p.age >= p.delay + p.life {
                 slot.particle = None;
             }
@@ -217,6 +331,11 @@ pub fn update_particles(
         if let Some(p) = slot.particle.as_mut() {
             let t = ((p.age - p.delay) / p.life.max(0.001)).clamp(0., 1.);
             if p.age >= p.delay {
+                if let Some(id) = p.follow
+                    && let Some(actor) = combat.actors.get(&id)
+                {
+                    p.target = Some(actor.position + Vec3::Y * actor.height * 0.5);
+                }
                 if let Some(target) = p.target {
                     p.position = p.start.lerp(target, t) + Vec3::Y * (4. * p.arc * t * (1. - t));
                 } else {
@@ -224,28 +343,23 @@ pub fn update_particles(
                     p.position += p.velocity * delta;
                 }
             }
-            let key = (p.image.clone(), p.additive);
-            let material = if let Some(material) = pool.materials.get(&key) {
-                material.clone()
-            } else {
-                let material = materials.add(ParticleMaterial {
-                    image: key
-                        .0
-                        .as_ref()
-                        .and_then(|id| pool.images.get(id))
-                        .unwrap_or(pool.dot.as_ref().unwrap())
-                        .clone(),
-                    colours: pool.colours.as_ref().unwrap().clone(),
-                    additive: key.1,
-                });
-                pool.materials.insert(key, material.clone());
-                material
-            };
+            let material = pool.material(p.image.clone(), p.additive, &mut materials);
             let colour = p.colour.to_vec4().lerp(p.end_colour.to_vec4(), t);
             *tint = colour.to_array();
             let transform = Transform {
                 translation: p.position,
-                rotation: if p.ground {
+                rotation: if p.model.is_some() {
+                    if let Some(target) = p.target {
+                        Quat::from_rotation_arc(Vec3::Z, (target - p.start).normalize_or(Vec3::Z))
+                    } else {
+                        Quat::from_euler(
+                            EulerRot::XYZ,
+                            p.spin * p.age * 0.7,
+                            p.spin * p.age * 0.4,
+                            p.spin * p.age,
+                        )
+                    }
+                } else if p.ground {
                     Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2)
                 } else {
                     rotation * Quat::from_rotation_z(p.spin * p.age)
@@ -290,6 +404,18 @@ pub fn update_particles(
         }
         pool.slots[index] = slot;
     }
+    for decal in &decals.decals {
+        let fade = ((decal.until - time.elapsed_secs_f64()) / 1.).clamp(0., 1.) as f32;
+        let mut colour = decal.colour.to_linear().to_vec4();
+        colour.w *= fade;
+        colours[8192 + (decal.id % 128) as usize] = colour.to_array();
+    }
+    pool.free = pool
+        .slots
+        .iter()
+        .enumerate()
+        .filter_map(|(index, slot)| slot.particle.is_none().then_some(index))
+        .collect();
     pool.active_count = pool.slots.iter().filter(|s| s.particle.is_some()).count();
     if let Some(mut buffer) = pool.colours.as_ref().and_then(|h| buffers.get_mut(h)) {
         buffer.clear();
@@ -315,13 +441,16 @@ pub fn particle(
 ) -> Particle {
     let colour = colour(&layer.colour);
     let mut end = layer.end_colour.as_deref().map_or(colour, self::colour);
-    end.alpha = 0.;
+    if layer.end_colour.is_none() {
+        end.alpha = 0.;
+    }
     Particle {
         position: position + Vec3::from_array(layer.offset),
-        start: position,
+        start: position + Vec3::from_array(layer.offset),
         velocity: Vec3::ZERO,
         gravity: 0.,
         age: 0.,
+        fresh: true,
         delay: layer.delay_ms as f32 / 1000.,
         life: layer.ms as f32 / 1000.,
         size: layer.size,
@@ -332,6 +461,8 @@ pub fn particle(
         distance,
         critical,
         image: layer.image.clone(),
+        model: None,
+        follow: None,
         additive: layer.blend == EffectBlend::Add,
         target: None,
         arc: 0.,
@@ -369,5 +500,45 @@ mod tests {
         }
         assert_eq!(pool.slots.len(), 512);
         assert_eq!(pool.active(), 512);
+    }
+}
+
+#[cfg(test)]
+mod batch_tests {
+    use super::*;
+    fn sample(cost: EffectCost, distance: f32, critical: bool) -> Particle {
+        let layer: EffectLayer = ron::from_str("(kind:Flash())").unwrap();
+        particle(&layer, Vec3::ZERO, cost, distance, critical)
+    }
+    #[test]
+    fn fx7_an_effect_reserves_all_its_particles_or_none() {
+        let mut pool = ParticlePool {
+            limit: 3,
+            ..Default::default()
+        };
+        pool.spawn(sample(EffectCost::Small, 0., true));
+        pool.spawn(sample(EffectCost::Small, 0., true));
+        assert!(!pool.spawn_batch(vec![sample(EffectCost::Small, 1., true); 2]));
+        assert_eq!(pool.active(), 2);
+        assert_eq!(pool.slots.len(), 2);
+        assert_eq!(pool.dropped_by_cost, [1, 0, 0]);
+    }
+    #[test]
+    fn fx7_near_small_effect_replaces_the_farthest_large_effect() {
+        let mut pool = ParticlePool {
+            limit: 3,
+            ..Default::default()
+        };
+        for distance in [10., 30., 20.] {
+            pool.spawn(sample(EffectCost::Large, distance, false));
+        }
+        assert!(pool.spawn_batch(vec![sample(EffectCost::Small, 1., false)]));
+        let distances: Vec<_> = pool
+            .slots
+            .iter()
+            .filter_map(|slot| slot.particle.as_ref().map(|p| p.distance))
+            .collect();
+        assert!(distances.contains(&10.) && distances.contains(&20.) && distances.contains(&1.));
+        assert!(!distances.contains(&30.));
     }
 }

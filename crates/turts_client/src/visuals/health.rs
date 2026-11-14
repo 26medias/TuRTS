@@ -132,6 +132,42 @@ pub(super) fn collect_health_bars(
     combat: Option<&crate::fx::CombatPresentation>,
 ) {
     let mut healths = replica.healths.clone();
+    let pending: Vec<_> = combat
+        .into_iter()
+        .flat_map(|combat| {
+            combat
+                .death_at
+                .iter()
+                .filter(|(_, at)| **at > combat.now)
+                .filter_map(|(&id, _)| {
+                    let actor = combat.actors.get(&id)?;
+                    Some(crate::present::PresentedUnit {
+                        unit_id: id,
+                        content_id: actor.content.clone(),
+                        pos: turts_net_protocol::Pos {
+                            x: actor.position.x,
+                            y: actor.position.z,
+                        },
+                        lo_tick: 0,
+                        hi_tick: 0,
+                        fraction: 0.,
+                    })
+                })
+        })
+        .collect();
+    let mut retained = std::borrow::Cow::Borrowed(presented_by_id);
+    for unit in &pending {
+        retained.to_mut().insert(unit.unit_id, unit);
+        if !healths.iter().any(|health| health.unit.0 == unit.unit_id)
+            && let Some(value) =
+                combat.and_then(|combat| combat.displayed_health.get(&unit.unit_id))
+        {
+            healths.push(turts_net_protocol::HealthRecord {
+                unit: turts_net_protocol::UnitId(unit.unit_id),
+                current: *value,
+            });
+        }
+    }
     if let Some(combat) = combat {
         for health in &mut healths {
             if let Some(value) = combat.displayed_health.get(&health.unit.0) {
@@ -142,7 +178,7 @@ pub(super) fn collect_health_bars(
     sync_health_bars(
         HealthBarSync {
             healths: &healths,
-            presented: presented_by_id,
+            presented: &retained,
             catalog: &content.catalog,
             selected: selected_ids,
             mode: display.0,

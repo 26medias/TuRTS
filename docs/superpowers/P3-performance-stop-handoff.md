@@ -89,3 +89,37 @@ Keep these if work resumes. Keep target/mc-evidence. Disk had about 250 GB free 
 Use /tmp/codex-mp1-cargo for native builds with the existing ALSA sysroot.
 Wait for the whole Trunk command, including wasm-opt and distribution.
 Never merge or push main without fresh CEO authorization.
+
+## Composed P3 candidate
+
+The later candidate is on `codex/p3-finish`. The last measured intermediate build reaches
+42.43 FPS at 400 units, compared with the initial 26.67 FPS. Its browser combat smoke passes.
+
+The composed implementation adds moving, target-following ribbons; whole-effect particle
+reservations; per-cost drop counters; ground decals; optional images and shared glTF models;
+bounded lights; local shake; effect sound routing; and the offscreen warning edge pulse.
+Work chips follow work-loop boundaries. Damage loops start at the model top. Named muzzle
+points work for static and animated models. The old empty effects-pool stub is removed.
+
+Native evidence under the main checkout's `target/mc-evidence/`:
+
+- `p3-finish-client-full.log`: 619 client tests pass.
+- `p3-finish-contract-tests.log`: 356 API/runtime tests pass.
+- `p3-final-native-clippy.log`: strict client/API/runtime checks pass.
+
+The composed candidate still needs browser acceptance, its own full performance table, the
+one independent P3 review, and final player probes. Do not treat the intermediate measurement
+as proof of the composed candidate's performance. The launcher still opens P2.
+
+Additional contract decisions:
+
+- `Projectile.delay_ms` must be zero. The spec requires a projectile to start at `Fired`.
+  Other layers can have delays. Delays count toward a composed effect's lifetime budget.
+- The wire carries a tick's coherent health, not damage for each bolt. If several bolts hit
+  one target in one tick, its health value waits for the last of those bolts. Each impact
+  still gets its own visual. The deadline stays at most 300 ms. Older impacts cannot restore
+  an older health value after a newer tick has arrived.
+- `hit_reduced` has not been exercised. The current supported skirmish combat has no damage
+  reduction rule. No new wire fact was added to infer reduction.
+- glTF effect models cannot add cameras or lights from the file. The engine's bounded effect
+  lights remain the only light path for these effects.

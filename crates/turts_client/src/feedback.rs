@@ -411,7 +411,9 @@ fn update_feedback(
                     });
             let events = collect_alert_events(
                 replica,
-                previous.as_ref(),
+                previous
+                    .as_ref()
+                    .filter(|old| old.snapshot_tick == replica.snapshot_tick),
                 state.welcome.map(|welcome| welcome.slot).unwrap_or(0),
                 &acquired.0.content,
                 interface.alerts.as_slice(),
@@ -1322,5 +1324,87 @@ mod stub_tests {
         ] {
             assert_raises_no_alert(trigger);
         }
+    }
+    #[test]
+    fn fx9_visible_damage_does_not_consume_the_offscreen_warning_cooldown() {
+        let mut previous = Replica::new(20);
+        previous.units.insert(
+            1,
+            crate::replica::UnitReplica {
+                content_id: "test:building".into(),
+                owner_slot: 0,
+                facing: None,
+                samples: VecDeque::from([(1, turts_net_protocol::Pos { x: 0., y: 0. })]),
+            },
+        );
+        previous.healths.push(turts_net_protocol::HealthRecord {
+            unit: turts_net_protocol::UnitId(1),
+            current: 100,
+        });
+        let mut current = previous.clone();
+        current.healths[0].current = 90;
+        let mut rule = rule(AlertTrigger::OwnUnitDamaged);
+        rule.offscreen_only = true;
+        rule.cooldown = 10.;
+        rule.units = vec!["test:building".into()];
+        let mut runtime = FeedbackRuntime::default();
+        let content = crate::content::ClientContent::default();
+        let visible = BTreeSet::from([1]);
+        let outside = BTreeSet::new();
+        assert!(
+            collect_alert_events(
+                &current,
+                Some(&previous),
+                0,
+                &content,
+                std::slice::from_ref(&rule),
+                0.,
+                &mut runtime,
+                Some(&visible)
+            )
+            .is_empty()
+        );
+        assert!(runtime.cooldowns.is_empty());
+        assert_eq!(
+            collect_alert_events(
+                &current,
+                Some(&previous),
+                0,
+                &content,
+                std::slice::from_ref(&rule),
+                1.,
+                &mut runtime,
+                Some(&outside)
+            )
+            .len(),
+            1
+        );
+        assert!(
+            collect_alert_events(
+                &current,
+                Some(&previous),
+                0,
+                &content,
+                std::slice::from_ref(&rule),
+                2.,
+                &mut runtime,
+                Some(&outside)
+            )
+            .is_empty()
+        );
+        assert_eq!(
+            collect_alert_events(
+                &current,
+                Some(&previous),
+                0,
+                &content,
+                &[rule],
+                12.,
+                &mut runtime,
+                Some(&outside)
+            )
+            .len(),
+            1
+        );
     }
 }

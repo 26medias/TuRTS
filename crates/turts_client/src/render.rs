@@ -18,6 +18,9 @@ use crate::ingest::ReplicaState;
 use crate::join::{AcquiredPackages, Acquisition, Phase};
 use crate::present::{Presented, update_presented};
 
+#[derive(Component)]
+pub struct MainSceneCamera;
+
 const CAMERA_TILT_UP: f32 = 0.8;
 const CAMERA_TILT_BACK: f32 = 0.6;
 const CAMERA_MAX_FIT_ITERATIONS: usize = 96;
@@ -339,7 +342,7 @@ pub fn setup_scene(
     *done = true;
     let (width, depth) = acquired.0.map_size;
     let centre = Vec3::new(width / 2.0, 0.0, depth / 2.0);
-    commands.spawn((Camera3d::default(), Transform::default()));
+    commands.spawn((Camera3d::default(), MainSceneCamera, Transform::default()));
     let light = acquisition
         .as_deref()
         .and_then(|acquisition| crate::camera::resolve_light(acquisition.accepted_archives()));
@@ -558,8 +561,23 @@ impl Plugin for UnitRenderPlugin {
             .init_resource::<crate::fx::flash::FlashMaterials>()
             .init_resource::<crate::fx::CombatPresentation>()
             .init_resource::<crate::fx::emitters::Emitters>()
+            .init_resource::<crate::fx::ribbons::Ribbons>()
+            .init_resource::<crate::fx::decals::DecalInstances>()
+            .init_resource::<crate::fx::model_particles::ModelPictures>()
+            .init_resource::<crate::fx::emitters::EffectSounds>()
+            .init_resource::<crate::fx::camera_feedback::FlashLights>()
+            .init_resource::<crate::fx::warnings::WarningPulse>()
             .init_resource::<crate::animation::BodySerial>()
             .init_resource::<crate::animation::SharedPoses>();
+        app.add_systems(
+            Update,
+            crate::fx::warnings::update_warning_pulse.after(crate::feedback::FeedbackSet),
+        );
+        app.add_systems(
+            PostUpdate,
+            crate::fx::camera_feedback::shake_camera
+                .before(bevy::transform::TransformSystems::Propagate),
+        );
         app.add_systems(
             PostUpdate,
             (
@@ -587,8 +605,11 @@ impl Plugin for UnitRenderPlugin {
                 crate::animation::animate_units,
                 crate::animation::age_bodies,
                 crate::fx::emitters::emit_effects,
+                crate::fx::camera_feedback::update_lights,
                 crate::fx::particles::update_particles,
-                crate::fx::emitters::draw_lines,
+                crate::fx::model_particles::update_model_particles,
+                crate::fx::decals::draw_decals,
+                crate::fx::ribbons::draw_ribbons,
                 crate::fx::flash::flash_models,
             )
                 .chain()

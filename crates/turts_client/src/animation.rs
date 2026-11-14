@@ -18,20 +18,40 @@ pub struct VisualEvents {
     pub fired: HashSet<u32>,
     pub destroyed: HashSet<u32>,
     sequence: u64,
+    snapshot: Option<(Option<u64>, Option<u32>)>,
 }
-pub fn collect_events(state: Res<ReplicaState>, mut events: ResMut<VisualEvents>) {
+pub fn collect_events(
+    state: Res<ReplicaState>,
+    presented: Option<Res<Presented>>,
+    mut events: ResMut<VisualEvents>,
+) {
     events.raw.clear();
     events.fired.clear();
     events.destroyed.clear();
     let Some(replica) = state.replica.as_ref() else {
         return;
     };
+    let snapshot = (
+        state.welcome.map(|welcome| welcome.match_id),
+        replica.snapshot_tick,
+    );
+    if events.snapshot != Some(snapshot) {
+        events.sequence = 0;
+        events.snapshot = Some(snapshot);
+    }
+    let presentation_tick = presented
+        .as_ref()
+        .filter(|shown| shown.latest_tick > 0 && shown.t.is_finite())
+        .map_or_else(
+            || replica.last_applied_tick.unwrap_or(0),
+            |shown| shown.t.max(0.).floor() as u32,
+        );
     for event in &replica.visual_events {
         if event.sequence <= events.sequence {
             continue;
         }
         events.sequence = event.sequence;
-        if event.tick.saturating_add(4) < replica.last_applied_tick.unwrap_or(0) {
+        if event.tick.saturating_add(4) < presentation_tick {
             continue;
         }
         events.raw.push(event.clone());
@@ -108,6 +128,7 @@ pub fn spawn_rig(
     library: &mut AnimationLibrary,
     materials: &HashMap<AssetId<bevy::gltf::GltfMaterial>, Handle<StandardMaterial>>,
     mapping: &ModelAnimations,
+    muzzle_node: Option<&str>,
 ) -> Option<(Entity, GpuChildren)> {
     let source = gltf.source.as_ref()?;
     let set = library
@@ -170,6 +191,9 @@ pub fn spawn_rig(
     for node in source.nodes() {
         let data = nodes.get(&gltf.nodes[node.index()])?;
         let entity = entities[&node.index()];
+        if muzzle_node.is_some_and(|name| name == data.name) {
+            commands.entity(entity).insert(crate::fx::UnitMuzzle(id));
+        }
         let parent = parents.get(&node.index()).map_or(player, |p| entities[p]);
         commands.entity(entity).insert(ChildOf(parent));
         let mut path = vec![Name::new(data.name.clone())];
@@ -969,5 +993,83 @@ mod crowd_tests {
                 .x,
             10.
         );
+    }
+}
+
+#[cfg(test)]
+mod effect_freshness_tests {
+    use super::*;
+    use crate::replica::{Replica, VisualEvent};
+    use turts_net_protocol::{Effect, UnitId};
+    #[test]
+    fn fx8_stale_events_do_not_start_and_a_new_snapshot_resets_the_cursor() {
+        let mut replica = Replica::new(20);
+        replica.last_applied_tick = Some(20);
+        replica.visual_events.push_back(VisualEvent {
+            sequence: 50,
+            tick: 1,
+            effect: Effect::Fired {
+                unit: UnitId(1),
+                target: UnitId(2),
+                weapon: 0,
+            },
+        });
+        let mut app = App::new();
+        app.insert_resource(ReplicaState {
+            replica: Some(replica),
+            ..Default::default()
+        })
+        .init_resource::<VisualEvents>()
+        .add_systems(Update, collect_events);
+        app.update();
+        assert!(app.world().resource::<VisualEvents>().raw.is_empty());
+        {
+            let mut state = app.world_mut().resource_mut::<ReplicaState>();
+            let replica = state.replica.as_mut().unwrap();
+            replica.snapshot_tick = Some(20);
+            replica.last_applied_tick = Some(21);
+            replica.visual_events.clear();
+            replica.visual_events.push_back(VisualEvent {
+                sequence: 1,
+                tick: 21,
+                effect: Effect::Fired {
+                    unit: UnitId(1),
+                    target: UnitId(2),
+                    weapon: 0,
+                },
+            });
+        }
+        app.update();
+        assert!(app.world().resource::<VisualEvents>().fired.contains(&1));
+        app.update();
+        assert!(app.world().resource::<VisualEvents>().raw.is_empty());
+    }
+    #[test]
+    fn fx8_freshness_uses_the_presentation_tick() {
+        let mut replica = Replica::new(20);
+        replica.last_applied_tick = Some(20);
+        replica.visual_events.push_back(VisualEvent {
+            sequence: 1,
+            tick: 9,
+            effect: Effect::Fired {
+                unit: UnitId(1),
+                target: UnitId(2),
+                weapon: 0,
+            },
+        });
+        let mut app = App::new();
+        app.insert_resource(ReplicaState {
+            replica: Some(replica),
+            ..Default::default()
+        })
+        .insert_resource(Presented {
+            t: 12.,
+            latest_tick: 20,
+            ..Default::default()
+        })
+        .init_resource::<VisualEvents>()
+        .add_systems(Update, collect_events);
+        app.update();
+        assert!(app.world().resource::<VisualEvents>().fired.contains(&1));
     }
 }
