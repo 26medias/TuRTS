@@ -114,6 +114,7 @@ pub fn install(app: &mut App, advertised: Advertised) {
         .init_resource::<CommandAdmissionDiagnostics>()
         .init_resource::<ReliableTraffic>()
         .init_resource::<RateLimitBuckets>();
+    app.add_observer(retire_disconnected_session);
     app.add_systems(
         FixedPreUpdate,
         admit_player_commands
@@ -132,6 +133,24 @@ pub fn install(app: &mut App, advertised: Advertised) {
             .after(MessageSystems::Receive),
     );
     app.add_systems(Update, kick_pending);
+}
+
+/// A closed transport no longer holds a live application session. Its permanent slot and
+/// rate-limit bucket stay intact. Already admitted gameplay orders continue in the sim.
+fn retire_disconnected_session(
+    trigger: On<Add<Disconnected>>,
+    sessions: Query<(), With<Session>>,
+    mut staged: ResMut<StagedPlayerCommands>,
+    mut commands: Commands,
+) {
+    if sessions.contains(trigger.entity) {
+        staged
+            .0
+            .retain(|command| command.connection != trigger.entity);
+        commands
+            .entity(trigger.entity)
+            .remove::<(Session, SnapshotDue)>();
+    }
 }
 
 /// The `MatchStart` of a `Welcome` under `Immediate` (design 6.7.5): the start tick is 1; each
@@ -198,7 +217,7 @@ type HelloClients<'w, 's> = Query<
         Has<Session>,
         Has<PendingKick>,
     ),
-    With<ClientOf>,
+    (With<ClientOf>, Without<Disconnected>),
 >;
 
 /// The two answers to a `Hello`.
@@ -222,7 +241,7 @@ pub fn receive_hello(
     mut traffic: ResMut<ReliableTraffic>,
     mut economy_log: Option<ResMut<EconomyLogSink>>,
     match_id: Res<crate::stats::MatchId>,
-    live_sessions: Query<&Session>,
+    live_sessions: Query<&Session, Without<Disconnected>>,
     mut diagnostics: Option<ResMut<SessionDiagnostics>>,
     computer: Option<Res<crate::computer::ComputerPlayer>>,
 ) {
@@ -365,7 +384,7 @@ pub fn receive_player_commands(
             &mut MessageReceiver<PlayerCommand>,
             Option<&Session>,
         ),
-        With<ClientOf>,
+        (With<ClientOf>, Without<Disconnected>),
     >,
     mut acks: Query<&mut MessageSender<CommandAck>>,
     tick: Res<SimTick>,
@@ -689,7 +708,7 @@ type ResyncClients<'w, 's> = Query<
         &'static mut MessageReceiver<ResyncRequest>,
         Has<Session>,
     ),
-    With<ClientOf>,
+    (With<ClientOf>, Without<Disconnected>),
 >;
 
 /// Answer each `ResyncRequest` of a session with a `Snapshot` of the current tick. Several
@@ -964,6 +983,78 @@ mod tests {
             judge_hello(&good(7), &advertised(), &mut slots, false),
             Ok(slot),
         );
+    }
+
+    #[test]
+    fn closed_transport_retires_session_and_rejoins_without_timeout() {
+        let mut app = hello_test_app();
+        let (source_a, client_a) = spawn_hello_peers(&mut app, 1);
+        deliver_hello(&mut app, source_a, client_a, good(7));
+        let (source_other, client_other) = spawn_hello_peers(&mut app, 2);
+        deliver_hello(&mut app, source_other, client_other, good(8));
+        let owners = app.world().resource::<Slots>().owners();
+        for _ in 0..64 {
+            assert!(
+                app.world_mut()
+                    .resource_mut::<RateLimitBuckets>()
+                    .admit(0, 0, 20, 1)
+            );
+        }
+        assert!(
+            !app.world_mut()
+                .resource_mut::<RateLimitBuckets>()
+                .admit(0, 0, 20, 1)
+        );
+        let pending = |connection, unit| StagedPlayerCommand {
+            connection,
+            slot: turts_sim::SlotId(if connection == client_a { 0 } else { 1 }),
+            envelope: PlayerCommand {
+                seq: 1,
+                order: OrderEnvelope {
+                    order: "skirmish:move".into(),
+                    units: vec![UnitId(unit)],
+                    target: OrderTarget::Point(Pos { x: 18.0, y: 30.0 }),
+                    queue: QueueMode::Replace,
+                    group: 0,
+                },
+            },
+        };
+        app.world_mut()
+            .resource_mut::<StagedPlayerCommands>()
+            .0
+            .extend([pending(client_a, 1), pending(client_other, 2)]);
+        app.world_mut().entity_mut(client_a).insert(Unlinked {
+            reason: UnlinkReason::ByPeer("page reload".into()),
+        });
+        app.update();
+        assert!(app.world().get::<Disconnected>(client_a).is_some());
+        assert!(
+            app.world().get::<Session>(client_a).is_none(),
+            "closed transport still reserves the application session"
+        );
+        assert!(app.world().get::<SnapshotDue>(client_a).is_none());
+        let staged = &app.world().resource::<StagedPlayerCommands>().0;
+        assert_eq!(staged.len(), 1);
+        assert_eq!(staged[0].connection, client_other);
+        assert!(app.world().get::<Session>(client_other).is_some());
+        let (source_b, client_b) = spawn_hello_peers(&mut app, 3);
+        deliver_hello(&mut app, source_b, client_b, good(7));
+        assert_eq!(
+            app.world().get::<Session>(client_b).unwrap().slot,
+            turts_sim::SlotId(0)
+        );
+        assert_eq!(app.world().resource::<Slots>().owners(), owners);
+        assert!(
+            !app.world_mut()
+                .resource_mut::<RateLimitBuckets>()
+                .admit(0, 0, 20, 1),
+            "rejoin must not refill the player's admission bucket"
+        );
+        let (source_duplicate, client_duplicate) = spawn_hello_peers(&mut app, 4);
+        deliver_hello(&mut app, source_duplicate, client_duplicate, good(7));
+        assert!(app.world().get::<Session>(client_duplicate).is_none());
+        assert!(app.world().get::<PendingKick>(client_duplicate).is_some());
+        assert!(app.world().get::<Session>(client_b).is_some());
     }
 
     #[test]

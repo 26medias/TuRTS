@@ -331,15 +331,16 @@ mod tests {
         let mut records = read_jsonl(Cursor::new(writer.output)).unwrap();
         assert!(validate_records(&records).is_ok());
 
+        // Other also permits automatic order work. Command requires a matching command record.
         if let EconomyLogRecord::Operation(operation) = &mut records[1] {
-            operation.phase = turts_sim::economy::transaction::AuditPhase::Other;
+            operation.phase = turts_sim::economy::transaction::AuditPhase::Command;
         } else {
             panic!("captured unit order did not decode as an operation");
         }
         assert!(
             validate_records(&records)
                 .unwrap_err()
-                .contains("movement transition changed nonmovement state")
+                .contains("Command phase without a command")
         );
     }
 
