@@ -52,11 +52,12 @@ function project(s,v){const m=s.clip_from_world,c=[0,1,2,3].map(r=>[...v,1].redu
  await page.mouse.click(button.rect[0]+button.rect[2]/2,button.rect[1]+button.rect[3]/2);await page.mouse.click(...project((await read()).scene,[-4,0,24]));await sleep(1000);s=await read();result.outside_build=s;
  if(s.world.units.some(u=>u.content_id==='skirmish:barracks')||s.world.economy.balances.find(b=>b.resource==='skirmish:credits').on_hand!==credits)throw Error('decorative ground accepted an outside building or charge');
  await page.screenshot({path:out+'/outside.png'});
- const beforeIdle=await page.evaluate(()=>JSON.parse(turts_scene()).effects.combat.now);
+ const idleBaseline=await read();const beforeIdle=idleBaseline.scene.effects.combat.now;
  await sleep(1200);
  const cached=await page.evaluate(()=>JSON.parse(turts_scene()).effects.combat.now);
- if(cached-beforeIdle>.3)throw Error('scene captured repeatedly without a reader');
- const refreshed=await read();result.idle_capture={before:beforeIdle,cached,refreshed:refreshed.scene.effects.combat.now};
+ result.idle_capture={before:beforeIdle,cached};
+ if(cached-beforeIdle>.3)throw Error('scene captured repeatedly without a reader: '+JSON.stringify(result.idle_capture));
+ const refreshed=await read();result.idle_capture.refreshed=refreshed.scene.effects.combat.now;
  if(refreshed.scene.effects.combat.now-cached<.9)throw Error('scene did not refresh with the debug request');
  result.status='PASS';console.log('PASS environment, real quality controls, map bounds, and outside construction');
 }catch(e){result.status='FAIL';result.error=String(e.stack||e);if(read)try{result.failure_state=await read();result.dom=await page.evaluate(()=>({focus:document.hasFocus(),active:document.activeElement?.tagName,wheel:window.__envWheel}))}catch{}console.error(e);if(page)try{await page.screenshot({path:out+'/failure.png'})}catch{}process.exitCode=1}
