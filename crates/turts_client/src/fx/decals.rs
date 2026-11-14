@@ -16,6 +16,7 @@ pub fn draw_decals(
     mut pool: ResMut<particles::ParticlePool>,
     mut materials: ResMut<Assets<particles::ParticleMaterial>>,
     fx: Res<CombatPresentation>,
+    mut transforms: Query<&mut Transform>,
 ) {
     let Some(mesh) = pool.mesh.clone() else {
         return;
@@ -30,10 +31,18 @@ pub fn draw_decals(
         }
     });
     for decal in &emitters.decals {
-        if fx.now < decal.starts || state.entities.contains_key(&decal.id) {
+        if fx.now < decal.starts {
             continue;
         }
-        let material = pool.material(decal.image.clone(), false, &mut materials);
+        let size =
+            decal.size + (decal.end_size.unwrap_or(decal.size) - decal.size) * decal.phase(fx.now);
+        if let Some(entity) = state.entities.get(&decal.id) {
+            if let Ok(mut transform) = transforms.get_mut(*entity) {
+                transform.scale = Vec3::splat(size);
+            }
+            continue;
+        }
+        let material = pool.material(decal.image.clone(), decal.additive, &mut materials);
         let entity = commands
             .spawn((
                 Mesh3d(mesh.clone()),
@@ -42,7 +51,7 @@ pub fn draw_decals(
                 Transform {
                     translation: Vec3::new(decal.position.x, 0.025, decal.position.z),
                     rotation: Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2),
-                    scale: Vec3::splat(decal.size),
+                    scale: Vec3::splat(size),
                 },
                 NotShadowCaster,
                 NotShadowReceiver,
@@ -82,11 +91,41 @@ mod tests {
                 size: 1.,
                 colour: Color::WHITE,
                 image: None,
+                end_size: Some(3.),
+                end_colour: Some(Color::linear_rgba(0., 0., 1., 0.5)),
+                additive: true,
             });
         app.update();
         assert!(app.world().resource::<DecalInstances>().entities.is_empty());
         app.world_mut().resource_mut::<CombatPresentation>().now = 0.5;
         app.update();
         assert_eq!(app.world().resource::<DecalInstances>().entities.len(), 1);
+        let entity = app.world().resource::<DecalInstances>().entities[&1];
+        assert_eq!(
+            app.world().get::<Transform>(entity).unwrap().scale,
+            Vec3::ONE
+        );
+        let material = app
+            .world()
+            .get::<MeshMaterial3d<particles::ParticleMaterial>>(entity)
+            .unwrap();
+        assert_eq!(
+            app.world()
+                .resource::<Assets<particles::ParticleMaterial>>()
+                .get(&material.0)
+                .unwrap()
+                .alpha_mode(),
+            bevy::material::AlphaMode::Add
+        );
+        app.world_mut().resource_mut::<CombatPresentation>().now = 1.;
+        app.update();
+        assert_eq!(
+            app.world().get::<Transform>(entity).unwrap().scale,
+            Vec3::splat(2.)
+        );
+        assert_eq!(
+            app.world().resource::<emitters::Emitters>().decals[0].tint(1.),
+            Vec4::new(0.5, 0.5, 1., 0.75)
+        );
     }
 }

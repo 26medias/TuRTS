@@ -3,7 +3,7 @@ use super::particles::{ParticlePool, particle};
 use super::*;
 use turts_mod_api::{EffectKind, EffectLayer, EffectLayerKind as Kind};
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct Line {
     pub source: Vec3,
     pub target: Vec3,
@@ -15,8 +15,14 @@ pub struct Line {
     pub arc: f32,
     pub trail_seconds: f32,
     pub target_unit: Option<u32>,
+    pub end_colour: Option<Color>,
+    pub end_width: Option<f32>,
+    pub additive: bool,
+    pub image: Option<String>,
+    pub target_offset: Vec3,
+    pub visible_at: f64,
 }
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct Decal {
     pub id: u64,
     pub starts: f64,
@@ -25,6 +31,21 @@ pub struct Decal {
     pub size: f32,
     pub colour: Color,
     pub image: Option<String>,
+    pub end_colour: Option<Color>,
+    pub end_size: Option<f32>,
+    pub additive: bool,
+}
+impl Decal {
+    pub fn tint(&self, now: f64) -> Vec4 {
+        let start = self.colour.to_linear().to_vec4();
+        self.end_colour.map_or(
+            start * Vec4::new(1., 1., 1., (self.until - now).clamp(0., 1.) as f32),
+            |end| start.lerp(end.to_linear().to_vec4(), self.phase(now)),
+        )
+    }
+    pub fn phase(&self, now: f64) -> f32 {
+        ((now - self.starts) / (self.until - self.starts).max(0.001)).clamp(0., 1.) as f32
+    }
 }
 #[derive(Clone)]
 pub struct ShakePulse {
@@ -163,6 +184,7 @@ pub fn emit_effects(
             crate::models::Quality::High => 1.,
         };
         let mut effect_particles = Vec::new();
+        let mut projectile_fallbacks = Vec::new();
         for layer in layers(effect) {
             emitters.serial = emitters.serial.wrapping_add(1);
             let seed = emitters.serial;
@@ -313,25 +335,44 @@ pub fn emit_effects(
                     p.arc = *arc_height;
                     p.image = image.clone().or(p.image);
                     p.model = model.clone();
+                    projectile_fallbacks.push(Line {
+                        source: p.start,
+                        target: emission.target,
+                        colour: Color::WHITE,
+                        starts: fx.now,
+                        until: fx.now + f64::from(p.life),
+                        width: 0.08,
+                        projectile: true,
+                        arc: *arc_height,
+                        trail_seconds: 0.04,
+                        target_unit: emission.target_unit,
+                        ..default()
+                    });
                     particles.push(p);
-                    let (width, trail_seconds, colour) = trail
+                    let trail_layer = trail
                         .as_ref()
                         .and_then(|id| acquired.0.presentation.effects.get(id))
                         .and_then(|effect| {
-                            effect.layers.iter().find_map(|layer| match layer.kind {
-                                Kind::Trail { width, ms } => Some((
-                                    width,
-                                    ms as f32 / 1000.,
-                                    Color::from(super::particles::colour(&layer.colour)),
-                                )),
-                                _ => None,
-                            })
-                        })
-                        .unwrap_or((0.06, 0.035, Color::srgb(0.75, 0.62, 0.38)));
+                            effect
+                                .layers
+                                .iter()
+                                .find(|layer| matches!(layer.kind, Kind::Trail { .. }))
+                        });
+                    let (width, trail_seconds) = trail_layer.map_or((0.06, 0.035), |layer| {
+                        let Kind::Trail { width, ms } = layer.kind else {
+                            unreachable!()
+                        };
+                        (width, ms as f32 / 1000.)
+                    });
+                    let colour = trail_layer.map_or(Color::srgb(0.75, 0.62, 0.38), |layer| {
+                        Color::from(super::particles::colour(&layer.colour))
+                    });
+                    let trail_offset =
+                        trail_layer.map_or(Vec3::ZERO, |layer| Vec3::from_array(layer.offset));
                     // A moving ribbon also keeps the shot readable while the sprite pipeline warms.
                     emitters.lines.push_back(Line {
-                        source: particles[0].start,
-                        target: emission.target,
+                        source: particles[0].start + trail_offset,
+                        target: emission.target + trail_offset,
                         colour,
                         until: fx.now + f64::from(particles[0].life),
                         starts: fx.now,
@@ -340,6 +381,17 @@ pub fn emit_effects(
                         arc: *arc_height,
                         trail_seconds,
                         target_unit: emission.target_unit,
+                        end_colour: trail_layer
+                            .and_then(|layer| layer.end_colour.as_deref())
+                            .map(super::particles::colour)
+                            .map(Color::from),
+                        end_width: trail_layer.and_then(|layer| layer.end_size),
+                        additive: trail_layer
+                            .is_some_and(|layer| layer.blend == turts_mod_api::EffectBlend::Add),
+                        image: trail_layer.and_then(|layer| layer.image.clone()),
+                        target_offset: trail_offset,
+                        visible_at: fx.now
+                            + trail_layer.map_or(0., |layer| f64::from(layer.delay_ms) / 1000.),
                     });
                 }
                 Kind::Tracer { width } | Kind::Trail { width, .. } => {
@@ -359,6 +411,15 @@ pub fn emit_effects(
                         arc: 0.,
                         trail_seconds: 0.,
                         target_unit: None,
+                        end_colour: layer
+                            .end_colour
+                            .as_deref()
+                            .map(super::particles::colour)
+                            .map(Color::from),
+                        end_width: layer.end_size,
+                        additive: layer.blend == turts_mod_api::EffectBlend::Add,
+                        image: layer.image.clone(),
+                        ..default()
                     });
                 }
                 Kind::Decal { size, ms, image } => {
@@ -375,6 +436,13 @@ pub fn emit_effects(
                         size: *size,
                         colour: Color::from(base.colour),
                         image: image.clone().or(layer.image.clone()),
+                        end_colour: layer
+                            .end_colour
+                            .as_deref()
+                            .map(super::particles::colour)
+                            .map(Color::from),
+                        end_size: layer.end_size,
+                        additive: layer.blend == turts_mod_api::EffectBlend::Add,
                     });
                 }
                 Kind::Shake { strength, ms } => {
@@ -392,6 +460,8 @@ pub fn emit_effects(
         }
         let accepted = pool.spawn_batch(effect_particles);
         if emission.critical && !accepted {
+            // The informational line is independent of an authored trail's delay or transparency.
+            emitters.lines.extend(projectile_fallbacks);
             emitters.lines.push_back(Line {
                 source: emission.source,
                 target: emission.source,
@@ -403,6 +473,7 @@ pub fn emit_effects(
                 arc: 0.,
                 trail_seconds: 0.,
                 target_unit: None,
+                ..default()
             });
         }
     }
@@ -579,7 +650,7 @@ mod tests {
                 )));
             }
         }
-        let defs: turts_mod_api::VisualEffectsDef=ron::from_str(r#"(effects:[(id:"fire",layers:[(kind:Flash())]),(id:"projectile",layers:[(kind:Projectile(speed:30.0))]),(id:"hit",layers:[(kind:Sparks(count:8))])])"#).unwrap();
+        let defs: turts_mod_api::VisualEffectsDef=ron::from_str(r##"(effects:[(id:"fire",layers:[(kind:Flash())]),(id:"projectile",layers:[(kind:Projectile(speed:30.0,trail:Some("test:trail")))]),(id:"trail",layers:[(kind:Trail(width:0.02,ms:50),delay_ms:500,colour:"#ffffff00",image:Some("test:stripe"))]),(id:"hit",layers:[(kind:Sparks(count:8))])])"##).unwrap();
         for effect in defs.effects {
             app.world_mut()
                 .resource_mut::<AcquiredPackages>()
@@ -607,7 +678,52 @@ mod tests {
         assert_eq!(pool.active(), 512);
         assert_eq!(pool.slots.len(), 512);
         let lines = &app.world().resource::<Emitters>().lines;
-        assert!(lines.iter().any(|line| line.projectile));
+        assert!(lines.iter().any(|line| line.projectile
+            && line.starts <= 0.
+            && line.visible_at <= 0.
+            && line.until > 0.
+            && line.width >= 0.06
+            && line.image.is_none()
+            && line.colour.alpha() > 0.));
         assert!(lines.iter().filter(|line| !line.projectile).count() >= 2);
+    }
+    #[test]
+    fn projectile_uses_the_referenced_trail_layer_parameters() {
+        let mut app = app();
+        let defs: turts_mod_api::VisualEffectsDef = ron::from_str(r##"(effects:[
+            (id:"bolt",layers:[(kind:Projectile(speed:1.0,trail:Some("test:trail")))]),
+            (id:"trail",layers:[(kind:Trail(width:0.2,ms:80),colour:"#ff0000",end_colour:Some("#0000ff80"),end_size:Some(0.6),image:Some("test:stripe"),blend:Add,offset:(0.1,0.2,0.3),delay_ms:50)])
+        ])"##).unwrap();
+        for effect in defs.effects {
+            app.world_mut()
+                .resource_mut::<AcquiredPackages>()
+                .0
+                .presentation
+                .effects
+                .insert(format!("test:{}", effect.id), effect);
+        }
+        app.world_mut()
+            .resource_mut::<CombatPresentation>()
+            .emissions
+            .push(Emission {
+                effect: "test:bolt".into(),
+                source: Vec3::new(0., 0., 0.5),
+                target: Vec3::new(0.5, 0., 0.5),
+                critical: true,
+                window: None,
+                anchor: None,
+                target_unit: None,
+            });
+        app.update();
+        let line = &app.world().resource::<Emitters>().lines[0];
+        assert_eq!(line.width, 0.2);
+        assert_eq!(line.end_width, Some(0.6));
+        assert_eq!(line.image.as_deref(), Some("test:stripe"));
+        assert!(line.additive);
+        assert!(line.end_colour.is_some());
+        assert_eq!(line.source, Vec3::new(0.1, 0.2, 0.8));
+        assert_eq!(line.target, Vec3::new(0.6, 0.2, 0.8));
+        assert_eq!(line.visible_at, 0.05);
+        assert!((line.trail_seconds - 0.08).abs() < 0.00001);
     }
 }

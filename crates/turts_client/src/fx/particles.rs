@@ -405,10 +405,7 @@ pub fn update_particles(
         pool.slots[index] = slot;
     }
     for decal in &decals.decals {
-        let fade = ((decal.until - time.elapsed_secs_f64()) / 1.).clamp(0., 1.) as f32;
-        let mut colour = decal.colour.to_linear().to_vec4();
-        colour.w *= fade;
-        colours[8192 + (decal.id % 128) as usize] = colour.to_array();
+        colours[8192 + (decal.id % 128) as usize] = decal.tint(combat.now).to_array();
     }
     pool.free = pool
         .slots
