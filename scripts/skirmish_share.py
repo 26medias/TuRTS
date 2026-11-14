@@ -75,7 +75,7 @@ class SharedHost:
                 listener.bind(("127.0.0.1", 0))
             http, ws = [listener.getsockname()[1] for listener in sockets]
             public_http = self.start_tunnel("http-tunnel", http)
-            public_ws = self.start_tunnel("ws-tunnel", ws).replace("https://", "wss://", 1)
+            public_ws = self.start_tunnel("ws-tunnel", ws).replace("https://", "wss://", 1) + "/"
             cfg = {"game_package": str(self.prepared / "pack/skirmish.tar"),
                    "http_listen": f"127.0.0.1:{http}", "ws_listen": f"127.0.0.1:{ws}",
                    "public_url": public_http, "tick_hz": 20, "static_dir": str(self.prepared / "dist")}
@@ -89,7 +89,8 @@ class SharedHost:
             local_ad = self.wait_for(lambda: self.http_ready(self.addresses["local_http"]), "local server")
             self.wait_for(lambda: self.http_ready(public_http) == local_ad, "matching public HTTPS server")
             self.addresses["url"] = public_http + "/?" + urlencode({"server": public_http, "ws": public_ws})
-            (self.output / "hosting.json").write_text(json.dumps(self.addresses, indent=2) + "\n")
+            (self.output / "hosting.json").write_text(json.dumps(
+                {**self.addresses, "owned_pids": [child.pid for child in self.children]}, indent=2) + "\n")
             return self.addresses["url"]
         finally:
             for listener in sockets:
