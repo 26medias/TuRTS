@@ -36,7 +36,8 @@ js-sys = "=0.3.106"
 
 [profile.wasm-release]
 inherits = "release"
-opt-level = "z"
+# The browser renderer needs throughput in skinning, transforms, and draw setup.
+opt-level = 3
 lto = "fat"
 codegen-units = 1
 strip = "debuginfo"
