@@ -1,6 +1,6 @@
 # Swordsman and surface range
 
-Status: implementation in progress. This is a small foundation change plus skirmish content.
+Status: implemented. Native checks, independent foundation review, browser combat checks, performance, and scripted player probes pass. See `docs/reports/2026-11-14-swordsman.md`.
 
 ## Player result
 

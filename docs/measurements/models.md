@@ -231,3 +231,30 @@ Both 400-unit samples pass. Every soldier stayed visible and shooting.
 Evidence: `target/mc-evidence/camera-pan-400-guard/result.json` and
 `target/mc-evidence/camera-pan-final-checks/receipt.json`.
 No compiler ran. The source stayed unchanged.
+
+## Swordsman mixed combat, 2026-11-14
+
+Engine source: `d2214625`. The later launcher head changes browser drivers only.
+The build source, packed content, and binary hashes remain unchanged at `e917050f`.
+Machine: local RTX 3080, i9-14900K, Linux, Chrome WebGPU, 1280x720.
+Fresh profile and `--alsa-output-device=null` for each run. No compilers ran during the samples.
+
+The scene has 200 Swordsmen and 200 Crossbowmen in opposing pairs.
+It uses shipped weapon ranges and cooldowns. Health is raised to sustain combat.
+All 400 models stay visible. All 400 units lose health during each ten-second timing window.
+Both attack types are observed. A Swordsman correctly returns to idle between strikes.
+The test checks sustained damage instead of requiring a continuous melee attack clip.
+The camera is pulled back to include the whole formation. The pointer is in the viewport center.
+This is a render/combat workload, not a measurement of moving a 400-unit army.
+
+| Quality | FPS | Frame p50 ms | Frame p95 ms | WASM high-water bytes |
+| --- | ---: | ---: | ---: | ---: |
+| High | 45.23 | 16.70 | 33.40 | 217710592 |
+| Low | 53.31 | 16.70 | 33.40 | 190447616 |
+
+Evidence: `target/mc-evidence/swordsman/400-guard-verified/result.json`.
+The raw frame intervals, state samples, screenshots, and GPU metadata are retained there.
+Wrapper: `target/mc-evidence/swordsman-verified-checks/receipt.json`.
+Its later player-test assertion failed, after both measurement rows passed.
+The final player run is separate. The earlier `400-guard` run is not an accepted measurement.
+Its old continuous-attack assertion was incorrect for melee.
