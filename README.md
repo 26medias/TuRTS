@@ -28,7 +28,7 @@ A fresh join browser can start with `bash scripts/mp1-play.sh --join HTTPS_GAME_
 From a source-built prepared folder, use `python3 -I -B scripts/skirmish_share.py --prepared /absolute/path/to/prepared`.
 
 Full local two-browser matches and public HTTPS/WSS orders pass scripted checks.
-Fast reload keeps the same army and slot. A ready lobby is next.
+Fast reload keeps the same army and slot. Human games wait in a ready lobby with colour choices and a cancellable three-second countdown.
 A full match played by two people and the full MP1 roster remain open.
 The simple opponent does not complete the general MP2 bot framework.
 Terrain, fog, broader lifecycle features, and large-scale performance remain later work.

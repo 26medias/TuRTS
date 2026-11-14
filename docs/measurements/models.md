@@ -275,3 +275,25 @@ Stationary markers do not force another UI layout each frame.
 Evidence: `target/mc-evidence/minimap/400-guard/result.json`.
 Receipt: `target/mc-evidence/minimap-browser-checks/receipt.json` (command and wrapper 0; unchanged source; no compilers).
 The sample measures sustained combat with a stationary camera. It does not measure panning a 400-unit scene.
+
+
+## Final lobby client, 2026-11-14
+
+Client source: `e6319f1d`. Prepared server source: `0dcd05b2`.
+Only the native computer policy differs between the two prepared builds.
+The browser, packer, and package hashes match exactly.
+The benchmark disables the computer player.
+Same machine and 400-unit mixed combat workload as the minimap row above.
+All 400 actors remain visible. All 400 take damage in each timing window.
+No compiler or other test browser runs during the samples.
+Every test browser has a fresh profile and --alsa-output-device=null.
+
+| Quality | FPS | Frame p50 ms | Frame p95 ms | WASM high-water bytes |
+| --- | ---: | ---: | ---: | ---: |
+| High | 46.42 | 16.70 | 33.40 | 221249536 |
+| Low | 56.91 | 16.70 | 33.30 | 193986560 |
+
+Evidence: `target/mc-evidence/mixed-opponent/400-guard/result.json`.
+Reuse proof: `target/mc-evidence/mixed-opponent/artifact-reuse.json`.
+The sample measures sustained combat with a stationary camera.
+No new 2,000-unit row or other-hardware performance claim is made.
