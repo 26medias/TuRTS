@@ -161,6 +161,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             path = path[:-3]
         return super().guess_type(path)
 
+    def send_error(self, code, message=None, explain=None):
+        # File errors contain plain HTML, even if a gzip sidecar was selected.
+        self._static_encoding = None
+        return super().send_error(code, message, explain)
+
     def end_headers(self):
         if getattr(self, '_static_encoding', None) == 'gzip':
             self.send_header('Content-Encoding', 'gzip')
