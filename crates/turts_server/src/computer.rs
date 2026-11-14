@@ -318,7 +318,7 @@ fn decide_inner(world: &mut World, bot: &mut ComputerPlayer) {
                 .recipes
                 .iter()
                 .filter_map(|id| catalog.production.get(id))
-                .find(|recipe| {
+                .filter(|recipe| {
                     catalog.units.get(&recipe.output_unit).is_some_and(|def| {
                         (def.weapon.is_some() && def.movement.is_some() && combatants.len() < 6)
                             || (def.gatherer.is_some()
@@ -327,6 +327,29 @@ fn decide_inner(world: &mut World, bot: &mut ComputerPlayer) {
                                         .is_some_and(|def| def.gatherer.is_some())
                                 }))
                     })
+                })
+                .min_by_key(|recipe| {
+                    // Restore the economy first. Then train the least represented available type.
+                    // Count paid jobs too. Recipe order resolves equal populations, not unit ids.
+                    let economy = catalog
+                        .units
+                        .get(&recipe.output_unit)
+                        .is_some_and(|def| def.gatherer.is_some());
+                    let output = recipe.output_unit.to_string();
+                    let current = own.iter().filter(|unit| unit.content_id == output).count();
+                    let pending = view
+                        .queues
+                        .iter()
+                        .filter(|queue| queue.owner_slot == bot.slot)
+                        .flat_map(|queue| &queue.jobs)
+                        .filter(|job| {
+                            catalog
+                                .production
+                                .get(&job.recipe)
+                                .is_some_and(|queued| queued.output_unit == recipe.output_unit)
+                        })
+                        .count();
+                    (!economy, current + pending)
                 });
             if let Some(recipe) = recipe {
                 issue(
@@ -456,6 +479,7 @@ mod tests {
         let mut saw_factory = false;
         let mut saw_harvest = false;
         let mut max_soldiers = 1;
+        let mut max_swordsmen = 0;
         for _ in 0..12_000 {
             tick(&mut app);
             let view = turts_sim::completed_world(app.world());
@@ -472,6 +496,12 @@ mod tests {
                     .filter(|unit| unit.owner_slot == 1 && unit.content_id == "skirmish:soldier")
                     .count(),
             );
+            max_swordsmen = max_swordsmen.max(
+                view.units
+                    .iter()
+                    .filter(|unit| unit.owner_slot == 1 && unit.content_id == "skirmish:swordsman")
+                    .count(),
+            );
             if app.world().resource::<MatchOutcomes>().end_tick.is_some() {
                 break;
             }
@@ -484,12 +514,12 @@ mod tests {
             turts_sim::completed_world(app.world())
         );
         assert!(
-            max_soldiers > 3,
-            "the opponent did not fund its army from timber deliveries"
+            max_soldiers >= 2 && max_swordsmen >= 2,
+            "the opponent did not fund a mixed army from timber deliveries: {max_soldiers} crossbowmen, {max_swordsmen} swordsmen"
         );
         let result = app.world().resource::<MatchOutcomes>();
         println!(
-            "computer victory at tick {:?}; largest army {max_soldiers}",
+            "computer victory at tick {:?}; peaks {max_soldiers} crossbowmen, {max_swordsmen} swordsmen",
             result.end_tick
         );
         assert_eq!(
