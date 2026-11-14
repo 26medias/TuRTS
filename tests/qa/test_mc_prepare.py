@@ -28,7 +28,7 @@ from pathlib import Path
 sys.dont_write_bytecode = True
 REAL = Path(__file__).resolve().parents[2]
 SCRIPT_FILES = ["mc-browser.sh", "mc-pixels.sh", "t7.sh", "m3-browser.sh", "m2-browser.sh", "mc_prepare.py", "mc_browser_params.py",
-                "per1_native_reference.py", "hd1_reference.py"]
+                "per1_native_reference.py", "hd1_reference.py", "compress_web.py", "skirmish_host.py"]
 OPTIONAL_SCRIPT_FILES = ["mc_prepare_lib.sh"]  # copied when the file exists (it comes with the prepare lock)
 # Every script that the prepare step runs or imports, and the browser package files that npm ci reads:
 # an edit of one of them after the prepare step must give exit 66.

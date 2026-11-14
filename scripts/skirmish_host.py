@@ -12,6 +12,7 @@ import sys
 import threading
 import time
 import urllib.request
+import urllib.parse
 
 
 class Game:
@@ -90,8 +91,35 @@ RETRY_JS = r'''
 '''
 
 
+def static_encoding(value, gzip_available):
+    """Choose an available representation. Missing preferences keep identity."""
+    qualities = {}
+    for entry in value.split(','):
+        parts = [part.strip() for part in entry.split(';')]
+        coding = parts[0].lower()
+        if not coding:
+            continue
+        weights = [part.split('=', 1)[1].strip() for part in parts[1:]
+                   if part.lower().startswith('q=')]
+        quality = 1.0
+        if weights:
+            weight = weights[0]
+            valid = len(weights) == 1 and re.fullmatch(r'(?:0(?:\.[0-9]{0,3})?|1(?:\.0{0,3})?)', weight)
+            quality = float(weight) if valid else 0.0
+        qualities[coding] = min(qualities.get(coding, 1.0), quality)
+    gzip_quality = qualities.get('gzip', qualities.get('*', 0.0)) if gzip_available else 0.0
+    identity_quality = qualities.get('identity')
+    identity_allowed = identity_quality != 0.0 and not (
+        identity_quality is None and qualities.get('*') == 0.0)
+    if gzip_quality > 0.0 and (identity_quality is None or gzip_quality >= identity_quality):
+        return 'gzip'
+    return 'identity' if identity_allowed else None
+
+
 class Handler(http.server.SimpleHTTPRequestHandler):
     def do_GET(self):
+        self._static_encoding = None
+        self._vary_encoding = False
         if self.path == '/__skirmish/retry.js':
             data = RETRY_JS.replace('TOKEN', json.dumps(self.server.game.token)).encode()
             content_type = 'text/javascript'
@@ -108,7 +136,41 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
+    def send_head(self):
+        self._static_encoding = None
+        self._vary_encoding = True
+        original = self.path
+        source = Path(self.translate_path(original))
+        if source.is_file():
+            accepted = ','.join(self.headers.get_all('Accept-Encoding', []))
+            encoding = static_encoding(accepted, source.with_name(source.name + '.gz').is_file())
+            if encoding is None:
+                self.send_error(406, 'No acceptable content encoding')
+                return None
+            if encoding == 'gzip':
+                self._static_encoding = 'gzip'
+                parts = urllib.parse.urlsplit(original)
+                self.path = parts._replace(path=parts.path + '.gz').geturl()
+        try:
+            return super().send_head()
+        finally:
+            self.path = original
+
+    def guess_type(self, path):
+        if getattr(self, '_static_encoding', None) == 'gzip' and path.endswith('.gz'):
+            path = path[:-3]
+        return super().guess_type(path)
+
+    def end_headers(self):
+        if getattr(self, '_static_encoding', None) == 'gzip':
+            self.send_header('Content-Encoding', 'gzip')
+        if getattr(self, '_vary_encoding', False):
+            self.send_header('Vary', 'Accept-Encoding')
+        super().end_headers()
+
     def do_POST(self):
+        self._static_encoding = None
+        self._vary_encoding = False
         game = self.server.game
         if (self.path != '/__skirmish/restart'
                 or self.headers.get('Origin') != game.origin

@@ -182,6 +182,8 @@ PYKM1PACK
     fi
     (cd "$ROOT/crates/turts_client_web" && env CARGO_BUILD_JOBS="$BUILD_JOBS" trunk build --release) >"$OUT/trunk-build.log" 2>&1 || { cat "$OUT/trunk-build.log" >&2; exit 1; }
 
+    python3 -B "$ROOT/scripts/compress_web.py" "$DIST" >"$OUT/compression.log" 2>&1 || { cat "$OUT/compression.log" >&2; exit 1; }
+
     if [[ -n "$PREPARE_DIR" ]]; then
         mkdir -p "$OUT/bin"
         cp "$TARGET/release/turts_server" "$TARGET/release/turts-pack" "$OUT/bin/"

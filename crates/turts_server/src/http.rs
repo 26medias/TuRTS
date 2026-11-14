@@ -50,7 +50,9 @@ fn router(booted: Arc<Booted>, static_dir: Option<PathBuf>) -> Router {
         .route("/packages/{name}", get(package))
         .with_state(booted);
     let router = match static_dir {
-        Some(dir) => router.fallback_service(ServeDir::new(dir).precompressed_br()),
+        Some(dir) => {
+            router.fallback_service(ServeDir::new(dir).precompressed_br().precompressed_gzip())
+        }
         None => router,
     };
     router.layer(CorsLayer::permissive())

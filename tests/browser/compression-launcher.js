@@ -1,0 +1,22 @@
+// Verify gzip through the real New skirmish launcher, with a fresh silent profile.
+const fs=require('node:fs'),path=require('node:path'),{spawn}=require('node:child_process'),crypto=require('node:crypto');
+const {chromium}=require('playwright-core');
+const [launcher,prepared,out]=process.argv.slice(2);if(!out)throw Error('LAUNCHER PREPARED OUTPUT');fs.mkdirSync(out,{recursive:true});
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+(async()=>{let child,browser;const result={status:'RUNNING',launcher,wasm_requests:[]};try{
+const fd=fs.openSync(out+'/launcher.log','w');child=spawn('bash',[launcher],{detached:true,stdio:['ignore',fd,fd]});fs.closeSync(fd);let log,port;
+for(let i=0;i<600;i++){log=fs.readFileSync(out+'/launcher.log','utf8');port=/DEBUG_PORT: (\d+)/.exec(log)?.[1];if(port)break;if(child.exitCode!==null)throw Error('launcher exited '+child.exitCode);await sleep(100)}
+if(!port||!log.includes('--alsa-output-device=null'))throw Error('silent browser did not start');result.profile=/^PROFILE: (.+)$/m.exec(log)?.[1];if(!result.profile?.startsWith('/tmp/turts-play-profile.'))throw Error('unexpected profile');
+browser=await chromium.connectOverCDP('http://127.0.0.1:'+port);const context=browser.contexts()[0],page=context.pages().find(p=>p.url().startsWith('http://127.0.0.1:'));if(!page)throw Error('game page missing');
+const session=await context.newCDPSession(page),requests=new Map();await session.send('Network.enable');await session.send('Network.setCacheDisabled',{cacheDisabled:true});
+session.on('Network.responseReceived',event=>{if(!/\.wasm(?:\?|$)/.test(event.response.url))return;const headers=Object.fromEntries(Object.entries(event.response.headers).map(([k,v])=>[k.toLowerCase(),v]));const row={url:event.response.url,status:event.response.status,content_encoding:headers['content-encoding'],content_length:Number(headers['content-length']),from_disk_cache:event.response.fromDiskCache};requests.set(event.requestId,row);result.wasm_requests.push(row)});
+session.on('Network.loadingFinished',event=>{const row=requests.get(event.requestId);if(row)row.encoded_data_length=event.encodedDataLength});
+const errors=[];page.on('pageerror',e=>errors.push(String(e)));
+// Attach the recorder first, then force a network load. The profile is still this launcher's fresh profile.
+await page.reload({waitUntil:'domcontentloaded'});
+let scene;for(let i=0;i<1200;i++){scene=await page.evaluate(()=>typeof turts_scene==='function'&&turts_scene()?JSON.parse(turts_scene()):null);if(scene?.units?.length&&scene.models?.length&&scene.models.every(m=>m.ready)&&scene.widgets?.some(w=>w.id==='skirmish_minimap'))break;if(errors.length)throw Error(errors.join('\n'));await sleep(50)}
+if(!scene?.units?.length||!scene.models?.every(m=>m.ready)||!scene.widgets?.some(w=>w.id==='skirmish_minimap'))throw Error('game did not reach models and map');
+const name=fs.readdirSync(prepared+'/dist').find(n=>n.endsWith('.wasm')),raw=fs.readFileSync(prepared+'/dist/'+name),encoded=fs.statSync(prepared+'/dist/'+name+'.gz').size;result.raw_bytes=raw.length;result.gzip_bytes=encoded;result.decoded_sha256=crypto.createHash('sha256').update(raw).digest('hex');
+const response=result.wasm_requests.find(row=>path.basename(new URL(row.url).pathname)===name&&row.status===200&&row.content_encoding==='gzip'&&row.encoded_data_length>0);if(!response||response.content_length!==encoded||response.encoded_data_length>=raw.length*.5||response.from_disk_cache)throw Error('ZIP4 actual WASM transfer was not gzip or did not shrink enough');
+result.scene=scene;result.ui=await page.evaluate(()=>JSON.parse(turts_ui()));if(!result.ui.some(w=>w.id==='sound_off_button'&&w.visible))throw Error('sound is not off');await page.screenshot({path:out+'/game.png'});result.status='PASS';console.log(JSON.stringify({status:result.status,raw_bytes:result.raw_bytes,gzip_bytes:encoded,wire_bytes:response.encoded_data_length}));
+}catch(e){result.status='FAIL';result.error=String(e.stack||e);console.error(e);process.exitCode=1}finally{if(browser)await browser.close();if(child&&child.exitCode===null){const ended=new Promise(r=>child.once('exit',r));try{process.kill(-child.pid,'SIGTERM')}catch{}await Promise.race([ended,sleep(8000)])}result.profile_removed=result.profile?!fs.existsSync(result.profile):null;if(result.profile_removed===false){result.status='FAIL';result.error='fresh profile was not removed';process.exitCode=1}fs.writeFileSync(out+'/result.json',JSON.stringify(result,null,2))}})();

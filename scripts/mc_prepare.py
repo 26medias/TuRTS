@@ -42,6 +42,7 @@ PREPARE_TIME_FILES = [
     "scripts/mc-browser.sh", "scripts/mc-pixels.sh", "scripts/t7.sh", "scripts/m2-browser.sh", "scripts/m3-browser.sh",
     "scripts/mc_prepare.py", "scripts/mc_prepare_lib.sh", "scripts/mc_browser_params.py",
     "scripts/per1_native_reference.py", "scripts/hd1_reference.py",
+    "scripts/compress_web.py", "scripts/skirmish_host.py",
     "tests/browser/package.json", "tests/browser/package-lock.json",
 ]
 BUILD_INPUTS = SOURCE_ROOTS + PREPARE_TIME_FILES
