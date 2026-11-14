@@ -4,7 +4,7 @@ const [prepared,out]=process.argv.slice(2);if(!out)throw Error('PREPARED OUTPUT'
 const sleep=ms=>new Promise(r=>setTimeout(r,ms)),port=()=>new Promise(r=>{const s=net.createServer();s.listen(0,'127.0.0.1',()=>{const p=s.address().port;s.close(()=>r(p))})});
 function project(s,v){const m=s.clip_from_world,c=[0,1,2,3].map(r=>[...v,1].reduce((a,x,k)=>a+m[k*4+r]*x,0)),[x,y,w,h]=s.viewport_logical_rect;return[x+(c[0]/c[3]+1)*w/2,y+(1-c[1]/c[3])*h/2]}
 (async()=>{let server,context;const profile=fs.mkdtempSync('/tmp/turts-hostname-'),result={status:'RUNNING',profile,errors:[]};try{
-const http=await port(),ws=await port(),origin=`http://127.0.0.1:${http}`;result.endpoint=`ws://localhost:${ws}/`;
+const http=await port(),ws=await port(),origin=`http://127.0.0.1:${http}`;result.endpoint=`${process.env.TURTS_WS_SCHEME||"ws"}://localhost:${ws}/`;
 fs.writeFileSync(out+'/server.ron',`(game_package:"${prepared}/pack/skirmish.tar",http_listen:"127.0.0.1:${http}",ws_listen:"127.0.0.1:${ws}",public_url:"${origin}",tick_hz:20,static_dir:"${prepared}/dist")`);
 const fd=fs.openSync(out+'/server.log','w');server=spawn(prepared+'/bin/turts_server',[out+'/server.ron'],{stdio:['ignore',fd,fd]});fs.closeSync(fd);
 for(let i=0;i<200;i++){try{if((await fetch(origin+'/advertisement.json')).ok)break}catch{}if(server.exitCode!==null)throw Error('server stopped');await sleep(50)}

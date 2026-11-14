@@ -151,12 +151,7 @@ pub fn ws_socket_addr(ws_url: &str) -> Result<SocketAddr, String> {
 
 fn parse_websocket_url(input: &str) -> Result<url::Url, String> {
     let error = || format!("cannot read a WebSocket address from `{input}`");
-    let endpoint = if input.contains("://") {
-        input.to_string()
-    } else {
-        ws_url(input)
-    };
-    let url = url::Url::parse(&endpoint).map_err(|_| error())?;
+    let url = url::Url::parse(&ws_url(input)).map_err(|_| error())?;
     if !matches!(url.scheme(), "ws" | "wss")
         || url.host().is_none()
         || !url.username().is_empty()
@@ -237,7 +232,7 @@ mod websocket_address_tests {
 
 /// The URL for the WebSocket client: a bare `host:port` gets the `ws://` scheme.
 fn ws_url(ws_url: &str) -> String {
-    if ws_url.starts_with("ws://") || ws_url.starts_with("wss://") {
+    if ws_url.contains("://") {
         ws_url.to_string()
     } else {
         format!("ws://{ws_url}")
@@ -781,5 +776,22 @@ mod rejoin_control_tests {
             *app.world().resource::<Phase>(),
             Phase::Failed(crate::rejoin::REJOIN_FINAL_TEXT.to_owned())
         );
+    }
+}
+
+#[cfg(test)]
+mod independent_hostname_review {
+    use super::*;
+
+    #[test]
+    fn accepted_endpoint_and_transport_endpoint_must_match() {
+        for input in ["WS://127.0.0.1:7001/path?room=two", "WSS://127.0.0.1/ws"] {
+            let validated = parse_websocket_url(input).unwrap();
+            let transport = url::Url::parse(&ws_url(input)).unwrap();
+            assert_eq!(
+                transport, validated,
+                "validated endpoint differs from transport for {input}"
+            );
+        }
     }
 }
