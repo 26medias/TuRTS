@@ -384,3 +384,53 @@ Both 400-unit detailed scenes pass 30 FPS. LOD 2 is actually selected in the LOD
 The browser and GPU details, screenshots, raw intervals, and linear-memory samples are retained.
 Draw-call counts and GPU-memory counters remain unavailable. `draw_meshes` counts entities, not draw calls.
 The display limits these runs to about 60 FPS. The rows do not measure maximum GPU throughput.
+
+## Rigid attachment batches: before the hit-origin fix
+
+Date: 2026-11-14. Source: `ed8b563e`, with rotation guards from `207e7af4`.
+Same machine, release profile, GPU, viewport, mixed fighting fixtures, and 500 ms scene-read protocol as the previous release.
+All actors stay visible and take damage. No quality setting or animation cadence is reduced.
+
+| Scene | Units | Quality | Frame p50, ms | Frame p95, ms | Mean FPS | Wasm high-water, MiB |
+| --- | ---: | --- | ---: | ---: | ---: | ---: |
+| Mixed fight | 400 | High | 16.70 | 16.70 | 59.30 | 195.6 |
+| Mixed fight | 400 | Low | 16.70 | 16.80 | 59.60 | 175.0 |
+| Mixed fight | 2000 | High | 33.30 | 50.10 | 27.26 | 406.1 |
+| Mixed fight | 2000 | Low | 33.30 | 50.00 | 31.95 | 367.7 |
+| Mixed fight and camera pan | 400 | High | 16.70 | 16.70 | 59.70 | 196.4 |
+| Mixed fight and camera pan | 400 | Low | 16.70 | 16.70 | 59.50 | 175.1 |
+
+The paired 2,000-unit High result increases from 21.49 to 27.26 FPS. Low increases from 28.05 to 31.95 FPS.
+High at 2,000 units remains below 30 FPS. The 400-unit High threshold passes.
+Browser presentation is capped near 60 FPS. Draw calls and GPU memory remain unavailable.
+The `draw_meshes` observation counts entities, not draw calls.
+Evidence: `target/mc-evidence/stable-model-transforms/final-battle400/result.json`,
+`final-battle2000/result.json`, and `final-pan/result.json`.
+Every browser uses a fresh profile and `--alsa-output-device=null`.
+No compiler or other test browser runs during these timings.
+
+## Rigid batches with visible hit sparks: final build
+
+Date: 2026-11-14. Final content: `68f9d456`. Compiled engine: `ed8b563e`.
+The client is byte-identical to the rig-only release. The package raises the authored spark origin by 0.65 map units.
+This keeps sparks outside the armour. Particle size, count, lifetime, and quality settings stay unchanged.
+The final fixtures include this content. Every actor stays visible and takes damage.
+
+| Scene | Units | Quality | Frame p50, ms | Frame p95, ms | Mean FPS | Wasm high-water, MiB |
+| --- | ---: | --- | ---: | ---: | ---: | ---: |
+| Mixed fight | 400 | High | 16.70 | 16.70 | 59.50 | 196.0 |
+| Mixed fight | 400 | Low | 16.70 | 16.80 | 59.60 | 174.8 |
+| Mixed fight | 2000 | High | 33.40 | 50.10 | 25.12 | 405.5 |
+| Mixed fight | 2000 | Low | 33.30 | 50.00 | 31.85 | 367.7 |
+| Mixed fight and camera pan | 400 | High | 16.70 | 16.70 | 59.60 | 196.1 |
+| Mixed fight and camera pan | 400 | Low | 16.70 | 16.70 | 59.50 | 175.1 |
+
+Same RTX 3080, release profile, browser, viewport, five-second warm-up, ten-second sample, and 500 ms scene-read protocol as above.
+High at 2,000 units remains below 30 FPS. The 400-unit High threshold passes.
+The previous delivered package reaches 21.49 FPS High and 28.05 FPS Low at 2,000 units.
+That package has the old spark origin. The rig-only comparison above isolates the engine change more closely.
+This final comparison includes the improved visible impact effect. No effect quality is reduced.
+Evidence: `target/mc-evidence/stable-model-transforms/visible-hit-final/`, with `result.json` in each row folder.
+Receipt: `target/mc-evidence/rig-visible-final-checks/receipt.json`; command 0, wrapper 0, source unchanged.
+All three final cold probes also pass in that batch. The checker retains open manual checks.
+No compiler or other test browser runs during the timings. Every Chrome uses a fresh silent profile.

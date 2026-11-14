@@ -3,7 +3,8 @@
 The engine reduces model-part work while it preserves the authored geometry and animation.
 A glTF node's skin binding selects its skin. Joint attributes alone do not select a skin.
 Rigid nodes ignore unused joint attributes. The engine changes private mesh copies only.
-The package files, public API 0.2.10, and wire protocol 6 stay unchanged.
+Batching leaves the package files unchanged. Public API 0.2.10 and wire protocol 6 stay unchanged.
+A separate skirmish content fix can correct an authored effect position without changing this contract.
 
 Opaque and masked parts can share a draw when their material, palette, and vertex layouts match.
 Transparent parts keep their separate sort positions.
