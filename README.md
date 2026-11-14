@@ -9,7 +9,7 @@
 
 TuRTS is a mod-first real-time strategy engine built with Rust and Bevy. It has a browser WebAssembly client, a native client, and an authoritative headless server. Game content is delivered as packages through the public mod API.
 
-**Current playable demo: a medieval fantasy skirmish against the computer.** Build Barracks, harvest timber, train Villagers, Crossbowmen, and Swordsmen, set rally points, fight, and reach Victory or Defeat. New skirmish starts another match. The browser build includes models, textures, team colours, graphics quality, pointer-centred zoom, walking and work animations, shot animation, construction rise, falling bodies, combat effects, attack warnings, and a minimap.
+**Current playable demo: a medieval fantasy skirmish against the computer.** Build Barracks, harvest timber, train Villagers, Crossbowmen, and Swordsmen, set rally points, fight, and reach Victory or Defeat. New skirmish starts another match. The browser build includes models, textures, team colours, graphics quality, pointer-centred zoom, walking and work animations, shot animation, construction rise, falling bodies, combat effects, attack warnings, a minimap, wider grass, a map boundary, distance haze, and antialiasing.
 
 The local tested launcher is:
 

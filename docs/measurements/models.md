@@ -297,3 +297,37 @@ Evidence: `target/mc-evidence/mixed-opponent/400-guard/result.json`.
 Reuse proof: `target/mc-evidence/mixed-opponent/artifact-reuse.json`.
 The sample measures sustained combat with a stationary camera.
 No new 2,000-unit row or other-hardware performance claim is made.
+
+## Environment stage 1, 2026-11-14
+
+Source for these samples: `e95e628a`. Final validation and HUD follow-up: `cecc9a96`.
+Machine: RTX 3080, Intel Core i9-14900K, Linux 7.0.0-42-generic, Chrome WebGPU, 1280x720.
+Each browser uses a fresh profile and `--alsa-output-device=null`. No compiler or other test browser ran during samples.
+The generated maps preserve the shipped grass, environment, and ground margin.
+All actors stay visible and take damage. The workload disables the computer player.
+The measurement driver reads the scene each animation frame. This includes test overhead.
+
+| Units | Camera | Quality | FPS | Frame p50 ms | Frame p95 ms | WASM high-water bytes |
+| ---: | --- | --- | ---: | ---: | ---: | ---: |
+| 400 | stationary | High | 42.13 | 16.70 | 33.40 | 241696768 |
+| 400 | stationary | Low | 49.82 | 16.70 | 33.40 | 209518592 |
+| 2000 | stationary | High | 5.08 | 200.00 | 250.00 | 589889536 |
+| 2000 | stationary | Low | 12.06 | 83.30 | 116.70 | 546701312 |
+| 400 | pan | High | 41.86 | 16.70 | 33.40 | 241762304 |
+| 400 | pan | Low | 50.32 | 16.70 | 33.30 | 209715200 |
+
+Evidence: `target/mc-evidence/p4-environment/{400-measure,2000-measure,400-pan}/result.json`.
+Each result retains raw frame intervals, state samples, browser details, and GPU adapter data.
+Chrome reports a hardware adapter and an empty adapter name. The local GPU inventory identifies the RTX 3080.
+The pan test sends real Arrow keys and checks distinct camera matrices.
+The 400-unit High row passes 30 FPS. The 2,000-unit scene needs more performance work.
+These samples do not prove performance on another GPU.
+
+Final build `cecc9a96`, refreshed fixtures from the shipped package, 400-unit pan:
+
+| Quality | FPS | Frame p50 ms | Frame p95 ms | WASM high-water bytes |
+| --- | ---: | ---: | ---: | ---: |
+| High | 42.23 | 16.70 | 33.40 | 242286592 |
+| Low | 49.02 | 16.70 | 33.40 | 209846272 |
+
+Evidence: `target/mc-evidence/p4-environment/final-400-pan/result.json`. All 400 remain visible and take damage.
