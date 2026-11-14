@@ -1,6 +1,6 @@
 # Browser download compression
 
-Status: implementation in progress.
+Status: implemented. ZIP1–ZIP5 pass. The independent review passes after its two fixes. See `docs/reports/2026-11-14-browser-compression.md`.
 
 ## Player result
 
