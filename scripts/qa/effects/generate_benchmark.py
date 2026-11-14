@@ -27,8 +27,14 @@ for name,side,burning in [('battle200',100,0),('burning200',100,10),('battle400'
     (package/'match.ron').write_text('(start:Immediate,victory:None,open_sites_per_slot:Some(4))')
     text=(package/'units/soldier.ron').read_text().replace('max: 120','max: 1000000').replace('range: 6.0',f'range: {100 if burning else offset+1:.5f}')
     (package/'units/soldier.ron').write_text(text)
-    # Ten enemy shooters leave each building at 95/500 health before joining the battle.
+    # Isolate the render workload: high building health prevents incidental target changes
+    # from killing a building. The damage thresholds are 1/1 in this fixture only.
+    # The separate gameplay acceptance probe checks the shipped 1/2 and 1/4 thresholds.
     if burning:
+        path=package/'units/barracks.ron'
+        path.write_text(path.read_text().replace('max: 500','max: 1000000'))
+        path=package/'visuals/barracks.ron'
+        path.write_text(path.read_text().replace('numerator:1,denominator:2','numerator:1,denominator:1').replace('numerator:1,denominator:4','numerator:1,denominator:1'))
         for i in range(10):
             commands.append({'tick':10,'slot':1,'envelope':{'order':'skirmish:order_attack','units':[side+i+1],'target':{'Unit':2*side+i+1},'queue':'Replace','group':0}})
             commands.append({'tick':380,'slot':1,'envelope':{'order':'skirmish:order_stop','units':[side+i+1],'target':'None','queue':'Replace','group':0}})

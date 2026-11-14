@@ -172,7 +172,7 @@ fn a1_a2_a3_new_export_groups() {
     for (feature, owner, group) in [
         ("exports.combat", "L-DMG", "combat"),
         ("exports.match", "", "match"),
-        ("exports.visual_effects", "L-FX-PRES", "visual_effects"),
+        ("exports.visual_effects", "", "visual_effects"),
     ] {
         let edits: &'static [Edit] = Box::leak(Box::new([(
             MANIFEST,
@@ -562,7 +562,7 @@ raw_case!(
 raw_case!(
     v4_effects,
     "effects",
-    "L-FX-PRES",
+    "",
     VISUAL,
     "effects",
     &[(VISUAL, "shape:", "effects: None, shape:")]

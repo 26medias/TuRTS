@@ -58,6 +58,9 @@ pub fn flash_models(
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut cache: ResMut<FlashMaterials>,
 ) {
+    if (fx.flashes.is_empty() || !settings.flashes) && cache.originals.is_empty() {
+        return;
+    }
     let roots: HashMap<_, _> = roots.iter().map(|(entity, id)| (entity, id.0)).collect();
     let mut live = HashSet::new();
     for (entity, mut material) in &mut meshes {

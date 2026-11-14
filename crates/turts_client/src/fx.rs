@@ -286,10 +286,7 @@ pub fn update_combat(
                 .is_some_and(|o| o.activity == turts_net_protocol::Activity::Gathering)
             && replica.economy.orders.iter().any(|order| {
                 order.unit.0 == unit.unit_id
-                    && matches!(
-                        order.stage,
-                        turts_net_protocol::GatherStage::Gathering { .. }
-                    )
+                    && matches!(order.stage, turts_net_protocol::GatherStage::Gathering)
             })
         {
             loops.push((unit.unit_id, effect.clone(), position + Vec3::Y * 0.7));

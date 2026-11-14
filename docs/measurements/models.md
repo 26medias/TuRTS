@@ -115,7 +115,7 @@ These are render workloads, not gameplay balance tests.
 | 200 against 200 | High | **26.67** | 33.30 | 83.30 | 3,200 | 196.1 |
 
 All 400 soldiers stayed visible and in their ranged attack state throughout the second row.
-The run stopped at the CEO's 30 FPS limit. No optimization or further feature work followed.
+The initial run stopped at the CEO's 30 FPS limit. The CEO then authorized automatic fixes.
 Low quality and 400 against 400 were not measured.
 
 The attempted burning-building row is **rejected**. It measured 51.02 FPS, but six of ten
@@ -131,3 +131,32 @@ Evidence under `target/mc-evidence/`:
 - `skirmish-effects-first-prepared/manifest.json`: build inputs and artifact hashes.
 
 Drivers: `scripts/qa/effects/generate_benchmark.py` and `tests/browser/effects-measure.js`.
+
+
+### P3 performance recovery
+
+The CEO resumed work and directed Codex to fix future performance failures without waiting for approval.
+
+The CPU profile identifies skin extraction, shadow/material specialization, UI snapshots,
+and scene observation as the largest costs. The named profiling copy uses a different Binaryen
+version and retains function names. Its timing is diagnostic only.
+
+Engine commit `14405dff` changes Rust and Binaryen optimization from size to speed.
+The same High 400-unit fixture now measures **36.84 FPS**, p50 **16.70 ms**, p95 **50.00 ms**.
+All 400 soldiers remain visible and shooting. No model, effect-count, or quality reduction was made.
+This is a 38% FPS increase over the initial 26.67 FPS sample.
+
+The tradeoff is a larger download. WASM grows from 29,683,233 to 59,363,833 bytes.
+At gzip level 6, it grows from 9,442,563 to 14,746,429 bytes.
+The gzip values describe compressibility. They do not claim that the server serves gzip.
+
+Evidence under `target/mc-evidence/`:
+
+- `p3-combat-cpu-profile/`: profile of the unchanged failing artifact.
+- `p3-combat-named-profile/`: named CPU profile and inclusive system costs.
+- `p3-combat-speed-measure/result.json`: unprofiled speed-build sample.
+- `p3-combat-speed-measure/receipt.json`: exit 0, source unchanged, no compiler at start.
+- `p3-build-size-comparison.json`: raw and gzip byte counts.
+
+Further work removes unnecessary UI scans and unchanged render-state writes.
+The full P3 High/Low table and final player acceptance are still incomplete.

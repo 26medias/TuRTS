@@ -74,8 +74,7 @@ pub fn spawn_tooltip_view(
 /// Place actual tooltip nodes against their target camera viewport after UI layout, and show
 /// them only while their actual hovered owner is visible.
 pub fn update_tooltips(world: &mut World) {
-    let views = world
-        .iter_entities()
+    let views = super::snapshot::entities_with::<TooltipView>(world)
         .filter_map(|entity| {
             let view = entity.get::<TooltipView>()?;
             Some((entity.id(), view.owner))
@@ -110,8 +109,7 @@ pub fn update_tooltips(world: &mut World) {
 }
 
 pub fn clear_tooltips(world: &mut World) {
-    let views = world
-        .iter_entities()
+    let views = super::snapshot::entities_with::<TooltipView>(world)
         .filter(|entity| entity.contains::<TooltipView>())
         .map(|entity| entity.id())
         .collect::<Vec<_>>();

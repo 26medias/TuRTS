@@ -917,9 +917,10 @@ pub struct VisualEffectDef {
     pub sound: Option<String>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(deny_unknown_fields)]
 pub enum EffectKind {
+    #[default]
     Flash,
     Spark,
     Tracer,
@@ -927,11 +928,6 @@ pub enum EffectKind {
     Smoke,
 }
 
-impl Default for EffectKind {
-    fn default() -> Self {
-        Self::Flash
-    }
-}
 fn effect_white() -> String {
     "#ffffff".into()
 }

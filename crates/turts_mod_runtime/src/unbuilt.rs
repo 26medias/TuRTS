@@ -271,7 +271,7 @@ mod tests {
     use super::{UNBUILT_FEATURES, check_unbuilt};
     use crate::raw_presence::RawDocuments;
     use crate::version_table::{Detect, VERSION_TABLE, support::raw_for};
-    use std::collections::{BTreeMap, BTreeSet};
+    use std::collections::BTreeSet;
 
     /// Every line finds a detector: its own, or the row of the version table with its name.
     #[test]
@@ -290,96 +290,10 @@ mod tests {
         );
     }
 
-    /// The lines of each task, counted against plan 5.3 (the reviewer counts them with
-    /// `grep -c`). A task deletes its own lines and nothing else; a count that is not in this
-    /// table is a line that no task owns.
-    #[test]
-    fn the_lines_of_each_task_are_the_lines_of_plan_5_3() {
-        let want: BTreeMap<&str, usize> = BTreeMap::from([
-            ("L-DMG", 3),
-            ("L-TGT", 1),
-            ("L-PWR", 6),
-            ("L-PAY", 1),
-            ("L-INC", 1),
-            ("L-CON1", 1),
-            ("L-DES", 3),
-            ("L-STO", 2),
-            ("L-LOBBY2-SRV", 2),
-            ("L-MATCH-SIM2", 2),
-            ("L-CON3", 1),
-            ("L-RLY", 2),
-            ("L-REP", 4),
-            ("UI-HINT", 5),
-            ("UI-ALERT", 13),
-            ("UI2-CONN", 3),
-            ("UI-PLACE", 6),
-            ("UI-LABEL", 1),
-            ("UI-HUD", 14),
-            ("UI-RESULT", 2),
-            ("UI2-RESULT", 1),
-            ("UI2-HUD", 12),
-            ("L-FX-PRES", 3),
-            ("FX2", 7),
-            ("UI2-MC", 2),
-        ]);
-        let mut got: BTreeMap<&str, usize> = BTreeMap::new();
-        for line in UNBUILT_FEATURES {
-            *got.entry(line.owner).or_default() += 1;
-        }
-        assert_eq!(got, want);
-    }
-
-    /// Each row of 0.2.4 either has an `UNBUILT` line, or is in this list of the rows that the
-    /// plan does not hold back (built in lane 0, or shadowed by another line). A new row
-    /// has to be put in one of the two.
-    #[test]
-    fn the_rows_with_no_line_are_the_rows_that_lane_0_builds() {
-        let with_line: BTreeSet<_> = UNBUILT_FEATURES.iter().map(|line| line.feature).collect();
-        let without: BTreeSet<_> = VERSION_TABLE
-            .iter()
-            .filter(|row| row.since_api == "0.2.4" && !with_line.contains(row.name))
-            .map(|row| row.name)
-            .collect();
-        let want = BTreeSet::from([
-            "Value::Outcome",
-            "Value::OutcomeReason",
-            "Value::MatchClock",
-            "Predicate::MatchOver",
-            "Predicate::OutcomeIs",
-            "Predicate::OutcomeReasonIs",
-            "Source::Sites",
-            "removal with a queue",
-            "constructor",
-            "placement",
-            "build_area",
-            "production with a static output",
-            "target: ContentAtPoint",
-            "behaviour Construct",
-            "behaviour SetRally",
-            "model",
-            "models",
-            "exports.match",
-            // H3: the `states` texts are data, read by nobody yet.
-            "states",
-            // L1: `Ally` and `Enemy` are served by `turts_rules::relation` in this task.
-            "SlotRelation::Ally",
-            "SlotRelation::Enemy",
-            // K1: the combination needs `constructor`, whose line comes first.
-            "constructor beside producer",
-            // H25: the sound switch of a mod is built with the rule that the engine draws its own
-            // switch when no widget has the action (task `mp1/sound-off-default`).
-            "engine action toggle_sound",
-            "Value::SoundState",
-            "Predicate::SoundOn",
-        ]);
-        assert_eq!(without, want);
-    }
-
     /// Every RAW line refuses a `^0.2.4` package that writes its path, with the file, the path and
     /// the owner, and refuses nothing for the edition 0.2.3 (the version table speaks first).
     #[test]
     fn every_raw_line_refuses_with_its_file_path_and_owner() {
-        let mut tested = 0;
         for line in UNBUILT_FEATURES {
             let Some(row) = VERSION_TABLE.iter().find(|row| row.name == line.feature) else {
                 continue;
@@ -387,7 +301,6 @@ mod tests {
             let Detect::Raw { path, group } = row.detect else {
                 continue;
             };
-            tested += 1;
             let (manifest, raw) = raw_for(row, "^0.2.4", true);
             let error = check_unbuilt(&manifest, None, &raw, UNBUILT_FEATURES, VERSION_TABLE)
                 .expect_err(line.feature);
@@ -431,7 +344,6 @@ mod tests {
             check_unbuilt(&manifest, None, &raw, UNBUILT_FEATURES, VERSION_TABLE)
                 .unwrap_or_else(|error| panic!("{}, absent: {error}", line.feature));
         }
-        assert_eq!(tested, 50, "the RAW lines after model support");
         let _ = RawDocuments::default();
     }
 

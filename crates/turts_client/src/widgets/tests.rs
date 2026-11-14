@@ -1907,7 +1907,7 @@ mod stub_contract {
     }
 
     #[test]
-    fn new_widget_actions_activate_nothing_until_their_owner_builds_them() {
+    fn alert_actions_queue_focus_and_unavailable_actions_queue_nothing() {
         use turts_interaction::InputEvent;
         for action in [
             primitives::WidgetAction::Place {
@@ -1942,10 +1942,21 @@ mod stub_contract {
                 .id();
             app.world_mut().trigger(Activate { entity: button });
             let queued: &Vec<InputEvent> = &app.world().resource::<CoreInputQueue>().0;
-            assert!(
-                queued.is_empty(),
-                "{action:?} must queue no input until its owner builds it: {queued:?}"
-            );
+            if let primitives::WidgetAction::FocusAlert { x, y, unit } = action {
+                assert_eq!(
+                    queued,
+                    &[InputEvent::Alert(turts_interaction::alerts::Input {
+                        x,
+                        y,
+                        unit
+                    })]
+                );
+            } else {
+                assert!(
+                    queued.is_empty(),
+                    "unavailable action {action:?}: {queued:?}"
+                );
+            }
         }
     }
 

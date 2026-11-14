@@ -676,6 +676,7 @@ struct AlertEvent {
     priority: i16,
 }
 
+#[allow(clippy::too_many_arguments)]
 fn collect_alert_events(
     current: &Replica,
     previous: Option<&Replica>,

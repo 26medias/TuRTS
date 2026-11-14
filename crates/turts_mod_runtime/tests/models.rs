@@ -59,10 +59,31 @@ fn files() -> BTreeMap<String, Vec<u8>> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../mods/skirmish");
     let mut files = BTreeMap::new();
     read(&root, &root, &mut files);
-    let manifest = String::from_utf8(files["manifest.ron"].clone())
-        .unwrap()
-        .replace("^0.2.4", "^0.2.5");
-    files.insert("manifest.ron".into(), manifest.into_bytes());
+    let manifest_text = String::from_utf8(files["manifest.ron"].clone()).unwrap();
+    let manifest: turts_mod_api::Manifest = ron::from_str(&manifest_text).unwrap();
+    let mut isolated = manifest_text.replace(&manifest.engine_api, "^0.2.6");
+    // Model-contract fixtures do not import later effect, alert, or input features.
+    for (name, paths) in [
+        ("visual_effects", manifest.exports.visual_effects),
+        ("interface", manifest.exports.interface),
+    ] {
+        let names = paths
+            .iter()
+            .map(|path| format!("{path:?}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let field = format!("{name}: [{names}],");
+        assert!(isolated.contains(&field), "missing fixture field {field}");
+        isolated = isolated.replace(&field, "");
+    }
+    files.insert("manifest.ron".into(), isolated.into_bytes());
+    let mut input: turts_mod_api::InputMapDef =
+        ron::de::from_bytes(&files["input/bindings.ron"]).unwrap();
+    input.engine_overrides.clear();
+    files.insert(
+        "input/bindings.ron".into(),
+        ron::ser::to_string(&input).unwrap().into_bytes(),
+    );
     // Tests isolate one model and retain all other content as shapes.
     for name in ["base", "barracks", "worker", "trees"] {
         let p = format!("visuals/{name}.ron");

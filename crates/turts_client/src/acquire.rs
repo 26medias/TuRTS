@@ -275,10 +275,10 @@ fn presentation_from_archives(archives: &[PackageArchive]) -> Result<Presentatio
                                 qualify(trail);
                             }
                         }
-                        turts_mod_api::EffectLayerKind::Decal { image, .. } => {
-                            if let Some(image) = image {
-                                qualify(image);
-                            }
+                        turts_mod_api::EffectLayerKind::Decal {
+                            image: Some(image), ..
+                        } => {
+                            qualify(image);
                         }
                         _ => {}
                     }

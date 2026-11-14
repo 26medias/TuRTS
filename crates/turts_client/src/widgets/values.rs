@@ -5,8 +5,7 @@ use super::*;
 
 pub(super) fn refresh_bound_widgets(world: &mut World, context: &sources::SourceContext<'_>) {
     reconcile_list_rows(world, context);
-    let bindings = world
-        .iter_entities()
+    let bindings = snapshot::entities_with::<WidgetBinding>(world)
         .filter_map(|entity| {
             entity
                 .get::<WidgetBinding>()

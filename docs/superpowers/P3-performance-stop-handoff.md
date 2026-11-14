@@ -1,11 +1,14 @@
-# P3 handoff: performance stop
+# P3 handoff: performance work resumed
 
 2026-11-13. Branch: codex/p2-p3-presentation. Engine checkpoint: 6d5a92a0.
 Main was not merged or pushed.
 
 The CEO requires a stop and report below 30 FPS at 400 detailed units.
 The first P3 High combat run measured 26.67 FPS at 400 units. Feature work stopped.
-The cause has not been profiled. Do not claim a cause yet.
+The CEO then authorized profiling and fixes. The CEO also instructed Codex to handle future
+performance failures without stopping to request approval. Work has resumed.
+Profiles now identify skin extraction, shadow/material specialization, UI snapshots, and
+scene observation as the largest CPU costs. See target/mc-evidence/p3-combat-named-profile/.
 
 ## Playable build
 

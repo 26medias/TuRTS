@@ -8,9 +8,8 @@ use super::*;
 /// bounds folded into the container explicitly. This keeps Fit content driven by actual UI
 /// layout rather than estimated glyph widths.
 pub(super) fn update_fit_layout(world: &mut World) {
-    let entities = world
-        .iter_entities()
-        .filter_map(|entity| entity.get::<WidgetBinding>().map(|_| entity.id()))
+    let entities = snapshot::entities_with::<WidgetBinding>(world)
+        .map(|entity| entity.id())
         .collect::<Vec<_>>();
     for entity in entities.into_iter().rev() {
         let Some(binding) = world.get::<WidgetBinding>(entity).cloned() else {
@@ -158,9 +157,8 @@ pub(super) fn sync_widget_tree(world: &mut World) {
         },
         |selection| selection.0.clone(),
     );
-    let window_size = world
-        .iter_entities()
-        .find(|entity| entity.contains::<PrimaryWindow>())
+    let window_size = snapshot::entities_with::<PrimaryWindow>(world)
+        .next()
         .and_then(|entity| entity.get::<Window>())
         .map(|window| Vec2::new(window.width(), window.height()));
     let Some(window_size) = window_size else {
@@ -678,8 +676,7 @@ pub(super) fn refresh_capture_marker(world: &mut World, entity: Entity, primitiv
 }
 
 pub(super) fn reconcile_list_rows(world: &mut World, context: &sources::SourceContext<'_>) {
-    let lists = world
-        .iter_entities()
+    let lists = snapshot::entities_with::<WidgetBinding>(world)
         .filter_map(|entity| {
             let binding = entity.get::<WidgetBinding>()?.clone();
             let id = entity.get::<primitives::AuthoredWidgetId>()?.0.clone();
@@ -752,8 +749,7 @@ pub(super) fn reconcile_list_rows(world: &mut World, context: &sources::SourceCo
             .filter(|item| grid_item_included(&source, grid.is_some(), item))
             .take(limit)
             .collect::<Vec<_>>();
-        let existing = world
-            .iter_entities()
+        let existing = snapshot::entities_with::<WidgetListRow>(world)
             .filter_map(|entity| {
                 let row = entity.get::<WidgetListRow>()?;
                 (row.owner == owner).then_some((row.key.clone(), entity.id()))

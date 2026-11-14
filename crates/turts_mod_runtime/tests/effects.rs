@@ -41,10 +41,7 @@ fn legacy_kinds_and_layered_effects_are_accepted() {
 fn rejects_layer_count_particle_count_lifetime_cost_and_cycles() {
     let cases = [
         (
-            format!(
-                "(id:\"bad\",layers:[{}])",
-                vec!["(kind:Flash())"; 9].join(",")
-            ),
+            format!("(id:\"bad\",layers:[{}])", ["(kind:Flash())"; 9].join(",")),
             "8 layers",
         ),
         (

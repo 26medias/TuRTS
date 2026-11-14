@@ -2666,7 +2666,8 @@ fn menu_rows_name_mod_actions_by_order_and_list_them_before_the_groups() {
         .add_plugins(ClientShellPlugin);
     app.update();
     let labels = menu_action_labels(&mut app);
-    assert_eq!(labels.len(), 51, "{labels:?}");
+    assert_eq!(labels.len(), 52, "{labels:?}");
+    assert!(labels.contains(&"Jump to alert".to_owned()), "{labels:?}");
     assert!(
         labels.contains(&"Stop selected units".to_owned()),
         "{labels:?}"

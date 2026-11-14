@@ -206,7 +206,7 @@ pub fn update_particles(
     }
     let mut colours = vec![[0_f32; 4]; 8192];
     let delta = time.delta_secs();
-    for index in 0..pool.slots.len() {
+    for (index, tint) in colours.iter_mut().enumerate().take(pool.slots.len()) {
         let mut slot = std::mem::take(&mut pool.slots[index]);
         if let Some(p) = slot.particle.as_mut() {
             p.age += delta;
@@ -242,7 +242,7 @@ pub fn update_particles(
                 material
             };
             let colour = p.colour.to_vec4().lerp(p.end_colour.to_vec4(), t);
-            colours[index] = colour.to_array();
+            *tint = colour.to_array();
             let transform = Transform {
                 translation: p.position,
                 rotation: if p.ground {
@@ -260,8 +260,12 @@ pub fn update_particles(
             if let Some(entity) = slot.entity {
                 if let Ok((mut tr, mut vis, mut mat)) = shown.get_mut(entity) {
                     *tr = transform;
-                    *vis = visibility;
-                    mat.0 = material;
+                    if *vis != visibility {
+                        *vis = visibility;
+                    }
+                    if mat.0 != material {
+                        mat.0 = material;
+                    }
                 }
             } else {
                 slot.entity = Some(
@@ -280,6 +284,7 @@ pub fn update_particles(
             }
         } else if let Some(entity) = slot.entity
             && let Ok((_, mut visibility, _)) = shown.get_mut(entity)
+            && *visibility != Visibility::Hidden
         {
             *visibility = Visibility::Hidden;
         }

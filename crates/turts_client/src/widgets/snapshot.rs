@@ -15,17 +15,36 @@ const MAX_FOCUS_OVERLAY_ROOTS: usize = 4;
 const MAX_FOCUS_OVERLAY_DESCENDANTS: usize = 512;
 const MAX_FOCUS_OVERLAY_TEXT_NODES: usize = 256;
 
+/// Visit only matching archetypes. A scene's bones and particles cannot add UI scan work.
+pub(super) fn entities_with<T: Component>(world: &World) -> impl Iterator<Item = EntityRef<'_>> {
+    entities_with_any(world, [world.component_id::<T>()])
+}
+fn entities_with_any<const N: usize>(
+    world: &World,
+    components: [Option<bevy::ecs::component::ComponentId>; N],
+) -> impl Iterator<Item = EntityRef<'_>> {
+    world
+        .archetypes()
+        .iter()
+        .filter(move |archetype| {
+            components
+                .iter()
+                .flatten()
+                .any(|id| archetype.contains(*id))
+        })
+        .flat_map(|archetype| archetype.entities().iter())
+        .map(move |entry| world.entity(entry.id()))
+}
+
 /// Build the bridge rows from computed Bevy UI geometry, never from the authored declaration.
 pub fn snapshot(world: &World) -> Value {
     let mut rows = Vec::new();
     let mut focus_overlay_root = None;
     let mut focus_overlay_count = 0;
-    for entity in world.iter_entities() {
-        if entity.contains::<crate::client_shell::FocusOverlay>() {
-            focus_overlay_count += 1;
-            if focus_overlay_count == 1 {
-                focus_overlay_root = Some(entity.id());
-            }
+    for entity in entities_with::<crate::client_shell::FocusOverlay>(world) {
+        focus_overlay_count += 1;
+        if focus_overlay_count == 1 {
+            focus_overlay_root = Some(entity.id());
         }
     }
     if focus_overlay_count > MAX_FOCUS_OVERLAY_ROOTS {
@@ -92,7 +111,15 @@ pub fn snapshot(world: &World) -> Value {
         }));
     }
     let mut settings_menu_roots = 0;
-    for entity in world.iter_entities() {
+    for entity in entities_with_any(
+        world,
+        [
+            world.component_id::<crate::client_shell::SettingsMenuOverlay>(),
+            world.component_id::<crate::client_shell::PlayScreenSoundSwitch>(),
+            world.component_id::<crate::client_shell::ClientNotice>(),
+            world.component_id::<AuthoredWidgetId>(),
+        ],
+    ) {
         if entity.contains::<crate::client_shell::SettingsMenuOverlay>() {
             settings_menu_roots += 1;
             if settings_menu_roots > MAX_SETTINGS_MENU_ROOTS {
@@ -228,7 +255,7 @@ pub fn snapshot(world: &World) -> Value {
             "capture_root":entity.contains::<UiCaptureRoot>(),
         }));
     }
-    for entity in world.iter_entities() {
+    for entity in entities_with::<WorldTooltip>(world) {
         let Some(tooltip) = entity.get::<WorldTooltip>() else {
             continue;
         };
@@ -402,7 +429,7 @@ fn computed_rect(node: &ComputedNode, transform: &UiGlobalTransform) -> Option<[
 /// Scene-bridge widget rectangles in window-logical/CSS coordinates, separate from turts_ui.
 pub fn scene_widgets(world: &World) -> Value {
     let mut widgets = Vec::new();
-    for entity in world.iter_entities() {
+    for entity in entities_with::<AuthoredWidgetId>(world) {
         let Some(id) = entity.get::<AuthoredWidgetId>() else {
             continue;
         };
