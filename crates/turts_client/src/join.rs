@@ -120,34 +120,119 @@ pub fn update_phase(mut phase: ResMut<Phase>, state: Res<ReplicaState>) {
     }
 }
 
-/// The socket address in a WebSocket URL: `ws://host:port/path` or `host:port`. netcode needs
-/// an address for the connect token. A name is resolved on native; the browser needs an IP.
+/// The address stored in the netcode token. The WebSocket transport dials the original URL.
+/// Native clients resolve hostnames. Browser clients leave DNS to the browser and use a
+/// placeholder token address for hostnames. The server already disables token address checks
+/// because a proxy's public address can differ from its bind address.
 pub fn ws_socket_addr(ws_url: &str) -> Result<SocketAddr, String> {
-    let rest = ws_url
-        .strip_prefix("ws://")
-        .or_else(|| ws_url.strip_prefix("wss://"))
-        .unwrap_or(ws_url);
-    let authority = rest.split('/').next().unwrap_or(rest);
-    if let Ok(address) = authority.parse() {
-        return Ok(address);
-    }
+    let url = parse_websocket_url(ws_url)?;
+    #[cfg(target_family = "wasm")]
+    return Ok(browser_token_address(&url));
     #[cfg(not(target_family = "wasm"))]
     {
         use std::net::ToSocketAddrs;
-        if let Some(address) = authority
+        let host = url.host_str().expect("validated WebSocket host");
+        // URL host_str retains brackets around IPv6 literals. Host converts them directly.
+        match url.host().expect("validated WebSocket host") {
+            url::Host::Ipv4(ip) => return Ok((ip, url.port_or_known_default().unwrap()).into()),
+            url::Host::Ipv6(ip) => return Ok((ip, url.port_or_known_default().unwrap()).into()),
+            url::Host::Domain(_) => {}
+        }
+        if let Some(address) = (host, url.port_or_known_default().unwrap())
             .to_socket_addrs()
             .ok()
             .and_then(|mut addresses| addresses.next())
         {
             return Ok(address);
         }
+        Err(format!("cannot read a socket address from `{ws_url}`"))
     }
-    Err(format!("cannot read a socket address from `{ws_url}`"))
+}
+
+fn parse_websocket_url(input: &str) -> Result<url::Url, String> {
+    let error = || format!("cannot read a WebSocket address from `{input}`");
+    let url = url::Url::parse(&ws_url(input)).map_err(|_| error())?;
+    if !matches!(url.scheme(), "ws" | "wss")
+        || url.host().is_none()
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.fragment().is_some()
+        || url.port_or_known_default().is_none_or(|port| port == 0)
+    {
+        return Err(error());
+    }
+    Ok(url)
+}
+
+#[cfg(any(target_family = "wasm", test))]
+fn browser_token_address(url: &url::Url) -> SocketAddr {
+    let port = url
+        .port_or_known_default()
+        .expect("validated WebSocket port");
+    match url.host().expect("validated WebSocket host") {
+        url::Host::Ipv4(ip) => (ip, port).into(),
+        url::Host::Ipv6(ip) => (ip, port).into(),
+        url::Host::Domain(_) => ([127, 0, 0, 1], port).into(),
+    }
+}
+
+#[cfg(test)]
+mod websocket_address_tests {
+    use super::*;
+
+    #[test]
+    fn browser_accepts_hostnames_without_resolving_dns() {
+        for (input, expected) in [
+            ("wss://game.example.invalid/ws?room=two", "127.0.0.1:443"),
+            ("ws://localhost:7001/", "127.0.0.1:7001"),
+            ("ws://game.example.invalid", "127.0.0.1:80"),
+            ("wss://game.example.invalid:8443/ws", "127.0.0.1:8443"),
+            ("127.0.0.1:7001", "127.0.0.1:7001"),
+            ("wss://[::1]/ws", "[::1]:443"),
+        ] {
+            let url = parse_websocket_url(input).unwrap();
+            assert_eq!(
+                browser_token_address(&url),
+                expected.parse().unwrap(),
+                "{input}"
+            );
+            assert_eq!(
+                url.as_str(),
+                url::Url::parse(&ws_url(input)).unwrap().as_str()
+            );
+        }
+    }
+
+    #[test]
+    fn invalid_websocket_urls_are_rejected_before_connecting() {
+        for input in [
+            "",
+            "ws://not an address",
+            "https://host/ws",
+            "ftp://host",
+            "ws://host:0",
+            "wss://host:99999",
+            "ws://user:password@host",
+            "ws://host/#fragment",
+        ] {
+            assert!(parse_websocket_url(input).is_err(), "{input}");
+        }
+    }
+
+    #[test]
+    fn native_numeric_addresses_keep_ports_and_default_ports() {
+        for (input, expected) in [
+            ("wss://127.0.0.1/ws", "127.0.0.1:443"),
+            ("ws://[::1]/ws", "[::1]:80"),
+        ] {
+            assert_eq!(ws_socket_addr(input).unwrap(), expected.parse().unwrap());
+        }
+    }
 }
 
 /// The URL for the WebSocket client: a bare `host:port` gets the `ws://` scheme.
 fn ws_url(ws_url: &str) -> String {
-    if ws_url.starts_with("ws://") || ws_url.starts_with("wss://") {
+    if ws_url.contains("://") {
         ws_url.to_string()
     } else {
         format!("ws://{ws_url}")
@@ -691,5 +776,22 @@ mod rejoin_control_tests {
             *app.world().resource::<Phase>(),
             Phase::Failed(crate::rejoin::REJOIN_FINAL_TEXT.to_owned())
         );
+    }
+}
+
+#[cfg(test)]
+mod independent_hostname_review {
+    use super::*;
+
+    #[test]
+    fn accepted_endpoint_and_transport_endpoint_must_match() {
+        for input in ["WS://127.0.0.1:7001/path?room=two", "WSS://127.0.0.1/ws"] {
+            let validated = parse_websocket_url(input).unwrap();
+            let transport = url::Url::parse(&ws_url(input)).unwrap();
+            assert_eq!(
+                transport, validated,
+                "validated endpoint differs from transport for {input}"
+            );
+        }
     }
 }
