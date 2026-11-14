@@ -1,5 +1,7 @@
 # WebSocket hostnames
 
+Status: DNS1–DNS3 pass. Review finding fixed.
+
 The browser must accept a WebSocket hostname, including a trusted HTTPS host's `wss` endpoint.
 The existing numeric-only token parser blocks this before the browser can connect.
 

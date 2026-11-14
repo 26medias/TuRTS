@@ -1,5 +1,7 @@
 # Shared skirmish host
 
+Status: SHARE1–SHARE5 pass. The temporary public test links are closed.
+
 ## Player result
 
 One command starts a human match and prints an HTTPS address for a second player.
