@@ -258,3 +258,20 @@ Wrapper: `target/mc-evidence/swordsman-verified-checks/receipt.json`.
 Its later player-test assertion failed, after both measurement rows passed.
 The final player run is separate. The earlier `400-guard` run is not an accepted measurement.
 Its old continuous-attack assertion was incorrect for melee.
+
+## Minimap, 2026-11-14
+
+Engine: `85873b77`; driver-only follow-up: `5a40481d`.
+Same 400-unit mixed combat protocol and machine as the swordsman row above.
+All 400 actors remain visible. All 400 lose health in both timing windows.
+The authored minimap and its live unit markers are enabled.
+Stationary markers do not force another UI layout each frame.
+
+| Quality | FPS | Frame p50 ms | Frame p95 ms | WASM high-water bytes |
+| --- | ---: | ---: | ---: | ---: |
+| High | 45.43 | 16.70 | 33.40 | 221577216 |
+| Low | 52.32 | 16.70 | 33.30 | 194052096 |
+
+Evidence: `target/mc-evidence/minimap/400-guard/result.json`.
+Receipt: `target/mc-evidence/minimap-browser-checks/receipt.json` (command and wrapper 0; unchanged source; no compilers).
+The sample measures sustained combat with a stationary camera. It does not measure panning a 400-unit scene.

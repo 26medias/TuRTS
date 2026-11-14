@@ -1,6 +1,6 @@
 # Skirmish minimap
 
-Status: implementation complete; browser acceptance is pending. Use the existing MinimapView contract.
+Status: implemented. Native, browser, performance, and scripted player checks pass. See `docs/reports/2026-11-14-minimap.md`. Use the existing MinimapView contract.
 No server, wire, or mod API change is planned.
 
 Show a compact map in the lower right. Show own and enemy unit colors, resource markers, and the camera frame.
