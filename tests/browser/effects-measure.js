@@ -21,5 +21,11 @@ const sorted=[...sample.frames].sort((a,b)=>a-b),pct=p=>sorted[Math.floor((sorte
 await context.close();context=null;fs.rmSync(profile,{recursive:true,force:true});server.kill('SIGTERM');await new Promise(r=>server.once('exit',r));server=null;
 if(count===400&&quality==='high'&&fps<30){result.status='NEEDS_CHEAPER_EFFECTS_PATH';save();process.exitCode=3;return;}
 if(name==='burning200'&&row.states.some(s=>s.units!==210||!Array.from({length:10},(_,i)=>s.effects?.combat?.health?.[String(201+i)]).every(h=>h>0&&h<1000000)))throw Error('burning fixture lost a building or failed to ignite all ten');
-if(row.states.some(s=>s.shooting<(name==='burning200'?200:count)*.95))throw Error('combat row stopped shooting '+name);
+if(process.env.TURTS_EFFECT_MIXED==='1'){
+ const first=row.states[0],last=row.states[row.states.length-1];
+ const ids=Object.keys(first.effects.combat.health);
+ row.damaged_units=ids.filter(id=>last.effects.combat.health[id]<first.effects.combat.health[id]).length;
+ save();
+ if(row.states.some(s=>s.visible!==count)||ids.length!==count||row.damaged_units!==count||!row.states.some(s=>s.melee===count/2&&s.ranged===count/2))throw Error('mixed combat stopped dealing damage or lost a visible actor');
+}else if(row.states.some(s=>s.shooting<(name==='burning200'?200:count)*.95))throw Error('combat row stopped shooting '+name);
 }result.status='PASS';save();}catch(e){result.status='FAIL';result.error=String(e.stack||e);save();console.error(e);process.exitCode=1;}finally{if(context)await context.close();if(server){server.kill('SIGTERM');await new Promise(r=>server.once('exit',r));}if(profile)fs.rmSync(profile,{recursive:true,force:true});}})();
