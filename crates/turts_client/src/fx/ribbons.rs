@@ -72,6 +72,17 @@ pub fn draw_ribbons(
         uvs.extend([[0., 0.], [1., 0.], [1., 1.], [0., 1.]]);
         indices.extend([base, base + 1, base + 2, base, base + 2, base + 3]);
     }
+    // An empty mesh makes the renderer log a warning each frame between volleys.
+    // Keep its allocation, but hide it until another line is ready.
+    if positions.is_empty() {
+        if let Some(entity) = state.entity {
+            commands.entity(entity).insert(Visibility::Hidden);
+        }
+        return;
+    }
+    if let Some(entity) = state.entity {
+        commands.entity(entity).insert(Visibility::Visible);
+    }
     if state.mesh.is_none() {
         let mesh = meshes.add(Mesh::new(
             PrimitiveTopology::TriangleList,
@@ -107,5 +118,71 @@ pub fn draw_ribbons(
         let count = mesh.count_vertices();
         mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, vec![[0., 1., 0.]; count]);
         mesh.insert_indices(Indices::U32(indices));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn an_empty_volley_hides_the_shared_mesh_then_reuses_it() {
+        let mut app = App::new();
+        app.init_resource::<CombatPresentation>()
+            .init_resource::<Emitters>()
+            .init_resource::<Ribbons>()
+            .init_resource::<Assets<Mesh>>()
+            .init_resource::<Assets<StandardMaterial>>()
+            .init_resource::<Assets<Image>>()
+            .add_systems(Update, draw_ribbons);
+        app.world_mut()
+            .spawn((Camera3d::default(), GlobalTransform::IDENTITY));
+        app.world_mut()
+            .resource_mut::<Emitters>()
+            .lines
+            .push_back(super::super::emitters::Line {
+                source: Vec3::ZERO,
+                target: Vec3::X,
+                colour: Color::WHITE,
+                starts: 0.,
+                until: 1.,
+                width: 0.1,
+                projectile: false,
+                arc: 0.,
+                trail_seconds: 0.,
+                target_unit: None,
+            });
+        app.update();
+        let entity = app.world().resource::<Ribbons>().entity.unwrap();
+        let mesh = app.world().resource::<Ribbons>().mesh.clone().unwrap();
+        assert_eq!(
+            app.world()
+                .resource::<Assets<Mesh>>()
+                .get(&mesh)
+                .unwrap()
+                .count_vertices(),
+            4
+        );
+        app.world_mut().resource_mut::<CombatPresentation>().now = 2.;
+        app.update();
+        assert_eq!(
+            app.world().get::<Visibility>(entity),
+            Some(&Visibility::Hidden)
+        );
+        assert_eq!(
+            app.world()
+                .resource::<Assets<Mesh>>()
+                .get(&mesh)
+                .unwrap()
+                .count_vertices(),
+            4
+        );
+        app.world_mut().resource_mut::<Emitters>().lines[0].until = 3.;
+        app.update();
+        assert_eq!(
+            app.world().get::<Visibility>(entity),
+            Some(&Visibility::Visible)
+        );
+        assert_eq!(app.world().resource::<Ribbons>().entity, Some(entity));
     }
 }
