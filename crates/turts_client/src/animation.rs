@@ -3,7 +3,7 @@ use crate::{ingest::ReplicaState, models::Quality, present::Presented, render::P
 use bevy::{
     animation::{AnimatedBy, AnimationTargetId},
     gltf::{Gltf, GltfMesh, GltfNode, GltfSkin},
-    mesh::skinning::SkinnedMesh,
+    mesh::skinning::{SkinnedMesh, SkinnedMeshInverseBindposes},
     prelude::*,
 };
 use std::{
@@ -12,6 +12,7 @@ use std::{
 };
 use turts_mod_api::{AnimationClipDef, ModelAnimations};
 mod mesh_batch;
+mod rigid_attachment;
 
 #[derive(Resource, Default)]
 pub struct VisualEvents {
@@ -133,6 +134,7 @@ pub fn spawn_rig(
     meshes: &Assets<GltfMesh>,
     mesh_assets: &mut Assets<Mesh>,
     skins: &Assets<GltfSkin>,
+    bindposes: &Assets<SkinnedMeshInverseBindposes>,
     clips: &Assets<AnimationClip>,
     graphs: &mut Assets<AnimationGraph>,
     library: &mut AnimationLibrary,
@@ -168,7 +170,7 @@ pub fn spawn_rig(
         })
         .clone();
     if let std::collections::hash_map::Entry::Vacant(entry) = library.meshes.entry(asset) {
-        let primitives = mesh_batch::prepare(gltf, nodes, meshes, mesh_assets)?;
+        let primitives = mesh_batch::prepare(gltf, nodes, meshes, skins, bindposes, mesh_assets)?;
         entry.insert(primitives);
     }
     let primitives = library.meshes.get(&asset)?;
