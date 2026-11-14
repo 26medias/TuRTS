@@ -22,7 +22,8 @@ let state=await wait(s=>s.scene.models?.length>0&&s.scene.models.every(m=>m.read
 if(state.slot!==0||hp(state,1)!==1000||hp(state,4)!==1000||state.world.units.find(u=>u.unit_id===1)?.max_health!==1000||state.world.units.find(u=>u.unit_id===4)?.max_health!==1000)throw Error('not the normal two-castle package');
 result.initial=state;await page.screenshot({path:out+'/initial.png'});const viewport=state.scene.viewport_logical_rect;await page.mouse.click(viewport[0]+viewport[2]/2,viewport[1]+viewport[3]*.65);await page.mouse.move(viewport[2]/2,viewport[3]-40);
 const clickPoint=async(point,label,button='left')=>{if(!point.every(Number.isFinite))throw Error('invalid point '+label);result.actions.push({label,point,button,seconds:(Date.now()-started)/1000});await page.mouse.click(...point,{button});await sleep(80)};
-const clickUnit=async(id,button='left')=>{const s=await read(),u=s.scene.units.find(u=>u.unit_id===id);if(!u?.ground_screen_center)throw Error('rendered unit absent '+id);const [x,y,w,h]=s.scene.viewport_logical_rect,p=u.ground_screen_center;if(p[0]<x+4||p[0]>x+w-4||p[1]<y+4||p[1]>y+h-4)throw Error('unit offscreen '+id);await clickPoint(project(s.scene,u.translation),'unit '+id,button)};
+const clickUnit=async(id,button='left')=>{const s=await read(),u=s.scene.units.find(u=>u.unit_id===id);if(!u?.ground_screen_center){if(button==='right')return false;throw Error('rendered unit absent '+id)}const [x,y,w,h]=s.scene.viewport_logical_rect,p=u.ground_screen_center;
+if(p[0]<x+4||p[0]>x+w-4||p[1]<y+4||p[1]>y+h-4){if(button==='right'){const rect=s.scene.widgets.find(w=>w.id==='skirmish_minimap').rect;await clickPoint([rect[0]+u.translation[0]/64*rect[2],rect[1]+(1-u.translation[2]/48)*rect[3]],'follow battle on map');await sleep(150);return false}throw Error('unit offscreen '+id)}await clickPoint(project(s.scene,u.translation),'unit '+id,button);return true};
 const clickWorld=async(x,y,button='left')=>{const s=await read();await clickPoint(project(s.scene,[x,0,y]),`world ${x},${y}`,button)};
 const clickButton=async(text,ms=30000)=>{const s=await wait(s=>s.ui.some(w=>w.kind==='button'&&w.visible&&w.enabled&&w.text?.includes(text)),'button '+text,ms),w=s.ui.find(w=>w.kind==='button'&&w.visible&&w.enabled&&w.text?.includes(text));await clickPoint([w.rect[0]+w.rect[2]/2,w.rect[1]+w.rect[3]/2],text);return s};
 if(mode==='win'){
@@ -42,9 +43,9 @@ state=await read();result.selected_army=state;await page.screenshot({path:out+'/
 const rect=state.scene.widgets.find(w=>w.id==='skirmish_minimap').rect;await clickPoint([rect[0]+54/64*rect[2],rect[1]+.5*rect[3]],'look at enemy castle');await sleep(250);
 let target=null,lastOrder=0;const deadline=Date.now()+180000;
 while(Date.now()<deadline){state=await read();record(state,'fight');if(outcome(state))break;const fighters=combatants(state,0);if(!fighters.length)throw Error('player army was defeated');
-const enemies=combatants(state,1),center=fighters.reduce((p,u)=>[p[0]+u.pos[0]/fighters.length,p[1]+u.pos[1]/fighters.length],[0,0]);
+const enemies=combatants(state,1).filter(u=>hp(state,u.unit_id)>0),center=fighters.reduce((p,u)=>[p[0]+u.pos[0]/fighters.length,p[1]+u.pos[1]/fighters.length],[0,0]);
 const selected=enemies.sort((a,b)=>(hp(state,a.unit_id)-hp(state,b.unit_id))||(Math.hypot(a.pos[0]-center[0],a.pos[1]-center[1])-Math.hypot(b.pos[0]-center[0],b.pos[1]-center[1])))[0]||state.world.units.find(u=>u.unit_id===4);
-if(!selected)break;if(target!==selected.unit_id||Date.now()-lastOrder>3000){target=selected.unit_id;await clickUnit(target,'right');lastOrder=Date.now();await page.mouse.move(viewport[2]/2,viewport[3]-40)}await sleep(400)}
+if(!selected)break;if(target!==selected.unit_id||Date.now()-lastOrder>3000){target=selected.unit_id;if(!await clickUnit(target,'right')){target=null;continue}lastOrder=Date.now();await page.mouse.move(viewport[2]/2,viewport[3]-40)}await sleep(400)}
 }else{
 const deadline=Date.now()+420000;
 while(Date.now()<deadline){state=await read();record(state,'idle defense');if(outcome(state))break;await sleep(1000)}
