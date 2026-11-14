@@ -141,3 +141,19 @@ The spec now states that batching itself leaves package files unchanged.
 The separate hit-origin correction changes the final package because the real rendered hit was unreliable.
 No geometry, motion, animation cadence, API contract, protocol, or acceptance threshold is reduced.
 Main is unchanged. No branch is pushed.
+
+## Delivered launcher
+
+The actual global computer launcher passes after the final cold probes.
+Evidence: `visible-hit-final/launcher/result.json`.
+The fresh silent profile is removed.
+WASM is 60,332,465 decoded bytes. The gzip body is 14,984,643 bytes.
+The measured network transfer is 14,984,888 bytes.
+All three global launchers now select `skirmish-rig-batches-visible-prepared`.
+The shared and two-player launchers were not rerun for this client and effect-origin change.
+
+Run `bash target/mc-evidence/play-skirmish.sh`.
+Build Barracks, harvest timber, train an army, and reach Victory or Defeat.
+
+The remaining 2,000-unit High limit is the next performance investigation.
+No new gameplay or presentation milestone is declared complete by this optimization.
