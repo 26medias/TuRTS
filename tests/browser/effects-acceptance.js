@@ -3,6 +3,7 @@ const fs=require('node:fs'),net=require('node:net'),{spawn,spawnSync}=require('n
 const {chromium}=require('playwright-core');
 const {decodePng,pixelAt}=require('./harness/png');
 const [prepared,out,mode='pixels']=process.argv.slice(2);if(!out)throw Error('PREPARED OUTPUT [pixels|warnings|victory|hash|camera]');
+if(!['pixels','warnings','victory','hash','camera','unit-death'].includes(mode))throw Error('Unknown effect probe mode: '+mode);
 fs.mkdirSync(out,{recursive:true});const fixture=out+'/fixture';fs.cpSync(prepared+'/pack/skirmish',fixture,{recursive:true});
 const placement=(unit,slot,x,y)=>`(unit:"skirmish:${unit}",owner_slot:${slot},pos:(x:${x}.0,y:${y}.0),contents:[])`;
 const placements=mode==='warnings'?[placement('base',0,10,20),placement('worker',0,15,25),placement('soldier',0,12,38),placement('soldier',1,15,20)]:mode==='victory'?[placement('base',0,10,12),placement('worker',0,12,9),placement('soldier',0,20,20),placement('base',1,30,20)]:[placement('base',0,10,15),placement('worker',0,13,8),placement('soldier',0,16,20),placement('soldier',1,24,20)];
@@ -10,7 +11,7 @@ fs.writeFileSync(fixture+'/maps/field.ron',`(id:"field",size:(x:${mode==='warnin
 if(mode==='warnings'){const p=fixture+'/interface/hud.ron';fs.writeFileSync(p,fs.readFileSync(p,'utf8').replace('pan_speed: 1.0','pan_speed: 100.0'));}
 if(mode!=='victory')fs.writeFileSync(fixture+'/match.ron','(start:Immediate,victory:None,open_sites_per_slot:Some(4))');
 if(mode==='victory'){const p=fixture+'/units/base.ron';fs.writeFileSync(p,fs.readFileSync(p,'utf8').replace('max: 1000','max: 30'));}
-else if(mode==='pixels'){const p=fixture+'/units/soldier.ron';fs.writeFileSync(p,fs.readFileSync(p,'utf8').replace('max: 120','max: 10000'));}
+else if(mode==='pixels'||mode==='unit-death'){const p=fixture+'/units/soldier.ron';fs.writeFileSync(p,fs.readFileSync(p,'utf8').replace('max: 120',mode==='unit-death'?'max: 15':'max: 10000'));}
 if(process.env.TURTS_EFFECT_NEGATIVE==='1'){const p=fixture+'/visuals/soldier.ron',s=fs.readFileSync(p,'utf8'),i=s.indexOf(',effects:');if(i<0)throw Error('No effects suffix');fs.writeFileSync(p,s.slice(0,i)+')');}
 const sleep=ms=>new Promise(r=>setTimeout(r,ms)),port=()=>new Promise(r=>{const s=net.createServer();s.listen(0,'127.0.0.1',()=>{const p=s.address().port;s.close(()=>r(p))})});
 function project(s,v){const m=s.clip_from_world,c=[0,1,2,3].map(r=>[...v,1].reduce((a,x,k)=>a+m[k*4+r]*x,0));return[(c[0]/c[3]+1)*640,(1-c[1]/c[3])*360]}
@@ -43,8 +44,8 @@ for(let i=0;i<200;i++){try{if((await fetch(url+'/advertisement.json')).ok)break}
 context=await chromium.launchPersistentContext(profile,{executablePath:'/usr/bin/google-chrome',headless:false,viewport:{width:1280,height:720},ignoreDefaultArgs:['--enable-unsafe-swiftshader'],args:['--enable-gpu','--alsa-output-device=null','--enable-unsafe-webgpu','--enable-features=Vulkan','--use-angle=vulkan','--disable-vulkan-surface','--no-first-run','--no-default-browser-check']});
 await context.addInitScript(q=>localStorage.setItem('turts.v1.settings',JSON.stringify({controls:{quality:q}})),process.env.TURTS_EFFECT_QUALITY||'high');
 const page=context.pages()[0];page.on('pageerror',e=>result.errors.push(String(e)));page.on('console',m=>{(result.console||=[]).push(m.text());if(m.type()==='error')result.errors.push(m.text())});
-await page.goto(url+'/?server='+encodeURIComponent(url)+'&ws='+encodeURIComponent(`ws://127.0.0.1:${ws}`));const read=()=>page.evaluate(()=>typeof turts_scene==='function'&&turts_scene()?JSON.parse(turts_scene()):null);
-const wait=async(fn,label,ms=60000)=>{const end=Date.now()+ms;while(Date.now()<end){const s=await read();if(s&&fn(s))return s;if(result.errors.some(e=>/panicked|shader|validation error/i.test(e)))throw Error(result.errors.join('\n'));await sleep(25)}throw Error(label+' timeout')};
+await page.goto(url+'/?server='+encodeURIComponent(url)+'&ws='+encodeURIComponent(`ws://127.0.0.1:${ws}`)+(process.env.TURTS_SKIN_REFERENCE==='1'?'&skin_reference=1':'')+(process.env.TURTS_SKIN_MATRIX_LIMIT!==undefined?'&skin_matrix_limit='+encodeURIComponent(process.env.TURTS_SKIN_MATRIX_LIMIT):''));const read=()=>page.evaluate(()=>typeof turts_scene==='function'&&turts_scene()?JSON.parse(turts_scene()):null);
+const wait=async(fn,label,ms=60000)=>{const end=Date.now()+ms;while(Date.now()<end){const s=await read();if(s&&fn(s))return s;if(result.errors.some(e=>/panicked|shader|validation error|caught rendering error|validation rendererror/i.test(e)))throw Error(result.errors.join('\n'));await sleep(25)}throw Error(label+' timeout')};
 let scene=await wait(s=>s.units?.length===4&&s.models?.every(m=>m.ready),'models ready');await page.mouse.click(640,360);
 if(mode==='camera'){
 scene=await read();const unit=scene.units.find(u=>u.unit_id===3);
@@ -88,22 +89,39 @@ await page.mouse.click(button.rect[0]+button.rect[2]/2,button.rect[1]+button.rec
 result.warningClick=await wait(s=>onscreen(project(s,[10,2,20])),'warning click returns camera',3000);
 
 }else{
-await page.mouse.move(...project(scene,[mode==='victory'?23:20,0,20]));for(let i=0;i<12;i++){await page.mouse.wheel(0,-100);await sleep(70)}scene=await read();
+await page.mouse.move(...project(scene,[mode==='victory'?23:20,0,20]));for(let i=0;i<12;i++){await page.mouse.wheel(0,-100);await sleep(70)}await page.evaluate(async()=>{await turts_debug_request();});scene=await read();
 let own=scene.units.find(u=>u.unit_id===3),enemy=scene.units.find(u=>u.unit_id===4);if(mode!=='pixels'){await page.mouse.click(...project(scene,[own.translation[0],.75,own.translation[2]]));await page.mouse.click(...project(scene,[enemy.translation[0],mode==='victory'?1:.75,enemy.translation[2]]),{button:'right'});}
 await page.mouse.move(30,680);
-if(mode==='victory'){scene=await wait(s=>!s.units.some(u=>u.unit_id===4),'castle destroyed',25000);await sleep(500);result.ui=await page.evaluate(()=>JSON.parse(turts_ui()));if(!JSON.stringify(result.ui).includes('Victory'))throw Error('victory HUD missing');scene=await read();await page.screenshot({path:out+'/victory.png'});result.final=scene;if(scene.effects.decals<1||scene.effects.pool.peak<13)throw Error('FX6 terminal castle destruction left no scorch or debris');}
+if(mode==='unit-death'){
+const victim=[enemy.translation[0],0,enemy.translation[2]];
+scene=await wait(s=>!s.units.some(u=>u.unit_id===4)&&s.body_count>0&&s.animations.some(a=>a.dead),'animated unit body',15000);
+await sleep(800);await page.evaluate(async()=>{await turts_debug_request();});const falling=await read();
+if(!falling.body_count||!falling.animations.some(a=>a.dead))throw Error('body expired before rendered capture');
+const before=decodePng(await page.screenshot({path:out+'/falling-body.png'}));
+await wait(s=>s.body_count===0,'body expiry',15000);await page.evaluate(async()=>{await turts_debug_request();});const expired=await read();
+const after=decodePng(await page.screenshot({path:out+'/expired-body.png'}));
+if(JSON.stringify(falling.clip_from_world)!==JSON.stringify(expired.clip_from_world))throw Error('corpse capture camera moved');
+const centre=project(falling,victim),neutral=p=>p&&Math.max(...p.slice(0,3))-Math.min(...p.slice(0,3))<24&&p[0]>50&&p[0]<235;
+let armorBefore=0,armorAfter=0,changed=0;
+for(let y=Math.max(0,Math.floor(centre[1]-90));y<Math.min(720,centre[1]+40);y++)for(let x=Math.max(0,Math.floor(centre[0]-90));x<Math.min(1280,centre[0]+90);x++){
+ const a=pixelAt(before,x,y),b=pixelAt(after,x,y);armorBefore+=Number(neutral(a));armorAfter+=Number(neutral(b));if(a&&b&&Math.max(...a.slice(0,3).map((v,k)=>Math.abs(v-b[k])))>24)changed++;
+}
+result.body={count:falling.body_count,dead_clips:falling.animations.filter(a=>a.dead),armor_before:armorBefore,armor_after:armorAfter,changed_pixels:changed,shared_before:falling.shared_skins,shared_after:expired.shared_skins};
+if(armorBefore-armorAfter<20||changed<40)throw Error('body left no rendered armour pixels');
+if(process.env.TURTS_SHARED_SKIN_CHECK==='1'&&falling.shared_skins.shared_draws-expired.shared_skins.shared_draws<falling.body_count*2)throw Error('unit bodies did not use shared skin draws');
+}else if(mode==='victory'){scene=await wait(s=>!s.units.some(u=>u.unit_id===4),'castle destroyed',25000);await sleep(500);result.ui=await page.evaluate(()=>JSON.parse(turts_ui()));if(!JSON.stringify(result.ui).includes('Victory'))throw Error('victory HUD missing');scene=await read();await page.screenshot({path:out+'/victory.png'});result.final=scene;if(scene.effects.decals<1||scene.effects.pool.peak<13)throw Error('FX6 terminal castle destruction left no scorch or debris');}
 else{
 // Capture scene and canvas in one browser task so each mask has the correct camera and actor positions.
 let preHit=null,hitBaseline=null,hitUntil=-1,wasHit=false;const anchorHeights=new Map();
-for(let i=0;i<180;i++){const c=await page.evaluate(()=>({scene:JSON.parse(turts_scene()),png:document.querySelector('canvas').toDataURL('image/png').split(',')[1]}));const png=decodePng(Buffer.from(c.png,'base64'));scene=c.scene;own=scene.units.find(u=>u.unit_id===3);enemy=scene.units.find(u=>u.unit_id===4);if(!own||!enemy)throw Error('combat fixture died');
+for(let i=0;i<180;i++){if(result.errors.some(e=>/panicked|shader|validation error|caught rendering error|validation rendererror/i.test(e)))throw Error(result.errors.join('\n'));const c=await page.evaluate(()=>({scene:JSON.parse(turts_scene()),png:document.querySelector('canvas').toDataURL('image/png').split(',')[1]}));const png=decodePng(Buffer.from(c.png,'base64'));scene=c.scene;own=scene.units.find(u=>u.unit_id===3);enemy=scene.units.find(u=>u.unit_id===4);if(!own||!enemy)throw Error('combat fixture died');
 for(const impact of scene.effects.combat.pending_impacts)anchorHeights.set(impact.target,impact.position[1]);
 const now=scene.effects.combat.now,hit=scene.effects.combat.flashes.includes(4);
 if(hit&&!wasHit){hitBaseline=preHit;hitUntil=now+.25;}wasHit=hit;
 const a=project(scene,[own.translation[0],anchorHeights.get(3)??.8,own.translation[2]]),b=project(scene,[enemy.translation[0],anchorHeights.get(4)??.8,enemy.translation[2]]);const marker=project(scene,[enemy.translation[0],0,enemy.translation[2]]);let bolt=0,sparks=0,white=0,blue=0;
 for(let y=Math.max(0,Math.floor(Math.min(a[1],b[1])-26));y<Math.min(720,Math.max(a[1],b[1])+27);y++)for(let x=Math.max(0,Math.floor(Math.min(a[0],b[0])-26));x<Math.min(1280,Math.max(a[0],b[0])+27);x++){const p=pixelAt(png,x,y);if(!p)continue;const [r,g,z]=p,da=Math.hypot(x-a[0],y-a[1]),db=Math.hypot(x-b[0],y-b[1]);if(da>30&&db>30&&r>130&&r-z>20&&g-z>25)bolt++;if(now<=hitUntil&&hitBaseline&&y<b[1]-9&&db<32&&db>7&&Math.hypot(x-marker[0],y-marker[1])>18&&r>145&&g>150&&r-z>25&&g-z>30&&z<155&&r>g+8){const previous=pixelAt(hitBaseline,x,y);if(previous&&Math.max(...[r,g,z].map((v,k)=>Math.abs(v-previous[k])))>25)sparks++;}if(da<15&&r>220&&g>220&&z>220)white++;if(da<15&&z>r*1.3&&z>g*1.1)blue++;}
 if(now>hitUntil&&!hit)preHit=png;result.frames.push({i,a,b,now,bolt,sparks,white,blue,hitUntil,effects:scene.effects});if(bolt||sparks||scene.effects.combat.flashes.includes(3))fs.writeFileSync(out+`/frame-${i}.png`,Buffer.from(c.png,'base64'));await sleep(10)}
-result.bolt=Math.max(...result.frames.map(f=>f.bolt));result.sparks=Math.max(...result.frames.map(f=>f.sparks));const flash=result.frames.filter(f=>f.effects.combat.flashes.includes(3));result.baselineWhite=Math.min(...result.frames.filter(f=>!f.effects.combat.flashes.includes(3)).map(f=>f.white));result.flash=flash.map(f=>({now:f.now,white:f.white,blue:f.blue}));result.teamReturn=flash.some(f=>result.frames.some(l=>l.now>f.now&&l.now-f.now<=.3&&!l.effects.combat.flashes.includes(3)&&l.blue>0));
+result.shared_skins=scene.shared_skins;result.bolt=Math.max(...result.frames.map(f=>f.bolt));result.sparks=Math.max(...result.frames.map(f=>f.sparks));const flash=result.frames.filter(f=>f.effects.combat.flashes.includes(3));result.baselineWhite=Math.min(...result.frames.filter(f=>!f.effects.combat.flashes.includes(3)).map(f=>f.white));result.flash=flash.map(f=>({now:f.now,white:f.white,blue:f.blue}));result.teamReturn=flash.some(f=>result.frames.some(l=>l.now>f.now&&l.now-f.now<=.3&&!l.effects.combat.flashes.includes(3)&&l.blue>0));
 if(result.bolt<2||result.sparks<2)throw Error('FX3 bolt or spark pixels missing');if(!flash.some(f=>f.white>result.baselineWhite+20)||!result.teamReturn)throw Error('FX4 white tint or team return missing');}
 }
-if(result.errors.some(e=>/shader|panicked|validation error/i.test(e)))throw Error('GPU validation failure');result.status='PASS';console.log(JSON.stringify({status:result.status,mode,bolt:result.bolt,sparks:result.sparks,teamReturn:result.teamReturn}));
+if(result.errors.some(e=>/shader|panicked|validation error|caught rendering error|validation rendererror/i.test(e)))throw Error('GPU validation failure');result.status='PASS';console.log(JSON.stringify({status:result.status,mode,bolt:result.bolt,sparks:result.sparks,teamReturn:result.teamReturn}));
 }catch(e){result.status='FAIL';result.error=String(e.stack||e);console.error(e);process.exitCode=1}finally{fs.writeFileSync(out+'/result.json',JSON.stringify(result,null,2));if(context)await context.close();if(server&&server.exitCode===null){server.kill('SIGTERM');await new Promise(r=>server.once('exit',r))}fs.rmSync(profile,{recursive:true,force:true})}})();

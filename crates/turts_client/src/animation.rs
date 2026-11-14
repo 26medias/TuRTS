@@ -13,6 +13,8 @@ use std::{
 use turts_mod_api::{AnimationClipDef, ModelAnimations};
 mod mesh_batch;
 mod rigid_attachment;
+pub(crate) mod shared_skin;
+pub use shared_skin::{SharedSkinSettings, SharedSkinStats};
 
 #[derive(Resource, Default)]
 pub struct VisualEvents {
@@ -112,15 +114,11 @@ pub struct VisualBody {
 #[derive(Resource, Default)]
 pub struct BodySerial(pub u64);
 
-pub type GpuChildren = Vec<(
-    Entity,
-    AssetId<Mesh>,
-    AssetId<crate::fx::flash::ModelMaterial>,
-)>;
+pub type GpuChildren = Vec<(Entity, AssetId<Mesh>, bevy::asset::UntypedAssetId)>;
 
 /// Build the same named hierarchy and skin links as the glTF loader, with shared render assets.
 #[allow(clippy::too_many_arguments)]
-pub fn spawn_rig(
+pub(crate) fn spawn_rig(
     commands: &mut Commands,
     root: Entity,
     id: u32,
@@ -141,6 +139,8 @@ pub fn spawn_rig(
     materials: &HashMap<AssetId<bevy::gltf::GltfMaterial>, Handle<crate::fx::flash::ModelMaterial>>,
     mapping: &ModelAnimations,
     muzzle_node: Option<&str>,
+    shared: &mut shared_skin::SharedSkinAssets,
+    material_assets: &Assets<crate::fx::flash::ModelMaterial>,
 ) -> Option<(Entity, GpuChildren)> {
     let source = gltf.source.as_ref()?;
     let set = library
@@ -230,36 +230,66 @@ pub fn spawn_rig(
     }
     for primitive in primitives {
         let material = materials.get(&primitive.material)?.clone();
-        let child = commands
-            .spawn((
-                Mesh3d(primitive.mesh.clone()),
-                MeshMaterial3d(material.clone()),
-                bevy::mesh::MeshTag::new(0),
-                Transform::IDENTITY,
-                ChildOf(entities[&primitive.node]),
-            ))
-            .id();
+        let anchor = entities[&primitive.node];
+        let skin = if let Some(handle) = &primitive.skin {
+            let skin = skins.get(handle)?;
+            Some(SkinnedMesh {
+                inverse_bindposes: skin.inverse_bind_matrices.clone(),
+                joints: skin
+                    .joints
+                    .iter()
+                    .map(|h| nodes.get(h).and_then(|n| entities.get(&n.index)).copied())
+                    .collect::<Option<Vec<_>>>()?,
+            })
+        } else {
+            None
+        };
+        let prepared = primitive
+            .skin
+            .as_ref()
+            .zip(skin.as_ref())
+            .and_then(|(handle, skin)| {
+                shared.prepare(
+                    player,
+                    anchor,
+                    primitive.node,
+                    handle,
+                    skin.clone(),
+                    &primitive.mesh,
+                    &material,
+                    mesh_assets,
+                    material_assets,
+                )
+            });
+        let mut child = commands.spawn((
+            bevy::mesh::MeshTag::new(0),
+            Transform::IDENTITY,
+            ChildOf(anchor),
+        ));
         if let Some(unit) = flash_unit {
-            commands
-                .entity(child)
-                .insert(crate::fx::flash::ModelFlash(unit));
+            child.insert(crate::fx::flash::ModelFlash(unit));
         }
-        if let Some(skin) = &primitive.skin {
-            let skin = skins.get(skin)?;
-            let joints = skin
-                .joints
-                .iter()
-                .map(|h| nodes.get(h).and_then(|n| entities.get(&n.index)).copied())
-                .collect::<Option<Vec<_>>>()?;
-            commands.entity(child).insert((
-                SkinnedMesh {
-                    inverse_bindposes: skin.inverse_bind_matrices.clone(),
-                    joints,
-                },
+        if let Some(prepared) = prepared {
+            let mesh = prepared.mesh.clone();
+            let material = prepared.material.clone();
+            child.insert((
+                Mesh3d(mesh.clone()),
+                MeshMaterial3d(material.clone()),
                 bevy::camera::visibility::NoFrustumCulling,
             ));
+            let child = child.id();
+            prepared.install(commands, child);
+            gpu.push((child, mesh.id(), material.id().untyped()));
+        } else {
+            child.insert((
+                Mesh3d(primitive.mesh.clone()),
+                MeshMaterial3d(material.clone()),
+            ));
+            if let Some(skin) = skin {
+                child.insert((skin, bevy::camera::visibility::NoFrustumCulling));
+            }
+            gpu.push((child.id(), primitive.mesh.id(), material.id().untyped()));
         }
-        gpu.push((child, primitive.mesh.id(), material.id()));
     }
     commands.entity(root).insert(UnitAnimation {
         player,
@@ -912,6 +942,7 @@ mod tests {
 #[derive(Resource, Default)]
 pub struct SharedPoses {
     copies: Vec<(Entity, Entity)>,
+    pub(crate) masters: HashMap<Entity, Entity>,
     pub evaluated_rigs: usize,
     pub shared_rigs: usize,
 }
@@ -922,9 +953,12 @@ pub fn group_crowd_poses(
     mut targets: Query<&mut AnimatedBy>,
     mut poses: ResMut<SharedPoses>,
 ) {
-    let mut groups: HashMap<(AssetId<AnimationGraph>, Vec<(usize, i32, i32)>), Vec<Entity>> =
-        HashMap::new();
+    let mut groups: HashMap<
+        (AssetId<AnimationGraph>, Vec<(usize, i32, i32)>),
+        (Entity, Vec<Entity>),
+    > = HashMap::new();
     poses.copies.clear();
+    poses.masters.clear();
     poses.evaluated_rigs = 0;
     poses.shared_rigs = 0;
     for rig in &rigs {
@@ -951,7 +985,8 @@ pub fn group_crowd_poses(
             .collect();
         phases.sort_unstable();
         let key = (rig.clips.graph.id(), phases);
-        if let Some(source) = groups.get(&key) {
+        if let Some((master, source)) = groups.get(&key) {
+            poses.masters.insert(rig.player, *master);
             poses.shared_rigs += 1;
             for (node, master) in rig.pose_nodes.iter().zip(source) {
                 if let Ok(mut by) = targets.get_mut(*node) {
@@ -966,7 +1001,8 @@ pub fn group_crowd_poses(
                     by.0 = rig.player;
                 }
             }
-            groups.insert(key, rig.pose_nodes.clone());
+            poses.masters.insert(rig.player, rig.player);
+            groups.insert(key, (rig.player, rig.pose_nodes.clone()));
         }
     }
 }

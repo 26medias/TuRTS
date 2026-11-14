@@ -255,7 +255,7 @@ fn limited_texture(
 
 /// Models replace the fallback atomically after their dependent meshes and textures are ready.
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
-pub fn sync_models(
+pub(crate) fn sync_models(
     mut commands: Commands,
     sources: ModelSources,
     mut state: ResMut<ModelState>,
@@ -266,6 +266,7 @@ pub fn sync_models(
     material_assets: Res<Assets<StandardMaterial>>,
     mut model_materials: ResMut<Assets<crate::fx::flash::ModelMaterial>>,
     mut images: ResMut<Assets<Image>>,
+    mut shared_skins: crate::animation::shared_skin::SharedSkinAssets,
     cameras: Query<(&Camera, &GlobalTransform)>,
     mut shown: Query<
         (
@@ -589,7 +590,7 @@ pub fn sync_models(
                         .insert(crate::fx::flash::ModelFlash(unit.0));
                 }
                 children.push(child);
-                gpu_children.push((child, primitive.mesh.id(), material.id()));
+                gpu_children.push((child, primitive.mesh.id(), material.id().untyped()));
             }
             if !animated
                 && let Some(name) = model.muzzle_node.as_deref()
@@ -635,6 +636,8 @@ pub fn sync_models(
                     &rig_materials,
                     model.animations.as_ref().unwrap(),
                     model.muzzle_node.as_deref(),
+                    &mut shared_skins,
+                    &model_materials,
                 ) {
                     children.push(rig);
                     gpu_children = gpu;
@@ -835,11 +838,28 @@ struct ModelGpuRequests {
 }
 struct GpuRequest {
     root: Entity,
-    children: Vec<(
-        Entity,
-        AssetId<Mesh>,
-        AssetId<crate::fx::flash::ModelMaterial>,
-    )>,
+    children: crate::animation::GpuChildren,
+}
+
+impl ModelGpuBridge {
+    pub(crate) fn replace_children(
+        &self,
+        replacements: &HashMap<Entity, (AssetId<Mesh>, bevy::asset::UntypedAssetId)>,
+    ) {
+        if replacements.is_empty() {
+            return;
+        }
+        if let Ok(mut bridge) = self.0.lock() {
+            for request in bridge.pending.values_mut() {
+                for (entity, mesh, material) in &mut request.children {
+                    if let Some((new_mesh, new_material)) = replacements.get(entity) {
+                        *mesh = *new_mesh;
+                        *material = *new_material;
+                    }
+                }
+            }
+        }
+    }
 }
 
 pub fn register_gpu_readiness(app: &mut App) {
@@ -884,5 +904,34 @@ fn acknowledge_models(
         if let Some(request) = bridge.pending.remove(&ticket) {
             bridge.ready.insert(ticket, request.root);
         }
+    }
+}
+
+#[cfg(test)]
+mod shared_skin_readiness_tests {
+    use super::*;
+    #[test]
+    fn a_backend_change_updates_the_actual_mesh_and_material_type_in_the_ready_request() {
+        let mut world = World::new();
+        let root = world.spawn_empty().id();
+        let child = world.spawn_empty().id();
+        let bridge = ModelGpuBridge::default();
+        let mesh = Handle::<Mesh>::default().id();
+        let ordinary = Handle::<crate::fx::flash::ModelMaterial>::default()
+            .id()
+            .untyped();
+        let shared = Handle::<crate::animation::shared_skin::CrowdMaterial>::default()
+            .id()
+            .untyped();
+        assert_ne!(ordinary, shared);
+        bridge.0.lock().unwrap().pending.insert(
+            1,
+            GpuRequest {
+                root,
+                children: vec![(child, mesh, shared)],
+            },
+        );
+        bridge.replace_children(&HashMap::from([(child, (mesh, ordinary))]));
+        assert_eq!(bridge.0.lock().unwrap().pending[&1].children[0].2, ordinary);
     }
 }

@@ -108,7 +108,8 @@ pub fn flash_models(
     mut tagged: Query<(&ModelFlash, &mut MeshTag)>,
 ) {
     for (unit, mut tag) in &mut tagged {
-        let value = u32::from(settings.flashes && fx.flashes.contains_key(&unit.0));
+        let value =
+            (tag.value & !1) | u32::from(settings.flashes && fx.flashes.contains_key(&unit.0));
         if tag.value != value {
             tag.value = value;
         }
@@ -234,5 +235,37 @@ mod tests {
             .unwrap()
             .base;
         assert_eq!(base.base_color, Color::srgb(0., 0., 1.));
+    }
+
+    #[test]
+    fn flash_updates_preserve_the_shared_palette_address() {
+        let mut app = App::new();
+        app.init_resource::<CombatPresentation>()
+            .init_resource::<EffectSettings>()
+            .init_resource::<FlashMaterials>()
+            .init_resource::<Assets<StandardMaterial>>()
+            .add_systems(Update, flash_models);
+        let entity = app
+            .world_mut()
+            .spawn((ModelFlash(7), MeshTag::new(44 << 1)))
+            .id();
+        app.world_mut()
+            .resource_mut::<CombatPresentation>()
+            .flashes
+            .insert(7, 1.);
+        app.update();
+        assert_eq!(
+            app.world().get::<MeshTag>(entity).unwrap().value,
+            (44 << 1) | 1
+        );
+        app.world_mut().resource_mut::<EffectSettings>().flashes = false;
+        app.update();
+        assert_eq!(app.world().get::<MeshTag>(entity).unwrap().value, 44 << 1);
+        app.world_mut().resource_mut::<EffectSettings>().flashes = true;
+        app.update();
+        assert_eq!(
+            app.world().get::<MeshTag>(entity).unwrap().value,
+            (44 << 1) | 1
+        );
     }
 }

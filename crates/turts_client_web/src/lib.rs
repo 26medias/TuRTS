@@ -172,6 +172,26 @@ pub fn start() {
     memory.forget();
 
     let mut app = build_app(options);
+    // Renderer reference controls belong to test URLs, not to the player HUD or mod API.
+    {
+        let mut skins = app
+            .world_mut()
+            .resource_mut::<turts_client::animation::SharedSkinSettings>();
+        for (key, value) in query
+            .trim_start_matches('?')
+            .split('&')
+            .filter_map(|part| part.split_once('='))
+        {
+            if key == "skin_reference" && value == "1" {
+                skins.enabled = false;
+            }
+            if key == "skin_matrix_limit"
+                && let Ok(limit) = value.parse::<usize>()
+            {
+                skins.matrix_limit = limit;
+            }
+        }
+    }
     if stored_identity_rejoin {
         *app.world_mut()
             .resource_mut::<turts_client::rejoin::RejoinController>() =
@@ -493,6 +513,7 @@ struct FxSceneSources<'w> {
     pictures: Option<Res<'w, turts_client::fx::model_particles::ModelPictures>>,
     emitters: Option<Res<'w, turts_client::fx::emitters::Emitters>>,
     warning: Option<Res<'w, turts_client::fx::warnings::WarningPulse>>,
+    shared_skins: Option<Res<'w, turts_client::animation::SharedSkinStats>>,
 }
 
 fn request_scene() {
@@ -558,6 +579,7 @@ fn publish_scene(
         pictures,
         emitters,
         warning,
+        shared_skins,
     } = fx_scene;
     let active: Vec<_> = cameras
         .iter()
@@ -708,6 +730,7 @@ fn publish_scene(
         "unit_id":unit.map(|u|u.0),"clip":rig.current,"distance_loops":rig.distance_loops,"dead":rig.dead,"visible":rig.visible,
         "seek":rig.current.as_ref().and_then(|name|rig.clips.clips.get(name)).and_then(|clip| animation_players.get(rig.player).ok()?.animation(clip.node).map(|a|a.seek_time()))
     })).collect());
+    scene["shared_skins"] = serde_json::json!(shared_skins.as_deref());
     scene["crowd_poses"] =
         serde_json::json!(shared_poses.map(|p| (p.evaluated_rigs, p.shared_rigs)));
     scene["effects"] = serde_json::json!({
