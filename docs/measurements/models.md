@@ -160,3 +160,60 @@ Evidence under `target/mc-evidence/`:
 
 Further work removes unnecessary UI scans and unchanged render-state writes.
 The full P3 High/Low table and final player acceptance are still incomplete.
+
+## P3 final combat measurement
+
+2026-11-13. Engine `f6b686e1`. All eight workload rows passed.
+The runtime HUD-only follow-up moves warnings below credits.
+The attempted camera speed change was reverted after the 1024-pixel probe failed.
+Compiled engine inputs are unchanged by that follow-up.
+
+RTX 3080, i9-14900K, Chrome 157, WebGPU, 1280x720.
+Each row uses a fresh silent browser. No compiler ran during this table.
+Five seconds of sustained shooting warm-up precede ten seconds of RAF samples.
+The fixtures raise health and range to keep every soldier shooting.
+The burning fixture keeps ten damaged buildings alive throughout the sample.
+
+| Scene | Quality | FPS | Frame p50 ms | Frame p95 ms | Live particles, max sampled | WASM high-water MiB | Drops Small / Medium / Large |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | --- |
+| 100 against 100 | High | 57.51 | 16.70 | 16.80 | 1,800 | 156.1 | 0 / 0 / 0 |
+| 100 against 100, 10 burning buildings | High | 58.11 | 16.70 | 16.80 | 1,909 | 154.9 | 0 / 0 / 0 |
+| 200 against 200 | High | 44.03 | 16.70 | 50.00 | 3,600 | 196.3 | 0 / 0 / 0 |
+| 400 against 400 | High | 22.25 | 33.40 | 100.00 | 7,200 | 276.4 | 0 / 0 / 0 |
+| 100 against 100 | Low | 59.20 | 16.70 | 16.80 | 400 | 141.1 | 2016 / 0 / 0 |
+| 100 against 100, 10 burning buildings | Low | 59.50 | 16.70 | 16.80 | 416 | 140.7 | 1514 / 3 / 0 |
+| 200 against 200 | Low | 50.32 | 16.70 | 33.40 | 512 | 170.3 | 12951 / 0 / 0 |
+| 400 against 400 | Low | 35.48 | 33.30 | 50.00 | 512 | 227.3 | 39666 / 0 / 0 |
+
+The High 400-unit result is **44.03 FPS**, compared with the original **26.67 FPS**.
+The Low 400-unit result is **50.32 FPS**.
+The High 800-unit result is **22.25 FPS**. That workload remains below 30 FPS.
+Low uses its fixed 512-particle pool. Informational lines and hit marks remain when effects are dropped.
+Drop counts are cumulative totals at the last sampled frame. They include warm-up.
+Live particle values are sampled peaks, not the pool's lifetime peak counter.
+
+Evidence under `target/mc-evidence/`:
+
+- `p3-contract-final-table/result.json`: raw frame intervals, adapter, memory, shooting counts, and per-cost drops.
+- `p3-contract-final-table/receipt.json`: command/wrapper 0, source unchanged, no compiler at start.
+- `p3-final-hud-reuse.json`: compiled-input equality and inspection of the rebuilt runtime package.
+- `skirmish-effects-final-prepared/manifest.json`: current build and package hashes.
+
+The earlier FX3 pixel PASS was rejected because it counted attack markers.
+The final acceptance uses a marker-free fixed-tick attack and a temporal spark mask.
+
+### Final terminal-fix performance guard
+
+Engine `85658237`. The terminal-only fix does not run in the sustained workload fixtures,
+which disable victory. The full eight-row table above records engine `f6b686e1`.
+The final High/Low 400-unit guard checks the complete delivered engine again.
+
+| Scene | Quality | FPS | Frame p50 ms | Frame p95 ms | Live particles, max sampled | WASM high-water MiB |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| 200 against 200 | High | 41.43 | 16.70 | 50.00 | 3600 | 196.3 |
+| 200 against 200 | Low | 54.71 | 16.70 | 33.30 | 512 | 170.4 |
+
+All 400 soldiers remained visible and shooting in every sampled state.
+Receipt: `target/mc-evidence/p3-terminal-400-guard/receipt.json`.
+Raw intervals and states: `target/mc-evidence/p3-terminal-400-guard/result.json`.
+Command/wrapper 0. Source unchanged. No compiler at start.

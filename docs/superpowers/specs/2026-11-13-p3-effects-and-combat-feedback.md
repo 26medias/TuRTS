@@ -1,6 +1,6 @@
 # Stage P3: effects and combat feedback
 
-Date: 2026-11-13. Status: ready to build. Roadmap: `2026-11-13-presentation-roadmap.md`, P3.
+Date: 2026-11-13. Status: built; FX1-FX13 and scripted player probes passed on 85658237. Roadmap: `2026-11-13-presentation-roadmap.md`, P3.
 Track: the package contract (section 3) is Foundation; the client work is the light path.
 Process: this spec, the build, one independent review that runs code. No plan document.
 Base: branch `codex/models-stage1`. It can run at the same time as P2; the two meet only at
