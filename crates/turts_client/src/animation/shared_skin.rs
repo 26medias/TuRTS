@@ -816,4 +816,86 @@ mod tests {
         app.update();
         assert_eq!(app.world().resource::<SharedSkinStats>().shared_draws, 2);
     }
+
+    #[test]
+    fn independent_next_frame_pose_upload_and_missing_bindpose_recovery() {
+        let (mut app, draws, buffer) = runtime_fixture();
+        app.update();
+        let before = app
+            .world()
+            .resource::<Assets<ShaderBuffer>>()
+            .get(&buffer)
+            .unwrap()
+            .cast_slice::<Mat4>()
+            .unwrap()
+            .to_vec();
+        let skins: Vec<_> = draws
+            .iter()
+            .map(|entity| {
+                app.world()
+                    .get::<SharedSkin>(*entity)
+                    .unwrap()
+                    .original_skin
+                    .clone()
+            })
+            .collect();
+        for skin in &skins {
+            let mut joint = app
+                .world_mut()
+                .get_mut::<GlobalTransform>(skin.joints[0])
+                .unwrap();
+            let mut transform = joint.compute_transform();
+            transform.translation.y += 0.5;
+            *joint = GlobalTransform::from(transform);
+        }
+        app.update();
+        let after = app
+            .world()
+            .resource::<Assets<ShaderBuffer>>()
+            .get(&buffer)
+            .unwrap()
+            .cast_slice::<Mat4>()
+            .unwrap()
+            .to_vec();
+        assert_ne!(
+            before, after,
+            "a changed joint pose must reach the palette in the next update"
+        );
+        assert!((after[0].w_axis.y - 0.8).abs() < 1e-5);
+        assert_eq!(app.world().resource::<SharedSkinStats>().palettes, 1);
+        let handle = skins[0].inverse_bindposes.clone();
+        let saved = app
+            .world_mut()
+            .resource_mut::<Assets<SkinnedMeshInverseBindposes>>()
+            .remove(handle.id())
+            .unwrap();
+        app.update();
+        for &draw in &draws {
+            assert!(
+                app.world().get::<SkinnedMesh>(draw).is_some(),
+                "missing bindposes must restore the ordinary draw"
+            );
+            assert!(
+                app.world()
+                    .get::<MeshMaterial3d<CrowdMaterial>>(draw)
+                    .is_none()
+            );
+            assert_eq!(app.world().get::<MeshTag>(draw).unwrap().value, 1);
+        }
+        app.world_mut()
+            .resource_mut::<Assets<SkinnedMeshInverseBindposes>>()
+            .insert(handle.id(), saved)
+            .unwrap();
+        app.update();
+        assert_eq!(app.world().resource::<SharedSkinStats>().shared_draws, 2);
+        for draw in draws {
+            assert!(app.world().get::<SkinnedMesh>(draw).is_none());
+            assert!(
+                app.world()
+                    .get::<MeshMaterial3d<CrowdMaterial>>(draw)
+                    .is_some()
+            );
+            assert_eq!(app.world().get::<MeshTag>(draw).unwrap().value & 1, 1);
+        }
+    }
 }
