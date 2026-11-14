@@ -373,6 +373,22 @@ pub fn sync_models(
         }
     }
     let quality = sources.settings.quality;
+    let mut shown_units = HashMap::with_capacity(sources.presented.units.len());
+    for unit in &sources.presented.units {
+        shown_units.entry(unit.unit_id).or_insert(unit);
+    }
+    let mut weapon_targets = HashMap::new();
+    let mut shown_nodes = HashMap::new();
+    if let Some(replica) = sources.replica.replica.as_ref() {
+        for weapon in &replica.weapons {
+            weapon_targets
+                .entry(weapon.unit.0)
+                .or_insert(weapon.last_target);
+        }
+        for node in replica.nodes.values() {
+            shown_nodes.entry(node.id.0).or_insert(node);
+        }
+    }
     for (entity, unit, node, mut transform, mut instance, mut animation) in &mut shown {
         if let Some(instance) = instance.as_deref_mut()
             && !instance.ready
@@ -399,8 +415,7 @@ pub fn sync_models(
             else {
                 continue;
             };
-            let Some(presented) = sources.presented.units.iter().find(|p| p.unit_id == unit.0)
-            else {
+            let Some(presented) = shown_units.get(&unit.0) else {
                 continue;
             };
             (
@@ -410,12 +425,7 @@ pub fn sync_models(
                 Some(replica.owner_slot),
             )
         } else if let Some(node) = node {
-            let Some(node) = sources
-                .replica
-                .replica
-                .as_ref()
-                .and_then(|r| r.nodes.values().find(|n| n.id.0 == node.0))
-            else {
+            let Some(node) = shown_nodes.get(&node.0) else {
                 continue;
             };
             (
@@ -665,19 +675,11 @@ pub fn sync_models(
                 let initial = transform.rotation.to_euler(EulerRot::YXZ).0;
                 let (previous, yaw) = state.facing.entry(id).or_insert((pos, initial));
                 let mut direction = pos - *previous;
-                if let Some(target) = sources
-                    .replica
-                    .replica
-                    .as_ref()
-                    .and_then(|r| r.weapons.iter().find(|w| w.unit.0 == id))
-                    .and_then(|w| w.last_target)
-                    .and_then(|target| {
-                        sources
-                            .presented
-                            .units
-                            .iter()
-                            .find(|u| u.unit_id == target.0)
-                    })
+                if let Some(target) = weapon_targets
+                    .get(&id)
+                    .copied()
+                    .flatten()
+                    .and_then(|target| shown_units.get(&target.0))
                 {
                     direction = Vec2::new(target.pos.x, target.pos.y) - pos;
                 }

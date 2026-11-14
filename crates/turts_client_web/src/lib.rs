@@ -17,7 +17,9 @@
 //! - `window.turts_memory_bytes()` returns the size of the wasm linear memory in bytes. Wasm
 //!   memory never shrinks, so the last value that a run reads is its high-water mark
 //!   (`tests/browser/measure.js`, design 4.5).
-//! - `window.turts_scene()` returns actual mesh entities and camera projection metadata. Unit
+//! - `window.turts_scene()` returns the last requested mesh/camera snapshot and requests the next frame.
+//!   A served debug request also refreshes the scene in that same frame. Unused scenes cost no capture work.
+//!   Unit
 //!   and node entries keep their stable ids and world translations, and add a projected ground
 //!   center plus the declared pick radius when both are available. The top-level target size,
 //!   viewport, scale factor and `clip_from_world` matrix come from the active Bevy camera/window;
@@ -79,6 +81,7 @@ thread_local! {
 
 /// The last scene JSON. The `window.turts_scene` closure reads it.
 static SCENE: Mutex<String> = Mutex::new(String::new());
+static SCENE_REQUESTED: Mutex<bool> = Mutex::new(true);
 static UI: Mutex<String> = Mutex::new(String::new());
 static LAYOUT_LABELS: Mutex<Option<BTreeMap<String, String>>> = Mutex::new(None);
 
@@ -128,7 +131,10 @@ pub fn start() {
     let move_to = Closure::<dyn Fn(f32, f32)>::new(|x, y| MOVES.lock().unwrap().push((x, y)));
     set_global(&window, "turts_move", move_to.as_ref());
     move_to.forget();
-    let scene = Closure::<dyn Fn() -> String>::new(|| SCENE.lock().unwrap().clone());
+    let scene = Closure::<dyn Fn() -> String>::new(|| {
+        request_scene();
+        SCENE.lock().unwrap().clone()
+    });
     set_global(&window, "turts_scene", scene.as_ref());
     scene.forget();
     let ui = Closure::<dyn Fn() -> String>::new(|| UI.lock().unwrap().clone());
@@ -197,7 +203,7 @@ pub fn start() {
         Last,
         (
             publish_debug.after(rebuild_debug_state),
-            publish_scene,
+            publish_scene.after(rebuild_debug_state),
             publish_ui.after(turts_client::core_adapter::FrameCloseSet),
         ),
     );
@@ -408,6 +414,7 @@ fn drain_moves(
 /// (`tests/browser/harness/sh1-lifecycle.js`); a grep test
 /// (`tests/browser/harness/debug-request-use.test.js`) fails when any other caller passes a value.
 fn request_debug(min_interval_ms: JsValue) -> js_sys::Promise {
+    request_scene();
     let wanted = min_interval_ms
         .as_f64()
         .filter(|ms| ms.is_finite() && *ms >= 0.0)
@@ -488,6 +495,26 @@ struct FxSceneSources<'w> {
     warning: Option<Res<'w, turts_client::fx::warnings::WarningPulse>>,
 }
 
+fn request_scene() {
+    *SCENE_REQUESTED.lock().unwrap() = true;
+}
+
+fn take_scene_request() -> bool {
+    std::mem::take(&mut *SCENE_REQUESTED.lock().unwrap())
+}
+
+fn scene_capture_due(requested: bool, builds: u64, previous_builds: &mut u64) -> bool {
+    let debug_built = builds != *previous_builds;
+    *previous_builds = builds;
+    requested || debug_built
+}
+
+#[derive(bevy::ecs::system::SystemParam)]
+struct SceneCaptureSchedule<'w, 's> {
+    debug: Res<'w, DebugRequest>,
+    previous_builds: Local<'s, u64>,
+}
+
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 fn publish_scene(
     animations: Query<(Option<&SceneUnit>, &turts_client::animation::UnitAnimation)>,
@@ -516,7 +543,15 @@ fn publish_scene(
     widgets: SceneWidgetQuery<'_, '_>,
     state: Res<ReplicaState>,
     adapter_info: Option<Res<RenderAdapterInfo>>,
+    mut capture: SceneCaptureSchedule,
 ) {
+    if !scene_capture_due(
+        take_scene_request(),
+        capture.debug.builds(),
+        &mut capture.previous_builds,
+    ) {
+        return;
+    }
     let FxSceneSources {
         fx,
         particles,
@@ -626,14 +661,13 @@ fn publish_scene(
         name: info.name.clone(),
         device_type: format!("{:?}", info.device_type),
     });
-    let mut scene: serde_json::Value = serde_json::from_str(&scene_json(
+    let mut scene = scene_json(
         active.len(),
         camera_metadata,
         adapter,
         &entries,
         &node_entries,
-    ))
-    .unwrap_or_else(|_| serde_json::json!({}));
+    );
     let mut widget_rects = widgets
         .iter()
         .filter_map(|(id, node, transform, target, visible, clip)| {
@@ -833,7 +867,7 @@ fn scene_json(
     adapter: Option<SceneAdapter>,
     entries: &[SceneEntry],
     nodes: &[SceneEntry],
-) -> String {
+) -> serde_json::Value {
     let (window_size, viewport, physical_viewport, scale_factor, clip_from_world) = camera.map_or(
         (
             serde_json::Value::Null,
@@ -888,12 +922,22 @@ fn scene_json(
         "units": entries.iter().copied().map(|entry| scene_entry(entry, "unit_id")).collect::<Vec<_>>(),
         "nodes": nodes.iter().copied().map(|entry| scene_entry(entry, "node_id")).collect::<Vec<_>>(),
     })
-    .to_string()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn scene_capture_stops_without_readers_and_refreshes_when_a_delayed_debug_build_arrives() {
+        let mut builds = 0;
+        assert!(!scene_capture_due(false, 0, &mut builds));
+        assert!(scene_capture_due(true, 0, &mut builds));
+        assert!(!scene_capture_due(false, 0, &mut builds));
+        assert!(scene_capture_due(false, 1, &mut builds));
+        assert!(!scene_capture_due(false, 1, &mut builds));
+        assert!(scene_capture_due(true, 1, &mut builds));
+    }
 
     #[test]
     fn scene_json_lists_rendered_entities_with_camera_projection_and_pick_metadata() {
@@ -904,7 +948,7 @@ mod tests {
             scale_factor: 1.0,
             clip_from_world: Mat4::IDENTITY,
         };
-        let json: serde_json::Value = serde_json::from_str(&scene_json(
+        let json = scene_json(
             1,
             Some(camera),
             Some(SceneAdapter {
@@ -932,8 +976,7 @@ mod tests {
                 screen_center: Some(Vec2::new(700.0, 355.0)),
                 pick_radius: Some(1.0),
             }],
-        ))
-        .unwrap();
+        );
         assert_eq!(json["cameras_3d"], 1);
         assert_eq!(json["coordinate_space"], "window-logical-pixels-top-left");
         assert_eq!(
@@ -980,8 +1023,7 @@ mod tests {
 
     #[test]
     fn scene_json_keeps_camera_count_and_null_projection_when_unavailable() {
-        let json: serde_json::Value =
-            serde_json::from_str(&scene_json(0, None, None, &[], &[])).unwrap();
+        let json = scene_json(0, None, None, &[], &[]);
         assert_eq!(json["cameras_3d"], 0);
         assert_eq!(json["clip_from_world"], serde_json::Value::Null);
         assert_eq!(json["units"], serde_json::json!([]));
