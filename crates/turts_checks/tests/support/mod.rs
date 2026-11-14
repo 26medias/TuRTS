@@ -106,6 +106,8 @@ pub fn derive_tokens(root: &Path) -> Result<TokenCatalog, ScanError> {
             ("recipe-export", &a.manifest.exports.recipes),
             ("technology-export", &a.manifest.exports.technologies),
             ("match-export", &a.manifest.exports.match_files),
+            ("combat-export", &a.manifest.exports.combat),
+            ("visual-effect-export", &a.manifest.exports.visual_effects),
         ] {
             for path in xs {
                 exports.insert(path.clone());
@@ -266,6 +268,20 @@ pub fn derive_tokens(root: &Path) -> Result<TokenCatalog, ScanError> {
                         add_id(&mut c, &p, &path, "effects.unit", unit, "unit-ref");
                     }
                 }
+            }
+        }
+        for (path, definition) in a.visual_effect_defs().map_err(|e| pkgerr(&dir, e))? {
+            for effect in definition.effects {
+                // Effect slots can use generic API words such as hit or release.
+                // Qualified references identify package content without banning those words.
+                add(
+                    &mut c,
+                    &p,
+                    "visual-effect",
+                    &path,
+                    "effects.id",
+                    &format!("{p}:{}", effect.id),
+                );
             }
         }
         for (path, d) in a.maps().map_err(|e| pkgerr(&dir, e))? {

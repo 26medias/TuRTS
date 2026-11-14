@@ -62,6 +62,7 @@ fn app_with_two_units_on(size: MapSize) -> bevy_app::App {
         start_order: None,
     };
     let map = MapDef {
+        environment: None,
         ground: None,
         id: "field".to_string(),
         size,
@@ -224,6 +225,7 @@ fn map_owner_slot_decides_who_may_move_a_unit() {
         start_order: None,
     };
     let map = MapDef {
+        environment: None,
         ground: None,
         id: "field".to_string(),
         size: MapSize { x: 64.0, y: 64.0 },
@@ -494,6 +496,7 @@ fn move_to_mixed_mobile_and_static_units_move_per_unit() {
     types.register_unit_type(&origin, mobile).unwrap();
     types.register_unit_type(&origin, static_def).unwrap();
     let map = MapDef {
+        environment: None,
         ground: None,
         id: "field".into(),
         size: MapSize { x: 64.0, y: 64.0 },

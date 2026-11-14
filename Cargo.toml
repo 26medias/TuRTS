@@ -46,3 +46,12 @@ panic = "abort"
 # Server TCP no-delay (vendor/aeronet_websocket/VENDORED.md).
 [patch.crates-io]
 aeronet_websocket = { path = "vendor/aeronet_websocket" }
+
+# Fast browser smoke checks. Deliveries and measurements use wasm-release.
+[profile.wasm-preview]
+inherits = "release"
+opt-level = 2
+lto = false
+codegen-units = 16
+strip = "debuginfo"
+panic = "abort"

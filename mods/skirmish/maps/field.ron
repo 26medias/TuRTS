@@ -1,4 +1,4 @@
-(ground: Some((base_colour: "skirmish:ground_grass", normal: None, tile_size: 8.0)), id: "field", size: (x: 64.0, y: 48.0), placements: [(unit: "skirmish:base", owner_slot: 0, pos: (x: 10.0, y: 24.0), contents: []),
+(environment: Some((background: "#B8D4DF", ground_margin: 64.0, boundary_colour: Some("#A7966D"), fog: Some((colour: "#B8D4DF", start: 80.0, end: 220.0, opacity: 0.2)), antialiasing: Fxaa)), ground: Some((base_colour: "skirmish:ground_grass", normal: None, tile_size: 8.0)), id: "field", size: (x: 64.0, y: 48.0), placements: [(unit: "skirmish:base", owner_slot: 0, pos: (x: 10.0, y: 24.0), contents: []),
 (unit: "skirmish:worker", owner_slot: 0, pos: (x: 14.0, y: 20.0), contents: []),
 (unit: "skirmish:soldier", owner_slot: 0, pos: (x: 14.0, y: 28.0), contents: []),
 (unit: "skirmish:base", owner_slot: 1, pos: (x: 54.0, y: 24.0), contents: []),

@@ -363,15 +363,28 @@ pub fn setup_scene(
     let (directional, transform, ambient) = crate::camera::light_components(light.as_ref());
     commands.spawn((directional, transform));
     commands.insert_resource(ambient);
-    let mut ground_mesh = Plane3d::default().mesh().size(width, depth).build();
+    let (ground_width, ground_depth) = crate::environment::ground_extent(
+        (width, depth),
+        acquired.0.presentation.environment.as_ref(),
+    );
+    let mut ground_mesh = Plane3d::default()
+        .mesh()
+        .size(ground_width, ground_depth)
+        .build();
     let mut ground_material = StandardMaterial::from(Color::srgb(0.25, 0.4, 0.25));
     if let Some(ground) = &acquired.0.presentation.ground {
         if let Some(bevy::mesh::VertexAttributeValues::Float32x2(uvs)) =
             ground_mesh.attribute_mut(Mesh::ATTRIBUTE_UV_0)
         {
             for uv in uvs {
-                uv[0] *= width / ground.tile_size;
-                uv[1] *= depth / ground.tile_size;
+                let margin = acquired
+                    .0
+                    .presentation
+                    .environment
+                    .as_ref()
+                    .map_or(0.0, |environment| environment.ground_margin);
+                uv[0] = uv[0] * ground_width / ground.tile_size - margin / ground.tile_size;
+                uv[1] = uv[1] * ground_depth / ground.tile_size - margin / ground.tile_size;
             }
         }
         let texture = |id: &str, srgb: bool, images: &mut Assets<Image>| -> Option<Handle<Image>> {
@@ -569,7 +582,8 @@ impl Plugin for UnitRenderPlugin {
     fn build(&self, app: &mut App) {
         crate::models::register_gpu_readiness(app);
         crate::fx::particles::register(app);
-        app.init_resource::<SlotMaterials>()
+        app.init_resource::<crate::environment::EnvironmentObservation>()
+            .init_resource::<SlotMaterials>()
             .init_resource::<crate::models::ModelState>()
             .init_resource::<crate::models::GraphicsSettings>()
             .init_resource::<crate::animation::AnimationLibrary>()
@@ -610,6 +624,12 @@ impl Plugin for UnitRenderPlugin {
             Update,
             (
                 setup_scene,
+                (
+                    crate::environment::sync_camera,
+                    crate::environment::draw_boundary,
+                    crate::environment::capture,
+                )
+                    .chain(),
                 sync_slot_materials,
                 crate::animation::collect_events,
                 crate::fx::update_combat,

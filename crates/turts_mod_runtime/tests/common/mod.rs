@@ -29,6 +29,21 @@ pub fn read_files(dir: &Path) -> BTreeMap<String, Vec<u8>> {
     }
     let mut out = BTreeMap::new();
     walk(dir, dir, &mut out);
+    // These fixtures test older, isolated contracts. A case adds environment explicitly when needed.
+    // Shipped-package checks use the package directory directly.
+    if let Some(bytes) = out.get("manifest.ron") {
+        let manifest: turts_mod_api::Manifest =
+            ron::from_str(std::str::from_utf8(bytes).unwrap()).unwrap();
+        for path in manifest.exports.maps {
+            if let Some(bytes) = out.get(&path) {
+                let mut map: turts_mod_api::MapDef =
+                    ron::from_str(std::str::from_utf8(bytes).unwrap()).unwrap();
+                if map.environment.take().is_some() {
+                    out.insert(path, ron::ser::to_string(&map).unwrap().into_bytes());
+                }
+            }
+        }
+    }
     as_edition_0_2_3(&mut out);
     out
 }

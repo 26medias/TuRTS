@@ -8941,6 +8941,7 @@ mod tests {
             },
         );
         let map = MapDef {
+            environment: None,
             ground: None,
             id: "field".into(),
             size: MapSize { x: 20.0, y: 20.0 },
@@ -9165,6 +9166,7 @@ mod tests {
             source_files: BTreeMap::new(),
         };
         let map = MapDef {
+            environment: None,
             ground: None,
             id: "field".into(),
             size: MapSize { x: 16.0, y: 16.0 },
@@ -10008,6 +10010,7 @@ mod tests {
             source_files: BTreeMap::new(),
         };
         let map = MapDef {
+            environment: None,
             ground: None,
             id: "field".into(),
             size: MapSize { x: 20.0, y: 20.0 },
@@ -10243,6 +10246,7 @@ mod tests {
             source_files: BTreeMap::new(),
         };
         let map = MapDef {
+            environment: None,
             ground: None,
             id: "field".into(),
             size: MapSize { x: 20.0, y: 20.0 },
@@ -10535,6 +10539,7 @@ mod tests {
             source_files: BTreeMap::new(),
         };
         let map = MapDef {
+            environment: None,
             ground: None,
             id: "field".into(),
             size: MapSize { x: 20.0, y: 20.0 },
@@ -10746,6 +10751,7 @@ mod tests {
             source_files: BTreeMap::new(),
         };
         let map = MapDef {
+            environment: None,
             ground: None,
             id: "field".into(),
             size: MapSize { x: 20.0, y: 20.0 },
@@ -10944,6 +10950,7 @@ mod tests {
             source_files: BTreeMap::new(),
         };
         let map = MapDef {
+            environment: None,
             ground: None,
             id: "field".into(),
             size: MapSize { x: 20.0, y: 20.0 },
@@ -13711,6 +13718,7 @@ mod tests {
             source_files: BTreeMap::new(),
         };
         let map = MapDef {
+            environment: None,
             ground: None,
             id: "mixed-follow".into(),
             size: MapSize { x: 16.0, y: 16.0 },

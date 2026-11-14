@@ -49,6 +49,7 @@ pub struct PresentationContent {
     pub model_visuals: BTreeMap<String, turts_mod_api::ModelDef>,
     pub model_bounds: BTreeMap<String, ([f32; 3], [f32; 3])>,
     pub ground: Option<turts_mod_api::GroundDef>,
+    pub environment: Option<turts_mod_api::EnvironmentDef>,
     pub interface: Option<InterfaceDef>,
     pub interface_package: Option<String>,
     pub images: BTreeMap<String, PresentationImage>,
@@ -134,7 +135,7 @@ pub fn accept_package(bytes: &[u8], entry: &LockEntry) -> Result<PackageArchive,
 /// Build what the client keeps from the accepted packages. Every unit has exactly one visual,
 /// and every visual names a defined unit, else this is an error that names the file and the
 /// field (design 4.4; `turts_mod_runtime::visuals::visuals_by_content`). The map is the first map
-/// of the first package that has one.
+/// of the verified root package. Tests without a verified root use the first package that has a map.
 pub fn build_acquired(
     archives: &[PackageArchive],
     lockfile_hash: String,
@@ -150,7 +151,7 @@ pub fn build_acquired_with_root(
     verified_root_mod: Option<VerifiedRootMod>,
 ) -> Result<Acquired, String> {
     let mut content = ClientContent::from_archives(archives).map_err(|error| error.to_string())?;
-    let presentation = presentation_from_archives(archives)?;
+    let presentation = presentation_from_archives(archives, verified_root_mod.as_ref())?;
     for (id, model) in &presentation.model_visuals {
         if let Some((min, max)) = presentation.model_bounds.get(&model.asset) {
             content.model_pick_shapes.insert(
@@ -171,7 +172,11 @@ pub fn build_acquired_with_root(
         for (_, unit) in archive.units().map_err(|error| error.to_string())? {
             unit_names.insert(ContentId::new(&package, &unit.id).to_string(), unit.name);
         }
-        if map_size.is_none() {
+        if map_size.is_none()
+            && verified_root_mod
+                .as_ref()
+                .is_none_or(|root| archive.manifest.id == root.id)
+        {
             let maps = archive.maps().map_err(|error| error.to_string())?;
             map_size = maps.first().map(|(_, map)| (map.size.x, map.size.y));
         }
@@ -188,8 +193,12 @@ pub fn build_acquired_with_root(
     })
 }
 
-fn presentation_from_archives(archives: &[PackageArchive]) -> Result<PresentationContent, String> {
+fn presentation_from_archives(
+    archives: &[PackageArchive],
+    root: Option<&VerifiedRootMod>,
+) -> Result<PresentationContent, String> {
     let mut presentation = PresentationContent::default();
+    let mut selected_map = false;
     for archive in archives {
         for (_, visual) in archive.visuals().map_err(|e| e.to_string())? {
             let target = match visual.target {
@@ -288,12 +297,17 @@ fn presentation_from_archives(archives: &[PackageArchive]) -> Result<Presentatio
                     .insert(qualified_asset_id(&archive.id().0, &effect.id), effect);
             }
         }
-        if presentation.ground.is_none() {
-            presentation.ground = archive
+        if !selected_map
+            && root.is_none_or(|root| archive.manifest.id == root.id)
+            && let Some((_, map)) = archive
                 .maps()
-                .map_err(|e| e.to_string())?
+                .map_err(|error| error.to_string())?
                 .into_iter()
-                .find_map(|(_, map)| map.ground);
+                .next()
+        {
+            presentation.ground = map.ground;
+            presentation.environment = map.environment;
+            selected_map = true;
         }
         if presentation.interface.is_none()
             && let Some((_, interface)) = archive

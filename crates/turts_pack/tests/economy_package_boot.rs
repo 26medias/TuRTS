@@ -687,6 +687,7 @@ fn cedar_matches_the_public_ten_file_authoring_example() {
     assert_eq!(
         archive.maps().unwrap()[0].1,
         MapDef {
+            environment: None,
             ground: None,
             id: "clearing".into(),
             size: MapSize { x: 64.0, y: 64.0 },

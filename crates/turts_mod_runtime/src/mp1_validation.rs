@@ -1222,6 +1222,38 @@ impl Pack {
 
     fn maps_group(&self) -> Result<(), ModError> {
         for (file, map) in &self.maps {
+            if let Some(environment) = &map.environment {
+                self.colour(file, "environment.background", &environment.background)?;
+                self.at_least_zero(file, "environment.ground_margin", environment.ground_margin)?;
+                if environment.ground_margin > 10_000.0 {
+                    return Err(self.fail(
+                        file,
+                        "environment.ground_margin",
+                        "must be at most 10000 world units",
+                    ));
+                }
+                if let Some(colour) = &environment.boundary_colour {
+                    self.colour(file, "environment.boundary_colour", colour)?;
+                }
+                if let Some(fog) = &environment.fog {
+                    self.colour(file, "environment.fog.colour", &fog.colour)?;
+                    self.at_least_zero(file, "environment.fog.start", fog.start)?;
+                    if !fog.end.is_finite() || fog.end <= fog.start || fog.end > 10_000.0 {
+                        return Err(self.fail(
+                            file,
+                            "environment.fog.end",
+                            "must be finite, above start, and at most 10000 world units",
+                        ));
+                    }
+                    if !fog.opacity.is_finite() || !(0.0..=1.0).contains(&fog.opacity) {
+                        return Err(self.fail(
+                            file,
+                            "environment.fog.opacity",
+                            "must be finite and from 0 to 1",
+                        ));
+                    }
+                }
+            }
             for (index, placement) in map.placements.iter().enumerate() {
                 if let Some(start) = &placement.start_order {
                     let local = placement

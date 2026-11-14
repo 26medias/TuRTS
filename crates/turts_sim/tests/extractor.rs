@@ -70,6 +70,7 @@ fn extractor_runs_in_fixed_extract_set() {
         source_files: BTreeMap::new(),
     };
     let map = MapDef {
+        environment: None,
         ground: None,
         id: "field".into(),
         size: MapSize { x: 32.0, y: 32.0 },

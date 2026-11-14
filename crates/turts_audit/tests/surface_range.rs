@@ -48,6 +48,7 @@ fn run(attack_move: bool) -> Vec<EconomyLogRecord> {
         start_order: None,
     };
     let map = MapDef {
+        environment: None,
         id: "field".into(),
         size: MapSize { x: 48.0, y: 32.0 },
         placements: vec![

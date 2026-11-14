@@ -59,6 +59,7 @@ fn app_with_units_on(
         )
         .unwrap();
     let map = MapDef {
+        environment: None,
         ground: None,
         id: "field".into(),
         size,
@@ -1865,6 +1866,7 @@ fn post_target_gives_a_ring() {
             .unwrap();
     }
     let map = MapDef {
+        environment: None,
         ground: None,
         id: "obstacle".into(),
         size: MapSize { x: 64.0, y: 64.0 },
@@ -2007,6 +2009,7 @@ fn group_zero_singleton_finds_a_free_point_beyond_a_large_post() {
             .unwrap();
     }
     let map = MapDef {
+        environment: None,
         ground: None,
         id: "large_obstacle".into(),
         size: MapSize {

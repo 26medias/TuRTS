@@ -45,30 +45,30 @@ pub use orders::{
 };
 pub use registry::UnitRegistry;
 pub use schema::{
-    AcquireDef, AmmoDef, AnimationClipDef, AnimationClipSettings, ArmourDef, BalanceAmount,
-    BeltLinePlacement, CancelRefunds, CombatDef, ConstructProgress, ConstructorDef, ContentsPolicy,
-    ConveyorDef, Cost, CostSource, DamageCell, DamagedEffect, DefeatClause, DropOffDef,
-    DropOffEffect, DropOffRule, EffectDef, EffectKind, ExecutionContext, Exports, ExtractorDef,
-    Facing, Footprint, GathererDef, GroundDef, GroundRally, HealthDef, IncomeDef, InserterDef,
-    InventoryDef, ItemStack, MachineDef, Manifest, MapDef, MapSize, MatchDef, ModelAnimations,
-    ModelDef, ModelLod, MovementDef, NodeDef, NodePlacement, PackageKind, PaymentPolicy, Placement,
-    ProducerDef, ProductionDef, Ratio, RecipeDef, RefundRatio, RemovalDef, RepairCost, RepairerDef,
-    ResearchStationDef, ResourceDef, ResourceKind, RunRefunds, Shape, ShortEffect,
-    SitePlacementDef, SlotEconomyInit, SlotRelation, StartOrder, StartPolicy, StartTarget,
-    SupplyAmount, SupplyCounts, SupplyScope, TargetFilter, TechnologyDef, UniqueMap, UnitDef,
-    VictoryRule, VisualDef, VisualEffectDef, VisualEffectRefs, VisualEffectsDef, VisualTarget,
-    WeaponDef, WeaponRangeMode, WeaponStat, WhenShort, WorldPos,
+    AcquireDef, AmmoDef, AnimationClipDef, AnimationClipSettings, Antialiasing, ArmourDef,
+    BalanceAmount, BeltLinePlacement, CancelRefunds, CombatDef, ConstructProgress, ConstructorDef,
+    ContentsPolicy, ConveyorDef, Cost, CostSource, DamageCell, DamagedEffect, DefeatClause,
+    DistanceFogDef, DropOffDef, DropOffEffect, DropOffRule, EffectDef, EffectKind, EnvironmentDef,
+    ExecutionContext, Exports, ExtractorDef, Facing, Footprint, GathererDef, GroundDef,
+    GroundRally, HealthDef, IncomeDef, InserterDef, InventoryDef, ItemStack, MachineDef, Manifest,
+    MapDef, MapSize, MatchDef, ModelAnimations, ModelDef, ModelLod, MovementDef, NodeDef,
+    NodePlacement, PackageKind, PaymentPolicy, Placement, ProducerDef, ProductionDef, Ratio,
+    RecipeDef, RefundRatio, RemovalDef, RepairCost, RepairerDef, ResearchStationDef, ResourceDef,
+    ResourceKind, RunRefunds, Shape, ShortEffect, SitePlacementDef, SlotEconomyInit, SlotRelation,
+    StartOrder, StartPolicy, StartTarget, SupplyAmount, SupplyCounts, SupplyScope, TargetFilter,
+    TechnologyDef, UniqueMap, UnitDef, VictoryRule, VisualDef, VisualEffectDef, VisualEffectRefs,
+    VisualEffectsDef, VisualTarget, WeaponDef, WeaponRangeMode, WeaponStat, WhenShort, WorldPos,
 };
 
 pub use written::Written;
 
 /// Version of the engine API that this crate defines.
-pub const ENGINE_API_VERSION: &str = "0.2.9";
+pub const ENGINE_API_VERSION: &str = "0.2.10";
 
 /// Engine API versions released by the project, in ascending order.
 pub const RELEASED_ENGINE_APIS: &[&str] = &[
     "0.1.0", "0.2.0", "0.2.1", "0.2.2", "0.2.3", "0.2.4", "0.2.5", "0.2.6", "0.2.7", "0.2.8",
-    "0.2.9",
+    "0.2.9", "0.2.10",
 ];
 
 /// The number of player slots of a match, which is the number of seats that the lobby offers
@@ -92,11 +92,10 @@ mod tests {
         );
     }
 
-    /// Design D:2280-2286: 0.2.4 is the one API step of MP1, released with its first row.
     #[test]
-    fn the_api_step_of_mp1_is_0_2_4() {
-        assert_eq!(ENGINE_API_VERSION, "0.2.9");
-        assert_eq!(RELEASED_ENGINE_APIS.len(), 11);
+    fn current_release_and_historical_versions_are_stable() {
+        assert_eq!(ENGINE_API_VERSION, "0.2.10");
+        assert_eq!(RELEASED_ENGINE_APIS.len(), 12);
         assert_eq!(RELEASED_ENGINE_APIS[4], "0.2.3");
     }
 

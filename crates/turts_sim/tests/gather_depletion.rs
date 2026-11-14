@@ -208,6 +208,7 @@ fn app_with(node_stock: u64, units: &[Vec2]) -> bevy_app::App {
     let mut placements = vec![placement("depot", DEPOT_POS)];
     placements.extend(units.iter().map(|at| placement("worker", *at)));
     let map = MapDef {
+        environment: None,
         ground: None,
         id: "strip".into(),
         size: MapSize { x: 80.0, y: 20.0 },

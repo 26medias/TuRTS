@@ -59,6 +59,15 @@ fn files() -> BTreeMap<String, Vec<u8>> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../mods/skirmish");
     let mut files = BTreeMap::new();
     read(&root, &root, &mut files);
+    // Keep the model fixture on its declared edition, without later map presentation.
+    let mut map: turts_mod_api::MapDef =
+        ron::from_str(std::str::from_utf8(&files["maps/field.ron"]).unwrap()).unwrap();
+    if map.environment.take().is_some() {
+        files.insert(
+            "maps/field.ron".into(),
+            ron::ser::to_string(&map).unwrap().into_bytes(),
+        );
+    }
     let manifest_text = String::from_utf8(files["manifest.ron"].clone()).unwrap();
     let manifest: turts_mod_api::Manifest = ron::from_str(&manifest_text).unwrap();
     let mut isolated = manifest_text.replace(&manifest.engine_api, "^0.2.6");

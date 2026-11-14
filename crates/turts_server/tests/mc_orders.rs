@@ -153,6 +153,7 @@ fn audit_fixture_at_enemy(
     enemy_position: WorldPos,
 ) -> (bevy_app::App, ContentCatalog) {
     let map = MapDef {
+        environment: None,
         ground: None,
         id: "audit:field".into(),
         size: MapSize { x: 40.0, y: 40.0 },
@@ -804,6 +805,7 @@ fn point_attack_switches_to_another_eligible_target_and_strictly_replays() {
         .unwrap()
         .max = 1;
     let map = MapDef {
+        environment: None,
         ground: None,
         id: "audit:target-switch-field".into(),
         size: MapSize { x: 40.0, y: 40.0 },

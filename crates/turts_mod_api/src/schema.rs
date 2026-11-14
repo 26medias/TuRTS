@@ -747,6 +747,9 @@ pub struct SlotEconomyInit {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct MapDef {
+    /// Optional client presentation. It never changes the authoritative map dimensions.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub environment: Option<EnvironmentDef>,
     /// Optional ground presentation. It never participates in simulation.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ground: Option<GroundDef>,
@@ -882,6 +885,41 @@ pub struct GroundDef {
     #[serde(default)]
     pub normal: Option<ContentRef>,
     pub tile_size: f32,
+}
+
+/// API 0.2.10: map-owned environment settings. These values never affect simulation.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EnvironmentDef {
+    pub background: String,
+    #[serde(default)]
+    pub ground_margin: f32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub boundary_colour: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fog: Option<DistanceFogDef>,
+    #[serde(default)]
+    pub antialiasing: Antialiasing,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DistanceFogDef {
+    pub colour: String,
+    pub start: f32,
+    pub end: f32,
+    #[serde(default = "default_fog_opacity")]
+    pub opacity: f32,
+}
+fn default_fog_opacity() -> f32 {
+    0.2
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Antialiasing {
+    Off,
+    #[default]
+    Fxaa,
 }
 
 /// API 0.2.4, row V4: the effects of a unit visual, each a reference to an effect of the

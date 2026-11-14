@@ -31,3 +31,8 @@ The second command starts a separate browser with a fresh profile. Keep the host
 Both players can act immediately. There is no ready lobby yet.
 Restart the host for a new match. This mode has no shared New skirmish button.
 The address is local to this computer. Internet hosting is not included yet.
+
+The map includes decorative grass beyond its boundary and light distance haze.
+The line marks the playable area. Buildings and units stay inside it.
+High and Medium use haze and FXAA. Low uses the cheaper visual path.
+The existing artwork and grass texture are unchanged.

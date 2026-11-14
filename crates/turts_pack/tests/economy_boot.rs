@@ -7,6 +7,7 @@ use turts_sim::{IdAllocators, MapBounds, Slots, UnitTypes, audit_state, load_map
 
 fn direct_map(unit: &str, x: f32, y: f32) -> MapDef {
     MapDef {
+        environment: None,
         ground: None,
         id: "append".into(),
         size: MapSize { x: 64.0, y: 64.0 },

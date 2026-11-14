@@ -439,6 +439,9 @@ pub fn debug_json(world: &World) -> String {
                 }))
                 .collect::<Vec<_>>())
     );
+    result["environment"] = world
+        .get_resource::<crate::environment::EnvironmentObservation>()
+        .map_or(serde_json::Value::Null, |observation| observation.0.clone());
     result.to_string()
 }
 

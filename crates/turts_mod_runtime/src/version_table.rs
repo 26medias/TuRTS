@@ -437,6 +437,7 @@ pub(crate) const VERSION_TABLE: &[VersionTableRow] = &[
         &["model", "animations", "hit"],
     ),
     raw("ground", "0.2.5", RawGroup::Maps, &["ground"]),
+    raw("environment", "0.2.10", RawGroup::Maps, &["environment"]),
     // API 0.2.2.
     VersionTableRow {
         name: "dependencies",

@@ -339,6 +339,7 @@ fn m3_unit() -> UnitDef {
 
 fn m3_map() -> MapDef {
     MapDef {
+        environment: None,
         ground: None,
         id: "proving_ground".into(),
         size: MapSize { x: 32.0, y: 16.0 },

@@ -60,6 +60,7 @@ fn app_with_walker() -> bevy_app::App {
         app.world_mut(),
         &package,
         &MapDef {
+            environment: None,
             ground: None,
             id: "field".into(),
             size: MapSize { x: 64.0, y: 64.0 },

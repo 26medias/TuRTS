@@ -270,6 +270,7 @@ fn installed_logger_tracks_real_failed_then_appended_move_to_completion() {
         app.world_mut(),
         &package,
         &MapDef {
+            environment: None,
             ground: None,
             id: "field".into(),
             size: MapSize { x: 20.0, y: 20.0 },

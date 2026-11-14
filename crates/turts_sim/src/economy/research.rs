@@ -606,6 +606,7 @@ mod tests {
             source_files: BTreeMap::new(),
         };
         let map = MapDef {
+            environment: None,
             ground: None,
             id: "test_map".into(),
             size: MapSize { x: 32.0, y: 32.0 },

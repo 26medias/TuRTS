@@ -154,6 +154,7 @@ fn catalog(field: GeometricField, value: f32) -> ContentCatalog {
 
 fn map(field: GeometricField, placed: bool) -> MapDef {
     MapDef {
+        environment: None,
         ground: None,
         id: "field".into(),
         size: MapSize { x: 24.0, y: 24.0 },
