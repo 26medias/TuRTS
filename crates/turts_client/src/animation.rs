@@ -11,6 +11,7 @@ use std::{
     time::Duration,
 };
 use turts_mod_api::{AnimationClipDef, ModelAnimations};
+mod mesh_batch;
 
 #[derive(Resource, Default)]
 pub struct VisualEvents {
@@ -78,7 +79,10 @@ pub struct ClipSet {
     pub clips: HashMap<String, Clip>,
 }
 #[derive(Resource, Default)]
-pub struct AnimationLibrary(pub HashMap<AssetId<Gltf>, ClipSet>);
+pub struct AnimationLibrary {
+    clips: HashMap<AssetId<Gltf>, ClipSet>,
+    meshes: HashMap<AssetId<Gltf>, Vec<mesh_batch::RigPrimitive>>,
+}
 #[derive(Component)]
 pub struct UnitAnimation {
     pub player: Entity,
@@ -122,6 +126,7 @@ pub fn spawn_rig(
     asset: AssetId<Gltf>,
     nodes: &Assets<GltfNode>,
     meshes: &Assets<GltfMesh>,
+    mesh_assets: &mut Assets<Mesh>,
     skins: &Assets<GltfSkin>,
     clips: &Assets<AnimationClip>,
     graphs: &mut Assets<AnimationGraph>,
@@ -132,7 +137,7 @@ pub fn spawn_rig(
 ) -> Option<(Entity, GpuChildren)> {
     let source = gltf.source.as_ref()?;
     let set = library
-        .0
+        .clips
         .entry(asset)
         .or_insert_with(|| {
             let mut named: Vec<_> = gltf.named_animations.iter().collect();
@@ -157,6 +162,11 @@ pub fn spawn_rig(
             }
         })
         .clone();
+    if let std::collections::hash_map::Entry::Vacant(entry) = library.meshes.entry(asset) {
+        let primitives = mesh_batch::prepare(gltf, nodes, meshes, mesh_assets)?;
+        entry.insert(primitives);
+    }
+    let primitives = library.meshes.get(&asset)?;
     let player = commands
         .spawn((
             Transform::from_xyz(0., -lift, 0.).with_scale(Vec3::splat(scale)),
@@ -210,37 +220,33 @@ pub fn spawn_rig(
             AnimationTargetId::from_names(path.iter()),
             AnimatedBy(player),
         ));
-        if let Some(mesh) = &data.mesh {
-            for primitive in &meshes.get(mesh)?.primitives {
-                let material = materials
-                    .get(&primitive.material.clone().unwrap_or_default().id())?
-                    .clone();
-                let child = commands
-                    .spawn((
-                        Mesh3d(primitive.mesh.clone()),
-                        MeshMaterial3d(material.clone()),
-                        Transform::IDENTITY,
-                        ChildOf(entity),
-                    ))
-                    .id();
-                if let Some(skin) = &data.skin {
-                    let skin = skins.get(skin)?;
-                    let joints = skin
-                        .joints
-                        .iter()
-                        .map(|h| nodes.get(h).and_then(|n| entities.get(&n.index)).copied())
-                        .collect::<Option<Vec<_>>>()?;
-                    commands.entity(child).insert((
-                        SkinnedMesh {
-                            inverse_bindposes: skin.inverse_bind_matrices.clone(),
-                            joints,
-                        },
-                        bevy::camera::visibility::NoFrustumCulling,
-                    ));
-                }
-                gpu.push((child, primitive.mesh.id(), material.id()));
-            }
+    }
+    for primitive in primitives {
+        let material = materials.get(&primitive.material)?.clone();
+        let child = commands
+            .spawn((
+                Mesh3d(primitive.mesh.clone()),
+                MeshMaterial3d(material.clone()),
+                Transform::IDENTITY,
+                ChildOf(entities[&primitive.node]),
+            ))
+            .id();
+        if let Some(skin) = &primitive.skin {
+            let skin = skins.get(skin)?;
+            let joints = skin
+                .joints
+                .iter()
+                .map(|h| nodes.get(h).and_then(|n| entities.get(&n.index)).copied())
+                .collect::<Option<Vec<_>>>()?;
+            commands.entity(child).insert((
+                SkinnedMesh {
+                    inverse_bindposes: skin.inverse_bind_matrices.clone(),
+                    joints,
+                },
+                bevy::camera::visibility::NoFrustumCulling,
+            ));
         }
+        gpu.push((child, primitive.mesh.id(), material.id()));
     }
     commands.entity(root).insert(UnitAnimation {
         player,

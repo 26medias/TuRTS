@@ -493,6 +493,7 @@ fn publish_scene(
     animations: Query<(Option<&SceneUnit>, &turts_client::animation::UnitAnimation)>,
     animation_players: Query<&AnimationPlayer>,
     bodies: Query<&turts_client::animation::VisualBody>,
+    draw_meshes: Query<(), With<Mesh3d>>,
     shared_poses: Option<Res<turts_client::animation::SharedPoses>>,
     fx_scene: FxSceneSources,
     model_instances: Query<(
@@ -682,6 +683,7 @@ fn publish_scene(
         "combat":fx.map(|fx|serde_json::json!({"now":fx.now,"health":fx.displayed_health,"held":fx.held_health.keys().collect::<Vec<_>>(),"flashes":fx.flashes.keys().collect::<Vec<_>>(),"pending_impacts":fx.impacts.iter().map(|hit|serde_json::json!({"target":hit.target,"at":hit.at,"position":hit.position.to_array()})).collect::<Vec<_>>()})),
     });
     scene["body_count"] = serde_json::json!(bodies.iter().count());
+    scene["draw_meshes"] = serde_json::json!(draw_meshes.iter().count());
     scene["widgets"] = serde_json::Value::Array(widget_rects);
     *SCENE.lock().unwrap() = scene.to_string();
 }
