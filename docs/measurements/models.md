@@ -217,3 +217,17 @@ All 400 soldiers remained visible and shooting in every sampled state.
 Receipt: `target/mc-evidence/p3-terminal-400-guard/receipt.json`.
 Raw intervals and states: `target/mc-evidence/p3-terminal-400-guard/result.json`.
 Command/wrapper 0. Source unchanged. No compiler at start.
+
+### Camera follow-up guard
+
+Engine `f5d7d316` adds responsive panning and protects edge-target clicks.
+Both 400-unit samples pass. Every soldier stayed visible and shooting.
+
+| Quality | FPS | Frame p50 ms | Frame p95 ms |
+| --- | ---: | ---: | ---: |
+| High | 43.33 | 16.70 | 50.00 |
+| Low | 51.62 | 16.70 | 33.40 |
+
+Evidence: `target/mc-evidence/camera-pan-400-guard/result.json` and
+`target/mc-evidence/camera-pan-final-checks/receipt.json`.
+No compiler ran. The source stayed unchanged.
