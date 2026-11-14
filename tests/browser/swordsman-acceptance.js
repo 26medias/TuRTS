@@ -41,9 +41,14 @@ scene=await wait(s=>{const u=s.units.find(u=>u.unit_id===7);return u&&Math.hypot
 await clickUnit(7);await clickUnit(5,'right');await clickUnit(4);await clickUnit(5,'right');await page.mouse.move(400,680);
 const end=Date.now()+25000;let swordAttack=false,bowAttack=false,hit=false,death=false,body=false;
 while(Date.now()<end){scene=await read();result.samples.push(scene);swordAttack ||= scene.animations.some(a=>a.unit_id===7&&a.clip==='1H_Melee_Attack_Chop'&&!a.dead);bowAttack ||= scene.animations.some(a=>a.unit_id===4&&a.clip==='2H_Ranged_Shoot');hit ||= scene.effects.combat.flashes.includes(7);death ||= scene.animations.some(a=>a.dead&&a.clip==='Death_A'&& !scene.units.some(u=>u.unit_id===7));body ||= scene.body_count>0;
-if(swordAttack&&!result.attack){result.attack=scene;await page.screenshot({path:out+'/mixed-attack.png'})}
+if(swordAttack&&!result.attack){result.attack=scene;await page.screenshot({path:out+'/mixed-attack.png'});const u=scene.units.find(u=>u.unit_id===7);await page.mouse.move(...project(scene,[u.translation[0],0,u.translation[2]]));for(let z=0;z<4;z++){await page.mouse.wheel(0,-100);await sleep(70)}await page.mouse.move(400,680);await page.screenshot({path:out+'/mixed-closeup.png'})}
 if(death&&body){result.death=scene;await page.screenshot({path:out+'/swordsman-death.png'});break}await sleep(50)}
 Object.assign(result,{swordAttack,bowAttack,hit,death,body});if(!swordAttack||!bowAttack||!hit||!death||!body)throw Error('missing combat observation');
-const sword=result.attack.units.find(u=>u.unit_id===7),castle=result.attack.units.find(u=>u.unit_id===5);result.melee_distance=Math.hypot(sword.translation[0]-castle.translation[0],sword.translation[2]-castle.translation[2]);if(result.melee_distance<2.6-1e-5||result.melee_distance>3.201)throw Error('wrong sword range');
+// Fired arrives before the last interpolated movement sample. Check the sustained
+// attack after that sample catches up, rather than its first transition frame.
+const settled=result.samples.filter(s=>s.effects.combat.now>result.attack.effects.combat.now+.25&&s.units.some(u=>u.unit_id===7));
+result.melee_distances=settled.map(s=>{const sword=s.units.find(u=>u.unit_id===7),castle=s.units.find(u=>u.unit_id===5);return Math.hypot(sword.translation[0]-castle.translation[0],sword.translation[2]-castle.translation[2])});
+if(result.melee_distances.length<10||result.melee_distances.some(d=>d<2.6-1e-5||d>3.201))throw Error('wrong sustained sword range');
+result.melee_distance=result.melee_distances[result.melee_distances.length-1];
 result.status='PASS';console.log(JSON.stringify({status:result.status,train_ms:result.train_ms,melee_distance:result.melee_distance}));
 }catch(e){result.status='FAIL';result.error=String(e.stack||e);console.error(e);process.exitCode=1}finally{fs.writeFileSync(out+'/result.json',JSON.stringify(result,null,2));if(context)await context.close();if(server&&server.exitCode===null){server.kill('SIGTERM');await new Promise(r=>server.once('exit',r))}fs.rmSync(profile,{recursive:true,force:true})}})();
