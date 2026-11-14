@@ -227,8 +227,8 @@ def stale_reasons(prepared, root, package, row_file, need):
     if manifest["package"] != package:
         reasons.append(f"package differs (prepared {manifest['package']}, run {package})")
     now = state(root, package)
-    if manifest["head"] != now["head"]:
-        reasons.append(f"HEAD differs (prepared {manifest['head'][:12]}, now {now['head'][:12]})")
+    # A docs-only or driver-only commit does not change a built artifact. The source, package,
+    # tools, environment, and artifact hashes below determine whether this build is current.
     if manifest["source_sha256"] != now["source_sha256"]:
         before, after = manifest["source_files"], now["source_files"]
         changed = sorted(name for name in set(before) | set(after) if before.get(name) != after.get(name))

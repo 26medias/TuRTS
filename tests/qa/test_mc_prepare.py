@@ -145,7 +145,9 @@ class Fake:
         (pkg / "package.json").write_text('{"name":"playwright-core","main":"index.js"}\n')
         (pkg / "index.js").write_text("module.exports = {};\n")
         sh(repo, "git", "init", "-q")
-        sh(repo, "git", "-c", "user.name=t", "-c", "user.email=t@t", "add", "-A")
+        source_paths = [str(path.relative_to(repo)) for path in repo.rglob("*")
+                        if path.is_file() and ".git" not in path.parts and "node_modules" not in path.parts]
+        sh(repo, "git", "add", "--", *source_paths)
         sh(repo, "git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "base")
 
     def make_shims(self):
@@ -322,10 +324,18 @@ class PrepareTests(unittest.TestCase):
         (self.fake.repo / "mods/pkg/units/a.ron").write_text("(a: 2)\n")
         self.refused(prepared, "package content differs (mods/pkg)", absent=["build source differs", "HEAD differs"])
 
-    def test_head_change_is_refused(self):
+    def test_docs_commit_does_not_reject_identical_build_inputs(self):
         prepared = self.fake.prepare()
-        self.fake.commit("empty commit")
-        self.refused(prepared, "HEAD differs", absent=["build source differs", "package content differs"])
+        (self.fake.repo / "report.md").write_text("A documentation-only report.\n")
+        sh(self.fake.repo, "git", "add", "--", "report.md")
+        self.fake.commit("record report")
+        proc, lines, url = self.served(prepared)
+        try:
+            self.assertIsNotNone(url, "".join(lines))
+            self.assertEqual(urllib.request.urlopen(url, timeout=10).status, 200)
+        finally:
+            self.fake.stop(proc)
+        self.assertEqual(self.fake.tool_log(), "")
 
     def test_changed_artefact_is_refused(self):
         prepared = self.fake.prepare()
