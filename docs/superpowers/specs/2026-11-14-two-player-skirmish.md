@@ -1,5 +1,7 @@
 # Two-player skirmish
 
+Status: VS1–VS6 pass. See `docs/reports/2026-11-14-two-player-skirmish.md`.
+
 ## First delivery
 
 Add `--human` to the skirmish launcher. This mode leaves both server slots for human players.
