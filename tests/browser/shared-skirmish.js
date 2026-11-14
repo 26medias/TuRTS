@@ -60,7 +60,9 @@ if(process.env.TURTS_LOBBY_CHECK==='1'){
   await pages[i].mouse.click(vx+vw/2,vy+vh*.65);await pages[i].mouse.click(...project(s.scene,u.translation));await wait(i,s=>s.selection.includes(id),'colour-check selection');await sleep(250);s=await read(i);
   const png=decodePng(await pages[i].screenshot({path:out+'/palette-'+i+'.png'})),rect=s.scene.widgets.find(w=>w.id==='skirmish_minimap').rect;
   const markers=colours.map((rgb,slot)=>count(png,[rect[0]+(slot?54:10)/64*rect[2],rect[1]+(1-24/48)*rect[3]],rgb,5));
-  const ring=count(png,project(s.scene,u.translation),colours[i],48);
+  const point=project(s.scene,u.translation);let ring=0;
+  // The 3D tone mapper changes RGB values. Check the selected colour family in the world view.
+  for(let y=Math.floor(point[1]-48);y<=point[1]+48;y++)for(let x=Math.floor(point[0]-48);x<=point[0]+48;x++){const p=pixelAt(png,x,y);if(p&&(i===0?p[0]>p[2]+12&&p[1]>p[2]+8:p[2]>p[0]+12&&p[2]>p[1]+8))ring++}
   result.palette_checks.push({body_materials:s.colours.slice(0,2),minimap_pixels:markers,selected_ring_pixels:ring});
   if(markers.some(n=>n<4)||ring<4)throw Error('chosen colours missing from minimap or selected ring: '+JSON.stringify(result.palette_checks));
  }
