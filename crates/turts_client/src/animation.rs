@@ -382,8 +382,11 @@ pub fn animate_units(
         } else {
             0.
         };
-        if let Ok(mut transform) = transforms.get_mut(rig.player) {
-            transform.rotation = Quat::from_rotation_y(rig.yaw_offset);
+        let rotation = Quat::from_rotation_y(rig.yaw_offset);
+        if let Ok(mut transform) = transforms.get_mut(rig.player)
+            && transform.rotation != rotation
+        {
+            transform.rotation = rotation;
         }
         let changed = rig.current.as_ref() != Some(&name) || fired;
         if changed {
@@ -565,6 +568,36 @@ mod tests {
             );
         app.update();
     }
+    #[test]
+    fn stable_rig_rotation_keeps_transform_clean_and_changed_rotation_is_still_applied() {
+        #[derive(Resource, Default)]
+        struct ChangedRigCount(usize);
+        let (mut app, _, player) = fixture();
+        app.init_resource::<ChangedRigCount>().add_systems(
+            Last,
+            |changed: Query<(), (With<AnimationPlayer>, Changed<Transform>)>,
+             mut count: ResMut<ChangedRigCount>| {
+                count.0 = changed.iter().count();
+            },
+        );
+        step(&mut app, 0., 0.016, Activity::Idle);
+        step(&mut app, 0., 0.016, Activity::Idle);
+        assert_eq!(
+            app.world().resource::<ChangedRigCount>().0,
+            0,
+            "an unchanged rig rotation must not dirty every bone descendant"
+        );
+        app.world_mut()
+            .get_mut::<Transform>(player)
+            .unwrap()
+            .rotation = Quat::from_rotation_y(0.4);
+        step(&mut app, 0., 0.016, Activity::Idle);
+        assert_eq!(
+            app.world().get::<Transform>(player).unwrap().rotation,
+            Quat::IDENTITY
+        );
+    }
+
     #[test]
     fn an9_construction_shows_half_height_at_half_progress_and_full_height_at_completion() {
         assert_eq!(construction_offset(4., 0.5), -2.);

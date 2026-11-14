@@ -531,7 +531,7 @@ fn publish_scene(
         &GlobalTransform,
     )>,
     units: Query<
-        (&SceneUnit, &GlobalTransform),
+        (&SceneUnit, Ref<GlobalTransform>, Ref<Transform>),
         Or<(With<Mesh3d>, With<turts_client::models::ModelInstance>)>,
     >,
     nodes: Query<
@@ -598,7 +598,7 @@ fn publish_scene(
 
     let mut entries: Vec<SceneEntry> = units
         .iter()
-        .map(|(unit, transform)| {
+        .map(|(unit, transform, _)| {
             let translation = transform.translation();
             let pick_radius = state
                 .replica
@@ -720,6 +720,18 @@ fn publish_scene(
     });
     scene["body_count"] = serde_json::json!(bodies.iter().count());
     scene["draw_meshes"] = serde_json::json!(draw_meshes.iter().count());
+    scene["changed_unit_roots"] = serde_json::json!(
+        units
+            .iter()
+            .filter(|(_, transform, _)| transform.is_changed())
+            .count()
+    );
+    scene["changed_local_unit_roots"] = serde_json::json!(
+        units
+            .iter()
+            .filter(|(_, _, local)| local.is_changed())
+            .count()
+    );
     scene["widgets"] = serde_json::Value::Array(widget_rects);
     *SCENE.lock().unwrap() = scene.to_string();
 }

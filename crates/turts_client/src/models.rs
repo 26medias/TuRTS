@@ -685,7 +685,10 @@ pub fn sync_models(
                 }
                 *yaw = turn_toward(*yaw, direction, sources.time.delta_secs());
                 *previous = pos;
-                transform.rotation = Quat::from_rotation_y(*yaw);
+                let rotation = Quat::from_rotation_y(*yaw);
+                if transform.rotation != rotation {
+                    transform.rotation = rotation;
+                }
             }
         }
     }
