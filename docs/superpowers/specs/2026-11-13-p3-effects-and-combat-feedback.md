@@ -144,6 +144,14 @@ mods, with a client setting to switch it off. Team colour returns after the flas
 - A building that is destroyed: the model is removed at the moment of the effect peak
   (`delay_ms` of the first `Burst` layer, default 0), then the `Decal` stays.
 
+Terminal-state correction, traced during acceptance: the server sends the final tick as a
+reliable full snapshot. That message has no `Fired` or `Destroyed` facts. On the first snapshot
+with a Victory or Draw outcome, the client may show death pictures for previously known actors
+that the snapshot newly removes. Actors already waiting for a known projectile death are excluded. This requires the same session and a coherent prior tick at most
+4 ticks earlier. The pictures start at receipt; no shot is inferred. Ordinary recovery,
+late joins, stale gaps, and repeated terminal snapshots do not start old death pictures.
+A Defeat result alone is not a terminal match: other teams can still be playing.
+
 ### 4.5 Shot moment (meeting point with P2)
 
 The `fire` effect and the projectile start at the `Fired` event time. P2 aligns its clip to

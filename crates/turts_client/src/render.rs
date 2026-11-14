@@ -506,9 +506,12 @@ pub fn sync_units(
                     .insert(crate::fx::PendingDeath { at, remove_model });
                 continue;
             }
-            if visual_events
+            if (visual_events
                 .as_ref()
                 .is_some_and(|e| e.destroyed.contains(&unit_id))
+                || combat
+                    .as_ref()
+                    .is_some_and(|fx| fx.released_deaths.contains(&unit_id)))
                 && let Ok(mut animation) = animations.get_mut(entity)
             {
                 animation.dead = true;

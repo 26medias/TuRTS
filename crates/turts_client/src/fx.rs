@@ -59,9 +59,13 @@ pub struct CombatPresentation {
     pub flashes: HashMap<u32, f64>,
     pub emissions: Vec<Emission>,
     pub destroyed: HashSet<u32>,
+    pub released_deaths: HashSet<u32>,
     pub now: f64,
     snapshot: Option<u32>,
     session: Option<u64>,
+    observed_tick: Option<u32>,
+    coherent: bool,
+    terminal_seen: bool,
     loops: HashMap<(u32, String), f64>,
     work_phase: HashMap<u32, f32>,
 }
@@ -113,17 +117,58 @@ pub fn update_combat(
 ) {
     fx.now = time.elapsed_secs_f64();
     fx.emissions.clear();
+    fx.released_deaths.clear();
     let (Some(replica), Some(acquired)) = (state.replica.as_ref(), acquired) else {
         return;
     };
     let session = state.welcome.map(|w| w.match_id);
-    if fx.snapshot != replica.snapshot_tick || fx.session != session {
+    let terminal = replica
+        .match_state()
+        .outcomes
+        .iter()
+        .flatten()
+        .any(|result| {
+            matches!(
+                result.outcome,
+                turts_net_protocol::Outcome::Victory | turts_net_protocol::Outcome::Draw
+            )
+        });
+    let snapshot_changed = fx.snapshot != replica.snapshot_tick || fx.session != session;
+    // The server ends with a reliable state snapshot, without a terminal delta's visual facts.
+    // Show only newly missing, known actors at a fresh first outcome. Never invent a shot.
+    let terminal_removed: Vec<_> = if snapshot_changed
+        && fx.session == session
+        && terminal
+        && !fx.terminal_seen
+        && fx.coherent
+        && fx
+            .observed_tick
+            .zip(replica.snapshot_tick)
+            .is_some_and(|(before, end)| end > before && end.saturating_sub(before) <= 4)
+    {
+        fx.actors
+            .iter()
+            .filter(|(id, _)| !replica.units.contains_key(id) && !fx.death_at.contains_key(id))
+            .map(|(&id, actor)| (id, actor.clone()))
+            .collect()
+    } else {
+        Vec::new()
+    };
+    let terminal_seen = terminal || (fx.session == session && fx.terminal_seen);
+    if snapshot_changed {
         *fx = CombatPresentation {
             now: time.elapsed_secs_f64(),
             snapshot: replica.snapshot_tick,
             session,
+            terminal_seen,
             ..Default::default()
         };
+    }
+    fx.observed_tick = replica.last_applied_tick;
+    fx.coherent = !replica.in_resync();
+    fx.terminal_seen = terminal_seen;
+    for (id, actor) in &terminal_removed {
+        fx.actors.insert(*id, actor.clone());
     }
     let package = &acquired.0.presentation;
     let now = fx.now;
@@ -260,7 +305,12 @@ pub fn update_combat(
             impact.health = Some(value);
         }
     }
-    for &id in &events.destroyed {
+    for id in events
+        .destroyed
+        .iter()
+        .copied()
+        .chain(terminal_removed.iter().map(|(id, _)| *id))
+    {
         fx.destroyed.insert(id);
         let at = *fx.death_at.entry(id).or_insert(now);
         let peak = fx
@@ -334,6 +384,7 @@ pub fn update_combat(
                 false,
             );
         }
+        fx.released_deaths.insert(id);
         fx.death_at.remove(&id);
         fx.destroyed.remove(&id);
     }
@@ -871,5 +922,200 @@ mod timeline_tests {
         assert!(fx.impacts.is_empty());
         assert!(fx.emissions.is_empty());
         assert_eq!(fx.displayed_health[&2], 90);
+    }
+    fn prime_terminal_history(app: &mut App, tick: u32) {
+        let mut state = app.world_mut().resource_mut::<ReplicaState>();
+        let replica = state.replica.as_mut().unwrap();
+        replica.set_context(crate::replica::ReplicaContext::new(
+            ClientContent::default(),
+            0,
+        ));
+        replica.last_applied_tick = Some(tick);
+        replica.resync = None;
+        app.world_mut()
+            .resource_mut::<AcquiredPackages>()
+            .0
+            .presentation
+            .effect_visuals
+            .get_mut("test:soldier")
+            .unwrap()
+            .death = Some("test:death".into());
+        app.update();
+    }
+    fn replace_with_empty_snapshot(
+        app: &mut App,
+        tick: u32,
+        outcome: Option<turts_net_protocol::Outcome>,
+    ) {
+        let snapshot = turts_net_protocol::Snapshot {
+            tick,
+            records: turts_net_protocol::SnapshotRecords {
+                match_state: Some(turts_net_protocol::MatchState {
+                    outcomes: outcome
+                        .map(|outcome| {
+                            vec![Some(turts_net_protocol::SlotOutcome {
+                                outcome,
+                                reason: turts_net_protocol::OutcomeReason::OpponentsDefeated,
+                                tick,
+                            })]
+                        })
+                        .unwrap_or_default(),
+                    ..default()
+                }),
+                ..default()
+            },
+            ..default()
+        };
+        let result = app
+            .world_mut()
+            .resource_mut::<ReplicaState>()
+            .replica
+            .as_mut()
+            .unwrap()
+            .apply_snapshot(&snapshot, bevy::platform::time::Instant::now());
+        assert!(
+            matches!(result, crate::replica::SnapshotOutcome::Applied { .. }),
+            "{result:?}"
+        );
+        app.world_mut().resource_mut::<Presented>().units.clear();
+        app.update();
+    }
+    #[test]
+    fn a_fresh_terminal_snapshot_shows_known_deaths_once_without_a_fake_shot() {
+        let mut app = app();
+        prime_terminal_history(&mut app, 10);
+        replace_with_empty_snapshot(&mut app, 11, Some(turts_net_protocol::Outcome::Victory));
+        let fx = app.world().resource::<CombatPresentation>();
+        assert_eq!(fx.emissions.len(), 2);
+        assert!(
+            fx.emissions
+                .iter()
+                .all(|emission| emission.effect == "test:death")
+        );
+        assert_eq!(fx.released_deaths.len(), 2);
+        assert!(fx.impacts.is_empty());
+        app.world_mut()
+            .resource_mut::<CombatPresentation>()
+            .actors
+            .insert(
+                99,
+                Actor {
+                    content: "test:soldier".into(),
+                    position: Vec3::ZERO,
+                    height: 1.,
+                },
+            );
+        replace_with_empty_snapshot(&mut app, 12, Some(turts_net_protocol::Outcome::Victory));
+        assert!(
+            app.world()
+                .resource::<CombatPresentation>()
+                .emissions
+                .is_empty()
+        );
+    }
+    #[test]
+    fn ordinary_or_nonterminal_defeat_snapshots_never_replay_deaths() {
+        for outcome in [None, Some(turts_net_protocol::Outcome::Defeat)] {
+            let mut app = app();
+            prime_terminal_history(&mut app, 10);
+            replace_with_empty_snapshot(&mut app, 11, outcome);
+            assert!(
+                app.world()
+                    .resource::<CombatPresentation>()
+                    .emissions
+                    .is_empty()
+            );
+        }
+    }
+    #[test]
+    fn a_stale_terminal_snapshot_does_not_replay_deaths_or_arm_a_duplicate() {
+        let mut app = app();
+        prime_terminal_history(&mut app, 10);
+        replace_with_empty_snapshot(&mut app, 20, Some(turts_net_protocol::Outcome::Victory));
+        assert!(
+            app.world()
+                .resource::<CombatPresentation>()
+                .emissions
+                .is_empty()
+        );
+        app.world_mut()
+            .resource_mut::<CombatPresentation>()
+            .actors
+            .insert(
+                99,
+                Actor {
+                    content: "test:soldier".into(),
+                    position: Vec3::ZERO,
+                    height: 1.,
+                },
+            );
+        replace_with_empty_snapshot(&mut app, 21, Some(turts_net_protocol::Outcome::Victory));
+        assert!(
+            app.world()
+                .resource::<CombatPresentation>()
+                .emissions
+                .is_empty()
+        );
+    }
+    #[test]
+    fn joining_an_ended_match_has_no_old_death_burst() {
+        let mut app = app();
+        app.world_mut()
+            .resource_mut::<ReplicaState>()
+            .replica
+            .as_mut()
+            .unwrap()
+            .set_context(crate::replica::ReplicaContext::new(
+                ClientContent::default(),
+                0,
+            ));
+        replace_with_empty_snapshot(&mut app, 11, Some(turts_net_protocol::Outcome::Draw));
+        assert!(
+            app.world()
+                .resource::<CombatPresentation>()
+                .emissions
+                .is_empty()
+        );
+    }
+    #[test]
+    fn terminal_recovery_from_an_incoherent_history_has_no_old_death_burst() {
+        let mut app = app();
+        prime_terminal_history(&mut app, 10);
+        app.world_mut()
+            .resource_mut::<ReplicaState>()
+            .replica
+            .as_mut()
+            .unwrap()
+            .resync = Some(vec![]);
+        app.update();
+        replace_with_empty_snapshot(&mut app, 11, Some(turts_net_protocol::Outcome::Victory));
+        assert!(
+            app.world()
+                .resource::<CombatPresentation>()
+                .emissions
+                .is_empty()
+        );
+    }
+    #[test]
+    fn a_terminal_snapshot_does_not_reconstruct_an_already_pending_death() {
+        let mut app = app();
+        prime_terminal_history(&mut app, 10);
+        app.world_mut()
+            .resource_mut::<ReplicaState>()
+            .replica
+            .as_mut()
+            .unwrap()
+            .units
+            .remove(&2);
+        app.world_mut()
+            .resource_mut::<CombatPresentation>()
+            .death_at
+            .insert(2, 0.2);
+        app.update();
+        replace_with_empty_snapshot(&mut app, 11, Some(turts_net_protocol::Outcome::Victory));
+        let fx = app.world().resource::<CombatPresentation>();
+        assert_eq!(fx.emissions.len(), 1);
+        assert_eq!(fx.emissions[0].source, Vec3::ZERO);
+        assert_eq!(fx.released_deaths, HashSet::from([1]));
     }
 }

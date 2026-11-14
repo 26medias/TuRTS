@@ -71,7 +71,7 @@ result.warningClick=await wait(s=>onscreen(project(s,[10,2,20])),'warning click 
 await page.mouse.move(...project(scene,[mode==='victory'?23:20,0,20]));for(let i=0;i<12;i++){await page.mouse.wheel(0,-100);await sleep(70)}scene=await read();
 let own=scene.units.find(u=>u.unit_id===3),enemy=scene.units.find(u=>u.unit_id===4);if(mode!=='pixels'){await page.mouse.click(...project(scene,[own.translation[0],.75,own.translation[2]]));await page.mouse.click(...project(scene,[enemy.translation[0],mode==='victory'?1:.75,enemy.translation[2]]),{button:'right'});}
 await page.mouse.move(30,680);
-if(mode==='victory'){scene=await wait(s=>!s.units.some(u=>u.unit_id===4),'castle destroyed',25000);await sleep(500);result.ui=await page.evaluate(()=>JSON.parse(turts_ui()));if(!JSON.stringify(result.ui).includes('Victory'))throw Error('victory HUD missing');await page.screenshot({path:out+'/victory.png'});result.final=scene;}
+if(mode==='victory'){scene=await wait(s=>!s.units.some(u=>u.unit_id===4),'castle destroyed',25000);await sleep(500);result.ui=await page.evaluate(()=>JSON.parse(turts_ui()));if(!JSON.stringify(result.ui).includes('Victory'))throw Error('victory HUD missing');scene=await read();await page.screenshot({path:out+'/victory.png'});result.final=scene;if(scene.effects.decals<1||scene.effects.pool.peak<13)throw Error('FX6 terminal castle destruction left no scorch or debris');}
 else{
 // Capture scene and canvas in one browser task so each mask has the correct camera and actor positions.
 let preHit=null,hitBaseline=null,hitUntil=-1,wasHit=false;const anchorHeights=new Map();
