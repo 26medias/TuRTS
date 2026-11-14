@@ -122,7 +122,11 @@ pub(super) fn draw_selection_rings(
                             .into(),
                         Transform {
                             translation: range_position,
-                            scale: Vec3::splat(weapon.range),
+                            scale: Vec3::splat(weapon.range_mode.centre_reach(
+                                weapon.range,
+                                *radius,
+                                0.0,
+                            )),
                             ..default()
                         },
                     ),

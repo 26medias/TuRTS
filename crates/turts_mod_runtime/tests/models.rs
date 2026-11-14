@@ -84,8 +84,14 @@ fn files() -> BTreeMap<String, Vec<u8>> {
         "input/bindings.ron".into(),
         ron::ser::to_string(&input).unwrap().into_bytes(),
     );
+    // This fixture targets API 0.2.6. Later combat fields do not belong to its checks.
+    let path = "units/swordsman.ron";
+    let text = String::from_utf8(files[path].clone())
+        .unwrap()
+        .replace(", range_mode: Surface", "");
+    files.insert(path.into(), text.into_bytes());
     // Tests isolate one model and retain all other content as shapes.
-    for name in ["base", "barracks", "worker", "trees"] {
+    for name in ["base", "barracks", "worker", "trees", "swordsman"] {
         let p = format!("visuals/{name}.ron");
         let text = String::from_utf8(files[&p].clone()).unwrap();
         if let Some(start) = text.find(", model:") {

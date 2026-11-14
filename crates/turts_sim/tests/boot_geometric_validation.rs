@@ -102,6 +102,7 @@ fn catalog(field: GeometricField, value: f32) -> ContentCatalog {
         health: None,
         weapon: matches!(field, GeometricField::Weapon).then_some(ResolvedWeapon {
             range: value,
+            range_mode: turts_mod_api::WeaponRangeMode::Centre,
             cooldown_ms: 250,
             damage: 1,
             ammo: None,

@@ -65,6 +65,8 @@ fn not_stopped(
 struct WeaponParameters {
     owner: u8,
     range: f32,
+    range_mode: turts_mod_api::WeaponRangeMode,
+    radius: f32,
     damage: u64,
     modifier: Result<u64, RejectReason>,
     cooldown_ticks: Result<u32, RejectReason>,
@@ -77,6 +79,8 @@ struct CombatIndex<'a> {
     points: &'a [crate::grid::GridPoint],
     positions: &'a BTreeMap<u32, bevy_math::Vec2>,
     owners: &'a BTreeMap<u32, u8>,
+    radii: &'a BTreeMap<u32, f32>,
+    max_radius: f32,
 }
 
 /// Run each enabled weapon once, in ascending unit-id order.
@@ -92,6 +96,8 @@ pub(crate) fn run_combat(world: &mut World) {
     let mut points = Vec::new();
     let mut owners = BTreeMap::new();
     let mut positions = BTreeMap::new();
+    let mut radii = BTreeMap::new();
+    let mut max_radius = 0.0_f32;
     for entity in world.iter_entities() {
         let (Some(id), Some(position), Some(owner)) = (
             entity.get::<UnitId>(),
@@ -100,6 +106,12 @@ pub(crate) fn run_combat(world: &mut World) {
         ) else {
             continue;
         };
+        let radius = entity
+            .get::<UnitType>()
+            .and_then(|kind| world.resource::<UnitTypes>().get(kind.0))
+            .map_or(0.0, |kind| kind.radius);
+        radii.insert(id.0, radius);
+        max_radius = max_radius.max(radius);
         entities.insert(id.0, entity.id());
         points.push(crate::grid::GridPoint {
             id: id.0,
@@ -122,6 +134,8 @@ pub(crate) fn run_combat(world: &mut World) {
         points: &points,
         positions: &positions,
         owners: &owners,
+        radii: &radii,
+        max_radius,
     };
     let mut weapon_ids = world
         .resource::<Weapons>()
@@ -288,6 +302,8 @@ fn weapon_parameters(
     Some(WeaponParameters {
         owner,
         range: weapon_def.range,
+        range_mode: weapon_def.range_mode,
+        radius: type_entry.radius,
         damage: weapon_def.damage,
         modifier,
         cooldown_ticks,
@@ -431,7 +447,12 @@ fn choose_target(
             return None;
         }
         let position = *candidates.positions.get(&id)?;
-        within_weapon_range(origin, position, parameters.range)
+        let reach = parameters.range_mode.centre_reach(
+            parameters.range,
+            parameters.radius,
+            *candidates.radii.get(&id)?,
+        );
+        within_weapon_range(origin, position, reach)
             .then(|| (position.distance_squared(origin), id))
     };
     if let Some(focus) = focus
@@ -441,7 +462,15 @@ fn choose_target(
     }
     candidates
         .grid
-        .within(candidates.points, origin, parameters.range)
+        .within(
+            candidates.points,
+            origin,
+            parameters.range_mode.centre_reach(
+                parameters.range,
+                parameters.radius,
+                candidates.max_radius,
+            ),
+        )
         .into_iter()
         .filter_map(|point_index| matches(candidates.points[point_index].id))
         .min_by(|left, right| {
@@ -584,6 +613,7 @@ mod tests {
         });
         result.weapon = Some(ResolvedWeapon {
             range: 8.0,
+            range_mode: turts_mod_api::WeaponRangeMode::Centre,
             cooldown_ms,
             damage,
             ammo: Some(ResolvedAmmo {
@@ -684,6 +714,39 @@ mod tests {
                 },
             );
         app
+    }
+
+    #[test]
+    fn surface_reach_hits_large_buildings_only_within_authored_gap() {
+        for (mode, distance, fires) in [
+            (turts_mod_api::WeaponRangeMode::Surface, 3.0, true),
+            (turts_mod_api::WeaponRangeMode::Surface, 3.25, false),
+            (turts_mod_api::WeaponRangeMode::Centre, 3.0, false),
+        ] {
+            let mut sword = weapon(800, 25);
+            sword.footprint = Footprint::Circle { radius: 0.6 };
+            let def = sword.weapon.as_mut().unwrap();
+            def.range = 0.6;
+            def.range_mode = mode;
+            def.ammo = None;
+            let mut castle = unit(TARGET, Some(1000));
+            castle.footprint = Footprint::Circle { radius: 2.0 };
+            let mut app = app_with_units(
+                20,
+                vec![sword, castle],
+                vec![
+                    placement(WEAPON, 0, 5.0, 5.0),
+                    placement(TARGET, 1, 5.0 + distance, 5.0),
+                ],
+                BTreeMap::new(),
+            );
+            app.world_mut().run_schedule(bevy_app::FixedUpdate);
+            assert_eq!(
+                app.world().resource::<Healths>().0[&2],
+                if fires { 975 } else { 1000 },
+                "mode={mode:?} distance={distance}"
+            );
+        }
     }
 
     fn fired_ticks(app: &mut bevy_app::App, through: u32) -> Vec<u32> {
@@ -997,6 +1060,141 @@ mod tests {
         install_attack_order(&mut app);
         set_order(&mut app, attack_order(2));
         app
+    }
+
+    #[test]
+    fn surface_attack_and_attack_move_hit_castle_without_overlap() {
+        for attack_move in [false, true] {
+            for bearing in 0..16 {
+                let target = bevy_math::Vec2::new(16.0, 16.0);
+                let angle = bearing as f32 * std::f32::consts::TAU / 16.0;
+                let start = target + bevy_math::Vec2::new(angle.cos(), angle.sin()) * 9.0;
+                let mut sword = weapon(800, 25);
+                sword.movement = Some(turts_mod_api::MovementDef { speed: 4.5 });
+                sword.footprint = Footprint::Circle { radius: 0.6 };
+                let w = sword.weapon.as_mut().unwrap();
+                w.range = 0.6;
+                w.range_mode = turts_mod_api::WeaponRangeMode::Surface;
+                w.ammo = None;
+                let mut castle = unit(TARGET, Some(1000));
+                castle.footprint = Footprint::Circle { radius: 2.0 };
+                let mut app = app_with_units(
+                    20,
+                    vec![sword, castle],
+                    vec![
+                        placement(WEAPON, 0, start.x, start.y),
+                        placement(TARGET, 1, target.x, target.y),
+                    ],
+                    BTreeMap::new(),
+                );
+                if attack_move {
+                    install_attack_move(&mut app);
+                    set_order(
+                        &mut app,
+                        Order {
+                            order: cid("combat_fixture:attack_move"),
+                            behaviour: Behaviour::Attack,
+                            target: OrderTargetSim::Point(target),
+                            group: 0,
+                        },
+                    );
+                } else {
+                    install_attack_order(&mut app);
+                    set_order(&mut app, attack_order(2));
+                }
+                let mut fired = false;
+                for _ in 0..120 {
+                    app.update();
+                    let actor = app
+                        .world()
+                        .iter_entities()
+                        .find(|e| e.get::<UnitId>().is_some_and(|id| id.0 == 1))
+                        .unwrap();
+                    let distance = actor.get::<Position>().unwrap().0.distance(target);
+                    assert!(
+                        distance >= 2.6 - 1e-5,
+                        "overlap: attack_move={attack_move}, bearing={bearing}, distance={distance}"
+                    );
+                    if app.world().resource::<Healths>().0[&2] < 1000 {
+                        fired = true;
+                        break;
+                    }
+                }
+                assert!(
+                    fired,
+                    "no shot: attack_move={attack_move}, bearing={bearing}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn mixed_surface_and_centre_attackers_keep_their_separate_reaches() {
+        let mut sword = weapon(800, 25);
+        sword.movement = Some(turts_mod_api::MovementDef { speed: 4.5 });
+        sword.footprint = Footprint::Circle { radius: 0.6 };
+        let w = sword.weapon.as_mut().unwrap();
+        w.range = 0.6;
+        w.range_mode = turts_mod_api::WeaponRangeMode::Surface;
+        w.ammo = None;
+        let mut bow = sword.clone();
+        bow.id = cid("combat_fixture:bow");
+        let w = bow.weapon.as_mut().unwrap();
+        w.range = 6.0;
+        w.range_mode = turts_mod_api::WeaponRangeMode::Centre;
+        let mut castle = unit(TARGET, Some(10000));
+        castle.footprint = Footprint::Circle { radius: 2.0 };
+        let target = bevy_math::Vec2::new(20.0, 16.0);
+        let mut app = app_with_units(
+            20,
+            vec![sword, bow, castle],
+            vec![
+                placement(WEAPON, 0, 5.0, 14.0),
+                placement("combat_fixture:bow", 0, 5.0, 18.0),
+                placement(TARGET, 1, target.x, target.y),
+            ],
+            BTreeMap::new(),
+        );
+        install_attack_order(&mut app);
+        set_order(&mut app, attack_order(3));
+        let bow_entity = app
+            .world()
+            .iter_entities()
+            .find(|e| e.get::<UnitId>().is_some_and(|id| id.0 == 2))
+            .unwrap()
+            .id();
+        app.world_mut().entity_mut(bow_entity).insert(UnitOrders {
+            current: Some(attack_order(3)),
+            ..Default::default()
+        });
+        let mut shooters = std::collections::BTreeSet::new();
+        for _ in 0..160 {
+            app.update();
+            for event in fired_events(&app) {
+                shooters.insert(event.0);
+            }
+        }
+        assert_eq!(shooters, std::collections::BTreeSet::from([1, 2]));
+        let distances: BTreeMap<_, _> = app
+            .world()
+            .iter_entities()
+            .filter_map(|e| {
+                Some((
+                    e.get::<UnitId>()?.0,
+                    e.get::<Position>()?.0.distance(target),
+                ))
+            })
+            .collect();
+        assert!(
+            (2.6..=3.201).contains(&distances[&1]),
+            "sword {:?}",
+            distances
+        );
+        assert!(
+            (5.8..=6.001).contains(&distances[&2]),
+            "bow {:?}",
+            distances
+        );
     }
 
     /// `approach_app`, stepped until the first shot or `ticks`. Returns the tick of the

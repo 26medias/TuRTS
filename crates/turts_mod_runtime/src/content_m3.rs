@@ -147,6 +147,7 @@ pub(crate) fn resolve_content_m3(
                     .transpose()?;
                 Ok(ResolvedWeapon {
                     range: weapon.range,
+                    range_mode: weapon.range_mode,
                     cooldown_ms: weapon.cooldown_ms,
                     damage: weapon.damage,
                     ammo,

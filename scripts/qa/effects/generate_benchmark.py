@@ -4,18 +4,23 @@ from pathlib import Path
 parser=argparse.ArgumentParser()
 parser.add_argument('output',type=Path)
 parser.add_argument('--root',type=Path,default=Path(__file__).resolve().parents[3])
+parser.add_argument('--mixed',action='store_true',help='400 units in adjacent melee and ranged pairs, with shipped weapon reach')
 args=parser.parse_args();root=args.root.resolve();out=args.output.resolve();out.mkdir(parents=True,exist_ok=True)
 for name,side,burning in [('battle200',100,0),('burning200',100,10),('battle400',200,0),('battle800',400,0)]:
+    if args.mixed and name!='battle400': continue
     package=out/name
     if package.exists():shutil.rmtree(package)
     shutil.copytree(root/'mods/skirmish',package)
     cols=math.ceil(math.sqrt(side));rows=math.ceil(side/cols);offset=cols*1.4+4
     width=offset+cols*1.4+4;height=max(rows*1.4+4,20)
+    if args.mixed: width=cols*3+4; height=max(rows*1.4+4,20)
     placements=[];commands=[]
     for slot in range(2):
         for i in range(side):
             x=2+i%cols*1.4+slot*offset;y=2+i//cols*1.4
-            placements.append(f'(unit:"skirmish:soldier",owner_slot:{slot},pos:(x:{x:.5f},y:{y:.5f}),contents:[])')
+            kind='soldier'
+            if args.mixed: x=2+i%cols*3+slot*1.7; kind='swordsman' if i%2==0 else 'soldier'
+            placements.append(f'(unit:"skirmish:{kind}",owner_slot:{slot},pos:(x:{x:.5f},y:{y:.5f}),contents:[])')
             commands.append({'tick':400 if burning else 30,'slot':slot,'envelope':{'order':'skirmish:order_attack','units':[slot*side+i+1],'target':{'Unit':(1-slot)*side+i+1},'queue':'Replace','group':0}})
     for i in range(burning):
         placements.append(f'(unit:"skirmish:barracks",owner_slot:0,pos:(x:{4+i*4:.5f},y:{height+4:.5f}),contents:[])')
@@ -25,8 +30,11 @@ for name,side,burning in [('battle200',100,0),('burning200',100,10),('battle400'
     camera=re.sub(r'height: 36.0',f'height: {(width+height+10)*0.8:.5f}',camera).replace('maximum: 100.0','maximum: 300.0')
     hud.write_text(camera)
     (package/'match.ron').write_text('(start:Immediate,victory:None,open_sites_per_slot:Some(4))')
-    text=(package/'units/soldier.ron').read_text().replace('max: 120','max: 1000000').replace('range: 6.0',f'range: {100 if burning else offset+1:.5f}')
+    text=(package/'units/soldier.ron').read_text().replace('max: 120','max: 1000000')
+    if not args.mixed: text=text.replace('range: 6.0',f'range: {100 if burning else offset+1:.5f}')
     (package/'units/soldier.ron').write_text(text)
+    if args.mixed:
+        path=package/'units/swordsman.ron';path.write_text(path.read_text().replace('max: 300','max: 1000000'))
     # Isolate the render workload: high building health prevents incidental target changes
     # from killing a building. The damage thresholds are 1/1 in this fixture only.
     # The separate gameplay acceptance probe checks the shipped 1/2 and 1/4 thresholds.

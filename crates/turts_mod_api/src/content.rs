@@ -77,6 +77,7 @@ pub struct ResolvedAmmo {
 #[derive(Debug, Clone, PartialEq)]
 pub struct ResolvedWeapon {
     pub range: f32,
+    pub range_mode: crate::WeaponRangeMode,
     pub cooldown_ms: u64,
     pub damage: u64,
     pub ammo: Option<ResolvedAmmo>,

@@ -2263,7 +2263,8 @@ fn validate_order_operation(
                             format!("accepted Attack for unit {unit_id} has a missing unit target")
                         })?;
                     let target_position = bevy::math::Vec2::new(target.pos.x, target.pos.y);
-                    let goal = audit_attack_goal(&operation.before, unit_id, target_position)?;
+                    let goal =
+                        audit_attack_goal(&operation.before, unit_id, target_position, *target_id)?;
                     goal.map(|point| bevy::math::Vec2::new(point.x, point.y))
                 }
                 _ => {
@@ -2609,7 +2610,7 @@ fn validate_automatic_order_operation(
                     .iter()
                     .find(|kind| kind.type_id == actor.unit_type)
                     .is_some_and(|kind| kind.movement_speed.is_some());
-                let goal = audit_attack_goal(&operation.before, unit_id, point)?;
+                let goal = audit_attack_goal(&operation.before, unit_id, point, target.unit_id)?;
                 match goal {
                     Some(_) if !can_move => {
                         orders_after.current = None;
@@ -5217,7 +5218,7 @@ fn start_next_audited_order(
                     state
                         .movement_progress
                         .retain(|progress| progress.unit_id != unit_id);
-                    let point = audit_attack_goal(state, unit_id, target_position)?;
+                    let point = audit_attack_goal(state, unit_id, target_position, *target_id)?;
                     set_audit_move_target(state, unit_id, point)?;
                     return Ok(());
                 }
@@ -7375,6 +7376,7 @@ fn audit_attack_goal(
     state: &AuditState,
     unit_id: u32,
     target_position: bevy::math::Vec2,
+    target_id: u32,
 ) -> Result<Option<turts_mod_api::WorldPos>, String> {
     let actor = state
         .raw_units
@@ -7401,14 +7403,36 @@ fn audit_attack_goal(
     let range = unit_content.weapon_range.ok_or_else(|| {
         format!("Attack target calculation lacks weapon range for unit {unit_id}")
     })?;
+    let range = unit_content.weapon_range_mode.centre_reach(
+        range,
+        audit_unit_radius(state, unit_id),
+        audit_unit_radius(state, target_id),
+    );
     let origin = bevy::math::Vec2::new(actor.pos.x, actor.pos.y);
     let delta = target_position - origin;
     Ok((delta.length_squared() > range * range).then(|| {
-        clamped_audit_point(
-            state,
-            target_position - delta.normalize_or_zero() * range,
-            audit_unit_radius(state, unit_id),
-        )
+        // Reconstruct the bounded approach rule independently. Rounding can put
+        // the initial ring point just outside firing reach, including on an axis.
+        let mut point = target_position + (origin - target_position).normalize_or_zero() * range;
+        for _ in 0..64 {
+            if point.distance_squared(target_position) <= range * range {
+                break;
+            }
+            for axis in 0..2 {
+                let gap = target_position[axis] - point[axis];
+                let magnitude = point[axis].abs().max(target_position[axis].abs());
+                let step = magnitude.next_up() - magnitude;
+                point[axis] = if gap.abs() <= step {
+                    target_position[axis]
+                } else {
+                    point[axis] + step.copysign(gap)
+                };
+            }
+        }
+        if point.distance_squared(target_position) > range * range {
+            point = target_position;
+        }
+        clamped_audit_point(state, point, audit_unit_radius(state, unit_id))
     }))
 }
 
@@ -7437,8 +7461,13 @@ fn audit_attack_point_target_in_range(state: &AuditState, unit_id: u32) -> Resul
         return Ok(false);
     };
     let origin = bevy::math::Vec2::new(actor.pos.x, actor.pos.y);
-    let range_squared = range * range;
     Ok(state.raw_units.iter().any(|candidate| {
+        let reach = weapon.weapon_range_mode.centre_reach(
+            range,
+            audit_unit_radius(state, unit_id),
+            audit_unit_radius(state, candidate.unit_id),
+        );
+        let range_squared = reach * reach;
         if !state
             .raw_healths
             .iter()
@@ -9510,6 +9539,7 @@ mod tests {
                 radius: 0.5,
                 movement_speed: None,
                 weapon_range: None,
+                weapon_range_mode: turts_mod_api::WeaponRangeMode::Centre,
                 weapon_targets: None,
                 removal: None,
                 machine_recipe: None,
@@ -11279,6 +11309,7 @@ mod tests {
                 radius: 0.5,
                 movement_speed: Some(3.0),
                 weapon_range: None,
+                weapon_range_mode: turts_mod_api::WeaponRangeMode::Centre,
                 weapon_targets: None,
                 removal: None,
                 machine_recipe: None,
@@ -16999,6 +17030,7 @@ mod tests {
                 radius: 0.5,
                 movement_speed: None,
                 weapon_range: Some(10.0),
+                weapon_range_mode: turts_mod_api::WeaponRangeMode::Centre,
                 weapon_targets: Some(turts_mod_api::SlotRelation::Other),
                 removal: None,
                 machine_recipe: None,
@@ -17973,6 +18005,7 @@ mod tests {
                 radius: 0.5,
                 movement_speed: Some(3.0),
                 weapon_range: None,
+                weapon_range_mode: turts_mod_api::WeaponRangeMode::Centre,
                 weapon_targets: None,
                 removal: None,
                 machine_recipe: None,

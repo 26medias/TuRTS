@@ -299,10 +299,34 @@ pub struct AmmoDef {
     pub per_shot: u64,
 }
 
+/// How a weapon measures its authored range (API 0.2.8).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum WeaponRangeMode {
+    #[default]
+    Centre,
+    Surface,
+}
+
+impl WeaponRangeMode {
+    pub fn is_centre(&self) -> bool {
+        *self == Self::Centre
+    }
+
+    /// Convert authored reach to center distance. Centre preserves the old arithmetic.
+    pub fn centre_reach(self, range: f32, source_radius: f32, target_radius: f32) -> f32 {
+        match self {
+            Self::Centre => range,
+            Self::Surface => (range + source_radius + target_radius).min(f32::MAX),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct WeaponDef {
     pub range: f32,
+    #[serde(default, skip_serializing_if = "WeaponRangeMode::is_centre")]
+    pub range_mode: WeaponRangeMode,
     pub cooldown_ms: u64,
     pub damage: u64,
     pub ammo: Option<AmmoDef>,

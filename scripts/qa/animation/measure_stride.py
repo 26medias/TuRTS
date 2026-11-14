@@ -6,10 +6,12 @@ import argparse
 parser=argparse.ArgumentParser(description='Measure in-place walking stride from glTF foot motion. Requires NumPy and SciPy.')
 parser.add_argument('--art',type=Path,default=Path(__file__).resolve().parents[3]/'target/mc-evidence/art/skirmish-fantasy')
 parser.add_argument('--out',type=Path,default=Path(__file__).resolve().parents[3]/'target/mc-evidence/p2-stride.json')
+parser.add_argument('--model',default=None,help='Measure one model file instead of the original pair')
+parser.add_argument('--scale',type=float,default=1.0)
 args=parser.parse_args()
 base=args.art
 out={}
-for filename,scale in [('soldier_anim.glb',.88),('worker_anim.glb',1.)]:
+for filename,scale in ([(args.model,args.scale)] if args.model else [('soldier_anim.glb',.88),('worker_anim.glb',1.)]):
  b=(base/filename).read_bytes();n=struct.unpack_from('<I',b,12)[0];d=json.loads(b[20:20+n]);blob=b[28+n:]
  def acc(i):
   a=d['accessors'][i];v=d['bufferViews'][a['bufferView']];nc={'SCALAR':1,'VEC3':3,'VEC4':4}[a['type']];return np.frombuffer(blob,dtype='<f4',count=a['count']*nc,offset=v.get('byteOffset',0)+a.get('byteOffset',0)).reshape(a['count'],nc)

@@ -85,6 +85,7 @@ fn audit_catalog() -> ContentCatalog {
                 health: Some(HealthDef { max: 60 }),
                 weapon: shooter.then_some(ResolvedWeapon {
                     range: 3.0,
+                    range_mode: turts_mod_api::WeaponRangeMode::Centre,
                     cooldown_ms: 0,
                     damage: 1,
                     ammo: None,

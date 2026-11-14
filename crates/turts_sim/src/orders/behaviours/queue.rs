@@ -92,7 +92,15 @@ pub(in crate::orders) fn start_order(
                 })
                 .and_then(|candidate| candidate.get::<crate::world::Position>().map(|pos| pos.0))
                 .ok_or(crate::command::RejectReason::TargetGone)?;
-            let target = attack_goal(world, entity, target_position);
+            let target_radius = world
+                .iter_entities()
+                .find(|candidate| {
+                    candidate
+                        .get::<crate::world::UnitId>()
+                        .is_some_and(|id| id.0 == *target_id)
+                })
+                .map_or(0.0, |candidate| unit_radius(world, candidate.id()));
+            let target = attack_goal(world, entity, target_position, target_radius);
             if let Some(mut weapons) = world.get_resource_mut::<crate::economy::combat::Weapons>()
                 && let Some(state) = weapons.0.get_mut(&unit)
             {

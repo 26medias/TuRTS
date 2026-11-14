@@ -18,6 +18,15 @@ use bevy_math::Vec2;
 use std::collections::BTreeMap;
 use turts_mod_api::Behaviour;
 
+struct EngagementIndex<'a> {
+    grid: &'a crate::grid::UniformGrid,
+    points: &'a [crate::grid::GridPoint],
+    positions: &'a BTreeMap<u32, Vec2>,
+    owners: &'a BTreeMap<u32, u8>,
+    radii: &'a BTreeMap<u32, f32>,
+    max_radius: f32,
+}
+
 /// Run one fixed-tick order phase.
 pub(crate) fn run_orders(world: &mut World) {
     dispatch_pending_movement(world);
@@ -25,6 +34,8 @@ pub(crate) fn run_orders(world: &mut World) {
     let mut engagement_points = Vec::new();
     let mut engagement_positions = BTreeMap::new();
     let mut engagement_owners = BTreeMap::new();
+    let mut engagement_radii = BTreeMap::new();
+    let mut max_radius = 0.0_f32;
     for entity in world.iter_entities() {
         let Some(id) = entity.get::<crate::world::UnitId>() else {
             continue;
@@ -42,6 +53,9 @@ pub(crate) fn run_orders(world: &mut World) {
         });
         engagement_positions.insert(id.0, position.0);
         engagement_owners.insert(id.0, owner.0.0);
+        let radius = crate::orders::apply::unit_radius(world, entity.id());
+        engagement_radii.insert(id.0, radius);
+        max_radius = max_radius.max(radius);
     }
     engagement_points.sort_unstable_by_key(|point| point.id);
     let engagement_cell_size = world
@@ -51,6 +65,14 @@ pub(crate) fn run_orders(world: &mut World) {
         .filter_map(|unit| unit.weapon.as_ref().map(|weapon| weapon.range))
         .fold(f32::EPSILON, f32::max);
     let engagement_grid = crate::grid::UniformGrid::new(&engagement_points, engagement_cell_size);
+    let engagement = EngagementIndex {
+        grid: &engagement_grid,
+        points: &engagement_points,
+        positions: &engagement_positions,
+        owners: &engagement_owners,
+        radii: &engagement_radii,
+        max_radius,
+    };
     for (&unit_id, &entity) in &unit_entities {
         let replacement_pending = unit_has_pending_move(world, unit_id);
         let no_plain_move_state = world.entity(entity).get::<MoveTarget>().is_none()
@@ -295,16 +317,8 @@ pub(crate) fn run_orders(world: &mut World) {
                 .is_some_and(|definition| {
                     definition.engage == Some(turts_mod_api::EngagePolicy::StopAndFire)
                 });
-            let target_in_range = engage
-                && attack_point_has_target_in_range(
-                    world,
-                    entity,
-                    unit_id,
-                    &engagement_grid,
-                    &engagement_points,
-                    &engagement_positions,
-                    &engagement_owners,
-                );
+            let target_in_range =
+                engage && attack_point_has_target_in_range(world, entity, unit_id, &engagement);
             if target_in_range {
                 continue;
             }
@@ -410,15 +424,12 @@ fn attack_point_has_target_in_range(
     world: &World,
     entity: bevy_ecs::entity::Entity,
     unit_id: u32,
-    grid: &crate::grid::UniformGrid,
-    points: &[crate::grid::GridPoint],
-    positions: &BTreeMap<u32, Vec2>,
-    owners: &BTreeMap<u32, u8>,
+    index: &EngagementIndex<'_>,
 ) -> bool {
-    let Some(origin) = positions.get(&unit_id).copied() else {
+    let Some(origin) = index.positions.get(&unit_id).copied() else {
         return false;
     };
-    let Some(owner) = owners.get(&unit_id).copied() else {
+    let Some(owner) = index.owners.get(&unit_id).copied() else {
         return false;
     };
     let Some(unit_type) = world.entity(entity).get::<crate::world::UnitType>() else {
@@ -445,11 +456,20 @@ fn attack_point_has_target_in_range(
     let Some(healths) = world.get_resource::<crate::economy::combat::Healths>() else {
         return false;
     };
-    grid.within(points, origin, weapon.range)
+    let radius = index.radii.get(&unit_id).copied().unwrap_or(0.0);
+    index
+        .grid
+        .within(
+            index.points,
+            origin,
+            weapon
+                .range_mode
+                .centre_reach(weapon.range, radius, index.max_radius),
+        )
         .into_iter()
-        .any(|index| {
-            let target = points[index].id;
-            let Some(target_owner) = owners.get(&target).copied() else {
+        .any(|point_index| {
+            let target = index.points[point_index].id;
+            let Some(target_owner) = index.owners.get(&target).copied() else {
                 return false;
             };
             if !healths.0.get(&target).is_some_and(|health| *health > 0) {
@@ -459,6 +479,14 @@ fn attack_point_has_target_in_range(
             // slot is the slot itself until the match config gives teams (`L-MATCH-SIM`).
             let relation_matches =
                 crate::rules_adapter::holds_own_team(weapon.targets.slots, owner, target_owner);
-            relation_matches && positions.contains_key(&target)
+            relation_matches
+                && index.positions.get(&target).is_some_and(|position| {
+                    let reach = weapon.range_mode.centre_reach(
+                        weapon.range,
+                        radius,
+                        index.radii.get(&target).copied().unwrap_or(0.0),
+                    );
+                    crate::economy::combat::within_weapon_range(origin, *position, reach)
+                })
         })
 }

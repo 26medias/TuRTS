@@ -22,3 +22,13 @@ The files retain their skeletons and authored clips. No model was regenerated.
 
 The animated Crossbowman crossbow prop uses half its supplied local scale.
 This keeps the carried weapon above ground in the Idle clip. The body scale remains 0.88.
+
+## Swordsman (2026-11-14)
+
+`swordsman.glb` and `swordsman_anim.glb` use the Knight body, 1H Sword, and Round Shield from KayKit Adventurers 1.0 by Kay Lousberg (CC0 1.0).
+Source: https://github.com/KayKit-Game-Assets/KayKit-Character-Pack-Adventures-1.0/tree/672074b73ba276876a19e8816ecdc5241817ab47
+Source file: `addons/kaykit_character_pack_adventures/Characters/gltf/Knight.glb`.
+Source SHA-256: `60428e3abc09ba83e595d256e3af8c5c976b46cdae599f0802fc82b4a3445168`.
+Changes: remove unused accessories, keep seven clips, scale to 1.7 units, shorten the sword prop to 60 percent, add a neutral team material, and export static and animated GLB files.
+Reproduce with `blender -b -t 4 -P scripts/qa/animation/prepare_swordsman.py -- SOURCE_DIRECTORY mods/skirmish/assets/models`.
+The source directory must contain `Knight.glb`. The original license is in `target/mc-evidence/swordsman/source/LICENSE.txt`.

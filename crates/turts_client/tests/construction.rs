@@ -310,6 +310,7 @@ fn a_completed_building_with_a_queued_job_can_be_destroyed() {
             enemy.id = cid("enemy");
             enemy.weapon = Some(ResolvedWeapon {
                 range: 10.0,
+                range_mode: turts_mod_api::WeaponRangeMode::Centre,
                 cooldown_ms: 50,
                 damage: 200,
                 ammo: None,

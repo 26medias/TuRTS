@@ -3079,6 +3079,7 @@ fn set_enabled_keeps_all_legacy_toggleable_capability_families() {
     let mut unit = base.clone();
     unit.weapon = Some(turts_mod_api::ResolvedWeapon {
         range: 1.0,
+        range_mode: turts_mod_api::WeaponRangeMode::Centre,
         cooldown_ms: 1,
         damage: 1,
         ammo: None,

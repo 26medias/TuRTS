@@ -700,6 +700,28 @@ mod timeline_tests {
         app.update();
     }
     #[test]
+    fn melee_without_projectile_emits_no_bolt_and_releases_health_immediately() {
+        let mut app = app();
+        app.world_mut()
+            .resource_mut::<AcquiredPackages>()
+            .0
+            .presentation
+            .effect_visuals
+            .get_mut("test:soldier")
+            .unwrap()
+            .projectile = None;
+        shoot(&mut app, 75);
+        let fx = app.world().resource::<CombatPresentation>();
+        assert_eq!(fx.displayed_health[&2], 75);
+        assert!(fx.impacts.is_empty(), "melee has no pending flight");
+        assert!(
+            fx.emissions.is_empty(),
+            "a melee strike cannot emit the configured bolt"
+        );
+        assert!(fx.flashes.contains_key(&2));
+    }
+
+    #[test]
     fn fx1_fx2_health_waits_for_real_flight_then_releases() {
         let mut app = app();
         shoot(&mut app, 90);

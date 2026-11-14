@@ -1929,6 +1929,7 @@ mod tests {
         let mut turret = resolved_unit("muster:turret", None);
         turret.weapon = Some(turts_mod_api::ResolvedWeapon {
             range: 8.0,
+            range_mode: turts_mod_api::WeaponRangeMode::Centre,
             cooldown_ms: 1000,
             damage: 10,
             ammo: Some(turts_mod_api::ResolvedAmmo {
@@ -2216,6 +2217,7 @@ mod tests {
         static_weapon.movement = None;
         static_weapon.weapon = Some(turts_mod_api::ResolvedWeapon {
             range: 5.0,
+            range_mode: turts_mod_api::WeaponRangeMode::Centre,
             cooldown_ms: 1000,
             damage: 1,
             ammo: None,

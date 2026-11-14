@@ -16,3 +16,4 @@ serde_json = { workspace = true }
 [dev-dependencies]
 bevy_app = { workspace = true }
 bevy_math = { workspace = true }
+turts_mod_runtime = { path = "../turts_mod_runtime" }

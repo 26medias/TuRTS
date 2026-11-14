@@ -338,6 +338,11 @@ pub struct CatalogUnitAudit {
     pub movement_speed: Option<f32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub weapon_range: Option<f32>,
+    #[serde(
+        default,
+        skip_serializing_if = "turts_mod_api::WeaponRangeMode::is_centre"
+    )]
+    pub weapon_range_mode: turts_mod_api::WeaponRangeMode,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub weapon_targets: Option<turts_mod_api::SlotRelation>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1033,6 +1038,12 @@ pub fn audit_state(world: &mut World) -> AuditState {
                         },
                         movement_speed: d.movement.as_ref().map(|m| m.speed),
                         weapon_range: d.weapon.as_ref().map(|weapon| weapon.range),
+                        weapon_range_mode: d
+                            .weapon
+                            .as_ref()
+                            .map_or(turts_mod_api::WeaponRangeMode::Centre, |weapon| {
+                                weapon.range_mode
+                            }),
                         weapon_targets: d.weapon.as_ref().map(|weapon| weapon.targets.slots),
                         removal: d.removal,
                         machine_recipe: d.machine.as_ref().map(|machine| machine.recipe.clone()),

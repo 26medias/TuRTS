@@ -708,3 +708,50 @@ fn m3_words_in_comments_and_strings_do_not_trigger_version_rejection() {
         .content()
         .unwrap();
 }
+
+#[test]
+fn range_mode_requires_api_0_2_8_even_for_explicit_centre() {
+    for mode in ["Centre", "Surface"] {
+        let unit = weapon_unit().replace("range: 5.0", &format!("range: 5.0, range_mode: {mode}"));
+        let error = archive(&unit, RECIPE, TECH, "^0.2.7", &[])
+            .content()
+            .unwrap_err();
+        assert!(
+            error.to_string().contains("needs engine api 0.2.8"),
+            "{error}"
+        );
+        let catalog = archive(&unit, RECIPE, TECH, "^0.2.8", &[])
+            .content()
+            .unwrap();
+        assert_eq!(
+            format!(
+                "{:?}",
+                catalog
+                    .units
+                    .values()
+                    .next()
+                    .unwrap()
+                    .weapon
+                    .as_ref()
+                    .unwrap()
+                    .range_mode
+            ),
+            mode
+        );
+    }
+    let catalog = archive(&weapon_unit(), RECIPE, TECH, "^0.2.1", &[])
+        .content()
+        .unwrap();
+    assert_eq!(
+        catalog
+            .units
+            .values()
+            .next()
+            .unwrap()
+            .weapon
+            .as_ref()
+            .unwrap()
+            .range_mode,
+        turts_mod_api::WeaponRangeMode::Centre
+    );
+}

@@ -13,6 +13,7 @@ pub(super) fn attack_goal(
     world: &World,
     entity: bevy_ecs::entity::Entity,
     target_position: bevy_math::Vec2,
+    target_radius: f32,
 ) -> Option<bevy_math::Vec2> {
     let actor = world.entity(entity).get::<crate::world::Position>()?.0;
     let unit_type = world.entity(entity).get::<crate::world::UnitType>()?.0;
@@ -27,17 +28,18 @@ pub(super) fn attack_goal(
         .get(&id)?
         .weapon
         .as_ref()?;
+    let reach = weapon
+        .range_mode
+        .centre_reach(weapon.range, unit.radius, target_radius);
     // One rule for "in range": the one that lets the weapon fire (`combat::within_weapon_range`).
     // The approach ends at a point that passes the same rule (`combat::weapon_stand_off`).
-    (!crate::economy::combat::within_weapon_range(actor, target_position, weapon.range)).then(
-        || {
-            clamp_target(
-                world,
-                crate::economy::combat::weapon_stand_off(target_position, actor, weapon.range),
-                unit.radius,
-            )
-        },
-    )
+    (!crate::economy::combat::within_weapon_range(actor, target_position, reach)).then(|| {
+        clamp_target(
+            world,
+            crate::economy::combat::weapon_stand_off(target_position, actor, reach),
+            unit.radius,
+        )
+    })
 }
 
 pub(in crate::orders) fn run_unit_attack(
@@ -85,7 +87,10 @@ pub(in crate::orders) fn run_unit_attack(
         });
         return;
     };
-    let Some(goal) = attack_goal(world, entity, target_position) else {
+    let target_radius = entity_by_unit.get(&target_id).map_or(0.0, |target| {
+        crate::orders::apply::unit_radius(world, *target)
+    });
+    let Some(goal) = attack_goal(world, entity, target_position, target_radius) else {
         if world.entity(entity).get::<MoveTarget>().is_some() {
             crate::economy::transaction::capture_unit_order_operation(world, unit_id, |world| {
                 let mut entity_mut = world.entity_mut(entity);
