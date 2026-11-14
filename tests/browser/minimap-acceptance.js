@@ -23,7 +23,7 @@ let scene=await wait(s=>s.units?.length===4&&s.models?.every(m=>m.ready)&&s.widg
 const rect=scene.widgets.find(w=>w.id==='skirmish_minimap').rect;result.rect=rect;const mapPoint=(x,y)=>[rect[0]+x/100*rect[2],rect[1]+(1-y/60)*rect[3]];
 const png=decodePng(await page.screenshot({path:out+'/map.png'}));
 result.pixels={own:colourCount(png,mapPoint(10,20),[0,114,178]),enemy:colourCount(png,mapPoint(80,35),[230,159,0]),resource:colourCount(png,mapPoint(20,40),[242,204,96])};
-let white=0;for(let y=Math.ceil(rect[1]);y<rect[1]+rect[3];y++)for(let x=Math.ceil(rect[0]);x<rect[0]+rect[2];x++){const p=pixelAt(png,x,y);if(p&&p[0]>240&&p[1]>240&&p[2]>240)white++}result.pixels.frame=white;
+let white=0;for(let y=Math.ceil(rect[1]+6);y<rect[1]+rect[3]-6;y++)for(let x=Math.ceil(rect[0]+6);x<rect[0]+rect[2]-6;x++){const p=pixelAt(png,x,y);if(p&&p[0]>240&&p[1]>240&&p[2]>240)white++}result.pixels.frame=white;
 if(Object.values(result.pixels).some(n=>n<4)||white<40)throw Error('map marker or camera frame pixels missing');
 const unit=scene.units.find(u=>u.unit_id===3);await page.mouse.click(...project(scene,[unit.translation[0],.75,unit.translation[2]]));await sleep(150);result.before=await debug();if(JSON.stringify(result.before.selection)!=='[3]')throw Error('soldier selection failed');
 await page.mouse.click(...mapPoint(80,35));result.look=await wait(s=>{const p=project(s,[80,0,35]);return Math.hypot(p[0]-640,p[1]-360)<6},'left click looks at map point',3000);if(JSON.stringify((await debug()).selection)!=='[3]')throw Error('map look changed selection');
