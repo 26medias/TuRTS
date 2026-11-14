@@ -1,5 +1,7 @@
 # Fast rejoin after a page reload
 
+Status: RJ1–RJ5 pass. Independent review passes. See `docs/reports/2026-11-14-fast-rejoin.md`.
+
 A page reload currently waits about ten seconds for its old session to expire.
 The public HTTPS/WSS probe recorded eight connection attempts for each reload.
 The old WebSocket had closed, but its application Session still blocked the same player.

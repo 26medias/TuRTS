@@ -9,7 +9,7 @@
 
 TuRTS is a mod-first real-time strategy engine built with Rust and Bevy. It has a browser WebAssembly client, a native client, and an authoritative headless server. Game content is delivered as packages through the public mod API.
 
-**Current playable demo: a medieval fantasy skirmish against the computer.** Build Barracks, harvest timber, train Villagers and Crossbowmen, set rally points, fight, and reach Victory or Defeat. New skirmish starts another match. The browser build includes models, textures, team colours, graphics quality, pointer-centred zoom, walking and work animations, shot animation, construction rise, and falling bodies.
+**Current playable demo: a medieval fantasy skirmish against the computer.** Build Barracks, harvest timber, train Villagers, Crossbowmen, and Swordsmen, set rally points, fight, and reach Victory or Defeat. New skirmish starts another match. The browser build includes models, textures, team colours, graphics quality, pointer-centred zoom, walking and work animations, shot animation, construction rise, falling bodies, combat effects, attack warnings, and a minimap.
 
 The local tested launcher is:
 
@@ -19,11 +19,23 @@ bash target/mc-evidence/play-skirmish.sh
 
 That launcher uses prepared local artifacts. To build from source, use `bash scripts/skirmish-play.sh --prepare /absolute/path/to/prepared`, then `bash scripts/skirmish-play.sh --prepared /absolute/path/to/prepared --silent`. Test browsers must use a fresh profile and `--alsa-output-device=null`.
 
-This is a narrow playable slice. The full MP1 roster and two-human acceptance are not complete. The current simple opponent does not complete the general MP2 bot framework. Combat effects and offscreen attack warnings are the next presentation stage. Terrain, fog, broader lifecycle features, and large-scale performance remain later work.
+Two local browsers can play one match through `bash target/mc-evidence/play-two-player.sh`.
+Run its printed `JOIN_COMMAND` in another terminal.
+For a temporary Internet game, use `bash target/mc-evidence/play-shared-skirmish.sh`.
+This command needs `cloudflared`. It prints a trusted HTTPS address for both players.
+Keep it running until the match ends. Anyone with the link can join.
+A fresh join browser can start with `bash scripts/mp1-play.sh --join HTTPS_GAME_ADDRESS --silent`.
+From a source-built prepared folder, use `python3 -I -B scripts/skirmish_share.py --prepared /absolute/path/to/prepared`.
+
+Full local two-browser matches and public HTTPS/WSS orders pass scripted checks.
+Fast reload keeps the same army and slot. A ready lobby is next.
+A full match played by two people and the full MP1 roster remain open.
+The simple opponent does not complete the general MP2 bot framework.
+Terrain, fog, broader lifecycle features, and large-scale performance remain later work.
 
 The older Forge industrial demonstration remains available below. It proves extraction, conveyors, inserters, recipes, research, and ammunition combat through the public mod API. Its two-slot and restart restrictions describe that demonstration.
 
-See the [project map](docs/reports/2026-11-13-project-overview.html), the [P2 spec](docs/superpowers/specs/2026-11-13-p2-animation.md), and the [model and animation measurements](docs/measurements/models.md). The project map is a dated snapshot from before P2.
+See the [project map](docs/reports/2026-11-13-project-overview.html), the [P2 spec](docs/superpowers/specs/2026-11-13-p2-animation.md), and the [model and animation measurements](docs/measurements/models.md). The project map includes the latest verified deliveries.
 
 ## Try Forge locally
 

@@ -22,9 +22,9 @@ Another computer, another GPU, and a full remote match played by two people were
 The temporary test links are closed. This is development hosting, not a production service.
 
 There is no ready lobby or shared rematch yet. Start another host for a new match.
-A reload currently retries until the previous connection expires, for about 10 seconds.
-The server rejects that overlap as another live window. Both tested reloads recover.
-I will fix that delay next while preserving rejection of a real second live window.
+The first delivery retried for about ten seconds after reload.
+The fast rejoin delivery fixes that delay. Both new public reloads use one connection attempt.
+See `2026-11-14-fast-rejoin.md`.
 
 The prepared-build check no longer rejects a documentation-only commit.
 It still verifies build source, package content, tools, environment, required files, and artifact hashes.
