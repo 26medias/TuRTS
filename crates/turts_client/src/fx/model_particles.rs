@@ -15,7 +15,7 @@ struct Picture {
 pub struct ModelPictures {
     roots: HashMap<Entity, Picture>,
     pub ready: usize,
-    materials: HashMap<(AssetId<StandardMaterial>, [u32; 4]), Handle<StandardMaterial>>,
+    materials: HashMap<(AssetId<StandardMaterial>, [u32; 4], bool), Handle<StandardMaterial>>,
 }
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn update_model_particles(
@@ -96,7 +96,7 @@ pub(crate) fn update_model_particles(
             };
             let original =
                 original.map_or_else(|| current.0.clone(), |original| original.0.clone());
-            let key = (original.id(), key_colour);
+            let key = (original.id(), key_colour, particle.additive);
             let material = if let Some(material) = pictures.materials.get(&key) {
                 material.clone()
             } else {
@@ -105,7 +105,11 @@ pub(crate) fn update_model_particles(
                 };
                 let colour = material.base_color.to_linear().to_vec4() * tint;
                 material.base_color = Color::linear_rgba(colour.x, colour.y, colour.z, colour.w);
-                material.alpha_mode = AlphaMode::Blend;
+                material.alpha_mode = if particle.additive {
+                    AlphaMode::Add
+                } else {
+                    AlphaMode::Blend
+                };
                 let handle = materials.add(material);
                 pictures.materials.insert(key, handle.clone());
                 handle

@@ -19,6 +19,7 @@ pub struct Line {
 #[derive(Clone)]
 pub struct Decal {
     pub id: u64,
+    pub starts: f64,
     pub until: f64,
     pub position: Vec3,
     pub size: f32,
@@ -343,8 +344,8 @@ pub fn emit_effects(
                 }
                 Kind::Tracer { width } | Kind::Trail { width, .. } => {
                     emitters.lines.push_back(Line {
-                        source: emission.source,
-                        target: emission.target,
+                        source: base.position,
+                        target: emission.target + Vec3::from_array(layer.offset),
                         colour: Color::from(base.colour),
                         until: fx.now
                             + f64::from(layer.delay_ms) / 1000.
@@ -368,7 +369,8 @@ pub fn emit_effects(
                     let id = emitters.decal_serial;
                     emitters.decals.push_back(Decal {
                         id,
-                        until: fx.now + f64::from(*ms) / 1000.,
+                        starts: fx.now + f64::from(layer.delay_ms) / 1000.,
+                        until: fx.now + f64::from(layer.delay_ms + ms) / 1000.,
                         position: emission.source + Vec3::from_array(layer.offset),
                         size: *size,
                         colour: Color::from(base.colour),
@@ -497,5 +499,115 @@ mod tests {
             .advance_by(Duration::from_millis(1001));
         app.update();
         assert!(app.world().resource::<Emitters>().decals.is_empty());
+    }
+    #[test]
+    fn review_common_line_offset_is_applied() {
+        let mut app = app();
+        let defs: turts_mod_api::VisualEffectsDef = ron::from_str(
+            r#"(effects:[(id:"line",layers:[(kind:Tracer(width:0.1),offset:(0.2,0.1,0.0))])])"#,
+        )
+        .unwrap();
+        app.world_mut()
+            .resource_mut::<AcquiredPackages>()
+            .0
+            .presentation
+            .effects
+            .insert("test:line".into(), defs.effects[0].clone());
+        app.world_mut()
+            .resource_mut::<CombatPresentation>()
+            .emissions
+            .push(Emission {
+                effect: "test:line".into(),
+                source: Vec3::new(0., 0., 0.5),
+                target: Vec3::new(0.5, 0., 0.5),
+                critical: false,
+                window: None,
+                anchor: None,
+                target_unit: None,
+            });
+        app.update();
+        assert_eq!(
+            app.world().resource::<Emitters>().lines[0].source,
+            Vec3::new(0.2, 0.1, 0.5)
+        );
+    }
+    #[test]
+    fn review_decal_lifetime_includes_common_delay() {
+        let mut app = app();
+        let defs: turts_mod_api::VisualEffectsDef = ron::from_str(
+            r#"(effects:[(id:"delayed",layers:[(kind:Decal(size:2.0,ms:1000),delay_ms:500)])])"#,
+        )
+        .unwrap();
+        app.world_mut()
+            .resource_mut::<AcquiredPackages>()
+            .0
+            .presentation
+            .effects
+            .insert("test:delayed".into(), defs.effects[0].clone());
+        app.world_mut()
+            .resource_mut::<CombatPresentation>()
+            .emissions
+            .push(Emission {
+                effect: "test:delayed".into(),
+                source: Vec3::new(0., 0., 0.5),
+                target: Vec3::ZERO,
+                critical: false,
+                window: None,
+                anchor: None,
+                target_unit: None,
+            });
+        app.update();
+        assert_eq!(app.world().resource::<Emitters>().decals[0].until, 1.5);
+    }
+    #[test]
+    fn review_full_low_pool_keeps_plain_fire_projectile_and_hit() {
+        let mut app = app();
+        app.world_mut()
+            .resource_mut::<crate::models::GraphicsSettings>()
+            .quality = crate::models::Quality::Low;
+        let layer: EffectLayer = ron::from_str("(kind:Flash())").unwrap();
+        {
+            let mut pool = app.world_mut().resource_mut::<ParticlePool>();
+            pool.limit = 512;
+            for _ in 0..512 {
+                assert!(pool.spawn(particle(
+                    &layer,
+                    Vec3::ZERO,
+                    turts_mod_api::EffectCost::Small,
+                    0.,
+                    true
+                )));
+            }
+        }
+        let defs: turts_mod_api::VisualEffectsDef=ron::from_str(r#"(effects:[(id:"fire",layers:[(kind:Flash())]),(id:"projectile",layers:[(kind:Projectile(speed:30.0))]),(id:"hit",layers:[(kind:Sparks(count:8))])])"#).unwrap();
+        for effect in defs.effects {
+            app.world_mut()
+                .resource_mut::<AcquiredPackages>()
+                .0
+                .presentation
+                .effects
+                .insert(format!("test:{}", effect.id), effect);
+        }
+        for name in ["fire", "projectile", "hit"] {
+            app.world_mut()
+                .resource_mut::<CombatPresentation>()
+                .emissions
+                .push(Emission {
+                    effect: format!("test:{name}"),
+                    source: Vec3::new(0., 0., 0.5),
+                    target: Vec3::new(0.5, 0., 0.5),
+                    critical: true,
+                    window: None,
+                    anchor: None,
+                    target_unit: None,
+                });
+        }
+        app.update();
+        let pool = app.world().resource::<ParticlePool>();
+        assert_eq!(pool.active(), 512);
+        assert_eq!(pool.slots.len(), 512);
+        let lines = &app.world().resource::<Emitters>().lines;
+        assert!(lines.iter().any(|line| line.projectile));
+        assert!(lines.iter().filter(|line| !line.projectile).count() >= 2);
     }
 }
