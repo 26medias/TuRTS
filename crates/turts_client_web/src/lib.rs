@@ -494,6 +494,7 @@ fn publish_scene(
     animation_players: Query<&AnimationPlayer>,
     bodies: Query<&turts_client::animation::VisualBody>,
     draw_meshes: Query<(), With<Mesh3d>>,
+    instance_flashes: Query<(&turts_client::fx::flash::ModelFlash, &bevy::mesh::MeshTag)>,
     shared_poses: Option<Res<turts_client::animation::SharedPoses>>,
     fx_scene: FxSceneSources,
     model_instances: Query<(
@@ -676,6 +677,7 @@ fn publish_scene(
     scene["crowd_poses"] =
         serde_json::json!(shared_poses.map(|p| (p.evaluated_rigs, p.shared_rigs)));
     scene["effects"] = serde_json::json!({
+        "instance_flashes":instance_flashes.iter().filter(|(_,tag)|tag.value & 1 != 0).map(|(unit,_)|unit.0).collect::<std::collections::BTreeSet<_>>(),
         "model_particles":pictures.map(|pictures|pictures.ready),
         "decals":emitters.map(|emitters|emitters.decals.len()),
         "warning":warning.map(|warning|serde_json::json!({"position":warning.position.map(|p|p.to_array()),"started":warning.started,"until":warning.until})),

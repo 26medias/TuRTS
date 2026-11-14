@@ -111,7 +111,11 @@ pub struct VisualBody {
 #[derive(Resource, Default)]
 pub struct BodySerial(pub u64);
 
-pub type GpuChildren = Vec<(Entity, AssetId<Mesh>, AssetId<StandardMaterial>)>;
+pub type GpuChildren = Vec<(
+    Entity,
+    AssetId<Mesh>,
+    AssetId<crate::fx::flash::ModelMaterial>,
+)>;
 
 /// Build the same named hierarchy and skin links as the glTF loader, with shared render assets.
 #[allow(clippy::too_many_arguments)]
@@ -119,6 +123,7 @@ pub fn spawn_rig(
     commands: &mut Commands,
     root: Entity,
     id: u32,
+    flash_unit: Option<u32>,
     pos: Vec2,
     lift: f32,
     scale: f32,
@@ -131,7 +136,7 @@ pub fn spawn_rig(
     clips: &Assets<AnimationClip>,
     graphs: &mut Assets<AnimationGraph>,
     library: &mut AnimationLibrary,
-    materials: &HashMap<AssetId<bevy::gltf::GltfMaterial>, Handle<StandardMaterial>>,
+    materials: &HashMap<AssetId<bevy::gltf::GltfMaterial>, Handle<crate::fx::flash::ModelMaterial>>,
     mapping: &ModelAnimations,
     muzzle_node: Option<&str>,
 ) -> Option<(Entity, GpuChildren)> {
@@ -227,10 +232,16 @@ pub fn spawn_rig(
             .spawn((
                 Mesh3d(primitive.mesh.clone()),
                 MeshMaterial3d(material.clone()),
+                bevy::mesh::MeshTag::new(0),
                 Transform::IDENTITY,
                 ChildOf(entities[&primitive.node]),
             ))
             .id();
+        if let Some(unit) = flash_unit {
+            commands
+                .entity(child)
+                .insert(crate::fx::flash::ModelFlash(unit));
+        }
         if let Some(skin) = &primitive.skin {
             let skin = skins.get(skin)?;
             let joints = skin

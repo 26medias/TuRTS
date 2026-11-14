@@ -1,5 +1,53 @@
-//! White copies are shared by source material. Original team materials stay unchanged.
+//! Model flashes use an instance tag. Shape fallbacks retain shared white materials.
 use super::*;
+use bevy::{
+    mesh::{MeshTag, MeshVertexBufferLayoutRef},
+    pbr::{ExtendedMaterial, MaterialExtension, MaterialExtensionKey, MaterialExtensionPipeline},
+    reflect::TypePath,
+    render::render_resource::{
+        AsBindGroup, RenderPipelineDescriptor, SpecializedMeshPipelineError,
+    },
+    shader::ShaderRef,
+};
+
+pub type ModelMaterial = ExtendedMaterial<StandardMaterial, FlashExtension>;
+
+#[derive(Asset, AsBindGroup, TypePath, Debug, Clone, Default)]
+pub struct FlashExtension {}
+
+impl MaterialExtension for FlashExtension {
+    fn fragment_shader() -> ShaderRef {
+        "embedded://turts_client/fx/flash.wesl".into()
+    }
+    fn deferred_fragment_shader() -> ShaderRef {
+        Self::fragment_shader()
+    }
+    fn specialize(
+        _pipeline: &MaterialExtensionPipeline,
+        descriptor: &mut RenderPipelineDescriptor,
+        _layout: &MeshVertexBufferLayoutRef,
+        _key: MaterialExtensionKey<Self>,
+    ) -> Result<(), SpecializedMeshPipelineError> {
+        descriptor
+            .vertex
+            .shader_defs
+            .push("VERTEX_OUTPUT_INSTANCE_INDEX".into());
+        if let Some(fragment) = descriptor.fragment.as_mut() {
+            fragment
+                .shader_defs
+                .push("VERTEX_OUTPUT_INSTANCE_INDEX".into());
+        }
+        Ok(())
+    }
+}
+
+#[derive(Component)]
+pub struct ModelFlash(pub u32);
+
+pub fn register(app: &mut App) {
+    bevy::shader::load_shader_library!(app, "flash.wesl");
+    app.add_plugins(MaterialPlugin::<ModelMaterial>::default());
+}
 #[derive(Resource, Default)]
 pub struct FlashMaterials {
     white: HashMap<AssetId<StandardMaterial>, Handle<StandardMaterial>>,
@@ -57,7 +105,14 @@ pub fn flash_models(
     mut meshes: Query<(Entity, &mut MeshMaterial3d<StandardMaterial>)>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut cache: ResMut<FlashMaterials>,
+    mut tagged: Query<(&ModelFlash, &mut MeshTag)>,
 ) {
+    for (unit, mut tag) in &mut tagged {
+        let value = u32::from(settings.flashes && fx.flashes.contains_key(&unit.0));
+        if tag.value != value {
+            tag.value = value;
+        }
+    }
     if (fx.flashes.is_empty() || !settings.flashes) && cache.originals.is_empty() {
         return;
     }
@@ -105,4 +160,79 @@ pub fn flash_models(
         }
     }
     cache.originals.retain(|entity, _| live.contains(entity));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn model_hit_flags_change_without_changing_materials_and_settings_clear_them() {
+        let mut app = App::new();
+        app.init_resource::<CombatPresentation>()
+            .init_resource::<EffectSettings>()
+            .init_resource::<FlashMaterials>()
+            .init_resource::<Assets<StandardMaterial>>()
+            .init_resource::<Assets<ModelMaterial>>()
+            .add_systems(Update, flash_models);
+        let material = app
+            .world_mut()
+            .resource_mut::<Assets<ModelMaterial>>()
+            .add(ModelMaterial {
+                base: StandardMaterial {
+                    base_color: Color::srgb(0., 0., 1.),
+                    ..default()
+                },
+                extension: FlashExtension::default(),
+            });
+        let entity = app
+            .world_mut()
+            .spawn((
+                ModelFlash(7),
+                MeshTag::new(0),
+                MeshMaterial3d(material.clone()),
+            ))
+            .id();
+        app.update();
+        app.world_mut().clear_trackers();
+        app.world_mut()
+            .resource_mut::<CombatPresentation>()
+            .flashes
+            .insert(7, 1.);
+        app.update();
+        assert_eq!(app.world().get::<MeshTag>(entity).unwrap().value, 1);
+        assert_eq!(
+            app.world()
+                .get::<MeshMaterial3d<ModelMaterial>>(entity)
+                .unwrap()
+                .0,
+            material
+        );
+        assert!(
+            !app.world()
+                .entity(entity)
+                .get_ref::<MeshMaterial3d<ModelMaterial>>()
+                .unwrap()
+                .is_changed()
+        );
+        app.world_mut().resource_mut::<EffectSettings>().flashes = false;
+        app.update();
+        assert_eq!(app.world().get::<MeshTag>(entity).unwrap().value, 0);
+        app.world_mut().resource_mut::<EffectSettings>().flashes = true;
+        app.update();
+        assert_eq!(app.world().get::<MeshTag>(entity).unwrap().value, 1);
+        app.world_mut()
+            .resource_mut::<CombatPresentation>()
+            .flashes
+            .clear();
+        app.update();
+        assert_eq!(app.world().get::<MeshTag>(entity).unwrap().value, 0);
+        let base = &app
+            .world()
+            .resource::<Assets<ModelMaterial>>()
+            .get(&material)
+            .unwrap()
+            .base;
+        assert_eq!(base.base_color, Color::srgb(0., 0., 1.));
+    }
 }

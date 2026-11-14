@@ -582,6 +582,7 @@ impl Plugin for UnitRenderPlugin {
     fn build(&self, app: &mut App) {
         crate::models::register_gpu_readiness(app);
         crate::fx::particles::register(app);
+        crate::fx::flash::register(app);
         app.init_resource::<crate::environment::EnvironmentObservation>()
             .init_resource::<SlotMaterials>()
             .init_resource::<crate::models::ModelState>()

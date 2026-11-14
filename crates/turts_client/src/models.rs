@@ -114,7 +114,10 @@ pub struct ModelState {
     next_gpu_ticket: u64,
     handles: HashMap<String, Handle<Gltf>>,
     templates: HashMap<String, Vec<Primitive>>,
-    materials: HashMap<(AssetId<GltfMaterial>, Option<u8>, Quality), Handle<StandardMaterial>>,
+    materials: HashMap<
+        (AssetId<GltfMaterial>, Option<u8>, Quality),
+        Handle<crate::fx::flash::ModelMaterial>,
+    >,
     images: HashMap<(AssetId<Image>, Quality), Handle<Image>>,
     facing: HashMap<u32, (Vec2, f32)>,
     /// Test driver may delay readiness. It never changes authoritative state.
@@ -259,7 +262,8 @@ pub fn sync_models(
     mut library: ResMut<crate::animation::AnimationLibrary>,
     mut graphs: ResMut<Assets<AnimationGraph>>,
     mut mesh_assets: ResMut<Assets<Mesh>>,
-    mut material_assets: ResMut<Assets<StandardMaterial>>,
+    material_assets: Res<Assets<StandardMaterial>>,
+    mut model_materials: ResMut<Assets<crate::fx::flash::ModelMaterial>>,
     mut images: ResMut<Assets<Image>>,
     cameras: Query<(&Camera, &GlobalTransform)>,
     mut shown: Query<
@@ -539,7 +543,10 @@ pub fn sync_models(
                             *h = limited_texture(h, quality, &mut images, &mut state.images);
                         }
                     }
-                    let handle = material_assets.add(material);
+                    let handle = model_materials.add(crate::fx::flash::ModelMaterial {
+                        base: material,
+                        extension: crate::fx::flash::FlashExtension::default(),
+                    });
                     state.materials.insert(key, handle.clone());
                     handle
                 };
@@ -560,10 +567,16 @@ pub fn sync_models(
                     .spawn((
                         Mesh3d(primitive.mesh.clone()),
                         MeshMaterial3d(material.clone()),
+                        bevy::mesh::MeshTag::new(0),
                         local,
                         ChildOf(entity),
                     ))
                     .id();
+                if let Some(unit) = unit {
+                    commands
+                        .entity(child)
+                        .insert(crate::fx::flash::ModelFlash(unit.0));
+                }
                 children.push(child);
                 gpu_children.push((child, primitive.mesh.id(), material.id()));
             }
@@ -589,6 +602,7 @@ pub fn sync_models(
                     &mut commands,
                     entity,
                     id,
+                    unit.map(|unit| unit.0),
                     pos,
                     acquired
                         .0
@@ -814,7 +828,11 @@ struct ModelGpuRequests {
 }
 struct GpuRequest {
     root: Entity,
-    children: Vec<(Entity, AssetId<Mesh>, AssetId<StandardMaterial>)>,
+    children: Vec<(
+        Entity,
+        AssetId<Mesh>,
+        AssetId<crate::fx::flash::ModelMaterial>,
+    )>,
 }
 
 pub fn register_gpu_readiness(app: &mut App) {
