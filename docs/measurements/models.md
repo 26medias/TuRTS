@@ -434,3 +434,33 @@ Evidence: `target/mc-evidence/stable-model-transforms/visible-hit-final/`, with 
 Receipt: `target/mc-evidence/rig-visible-final-checks/receipt.json`; command 0, wrapper 0, source unchanged.
 All three final cold probes also pass in that batch. The checker retains open manual checks.
 No compiler or other test browser runs during the timings. Every Chrome uses a fresh silent profile.
+
+## Shared skin palettes: final release
+
+Date: 2026-11-14. Engine: `66e0d0d3`; retained review test: `9e5f0f5f`.
+Same game package and server as the previous delivery. Same 500 ms scene-read protocol.
+Host: RTX 3080, driver 580.178.04. WebGPU reports NVIDIA/Ampere and no software fallback.
+Every actor remains visible and takes damage. Animation detail and cadence stay unchanged.
+
+| Scene | Units | Quality | Frame p50, ms | Frame p95, ms | Mean FPS | Wasm high-water, MiB |
+| --- | ---: | --- | ---: | ---: | ---: | ---: |
+| Mixed fight | 400 | High | 16.70 | 16.70 | 59.30 | 193.6 |
+| Mixed fight | 400 | Low | 16.70 | 16.70 | 59.20 | 172.1 |
+| Mixed fight | 2000 | High | 33.30 | 50.00 | 31.45 | 392.8 |
+| Mixed fight | 2000 | Low | 33.20 | 33.40 | 39.14 | 350.8 |
+| Mixed fight and camera pan | 400 | High | 16.70 | 16.80 | 59.60 | 193.3 |
+| Mixed fight and camera pan | 400 | Low | 16.70 | 16.80 | 59.60 | 172.2 |
+| Same release with reference renderer | 2000 | High | 33.30 | 50.10 | 27.21 | 408.1 |
+
+At 2,000 units, all 5,000 skin draws use 33 palettes and 1,353 matrices.
+The paired High comparison uses one release binary: 27.21 FPS reference, 31.45 FPS shared.
+This is about a 16 percent increase. High p95 remains 50 ms. The stress scene still has slow frames.
+The previous delivered build reaches 25.12 FPS High and 31.85 FPS Low.
+That older-binary comparison is separate from the paired reference result.
+The 400-unit High threshold passes. Both 2,000-unit mean results exceed 30 FPS.
+The paired High Wasm high-water falls from 408.1 MiB to 392.8 MiB.
+Presentation timing is not an isolated GPU timer. Draw calls and GPU memory remain unavailable.
+The five-second warm-up and ten-second sample stay unchanged. No compiler or other test browser runs during timing.
+Evidence: `target/mc-evidence/shared-skin-palettes/final/`, one `result.json` per row folder.
+Receipt: `target/mc-evidence/shared-skins-final-checks/receipt.json`: command 0, wrapper 0, source unchanged.
+No new static detailed-model measurement runs. This change affects skin rendering.
