@@ -1,7 +1,7 @@
 (
     id: "hud_main",
     root: [
- (id:"attack_warnings",at:Some((anchor:TopRight,offset:(-12.0,60.0),pivot:None)),size:(w:Px(320.0),h:Px(120.0)),layer:60,widget:List(source:Alerts,direction:Vertical,gap:4,max_items:3,item:(id:"warning_row",size:(w:Px(320.0),h:Px(24.0)),widget:Button(icon:None,label:Some(Item(Name)),action:Item(Action),hotkey_label:false)))),
+ (id:"attack_warnings",at:Some((anchor:TopRight,offset:(-12.0,108.0),pivot:None)),size:(w:Px(320.0),h:Px(120.0)),layer:60,widget:List(source:Alerts,direction:Vertical,gap:4,max_items:3,item:(id:"warning_row",size:(w:Px(320.0),h:Px(24.0)),widget:Button(icon:None,label:Some(Item(Name)),action:Item(Action),hotkey_label:false)))),
  (id: "match_result", at: Some((anchor: Centre, offset: (0.0, 0.0), pivot: None)), size: (w: Px(520.0), h: Px(160.0)), layer: 100, visible: [MatchOver], widget: Box(fill: Some(Colour("#10251c")), border: None, children: [
   (id: "result_title", at: Some((anchor: TopLeft, offset: (24.0, 20.0), pivot: None)), size: (w: Px(472.0), h: Px(52.0)), widget: Text(text: Bind(Outcome), font: None, size: 36, colour: "#ffffff", align: Centre, wrap: false)),
   (id: "victory_detail", at: Some((anchor: TopLeft, offset: (24.0, 90.0), pivot: None)), size: (w: Px(472.0), h: Px(44.0)), visible: [OutcomeIs(Victory)], widget: Text(text: Literal("You destroyed the enemy castle."), font: None, size: 16, colour: "#ffffff", align: Centre, wrap: true)),
@@ -36,7 +36,7 @@
     tooltip_style: (background: "#000000", colour: "#ffffff", font: None, size: 12),
     cursors: {},
     camera: (pitch: 0.7, yaw: 0.0, field_of_view: 60.0, minimum: 10.0, maximum: 100.0,
-        start: OwnedCentre, height: 36.0, margin: 0.0, pan_speed: 1.0, edge_band: true),
+        start: OwnedCentre, height: 36.0, margin: 0.0, pan_speed: 100.0, edge_band: true),
     light: None,
     slot_colours: [],
     world: (ground: "#243b2c", grid: "#354b3c", selection: "#ffffff", health: "#00ff00",
