@@ -1,4 +1,5 @@
 // Exercise the real temporary HTTPS/WSS host and two fresh browser join commands.
+const {decodePng,pixelAt}=require('./harness/png');
 const fs=require('node:fs'),{spawn}=require('node:child_process'),{chromium}=require('playwright-core');
 const [root,prepared,out]=process.argv.slice(2);if(!out)throw Error('ROOT PREPARED OUTPUT');fs.mkdirSync(out,{recursive:true});
 const sleep=ms=>new Promise(r=>setTimeout(r,ms)),children=[],browsers=[],pages=[],result={status:'RUNNING',profiles:[],errors:[],networks:[]};
@@ -47,6 +48,22 @@ for(let i=0;i<2;i++){
 
  const session=await context.newCDPSession(page),network={websockets:[],packages:[]};result.networks.push(network);await session.send('Network.enable');session.on('Network.webSocketCreated',e=>network.websockets.push(e.url));session.on('Network.responseReceived',e=>{if(e.response.url.includes('/packages/'))network.packages.push({url:e.response.url,status:e.response.status})});
  const reloadStarted=Date.now();await page.reload({waitUntil:'domcontentloaded'});await wait(i,s=>s.scene.models.length>0&&s.scene.models.every(m=>m.ready),'reloaded public join');network.reload_ms=Date.now()-reloadStarted;if(process.env.TURTS_REJOIN_CHECK==='1'){const id=i?6:3,x=i?46:18;await wait(i,s=>{const u=s.world.units.find(u=>u.unit_id===id);return Math.hypot(u.pos[0]-x,u.pos[1]-30)<.25},'admitted order survives reload',10000);network.admitted_order_preserved=true;}if(process.env.TURTS_REJOIN_CHECK==='1'&&network.websockets.length>2)throw Error('rejoin opened repeated WebSockets: '+network.websockets.length);if(!network.websockets.includes(result.services.ws))throw Error('WSS endpoint not used: '+JSON.stringify(network));if(!network.packages.some(r=>r.url.startsWith(result.services.http+'/packages/')&&r.status===200))throw Error('public package did not load: '+JSON.stringify(network));
+}
+if(process.env.TURTS_LOBBY_CHECK==='1'){
+ result.palette_checks=[];
+ const colours=[[230,159,0],[0,114,178]];
+ const count=(png,point,colour,radius)=>{let n=0;for(let y=Math.floor(point[1]-radius);y<=point[1]+radius;y++)for(let x=Math.floor(point[0]-radius);x<=point[0]+radius;x++){const p=pixelAt(png,x,y);if(p&&colour.every((v,k)=>Math.abs(v-p[k])<16))n++}return n};
+ for(let i=0;i<2;i++){
+  let s=await read(i);
+  if(!colours.every((rgb,slot)=>rgb.every((value,k)=>Math.abs(s.colours?.[slot]?.[k]*255-value)<1)))throw Error('body materials do not use chosen slot colours');
+  const id=i?6:3,u=s.scene.units.find(u=>u.unit_id===id),[vx,vy,vw,vh]=s.scene.viewport_logical_rect;
+  await pages[i].mouse.click(vx+vw/2,vy+vh*.65);await pages[i].mouse.click(...project(s.scene,u.translation));await wait(i,s=>s.selection.includes(id),'colour-check selection');await sleep(250);s=await read(i);
+  const png=decodePng(await pages[i].screenshot({path:out+'/palette-'+i+'.png'})),rect=s.scene.widgets.find(w=>w.id==='skirmish_minimap').rect;
+  const markers=colours.map((rgb,slot)=>count(png,[rect[0]+(slot?54:10)/64*rect[2],rect[1]+(1-24/48)*rect[3]],rgb,5));
+  const ring=count(png,project(s.scene,u.translation),colours[i],48);
+  result.palette_checks.push({body_materials:s.colours.slice(0,2),minimap_pixels:markers,selected_ring_pixels:ring});
+  if(markers.some(n=>n<4)||ring<4)throw Error('chosen colours missing from minimap or selected ring: '+JSON.stringify(result.palette_checks));
+ }
 }
 result.initial=[await read(0),await read(1)];if(process.env.TURTS_LOBBY_CHECK==='1'&&result.initial.some(s=>JSON.stringify(s.start?.colours)!=='[1,0]'))throw Error('chosen colours did not survive match start and reload');if(result.initial[0].slot!==0||result.initial[1].slot!==1||result.initial[0].match!==result.initial[1].match||result.initial.some(s=>!s.secure))throw Error('secure shared slots or match differ');
 for(let i=0;i<2;i++){

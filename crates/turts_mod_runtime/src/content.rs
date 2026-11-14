@@ -15,6 +15,26 @@ use turts_mod_api::{ContentId, ModError, PackageId};
 const MAX_MOVEMENT_SPEED: f32 = 100.0;
 const MAX_FOOTPRINT_RADIUS: f32 = 50.0;
 
+/// Validate the actual palette offered by a human lobby, including host overrides.
+pub fn validate_lobby_palette(colours: &[String]) -> Result<(), String> {
+    if colours.len() < usize::from(turts_mod_api::SLOT_COUNT)
+        || colours.len() > usize::from(u8::MAX)
+    {
+        return Err("a lobby needs 2 to 255 distinct interface colours".into());
+    }
+    let mut unique = BTreeSet::new();
+    for colour in colours {
+        let bytes = colour.as_bytes();
+        if bytes.len() != 7 || bytes[0] != b'#' || !bytes[1..].iter().all(u8::is_ascii_hexdigit) {
+            return Err(format!("`{colour}` is not a #RRGGBB colour"));
+        }
+        if !unique.insert(colour.to_ascii_lowercase()) {
+            return Err("a lobby needs distinct interface colours".into());
+        }
+    }
+    Ok(())
+}
+
 pub fn checked_content_ref(
     origin: &PackageId,
     file: &str,

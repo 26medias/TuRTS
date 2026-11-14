@@ -26,8 +26,8 @@ type LobbyReaders<'w, 's> = Query<
     's,
     (
         Entity,
-        &'static mut MessageReceiver<LobbyState>,
-        &'static mut MessageReceiver<LobbyRefused>,
+        Option<&'static mut MessageReceiver<LobbyState>>,
+        Option<&'static mut MessageReceiver<LobbyRefused>>,
     ),
     (With<Client>, Without<Disconnected>),
 >;
@@ -48,7 +48,10 @@ pub fn receive_states(
 ) {
     for (entity, mut states, mut refusals) in &mut clients {
         let epoch = witnesses.epoch_for(entity.to_bits());
-        for received in states.receive_with_tick() {
+        for received in states
+            .iter_mut()
+            .flat_map(|states| states.receive_with_tick())
+        {
             witnesses.record_message(
                 epoch,
                 received.channel_kind
@@ -72,7 +75,10 @@ pub fn receive_states(
             rejoin.advance_to(time.elapsed_secs_f64(), true);
             lobby.state = Some(state);
         }
-        for received in refusals.receive_with_tick() {
+        for received in refusals
+            .iter_mut()
+            .flat_map(|refusals| refusals.receive_with_tick())
+        {
             witnesses.record_message(
                 epoch,
                 received.channel_kind
@@ -120,16 +126,18 @@ pub fn send_intent(
     }) else {
         return;
     };
-    if lobby.desired_colour == Some(colour) {
-        lobby.desired_colour = None;
-    }
-    if lobby.desired_ready == Some(ready) {
-        lobby.desired_ready = None;
-    }
+    // Keep the latest local choice even when an older snapshot already matches it.
+    // An opposite action can still be in flight and arrive in the next revision.
     let action = lobby
         .desired_colour
+        .filter(|value| *value != colour)
         .map(LobbyActionKind::SetColour)
-        .or_else(|| lobby.desired_ready.map(LobbyActionKind::SetReady));
+        .or_else(|| {
+            lobby
+                .desired_ready
+                .filter(|value| *value != ready)
+                .map(LobbyActionKind::SetReady)
+        });
     let Some(action) = action else {
         return;
     };
@@ -173,13 +181,17 @@ pub(crate) fn activate(
     lobby.notice = None;
     match button {
         LobbyButton::Ready => lobby.desired_ready = Some(!lobby.desired_ready.unwrap_or(ready)),
-        LobbyButton::Colour(value) if *value != colour => {
-            lobby.desired_ready = None;
+        LobbyButton::Colour(value)
+            if *value != colour
+                || lobby
+                    .desired_colour
+                    .is_some_and(|pending| pending != *value) =>
+        {
+            lobby.desired_ready = Some(false);
             lobby.desired_colour = Some(*value);
         }
         LobbyButton::Colour(_) => {}
     }
-    lobby.last_sent = None;
 }
 
 #[derive(Resource, Default)]
@@ -452,7 +464,12 @@ pub(crate) fn update_ui(
         LobbyStart::Countdown { remaining_ms } => {
             format!("Starting in {}", remaining_ms.div_ceil(1000))
         }
-        LobbyStart::Waiting if lobby.desired_ready.is_some() || lobby.desired_colour.is_some() => {
+        LobbyStart::Waiting
+            if lobby.desired_ready.is_some_and(|value| value != own.ready)
+                || lobby
+                    .desired_colour
+                    .is_some_and(|value| value != own.colour) =>
+        {
             "Waiting for the server.".into()
         }
         LobbyStart::Waiting => "Both players must be ready.".into(),
@@ -627,6 +644,91 @@ mod tests {
                 .resource::<RejoinController>()
                 .terminal_text()
                 .is_none()
+        );
+    }
+    #[test]
+    fn first_state_reader_does_not_require_a_refusal_that_never_arrived() {
+        let mut world = World::new();
+        let peer = world
+            .spawn((Client, MessageReceiver::<LobbyState>::default()))
+            .id();
+        let mut query = bevy::ecs::system::SystemState::<LobbyReaders>::new(&mut world);
+        assert_eq!(
+            query
+                .get_mut(&mut world)
+                .unwrap()
+                .iter_mut()
+                .map(|(entity, _, _)| entity)
+                .collect::<Vec<_>>()
+                .len(),
+            1,
+            "a lazily inserted state receiver must work without a refusal receiver"
+        );
+        assert!(world.get::<MessageReceiver<LobbyRefused>>(peer).is_none());
+    }
+
+    #[test]
+    fn colour_choice_can_return_to_the_current_colour_before_the_echo() {
+        let mut app = App::new();
+        app.insert_resource(ClientLobby {
+            state: Some(state()),
+            desired_ready: Some(true),
+            desired_colour: Some(2),
+            ..default()
+        })
+        .add_observer(activate);
+        let button = app
+            .world_mut()
+            .spawn((LobbyButton::Colour(0), WidgetEnabled(true)))
+            .id();
+        app.world_mut().trigger(Activate { entity: button });
+        let lobby = app.world().resource::<ClientLobby>();
+        assert_eq!(lobby.desired_colour, Some(0));
+        assert_eq!(lobby.desired_ready, Some(false));
+    }
+
+    #[test]
+    fn independent_review_unready_survives_inflight_ready_echo() {
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins)
+            .insert_resource(Phase::Lobby)
+            .insert_resource(ClientLobby {
+                state: Some(state()),
+                desired_ready: Some(true),
+                ..default()
+            })
+            .add_systems(Update, send_intent);
+        let peer = app
+            .world_mut()
+            .spawn((Client, MessageSender::<LobbyAction>::default()))
+            .id();
+        let mut rejoin = RejoinController::for_stored_identity();
+        assert!(rejoin.start_attempt_at(peer.to_bits(), 0.0));
+        assert!(rejoin.on_connected_at(peer.to_bits(), 0.0));
+        app.insert_resource(rejoin);
+        app.update();
+        assert_eq!(
+            app.world().resource::<ClientLobby>().last_sent,
+            Some((1, LobbyActionKind::SetReady(true)))
+        );
+        // A second click cancels Ready before the first server echo arrives.
+        {
+            let mut lobby = app.world_mut().resource_mut::<ClientLobby>();
+            lobby.desired_ready = Some(false);
+            lobby.last_sent = None;
+        }
+        app.update();
+        {
+            let mut lobby = app.world_mut().resource_mut::<ClientLobby>();
+            let state = lobby.state.as_mut().unwrap();
+            state.revision = 2;
+            state.seats[0].ready = true;
+        }
+        app.update();
+        assert_eq!(
+            app.world().resource::<ClientLobby>().last_sent,
+            Some((2, LobbyActionKind::SetReady(false))),
+            "the pending Unready intent must be sent after the in-flight Ready echo"
         );
     }
 }

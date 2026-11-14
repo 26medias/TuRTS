@@ -939,14 +939,19 @@ mod tests {
 
     #[derive(Resource, Default)]
     struct LobbyRepliesCaptured {
+        states: Vec<LobbyState>,
         orders: Vec<OrderResult>,
         refusals: Vec<LobbyRefused>,
     }
     fn capture_lobby_replies(
+        mut states: Query<&mut MessageReceiver<LobbyState>>,
         mut orders: Query<&mut MessageReceiver<OrderResult>>,
         mut refusals: Query<&mut MessageReceiver<LobbyRefused>>,
         mut captured: ResMut<LobbyRepliesCaptured>,
     ) {
+        for mut reader in &mut states {
+            captured.states.extend(reader.receive());
+        }
         for mut reader in &mut orders {
             captured.orders.extend(reader.receive());
         }
@@ -1022,6 +1027,74 @@ mod tests {
         app.insert_resource(bevy::time::TimeUpdateStrategy::ManualDuration(
             Duration::ZERO,
         ));
+    }
+
+    #[test]
+    fn independent_review_first_real_hello_receives_typed_lobby_state() {
+        let mut app = lobby_app();
+        let (a, ca) = spawn_hello_peers(&mut app, 1);
+        deliver_hello(&mut app, a, ca, good(7));
+        relay_test_packets(&mut app, ca, a);
+        let states = &app.world().resource::<LobbyRepliesCaptured>().states;
+        assert!(
+            !states.is_empty(),
+            "first Hello must receive LobbyState through the typed reliable transport"
+        );
+        assert_eq!(states.last().unwrap().you, Some(0));
+        assert_eq!(states.last().unwrap().seats.len(), 2);
+    }
+
+    #[test]
+    fn independent_review_prestart_order_in_final_ready_packet_is_refused() {
+        let mut app = lobby_app();
+        app.insert_resource(crate::lobby::HostedLobby::new(
+            turts_mod_api::StartPolicy::AllSeatedReady { countdown_secs: 0 },
+            2,
+        ));
+        let (a, ca) = spawn_hello_peers(&mut app, 1);
+        deliver_hello(&mut app, a, ca, good(7));
+        let (b, cb) = spawn_hello_peers(&mut app, 2);
+        deliver_hello(&mut app, b, cb, good(8));
+        lobby_action(&mut app, a, ca, LobbyActionKind::SetReady(true));
+        let revision = app
+            .world()
+            .resource::<crate::lobby::HostedLobby>()
+            .room
+            .seats()
+            .revision();
+        app.world_mut()
+            .get_mut::<MessageSender<PlayerCommand>>(b)
+            .unwrap()
+            .send::<ReliableChannel>(PlayerCommand {
+                seq: 1,
+                order: OrderEnvelope {
+                    order: "skirmish:move".into(),
+                    units: vec![UnitId(3)],
+                    target: OrderTarget::Point(Pos { x: 18.0, y: 30.0 }),
+                    queue: QueueMode::Replace,
+                    group: 0,
+                },
+            });
+        app.world_mut()
+            .get_mut::<MessageSender<LobbyAction>>(b)
+            .unwrap()
+            .send::<ReliableChannel>(LobbyAction {
+                revision,
+                action: LobbyActionKind::SetReady(true),
+            });
+        relay_test_packets(&mut app, b, cb);
+        assert!(app.world().contains_resource::<turts_sim::MatchConfig>());
+        assert!(app.world().resource::<StagedPlayerCommands>().0.is_empty());
+        assert!(app.world().resource::<CommandQueue>().0.is_empty());
+        relay_test_packets(&mut app, cb, b);
+        assert!(
+            app.world()
+                .resource::<LobbyRepliesCaptured>()
+                .orders
+                .iter()
+                .any(|reply| reply.seq == 1
+                    && reply.envelope == Some(CommandRejectReason::MatchNotStarted))
+        );
     }
 
     #[test]

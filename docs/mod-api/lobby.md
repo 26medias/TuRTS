@@ -12,7 +12,9 @@ Countdown is 0 to 30 seconds. Cancelling readiness, changing colour, or leaving 
 A later valid start condition begins a full new countdown.
 Newly implemented lobby policies require an engine API requirement that excludes versions below 0.2.9.
 Existing Immediate packages retain their previous API requirements.
-A lobby needs at least two distinct colours in the interface's `slot_colours` palette.
+A lobby needs 2 to 255 distinct colours in the first interface's `slot_colours` palette.
+Each value must use #RRGGBB. Letter case does not make two colours distinct.
+The same validation applies when a host overrides an Immediate package.
 The server supports 2 to 255 palette entries. Colours stay unique among occupied seats.
 A colour change clears that player's readiness.
 
@@ -35,3 +37,6 @@ Lobby bots, surrender, disconnect defeat, and shared rematch remain separate wor
 Protocol 6 activates the existing lobby handshake. Message layouts and registration order are unchanged.
 Older clients are refused by protocol version. Each accepted start sends Welcome and a full Snapshot.
 Welcome's colour indices map player slots to the interface palette for models, rings, and the minimap.
+
+The client retains the latest Ready and colour choices while older actions are in flight.
+An older matching snapshot does not acknowledge a newer choice.

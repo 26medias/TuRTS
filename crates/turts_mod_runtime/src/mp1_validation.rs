@@ -1317,23 +1317,28 @@ impl Pack {
             // H15: one different colour for each seat that the lobby offers (`SLOT_COUNT`, the
             // engine slot count of a match), not for each slot that the map places units for.
             let seats = usize::from(SLOT_COUNT);
-            let colours: BTreeSet<String> = self
+            let palette = self
                 .interfaces
+                .first()
+                .map(|(_, interface)| interface.slot_colours.as_slice())
+                .unwrap_or_default();
+            let distinct = palette
                 .iter()
-                .flat_map(|(_, interface)| interface.slot_colours.iter())
                 .map(|colour| colour.to_ascii_lowercase())
-                .collect();
-            if colours.len() < seats {
+                .collect::<BTreeSet<_>>()
+                .len();
+            if distinct < seats {
                 return Err(self.fail(
                     file,
                     "start",
                     format!(
                         "`{name}` needs {} different slot colours in the interface, found {}",
-                        seats,
-                        colours.len()
+                        seats, distinct
                     ),
                 ));
             }
+            crate::content::validate_lobby_palette(palette)
+                .map_err(|message| self.fail(file, "start", message))?;
         }
         let Some(VictoryRule::LastTeamStanding { defeat }) = &definition.victory else {
             return Ok(());

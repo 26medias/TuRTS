@@ -108,17 +108,7 @@ fn run() -> Result<(), String> {
             .first()
             .map(|(_, interface)| &interface.slot_colours)
             .ok_or("a lobby needs an interface palette")?;
-        if colours.len() < usize::from(turts_mod_api::SLOT_COUNT)
-            || colours.len() > usize::from(u8::MAX)
-            || colours
-                .iter()
-                .map(|colour| colour.to_ascii_lowercase())
-                .collect::<std::collections::BTreeSet<_>>()
-                .len()
-                != colours.len()
-        {
-            return Err("a lobby needs 2 to 255 distinct interface colours".into());
-        }
+        turts_mod_runtime::content::validate_lobby_palette(colours)?;
         app.insert_resource(lobby::HostedLobby::new(policy, colours.len() as u8));
     }
     let package = &booted.archive.manifest;
