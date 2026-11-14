@@ -52,3 +52,32 @@ No new human playtest or other-machine GPU test was performed.
 Manual cold-play checks remain open. Scripted probes are reported separately.
 Main is not merged or pushed.
 Every test browser uses a fresh profile and `--alsa-output-device=null`.
+
+## Acceptance evidence
+
+All paths in this table start at `target/mc-evidence/`.
+
+| Row | Result | Evidence |
+| --- | --- | --- |
+| ENV1 | PASS. Legacy defaults and API floor checks. | `p4-environment/review-fix-api.log`; `p4-environment/review-fix-client.log` |
+| ENV2 | PASS. Invalid scalars, colours, opacity, and derived UV ranges are rejected. | `p4-environment/review-fix-api.log` |
+| ENV3 | PASS. Actual mesh extends on four sides. Boundary dimensions stay unchanged. Outside movement and construction are refused. | `p4-environment/review-fix-client.log`; `p4-environment/final-quality/result.json` |
+| ENV4 | PASS. Final hardware browser screenshot shows background, textured ground, boundary, haze, models, and team colours. | `p4-environment/final-quality/high.png`; `p4-environment/final-quality/restored.png` |
+| ENV5 | PASS. Real Settings clicks cycle High, Low, Medium, and High. Native legacy camera check passes. | `p4-environment/final-quality/result.json`; `p4-environment/review-fix-client.log` |
+| ENV6 | PASS. Exact audited simulation equality after 2,000 ticks. Browser minimap and map size retain 64 by 48. | `p4-environment-api-tests.log`; `p4-environment-authority-tests.log`; `p4-environment/final-quality/result.json` |
+| ENV7 | PASS. All required measurement rows are recorded. Final 400-unit pan: High 42.23 FPS, Low 49.02 FPS. | `p4-environment/{400-measure,2000-measure,400-pan,final-400-pan}/result.json`; `docs/measurements/models.md` |
+| ENV8 | PASS. One code-running review, fixed finding, all three scripted player probes, and actual global launcher. | `p4-environment/review/review.md`; `p4-environment/review-fix-{api,client,clippy}.log`; `p4-environment/cold-{1280,1024,buttons}/`; `p4-environment/launcher/result.json` |
+
+The final cold wrapper returns command 0 and wrapper 0 with unchanged source.
+Receipt: `target/mc-evidence/p4-environment-final-player-checks-v2/receipt.json`.
+The checker reports PARTIAL-PASS because manual checks remain open.
+The first wrapper invocation had a mistyped commit id. It stopped before starting a browser.
+Its failed preflight log remains separate from the accepted player run.
+The final environment driver verifies browser profile removal and server shutdown.
+The actual computer launcher verifies gzip transfer and starts the final game.
+The shared and two-player launchers point to the same prepared build.
+Those two launchers were not rerun for this environment-only delivery.
+
+Run `bash target/mc-evidence/play-skirmish.sh` to play the build.
+Build Barracks, harvest timber, train an army, and destroy the enemy castle.
+A good result is Victory or Defeat with a working New skirmish button.
