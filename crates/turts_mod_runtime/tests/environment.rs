@@ -29,6 +29,7 @@ fn archive(environment: Option<EnvironmentDef>, api: &str) -> PackageArchive {
     );
     let mut map: MapDef =
         ron::from_str(std::str::from_utf8(&files["maps/field.ron"]).unwrap()).unwrap();
+    map.ground.as_mut().unwrap().overlay = None;
     map.environment = environment;
     files.insert(
         "maps/field.ron".into(),
@@ -127,6 +128,7 @@ fn independent_extreme_ground_values_are_rejected_before_rendering() {
     );
     let mut map: MapDef =
         ron::from_str(std::str::from_utf8(&files["maps/field.ron"]).unwrap()).unwrap();
+    map.ground.as_mut().unwrap().overlay = None;
     let mut env = environment();
     env.ground_margin = 10000.0;
     map.environment = Some(env);

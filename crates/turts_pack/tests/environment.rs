@@ -39,6 +39,7 @@ fn environment_does_not_change_a_moving_and_harvesting_match() {
     );
     let mut map: MapDef =
         ron::from_str(std::str::from_utf8(&files["maps/field.ron"]).unwrap()).unwrap();
+    map.ground.as_mut().unwrap().overlay = None;
     let mut worlds = Vec::new();
     for enabled in [false, true] {
         map.environment = enabled.then(|| EnvironmentDef {

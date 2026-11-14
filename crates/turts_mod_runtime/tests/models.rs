@@ -62,7 +62,9 @@ fn files() -> BTreeMap<String, Vec<u8>> {
     // Keep the model fixture on its declared edition, without later map presentation.
     let mut map: turts_mod_api::MapDef =
         ron::from_str(std::str::from_utf8(&files["maps/field.ron"]).unwrap()).unwrap();
-    if map.environment.take().is_some() {
+    let environment = map.environment.take().is_some();
+    let overlay = map.ground.as_mut().and_then(|g| g.overlay.take()).is_some();
+    if environment || overlay {
         files.insert(
             "maps/field.ron".into(),
             ron::ser::to_string(&map).unwrap().into_bytes(),

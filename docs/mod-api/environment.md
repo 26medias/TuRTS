@@ -36,3 +36,35 @@ The server validates these values. It does not use them to change simulation or 
 Protocol 6 and the wire layouts stay unchanged.
 
 This is the first P4 slice. It does not implement water, heightfield visuals, a full sky, or weather.
+
+## Ground overlay (API 0.2.11)
+
+`ground.overlay` adds one bounded layer without changing ground geometry or match rules.
+Use `engine_api: "^0.2.11"`. Omit the field to keep the original material.
+
+```ron
+overlay: Some((
+    colour: "#9B8057", base_colour: None, tile_size: 8.0, roughness: 1.0,
+    patches: [
+        (centre: (x: 10.0, y: 24.0), size: (x: 14.0, y: 14.0),
+         rotation_deg: 0.0, feather: 3.0, opacity: 1.0),
+    ],
+)),
+```
+
+The image, when present, multiplies the colour. Both colours enter lighting in linear space.
+An absent image uses white, so the authored colour works alone.
+`tile_size` uses world units and must be finite and positive. World UV ranges must be finite.
+`roughness` defaults to 1 and stays between 0 and 1.
+There are at most 16 patches. A patch is a rectangle in world map coordinates.
+Size is the full width and depth, each positive and at most 10000 world units.
+Centre coordinates range from -10000 to 10000. Rotation ranges from -360 to 360 degrees.
+Feather is positive and no larger than half the smaller size.
+It fades inward from the rectangle edge. Opacity defaults to 1 and ranges from 0 to 1.
+Every numeric value must be finite. Overlaps use the maximum mask.
+
+The layer blends base colour, roughness, and the base normal towards the geometric normal before lighting.
+All qualities retain the masks. Optional images use the existing texture limits.
+The shader uses at most 16 masks and one added image sample per ground fragment.
+The server validates the data. It never uses the layer for navigation, visibility, or match results.
+This slice does not add heightfield geometry, water, or custom mod shaders.

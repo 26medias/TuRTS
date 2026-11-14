@@ -185,6 +185,7 @@ fn sync_app() -> App {
     app.add_plugins((MinimalPlugins, AssetPlugin::default()))
         .init_asset::<Mesh>()
         .init_asset::<StandardMaterial>()
+        .init_asset::<turts_client::ground::GroundMaterial>()
         .init_resource::<SlotMaterials>()
         .init_resource::<Presented>()
         .init_resource::<turts_client::ingest::ReplicaState>()
@@ -296,6 +297,7 @@ fn setup_app(phase: Phase) -> App {
     app.add_plugins((MinimalPlugins, AssetPlugin::default()))
         .init_asset::<Mesh>()
         .init_asset::<StandardMaterial>()
+        .init_asset::<turts_client::ground::GroundMaterial>()
         .init_asset::<Image>()
         .insert_resource(phase)
         .insert_resource(AcquiredPackages(Acquired {
@@ -379,6 +381,7 @@ fn sync_nodes_uses_downloaded_shapes_and_stable_ids() {
     app.add_plugins((MinimalPlugins, AssetPlugin::default()))
         .init_asset::<Mesh>()
         .init_asset::<StandardMaterial>()
+        .init_asset::<turts_client::ground::GroundMaterial>()
         .insert_resource(state)
         .insert_resource(AcquiredPackages(Acquired {
             lockfile_hash: String::new(),

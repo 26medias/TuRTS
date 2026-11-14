@@ -531,6 +531,84 @@ pub(crate) fn validate_environment_ground(
     Ok(())
 }
 
+/// Shared pack/content validation. Presentation never enters simulation state.
+pub(crate) fn validate_ground_overlay(
+    package: &str,
+    file: &str,
+    map: &turts_mod_api::MapDef,
+) -> Result<(), ModError> {
+    let Some(layer) = map.ground.as_ref().and_then(|g| g.overlay.as_ref()) else {
+        return Ok(());
+    };
+    let fail = |field: &str, message: &str| {
+        error(package, file, &format!("ground.overlay.{field}"), message)
+    };
+    if layer.colour.len() != 7
+        || !layer.colour.starts_with('#')
+        || !layer.colour.as_bytes()[1..]
+            .iter()
+            .all(u8::is_ascii_hexdigit)
+    {
+        return Err(fail("colour", "must use opaque #RRGGBB"));
+    }
+    if !layer.tile_size.is_finite() || layer.tile_size <= 0.0 {
+        return Err(fail("tile_size", "must be finite and positive"));
+    }
+    let margin = map.environment.as_ref().map_or(0.0, |e| e.ground_margin);
+    if [margin, map.size.x + margin, map.size.y + margin]
+        .iter()
+        .any(|x| !(x / layer.tile_size).is_finite())
+    {
+        return Err(fail(
+            "tile_size",
+            "world texture coordinates must be finite",
+        ));
+    }
+    if !layer.roughness.is_finite() || !(0.0..=1.0).contains(&layer.roughness) {
+        return Err(fail("roughness", "must be finite and between 0 and 1"));
+    }
+    if layer.patches.len() > 16 {
+        return Err(fail("patches", "at most 16 patches are supported"));
+    }
+    for (i, patch) in layer.patches.iter().enumerate() {
+        let field = |name: &str, message: &str| fail(&format!("patches[{i}].{name}"), message);
+        if [patch.centre.x, patch.centre.y]
+            .iter()
+            .any(|x| !x.is_finite() || x.abs() > 10000.0)
+        {
+            return Err(field(
+                "centre",
+                "must be finite and within 10000 world units",
+            ));
+        }
+        if [patch.size.x, patch.size.y]
+            .iter()
+            .any(|x| !x.is_finite() || *x <= 0.0 || *x > 10000.0)
+        {
+            return Err(field("size", "must be finite, positive, and at most 10000"));
+        }
+        if !patch.rotation_deg.is_finite() || !(-360.0..=360.0).contains(&patch.rotation_deg) {
+            return Err(field(
+                "rotation_deg",
+                "must be finite and between -360 and 360",
+            ));
+        }
+        if !patch.feather.is_finite()
+            || patch.feather <= 0.0
+            || patch.feather > patch.size.x.min(patch.size.y) * 0.5
+        {
+            return Err(field(
+                "feather",
+                "must be positive and no larger than half the smaller size",
+            ));
+        }
+        if !patch.opacity.is_finite() || !(0.0..=1.0).contains(&patch.opacity) {
+            return Err(field("opacity", "must be finite and between 0 and 1"));
+        }
+    }
+    Ok(())
+}
+
 pub fn validate_models(archive: &PackageArchive) -> Result<Vec<String>, ModError> {
     let package = &archive.id().0;
     let mut images = std::collections::BTreeSet::new();
@@ -581,6 +659,7 @@ pub fn validate_models(archive: &PackageArchive) -> Result<Vec<String>, ModError
     }
     for (file, map) in archive.maps()? {
         validate_environment_ground(package, &file, &map)?;
+        validate_ground_overlay(package, &file, &map)?;
         if let Some(ground) = map.ground {
             if !ground.tile_size.is_finite() || ground.tile_size <= 0.0 {
                 return Err(error(
@@ -590,7 +669,15 @@ pub fn validate_models(archive: &PackageArchive) -> Result<Vec<String>, ModError
                     "tile size must be finite and positive",
                 ));
             }
-            for image in std::iter::once(&ground.base_colour).chain(ground.normal.iter()) {
+            for image in std::iter::once(&ground.base_colour)
+                .chain(ground.normal.iter())
+                .chain(
+                    ground
+                        .overlay
+                        .iter()
+                        .flat_map(|layer| layer.base_colour.iter()),
+                )
+            {
                 if !images.contains(image) {
                     return Err(error(
                         package,

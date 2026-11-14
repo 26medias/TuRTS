@@ -347,6 +347,7 @@ pub fn setup_scene(
     mut images: ResMut<Assets<Image>>,
     settings: Res<crate::models::GraphicsSettings>,
     mut model_state: ResMut<crate::models::ModelState>,
+    mut layered_materials: ResMut<Assets<crate::ground::GroundMaterial>>,
     mut done: Local<bool>,
 ) {
     if *done || !matches!(*phase, Phase::Joined { .. }) {
@@ -421,12 +422,47 @@ pub fn setup_scene(
         .normal
         .as_ref()
         .map(|source| model_state.texture(source, settings.quality, &mut images));
-    commands.spawn((
+    let mut entity = commands.spawn((
         ground_source,
         Mesh3d(meshes.add(ground_mesh)),
-        MeshMaterial3d(materials.add(ground_material)),
         Transform::from_translation(centre),
     ));
+    if let Some(layer) = acquired
+        .0
+        .presentation
+        .ground
+        .as_ref()
+        .and_then(|g| g.overlay.as_ref())
+    {
+        let source = layer.base_colour.as_ref().and_then(|id| {
+            let bytes = &acquired.0.presentation.images.get(id)?.bytes;
+            let dynamic = image::load_from_memory(bytes).ok()?;
+            let mut image =
+                Image::from_dynamic(dynamic, true, bevy::asset::RenderAssetUsages::MAIN_WORLD);
+            image.sampler =
+                bevy::image::ImageSampler::Descriptor(bevy::image::ImageSamplerDescriptor {
+                    address_mode_u: bevy::image::ImageAddressMode::Repeat,
+                    address_mode_v: bevy::image::ImageAddressMode::Repeat,
+                    ..default()
+                });
+            Some(images.add(image))
+        });
+        let texture = source
+            .as_ref()
+            .map(|h| model_state.texture(h, settings.quality, &mut images));
+        entity.insert((
+            crate::ground::OverlaySource(source),
+            MeshMaterial3d(layered_materials.add(crate::ground::GroundMaterial {
+                base: ground_material,
+                extension: crate::ground::GroundExtension {
+                    layer: crate::ground::Layer::from_definition(layer),
+                    texture,
+                },
+            })),
+        ));
+    } else {
+        entity.insert(MeshMaterial3d(materials.add(ground_material)));
+    }
 }
 
 /// `Update`, after [`update_presented`]: one entity per presented unit. A new unit gets an
@@ -581,6 +617,7 @@ pub struct UnitRenderPlugin;
 impl Plugin for UnitRenderPlugin {
     fn build(&self, app: &mut App) {
         crate::models::register_gpu_readiness(app);
+        crate::ground::register(app);
         crate::fx::particles::register(app);
         crate::fx::flash::register(app);
         crate::animation::shared_skin::register(app);
@@ -639,7 +676,11 @@ impl Plugin for UnitRenderPlugin {
                 sync_nodes,
                 crate::models::sync_models,
                 crate::models::quality_lighting,
-                crate::models::sync_ground_quality,
+                (
+                    crate::models::sync_ground_quality,
+                    crate::ground::sync_quality,
+                )
+                    .chain(),
                 crate::fx::release_deaths,
                 crate::animation::animate_units,
                 crate::animation::age_bodies,

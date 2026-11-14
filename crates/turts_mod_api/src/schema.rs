@@ -881,10 +881,41 @@ pub struct ModelAnimations {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct GroundDef {
+    /// API 0.2.11: a bounded, client-only colour and texture layer.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub overlay: Option<GroundOverlayDef>,
     pub base_colour: ContentRef,
     #[serde(default)]
     pub normal: Option<ContentRef>,
     pub tile_size: f32,
+}
+
+/// A second ground layer. Masks use world coordinates, independent of ground mesh topology.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GroundOverlayDef {
+    pub colour: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_colour: Option<ContentRef>,
+    pub tile_size: f32,
+    #[serde(default = "ground_layer_one")]
+    pub roughness: f32,
+    pub patches: Vec<GroundPatchDef>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GroundPatchDef {
+    pub centre: WorldPos,
+    pub size: MapSize,
+    #[serde(default)]
+    pub rotation_deg: f32,
+    pub feather: f32,
+    #[serde(default = "ground_layer_one")]
+    pub opacity: f32,
+}
+fn ground_layer_one() -> f32 {
+    1.0
 }
 
 /// API 0.2.10: map-owned environment settings. These values never affect simulation.

@@ -18,6 +18,7 @@ pub mod feedback;
 pub mod fetch;
 pub mod framelog;
 pub mod fx;
+pub mod ground;
 pub mod ingest;
 pub mod input;
 pub mod interp;

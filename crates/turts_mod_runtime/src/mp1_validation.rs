@@ -1222,6 +1222,27 @@ impl Pack {
 
     fn maps_group(&self) -> Result<(), ModError> {
         for (file, map) in &self.maps {
+            crate::models::validate_ground_overlay(&self.package.0, file, map)?;
+            if let Some(image) = map
+                .ground
+                .as_ref()
+                .and_then(|g| g.overlay.as_ref())
+                .and_then(|l| l.base_colour.as_ref())
+            {
+                let found = self.assets.iter().any(|(_, assets)| {
+                    assets
+                        .images
+                        .iter()
+                        .any(|asset| format!("{}:{}", self.package.0, asset.id) == *image)
+                });
+                if !found {
+                    return Err(self.fail(
+                        file,
+                        "ground.overlay.base_colour",
+                        format!("unknown ground image `{image}`"),
+                    ));
+                }
+            }
             if let Some(environment) = &map.environment {
                 crate::models::validate_environment_ground(&self.package.0, file, map)?;
                 self.colour(file, "environment.background", &environment.background)?;

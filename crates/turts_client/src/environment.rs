@@ -231,6 +231,7 @@ mod tests {
             .insert_resource(crate::join::Phase::Joined { slot: 0 })
             .init_resource::<Assets<Mesh>>()
             .init_resource::<Assets<StandardMaterial>>()
+            .init_resource::<Assets<crate::ground::GroundMaterial>>()
             .init_resource::<Assets<Image>>()
             .init_resource::<GraphicsSettings>()
             .init_resource::<crate::models::ModelState>()
@@ -330,8 +331,19 @@ pub(crate) fn capture(
         (&Camera, Option<&Msaa>, Option<&Fxaa>, Option<&DistanceFog>),
         With<MainSceneCamera>,
     >,
-    ground: Query<(&Mesh3d, &Transform), With<crate::models::GroundSurface>>,
-    meshes: Res<Assets<Mesh>>,
+    ground: Query<
+        (
+            &Mesh3d,
+            &Transform,
+            Option<&MeshMaterial3d<crate::ground::GroundMaterial>>,
+        ),
+        With<crate::models::GroundSurface>,
+    >,
+    (materials, images, meshes): (
+        Res<Assets<crate::ground::GroundMaterial>>,
+        Res<Assets<Image>>,
+        Res<Assets<Mesh>>,
+    ),
     acquired: Option<Res<AcquiredPackages>>,
     mut observation: ResMut<EnvironmentObservation>,
     time: Res<Time<Real>>,
@@ -352,7 +364,7 @@ pub(crate) fn capture(
     });
     let ground = ground
         .iter()
-        .filter_map(|(mesh, transform)| {
+        .filter_map(|(mesh, transform, material)| {
             let mesh = meshes.get(&mesh.0)?;
             let bevy::mesh::VertexAttributeValues::Float32x3(positions) =
                 mesh.attribute(Mesh::ATTRIBUTE_POSITION)?
@@ -366,7 +378,7 @@ pub(crate) fn capture(
                 min = min.min(point);
                 max = max.max(point);
             }
-            Some(serde_json::json!({"min":min.to_array(),"max":max.to_array()}))
+            Some(serde_json::json!({"min":min.to_array(),"max":max.to_array(),"overlay":material.and_then(|h|materials.get(&h.0)).map(|m|m.extension.observe(&images))}))
         })
         .collect::<Vec<_>>();
     observation.0 = serde_json::json!({"camera":camera,"ground":ground,"map_size":acquired.as_deref().map(|value|value.0.map_size)});
