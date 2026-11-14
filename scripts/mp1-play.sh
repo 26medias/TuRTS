@@ -7,6 +7,7 @@
 #   scripts/mp1-play.sh --prepared DIR [--package P]         serve the game, start Chrome, print the URL and the port
 #   scripts/mp1-play.sh --url URL                            start only the Chrome, at the loopback address URL (a game that
 #                                                            another command serves; the cold-play tool uses this form)
+#   scripts/mp1-play.sh --join HTTPS_URL                     start a fresh browser for a shared game
 #   scripts/mp1-play.sh --print-plan                         print the free port and the Chrome command; start nothing
 #
 # Sound. The person form (a human at a real desktop) keeps the normal sound. The SILENT form starts the Chrome with the
@@ -34,14 +35,14 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PACKAGE=mods/muster
 SOUND=""
 usage() {
-    echo "usage: scripts/mp1-play.sh --prepare DIR [--package P] | --prepared DIR [--package P] | --url URL | --print-plan  [--silent | --with-sound]" >&2
+    echo "usage: scripts/mp1-play.sh --prepare DIR [--package P] | --prepared DIR [--package P] | --url URL | --join HTTPS_URL | --print-plan  [--silent | --with-sound]" >&2
     exit 2
 }
 (($# >= 1)) || usage
 mode="$1"
 shift
 dir=""
-if [[ "$mode" == --prepare || "$mode" == --prepared || "$mode" == --url ]]; then
+if [[ "$mode" == --prepare || "$mode" == --prepared || "$mode" == --url || "$mode" == --join ]]; then
     (($# >= 1)) || usage
     dir="$1"
     shift
@@ -74,7 +75,7 @@ chrome_args() {
 
 # The sound form: --with-sound is the person form; --silent, --url and a run under the lock wrapper are silent.
 if [[ -z "$SOUND" ]]; then
-    if [[ -n "${MC_LOCK_RUN:-}" || "$mode" == --url ]]; then SOUND=silent; else SOUND=person; fi
+    if [[ -n "${MC_LOCK_RUN:-}" || "$mode" == --url || "$mode" == --join ]]; then SOUND=silent; else SOUND=person; fi
 fi
 # The environment of a silent Chrome: no pulse server, and a null ALSA device. A null configuration is written next to the
 # profile when the caller has none.
@@ -102,9 +103,9 @@ fi
 if [[ "$mode" == --prepare ]]; then
     exec bash "$ROOT/scripts/mc-browser.sh" "$PACKAGE" --prepare "$dir"
 fi
-[[ "$mode" == --prepared || "$mode" == --url ]] || usage
-if [[ "$mode" == --url ]]; then
-    [[ "$dir" =~ ^https?://(127\.0\.0\.1|localhost)(:[0-9]+)?(/|\?|$) ]] || { echo "mp1-play: --url takes a loopback address (http://127.0.0.1:PORT/...)" >&2; exit 2; }
+[[ "$mode" == --prepared || "$mode" == --url || "$mode" == --join ]] || usage
+if [[ "$mode" == --url || "$mode" == --join ]]; then
+    python3 -I -B "$ROOT/scripts/play_url.py" "$mode" "$dir"
 fi
 
 CHROME_BIN="${CHROME_BIN:-$(command -v google-chrome || command -v chromium || true)}"
@@ -136,7 +137,7 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 
 URL=""
-if [[ "$mode" == --url ]]; then
+if [[ "$mode" == --url || "$mode" == --join ]]; then
     URL="$dir"
 else
     bash "$ROOT/scripts/mc-browser.sh" "$PACKAGE" --serve-only --prepared "$dir" >"$SERVE_LOG" 2>&1 &
