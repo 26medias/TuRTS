@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 import os
 import tempfile
+import subprocess
+import sys
 import unittest
 from unittest.mock import patch
 from urllib.request import urlopen
@@ -76,6 +78,22 @@ host,port=values['http_listen'].split(':');HTTPServer((host,int(port)),Handler).
         self.host.close()
         for pid in pids:
             with self.assertRaises(ProcessLookupError): os.kill(pid, 0)
+
+    def test_stale_prepared_build_starts_no_hosting_process(self):
+        command = subprocess.run([sys.executable, '-I', '-B', str(ROOT/'scripts/skirmish_share.py'),
+                                  '--prepared', str(self.prepared), '--cloudflared', str(self.tunnel),
+                                  '--out', str(self.root/'cli-out')], capture_output=True, text=True)
+        self.assertEqual(command.returncode, 66, command.stderr)
+        self.assertFalse((self.root/'cli-out').exists())
+        self.assertNotIn('Traceback', command.stderr)
+
+    def test_tunnel_death_is_reported_after_start(self):
+        with patch.object(self.host, 'http_ready', side_effect=self.fake_public_probe):
+            self.host.start()
+        self.host.children[0].terminate()
+        self.host.children[0].wait(timeout=2)
+        with self.assertRaisesRegex(RuntimeError, 'hosting process stopped'):
+            self.host.check_children()
 
     def test_failed_tunnel_stops_startup(self):
         with patch.dict(os.environ, {'FAKE_TUNNEL_FAIL':'1'}):

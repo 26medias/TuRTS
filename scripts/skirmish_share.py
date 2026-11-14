@@ -133,9 +133,11 @@ def main():
     env = os.environ.copy()
     env.setdefault("CARGO_PROFILE_DEV_DEBUG", "0")
     env.setdefault("CARGO_PROFILE_TEST_DEBUG", "0")
-    subprocess.run([sys.executable, "-B", str(ROOT / "scripts/mc_prepare.py"), "check", str(args.prepared),
+    checked = subprocess.run([sys.executable, "-B", str(ROOT / "scripts/mc_prepare.py"), "check", str(args.prepared),
                     "--root", str(ROOT), "--package", "mods/skirmish", "--need", "bin/turts_server",
-                    "--need", "pack/skirmish.tar", "--need", "dist/index.html"], env=env, check=True)
+                    "--need", "pack/skirmish.tar", "--need", "dist/index.html"], env=env)
+    if checked.returncode:
+        return checked.returncode
     output = args.out or Path(tempfile.gettempdir()) / ("turts-share-" + uuid.uuid4().hex)
     host = SharedHost(args.prepared, output, args.cloudflared)
     def stop(_signal, _frame):
