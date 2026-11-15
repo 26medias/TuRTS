@@ -1,6 +1,4 @@
 //! Atomic permitted snapshots and ordinary visibility transitions. No raw truth enters a baseline.
-#[cfg(test)]
-use super::{export_observation, snapshot_for};
 #[path = "export_visibility_memory.rs"]
 mod memory;
 use crate::permissions::ObservationPermissions;
