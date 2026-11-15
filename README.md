@@ -59,6 +59,8 @@ The normal launcher was started and its populated browser world was captured aft
 The public Skirmish win and Stockyard browser checks pass. All three cold-play product probes pass.
 The isolated checker reports PARTIAL-PASS with manual/reference checks open. The full fresh-agent and manual readiness procedure was not repeated.
 The two-human and Internet modes retain their tested launch flags. Their full matches were not repeated for SDK15.
+Tested milestones are merged and pushed to main under the CEO's standing approval.
+CI keeps product and test-tool checks. The old spec registry, browser role-header inventory, and planted-fault anchor checks no longer block delivery.
 See [working rules](AGENTS.md) for parallel delivery, review, and milestone integration.
 
 The older Forge industrial demonstration remains available below. It proves extraction, conveyors, inserters, recipes, research, and ammunition combat through the public mod API. Its two-slot and restart restrictions describe that demonstration.
