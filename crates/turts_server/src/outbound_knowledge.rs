@@ -482,6 +482,75 @@ mod tests {
         assert_eq!(slow.restarts.len(), 1);
     }
     #[test]
+    fn bounded_typed_send_window_does_not_block_a_second_connection() {
+        use lightyear::prelude::server::{ClientOf, ServerPlugins};
+        let mut app = App::new();
+        app.add_plugins(ServerPlugins {
+            tick_duration: Duration::from_millis(50),
+        });
+        app.add_plugins(turts_net_lightyear::ProtocolPlugin);
+        app.finish();
+        app.cleanup();
+        let spawn = |app: &mut App| {
+            let registry = app.world().resource::<ChannelRegistry>();
+            let mut transport = Transport::default();
+            transport.add_channel_send_from_registry::<KnowledgeChannel>(registry);
+            app.world_mut()
+                .spawn((
+                    ClientOf,
+                    Link::default(),
+                    transport,
+                    RemoteId(PeerId::Local(42)),
+                    Linked,
+                    Connected,
+                    Session {
+                        slot: SlotId(0),
+                        player_id: 42,
+                        last_seq: None,
+                    },
+                    MessageSender::<turts_net_protocol::StateTransactionBegin>::default(),
+                    MessageSender::<turts_net_protocol::StateTransactionChunk>::default(),
+                    MessageSender::<turts_net_protocol::StateTransactionEnd>::default(),
+                ))
+                .id()
+        };
+        let slow_entity = spawn(&mut app);
+        let healthy_entity = spawn(&mut app);
+        let now = Instant::now();
+        let mut slow = sender(now);
+        slow.cancel(StateTransactionCancelReason::Superseded);
+        slow.tip.state.units = (1..=2000)
+            .map(|id| turts_net_protocol::UnitSnapshot {
+                unit_id: turts_net_protocol::UnitId(id),
+                content_id: "fixture:ordinary_unit_with_a_public_content_name".into(),
+                owner_slot: turts_net_protocol::SlotId(0),
+                facing: None,
+                pos: turts_net_protocol::Pos { x: 1.0, y: 1.0 },
+                site: false,
+            })
+            .collect();
+        slow.full(now).unwrap();
+        assert!(slow.pending.as_ref().unwrap().encoded.begin().chunk_count > WINDOW as u32);
+        for _ in 0..20 {
+            pump_one(app.world_mut(), slow_entity, &mut slow, now).unwrap();
+        }
+        assert_eq!(slow.outstanding, WINDOW);
+        assert!(slow.retained() < MAX_PENDING_STATE_BYTES as usize);
+        let mut healthy = sender(now);
+        pump_one(app.world_mut(), healthy_entity, &mut healthy, now).unwrap();
+        assert_eq!(healthy.outstanding, 1);
+        assert!(
+            healthy
+                .pending
+                .as_ref()
+                .unwrap()
+                .encoded
+                .begin()
+                .encoded_bytes
+                < slow.pending.as_ref().unwrap().encoded.begin().encoded_bytes
+        );
+    }
+    #[test]
     fn capacity_accounting_rejects_large_typed_storage_before_snapshot_encoding() {
         let now = Instant::now();
         let mut sender = sender(now);
