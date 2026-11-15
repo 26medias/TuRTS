@@ -330,7 +330,7 @@ fn production_output_inserter_without_facing_is_rejected() {
 /// combination `health without removal` of the version table, so an older edition is refused by
 /// the table (observation change of `L0-API2`: the text and the file are the table's).
 #[test]
-fn health_requires_removal() {
+fn health_without_removal_requires_api14() {
     let error = archive(
         &UNIT.replace("health: None", "health: Some((max: 100))"),
         RECIPE,
@@ -342,7 +342,7 @@ fn health_requires_removal() {
     .unwrap_err();
     assert_eq!(
         error.to_string(),
-        "forge/manifest.ron: engine_api: `health without removal` needs engine api 0.2.4; `^0.2.1` admits 0.2.3 (written in units/turret.ron: health)"
+        "forge/manifest.ron: engine_api: `health without removal` needs engine api 0.2.14; `^0.2.1` admits 0.2.13 (written in units/turret.ron: health)"
     );
 }
 fn mobile_weapon_unit() -> String {

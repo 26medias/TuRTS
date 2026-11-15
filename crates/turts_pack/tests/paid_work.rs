@@ -382,10 +382,14 @@ fn mixed_costs(f: &mut Fixture, duration: u64, balance_cost: u64, item_cost: u64
             .iter_mut()
             .find(|row| row.unit == cid(name).to_string())
             .unwrap()
-            .contents = vec![ItemStack {
-            item: cid("ore").to_string(),
-            amount: stock,
-        }];
+            .contents = if stock == 0 {
+            Vec::new()
+        } else {
+            vec![ItemStack {
+                item: cid("ore").to_string(),
+                amount: stock,
+            }]
+        };
     }
     for name in ["train", "build_relay"] {
         let recipe = f.catalog.production.get_mut(&cid(name)).unwrap();

@@ -51,6 +51,9 @@ fn note_entity(world: &mut World, entity: Entity) {
 
 /// Replace the orders of a unit (insert them when the unit has none).
 pub(crate) fn set_unit_orders(world: &mut World, entity: Entity, mut new: UnitOrders) {
+    if let Some(previous) = world.get::<UnitOrders>(entity) {
+        new.repair_stopped = previous.repair_stopped;
+    }
     if new.rally.is_none() {
         new.rally = world
             .get::<UnitOrders>(entity)
@@ -69,24 +72,39 @@ pub(crate) fn edit_unit_orders<R>(
     let result = world
         .entity_mut(entity)
         .get_mut::<UnitOrders>()
-        .map(|mut orders| edit(&mut orders));
+        .map(|mut orders| {
+            let repair_stopped = orders.repair_stopped;
+            let result = edit(&mut orders);
+            orders.repair_stopped = repair_stopped;
+            result
+        });
     if result.is_some() {
         note_entity(world, entity);
     }
     result
 }
 
+/// Change the repair latch after an accepted player command. Generic order writers preserve it.
+pub(crate) fn set_repair_stopped(world: &mut World, entity: Entity, stopped: bool) {
+    if world.get::<UnitOrders>(entity).is_none() {
+        world.entity_mut(entity).insert(UnitOrders::default());
+    }
+    if let Some(mut orders) = world.entity_mut(entity).get_mut::<UnitOrders>() {
+        orders.repair_stopped = stopped;
+    }
+    note_entity(world, entity);
+}
+
 /// Remove the orders of a unit.
 pub(crate) fn clear_unit_orders(world: &mut World, entity: Entity) {
-    if let Some(rally) = world
-        .get::<UnitOrders>(entity)
-        .and_then(|orders| orders.rally)
-    {
+    let previous = world.get::<UnitOrders>(entity);
+    if previous.is_some_and(|orders| orders.rally.is_some() || orders.repair_stopped) {
+        let rally = previous.and_then(|orders| orders.rally);
         set_unit_orders(
             world,
             entity,
             UnitOrders {
-                rally: Some(rally),
+                rally,
                 ..Default::default()
             },
         );
@@ -262,4 +280,25 @@ pub(crate) fn check_order_changes(
         "the order change list misses the units {missing:?}: their record changed in this tick \
          and no writer noted them (write through `orders::writer`, or note the input)"
     );
+}
+
+#[cfg(test)]
+mod repair_latch_tests {
+    use super::*;
+
+    #[test]
+    fn generated_replacements_edits_and_clears_preserve_the_stop_latch() {
+        let mut world = World::new();
+        world.init_resource::<OrderChanges>();
+        let entity = world.spawn((UnitId(77), UnitOrders::default())).id();
+        set_repair_stopped(&mut world, entity, true);
+        set_unit_orders(&mut world, entity, UnitOrders::default());
+        assert!(world.get::<UnitOrders>(entity).unwrap().repair_stopped);
+        edit_unit_orders(&mut world, entity, |orders| *orders = UnitOrders::default());
+        assert!(world.get::<UnitOrders>(entity).unwrap().repair_stopped);
+        clear_unit_orders(&mut world, entity);
+        assert!(world.get::<UnitOrders>(entity).unwrap().repair_stopped);
+        set_repair_stopped(&mut world, entity, false);
+        assert!(!world.get::<UnitOrders>(entity).unwrap().repair_stopped);
+    }
 }

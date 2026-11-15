@@ -82,6 +82,13 @@ pub(in crate::orders) fn start_order(
             forget_plain_move_identity(world, unit);
             Ok(())
         }
+        (Behaviour::Repair, OrderTargetSim::Unit(_)) => {
+            match crate::economy::repair::run_order_approach(world, unit) {
+                crate::economy::repair::RepairOrderProgress::Active
+                | crate::economy::repair::RepairOrderProgress::Complete => Ok(()),
+                crate::economy::repair::RepairOrderProgress::Failed(reason) => Err(reason),
+            }
+        }
         (Behaviour::Attack, OrderTargetSim::Unit(target_id)) => {
             let target_position = world
                 .iter_entities()

@@ -285,7 +285,7 @@ fn in_reach(world: &World, source: u32, target: u32, reach: f32) -> bool {
     })
 }
 
-fn clear_motion(world: &mut World, source: u32) {
+pub(crate) fn clear_motion(world: &mut World, source: u32) {
     let Some(entity) = unit_entity(world, source) else {
         return;
     };
@@ -617,6 +617,15 @@ pub(crate) fn run_repair(world: &mut World) {
             continue;
         }
         let orders = world.get::<UnitOrders>(entity);
+        if world
+            .get_resource::<crate::orders::PendingMovementOrders>()
+            .is_some_and(|pending| pending.pending_member_counts.contains_key(&source))
+        {
+            if active_action(world, source) {
+                order_changed(world, source);
+            }
+            continue;
+        }
         if orders
             .and_then(|orders| orders.current.as_ref())
             .is_some_and(|order| order.behaviour == Behaviour::Repair)
@@ -983,7 +992,7 @@ mod tests {
             Err(RejectReason::TargetInvalid)
         );
         app.world_mut().resource_mut::<Healths>().0.insert(3, 10);
-        let site = serde_json::from_value(serde_json::json!({ "constructor": 1, "owner_slot": 0, "recipe": "test:site", "job": 1, "done": 0, "total": 10, "charged": [] })).unwrap();
+        let site = serde_json::from_value(serde_json::json!({ "constructor": 1, "owner_slot": 0, "recipe": id("site"), "job": 1, "done": 0, "total": 10, "charged": [] })).unwrap();
         app.world_mut()
             .resource_mut::<ConstructionState>()
             .sites

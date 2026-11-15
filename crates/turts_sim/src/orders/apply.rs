@@ -31,7 +31,10 @@ pub(crate) fn unit_order_capable(world: &World, kind: turts_mod_api::UnitTypeId)
             .is_some_and(|catalog| {
                 catalog.0.units.values().any(|unit| {
                     unit.id.to_string() == entry.content_id
-                        && (unit.weapon.is_some() || unit.producer.is_some())
+                        && (unit.weapon.is_some()
+                            || unit.producer.is_some()
+                            || unit.constructor.is_some()
+                            || unit.repairer.is_some())
                 })
             })
 }
@@ -42,7 +45,9 @@ pub(super) fn unit_toggleable(unit: &turts_mod_api::ResolvedUnit) -> bool {
         || unit.machine.is_some()
         || unit.research.is_some()
         || unit.producer.is_some()
+        || unit.constructor.is_some()
         || unit.weapon.is_some()
+        || unit.repairer.is_some()
 }
 
 /// Apply one server-resolved order envelope, validating each unit independently.
@@ -78,13 +83,17 @@ pub(crate) fn apply_order(
                 .map(|id| (id.0, entity.id()))
         })
         .collect();
+    if command.behaviour == Behaviour::CancelConstruction {
+        return cancel_sites(world, slot, command, &unit_ids, &entity_by_unit);
+    }
     let mut outcomes = UnitOutcomes::default();
     let mut first_job_id = None;
     let mut spread_units = Vec::new();
     let mut spread_order = None;
     let immediate = matches!(
         command.behaviour,
-        Behaviour::Produce
+        Behaviour::Stop
+            | Behaviour::Produce
             | Behaviour::Construct
             | Behaviour::SetRally
             | Behaviour::CancelProduction
@@ -141,7 +150,9 @@ pub(crate) fn apply_order(
         let capable = match command.behaviour {
             Behaviour::Move => registry_movement,
             Behaviour::Stop | Behaviour::Hold => {
-                definition.is_some_and(|unit| unit.weapon.is_some()) || registry_movement
+                definition.is_some_and(|unit| {
+                    unit.weapon.is_some() || unit.constructor.is_some() || unit.repairer.is_some()
+                }) || registry_movement
             }
             Behaviour::Attack => match command.target {
                 OrderTargetSim::Point(_) => registry_movement,
@@ -163,14 +174,16 @@ pub(crate) fn apply_order(
             // packer refuses these orders with `UNBUILT_FEATURES` until then).
             Behaviour::Construct => definition.is_some_and(|unit| unit.constructor.is_some()),
             Behaviour::SetRally => definition.is_some_and(|unit| unit.producer.is_some()),
-            Behaviour::CancelConstruction | Behaviour::Repair | Behaviour::Surrender => false,
+            Behaviour::Repair => definition.is_some_and(|unit| unit.repairer.is_some()),
+            Behaviour::CancelConstruction | Behaviour::Surrender => false,
         };
         if !capable {
             let reason = match command.behaviour {
                 Behaviour::Gather
                 | Behaviour::Produce
                 | Behaviour::CancelProduction
-                | Behaviour::Construct => R::MissingCapability,
+                | Behaviour::Construct
+                | Behaviour::Repair => R::MissingCapability,
                 Behaviour::Remove => R::NotRemovable,
                 Behaviour::SetEnabled(_) => R::NotToggleable,
                 _ => R::NotApplicable,
@@ -189,6 +202,16 @@ pub(crate) fn apply_order(
         if let Err(reason) = validate_target(world, command) {
             outcomes.refused.push((*unit_id, reason));
             continue;
+        }
+        if command.behaviour == Behaviour::Repair {
+            let OrderTargetSim::Unit(target) = command.target else {
+                outcomes.refused.push((*unit_id, R::TargetInvalid));
+                continue;
+            };
+            if let Err(reason) = crate::economy::repair::validate_order(world, *unit_id, target) {
+                outcomes.refused.push((*unit_id, reason));
+                continue;
+            }
         }
         if command.queue == QueueMode::Append && !immediate {
             let orders = world.entity(entity).get::<UnitOrders>();
@@ -463,6 +486,9 @@ pub(crate) fn apply_order(
         }
     }
 
+    for &unit in &outcomes.accepted {
+        note_accepted_player_order(world, unit, command.behaviour, command.queue);
+    }
     let outcome = if outcomes.accepted.is_empty() {
         outcomes
             .refused
@@ -474,6 +500,151 @@ pub(crate) fn apply_order(
         })
     };
     (outcome, outcomes)
+}
+
+fn unit_definition(world: &World, unit: u32) -> Option<&turts_mod_api::ResolvedUnit> {
+    let entity = crate::unit_index::unit_entity(world, unit)?;
+    let kind = world.get::<crate::UnitType>(entity)?;
+    let name = &world
+        .get_resource::<crate::UnitTypes>()?
+        .get(kind.0)?
+        .content_id;
+    world
+        .get_resource::<crate::bootstrap::InstalledCatalog>()?
+        .0
+        .units
+        .get(&turts_mod_api::ContentId::parse(name).ok()?)
+}
+
+/// Only accepted player commands may change the persistent automatic-repair latch.
+pub(crate) fn note_accepted_player_order(
+    world: &mut World,
+    unit: u32,
+    behaviour: Behaviour,
+    queue: QueueMode,
+) {
+    if !unit_definition(world, unit).is_some_and(|definition| definition.repairer.is_some()) {
+        return;
+    }
+    let Some(entity) = crate::unit_index::unit_entity(world, unit) else {
+        return;
+    };
+    crate::economy::transaction::capture_unit_order_operation(world, unit, |world| {
+        crate::orders::writer::set_repair_stopped(world, entity, behaviour == Behaviour::Stop);
+        let replaces_action = matches!(
+            behaviour,
+            Behaviour::Move
+                | Behaviour::Stop
+                | Behaviour::Hold
+                | Behaviour::Attack
+                | Behaviour::Gather
+                | Behaviour::Repair
+        );
+        if !replaces_action {
+            return;
+        }
+        let manual_action = world
+            .get_resource::<crate::economy::repair::RepairRuntime>()
+            .and_then(|runtime| runtime.units.get(&unit))
+            .and_then(|state| state.action.as_ref())
+            .is_some_and(|action| !action.automatic);
+        let current_repair = world
+            .get::<UnitOrders>(entity)
+            .and_then(|orders| orders.current.as_ref())
+            .is_some_and(|order| order.behaviour == Behaviour::Repair);
+        if queue == QueueMode::Append
+            && behaviour != Behaviour::Stop
+            && manual_action
+            && current_repair
+        {
+            return;
+        }
+        let no_current = world
+            .get::<UnitOrders>(entity)
+            .is_none_or(|orders| orders.current.is_none());
+        if queue == QueueMode::Append && no_current && !unit_has_pending_move(world, unit) {
+            // A queued explicit order must not wait for an implicit repair approach to finish.
+            crate::economy::repair::clear_motion(world, unit);
+        }
+        crate::economy::repair::order_changed(world, unit);
+    });
+}
+
+fn cancel_sites(
+    world: &mut World,
+    slot: SlotId,
+    command: &OrderCommand,
+    unit_ids: &[u32],
+    entities: &BTreeMap<u32, bevy_ecs::entity::Entity>,
+) -> (
+    Result<crate::command::Applied, crate::RejectReason>,
+    UnitOutcomes,
+) {
+    use crate::RejectReason as R;
+    let mut outcomes = UnitOutcomes::default();
+    let mut sites = Vec::new();
+    for &unit in unit_ids {
+        let checked = (|| {
+            let entity = *entities.get(&unit).ok_or(R::UnknownUnit)?;
+            if world.get::<crate::Owner>(entity).map(|owner| owner.0) != Some(slot) {
+                return Err(R::NotOwner);
+            }
+            if !world
+                .resource::<crate::economy::construction::ConstructionState>()
+                .sites
+                .contains_key(&unit)
+            {
+                return Err(R::NotApplicable);
+            }
+            let definition = unit_definition(world, unit).ok_or(R::NotApplicable)?;
+            if !command.allowed_units.is_empty()
+                && !command.allowed_units.contains(&definition.id.to_string())
+            {
+                return Err(R::NotApplicable);
+            }
+            validate_target(world, command)?;
+            let position = world
+                .get::<crate::Position>(entity)
+                .ok_or(R::IntegrityViolation)?
+                .0;
+            Ok(position)
+        })();
+        match checked {
+            Ok(position) => sites.push((unit, position)),
+            Err(reason) => outcomes.refused.push((unit, reason)),
+        }
+    }
+    let coordinate = |value: f32| if value == 0.0 { 0.0 } else { value };
+    sites.sort_by(|left, right| {
+        coordinate(left.1.x)
+            .total_cmp(&coordinate(right.1.x))
+            .then_with(|| coordinate(left.1.y).total_cmp(&coordinate(right.1.y)))
+    });
+    for (index, &(unit, position)) in sites.iter().enumerate() {
+        let tied = index
+            .checked_sub(1)
+            .is_some_and(|previous| sites[previous].1 == position)
+            || sites.get(index + 1).is_some_and(|next| next.1 == position);
+        if tied {
+            outcomes.refused.push((unit, R::Blocked));
+            continue;
+        }
+        match crate::economy::construction::cancel_site(world, slot, unit) {
+            Ok(()) => outcomes.accepted.push(unit),
+            Err(reason) => outcomes.refused.push((unit, reason)),
+        }
+    }
+    outcomes.accepted.sort_unstable();
+    outcomes.refused.sort_unstable_by_key(|(unit, _)| *unit);
+    let result = if outcomes.accepted.is_empty() {
+        Err(outcomes
+            .refused
+            .first()
+            .map_or(R::NotApplicable, |(_, reason)| *reason))
+    } else {
+        Ok(crate::command::Applied { job_id: None })
+    };
+    (result, outcomes)
 }
 
 fn validate_target(
@@ -513,6 +684,14 @@ fn validate_target(
             Ok(())
         }
         (Behaviour::SetRally, _) => Err(R::TargetInvalid),
+        (Behaviour::CancelConstruction, OrderTargetSim::None) => Ok(()),
+        (Behaviour::CancelConstruction, _) => Err(R::TargetInvalid),
+        (Behaviour::Repair, OrderTargetSim::Unit(unit)) => {
+            crate::unit_index::unit_entity(world, *unit)
+                .map(|_| ())
+                .ok_or(R::TargetGone)
+        }
+        (Behaviour::Repair, _) => Err(R::TargetInvalid),
         (Behaviour::Construct, OrderTargetSim::ContentAtPoint { point, .. })
             if point.is_finite() =>
         {
@@ -785,6 +964,9 @@ fn apply_unit_order(
             _ => Err(R::TargetInvalid),
         },
         Behaviour::Stop => {
+            if unit_definition(world, unit_id).is_some_and(|unit| unit.constructor.is_some()) {
+                crate::economy::construction::clear_held(world, slot, unit_id)?;
+            }
             clear_replaced_movement(world, slot, entity, unit_id);
             set_unit_orders(world, entity, UnitOrders::default());
             clear_gather(world, unit_id);
@@ -947,9 +1129,46 @@ fn apply_unit_order(
             set_unit_orders(world, entity, orders);
             Ok(None)
         }
-        Behaviour::CancelConstruction | Behaviour::Repair | Behaviour::Surrender => {
-            Err(R::NotApplicable)
+        Behaviour::Repair => {
+            let OrderTargetSim::Unit(target) = order.target else {
+                return Err(R::TargetInvalid);
+            };
+            crate::economy::repair::validate_order(world, unit_id, target)?;
+            let active = world
+                .get::<UnitOrders>(entity)
+                .is_some_and(|orders| orders.current.is_some())
+                || world.get::<MoveTarget>(entity).is_some()
+                || unit_has_pending_move(world, unit_id);
+            if command.queue == QueueMode::Append && active {
+                if edit_unit_orders(world, entity, |orders| {
+                    orders.queue.push_back(order.clone())
+                })
+                .is_none()
+                {
+                    set_unit_orders(
+                        world,
+                        entity,
+                        UnitOrders {
+                            queue: [order].into(),
+                            ..Default::default()
+                        },
+                    );
+                }
+            } else {
+                clear_replaced_movement(world, slot, entity, unit_id);
+                clear_gather(world, unit_id);
+                set_unit_orders(
+                    world,
+                    entity,
+                    UnitOrders {
+                        current: Some(order),
+                        ..Default::default()
+                    },
+                );
+            }
+            Ok(None)
         }
+        Behaviour::CancelConstruction | Behaviour::Surrender => Err(R::NotApplicable),
     }
 }
 

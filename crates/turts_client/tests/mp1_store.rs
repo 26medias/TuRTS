@@ -1809,6 +1809,10 @@ fn site_refund_uses_its_authoritative_recipe_and_rejects_unknown_or_wrong_output
             replica.site_production(SITE),
             Some(alternate.to_string().as_str())
         );
+        // Invalid snapshots enter resync. Use a fresh admitted baseline for the delta case.
+        let mut replica = Replica::new(20);
+        replica.set_context(ReplicaContext::new(content.clone(), 0));
+        applied(&mut replica, &first);
         let mut bad_delta = delta(11);
         bad_delta.records.sites = bad.records.sites;
         bad_delta.economy.balances = bad.economy.balances;

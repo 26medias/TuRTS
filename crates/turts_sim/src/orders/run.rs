@@ -145,8 +145,10 @@ pub(crate) fn run_orders(world: &mut World) {
             .get::<UnitOrders>()
             .and_then(|orders| orders.current.as_ref())
             .is_some_and(|current| {
-                matches!(current.behaviour, Behaviour::Move | Behaviour::Attack)
-                    && matches!(current.target, OrderTargetSim::Unit(_))
+                matches!(
+                    current.behaviour,
+                    Behaviour::Move | Behaviour::Attack | Behaviour::Repair
+                ) && matches!(current.target, OrderTargetSim::Unit(_))
             });
         if completed_plain_fallback && !gather_still_approaching && !current_is_unit_follow {
             crate::economy::transaction::capture_unit_order_operation(world, unit_id, |world| {
@@ -286,6 +288,37 @@ pub(crate) fn run_orders(world: &mut World) {
             continue;
         }
         let current = current.unwrap();
+        if current.behaviour == Behaviour::Repair {
+            if replacement_pending {
+                continue;
+            }
+            crate::economy::transaction::capture_unit_order_operation(world, unit_id, |world| {
+                let progress = crate::economy::repair::run_order_approach(world, unit_id);
+                if progress == crate::economy::repair::RepairOrderProgress::Active {
+                    return;
+                }
+                let slot = world
+                    .get::<crate::Owner>(entity)
+                    .map_or(SlotId(0), |owner| owner.0);
+                let tick = world.resource::<crate::Tick>().0;
+                edit_unit_orders(world, entity, |orders| {
+                    orders.current = None;
+                    if let crate::economy::repair::RepairOrderProgress::Failed(reason) = progress {
+                        orders.last_failure = Some(OrderFailure {
+                            order: current.order.clone(),
+                            reason,
+                            tick,
+                        });
+                    }
+                });
+                crate::economy::repair::order_changed(world, unit_id);
+                crate::economy::repair::clear_motion(world, unit_id);
+                if !unit_has_pending_move(world, unit_id) {
+                    start_next_queued_order(world, slot, entity, unit_id);
+                }
+            });
+            continue;
+        }
         if matches!(current.behaviour, Behaviour::Move | Behaviour::Attack)
             && let OrderTargetSim::Unit(target_id) = current.target
         {
