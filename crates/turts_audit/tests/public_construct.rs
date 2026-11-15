@@ -10,6 +10,14 @@ fn id(local: &str) -> ContentId {
     ContentId::parse(&format!("cedar:{local}")).unwrap()
 }
 fn stream(payment: PaymentPolicy, held: bool) -> Vec<EconomyLogRecord> {
+    stream_case(payment, held, false, false)
+}
+fn stream_case(
+    payment: PaymentPolicy,
+    held: bool,
+    grouped: bool,
+    produce: bool,
+) -> Vec<EconomyLogRecord> {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../mods/cedar");
     let archive = PackageArchive::parse(&pack_dir(&root).unwrap()).unwrap();
     let mut catalog = archive.content().unwrap();
@@ -41,19 +49,77 @@ fn stream(payment: PaymentPolicy, held: bool) -> Vec<EconomyLogRecord> {
     recipe.output_unit = id("building");
     recipe.duration_ms = 1000;
     recipe.payment = payment;
+    if grouped {
+        catalog.resources.insert(
+            id("credits"),
+            ResourceDef {
+                id: "credits".into(),
+                name: "Credits".into(),
+                unit_name: "credit".into(),
+                kind: ResourceKind::Balance,
+            },
+        );
+        recipe.costs = vec![ResolvedCost {
+            resource: id("credits"),
+            amount: 12,
+            source: CostSource::SlotBalance,
+        }];
+    }
     catalog.production.insert(id("build"), recipe);
+    if produce {
+        catalog
+            .units
+            .get_mut(&id("depot"))
+            .unwrap()
+            .producer
+            .as_mut()
+            .unwrap()
+            .recipes
+            .push(id("build"));
+    }
     let mut order = catalog.orders[&id("order_produce")].clone();
     order.id = "order_construct".into();
-    order.behaviour = Behaviour::Construct;
-    order.target = TargetKind::ContentAtPoint;
+    order.behaviour = if produce {
+        Behaviour::Produce
+    } else {
+        Behaviour::Construct
+    };
+    order.target = if produce {
+        TargetKind::Content
+    } else {
+        TargetKind::ContentAtPoint
+    };
     catalog.orders.insert(id("order_construct"), order.clone());
+    let mut map = archive.maps().unwrap().remove(0).1;
+    if grouped {
+        // The lower physical source gets the larger real allocated ID.
+        map.placements = [40.0, 8.0]
+            .into_iter()
+            .map(|x| Placement {
+                unit: id("depot").to_string(),
+                owner_slot: 0,
+                pos: WorldPos { x, y: 8.0 },
+                contents: vec![],
+                facing: None,
+                start_order: None,
+            })
+            .collect();
+        map.nodes.clear();
+        map.slot_economy = vec![SlotEconomyInit {
+            slot: 0,
+            balances: vec![BalanceAmount {
+                balance: id("credits").to_string(),
+                amount: 12,
+            }],
+        }];
+    }
     let mut app = turts_sim::headless_app(20);
     let staged = turts_sim::stage_package(
         app.world(),
         catalog,
         SourceDef {
             file: "public_construct/map".into(),
-            value: archive.maps().unwrap().remove(0).1,
+            value: map,
         },
         20,
     )
@@ -89,13 +155,21 @@ fn stream(payment: PaymentPolicy, held: bool) -> Vec<EconomyLogRecord> {
             seq: 1,
             kind: CommandKind::Order(Box::new(OrderCommand {
                 order: id("order_construct"),
-                behaviour: Behaviour::Construct,
-                target_kind: TargetKind::ContentAtPoint,
+                behaviour: order.behaviour,
+                target_kind: order.target,
                 policy: Some(policy),
-                units: vec![1],
-                target: OrderTargetSim::ContentAtPoint {
-                    content: id("build"),
-                    point: turts_sim::Vec2::new(20.0, 20.0),
+                units: if grouped {
+                    initial.raw_units.iter().map(|unit| unit.unit_id).collect()
+                } else {
+                    vec![1]
+                },
+                target: if produce {
+                    OrderTargetSim::Content(id("build"))
+                } else {
+                    OrderTargetSim::ContentAtPoint {
+                        content: id("build"),
+                        point: turts_sim::Vec2::new(20.0, 20.0),
+                    }
                 },
                 queue: QueueMode::Replace,
                 group: 0,
@@ -105,6 +179,14 @@ fn stream(payment: PaymentPolicy, held: bool) -> Vec<EconomyLogRecord> {
         },
     );
     assert!(result.outcome.is_ok(), "ordinary Construct: {result:?}");
+    if grouped {
+        assert_eq!(
+            result.units.accepted,
+            vec![2],
+            "physical source wins independently of ID: {result:?}"
+        );
+        assert_eq!(result.units.refused.len(), 1);
+    }
     let mut trail = app.world_mut().resource_mut::<AuditTrail>();
     let mut records = vec![EconomyLogRecord::Initial(initial)];
     records.extend(
@@ -281,5 +363,59 @@ fn construct_aggregate_job_is_the_first_placed_job_and_held_has_none() {
                 .unwrap_err()
                 .contains("aggregate JobId")
         );
+    }
+}
+
+#[test]
+fn grouped_immediate_paid_work_validates_physical_priority_and_rejects_coherent_id_priority() {
+    fn swap_sources(state: &mut turts_sim::AuditState) {
+        for unit in &mut state.raw_units {
+            if unit.unit_id <= 2 {
+                unit.pos.x = 48.0 - unit.pos.x;
+            }
+        }
+        for unit in &mut state.units {
+            if unit.unit_id <= 2 {
+                unit.pos.x = 48.0 - unit.pos.x;
+            }
+        }
+        for unit in &mut state.economy.units {
+            if unit.unit_id <= 2 {
+                unit.pos.x = 48.0 - unit.pos.x;
+            }
+        }
+    }
+    for payment in [
+        PaymentPolicy::ChargeOnQueue,
+        PaymentPolicy::ReserveThenCharge,
+    ] {
+        for produce in [false, true] {
+            let records = stream_case(payment, false, true, produce);
+            validate_records(&records)
+                .unwrap_or_else(|error| panic!("{payment:?},produce{produce}: {error}"));
+            let mut bad = records.clone();
+            for record in &mut bad {
+                match record {
+                    EconomyLogRecord::Initial(state) => swap_sources(state),
+                    EconomyLogRecord::CommandBoundary(command) => {
+                        swap_sources(&mut command.before);
+                        swap_sources(&mut command.after);
+                    }
+                    EconomyLogRecord::Operation(operation) => {
+                        swap_sources(&mut operation.before);
+                        swap_sources(&mut operation.after);
+                    }
+                    _ => {}
+                }
+            }
+            // All captured before/after positions agree. The funded request now loses physical priority.
+            let error = validate_records(&bad).expect_err(
+                "coherent ID-priority stream must fail independent physical scheduling",
+            );
+            assert!(
+                error.contains("refusal for unit") || error.contains("execution priority"),
+                "priority rejection must be specific: {error}"
+            );
+        }
     }
 }
