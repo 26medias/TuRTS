@@ -84,7 +84,7 @@ fn stream(payment: PaymentPolicy, held: bool) -> Vec<EconomyLogRecord> {
     };
     let result = turts_sim::apply_command(
         app.world_mut(),
-        Command {
+        &Command {
             slot: SlotId(0),
             seq: 1,
             kind: CommandKind::Order(Box::new(OrderCommand {
