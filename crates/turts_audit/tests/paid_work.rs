@@ -480,3 +480,87 @@ fn fractional_repair_stream_preserves_debt_and_rejects_coherent_heal_tampering()
         assert!(validate_records(&bad).unwrap_err().contains("repair"));
     }
 }
+
+#[test]
+fn destruction_refund_wide_discard_stream_and_coherent_tampering() {
+    let mut fixture = Fixture::new();
+    fixture.ticks("train", 200);
+    fixture.map.slot_economy[0].balances[0].amount = u64::MAX;
+    let recipe = fixture.catalog.production.get_mut(&cid("train")).unwrap();
+    recipe.payment = PaymentPolicy::ChargeOnQueue;
+    recipe.costs[0].amount = u64::MAX;
+    recipe.cancel_refunds.destroyed = RefundRatio::ONE;
+    fixture.unit("supply").income = Some(IncomeDef {
+        resource: cid("credits").to_string(),
+        amount: u64::MAX,
+        period_ms: 50,
+    });
+    let mut app = fixture.app();
+    production::queue_production(app.world_mut(), SlotId(0), 1, cid("train")).unwrap();
+    let mut records = start(&mut app);
+    app.world_mut()
+        .resource_mut::<turts_sim::CommandQueue>()
+        .0
+        .push_back(Command {
+            slot: SlotId(0),
+            seq: 1,
+            kind: CommandKind::Produce {
+                producer_id: 1,
+                recipe_id: cid("train"),
+            },
+        });
+    ticks(&mut app, &mut records, 1);
+    app.world_mut()
+        .resource_mut::<turts_sim::CommandQueue>()
+        .0
+        .push_back(Command {
+            slot: SlotId(0),
+            seq: 2,
+            kind: CommandKind::Remove { unit_id: 1 },
+        });
+    ticks(&mut app, &mut records, 2);
+    assert_records("destruction-wide-discard", &records);
+    let index=records.iter().position(|record|matches!(record,EconomyLogRecord::Operation(operation) if operation.events.iter().any(|event|matches!(event.kind,EconomyEventKind::DestructionRefunded{..})))).expect("mandatory destruction refund event");
+    let mut bad = records[..=index].to_vec();
+    let EconomyLogRecord::Operation(operation) = bad.last_mut().unwrap() else {
+        unreachable!()
+    };
+    let event = operation
+        .events
+        .iter_mut()
+        .find(|event| matches!(event.kind, EconomyEventKind::DestructionRefunded { .. }))
+        .unwrap();
+    if let EconomyEventKind::DestructionRefunded {
+        desired,
+        credited,
+        discarded,
+        ..
+    } = &mut event.kind
+    {
+        assert_eq!(
+            desired
+                .iter()
+                .map(|row| u128::from(row.amount))
+                .sum::<u128>(),
+            u128::from(u64::MAX) * 2
+        );
+        assert!(credited.is_empty());
+        assert_eq!(
+            discarded
+                .iter()
+                .map(|row| u128::from(row.amount))
+                .sum::<u128>(),
+            u128::from(u64::MAX) * 2
+        );
+        discarded[0].amount -= 1;
+    }
+    let ordinal = event.ordinal;
+    let event = event.clone();
+    *operation
+        .after
+        .pending_events
+        .iter_mut()
+        .find(|row| row.ordinal == ordinal)
+        .unwrap() = event;
+    assert!(validate_records(&bad).unwrap_err().contains("destruction"));
+}

@@ -5824,19 +5824,6 @@ fn validate_remove_order(
     {
         return Err("accepted Remove lacks catalog command-removal permission".into());
     }
-    if before
-        .raw_queues
-        .iter()
-        .find(|queue| queue.producer == unit_id)
-        .is_some_and(|queue| !queue.jobs.is_empty())
-    {
-        return Err("accepted Remove has queued production jobs".into());
-    }
-    if before.ledger_claims.iter().any(|claim| {
-        matches!(claim, turts_sim::ReservationClaimView::Active { lines, .. } if lines.iter().any(|line| matches!(line.endpoint, turts_sim::ReservationEndpointView::Inventory(id) | turts_sim::ReservationEndpointView::Output(id) if id == unit_id)))
-    }) {
-        return Err("accepted Remove retains an active inventory reservation".into());
-    }
 
     let mut destroyed = Vec::<DestroyedLine>::new();
     if let Some(inventory) = before
@@ -5846,9 +5833,6 @@ fn validate_remove_order(
         .find(|inventory| inventory.unit == unit_id)
     {
         for item in &inventory.items {
-            if item.reserved != 0 {
-                return Err("accepted Remove retains reserved inventory stock".into());
-            }
             if item.on_hand > 0 {
                 destroyed.push(DestroyedLine {
                     location: DestroyedLocation::Inventory(unit_id),
@@ -5864,9 +5848,6 @@ fn validate_remove_order(
         .find(|inventory| inventory.unit == unit_id)
     {
         for (item, account) in &inventory.items {
-            if account.reserved != 0 {
-                return Err("accepted Remove retains reserved output stock".into());
-            }
             if account.on_hand > 0 {
                 destroyed.push(DestroyedLine {
                     location: DestroyedLocation::Output(unit_id),
@@ -5897,8 +5878,19 @@ fn validate_remove_order(
     }
     destroyed
         .sort_by(|left, right| (left.location, &left.item).cmp(&(right.location, &right.item)));
+    let mut event_base = before.clone();
+    for prefix in events.iter().take(events.len().saturating_sub(1)) {
+        if !matches!(prefix.kind,turts_sim::EconomyEventKind::ProgressCharged{unit,..}|turts_sim::EconomyEventKind::DestructionRefunded{unit,..} if unit==unit_id)
+            || prefix.owner_slot != actor.owner_slot
+            || Some(prefix.ordinal) != event_base.next_event_ordinal
+            || prefix.tick != before.economy.tick
+        {
+            return Err("Remove has an unrelated or misordered accounting prefix".into());
+        }
+        event_base.append_order_event(prefix.clone());
+    }
     let event = event_for_order(
-        before,
+        &event_base,
         unit_id,
         turts_sim::EconomyEventKind::Destroyed {
             unit: unit_id,
@@ -5906,11 +5898,80 @@ fn validate_remove_order(
             items: destroyed,
         },
     )?;
-    if events != [event.clone()] {
+    if events.last() != Some(&event) {
         return Err("Remove destruction event differs from captured unit contents".into());
     }
 
     let mut expected = before.clone();
+    for prefix in events.iter().take(events.len().saturating_sub(1)) {
+        if let turts_sim::EconomyEventKind::DestructionRefunded { credited, .. } = &prefix.kind {
+            for row in credited {
+                let endpoint = match row.source {
+                    turts_sim::economy::events::EventSource::Slot(id) => {
+                        turts_sim::ReservationEndpointView::Slot(id)
+                    }
+                    turts_sim::economy::events::EventSource::Inventory(id) => {
+                        turts_sim::ReservationEndpointView::Inventory(id)
+                    }
+                    turts_sim::economy::events::EventSource::Output(id) => {
+                        turts_sim::ReservationEndpointView::Output(id)
+                    }
+                };
+                adjust_order_cost(
+                    &mut expected,
+                    &endpoint,
+                    &row.resource,
+                    i128::from(row.amount),
+                    0,
+                )?;
+            }
+        }
+        expected.append_order_event(prefix.clone());
+    }
+    for job in before
+        .raw_queues
+        .iter()
+        .filter(|queue| queue.producer == unit_id)
+        .flat_map(|queue| &queue.jobs)
+    {
+        if let Some(reservation) = &job.reservation {
+            for row in &reservation.lines {
+                adjust_order_cost(
+                    &mut expected,
+                    &row.endpoint,
+                    &row.resource,
+                    0,
+                    -i128::from(row.amount),
+                )?;
+            }
+            for claim in &mut expected.ledger_claims {
+                if matches!(claim,turts_sim::ReservationClaimView::Active{map_job_id,..} if *map_job_id==job.id)
+                {
+                    *claim = turts_sim::ReservationClaimView::Closed { map_job_id: job.id };
+                }
+            }
+        }
+    }
+    expected.economy.construction.sites.remove(&unit_id);
+    expected.economy.construction.held.remove(&unit_id);
+    expected.raw_repairs.retain(|row| row.repairer != unit_id);
+    for row in &mut expected.raw_repairs {
+        if row
+            .action
+            .as_ref()
+            .is_some_and(|action| action.target == unit_id)
+        {
+            row.action = None;
+            row.hold = None;
+        }
+    }
+    expected
+        .raw_repairs
+        .retain(|row| row.action.is_some() || row.hold.is_some() || !row.remainders.is_empty());
+    expected
+        .economy
+        .repairs
+        .retain(|row| row.repairer != unit_id && row.target != unit_id);
     expected.raw_units.retain(|unit| unit.unit_id != unit_id);
     expected.units.retain(|unit| unit.unit_id != unit_id);
     expected
@@ -6124,9 +6185,10 @@ fn validate_produce_order(
             duration,
             false,
         )?,
-        // API 0.2.4: the packer refuses `ChargeOverTime` until `L-PAY` builds it.
         turts_mod_api::PaymentPolicy::ChargeOverTime => {
-            return Err("ChargeOverTime has no replay rule yet (L-PAY)".into());
+            let mut job = next_raw_job(producer, owner, recipe_id, &[], next_job, duration, true)?;
+            job.0.funding = Some(Default::default());
+            job
         }
     };
     let expected_event = event_for_order(
@@ -6161,7 +6223,11 @@ fn validate_produce_order(
     expected
         .allocators
         .set_next_values(next_unit, next_node, next_job_after);
-    for cost in &job_policy.costs {
+    for cost in job_policy
+        .costs
+        .iter()
+        .filter(|_| job_policy.payment != turts_mod_api::PaymentPolicy::ChargeOverTime)
+    {
         let endpoint = match cost.source {
             turts_mod_api::CostSource::SlotBalance => {
                 turts_sim::ReservationEndpointView::Slot(owner)
@@ -6206,6 +6272,22 @@ fn validate_produce_order(
                 token_job_id: next_job,
                 lines,
             });
+    }
+    if let Some(view) = &mut expected.economy.operating {
+        let q = view.rate_q;
+        view.jobs.push(turts_sim::economy::views::OperatingJobView {
+            unit: producer,
+            job: next_job,
+            done: 0,
+            total: duration.checked_mul(q).ok_or("paid job total overflows")?,
+            held: false,
+            held_since_tick: 0,
+            funding: job_policy
+                .payment
+                .eq(&turts_mod_api::PaymentPolicy::ChargeOverTime)
+                .then(Default::default),
+        });
+        view.jobs.sort_by_key(|row| (row.unit, row.job));
     }
     expected.append_order_event(expected_event);
     if expected != *after {

@@ -82,6 +82,18 @@ fn jobs(state: &AuditState) -> Result<BTreeMap<(u32, u64), Job>, String> {
                     amount: row.amount,
                 })
                 .collect();
+            let (done, total) = state
+                .economy
+                .operating
+                .as_ref()
+                .and_then(|view| {
+                    view.jobs
+                        .iter()
+                        .find(|row| row.unit == queue.producer && row.job == job.id)
+                })
+                .map_or((job.elapsed_ticks, job.duration_ticks), |row| {
+                    (row.done, row.total)
+                });
             output.insert(
                 (queue.producer, job.id),
                 Job {
@@ -89,8 +101,8 @@ fn jobs(state: &AuditState) -> Result<BTreeMap<(u32, u64), Job>, String> {
                     job: job.id,
                     owner,
                     recipe: job.recipe.clone(),
-                    done: job.elapsed_ticks,
-                    total: job.duration_ticks,
+                    done,
+                    total,
                     charged,
                     funding: funding.clone(),
                     source: queue.producer,
@@ -227,6 +239,45 @@ pub(crate) fn validate_operation(operation: &OperationAudit) -> Result<(), Strin
     let after = jobs(&operation.after)?;
     let mut debits = Amounts::new();
     let mut involved = false;
+    for event in &operation.events {
+        if let EconomyEventKind::ProductionStarted {
+            producer,
+            job,
+            charged,
+        } = &event.kind
+        {
+            if before
+                .get(&(*producer, *job))
+                .or_else(|| after.get(&(*producer, *job)))
+                .is_some()
+                && !charged.is_empty()
+            {
+                return Err("paid-work start charges an upfront amount".into());
+            }
+        }
+        if let EconomyEventKind::ProgressCharged { unit, job, charged } = &event.kind {
+            let source = before
+                .get(&(*unit, *job))
+                .ok_or("paid-work flush has no prior funded job")?;
+            let done=after.get(&(*unit,*job)).map_or_else(||if operation.events.iter().any(|event|matches!(event.kind,EconomyEventKind::ProductionCompleted{producer,job:completed,..} if producer==*unit && completed==*job)) || source.site && operation.after.economy.construction.completed.contains(unit) {source.total}else{source.done},|next|next.done);
+            let mut expected = sum(&source.funding.pending_charges)?;
+            let differences = delta(
+                &sum(&cumulative(&operation.before, source, source.done)?)?,
+                &sum(&cumulative(&operation.before, source, done)?)?,
+            )?;
+            for (key, amount) in differences {
+                *expected.entry(key).or_default() += amount;
+            }
+            if expected.is_empty()
+                || expected != sum(charged)?
+                || after
+                    .get(&(*unit, *job))
+                    .is_some_and(|next| !next.funding.pending_charges.is_empty())
+            {
+                return Err("paid-work flush does not consume its exact pending charges".into());
+            }
+        }
+    }
     for (key, previous) in &before {
         let terminal;
         let removed = !after.contains_key(key);
