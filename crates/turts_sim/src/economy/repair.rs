@@ -1004,4 +1004,180 @@ mod tests {
         remove_unit(app.world_mut(), 1);
         assert!(audit_rows(app.world()).is_empty());
     }
+    #[test]
+    fn authored_armour_class_filter_is_exact() {
+        let mut app = app(
+            &[
+                (1, "repairer", 0, Vec2::new(8.0, 8.0)),
+                (3, "target", 0, Vec2::new(10.0, 8.0)),
+            ],
+            100,
+        );
+        app.world_mut()
+            .resource_mut::<InstalledCatalog>()
+            .0
+            .units
+            .get_mut(&id("repairer"))
+            .unwrap()
+            .repairer
+            .as_mut()
+            .unwrap()
+            .classes = vec![id("metal").to_string()];
+        assert_eq!(
+            validate_order(app.world(), 1, 3),
+            Err(RejectReason::TargetInvalid)
+        );
+        app.world_mut()
+            .resource_mut::<InstalledCatalog>()
+            .0
+            .units
+            .get_mut(&id("target"))
+            .unwrap()
+            .armour = Some(turts_mod_api::ArmourDef {
+            class: id("metal").to_string(),
+            flat: 0,
+            tags: vec![],
+            points: 0,
+            flat_by_type: vec![],
+        });
+        assert!(validate_order(app.world(), 1, 3).is_ok());
+        app.world_mut()
+            .resource_mut::<InstalledCatalog>()
+            .0
+            .units
+            .get_mut(&id("repairer"))
+            .unwrap()
+            .repairer
+            .as_mut()
+            .unwrap()
+            .classes = vec![id("wood").to_string()];
+        assert_eq!(
+            validate_order(app.world(), 1, 3),
+            Err(RejectReason::TargetInvalid)
+        );
+    }
+
+    #[test]
+    fn real_supply_shortage_does_not_slow_repair() {
+        use turts_mod_api::{
+            ResolvedProducer, ResolvedWeapon, ShortEffect, SupplyAmount, SupplyCounts, SupplyScope,
+            WeaponRangeMode, WhenShort,
+        };
+        let mut app = app(
+            &[
+                (1, "repairer", 0, Vec2::new(8.0, 8.0)),
+                (3, "target", 0, Vec2::new(10.0, 8.0)),
+            ],
+            100,
+        );
+        {
+            let mut catalog = app.world_mut().resource_mut::<InstalledCatalog>();
+            catalog.0.resources.insert(
+                id("power"),
+                ResourceDef {
+                    id: "power".into(),
+                    name: "power".into(),
+                    unit_name: String::new(),
+                    kind: ResourceKind::Supply {
+                        scope: SupplyScope::Slot,
+                        counts: SupplyCounts::Completed,
+                    },
+                },
+            );
+            let source = catalog.0.units.get_mut(&id("repairer")).unwrap();
+            source.consumes = vec![SupplyAmount {
+                resource: id("power").to_string(),
+                amount: 1,
+            }];
+            source.producer = Some(ResolvedProducer {
+                recipes: vec![],
+                queue_capacity: 1,
+                spawn_offsets: vec![],
+                when_short: vec![WhenShort {
+                    resource: id("power").to_string(),
+                    effect: ShortEffect::Rate(turts_mod_api::Ratio {
+                        numerator: 1,
+                        denominator: 2,
+                    }),
+                }],
+            });
+            source.weapon = Some(ResolvedWeapon {
+                damage_type: None,
+                bonus: vec![],
+                range: 10.0,
+                range_mode: WeaponRangeMode::Centre,
+                cooldown_ms: 1000,
+                damage: 1,
+                ammo: None,
+                targets: TargetFilter {
+                    slots: SlotRelation::Other,
+                },
+                when_short: vec![WhenShort {
+                    resource: id("power").to_string(),
+                    effect: ShortEffect::Disable,
+                }],
+            });
+        }
+        super::super::power::initialize(app.world_mut()).unwrap();
+        assert!(!super::super::power::weapon_enabled(app.world(), 1));
+        assert_eq!(
+            super::super::power::rate_factor(app.world(), 1),
+            turts_rules::Ratio::new(1, 2).unwrap()
+        );
+        for _ in 0..5 {
+            run_repair(app.world_mut());
+        }
+        assert_eq!(hp(&app, 3), 15);
+        assert_eq!(funds(&app), 95);
+    }
+
+    #[test]
+    fn last_repair_tick_suppresses_auto_fire_and_replacement_restores_it() {
+        let mut app = app(
+            &[
+                (1, "repairer", 0, Vec2::new(8.0, 8.0)),
+                (3, "target", 0, Vec2::new(10.0, 8.0)),
+                (4, "target", 1, Vec2::new(12.0, 8.0)),
+            ],
+            100,
+        );
+        app.world_mut().resource_mut::<Healths>().0.insert(3, 99);
+        app.world_mut()
+            .resource_mut::<InstalledCatalog>()
+            .0
+            .units
+            .get_mut(&id("repairer"))
+            .unwrap()
+            .weapon = Some(turts_mod_api::ResolvedWeapon {
+            damage_type: None,
+            bonus: vec![],
+            range: 10.0,
+            range_mode: turts_mod_api::WeaponRangeMode::Centre,
+            cooldown_ms: 1,
+            damage: 1,
+            ammo: None,
+            targets: TargetFilter {
+                slots: SlotRelation::Other,
+            },
+            when_short: vec![],
+        });
+        let mut weapons = super::super::combat::Weapons::default();
+        weapons.0.insert(1, Default::default());
+        app.world_mut().insert_resource(weapons);
+        run_repair(app.world_mut());
+        assert_eq!(hp(&app, 3), 100);
+        assert!(
+            status_rows(app.world()).is_empty(),
+            "full target clears owner status immediately"
+        );
+        super::super::combat::run_combat(app.world_mut());
+        assert_eq!(
+            hp(&app, 4),
+            10,
+            "no automatic shot on the final healing tick"
+        );
+        order_changed(app.world_mut(), 1);
+        super::super::combat::run_combat(app.world_mut());
+        assert_eq!(hp(&app, 4), 9, "replacement clears repair suppression");
+    }
 }
