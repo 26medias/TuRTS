@@ -41,6 +41,8 @@ Integrate completed work early on a non-main integration branch.
 The orchestrator also implements and integrates work. Do not spend the whole turn supervising agents.
 Reuse existing agent context. Avoid duplicate investigations and duplicate reviews.
 Schedule builds to avoid Cargo locks, excess RAM use, and disk exhaustion.
+When sharing a native Cargo target across worktrees, use `~/.codex/bin/turts-cargo`.
+It refreshes local source timestamps on a worktree change to prevent stale artifact reuse.
 Serialize GPU measurements and browser workloads that would invalidate each other's results.
 
 ## Specs use Anvil
