@@ -48,7 +48,12 @@ fn catalog() -> ContentCatalog {
                 amount: 12,
             }],
             payment: PaymentPolicy::ChargeOverTime,
-            cancel_refunds: CancelRefunds::default(),
+            cancel_refunds: CancelRefunds {
+                queued: Default::default(),
+                running: Default::default(),
+                output_blocked: Default::default(),
+                destroyed: Default::default(),
+            },
         },
     );
     catalog
