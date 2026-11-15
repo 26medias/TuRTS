@@ -48,6 +48,7 @@ fn config(package: &Path) -> HostConfig {
         tick_hz: 20,
         static_dir: None,
         start_policy: None,
+        bots: vec![],
     }
 }
 
@@ -191,6 +192,7 @@ fn boot_refuses_a_root_with_a_dependency() {
 fn synthetic_cli(count: u32) -> config::Cli {
     config::Cli {
         computer_slot: None,
+        bots: vec![],
         config: PathBuf::from("server.ron"),
         tick_log: None,
         stats: None,
