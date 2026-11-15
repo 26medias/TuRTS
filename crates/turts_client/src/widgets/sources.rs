@@ -747,12 +747,17 @@ fn capability_matches(order: &turts_mod_api::OrderDef, unit: &turts_mod_api::Res
                 || unit.producer.is_some()
                 || unit.weapon.is_some()
         }
-        Behaviour::Stop | Behaviour::Hold => unit.movement.is_some() || unit.weapon.is_some(),
-        // API 0.2.4: no unit is capable of a new behaviour until its lane builds it.
-        Behaviour::Construct
-        | Behaviour::CancelConstruction
-        | Behaviour::Repair
-        | Behaviour::Surrender => false,
+        Behaviour::Stop => {
+            unit.movement.is_some()
+                || unit.weapon.is_some()
+                || unit.constructor.is_some()
+                || unit.repairer.is_some()
+        }
+        Behaviour::Hold => unit.movement.is_some() || unit.weapon.is_some(),
+        Behaviour::Construct => unit.constructor.is_some(),
+        Behaviour::CancelConstruction => unit.placement.is_some(),
+        Behaviour::Repair => unit.repairer.is_some(),
+        Behaviour::Surrender => false,
     }
 }
 
