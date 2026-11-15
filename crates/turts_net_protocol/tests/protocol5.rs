@@ -133,6 +133,7 @@ fn the_record_list_round_trips() {
         held_since_tick: 31,
     };
     let records = DeltaRecords {
+        terrain: None,
         repairs: Vec::new(),
         repairs_cleared: Vec::new(),
 
