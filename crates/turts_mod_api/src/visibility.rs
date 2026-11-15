@@ -84,6 +84,9 @@ pub struct RememberedUnit {
     pub facing: Option<crate::Facing>,
     pub site: bool,
     pub last_seen_tick: u32,
+    /// Last permitted physical ground contact; it grants no neighboring terrain facts.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ground_elevation: Option<i32>,
 }
 
 /// Public surface-node facts. Remaining resources may be stale.

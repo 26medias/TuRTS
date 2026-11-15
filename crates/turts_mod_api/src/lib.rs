@@ -102,8 +102,8 @@ mod tests {
 
     #[test]
     fn current_release_and_historical_versions_are_stable() {
-        assert_eq!(ENGINE_API_VERSION, "0.2.16");
-        assert_eq!(RELEASED_ENGINE_APIS.len(), 18);
+        assert_eq!(ENGINE_API_VERSION, "0.2.17");
+        assert_eq!(RELEASED_ENGINE_APIS.len(), 19);
         assert_eq!(RELEASED_ENGINE_APIS[4], "0.2.3");
         assert_eq!(RELEASED_ENGINE_APIS[15], "0.2.14");
         assert_eq!(RELEASED_ENGINE_APIS[16], "0.2.15");

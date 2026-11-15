@@ -9,6 +9,7 @@ publish.workspace = true
 gltf = { version = "=1.4.1", default-features = false, features = ["utils", "names", "extensions"] }
 image = { version = "=0.25.10", default-features = false, features = ["png", "jpeg"] }
 turts_mod_api = { path = "../turts_mod_api" }
+turts_rules = { path = "../turts_rules" }
 serde = { workspace = true }
 ron = { workspace = true }
 serde_json = { workspace = true }

@@ -1312,7 +1312,8 @@ fn validate_order_target(
         B::Construct => order.target == T::ContentAtPoint,
         B::CancelConstruction | B::Surrender => order.target == T::None,
         B::SetRally => matches!(order.target, T::Point | T::Unit | T::PointOrUnit | T::Node),
-        B::Repair => order.target == T::Unit,
+        B::Repair | B::UnloadCargo => order.target == T::Unit,
+        B::TerrainWork => order.target == T::TerrainDesignation,
     };
     if !allowed {
         let expected = match order.behaviour {
@@ -1324,7 +1325,8 @@ fn validate_order_target(
             B::Construct => "ContentAtPoint",
             B::CancelConstruction | B::Surrender => "None",
             B::SetRally => "Point, Unit, PointOrUnit or Node",
-            B::Repair => "Unit",
+            B::Repair | B::UnloadCargo => "Unit",
+            B::TerrainWork => "TerrainDesignation",
         };
         return Err(error(
             package,

@@ -186,6 +186,29 @@ impl PackageArchive {
         self.parse_exports("exports.match", &self.manifest.exports.match_files)
     }
 
+    pub fn terrain_materials(
+        &self,
+    ) -> Result<Vec<(String, turts_mod_api::TerrainMaterialDef)>, ModError> {
+        self.parse_exports(
+            "exports.terrain_materials",
+            &self.manifest.exports.terrain_materials,
+        )
+    }
+    pub fn terrain_movement_classes(
+        &self,
+    ) -> Result<Vec<(String, turts_mod_api::TerrainMovementClassDef)>, ModError> {
+        self.parse_exports(
+            "exports.terrain_movement_classes",
+            &self.manifest.exports.terrain_movement_classes,
+        )
+    }
+    pub fn terrain_tools(&self) -> Result<Vec<(String, turts_mod_api::TerrainToolDef)>, ModError> {
+        self.parse_exports(
+            "exports.terrain_tools",
+            &self.manifest.exports.terrain_tools,
+        )
+    }
+
     /// Portable bot profiles. Factory availability is checked only by host activation.
     pub fn bots(&self) -> Result<Vec<(String, turts_mod_api::BotDef)>, ModError> {
         self.parse_exports("exports.bots", &self.manifest.exports.bots)
@@ -200,6 +223,10 @@ impl PackageArchive {
             catalog
                 .source_files
                 .insert(turts_mod_api::ContentId::new(&self.id(), &bot.id), file);
+        }
+        crate::terrain::validate_terrain_catalog(&self.id(), &catalog)?;
+        for (file, map) in self.maps()? {
+            crate::terrain::validate_terrain_map(&self.id(), &file, &map, &catalog)?;
         }
         Ok(catalog)
     }
@@ -324,6 +351,13 @@ impl PackageArchive {
         }
         catalog.combat = combat.into_iter().next().map(|(_, table)| table);
         crate::content_m3::validate_m3(&self.manifest, &catalog)?;
+        crate::terrain::install_terrain(
+            &self.manifest,
+            &mut catalog,
+            self.terrain_materials()?,
+            self.terrain_movement_classes()?,
+            self.terrain_tools()?,
+        )?;
         Ok(catalog)
     }
 
@@ -340,6 +374,7 @@ impl PackageArchive {
         let maps = self.parse_exports("exports.maps", &self.manifest.exports.maps)?;
         for (file, map) in &maps {
             crate::visibility::validate_visibility(&self.id(), file, map)?;
+            crate::terrain::validate_terrain_definition(&self.id(), file, map)?;
         }
         Ok(maps)
     }
