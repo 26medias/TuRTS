@@ -1,0 +1,482 @@
+//! Independent audit of real paid-work and repair simulation streams.
+use std::{collections::BTreeMap, path::Path};
+
+use bevy_app::App;
+use turts_mod_api::*;
+use turts_mod_runtime::{archive::PackageArchive, pack::pack_dir};
+use turts_sim::{
+    Command, CommandKind, SlotId, Vec2,
+    economy::{
+        construction, production,
+        views::{AuditState, WorldView},
+    },
+};
+
+fn cid(local: &str) -> ContentId {
+    ContentId::parse(&format!("cedar:{local}")).unwrap()
+}
+fn short(local: &str, denominator: u32) -> WhenShort {
+    WhenShort {
+        resource: cid(local).to_string(),
+        effect: ShortEffect::Rate(Ratio {
+            numerator: 1,
+            denominator,
+        }),
+    }
+}
+fn amount(local: &str, amount: u64) -> SupplyAmount {
+    SupplyAmount {
+        resource: cid(local).to_string(),
+        amount,
+    }
+}
+fn placement(local: &str, x: f32, y: f32) -> Placement {
+    Placement {
+        unit: cid(local).to_string(),
+        owner_slot: 0,
+        pos: WorldPos { x, y },
+        contents: vec![],
+        facing: None,
+        start_order: None,
+    }
+}
+fn bare(base: &ResolvedUnit, local: &str, mobile: bool) -> ResolvedUnit {
+    let mut unit = base.clone();
+    unit.id = cid(local);
+    unit.name = local.into();
+    unit.footprint = Footprint::Circle {
+        radius: if mobile { 0.5 } else { 1.0 },
+    };
+    unit.movement = mobile.then_some(MovementDef { speed: 3.0 });
+    unit.inventory = None;
+    unit.gatherer = None;
+    unit.drop_off = None;
+    unit.producer = None;
+    unit.constructor = None;
+    unit.placement = None;
+    unit.build_area = None;
+    unit.output_inventory = None;
+    unit.extractor = None;
+    unit.conveyor = None;
+    unit.inserter = None;
+    unit.machine = None;
+    unit.research = None;
+    unit.health = Some(HealthDef { max: 100 });
+    unit.weapon = None;
+    unit.armour = None;
+    unit.acquire = None;
+    unit.provides.clear();
+    unit.consumes.clear();
+    unit.income = None;
+    unit.repairer = None;
+    unit.removal = Some(RemovalDef {
+        by_command: true,
+        contents: ContentsPolicy::Destroy,
+    });
+    unit
+}
+fn recipe(local: &str, output: &str, ticks: u64, cost: u64) -> ResolvedProduction {
+    ResolvedProduction {
+        id: cid(local),
+        name: local.into(),
+        output_unit: cid(output),
+        duration_ms: ticks * 50,
+        costs: vec![ResolvedCost {
+            resource: cid("credits"),
+            amount: cost,
+            source: CostSource::SlotBalance,
+        }],
+        payment: PaymentPolicy::ChargeOverTime,
+        cancel_refunds: CancelRefunds {
+            queued: RefundRatio::ONE,
+            running: RefundRatio::ONE,
+            output_blocked: RefundRatio::ONE,
+            destroyed: RefundRatio::ZERO,
+        },
+    }
+}
+struct Fixture {
+    catalog: ContentCatalog,
+    map: MapDef,
+}
+impl Fixture {
+    fn new() -> Self {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../mods/cedar");
+        let archive = PackageArchive::parse(&pack_dir(&path).unwrap()).unwrap();
+        let mut catalog = archive.content().unwrap();
+        let mut map = archive.maps().unwrap().remove(0).1;
+        let base = catalog.units[&cid("worker")].clone();
+        let mut factory = bare(&base, "factory", false);
+        factory.producer = Some(ResolvedProducer {
+            recipes: vec![cid("train"), cid("train_b")],
+            queue_capacity: 8,
+            spawn_offsets: vec![WorldPos { x: 0.0, y: 3.0 }, WorldPos { x: 0.0, y: -3.0 }],
+            when_short: vec![],
+        });
+        factory.placement = Some(SitePlacementDef {
+            gap: 1.5,
+            node_clearance: 0.0,
+            in_build_area: false,
+            site_health: Ratio {
+                numerator: 1,
+                denominator: 4,
+            },
+        });
+        let mut builder = bare(&base, "builder", false);
+        builder.constructor = Some(ResolvedConstructor {
+            buildings: vec![cid("build_relay"), cid("build_factory")],
+            concurrent_sites: 8,
+            queue_capacity: 8,
+            progress: ConstructProgress::Autonomous,
+            when_short: vec![],
+        });
+        builder.build_area = Some(60.0);
+        let mut relay = bare(&base, "relay", false);
+        relay.placement = factory.placement;
+        let supply = bare(&base, "supply", false);
+        let product = bare(&base, "product", true);
+        let product_b = bare(&base, "product_b", true);
+        catalog.units = [factory, builder, relay, supply, product, product_b]
+            .into_iter()
+            .map(|unit| (unit.id.clone(), unit))
+            .collect();
+        catalog.resources = [
+            (
+                "power",
+                ResourceKind::Supply {
+                    scope: SupplyScope::Slot,
+                    counts: SupplyCounts::Completed,
+                },
+            ),
+            (
+                "capacity",
+                ResourceKind::Supply {
+                    scope: SupplyScope::Slot,
+                    counts: SupplyCounts::Completed,
+                },
+            ),
+            ("credits", ResourceKind::Balance),
+        ]
+        .into_iter()
+        .map(|(local, kind)| {
+            (
+                cid(local),
+                ResourceDef {
+                    id: local.into(),
+                    name: local.into(),
+                    unit_name: String::new(),
+                    kind,
+                },
+            )
+        })
+        .collect();
+        catalog.production = [
+            recipe("train", "product", 1, 7),
+            recipe("train_b", "product_b", 1, 7),
+            recipe("build_relay", "relay", 2, 11),
+            recipe("build_factory", "factory", 1, 13),
+        ]
+        .into_iter()
+        .map(|recipe| (recipe.id.clone(), recipe))
+        .collect();
+        catalog.nodes.clear();
+        catalog.recipes.clear();
+        catalog.technologies.clear();
+        catalog.orders.clear();
+        catalog.combat = None;
+        catalog.source_files = BTreeMap::new();
+        map.size = MapSize { x: 64.0, y: 64.0 };
+        map.nodes.clear();
+        map.belts.clear();
+        map.environment = None;
+        map.ground = None;
+        map.placements = vec![
+            placement("factory", 8.0, 8.0),
+            placement("builder", 54.0, 8.0),
+            placement("supply", 54.0, 24.0),
+        ];
+        map.slot_economy = vec![SlotEconomyInit {
+            slot: 0,
+            balances: vec![BalanceAmount {
+                balance: cid("credits").to_string(),
+                amount: 1000,
+            }],
+        }];
+        Self { catalog, map }
+    }
+    fn unit(&mut self, name: &str) -> &mut ResolvedUnit {
+        self.catalog.units.get_mut(&cid(name)).unwrap()
+    }
+    fn ticks(&mut self, name: &str, ticks: u64) {
+        self.catalog
+            .production
+            .get_mut(&cid(name))
+            .unwrap()
+            .duration_ms = ticks * 50;
+    }
+    fn app(self) -> App {
+        self.app_at(20)
+    }
+    fn app_at(self, hz: u16) -> App {
+        let mut app = turts_sim::headless_app(hz);
+        let staged = turts_sim::stage_package(
+            app.world(),
+            self.catalog,
+            SourceDef {
+                file: "operating-engine/field.ron".into(),
+                value: self.map,
+            },
+            hz,
+        )
+        .unwrap();
+        turts_sim::install_package(app.world_mut(), staged);
+        app.world_mut()
+            .insert_resource(construction::ConstructionLimit(8));
+        turts_sim::initialize_completed_world(app.world_mut());
+        app
+    }
+}
+fn mixed_costs(f: &mut Fixture, duration: u64, balance_cost: u64, item_cost: u64, stock: u64) {
+    f.catalog.resources.insert(
+        cid("ore"),
+        ResourceDef {
+            id: "ore".into(),
+            name: "ore".into(),
+            unit_name: String::new(),
+            kind: ResourceKind::Item,
+        },
+    );
+    for name in ["factory", "builder"] {
+        f.unit(name).inventory = Some(ResolvedInventory {
+            capacity: 100,
+            accepts: vec![cid("ore")],
+        });
+        f.map
+            .placements
+            .iter_mut()
+            .find(|row| row.unit == cid(name).to_string())
+            .unwrap()
+            .contents = vec![ItemStack {
+            item: cid("ore").to_string(),
+            amount: stock,
+        }];
+    }
+    for name in ["train", "build_relay"] {
+        let recipe = f.catalog.production.get_mut(&cid(name)).unwrap();
+        recipe.duration_ms = duration;
+        recipe.costs = vec![
+            ResolvedCost {
+                resource: cid("credits"),
+                amount: balance_cost,
+                source: CostSource::SlotBalance,
+            },
+            ResolvedCost {
+                resource: cid("ore"),
+                amount: item_cost,
+                source: CostSource::ProducerInventory,
+            },
+        ];
+    }
+}
+
+use turts_audit::{EconomyLogRecord, validate_records};
+use turts_sim::{AuditTrail, EconomyEventKind};
+fn start(app: &mut App) -> Vec<EconomyLogRecord> {
+    app.update();
+    app.world_mut().resource_mut::<AuditTrail>().enable();
+    vec![EconomyLogRecord::Initial(turts_sim::audit_state(
+        app.world_mut(),
+    ))]
+}
+fn ticks(app: &mut App, records: &mut Vec<EconomyLogRecord>, count: u32) {
+    for _ in 0..count {
+        app.update();
+        let mut trail = app.world_mut().resource_mut::<AuditTrail>();
+        records.extend(
+            trail
+                .drain_commands()
+                .into_iter()
+                .map(EconomyLogRecord::CommandBoundary),
+        );
+        records.extend(
+            trail
+                .drain_operations()
+                .into_iter()
+                .map(EconomyLogRecord::Operation),
+        );
+        records.extend(
+            trail
+                .drain_ticks()
+                .into_iter()
+                .map(EconomyLogRecord::from_tick),
+        );
+    }
+}
+fn save(name: &str, records: &[EconomyLogRecord]) {
+    if let Ok(path) = std::env::var("TURTS_PAID_AUDIT_OUT") {
+        let path = std::path::PathBuf::from(path);
+        std::fs::create_dir_all(&path).unwrap();
+        std::fs::write(
+            path.join(format!("{name}.jsonl")),
+            records
+                .iter()
+                .map(|record| serde_json::to_string(record).unwrap() + "\n")
+                .collect::<String>(),
+        )
+        .unwrap();
+    }
+}
+fn assert_records(name: &str, records: &[EconomyLogRecord]) {
+    save(name, records);
+    validate_records(records).unwrap_or_else(|error| panic!("{name}: {error}"));
+}
+#[test]
+fn cumulative_paid_producer_and_site_streams_and_coherent_tampering() {
+    for hz in [10, 20] {
+        for scaled in [false, true] {
+            let mut fixture = Fixture::new();
+            fixture.ticks("train", 8);
+            fixture.ticks("build_relay", 8);
+            mixed_costs(&mut fixture, 400, 7, 5, 100);
+            if scaled {
+                fixture.unit("factory").consumes = vec![amount("power", 10)];
+                fixture
+                    .unit("factory")
+                    .producer
+                    .as_mut()
+                    .unwrap()
+                    .when_short = vec![short("power", 2)];
+                fixture
+                    .unit("builder")
+                    .constructor
+                    .as_mut()
+                    .unwrap()
+                    .when_short = vec![short("capacity", 3)];
+            }
+            let mut app = fixture.app_at(hz);
+            production::queue_production(app.world_mut(), SlotId(0), 1, cid("train")).unwrap();
+            construction::construct(
+                app.world_mut(),
+                SlotId(0),
+                2,
+                cid("build_relay"),
+                Vec2::new(40., 30.),
+            )
+            .unwrap();
+            let mut records = start(&mut app);
+            ticks(&mut app, &mut records, 40);
+            assert_records(&format!("progress-{hz}-{scaled}"), &records);
+            assert!(records.iter().any(|record|matches!(record,EconomyLogRecord::Operation(operation) if operation.events.iter().any(|event|matches!(event.kind,EconomyEventKind::ProgressCharged{..})))));
+            let index=records.iter().position(|record|matches!(record,EconomyLogRecord::Operation(operation) if operation.before.raw_queues.iter().flat_map(|queue|&queue.jobs).zip(operation.after.raw_queues.iter().flat_map(|queue|&queue.jobs)).any(|(a,b)|a.charged!=b.charged && !b.charged.is_empty()))).unwrap();
+            let mut bad = records[..=index].to_vec();
+            let EconomyLogRecord::Operation(operation) = bad.last_mut().unwrap() else {
+                unreachable!()
+            };
+            let job = operation
+                .after
+                .raw_queues
+                .iter_mut()
+                .flat_map(|queue| &mut queue.jobs)
+                .find(|job| !job.charged.is_empty())
+                .unwrap();
+            job.charged[0].amount += 1;
+            if let Some(balance) = operation
+                .after
+                .economy
+                .balances
+                .iter_mut()
+                .find(|row| row.resource == cid("credits"))
+            {
+                balance.on_hand -= 1;
+            }
+            assert!(validate_records(&bad).unwrap_err().contains("paid-work"));
+        }
+    }
+}
+#[test]
+fn cancellation_flushes_actual_paid_without_duplicating_refund() {
+    let mut fixture = Fixture::new();
+    fixture.ticks("train", 40);
+    let mut app = fixture.app();
+    let job = production::queue_production(app.world_mut(), SlotId(0), 1, cid("train")).unwrap();
+    let mut records = start(&mut app);
+    ticks(&mut app, &mut records, 10);
+    app.world_mut()
+        .resource_mut::<turts_sim::CommandQueue>()
+        .0
+        .push_back(Command {
+            slot: SlotId(0),
+            seq: 1,
+            kind: CommandKind::CancelProduction {
+                producer_id: 1,
+                job_id: job,
+            },
+        });
+    ticks(&mut app, &mut records, 2);
+    assert_records("cancel", &records);
+}
+#[test]
+fn fractional_repair_stream_preserves_debt_and_rejects_coherent_heal_tampering() {
+    for hz in [10, 20] {
+        let mut fixture = Fixture::new();
+        fixture.unit("factory").producer = None;
+        fixture.unit("factory").repairer = Some(RepairerDef {
+            rate_per_second: 6,
+            reach: 30.,
+            cost: vec![RepairCost {
+                resource: cid("credits").to_string(),
+                amount: 3,
+                per_health: 4,
+            }],
+            targets: TargetFilter {
+                slots: SlotRelation::Same,
+            },
+            classes: vec![],
+            auto_range: Some(30.),
+        });
+        fixture.unit("builder").constructor = None;
+        fixture.map.placements[1].pos = WorldPos { x: 14., y: 8. };
+        fixture.map.placements[2].owner_slot = 1;
+        fixture.map.placements[2].pos = WorldPos { x: 24., y: 8. };
+        fixture.unit("supply").weapon = Some(ResolvedWeapon {
+            range: 20.,
+            range_mode: WeaponRangeMode::Centre,
+            cooldown_ms: 5000,
+            damage: 90,
+            ammo: None,
+            targets: TargetFilter {
+                slots: SlotRelation::Other,
+            },
+            damage_type: None,
+            bonus: vec![],
+            when_short: vec![],
+        });
+        fixture.unit("factory").health = None;
+        let mut app = fixture.app_at(hz);
+        let mut records = start(&mut app);
+        ticks(&mut app, &mut records, 25);
+        assert_records(&format!("repair-{hz}"), &records);
+        let index=records.iter().position(|record|matches!(record,EconomyLogRecord::Operation(operation) if operation.before.raw_healths.iter().zip(&operation.after.raw_healths).any(|(a,b)|b.current>a.current))).expect("real repair healed");
+        let mut bad = records[..=index].to_vec();
+        let EconomyLogRecord::Operation(operation) = bad.last_mut().unwrap() else {
+            unreachable!()
+        };
+        let health = operation
+            .after
+            .raw_healths
+            .iter_mut()
+            .find(|row| row.unit == 2)
+            .unwrap();
+        health.current += 1;
+        let mirror = operation
+            .after
+            .economy
+            .m3
+            .raw_healths
+            .iter_mut()
+            .find(|row| row.unit == 2)
+            .unwrap();
+        mirror.current += 1;
+        assert!(validate_records(&bad).unwrap_err().contains("repair"));
+    }
+}

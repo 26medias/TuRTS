@@ -270,6 +270,15 @@ pub(crate) fn validate_operation(operation: &OperationAudit) -> Result<(), Strin
         {
             return Err("paid-work job identity changed".into());
         }
+        if next.done > previous.done {
+            let step = progress_step(&operation.before, previous)?;
+            if next.done - previous.done != step.min(previous.total - previous.done) {
+                return Err("paid-work progress differs from immutable capability rate".into());
+            }
+            if previous.site {
+                validate_site_health(operation, previous, next.done)?;
+            }
+        }
         let differences = delta(
             &sum(&cumulative(&operation.before, previous, previous.done)?)?,
             &sum(&cumulative(&operation.before, previous, next.done)?)?,
@@ -326,6 +335,40 @@ pub(crate) fn validate_operation(operation: &OperationAudit) -> Result<(), Strin
                 }
             }
         } else if let Some(resource) = &next.funding.waiting_for_funds {
+            let step = progress_step(&operation.before, previous)?;
+            let proposed = previous
+                .done
+                .checked_add(step.min(previous.total - previous.done))
+                .ok_or("paid wait progress overflows")?;
+            let mut missing = None;
+            let original = sum(&cumulative(&operation.before, previous, previous.done)?)?;
+            let proposed = sum(&cumulative(&operation.before, previous, proposed)?)?;
+            let available = accounts(&operation.before);
+            for cost in &recipe(&operation.before, &previous.recipe)?.costs {
+                let endpoint = match cost.source {
+                    CostSource::SlotBalance => Destination::Slot(previous.owner),
+                    CostSource::ProducerInventory => Destination::Inventory(previous.source),
+                };
+                let key = (endpoint, cost.resource.clone());
+                let on_hand = available.get(&key).ok_or(
+                    "paid funding wait names absent endpoint rather than typed diagnostic",
+                )?;
+                let due = proposed.get(&key).copied().unwrap_or(0)
+                    - original.get(&key).copied().unwrap_or(0);
+                if on_hand
+                    .checked_sub(reserved(&operation.before, &key))
+                    .ok_or("paid reserved balance exceeds on hand")?
+                    < due
+                {
+                    missing = Some(cost.resource.clone());
+                    break;
+                }
+            }
+            if missing.as_ref() != Some(resource) {
+                return Err(
+                    "paid funding wait differs from first unaffordable authored resource".into(),
+                );
+            }
             expected.waiting_for_funds = Some(resource.clone());
             expected
                 .held_since_tick
@@ -339,7 +382,13 @@ pub(crate) fn validate_operation(operation: &OperationAudit) -> Result<(), Strin
         }
     }
     let refund_credits = validate_refunds(operation)?;
-    involved |= !refund_credits.is_empty();
+    involved |= operation.events.iter().any(|event| {
+        matches!(
+            event.kind,
+            EconomyEventKind::DestructionRefunded { .. }
+                | EconomyEventKind::ProductionCancelled { .. }
+        )
+    });
     if involved {
         let old = accounts(&operation.before);
         let actual = accounts(&operation.after);
@@ -458,6 +507,22 @@ fn validate_repair_operation(operation: &OperationAudit) -> Result<(), String> {
     let mut repair_debits = Amounts::new();
     let mut healings = BTreeMap::<u32, u64>::new();
     let mut advanced = false;
+    for previous in &operation.before.raw_repairs {
+        if !previous.remainders.is_empty()
+            && operation
+                .after
+                .raw_units
+                .iter()
+                .any(|unit| unit.unit_id == previous.repairer)
+            && !operation
+                .after
+                .raw_repairs
+                .iter()
+                .any(|row| row.repairer == previous.repairer)
+        {
+            return Err("repair fractional debt disappeared from a surviving source".into());
+        }
+    }
     for next in &operation.after.raw_repairs {
         let previous = operation
             .before
@@ -509,6 +574,41 @@ fn validate_repair_operation(operation: &OperationAudit) -> Result<(), String> {
             .current;
         if health == 0 || health >= max {
             return Err("repair advances on dead or full target".into());
+        }
+        let source = operation
+            .before
+            .raw_units
+            .iter()
+            .find(|unit| unit.unit_id == next.repairer)
+            .ok_or("repair source is absent")?;
+        let target_unit = operation
+            .before
+            .raw_units
+            .iter()
+            .find(|unit| unit.unit_id == action.target)
+            .ok_or("repair target is absent")?;
+        let same = source.owner_slot == target_unit.owner_slot;
+        let allowed = match definition.targets.slots {
+            turts_mod_api::SlotRelation::Same | turts_mod_api::SlotRelation::Ally => same,
+            turts_mod_api::SlotRelation::Other | turts_mod_api::SlotRelation::Enemy => !same,
+            turts_mod_api::SlotRelation::Any => true,
+        };
+        if !allowed
+            || !definition.classes.is_empty()
+                && !target
+                    .armour
+                    .as_ref()
+                    .is_some_and(|armour| definition.classes.contains(&armour.class))
+        {
+            return Err("repair heals a target outside its authored filters".into());
+        }
+        let origin = bevy::math::Vec2::new(source.pos.x, source.pos.y);
+        let point = bevy::math::Vec2::new(target_unit.pos.x, target_unit.pos.y);
+        let reach = unit_definition(&operation.before, next.repairer)?.radius
+            + target.radius
+            + definition.reach;
+        if origin.distance_squared(point) > reach * reach {
+            return Err("repair heals outside footprint reach".into());
         }
         let hz = u128::from(
             operation
@@ -690,6 +790,17 @@ fn validate_refunds(operation: &OperationAudit) -> Result<Amounts, String> {
     use turts_sim::EconomyEventKind;
     let mut credits = Amounts::new();
     for event in &operation.events {
+        if let EconomyEventKind::Destroyed { unit, cause, .. } = &event.kind
+            && !matches!(
+                cause,
+                turts_sim::economy::events::RemoveCause::CancelledConstruction
+            )
+        {
+            let desired = refund_rows(&operation.before, *unit, None, true)?;
+            if desired.iter().any(|row|row.amount!=0) && operation.events.iter().filter(|event|matches!(event.kind,EconomyEventKind::DestructionRefunded{unit:source,..} if source==*unit)).count()!=1 {return Err("destruction omitted or duplicated mandatory refund accounting".into())}
+        }
+    }
+    for event in &operation.events {
         match &event.kind {
             EconomyEventKind::ProductionCancelled {
                 producer,
@@ -712,17 +823,7 @@ fn validate_refunds(operation: &OperationAudit) -> Result<Amounts, String> {
                 discarded,
             } => {
                 let expected = refund_rows(&operation.before, *unit, None, true)?;
-                // Preserve per-cost desired multiplicity. Sorting only changes
-                // serialization order, never floors an already aggregated cost.
-                let rows = |rows: &[CostLine]| {
-                    let mut rows = rows
-                        .iter()
-                        .map(|row| (event_key(row), row.amount))
-                        .collect::<Vec<_>>();
-                    rows.sort();
-                    rows
-                };
-                if rows(&expected) != rows(desired) {
+                if sum(&expected)? != sum(desired)? {
                     return Err(
                         "destruction desired refunds differ from per-cost actual-paid floors"
                             .into(),
@@ -819,4 +920,151 @@ fn validate_refunds(operation: &OperationAudit) -> Result<Amounts, String> {
         }
     }
     Ok(credits)
+}
+
+fn progress_step(state: &AuditState, job: &Job) -> Result<u64, String> {
+    let q = state
+        .raw_operating
+        .as_ref()
+        .map_or(1, |operating| operating.rate_q);
+    let mut rate = (1_u64, 1_u64);
+    let rules = if job.site {
+        state
+            .economy
+            .construction
+            .sites
+            .get(&job.unit)
+            .ok_or("paid site is missing")?
+            .constructor_when_short
+            .as_slice()
+    } else {
+        unit_definition(state, job.unit)?
+            .producer_when_short
+            .as_slice()
+    };
+    if state.disabled.contains(&job.source) {
+        return Ok(0);
+    }
+    for rule in rules {
+        let short = state.raw_operating.as_ref().is_some_and(|operating| {
+            operating.effects.iter().any(|row| {
+                row.slot == job.owner
+                    && row.resource.to_string() == rule.resource
+                    && row.consumed > row.provided
+            })
+        });
+        if short && let turts_mod_api::ShortEffect::Rate(ratio) = rule.effect {
+            let candidate = (u64::from(ratio.numerator), u64::from(ratio.denominator));
+            if u128::from(candidate.0) * u128::from(rate.1)
+                < u128::from(rate.0) * u128::from(candidate.1)
+            {
+                rate = candidate;
+            }
+        }
+    }
+    if rate.1 == 0 || q % rate.1 != 0 {
+        return Err("paid work has invalid exact rate scale".into());
+    }
+    (q / rate.1)
+        .checked_mul(rate.0)
+        .ok_or_else(|| "paid rate step overflows".into())
+}
+fn validate_site_health(operation: &OperationAudit, job: &Job, next: u64) -> Result<(), String> {
+    let recipe = recipe(&operation.before, &job.recipe)?;
+    let output = operation
+        .before
+        .catalog
+        .as_ref()
+        .and_then(|catalog| {
+            catalog
+                .units
+                .iter()
+                .find(|unit| unit.id == recipe.output_unit)
+        })
+        .ok_or("paid site output definition missing")?;
+    if let (Some(max), Some(placement)) = (output.health_max, output.placement) {
+        let ratio = placement.site_health;
+        if ratio.denominator == 0 {
+            return Err("paid site initial health denominator is zero".into());
+        }
+        let denominator = u128::from(ratio.denominator) * u128::from(job.total);
+        let numerator = u128::from(ratio.numerator.min(ratio.denominator));
+        let target = |done: u64| {
+            let part = numerator * u128::from(job.total)
+                + (u128::from(ratio.denominator) - numerator) * u128::from(done);
+            wide_fraction(max, part, denominator)
+        };
+        let gain = target(next)?
+            .checked_sub(target(job.done)?)
+            .ok_or("paid site health target went backwards")?;
+        let old = operation
+            .before
+            .raw_healths
+            .iter()
+            .find(|health| health.unit == job.unit)
+            .ok_or("paid site health missing")?
+            .current;
+        let expected = old
+            .checked_add(gain)
+            .ok_or("paid site health gain overflow")?
+            .min(max);
+        let actual = operation
+            .after
+            .raw_healths
+            .iter()
+            .find(|health| health.unit == job.unit)
+            .ok_or("paid site lost its health")?
+            .current;
+        if expected != actual {
+            return Err("paid site health differs from scaled progress gain".into());
+        }
+    }
+    Ok(())
+}
+
+// Exact floor(amount * numerator / denominator) without a 192-bit product.
+fn wide_fraction(amount: u64, numerator: u128, denominator: u128) -> Result<u64, String> {
+    if denominator == 0 {
+        return Err("wide fraction has zero denominator".into());
+    }
+    let mut quotient = 0_u128;
+    let mut remainder = 0_u128;
+    for bit in (0..64).rev() {
+        quotient = quotient.checked_mul(2).ok_or("wide quotient overflows")?;
+        remainder = remainder.checked_mul(2).ok_or("wide remainder overflows")?;
+        if (amount >> bit) & 1 != 0 {
+            remainder = remainder
+                .checked_add(numerator)
+                .ok_or("wide numerator overflows")?;
+        }
+        quotient = quotient
+            .checked_add(remainder / denominator)
+            .ok_or("wide quotient overflows")?;
+        remainder %= denominator;
+    }
+    u64::try_from(quotient).map_err(|_| "wide fraction result overflows".into())
+}
+
+fn reserved(state: &AuditState, key: &AccountKey) -> u128 {
+    match key.0 {
+        Destination::Slot(slot) => state
+            .economy
+            .balances
+            .iter()
+            .find(|row| row.slot == slot && row.resource == key.1)
+            .map_or(0, |row| u128::from(row.reserved)),
+        Destination::Inventory(unit) => state
+            .economy
+            .inventories
+            .iter()
+            .find(|row| row.unit == unit)
+            .and_then(|row| row.items.iter().find(|row| row.resource == key.1))
+            .map_or(0, |row| u128::from(row.reserved)),
+        Destination::Output(unit) => state
+            .raw_output_inventories
+            .iter()
+            .find(|row| row.unit == unit)
+            .and_then(|row| row.items.iter().find(|(id, _)| *id == key.1))
+            .map_or(0, |(_, row)| u128::from(row.reserved)),
+    }
 }
