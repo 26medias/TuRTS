@@ -258,6 +258,7 @@ pub fn drive(world: &mut World) {
             world.insert_resource(lobby);
             return;
         }
+        turts_sim::initialize_completed_world(world);
         plan.claim_in(&mut world.resource_mut::<Slots>())
             .expect("lobby slots are unclaimed until start");
         let tick = world.resource::<Tick>().0;

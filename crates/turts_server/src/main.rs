@@ -126,6 +126,7 @@ fn run() -> Result<(), String> {
     {
         let match_id = app.world().resource::<stats::MatchId>().0;
         turts_sim::visibility::initialize_context(app.world_mut(), match_id, &config.teams)?;
+        turts_sim::initialize_completed_world(app.world_mut());
     }
     let package = &booted.archive.manifest;
     eprintln!(

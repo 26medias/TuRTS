@@ -41,7 +41,8 @@ A unit without health can contribute sight. An unfinished site cannot contribute
 Manual disable and economic shortage do not remove sight. Removal or zero health does remove it.
 Team mode unions sight and explored coverage for slots with the same installed team identifier.
 A slot without a team shares with nobody. Team membership does not grant control or private accounts.
-Sight and memories are match-local. Package replacement clears them before installing a new initial basis.
+Sight and memories are match-local. A new match uses a fresh simulation world and installs a fresh initial basis.
+The existing API rejects a second package install into a populated world without changing it. Live package replacement remains outside this milestone.
 
 Validate grid dimensions and checked allocation sizes before changing the world.
 The map may have at most 1,048,576 cells. Checked total slot coverage storage must not exceed 64 MiB.
@@ -182,7 +183,7 @@ Keep one feature report with the row results and evidence paths. No new gate fra
 
 | Row | Required result |
 | --- | --- |
-| SV1 | Package loading covers API floors, absent/default settings, both sharing modes, nonfinite/zero values, boundary/radius rules, allocation overflow, oversized grids, and atomic reinstall. Old packages keep AllVisible gameplay. |
+| SV1 | Package loading covers API floors, absent/default settings, both sharing modes, nonfinite/zero values, boundary/radius rules, allocation overflow, oversized grids, atomic rejection of a second install, and clean new-match installation. Old packages keep AllVisible gameplay. |
 | SV2 | Real movement, site completion, disable, source damage/death, overlapping circles, teams, and boundary crossings produce exact current/explored coverage. Inverted entity creation and viewer connection order preserve knowledge. |
 | SV3 | Observe, hide, move/change/damage/kill while hidden, reobserve, and resync. Exact stale records/ticks persist correctly. Observed empty locations and observed death clear memory without inventing hidden death. No duplicate history grows. |
 | SV4 | Real human wire capture and public bot queries agree per slot/tick. Hidden-present/absent paired worlds give equal payloads and query metadata. Check health, every foreign reference, effects, initial snapshot, deltas, reconnect, and resync. Include appear-and-die within one tick and the final sight source dying after its authorized shot; no event references an unknown handle. Large interrupted/reordered snapshot and patch tests prove atomic activation, caps, cancellation, stale chunk rejection, restart/disconnect, and viewer isolation. Private allied economy remains private. |

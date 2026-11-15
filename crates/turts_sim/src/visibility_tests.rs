@@ -802,3 +802,46 @@ fn recorded_commands_reproduce_every_phase_of_permitted_knowledge() {
         "the same commands must reproduce each phase, mask, memory, and result"
     );
 }
+
+#[test]
+fn second_install_is_atomic_and_a_fresh_match_has_no_old_memory() {
+    let mut app = scene(false);
+    move_to(&mut app, 0, 1, 22.0, 1);
+    run(&mut app, 160);
+    move_to(&mut app, 0, 1, 8.0, 2);
+    run(&mut app, 160);
+    let before = basis(app.world(), ObservationPhase::Completed)
+        .unwrap()
+        .knowledge(0)
+        .unwrap();
+    assert!(!before.remembered_units.is_empty());
+    let bytes =
+        pack_dir(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../mods/cedar"))
+            .unwrap();
+    let archive = PackageArchive::parse(&bytes).unwrap();
+    let (file, map) = archive.maps().unwrap().remove(0);
+    let error = stage_package(
+        app.world(),
+        archive.content().unwrap(),
+        SourceDef { file, value: map },
+        20,
+    )
+    .err()
+    .expect("a second live install must refuse");
+    assert_eq!(error.field_path, "map");
+    assert_eq!(
+        before,
+        basis(app.world(), ObservationPhase::Completed)
+            .unwrap()
+            .knowledge(0)
+            .unwrap()
+    );
+    let fresh = scene(false);
+    let clean = basis(fresh.world(), ObservationPhase::Completed)
+        .unwrap()
+        .knowledge(0)
+        .unwrap();
+    assert!(clean.remembered_units.is_empty());
+    assert_eq!(clean.basis.tick, 0);
+    assert!(!clean.retention_truncated);
+}
