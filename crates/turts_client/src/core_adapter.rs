@@ -287,6 +287,7 @@ struct FrameWorld {
     producible: HashSet<(u32, String)>,
     jobs: HashSet<(u32, u64)>,
     damaged_complete: HashSet<u32>,
+    site_units: HashSet<u32>,
     facts: facts::OwnerFacts,
 }
 impl WorldView for FrameWorld {
@@ -371,7 +372,7 @@ impl WorldView for FrameWorld {
         self.jobs.contains(&(unit.id.0, job.0))
     }
     fn can_repair(&self, unit: &UnitView, target: &UnitView) -> bool {
-        if !self.damaged_complete.contains(&target.id.0) {
+        if self.site_units.contains(&unit.id.0) || !self.damaged_complete.contains(&target.id.0) {
             return false;
         }
         let Some(actor) = self
@@ -650,6 +651,7 @@ fn frame_world(
         producible,
         jobs,
         damaged_complete,
+        site_units: replica.sites().collect(),
         facts: {
             facts.build(replica, content);
             facts

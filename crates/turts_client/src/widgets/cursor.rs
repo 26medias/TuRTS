@@ -382,8 +382,8 @@ fn hover_context(
 ) -> String {
     let own_selection = selection
         .iter()
-        .filter_map(|id| replica.units.get(id))
-        .filter(|unit| unit.owner_slot == slot)
+        .filter_map(|id| replica.units.get(id).map(|unit| (*id, unit)))
+        .filter(|(_, unit)| unit.owner_slot == slot)
         .collect::<Vec<_>>();
     if own_selection.is_empty() {
         return if matches!(hover, Hover::Unit { owner, .. } if owner == slot) {
@@ -394,7 +394,10 @@ fn hover_context(
     }
     for rule in &content.order_rules.smart {
         let target_kind = rule.target;
-        for selected in &own_selection {
+        for (selected_id, selected) in &own_selection {
+            if rule.needs == turts_mod_api::Capability::Repairer && replica.is_site(*selected_id) {
+                continue;
+            }
             let Some(definition) = ContentId::parse(&selected.content_id)
                 .ok()
                 .and_then(|id| content.catalog.units.get(&id))
@@ -718,6 +721,7 @@ fn order_unit_target_relation(
     if order.behaviour == turts_mod_api::Behaviour::Repair {
         return selection
             .iter()
+            .filter(|id| !replica.is_site(**id))
             .filter_map(|id| replica.units.get(id))
             .filter(|unit| {
                 unit.owner_slot == slot
