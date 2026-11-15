@@ -1053,7 +1053,7 @@ fn validate_actor_records(
                         ActorLogIdentity::Human {
                             player_id: expected,
                             ..
-                        } => player_id == expected,
+                        } => *connection != 0 && player_id == expected,
                         ActorLogIdentity::Bot { slot, .. } => {
                             *connection == 0 && *player_id == u64::MAX - u64::from(*slot)
                         }
@@ -20286,5 +20286,97 @@ mod tests {
         let state = initial();
         let records = vec![EconomyLogRecord::Initial(state)];
         validate_records(&records).unwrap();
+    }
+    #[test]
+    fn actor_command_witness_preserves_ordinary_operation_checks() {
+        use crate::{ActorLogIdentity, ActorLogRecord, ActorPhase, ActorTask};
+        use turts_net_protocol::{
+            OrderEnvelope, OrderResult, OrderTarget, PlayerCommand, Pos, QueueMode, UnitId,
+        };
+        let mut records = valid_point_move_records();
+        validate_records(&records).expect("ordinary foundation fixture");
+        let EconomyLogRecord::CommandBoundary(boundary) = &records[1] else {
+            unreachable!()
+        };
+        let tick = boundary.before.economy.tick;
+        let actor = ActorLogIdentity::Bot {
+            profile: turts_mod_api::ContentId::parse("fixture:policy").unwrap(),
+            slot: 0,
+        };
+        let submission = EconomyLogRecord::Actor(ActorLogRecord::Submission {
+            tick,
+            ordinal: 1,
+            actor: actor.clone(),
+            sequence: 1,
+            task: Some(ActorTask {
+                controller: "squad".into(),
+                goal: "advance".into(),
+                instance: "main".into(),
+            }),
+            envelope: PlayerCommand {
+                seq: 1,
+                order: OrderEnvelope {
+                    order: "fixture:move".into(),
+                    units: vec![UnitId(1)],
+                    target: OrderTarget::Point(Pos { x: 8.0, y: 8.0 }),
+                    queue: QueueMode::Replace,
+                    group: 1,
+                },
+            },
+        });
+        let result = EconomyLogRecord::Actor(ActorLogRecord::Result {
+            tick,
+            ordinal: 1,
+            actor,
+            sequence: 1,
+            result: OrderResult {
+                seq: 1,
+                tick,
+                accepted: vec![UnitId(1)],
+                refused: vec![],
+                envelope: None,
+                job_id: None,
+            },
+        });
+        records.insert(
+            1,
+            EconomyLogRecord::Actor(ActorLogRecord::Lifecycle {
+                tick,
+                humans_present: false,
+                phase: ActorPhase::Running,
+            }),
+        );
+        records.insert(2, submission);
+        records.insert(3, result);
+        validate_records(&records).expect("actor records supplement a valid ordinary operation");
+        let mut missing_operation = records.clone();
+        missing_operation.retain(|record| !matches!(record, EconomyLogRecord::Operation(_)));
+        assert!(
+            validate_records(&missing_operation)
+                .unwrap_err()
+                .contains("matching operation")
+        );
+        let mut changed_result = records.clone();
+        if let EconomyLogRecord::Actor(ActorLogRecord::Result { result, .. }) =
+            &mut changed_result[3]
+        {
+            result.accepted[0] = UnitId(2);
+        }
+        assert!(
+            validate_records(&changed_result)
+                .unwrap_err()
+                .contains("ordinary witness")
+        );
+        let mut changed_target = records;
+        if let EconomyLogRecord::Actor(ActorLogRecord::Submission { envelope, .. }) =
+            &mut changed_target[2]
+        {
+            envelope.order.target = OrderTarget::Point(Pos { x: 9.0, y: 8.0 });
+        }
+        assert!(
+            validate_records(&changed_target)
+                .unwrap_err()
+                .contains("ordinary witness")
+        );
     }
 }
