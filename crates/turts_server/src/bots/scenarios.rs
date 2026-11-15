@@ -122,7 +122,10 @@ fn regenerated_presence_pauses_and_retains_pending_state_without_reading_live_se
     assert!(app.world().resource::<BotExecution>().generated.is_empty());
 }
 
-fn live_package(package: &str) -> App {
+pub(super) fn live_package(package: &str) -> App {
+    live_package_with_guard(package, None)
+}
+pub(super) fn live_package_with_guard(package: &str, guard: Option<BotStartWhen>) -> App {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../mods")
         .join(package);
@@ -130,6 +133,15 @@ fn live_package(package: &str) -> App {
     let mut app = turts_sim::headless_app(20);
     turts_pack::load_package(app.world_mut(), &archive).unwrap();
     app.insert_resource(ServerCatalog(archive.content().unwrap()));
+    if let Some(guard) = guard {
+        app.world_mut()
+            .resource_mut::<ServerCatalog>()
+            .0
+            .bots
+            .get_mut(&ContentId::parse(&format!("{package}:opponent")).unwrap())
+            .unwrap()
+            .start_when = guard;
+    }
     session::install(
         &mut app,
         session::Advertised {

@@ -86,7 +86,8 @@ fn run() -> Result<(), String> {
         .archive
         .content()
         .map_err(|error| error.to_string())?;
-    let bot_configuration = computer::configuration(&cfg, &cli, &server_catalog)?;
+    let bot_configuration =
+        computer::configuration(&cfg, &cli, &server_catalog, &booted.archive.manifest.id)?;
     app.insert_resource(orders::ServerCatalog(server_catalog));
     app.insert_resource(stats::generate_match_id());
     let policy = cfg.start_policy.unwrap_or_else(|| {

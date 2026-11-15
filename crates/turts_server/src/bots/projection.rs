@@ -28,7 +28,29 @@ pub(crate) fn source_rows(view: &WorldView) -> usize {
         view.unit_orders.len(),
         view.m3.raw_healths.len(),
         view.m3.raw_output_inventories.len(),
-        view.construction.held.values().map(Vec::len).sum(),
+        view.construction
+            .held
+            .values()
+            .map(Vec::len)
+            .fold(0usize, usize::saturating_add),
+        view.economy
+            .inventories
+            .iter()
+            .map(|i| i.items.len())
+            .fold(0usize, usize::saturating_add),
+        view.m3
+            .raw_output_inventories
+            .iter()
+            .map(|i| i.items.len())
+            .fold(0usize, usize::saturating_add),
+        view.economy
+            .queues
+            .iter()
+            .map(|q| q.jobs.len())
+            .fold(0usize, usize::saturating_add),
+        view.operating
+            .as_ref()
+            .map_or(0, |op| op.jobs.len().saturating_add(op.supply.len())),
     ]
     .into_iter()
     .fold(0usize, usize::saturating_add)
