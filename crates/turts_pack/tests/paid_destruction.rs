@@ -672,3 +672,161 @@ fn constructor_kill_drops_held_requests_but_its_paid_sites_continue() {
         "the removed constructor cannot place its old held request"
     );
 }
+
+fn cancel_group(app: &mut App, units: Vec<u32>) -> turts_sim::CommandResult {
+    turts_sim::apply_command(
+        app.world_mut(),
+        &Command {
+            slot: SlotId(0),
+            seq: 99,
+            kind: CommandKind::Order(Box::new(OrderCommand {
+                order: cid("cancel"),
+                behaviour: Behaviour::CancelConstruction,
+                target_kind: TargetKind::None,
+                policy: None,
+                units,
+                target: OrderTargetSim::None,
+                queue: QueueMode::Replace,
+                group: 0,
+                allowed_units: vec![],
+                queue_depth: 16,
+            })),
+        },
+    )
+}
+#[test]
+fn grouped_manual_refund_competition_uses_site_position_after_creation_id_inversion() {
+    for early_created_first in [false, true] {
+        let mut f = Fixture::new();
+        f.definition("builder")
+            .constructor
+            .as_mut()
+            .unwrap()
+            .concurrent_sites = 2;
+        f.map.slot_economy[0].balances[0].amount = u64::MAX;
+        f.catalog.production.get_mut(&cid("build")).unwrap().payment = PaymentPolicy::ChargeOnQueue;
+        f.definition("income").income = Some(IncomeDef {
+            resource: cid("credits").to_string(),
+            amount: 10,
+            period_ms: 100,
+        });
+        let mut app = f.app();
+        let builder = id(&app, "builder");
+        let (early, late) = if early_created_first {
+            let early = build(&mut app, builder, 8.);
+            (early, build(&mut app, builder, 30.))
+        } else {
+            let late = build(&mut app, builder, 30.);
+            (build(&mut app, builder, 8.), late)
+        };
+        assert_eq!(early < late, early_created_first);
+        app.update();
+        app.update();
+        assert_eq!(balance(&mut app), u64::MAX - 10);
+        let result = cancel_group(&mut app, vec![late, early]);
+        assert_eq!(result.units.accepted, vec![early]);
+        assert_eq!(
+            result.units.refused,
+            vec![(late, RejectReason::RefundDestinationOverflow)]
+        );
+        assert_eq!(balance(&mut app), u64::MAX);
+        assert!(!live(&mut app).construction.sites.contains_key(&early));
+        assert!(live(&mut app).construction.sites.contains_key(&late));
+    }
+}
+#[test]
+fn grouped_manual_cancel_refuses_exact_site_position_ties_symmetrically() {
+    let mut f = Fixture::new();
+    f.definition("builder")
+        .constructor
+        .as_mut()
+        .unwrap()
+        .concurrent_sites = 2;
+    f.catalog.production.get_mut(&cid("build")).unwrap().payment = PaymentPolicy::ChargeOnQueue;
+    let mut app = f.app();
+    let builder = id(&app, "builder");
+    let a = build(&mut app, builder, 8.);
+    let b = build(&mut app, builder, 30.);
+    // Legal placement cannot overlap static sites. Supply the exact rank-tie boundary directly.
+    // Accounts, health, paid work, runtime identities, and site state remain normally authored.
+    for id in [a, b] {
+        let entity = app
+            .world()
+            .iter_entities()
+            .find(|e| {
+                e.get::<turts_sim::UnitId>()
+                    .is_some_and(|unit| unit.0 == id)
+            })
+            .unwrap()
+            .id();
+        app.world_mut()
+            .get_mut::<turts_sim::Position>(entity)
+            .unwrap()
+            .0 = Vec2::new(20., 24.);
+    }
+    let before = balance(&mut app);
+    let result = cancel_group(&mut app, vec![b, a]);
+    assert!(result.units.accepted.is_empty());
+    assert_eq!(
+        result.units.refused,
+        vec![(a, RejectReason::Blocked), (b, RejectReason::Blocked)]
+    );
+    assert_eq!(balance(&mut app), before);
+    assert_eq!(live(&mut app).construction.sites.len(), 2);
+}
+#[test]
+fn appended_stop_clears_only_held_requests_on_a_hybrid_constructor() {
+    let mut f = Fixture::new();
+    let producer = f.definition("factory").producer.clone();
+    f.definition("builder").producer = producer;
+    let mut app = f.app();
+    let builder = id(&app, "builder");
+    let site = build(&mut app, builder, 30.);
+    construction::construct(
+        app.world_mut(),
+        SlotId(0),
+        builder,
+        cid("build"),
+        Vec2::new(34., 24.),
+    )
+    .unwrap();
+    queue(&mut app, builder, "train");
+    let result = turts_sim::apply_command(
+        app.world_mut(),
+        &Command {
+            slot: SlotId(0),
+            seq: 99,
+            kind: CommandKind::Order(Box::new(OrderCommand {
+                order: cid("stop"),
+                behaviour: Behaviour::Stop,
+                target_kind: TargetKind::None,
+                policy: None,
+                units: vec![builder],
+                target: OrderTargetSim::None,
+                queue: QueueMode::Append,
+                group: 0,
+                allowed_units: vec![],
+                queue_depth: 16,
+            })),
+        },
+    );
+    assert!(
+        result.outcome.is_ok() && result.units.refused.is_empty(),
+        "{result:?}"
+    );
+    let view = live(&mut app);
+    assert!(!view.construction.held.contains_key(&builder));
+    assert!(view.construction.sites.contains_key(&site));
+    assert_eq!(
+        view.queues
+            .iter()
+            .find(|queue| queue.producer == builder)
+            .unwrap()
+            .jobs
+            .len(),
+        1
+    );
+    assert_eq!(balance(&mut app), 100);
+    app.update();
+    assert_eq!(live(&mut app).construction.sites[&site].done, 1);
+}
