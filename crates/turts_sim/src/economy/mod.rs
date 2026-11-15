@@ -10,6 +10,7 @@ pub mod inserter;
 pub mod ledger;
 pub mod machine;
 pub mod operating;
+pub(crate) mod payment;
 pub mod power;
 pub mod production;
 pub mod repair;
