@@ -1,6 +1,6 @@
 # M4: terrain work, material accounting, and an opened passage
 
-Status: Anvil spec review approved. The implementation plan review remains pending. Do not implement yet.
+Status: Anvil spec and implementation plan approved. Implementation waits for accepted SDK16.
 One reviewer completed one spec turn and one focused recheck. The revision defines exact material quantities, geological exhaustion, and mixed-knowledge work previews.
 Dependency: accepted SDK16 shared knowledge and its atomic state transport.
 Target: additive public API 0.2.17 and protocol 10. Confirm the actual predecessor before integration.
