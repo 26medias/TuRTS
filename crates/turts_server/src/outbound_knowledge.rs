@@ -13,9 +13,11 @@ use turts_net_lightyear::{KnowledgeChannel, ReliableChannel};
 use turts_net_protocol::{
     MAX_PENDING_STATE_BYTES, MAX_POST_BASE_PATCH_BYTES, MAX_STATE_RESTARTS,
     STATE_RESTART_WINDOW_MS, STATE_TRANSACTION_TIMEOUT_MS, StateTransactionAck,
-    StateTransactionCancel, StateTransactionCancelReason, StateTransactionPayload,
-    StateTransactionStamp,
-    visibility_transaction::{EncodedStateTransaction, StateTransactionFrame, encode_transaction},
+    StateTransactionCancel, StateTransactionCancelReason, StateTransactionStamp,
+    visibility_transaction::{
+        EncodedStateTransaction, StateTransactionFrame, encode_snapshot, encode_transaction,
+        encoded_snapshot_size,
+    },
 };
 use turts_sim::SlotId;
 const FRAME_LIMIT: usize = 1024;
@@ -93,9 +95,9 @@ impl KnowledgeSender {
     }
     fn full(&mut self, now: Instant) -> Result<(), String> {
         let stamp = self.stamp(None)?;
-        // Include the temporary typed clone and encoded bytes before allocating the encoding.
-        let size = postcard::experimental::serialized_size(&self.tip.snapshot_payload())
-            .map_err(|e| e.to_string())?;
+        // Borrow the baseline. Admission precedes the only complete encoded allocation.
+        let size = encoded_snapshot_size(&self.tip.state, self.tip.knowledge.as_ref())
+            .map_err(|error| format!("Cannot size permitted state: {error:?}"))?;
         if self
             .retained()
             .saturating_add(self.tip.retained_bytes())
@@ -104,8 +106,13 @@ impl KnowledgeSender {
         {
             return Err("A permitted state exceeds the64MiB connection budget".into());
         }
-        let encoded = encode_transaction(stamp, &self.tip.snapshot_payload(), FRAME_LIMIT)
-            .map_err(|e| format!("Cannot encode permitted state: {e:?}"))?;
+        let encoded = encode_snapshot(
+            stamp,
+            &self.tip.state,
+            self.tip.knowledge.as_ref(),
+            FRAME_LIMIT,
+        )
+        .map_err(|e| format!("Cannot encode permitted state: {e:?}"))?;
         self.pending = Some(Pending::new(encoded, now));
         Ok(())
     }

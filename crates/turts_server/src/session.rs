@@ -166,9 +166,11 @@ fn retire_disconnected_session(
         staged
             .0
             .retain(|command| command.connection != trigger.entity);
-        commands
-            .entity(trigger.entity)
-            .remove::<(Session, SnapshotDue)>();
+        commands.entity(trigger.entity).remove::<(
+            Session,
+            SnapshotDue,
+            crate::outbound::knowledge::KnowledgeSender,
+        )>();
     }
 }
 

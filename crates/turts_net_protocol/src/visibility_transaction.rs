@@ -155,15 +155,71 @@ pub fn encode_transaction(
     if !payload_valid(&stamp, payload) {
         return Err(StateTransactionError::InvalidStamp);
     }
-    let size = postcard::experimental::serialized_size(payload)
-        .map_err(|_| StateTransactionError::MalformedPayload)?;
-    let per_chunk = capacity(&stamp, frame_limit)?;
-    let begin = StateTransactionBegin {
-        kind: if matches!(payload, StateTransactionPayload::Snapshot { .. }) {
+    encode_serialized(
+        stamp,
+        if matches!(payload, StateTransactionPayload::Snapshot { .. }) {
             StateTransactionKind::Snapshot
         } else {
             StateTransactionKind::Patch
         },
+        payload,
+        frame_limit,
+    )
+}
+#[derive(serde::Serialize)]
+enum SnapshotReference<'a> {
+    Snapshot {
+        state: &'a crate::Snapshot,
+        knowledge: Option<&'a turts_mod_api::KnowledgeSnapshot>,
+        event_units: &'a [crate::EventUnitObservation],
+    },
+}
+pub fn encoded_snapshot_size(
+    state: &crate::Snapshot,
+    knowledge: Option<&turts_mod_api::KnowledgeSnapshot>,
+) -> Result<usize, StateTransactionError> {
+    postcard::experimental::serialized_size(&SnapshotReference::Snapshot {
+        state,
+        knowledge,
+        event_units: &[],
+    })
+    .map_err(|_| StateTransactionError::MalformedPayload)
+}
+/// Snapshot encoding borrows the already-permitted baseline. It never clones its full tables.
+pub fn encode_snapshot(
+    stamp: StateTransactionStamp,
+    state: &crate::Snapshot,
+    knowledge: Option<&turts_mod_api::KnowledgeSnapshot>,
+    frame_limit: usize,
+) -> Result<EncodedStateTransaction, StateTransactionError> {
+    if stamp.parent_transaction_id.is_some()
+        || state.tick != stamp.basis.tick
+        || knowledge.is_some_and(|knowledge| knowledge.basis != stamp.basis)
+    {
+        return Err(StateTransactionError::InvalidStamp);
+    }
+    encode_serialized(
+        stamp,
+        StateTransactionKind::Snapshot,
+        &SnapshotReference::Snapshot {
+            state,
+            knowledge,
+            event_units: &[],
+        },
+        frame_limit,
+    )
+}
+fn encode_serialized(
+    stamp: StateTransactionStamp,
+    kind: StateTransactionKind,
+    payload: &impl serde::Serialize,
+    frame_limit: usize,
+) -> Result<EncodedStateTransaction, StateTransactionError> {
+    let size = postcard::experimental::serialized_size(payload)
+        .map_err(|_| StateTransactionError::MalformedPayload)?;
+    let per_chunk = capacity(&stamp, frame_limit)?;
+    let begin = StateTransactionBegin {
+        kind,
         stamp,
         encoded_bytes: size as u64,
         chunk_count: u32::try_from(size.div_ceil(per_chunk))
@@ -181,6 +237,7 @@ pub fn encode_transaction(
         ended: false,
     })
 }
+
 struct Pending {
     begin: StateTransactionBegin,
     bytes: Vec<u8>,
@@ -454,6 +511,23 @@ mod tests {
         }
         assert!(assembler.active().is_none());
         assembler.end(&end.unwrap()).unwrap().unwrap()
+    }
+    #[test]
+    fn borrowed_snapshot_encoding_preserves_the_portable_payload_exactly() {
+        let original = payload(1, true);
+        let StateTransactionPayload::Snapshot {
+            state, knowledge, ..
+        } = &original
+        else {
+            panic!()
+        };
+        let borrowed = encode_snapshot(stamp(1, None), state, knowledge.as_ref(), 768).unwrap();
+        let normal = encode_transaction(stamp(1, None), &original, 768).unwrap();
+        assert_eq!(borrowed.bytes, normal.bytes);
+        assert_eq!(
+            encoded_snapshot_size(state, knowledge.as_ref()).unwrap(),
+            normal.bytes.len()
+        );
     }
     #[test]
     fn reordered_chunks_and_identical_duplicates_stage_once_and_require_activation() {
