@@ -64,7 +64,7 @@ fn authored_fixture(fog: bool, concentrated: bool) -> Fixture {
         }
         unit.footprint = turts_mod_api::Footprint::Circle { radius: 0.3 };
         if let Some(movement) = &mut unit.movement {
-            movement.speed = 128.;
+            movement.speed = 100.;
         }
         if let Some(weapon) = &mut unit.weapon {
             weapon.range = 10.;
@@ -190,9 +190,9 @@ fn authored_fixture(fog: bool, concentrated: bool) -> Fixture {
     }
     let authored = serde_json::json!({"source_archive_sha256":turts_mod_runtime::hash::sha256_hex(&bytes),
         "map":map,"fog":fog,"concentrated":concentrated,"health":HEALTH,"radius":0.3,
-        "speed":128,"source_radius":12,"weapon_range":10,"weapon_cooldown_ms":100,
+        "speed":100,"source_radius":12,"weapon_range":10,"weapon_cooldown_ms":100,
         "inventory_capacity":1_000_000_000u64,"gather_range":16,"cleared_supply_and_income":true,"cot_duration_ms":LONG_WORK_MS,
-        "cot_balance_cost":50_000,"route_x":[32,96],"route_switch_ticks":10,
+        "cot_balance_cost":50_000,"route_x":[32,80],"route_switch_ticks":10,
         "mix_per_slot":{"sight_movers":100,"armed_movers":150,"static_combatants":100,"gatherers":100,"producers":50}});
     Fixture {
         catalog,
@@ -518,7 +518,7 @@ impl Harness {
                     movers,
                     turts_net_protocol::OrderTarget::Point(turts_net_protocol::Pos {
                         x: if ((tick - 1) / 10).is_multiple_of(2) {
-                            96.
+                            80.
                         } else {
                             32.
                         },
