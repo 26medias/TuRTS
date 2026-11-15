@@ -2407,7 +2407,9 @@ fn owner_report_projection_from_audit(
         "unit_orders": snapshot.unit_orders,
         "progress":progress,
         "repairs":repairs,
-        // These M2 fixtures use AllVisible and have no fog knowledge.
+        // These M2 fixtures use AllVisible and flat terrain. Keep explicit absence
+        // so an unexpected terrain payload still fails the complete projection equality.
+        "terrain": serde_json::Value::Null,
         "knowledge": serde_json::Value::Null,
     })
 }
@@ -2424,6 +2426,7 @@ fn owner_report_keeps_sdk14_progress_and_repair_families_for_legacy_packages() {
         );
         assert_eq!(expected["repairs"], serde_json::json!([]));
         assert_eq!(expected.get("knowledge"), Some(&serde_json::Value::Null));
+        assert_eq!(expected.get("terrain"), Some(&serde_json::Value::Null));
     }
 }
 
