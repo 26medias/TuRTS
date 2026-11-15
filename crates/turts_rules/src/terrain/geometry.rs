@@ -78,6 +78,71 @@ pub struct Grid {
     pub floor: i32,
     pub ceiling: i32,
 }
+impl Grid {
+    /// A terrain cell is observed only when all positive-area overlapping fog
+    /// cells are observed. Shared edges do not disclose neighboring terrain.
+    /// Both grids retain their authored precision; no float snapping is used.
+    pub fn cell_observed(
+        self,
+        cell: Cell,
+        fog: crate::visibility::Grid,
+        budget: &mut Budget,
+        mut observed: impl FnMut(u32) -> bool,
+    ) -> Result<bool, Error> {
+        self.valid()?;
+        if cell.x >= self.columns || cell.y >= self.rows {
+            return Err(Error::OutOfBounds);
+        }
+        if crate::visibility::Grid::checked(fog.width, fog.height, fog.cell_size) != Some(fog) {
+            return Err(Error::Invalid);
+        }
+        // The existing map contract stores world extents as f32. Authoring
+        // validates this same conversion. Only its outer boundary can clip the
+        // exact terrain cell; internal cell boundaries retain rational precision.
+        if (f64::from(self.columns) * f64::from(self.cell_width) / f64::from(self.length_scale))
+            as f32
+            != fog.width
+            || (f64::from(self.rows) * f64::from(self.cell_width) / f64::from(self.length_scale))
+                as f32
+                != fog.height
+        {
+            return Err(Error::Invalid);
+        }
+        let size = Q::float(f64::from(fog.cell_size))?;
+        let range = |index: u32, extent: f32, count: u32| -> Result<(u32, u32), Error> {
+            let min = self.axis(index)?;
+            let mut max = self.axis(index.checked_add(1).ok_or(Error::Arithmetic)?)?;
+            let map_end = Q::float(f64::from(extent))?;
+            if max.cmp(map_end)? == Ordering::Greater {
+                max = map_end;
+            }
+            let first = min.div(size)?;
+            let end = max.div(size)?;
+            let first = u32::try_from(first.n / first.d).map_err(|_| Error::Arithmetic)?;
+            let last = end.n / end.d + i128::from(end.n % end.d != 0) - 1;
+            let last = u32::try_from(last).map_err(|_| Error::Arithmetic)?;
+            if first > last || last >= count {
+                return Err(Error::OutOfBounds);
+            }
+            Ok((first, last))
+        };
+        let (first_x, last_x) = range(cell.x, fog.width, fog.columns)?;
+        let (first_y, last_y) = range(cell.y, fog.height, fog.rows)?;
+        for y in first_y..=last_y {
+            for x in first_x..=last_x {
+                budget.take()?;
+                let index = y
+                    .checked_mul(fog.columns)
+                    .and_then(|row| row.checked_add(x))
+                    .ok_or(Error::Arithmetic)?;
+                if !observed(index) {
+                    return Ok(false);
+                }
+            }
+        }
+        Ok(true)
+    }
+}
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Traversal {
     pub max_step: u32,
@@ -1031,6 +1096,79 @@ impl Grid {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn complete_cell_observation_matches_independent_positive_area_integer_oracle() {
+        for width in 1..=4 {
+            let terrain = Grid::checked(4, 4, 2, width, 1, -1, 2).unwrap();
+            for fog_quarters in [1, 2, 4, 6] {
+                let extent = (width * 2) as f32;
+                let fog =
+                    crate::visibility::Grid::checked(extent, extent, fog_quarters as f32 / 4.0)
+                        .unwrap();
+                for y in 0..4 {
+                    for x in 0..4 {
+                        let mut expected = Vec::new();
+                        for fy in 0..fog.rows {
+                            for fx in 0..fog.columns {
+                                let overlaps = |a: u32, f: u32| {
+                                    let a0 = a * width * 2;
+                                    let a1 = (a + 1) * width * 2;
+                                    let f0 = f * fog_quarters;
+                                    let f1 = ((f + 1) * fog_quarters).min(width * 8);
+                                    a0 < f1 && f0 < a1
+                                };
+                                if overlaps(x, fx) && overlaps(y, fy) {
+                                    expected.push(fy * fog.columns + fx);
+                                }
+                            }
+                        }
+                        let mut actual = Vec::new();
+                        assert_eq!(
+                            terrain.cell_observed(Cell { x, y }, fog, &mut budget(), |id| {
+                                actual.push(id);
+                                true
+                            }),
+                            Ok(true)
+                        );
+                        assert_eq!(actual, expected);
+                        for hidden in expected {
+                            assert_eq!(
+                                terrain.cell_observed(Cell { x, y }, fog, &mut budget(), |id| id
+                                    != hidden),
+                                Ok(false)
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn observation_handles_rounded_map_edges_and_exhaustion_without_disclosure() {
+        let terrain = Grid::checked(7, 7, 10, 1, 1, -1, 2).unwrap();
+        let fog = crate::visibility::Grid::checked(0.7, 0.7, 0.1).unwrap();
+        assert_eq!(
+            terrain.cell_observed(Cell { x: 6, y: 6 }, fog, &mut budget(), |_| true),
+            Ok(true)
+        );
+        assert_eq!(
+            terrain.cell_observed(Cell { x: 6, y: 6 }, fog, &mut Budget::new(0), |_| panic!(
+                "budget must fail before visiting"
+            )),
+            Err(Error::Budget)
+        );
+        assert_eq!(
+            terrain.cell_observed(Cell { x: 7, y: 0 }, fog, &mut budget(), |_| true),
+            Err(Error::OutOfBounds)
+        );
+        let other = crate::visibility::Grid::checked(1.0, 1.0, 0.1).unwrap();
+        assert_eq!(
+            terrain.cell_observed(Cell { x: 0, y: 0 }, other, &mut budget(), |_| true),
+            Err(Error::Invalid)
+        );
+    }
+
     fn grid() -> Grid {
         Grid::checked(8, 8, 1000, 1000, 250, -8, 8).unwrap()
     }
