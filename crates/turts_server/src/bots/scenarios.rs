@@ -248,6 +248,29 @@ fn public_balance_and_inventory_profiles_build_gather_produce_and_attack() {
     }
 }
 
+#[test]
+fn normal_skirmish_profile_finishes_defenses_and_trains_a_warrior() {
+    let mut app = live_package("skirmish");
+    let mut tower = false;
+    let mut warrior = false;
+    for _ in 0..2400 {
+        app.update();
+        let view = turts_sim::completed_world(app.world());
+        for unit in &view.units {
+            if unit.owner_slot == 1 {
+                tower |= unit.content_id == "skirmish:tower"
+                    && !view.construction.sites.contains_key(&unit.unit_id);
+                warrior |= unit.content_id == "skirmish:warrior";
+            }
+        }
+        if tower && warrior {
+            eprintln!("completed tower and trained Warrior at tick {}", view.tick);
+            return;
+        }
+    }
+    panic!("normal profile: tower={tower} warrior={warrior}");
+}
+
 fn renamed_archive() -> PackageArchive {
     fn visit(
         root: &std::path::Path,

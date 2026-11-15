@@ -340,3 +340,9 @@ jobs:
         run: python3 -B tests/qa/test_cold_play_check.py
       - name: Every Python test runs in CI or has a reason
         run: python3 tests/qa/test_python_ci_list.py
+      - name: Skirmish hosting and web compression tools
+        run: |
+          python3 tests/qa/test_skirmish_host.py
+          python3 tests/qa/test_skirmish_share.py
+          python3 tests/qa/test_web_compression.py
+          python3 tests/qa/test_web_compression_edges.py
