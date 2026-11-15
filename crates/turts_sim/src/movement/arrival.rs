@@ -430,7 +430,7 @@ impl SpatialNeighbors for crate::grid::UniformGrid {
         // This consumer needs spatial order. Avoid an intermediate ID sort;
         // the complete existing comparator still defines the returned order.
         let mut found = self.within_unsorted(points, position, reach);
-        found.sort_by(|a, b| {
+        found.sort_unstable_by(|a, b| {
             points[*a]
                 .position
                 .x
