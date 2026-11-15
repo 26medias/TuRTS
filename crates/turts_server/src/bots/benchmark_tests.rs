@@ -443,6 +443,7 @@ fn fixture(bots: bool) -> (App, serde_json::Value) {
     let profile_hash =
         turts_audit::actor_profile_hash(&catalog.bots[&content("opponent")]).unwrap();
     let mut map = MapDef {
+        terrain: None,
         visibility: None,
         id: "bot_workload".into(),
         environment: None,

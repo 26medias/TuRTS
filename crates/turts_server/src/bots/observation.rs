@@ -1241,6 +1241,9 @@ mod tests {
     }
     fn empty_catalog() -> ContentCatalog {
         ContentCatalog {
+            terrain_materials: Default::default(),
+            terrain_movement_classes: Default::default(),
+            terrain_tools: Default::default(),
             bots: BTreeMap::new(),
             combat: None,
             resources: BTreeMap::new(),

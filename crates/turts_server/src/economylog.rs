@@ -265,6 +265,10 @@ mod tests {
             .register_unit_type(
                 &PackageId("probe".into()),
                 UnitDef {
+                    terrain_class: None,
+                    terrain_foundation: None,
+                    terrain_tools: Vec::new(),
+                    terrain_cargo: None,
                     vision: None,
                     id: "walker".into(),
                     name: "Walker".into(),

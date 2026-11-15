@@ -65,6 +65,10 @@ fn audit_catalog() -> ContentCatalog {
             let content_id = ContentId::parse(id).unwrap();
             let shooter = id == "audit:shooter";
             let unit = ResolvedUnit {
+                terrain_class: None,
+                terrain_foundation: None,
+                terrain_tools: Vec::new(),
+                terrain_cargo: None,
                 vision: None,
                 repairer: None,
 
@@ -135,6 +139,9 @@ fn audit_catalog() -> ContentCatalog {
         )
     };
     ContentCatalog {
+        terrain_materials: Default::default(),
+        terrain_movement_classes: Default::default(),
+        terrain_tools: Default::default(),
         combat: None,
         resources: BTreeMap::new(),
         units,
@@ -168,6 +175,7 @@ fn audit_fixture_at_enemy(
     enemy_position: WorldPos,
 ) -> (bevy_app::App, ContentCatalog) {
     let map = MapDef {
+        terrain: None,
         visibility: None,
         environment: None,
         ground: None,
@@ -821,6 +829,7 @@ fn point_attack_switches_to_another_eligible_target_and_strictly_replays() {
         .unwrap()
         .max = 1;
     let map = MapDef {
+        terrain: None,
         visibility: None,
         environment: None,
         ground: None,

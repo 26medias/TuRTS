@@ -236,6 +236,10 @@ fn installed_logger_tracks_real_failed_then_appended_move_to_completion() {
         .register_unit_type(
             &package,
             UnitDef {
+                terrain_class: None,
+                terrain_foundation: None,
+                terrain_tools: Vec::new(),
+                terrain_cargo: None,
                 vision: None,
                 id: "walker".into(),
                 name: "walker".into(),
@@ -271,6 +275,7 @@ fn installed_logger_tracks_real_failed_then_appended_move_to_completion() {
         app.world_mut(),
         &package,
         &MapDef {
+            terrain: None,
             visibility: None,
             environment: None,
             ground: None,

@@ -26,6 +26,10 @@ fn app_with_walker() -> bevy_app::App {
         .register_unit_type(
             &package,
             UnitDef {
+                terrain_class: None,
+                terrain_foundation: None,
+                terrain_tools: Vec::new(),
+                terrain_cargo: None,
                 vision: None,
                 id: "walker".into(),
                 name: "Walker".into(),
@@ -61,6 +65,7 @@ fn app_with_walker() -> bevy_app::App {
         app.world_mut(),
         &package,
         &MapDef {
+            terrain: None,
             visibility: None,
             environment: None,
             ground: None,
@@ -85,6 +90,9 @@ fn app_with_walker() -> bevy_app::App {
 
 fn catalog() -> ContentCatalog {
     let mut catalog = ContentCatalog {
+        terrain_materials: Default::default(),
+        terrain_movement_classes: Default::default(),
+        terrain_tools: Default::default(),
         combat: None,
         resources: BTreeMap::new(),
         units: BTreeMap::new(),

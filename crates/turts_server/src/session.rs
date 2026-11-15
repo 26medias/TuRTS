@@ -2051,6 +2051,10 @@ mod admission_tests {
             .register_unit_type(
                 &package,
                 UnitDef {
+                    terrain_class: None,
+                    terrain_foundation: None,
+                    terrain_tools: Vec::new(),
+                    terrain_cargo: None,
                     vision: None,
                     id: "producer".into(),
                     name: "Producer".into(),
@@ -2089,6 +2093,9 @@ mod admission_tests {
             .unwrap();
         let id = ContentId::new(&package, "producer");
         let mut catalog = ContentCatalog {
+            terrain_materials: Default::default(),
+            terrain_movement_classes: Default::default(),
+            terrain_tools: Default::default(),
             combat: None,
             resources: BTreeMap::new(),
             units: BTreeMap::new(),
@@ -2104,6 +2111,10 @@ mod admission_tests {
         catalog.units.insert(
             id.clone(),
             ResolvedUnit {
+                terrain_class: None,
+                terrain_foundation: None,
+                terrain_tools: Vec::new(),
+                terrain_cargo: None,
                 vision: None,
                 repairer: None,
 
@@ -2184,6 +2195,9 @@ mod admission_tests {
     fn test_order_catalog() -> ContentCatalog {
         use turts_mod_api::{Behaviour, ContentId, OrderDef, TargetKind};
         let mut catalog = ContentCatalog {
+            terrain_materials: Default::default(),
+            terrain_movement_classes: Default::default(),
+            terrain_tools: Default::default(),
             combat: None,
             resources: BTreeMap::new(),
             units: BTreeMap::new(),
@@ -2615,6 +2629,10 @@ mod admission_tests {
             .register_unit_type(
                 &package,
                 UnitDef {
+                    terrain_class: None,
+                    terrain_foundation: None,
+                    terrain_tools: Vec::new(),
+                    terrain_cargo: None,
                     vision: None,
                     id: "lab".into(),
                     name: "Lab".into(),
@@ -2657,6 +2675,10 @@ mod admission_tests {
             .insert(
                 id.clone(),
                 ResolvedUnit {
+                    terrain_class: None,
+                    terrain_foundation: None,
+                    terrain_tools: Vec::new(),
+                    terrain_cargo: None,
                     vision: None,
                     repairer: None,
 
@@ -2786,6 +2808,10 @@ mod admission_tests {
             .register_unit_type(
                 &package,
                 UnitDef {
+                    terrain_class: None,
+                    terrain_foundation: None,
+                    terrain_tools: Vec::new(),
+                    terrain_cargo: None,
                     vision: None,
                     id: "producer".into(),
                     name: "Producer".into(),
@@ -2824,6 +2850,9 @@ mod admission_tests {
             .unwrap();
         let id = ContentId::new(&package, "producer");
         let mut catalog = ContentCatalog {
+            terrain_materials: Default::default(),
+            terrain_movement_classes: Default::default(),
+            terrain_tools: Default::default(),
             combat: None,
             resources: BTreeMap::new(),
             units: BTreeMap::new(),
@@ -2839,6 +2868,10 @@ mod admission_tests {
         catalog.units.insert(
             id.clone(),
             ResolvedUnit {
+                terrain_class: None,
+                terrain_foundation: None,
+                terrain_tools: Vec::new(),
+                terrain_cargo: None,
                 vision: None,
                 repairer: None,
 
@@ -3288,6 +3321,10 @@ mod admission_tests {
             .register_unit_type(
                 &PackageId::parse("test").unwrap(),
                 UnitDef {
+                    terrain_class: None,
+                    terrain_foundation: None,
+                    terrain_tools: Vec::new(),
+                    terrain_cargo: None,
                     vision: None,
                     id: "static".into(),
                     name: "Static".into(),
@@ -3327,6 +3364,10 @@ mod admission_tests {
             .insert(
                 static_id.clone(),
                 ResolvedUnit {
+                    terrain_class: None,
+                    terrain_foundation: None,
+                    terrain_tools: Vec::new(),
+                    terrain_cargo: None,
                     vision: None,
                     repairer: None,
 
@@ -3594,6 +3635,10 @@ mod admission_tests {
             .register_unit_type(
                 &PackageId::parse("test").unwrap(),
                 UnitDef {
+                    terrain_class: None,
+                    terrain_foundation: None,
+                    terrain_tools: Vec::new(),
+                    terrain_cargo: None,
                     vision: None,
                     id: "static".into(),
                     name: "Static".into(),
@@ -3633,6 +3678,10 @@ mod admission_tests {
             .insert(
                 static_id.clone(),
                 ResolvedUnit {
+                    terrain_class: None,
+                    terrain_foundation: None,
+                    terrain_tools: Vec::new(),
+                    terrain_cargo: None,
                     vision: None,
                     repairer: None,
 

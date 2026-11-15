@@ -2920,6 +2920,7 @@ fn sdk14_progress_history_keeps_real_anchors_and_rejects_poisoned_rates() {
             research: vec![],
             unit_orders: vec![],
             records: wire::DeltaRecords {
+                terrain: None,
                 jobs: if tick == 3 {
                     vec![rate(3, 1, 0)]
                 } else {

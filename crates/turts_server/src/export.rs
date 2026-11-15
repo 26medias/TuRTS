@@ -222,6 +222,7 @@ fn snapshot_projected_reusing(
             .collect(),
         // Reliable baselines project the same completed immutable view as change records.
         records: wire::SnapshotRecords {
+            terrain: None,
             repairs: export_repair::snapshot(&view.economy.repairs, slot),
             supply: export_supply::snapshot(view.operating.as_ref(), slot),
             sites: turts_sim::economy::construction::progress_rows_for_slot(view, slot)
