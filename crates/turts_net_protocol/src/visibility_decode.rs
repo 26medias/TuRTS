@@ -189,8 +189,12 @@ impl<'de, A: MapAccess<'de>> MapAccess<'de> for Access<'_, A> {
         &mut self,
         seed: S,
     ) -> Result<Option<S::Value>, Self::Error> {
-        self.budget.charge::<Self::Error>(96)?;
-        self.budget.value::<S::Value, Self::Error>()?;
+        // BTreeMap nodes reserve multiple entries at once, even for the first key.
+        self.budget.charge::<Self::Error>(
+            std::mem::size_of::<S::Value>()
+                .saturating_mul(24)
+                .saturating_add(256),
+        )?;
         self.inner.next_key_seed(Seed {
             inner: seed,
             budget: self.budget,
@@ -200,7 +204,11 @@ impl<'de, A: MapAccess<'de>> MapAccess<'de> for Access<'_, A> {
         &mut self,
         seed: S,
     ) -> Result<S::Value, Self::Error> {
-        self.budget.value::<S::Value, Self::Error>()?;
+        self.budget.charge::<Self::Error>(
+            std::mem::size_of::<S::Value>()
+                .saturating_mul(24)
+                .saturating_add(32),
+        )?;
         self.inner.next_value_seed(Seed {
             inner: seed,
             budget: self.budget,
