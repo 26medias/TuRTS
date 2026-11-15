@@ -42,8 +42,10 @@ def decimal(value):
     return result
 
 
-def one_decimal(value):
-    return format(value.quantize(Decimal("0.1")), ".1f")
+def shifted_coordinate(text, delta):
+    # Preserve each authored coordinate's precision; do not snap lattice centers.
+    places = len(text.partition(".")[2])
+    return format(decimal(text) + delta, f".{places}f")
 
 
 def parse_map(text, package, translated=False):
@@ -84,16 +86,41 @@ def parse_map(text, package, translated=False):
     return {"id": expected_id, "width": width, "height": height, "records": records}
 
 
+def output_blocker_positions():
+    # Triangular lattice: nearest centers >4 (two radius2 footprints).
+    # Covering radius <2.33, below radius2 + Rifleman radius0.4.
+    positions = []
+    for i in range(-5, 6):
+        for j in range(-5, 6):
+            dx = Decimal("3.48") * i
+            dy = Decimal("2.01") * i + Decimal("4.02") * j
+            if (i or j) and dx * dx + dy * dy <= 18 * 18:
+                positions.append((Decimal(24) + dx, Decimal(24) + dy))
+    return positions
+
+
 def add_expected_case_override(source_text, package, case_id):
     if package == "base" and case_id == "E9-browser-base-loss-final_change":
+        text = source_text
+        replacements = {
+            'pos: (x: 8.0, y: 8.0)': 'pos: (x: 24.0, y: 24.0)',
+            'pos: (x: 12.0, y: 8.0)': 'pos: (x: 12.0, y: 50.0)',
+            'pos: (x: 24.0, y: 8.0)': 'pos: (x: 24.0, y: 50.0)',
+            'pos: (x: 40.0, y: 8.0)': 'pos: (x: 40.0, y: 50.0)',
+        }
+        # Keep all existing IDs/types/owners. Clear space for a valid enclosure.
+        for old, new in replacements.items():
+            if text.count(old) != 1:
+                raise ValueError(f"base final_change anchor must occur exactly once: {old}")
+            text = text.replace(old, new, 1)
         anchor = '        (unit: "base:harvester", owner_slot: 1, pos: (x: 52.0, y: 8.0), contents: []),'
-        blockers = (
-            '\n        (unit: "base:command_center", owner_slot: 0, pos: (x: 8.0, y: 12.0), contents: []),'
-            '\n        (unit: "base:command_center", owner_slot: 0, pos: (x: 8.0, y: 4.0), contents: []),'
+        if text.count(anchor) != 1:
+            raise ValueError("base final_change placement anchor must occur exactly once")
+        blockers = ''.join(
+            f'\n        (unit: "base:command_center", owner_slot: 0, pos: (x: {x:.2f}, y: {y:.2f}), contents: []),'
+            for x, y in output_blocker_positions()
         )
-        if source_text.count(anchor) != 1:
-            raise ValueError("base final_change source placement anchor must occur exactly once")
-        return source_text.replace(anchor, anchor + blockers, 1)
+        return text.replace(anchor, anchor + blockers, 1)
     return source_text
 
 
@@ -126,7 +153,7 @@ def translate(source_path, packed_path, receipt_path, package, case_id, offset):
     assert width_match is not None
     new_width = before["width"] + OFFSET_X
     translated_text, size_count = SIZE.subn(
-        lambda match: match.group(1) + one_decimal(new_width) + match.group(3) + match.group(4) + match.group(5),
+        lambda match: match.group(1) + format(new_width, ".1f") + match.group(3) + match.group(4) + match.group(5),
         expected_before_text,
         count=1,
     )
@@ -134,7 +161,7 @@ def translate(source_path, packed_path, receipt_path, package, case_id, offset):
         raise ValueError("map width translation anchor must occur exactly once")
 
     def move_position(match):
-        return match.group(1) + one_decimal(decimal(match.group(2)) + OFFSET_X) + match.group(3) + match.group(4) + match.group(5)
+        return match.group(1) + shifted_coordinate(match.group(2), OFFSET_X) + match.group(3) + match.group(4) + match.group(5)
 
     translated_text, position_count = POSITION.subn(move_position, translated_text)
     if position_count != len(before["records"]):
@@ -157,12 +184,12 @@ def translate(source_path, packed_path, receipt_path, package, case_id, offset):
         raise ValueError("translation changed pairwise geometry")
 
     restored_text = SIZE.sub(
-        lambda match: match.group(1) + one_decimal(before["width"]) + match.group(3) + match.group(4) + match.group(5),
+        lambda match: match.group(1) + format(before["width"], ".1f") + match.group(3) + match.group(4) + match.group(5),
         translated_text,
         count=1,
     )
     restored_text = POSITION.sub(
-        lambda match: match.group(1) + one_decimal(decimal(match.group(2)) - OFFSET_X) + match.group(3) + match.group(4) + match.group(5),
+        lambda match: match.group(1) + shifted_coordinate(match.group(2), -OFFSET_X) + match.group(3) + match.group(4) + match.group(5),
         restored_text,
     )
     if restored_text != expected_before_text:

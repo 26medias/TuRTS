@@ -360,10 +360,23 @@ test("M2 clicks the producer mesh above a nearer output blocker", async () => {
     const clicks = [];
     const io = { use: async () => {}, wait: async () => {}, screenshot: async () => png,
         save: async () => {}, click: async (x, y, button) => clicks.push({ x, y, button }) };
-    await drive(io, { m2: { package: "base", case_id: "E9-browser-base-loss-final_change" }, fixture_phase: "select" });
+    await drive(io, { m2: { package: "base", case_id: "E9-browser-base-loss-refund" }, fixture_phase: "select" });
     assert.equal(clicks.length, 2);
     assert.ok(clicks[1].x >= 488 && clicks[1].x < 517 && clicks[1].y >= 174 && clicks[1].y < 190,
         `click must land on the intended producer, above the front blocker: ${JSON.stringify(clicks[1])}`);
+});
+
+test("M2 selects the interior producer in the fully blocked output fixture", async () => {
+    const png = blankPng(1280, 720, [
+        { x: 639, y: 278, w: 25, h: 16, colour: [0, 114, 178] },
+        { x: 635, y: 294, w: 33, h: 24, colour: [0, 114, 178] },
+    ]);
+    const clicks = [];
+    const io = { use: async () => {}, wait: async () => {}, screenshot: async () => png,
+        save: async () => {}, click: async (x, y, button) => clicks.push({ x, y, button }) };
+    await drive(io, { m2: { package: "base", case_id: "E9-browser-base-loss-final_change" }, fixture_phase: "select" });
+    assert.equal(clicks.length, 2);
+    assert.ok(clicks[1].x >= 639 && clicks[1].x < 664 && clicks[1].y >= 278 && clicks[1].y < 294);
 });
 
 test("M2 selects the intended haul worker and samples the elevated node", async () => {
@@ -377,8 +390,17 @@ test("M2 selects the intended haul worker and samples the elevated node", async 
     ]);
     const clicks = [];
     const saved = [];
-    const io = { use: async () => {}, wait: async () => {}, move: async () => {}, screenshot: async () => png,
-        save: async name => saved.push(name), click: async (x, y, button) => clicks.push({ x, y, button }) };
+    const tooltip = blankPng(1280, 720, [
+        { x: 621, y: 210, w: 120, h: 21, colour: [0, 0, 0] },
+    ]);
+    let hoveringWorker = false;
+    const io = { use: async () => {}, wait: async () => {},
+        move: async () => { hoveringWorker = false; },
+        screenshot: async () => hoveringWorker ? tooltip : png,
+        save: async name => saved.push(name), click: async (x, y, button) => {
+            clicks.push({ x, y, button });
+            hoveringWorker = button === "left" && x >= 606 && x < 613;
+        } };
     await drive(io, { m2: { package: "haul", case_id: "E9-browser-haul-economy" } });
     const workerClick = clicks.find(click => click.button === "left" && click.x >= 606 && click.x < 613);
     assert.ok(workerClick && workerClick.y >= 225 && workerClick.y < 238,

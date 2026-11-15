@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Focused tests for the test-only packed M2 map translation."""
 import importlib.util
+import math
+import re
 from pathlib import Path
 import tempfile
 import unittest
@@ -45,13 +47,42 @@ class BrowserFixtureTranslationTests(unittest.TestCase):
             translated = fixture.parse_map(packed_path.read_text(), "base", translated=True)
             self.assertEqual(translated["width"], 82)
             self.assertEqual(translated["height"], 64)
-            self.assertEqual(receipt["placement_count"], 6)
+            self.assertEqual(receipt["placement_count"], 4 + len(fixture.output_blocker_positions()))
             self.assertEqual(receipt["node_count"], 2)
             self.assertEqual(receipt["pairwise_squared_distance_sha256_before"], receipt["pairwise_squared_distance_sha256_after"])
             self.assertEqual(receipt["packed_after_translation_sha256"], fixture.sha256(packed_path.read_bytes()))
             self.assertTrue(receipt["non_coordinate_source_text_preserved"])
-            self.assertEqual([row["x"] for row in translated["records"][:2]], [26, 30])
+            self.assertEqual([row["x"] for row in translated["records"][:2]], [42, 30])
             self.assertEqual([row["x"] for row in translated["records"][-2:]], [42, 58])
+
+    def test_output_blockers_are_disjoint_and_cover_fallback_search(self):
+        source = (fixture.ROOT / "mods/base/maps/flat.ron").read_text()
+        overridden = fixture.add_expected_case_override(source, "base", "E9-browser-base-loss-final_change")
+        rows = fixture.parse_map(overridden, "base")["records"]
+        centers = [(float(row["x"]), float(row["y"])) for row in rows
+                   if row["kind"] == "unit" and row["id"] == "base:command_center" and row["owner_slot"] == 0]
+        producer_text = (fixture.ROOT / "mods/base/units/command_center.ron").read_text()
+        output_text = (fixture.ROOT / "mods/base/units/rifleman.ron").read_text()
+        radius = float(re.search(r'Circle\(radius: ([0-9.]+)\)', producer_text)[1])
+        output_radius = float(re.search(r'Circle\(radius: ([0-9.]+)\)', output_text)[1])
+        # The triangle circumradius bounds every point in the infinite tiling.
+        side = math.hypot(3.48, 2.01)
+        covering_radius = side * side / (2 * 3.48)
+        self.assertLess(covering_radius, radius + output_radius)
+        self.assertLess(14 + covering_radius, 18)
+        for index, first in enumerate(centers):
+            for second in centers[index + 1:]:
+                self.assertGreaterEqual(math.dist(first, second), 2 * radius)
+        # Independent Cartesian oracle across the bounded search disk. Includes
+        # interior holes between blockers and all sides of the outermost ring.
+        for ix in range(-28, 29):
+            for iy in range(-28, 29):
+                if ix * ix + iy * iy <= 28 * 28:
+                    point = (24 + ix / 2, 24 + iy / 2)
+                    self.assertLess(min(math.dist(point, center) for center in centers), radius + output_radius)
+        original = fixture.parse_map(source, "base")["records"]
+        self.assertEqual([(r["id"], r.get("owner_slot")) for r in rows[:4]],
+                         [(r["id"], r.get("owner_slot")) for r in original[:4]])
 
     def test_old_world_x_lookup_fails_and_shifted_lookup_finds_same_base_subjects(self):
         source_path = fixture.ROOT / "mods/base/maps/flat.ron"

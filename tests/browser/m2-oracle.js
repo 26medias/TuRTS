@@ -519,7 +519,7 @@ async function judgeLoss(view, input, checkpoints, at, kind, record, records, jo
     const steps = record.steps;
     const needsGather = kind === "conversion";
     const target = needsGather ? unitNear(joined.debug, "base:harvester", 12 + OFFSET.base, 8)
-        : unitNear(joined.debug, "base:command_center", 8 + OFFSET.base, 8);
+        : unitNear(joined.debug, "base:command_center", (kind === "final_change" ? 24 : 8) + OFFSET.base, kind === "final_change" ? 24 : 8);
     assert(target, `${kind} loss fixture lacks its real owner-0 target mesh`);
     const before = notTimedOut(steps.before, "the selected target");
     assert.deepEqual(before.debug.selection, [target.unit_id], `${kind} target selection uses actual Bevy UI`);
