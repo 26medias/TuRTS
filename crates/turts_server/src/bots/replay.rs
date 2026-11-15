@@ -142,6 +142,7 @@ pub(crate) fn install(
             }
         }
     }
+    crate::session::participant_trace::enable_replay(app.world_mut())?;
     let mut execution = app.world_mut().resource_mut::<BotExecution>();
     execution.mode = mode;
     execution.inputs = inputs;

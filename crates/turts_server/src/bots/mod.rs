@@ -20,6 +20,7 @@ use turts_bot::*;
 use turts_mod_api::{BotDef, BotQuota, BotStartWhen, ContentId, WorldPos};
 use turts_sim::{MatchConfig, SimClock, SimSet, Tick};
 
+#[cfg(test)]
 pub(crate) fn operator_quota() -> BotQuota {
     BotQuota {
         queries: 32,
@@ -118,11 +119,13 @@ pub(crate) struct BotHost {
     installation_recorded: bool,
 }
 impl BotHost {
+    #[cfg(test)]
     pub fn actors(&self) -> Vec<BotActor> {
         self.bots.iter().map(|b| b.actor.clone()).collect()
     }
 }
 /// Validate every profile and factory before the atomic actor claim batch.
+#[cfg(test)]
 pub(crate) fn install(app: &mut App, configuration: &[BotConfig]) -> Result<(), String> {
     let mut registry = ControllerRegistry::new();
     turts_bot::controllers::register_stock(&mut registry).map_err(|e| e.to_string())?;
@@ -137,6 +140,7 @@ pub(crate) fn install_with_limits(
     turts_bot::controllers::register_stock(&mut registry).map_err(|e| e.to_string())?;
     install_with_registry_and_limits(app, configuration, &registry, limits)
 }
+#[cfg(test)]
 pub(crate) fn install_with_registry(
     app: &mut App,
     configuration: &[BotConfig],
