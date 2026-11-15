@@ -410,6 +410,44 @@ fn validate_content_m2(
         catalog.units.insert(
             id.clone(),
             ResolvedUnit {
+                repairer: value
+                    .repairer
+                    .map(|mut repairer| {
+                        let mut seen = BTreeSet::new();
+                        for (index, cost) in repairer.cost.iter_mut().enumerate() {
+                            let path = format!("repairer.cost[{index}].resource");
+                            let reference =
+                                checked_content_ref(origin, &file, &path, &cost.resource)?;
+                            require_kind(
+                                origin,
+                                &file,
+                                &path,
+                                &reference,
+                                &catalog.resources,
+                                ResourceKind::Balance,
+                            )?;
+                            if !seen.insert(reference.clone()) {
+                                return Err(error(
+                                    origin,
+                                    &file,
+                                    &path,
+                                    "duplicate repair resource",
+                                ));
+                            }
+                            cost.resource = reference.to_string();
+                        }
+                        for (index, class) in repairer.classes.iter_mut().enumerate() {
+                            *class = checked_content_ref(
+                                origin,
+                                &file,
+                                &format!("repairer.classes[{index}]"),
+                                class,
+                            )?
+                            .to_string();
+                        }
+                        Ok::<_, ModError>(repairer)
+                    })
+                    .transpose()?,
                 armour: value.armour.clone(),
                 acquire: value.acquire,
                 constructor: value
