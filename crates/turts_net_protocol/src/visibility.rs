@@ -8,6 +8,9 @@ use turts_mod_api::{KnowledgeBasis, KnowledgeDelta, KnowledgeSnapshot};
 
 use crate::{Snapshot, UnitSnapshot, WorldDelta};
 
+#[path = "visibility_chunk_bytes.rs"]
+mod chunk_bytes;
+
 /// Maximum complete encoded chunk, including its stamp and index.
 pub const MAX_STATE_CHUNK_BYTES: usize = 1_024;
 pub const MAX_PENDING_STATE_BYTES: u64 = 64 * 1024 * 1024;
@@ -43,6 +46,7 @@ pub struct StateTransactionBegin {
 pub struct StateTransactionChunk {
     pub stamp: StateTransactionStamp,
     pub index: u32,
+    #[serde(with = "chunk_bytes")]
     pub bytes: Vec<u8>,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
