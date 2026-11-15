@@ -35,6 +35,26 @@ A full match played by two people and the full MP1 roster remain open.
 The computer now trains a paid mixed army of Crossbowmen and Swordsmen. It does not complete the general MP2 bot framework.
 Terrain, fog, broader lifecycle features, and large-scale performance remain later work.
 
+## Engine progress
+
+The target is the full RTS engine in the [project specification](RTS-Engine-Project-Specifications.md).
+The skirmish is its playable test bed. This table tracks delivered capabilities, not completion percentages.
+
+| Capability | Verified progress | Evidence and remaining work |
+| --- | --- | --- |
+| Core simulation and mod content | Authoritative simulation, package loading, gathering, production, logistics, research, and combat are implemented. | Forge and Skirmish exercise these systems. Supply, repair, and incremental payment remain open. |
+| Playable skirmish | Building, harvesting, paid mixed armies, rally points, Victory, Defeat, and restart pass browser checks. | [Normal-stat win and loss report](docs/reports/2026-11-14-full-skirmish.md). Full game content remains open. |
+| Human multiplayer | Two browser clients, public HTTPS/WSS hosting, ready lobby, colour selection, and reload recovery pass scripted checks. | [Two-player report](docs/reports/2026-11-14-two-player-skirmish.md), [lobby report](docs/reports/2026-11-14-ready-lobby.md), [rejoin report](docs/reports/2026-11-14-fast-rejoin.md). A full match between two people remains unverified. |
+| Presentation | Models, animations, effects, minimap, ground blending, and selected-unit portraits and health are delivered. | [Ground report](docs/reports/2026-11-14-ground-blending.md), [selection report](docs/reports/2026-11-14-unit-selection-panel.md). Custom shader support remains open. |
+| Browser performance | The measured release reaches 58.70 FPS at 400 units and 33.15 FPS at 2,000 units on High. | [Measurements and independent review](docs/reports/2026-11-14-presentation-payload-sharing.md). One local RTX 3080 host; 2,000-unit p95 is 50 ms. Worst-case engine scale remains open. |
+| Damage system | Implementation is in progress on a separate branch. It is not included in this milestone. | Remaining acceptance, final release checks, and independent review must pass before integration. |
+| Remaining engine scope | Public mod bots, editable terrain, discovery and fog, scripts, utilities, rooms, saves, and spectator/replay delivery remain open. | These capabilities follow the full project specification. Existing package loading and networking will be reused. |
+
+Latest accepted build: `target/mc-evidence/skirmish-selection-panel-prepared`.
+All three scripted player probes pass for this build.
+The full fresh-agent and manual readiness procedure was not repeated for the selection panel.
+See [working rules](AGENTS.md) for parallel delivery, review, and milestone integration.
+
 The older Forge industrial demonstration remains available below. It proves extraction, conveyors, inserters, recipes, research, and ammunition combat through the public mod API. Its two-slot and restart restrictions describe that demonstration.
 
 See the [project map](docs/reports/2026-11-13-project-overview.html), the [P2 spec](docs/superpowers/specs/2026-11-13-p2-animation.md), and the [model and animation measurements](docs/measurements/models.md). The project map includes the latest verified deliveries.
