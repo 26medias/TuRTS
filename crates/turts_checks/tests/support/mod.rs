@@ -680,9 +680,10 @@ pub fn scan_rust(roots: &[PathBuf], c: &TokenCatalog) -> Result<Vec<Hit>, ScanEr
     for r in roots {
         collect(r, &mut fslist, &mut skipped)?
     }
-    for file in &skipped {
-        check_test_module_gate(file)?
-    }
+    let test_files = verified_test_modules(&fslist, &skipped)?;
+    fslist.retain(|file| {
+        !test_files.contains(&fs::canonicalize(file).unwrap_or_else(|_| file.clone()))
+    });
     fslist.sort();
     let mut hits = Vec::new();
     for p in fslist {
@@ -705,17 +706,18 @@ pub fn scan_rust(roots: &[PathBuf], c: &TokenCatalog) -> Result<Vec<Hit>, ScanEr
     Ok(hits)
 }
 /// The production source files under `roots`, sorted: the files that `scan_rust` reads (no
-/// `tests` directory, no listed test-module file; each listed file is checked to be gated by
-/// `#[cfg(test)]` in its parent).
+/// `tests` directory, no test-only module file; real declarations and explicit paths
+/// determine whether a source can be included in production).
 pub fn production_sources(roots: &[PathBuf]) -> Result<Vec<PathBuf>, ScanError> {
     let mut fslist = Vec::new();
     let mut skipped = Vec::new();
     for r in roots {
         collect(r, &mut fslist, &mut skipped)?
     }
-    for file in &skipped {
-        check_test_module_gate(file)?
-    }
+    let test_files = verified_test_modules(&fslist, &skipped)?;
+    fslist.retain(|file| {
+        !test_files.contains(&fs::canonicalize(file).unwrap_or_else(|_| file.clone()))
+    });
     fslist.sort();
     let mut production = Vec::new();
     for file in fslist {
@@ -731,81 +733,159 @@ pub fn production_sources(roots: &[PathBuf]) -> Result<Vec<PathBuf>, ScanError> 
 }
 /// Test modules in their own file. The parent file declares each one with `#[cfg(test)] mod`,
 /// so the scan skips the file as it skips an inline `#[cfg(test)]` module.
-/// The scan skips a listed file by path only. This check reads the parent file and requires an
-/// `ItemMod` named like the file stem, with no inline body and a `#[cfg(test)]` gate. Without it,
-/// production code could hide in a skipped file.
-fn check_test_module_gate(file: &Path) -> Result<(), ScanError> {
-    let fail = |parent: &Path, why: String| ScanError::TestModule(file.into(), parent.into(), why);
-    let dir = file.parent().unwrap_or(Path::new(""));
-    let stem = file.file_stem().and_then(|x| x.to_str()).unwrap_or("");
-    let sibling = dir.with_extension("rs");
-    let mod_rs = dir.join("mod.rs");
-    let mut parents = vec![sibling.clone(), mod_rs.clone()];
-    parents.extend(
-        fs::read_dir(dir)
-            .map_err(|error| ScanError::Io(dir.into(), error))?
-            .filter_map(Result::ok)
-            .map(|entry| entry.path())
-            .filter(|candidate| {
-                candidate
-                    .extension()
-                    .is_some_and(|extension| extension == "rs")
-                    && candidate != file
-            }),
-    );
-    parents.dedup();
-    let mut found = None;
-    for parent in parents.iter().filter(|parent| parent.is_file()) {
-        let source =
-            fs::read_to_string(parent).map_err(|error| ScanError::Io(parent.clone(), error))?;
-        let parsed = syn::parse_file(&source)
-            .map_err(|error| ScanError::Rust(parent.clone(), error.to_string()))?;
-        for item in parsed.items {
-            let Item::Mod(declaration) = item else {
+/// Resolve real Rust module declarations once. A test inclusion cannot hide a
+/// second production inclusion of the same source file.
+#[derive(Clone)]
+struct ModuleDeclaration {
+    parent: PathBuf,
+    name: String,
+    production: bool,
+    inline: bool,
+}
+fn verified_test_modules(
+    files: &[PathBuf],
+    conventional: &[PathBuf],
+) -> Result<BTreeSet<PathBuf>, ScanError> {
+    fn explicit_path(attributes: &[syn::Attribute]) -> Option<String> {
+        attributes.iter().find_map(|attribute| {
+            if attribute.path().is_ident("path")
+                && let syn::Meta::NameValue(value) = &attribute.meta
+                && let Expr::Lit(literal) = &value.value
+                && let Lit::Str(path) = &literal.lit
+            {
+                Some(path.value())
+            } else {
+                None
+            }
+        })
+    }
+    fn declarations(
+        items: &[Item],
+        parent: &Path,
+        default_dir: &Path,
+        explicit_dir: &Path,
+        production: bool,
+        out: &mut BTreeMap<PathBuf, Vec<ModuleDeclaration>>,
+    ) -> Result<(), ScanError> {
+        for item in items {
+            let Item::Mod(module) = item else {
                 continue;
             };
-            let explicit = declaration.attrs.iter().find_map(|attribute| {
-                if attribute.path().is_ident("path")
-                    && let syn::Meta::NameValue(value) = &attribute.meta
-                    && let Expr::Lit(literal) = &value.value
-                    && let Lit::Str(path) = &literal.lit
-                {
-                    Some(parent.parent().unwrap().join(path.value()))
+            let production = production && production_attrs(&module.attrs);
+            let name = normalize_ident(&module.ident);
+            let explicit = explicit_path(&module.attrs).map(|path| explicit_dir.join(path));
+            let target = explicit.clone().unwrap_or_else(|| {
+                let flat = default_dir.join(format!("{name}.rs"));
+                if flat.is_file() {
+                    flat
                 } else {
-                    None
+                    default_dir.join(&name).join("mod.rs")
                 }
             });
-            let base = if parent
-                .file_stem()
-                .is_some_and(|name| matches!(name.to_str(), Some("mod" | "lib" | "main")))
-            {
-                parent.parent().unwrap().to_path_buf()
-            } else {
-                parent.with_extension("")
-            };
-            let target = explicit.unwrap_or_else(|| base.join(format!("{}.rs", declaration.ident)));
-            if target == file {
-                found = Some((parent.clone(), declaration));
-                break;
+            if target.is_file() {
+                let target =
+                    fs::canonicalize(&target).map_err(|error| ScanError::Io(target, error))?;
+                out.entry(target).or_default().push(ModuleDeclaration {
+                    parent: parent.into(),
+                    name: name.clone(),
+                    production,
+                    inline: module.content.is_some(),
+                });
+            }
+            if let Some((_, items)) = &module.content {
+                let nested = explicit.unwrap_or_else(|| default_dir.join(&name));
+                declarations(items, parent, &nested, &nested, production, out)?;
             }
         }
-        if found.is_some() {
+        Ok(())
+    }
+    let mut intrinsic = BTreeSet::new();
+    let mut registry = BTreeMap::<PathBuf, Vec<ModuleDeclaration>>::new();
+    let all = files
+        .iter()
+        .chain(conventional)
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    for file in all {
+        let parent = fs::canonicalize(&file).map_err(|error| ScanError::Io(file.clone(), error))?;
+        let source =
+            fs::read_to_string(&parent).map_err(|error| ScanError::Io(parent.clone(), error))?;
+        let parsed = syn::parse_file(&source)
+            .map_err(|error| ScanError::Rust(parent.clone(), error.to_string()))?;
+        let production = production_attrs(&parsed.attrs);
+        if !production {
+            intrinsic.insert(parent.clone());
+        }
+        let directory = parent.parent().unwrap();
+        let default_dir = if parent
+            .file_stem()
+            .is_some_and(|stem| matches!(stem.to_str(), Some("lib" | "main" | "mod")))
+        {
+            directory.to_path_buf()
+        } else {
+            parent.with_extension("")
+        };
+        declarations(
+            &parsed.items,
+            &parent,
+            &default_dir,
+            directory,
+            production,
+            &mut registry,
+        )?;
+    }
+    let mut only_test = intrinsic.clone();
+    loop {
+        let mut changed = false;
+        for (target, entries) in &registry {
+            let imports = entries
+                .iter()
+                .filter(|entry| !entry.inline)
+                .collect::<Vec<_>>();
+            if !imports.is_empty()
+                && imports
+                    .iter()
+                    .all(|entry| !entry.production || only_test.contains(&entry.parent))
+            {
+                changed |= only_test.insert(target.clone());
+            }
+        }
+        if !changed {
             break;
         }
     }
-    let Some((parent, declaration)) = found else {
-        return Err(fail(&sibling, format!("declares no `mod {stem}`")));
-    };
-    if declaration.content.is_some() {
-        return Err(fail(&parent, format!("`mod {stem}` has an inline body")));
+    for file in conventional {
+        let canonical =
+            fs::canonicalize(file).map_err(|error| ScanError::Io(file.clone(), error))?;
+        let stem = file
+            .file_stem()
+            .and_then(|stem| stem.to_str())
+            .unwrap_or("");
+        let fallback = file.parent().unwrap_or(Path::new("")).with_extension("rs");
+        let entries = registry.get(&canonical).ok_or_else(|| {
+            ScanError::TestModule(file.clone(), fallback, format!("declares no `mod {stem}`"))
+        })?;
+        for entry in entries {
+            let why = if entry.inline {
+                Some(format!("`mod {}` has an inline body", entry.name))
+            } else if entry.production && !only_test.contains(&entry.parent) {
+                Some(format!(
+                    "`mod {}` is not gated by `#[cfg(test)]`",
+                    entry.name
+                ))
+            } else {
+                None
+            };
+            if let Some(why) = why {
+                return Err(ScanError::TestModule(
+                    file.clone(),
+                    entry.parent.clone(),
+                    why,
+                ));
+            }
+        }
     }
-    if production_cfg(&declaration.attrs) {
-        return Err(fail(
-            &parent,
-            format!("`mod {stem}` is not gated by `#[cfg(test)]`"),
-        ));
-    }
-    Ok(())
+    Ok(only_test)
 }
 fn collect(p: &Path, out: &mut Vec<PathBuf>, skipped: &mut Vec<PathBuf>) -> Result<(), ScanError> {
     if p.is_file() {
@@ -816,10 +896,15 @@ fn collect(p: &Path, out: &mut Vec<PathBuf>, skipped: &mut Vec<PathBuf>) -> Resu
             let parsed = syn::parse_file(&source)
                 .map_err(|error| ScanError::Rust(p.into(), error.to_string()))?;
             if !production_attrs(&parsed.attrs) {
+                out.push(p.into());
                 return Ok(());
             }
             let stem = p.file_stem().and_then(|stem| stem.to_str()).unwrap_or("");
-            if stem == "tests" || stem.ends_with("_tests") {
+            let contains_production = parsed
+                .items
+                .iter()
+                .any(|item| production_attrs(item_attrs(item)));
+            if contains_production && (stem == "tests" || stem.ends_with("_tests")) {
                 skipped.push(p.into())
             } else {
                 out.push(p.into())

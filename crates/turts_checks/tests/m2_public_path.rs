@@ -67,6 +67,11 @@ fn public_loading_path_has_no_native_hooks() {
         assert_no_native_mod_files(&scratch.join("mods")).is_err(),
         "scratch native hook must be detected"
     );
+    assert!(forbidden_bypasses("fn boot(archive:&Archive) { let has_terrain=archive.maps()?.iter().any(|(_,map)|map.terrain.is_some()); }").is_empty(),"portable public map inspection must not be confused with world installation");
+    assert!(
+        !forbidden_bypasses("fn boot() { turts_sim::stage_package_with_terrain(); }").is_empty(),
+        "direct terrain staging must not bypass public package validation"
+    );
     let bypass = "use turts_sim::install_package as publish; fn f() { publish(); }";
     assert!(
         !forbidden_bypasses(bypass).is_empty(),
@@ -445,10 +450,11 @@ fn forbidden_bypasses(code: &str) -> Vec<String> {
     let forbidden = [
         "install_package",
         "stage_package",
+        "stage_package_with_terrain",
+        "stage_package_with_map_identity",
         "load_map",
         "UnitRegistry",
         "content",
-        "maps",
         "units",
         "resources",
         "nodes",

@@ -581,3 +581,38 @@ const WRONG: &str="light";
     );
     std::fs::remove_dir_all(scratch).unwrap();
 }
+
+#[test]
+fn explicit_relative_test_path_is_safe_only_without_a_production_inclusion() {
+    let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let catalog = derive_tokens(&repo.join("mods")).unwrap();
+    let root = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("relative_test_path");
+    let _ = std::fs::remove_dir_all(&root);
+    let src = root.join("src");
+    std::fs::create_dir_all(src.join("bots")).unwrap();
+    std::fs::write(src.join("main.rs"), "mod bots;").unwrap();
+    std::fs::write(
+        src.join("bots/mod.rs"),
+        r#"#[cfg(test)] #[path="../nested_tests.rs"] mod tests;"#,
+    )
+    .unwrap();
+    std::fs::write(
+        src.join("nested_tests.rs"),
+        r#"const RECIPE: &str="forge:make_shells";"#,
+    )
+    .unwrap();
+    assert!(scan_rust(&[src.clone()], &catalog).unwrap().is_empty());
+    std::fs::write(
+        src.join("leak.rs"),
+        r#"#[path="nested_tests.rs"] mod production;"#,
+    )
+    .unwrap();
+    let error = scan_rust(&[src], &catalog)
+        .expect_err("a second production inclusion cannot inherit a test exemption");
+    assert!(
+        matches!(error, support::ScanError::TestModule(..)),
+        "{error}"
+    );
+    assert!(error.to_string().contains("is not gated"), "{error}");
+    std::fs::remove_dir_all(root).unwrap();
+}
