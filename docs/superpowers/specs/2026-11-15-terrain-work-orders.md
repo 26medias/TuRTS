@@ -1,6 +1,6 @@
 # M4: terrain work, material accounting, and an opened passage
 
-Status: Anvil spec and implementation plan approved. Engine integration waits for accepted SDK16. Approved pure rules can be prepared in isolated worktrees.
+Status: Anvil spec and implementation plan approved. SDK16 is accepted and pushed on main at `52ac9b5e`. M4 implementation is active in isolated worktrees.
 One reviewer completed one spec turn and one focused recheck. The revision defines exact material quantities, geological exhaustion, and mixed-knowledge work previews.
 Dependency: accepted SDK16 shared knowledge and its atomic state transport.
 Target: additive public API 0.2.17 and protocol 10. Confirm the actual predecessor before integration.
