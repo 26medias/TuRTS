@@ -424,6 +424,21 @@ mod tests {
         drop(app);
         let records = turts_audit::read_jsonl_file(&path).unwrap();
         turts_audit::validate_records(&records).unwrap();
+        let mut mismatched = ReplayTape::from_records(&records).unwrap();
+        mismatched.installation.bots[0].seed ^= 1;
+        let mut untouched = fixture();
+        let claims = untouched.world().resource::<Slots>().owners();
+        assert!(
+            install(
+                &mut untouched,
+                mismatched,
+                BotExecutionMode::RegenerateAndCompare
+            )
+            .unwrap_err()
+            .contains("installation")
+        );
+        assert_eq!(untouched.world().resource::<Tick>().0, 0);
+        assert_eq!(untouched.world().resource::<Slots>().owners(), claims);
         for (mode, name) in [
             (BotExecutionMode::RecordedCommands, "cot-recorded.jsonl"),
             (
