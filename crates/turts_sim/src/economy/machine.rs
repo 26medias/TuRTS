@@ -1005,4 +1005,28 @@ mod tests {
             2
         );
     }
+    #[test]
+    fn independent_review_machine_full_speed_uses_global_q() {
+        let mut app = app_with_machine(2, 0);
+        app.world_mut()
+            .insert_resource(crate::economy::power::RateQ(6));
+        app.update();
+        assert_eq!(
+            app.world().resource::<ProductionQueues>().0[&1][0].total,
+            240
+        );
+        for expected in 1..40 {
+            app.update();
+            assert_eq!(
+                app.world().resource::<ProductionQueues>().0[&1][0].elapsed_ticks,
+                expected * 6
+            );
+        }
+        app.update();
+        assert!(app.world().resource::<ProductionQueues>().0[&1].is_empty());
+        assert_eq!(
+            item_amount(app.world().resource::<EconomyLedger>(), true, 1),
+            1
+        );
+    }
 }

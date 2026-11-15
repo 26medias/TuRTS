@@ -1291,4 +1291,35 @@ mod tests {
         let mut app = app_with_research(20, 5);
         assert!(produce(&mut app, 1, "research_fixture:first", 1).is_ok());
     }
+    #[test]
+    fn independent_review_research_full_speed_uses_global_q() {
+        let mut app = app_with_research_config(20, 5, |catalog, _| {
+            catalog
+                .technologies
+                .get_mut(&cid("research_fixture:first"))
+                .unwrap()
+                .duration_ms = 100;
+        });
+        app.world_mut()
+            .insert_resource(crate::economy::power::RateQ(6));
+        produce(&mut app, 1, "research_fixture:first", 1).unwrap();
+        assert_eq!(
+            app.world().resource::<ProductionQueues>().0[&1][0].total,
+            12
+        );
+        app.update();
+        app.update();
+        assert_eq!(
+            app.world().resource::<ProductionQueues>().0[&1][0].elapsed_ticks,
+            6
+        );
+        app.update();
+        assert!(app.world().resource::<ProductionQueues>().0[&1].is_empty());
+        assert!(
+            app.world()
+                .resource::<ResearchState>()
+                .completed
+                .contains(&(0, cid("research_fixture:first")))
+        );
+    }
 }
