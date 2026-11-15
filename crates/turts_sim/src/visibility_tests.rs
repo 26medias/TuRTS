@@ -973,3 +973,50 @@ fn typed_capture_tracks_archetype_changes_facing_spawns_and_source_death() {
     let (units, _) = capture_units(app.world_mut());
     assert!(!units.iter().any(|row| row.unit == 99));
 }
+
+#[test]
+fn cached_circle_deltas_match_full_rebuilds_across_routes_radius_changes_and_teams() {
+    for sharing in [VisionSharing::OwnSlot, VisionSharing::Team] {
+        let mut incremental = prepared(sharing, 10);
+        let mut explored = vec![vec![0u8; 512]; usize::from(SLOT_COUNT)];
+        for step in 0..40u32 {
+            let mut sources = vec![
+                (
+                    1,
+                    0,
+                    p(2.0 + step as f32 * 1.3, 10.0),
+                    3.0 + (step % 7) as f32,
+                ),
+                (2, (step / 10 % 2) as u8, p(30.0, 2.0 + step as f32), 8.0),
+            ];
+            if step % 3 == 0 {
+                sources.pop();
+            }
+            incremental.update(
+                step,
+                ObservationPhase::Completed,
+                vec![],
+                vec![],
+                sources.clone(),
+            );
+            let mut rebuilt = prepared(sharing, 10);
+            rebuilt.update(step, ObservationPhase::Completed, vec![], vec![], sources);
+            for viewer in 0..usize::from(SLOT_COUNT) {
+                let expected = &rebuilt.coverage[viewer];
+                for (seen, current) in explored[viewer].iter_mut().zip(expected.observed.iter()) {
+                    *seen |= current;
+                }
+                assert_eq!(
+                    incremental.coverage[viewer].counts, expected.counts,
+                    "step {step}, viewer {viewer}"
+                );
+                assert_eq!(incremental.coverage[viewer].observed, expected.observed);
+                assert_eq!(
+                    incremental.coverage[viewer].explored.as_ref(),
+                    explored[viewer]
+                );
+            }
+            assert!(incremental.cached_source_cell_bytes() <= MAX_CACHED_SOURCE_CELL_BYTES);
+        }
+    }
+}

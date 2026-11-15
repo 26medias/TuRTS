@@ -374,6 +374,49 @@ impl VisibilityState {
             }
         }
     }
+    fn adjust_cached_source_delta(&mut self, owner: u8, old: &[u32], new: &[u32]) {
+        for viewer in 0..SLOT_COUNT {
+            if !self.shared(viewer, owner) {
+                continue;
+            }
+            let coverage = &mut self.coverage[usize::from(viewer)];
+            let observed = Arc::make_mut(&mut coverage.observed);
+            let explored = Arc::make_mut(&mut coverage.explored);
+            let (mut before, mut after) = (0, 0);
+            // Circle geometry enumerates cells in increasing row-major order.
+            // Shared cells keep their count. Only the symmetric difference writes.
+            while before < old.len() || after < new.len() {
+                if before < old.len() && after < new.len() && old[before] == new[after] {
+                    before += 1;
+                    after += 1;
+                    continue;
+                }
+                let add = before == old.len() || (after < new.len() && new[after] < old[before]);
+                let cell = if add {
+                    let cell = new[after];
+                    after += 1;
+                    cell
+                } else {
+                    let cell = old[before];
+                    before += 1;
+                    cell
+                };
+                let count = &mut coverage.counts[cell as usize];
+                let flag = 1 << (cell % 8);
+                let byte = cell as usize / 8;
+                if add {
+                    *count += 1;
+                    observed[byte] |= flag;
+                    explored[byte] |= flag;
+                } else {
+                    *count -= 1;
+                    if *count == 0 {
+                        observed[byte] &= !flag;
+                    }
+                }
+            }
+        }
+    }
     fn update(
         &mut self,
         tick: u32,
@@ -417,6 +460,29 @@ impl VisibilityState {
                 continue;
             }
             if let Some(old) = self.sources.remove(&id) {
+                // Both geometries coexist only within the aggregate cache budget.
+                // If there is no room, release the old cache before rebuilding.
+                if old.owner == owner
+                    && let Some(old_cells) = &old.cells
+                    && let Some(cells) = cached_source_cells(
+                        rule_grid(self.grid),
+                        position,
+                        radius,
+                        MAX_CACHED_SOURCE_CELL_BYTES - self.source_cache_bytes,
+                    )
+                {
+                    self.adjust_cached_source_delta(owner, old_cells, &cells);
+                    self.source_cache_bytes -= old.cached_bytes();
+                    let source = Source {
+                        owner,
+                        position,
+                        radius,
+                        cells: Some(cells),
+                    };
+                    self.source_cache_bytes += source.cached_bytes();
+                    self.sources.insert(id, source);
+                    continue;
+                }
                 self.source_cache_bytes -= old.cached_bytes();
                 self.adjust_source(&old, false);
             }
