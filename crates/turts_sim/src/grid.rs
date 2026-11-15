@@ -1,8 +1,38 @@
 //! Deterministic uniform-grid neighbour lookup for flat-ground simulation.
 
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    hash::{BuildHasherDefault, Hasher},
+};
 
 use bevy_math::Vec2;
+
+/// Packed cell coordinates need one integer mix rather than general-purpose
+/// keyed byte hashing. Full key equality still resolves every hash collision.
+#[derive(Default)]
+struct CellHasher(u64);
+impl Hasher for CellHasher {
+    fn finish(&self) -> u64 {
+        let mut value = self.0;
+        value = (value ^ (value >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+        value = (value ^ (value >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+        value ^ (value >> 31)
+    }
+    fn write_u64(&mut self, value: u64) {
+        self.0 = value;
+    }
+    fn write(&mut self, bytes: &[u8]) {
+        for &byte in bytes {
+            self.0 = self.0.rotate_left(5) ^ u64::from(byte);
+        }
+    }
+}
+fn cell_key((x, y): (i32, i32)) -> u64 {
+    (u64::from(x as u32) << 32) | u64::from(y as u32)
+}
+fn cell_coordinates(key: u64) -> (i32, i32) {
+    ((key >> 32) as u32 as i32, key as u32 as i32)
+}
 
 /// Relative margin on the query box of `within`, times max(1, reach).
 const EDGE_MARGIN: f32 = 1e-4;
@@ -17,7 +47,7 @@ pub(crate) struct GridPoint {
 /// sorted by unit id, so hash bucket order cannot affect simulation decisions.
 pub(crate) struct UniformGrid {
     cell_size: f32,
-    cells: HashMap<(i32, i32), Vec<usize>>,
+    cells: HashMap<u64, Vec<usize>, BuildHasherDefault<CellHasher>>,
     #[cfg(test)]
     visited_cells: std::sync::atomic::AtomicUsize,
 }
@@ -27,7 +57,7 @@ impl UniformGrid {
         let cell_size = cell_size.max(f32::EPSILON);
         let mut grid = Self {
             cell_size,
-            cells: HashMap::with_capacity(points.len()),
+            cells: HashMap::with_capacity_and_hasher(points.len(), BuildHasherDefault::default()),
             #[cfg(test)]
             visited_cells: std::sync::atomic::AtomicUsize::new(0),
         };
@@ -39,14 +69,14 @@ impl UniformGrid {
 
     pub(crate) fn insert(&mut self, index: usize, position: Vec2) {
         self.cells
-            .entry(cell(position, self.cell_size))
+            .entry(cell_key(cell(position, self.cell_size)))
             .or_default()
             .push(index);
     }
 
     pub(crate) fn move_point(&mut self, index: usize, from: Vec2, to: Vec2) {
-        let old_cell = cell(from, self.cell_size);
-        let new_cell = cell(to, self.cell_size);
+        let old_cell = cell_key(cell(from, self.cell_size));
+        let new_cell = cell_key(cell(to, self.cell_size));
         if old_cell == new_cell {
             return;
         }
@@ -77,8 +107,21 @@ impl UniformGrid {
 
     /// The indices of the points within `reach` of `position`, sorted by id.
     /// A negative `reach` is not legal input: debug builds panic. Release
-    /// builds scan the cells of `reach.abs()` and accept no point.
+    /// builds retain the same bounding box and squared-distance predicate.
     pub(crate) fn within(&self, points: &[GridPoint], position: Vec2, reach: f32) -> Vec<usize> {
+        let mut found = self.within_unsorted(points, position, reach);
+        found.sort_unstable_by_key(|index| (points[*index].id, *index));
+        found
+    }
+
+    /// The same exact candidates without an ordering contract. Use only when
+    /// the caller immediately applies its own complete canonical sort.
+    pub(crate) fn within_unsorted(
+        &self,
+        points: &[GridPoint],
+        position: Vec2,
+        reach: f32,
+    ) -> Vec<usize> {
         debug_assert!(reach >= 0.0, "reach must not be negative: {reach}");
         let ((min_x, min_y), (max_x, max_y)) = self.cell_range(position, reach);
         let width = (max_x - min_x + 1) as u128;
@@ -89,7 +132,8 @@ impl UniformGrid {
         self.visited_cells
             .store(0, std::sync::atomic::Ordering::Relaxed);
         if sparse_scan {
-            for (&(x, y), indices) in &self.cells {
+            for (&key, indices) in &self.cells {
+                let (x, y) = cell_coordinates(key);
                 #[cfg(test)]
                 self.visited_cells
                     .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -112,7 +156,7 @@ impl UniformGrid {
                     let Some(indices) = i32::try_from(x)
                         .ok()
                         .zip(i32::try_from(y).ok())
-                        .and_then(|key| self.cells.get(&key))
+                        .and_then(|key| self.cells.get(&cell_key(key)))
                     else {
                         continue;
                     };
@@ -122,7 +166,6 @@ impl UniformGrid {
                 }
             }
         }
-        found.sort_unstable_by_key(|index| (points[*index].id, *index));
         found
     }
 
@@ -254,10 +297,112 @@ mod tests {
         position: Vec2,
         reach: f32,
     ) -> Vec<u32> {
-        grid.within(points, position, reach)
-            .into_iter()
-            .map(|index| points[index].id)
-            .collect()
+        let sorted = grid.within(points, position, reach);
+        let mut unordered = grid.within_unsorted(points, position, reach);
+        unordered.sort_unstable_by_key(|index| (points[*index].id, *index));
+        assert_eq!(unordered, sorted);
+        sorted.into_iter().map(|index| points[index].id).collect()
+    }
+
+    fn assert_exact_indices(grid: &UniformGrid, points: &[GridPoint], position: Vec2, reach: f32) {
+        let mut expected = points
+            .iter()
+            .enumerate()
+            .filter(|(_, point)| point.position.distance_squared(position) <= reach * reach)
+            .map(|(index, _)| index)
+            .collect::<Vec<_>>();
+        expected.sort_unstable_by_key(|index| (points[*index].id, *index));
+        let found = grid.within(points, position, reach);
+        assert_eq!(found, expected);
+        let mut unordered = grid.within_unsorted(points, position, reach);
+        unordered.sort_unstable_by_key(|index| (points[*index].id, *index));
+        assert_eq!(unordered, found);
+    }
+
+    #[test]
+    fn packed_grid_matches_exact_index_oracle_after_insertions_and_moves_with_duplicate_ids() {
+        let mut rng = TestRng(0x3141_5926_5358_9793);
+        let mut points = (0..256)
+            .map(|_| GridPoint {
+                id: (rng.next() % 7) as u32,
+                position: Vec2::new(rng.whole(32), rng.whole(32)),
+            })
+            .collect::<Vec<_>>();
+        let mut grid = UniformGrid::new(&points, 2.0);
+        for step in 0..80 {
+            let index = (rng.next() as usize) % points.len();
+            let old = points[index].position;
+            let next = Vec2::new(rng.whole(32), rng.whole(32));
+            grid.move_point(index, old, next);
+            points[index].position = next;
+            if step % 10 == 0 {
+                let index = points.len();
+                points.push(GridPoint {
+                    id: u32::MAX,
+                    position: next,
+                });
+                grid.insert(index, next);
+            }
+            for reach in [0.0, 2.0, 7.5, 1_000_000.0] {
+                assert_exact_indices(&grid, &points, next, reach);
+            }
+        }
+    }
+
+    #[test]
+    fn packed_grid_preserves_saturated_signed_cells_and_huge_sparse_queries() {
+        let points = [
+            GridPoint {
+                id: u32::MAX,
+                position: Vec2::new(-1e30, 1e30),
+            },
+            GridPoint {
+                id: 4,
+                position: Vec2::new(1e30, -1e30),
+            },
+            GridPoint {
+                id: 4,
+                position: Vec2::new(-0.0, -1.0),
+            },
+            GridPoint {
+                id: 0,
+                position: Vec2::new(0.0, 1.0),
+            },
+        ];
+        for size in [f32::EPSILON, 1.0, 1024.0] {
+            let grid = UniformGrid::new(&points, size);
+            for position in [Vec2::ZERO, points[0].position, points[1].position] {
+                for reach in [0.0, 1.0, f32::MAX] {
+                    assert_exact_indices(&grid, &points, position, reach);
+                }
+            }
+        }
+        for x in [i32::MIN, -1, 0, 1, i32::MAX] {
+            for y in [i32::MIN, -1, 0, 1, i32::MAX] {
+                assert_eq!(super::cell_coordinates(super::cell_key((x, y))), (x, y));
+            }
+        }
+    }
+
+    #[cfg(not(debug_assertions))]
+    #[test]
+    fn release_negative_reach_preserves_the_existing_squared_distance_predicate() {
+        let points = [
+            GridPoint {
+                id: 2,
+                position: Vec2::ZERO,
+            },
+            GridPoint {
+                id: 1,
+                position: Vec2::new(-1.0, 0.0),
+            },
+        ];
+        let grid = UniformGrid::new(&points, 1.0);
+        assert_exact_indices(&grid, &points, Vec2::ZERO, -2.0);
+        assert_eq!(
+            grid.within(&points, Vec2::ZERO, -2.0),
+            grid.within(&points, Vec2::ZERO, 2.0)
+        );
     }
 
     #[derive(Default)]
