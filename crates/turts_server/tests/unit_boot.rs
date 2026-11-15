@@ -45,6 +45,8 @@ const PUBLIC_URL: &str = "http://127.0.0.1:7000";
 
 fn config(package: &Path) -> HostConfig {
     HostConfig {
+        terrain_seed_file: None,
+        terrain_provenance: None,
         game_package: package.display().to_string(),
         http_listen: "127.0.0.1:0".to_string(),
         ws_listen: "127.0.0.1:0".to_string(),
