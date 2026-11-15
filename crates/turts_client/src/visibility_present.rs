@@ -11,6 +11,10 @@ impl Plugin for VisibilityPresentationPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(
             PostUpdate,
+            clear_hidden_bodies.after(bevy::transform::TransformSystems::Propagate),
+        );
+        app.add_systems(
+            PostUpdate,
             sync_remembered.after(bevy::camera::CameraUpdateSystems),
         );
     }
@@ -96,5 +100,24 @@ fn sync_remembered(
             ))
             .id();
         markers.insert(key, entity);
+    }
+}
+
+/// Corpses and delayed death bodies carry no live identity after their event.
+fn clear_hidden_bodies(
+    mut commands: Commands,
+    state: Res<ReplicaState>,
+    bodies: Query<
+        (Entity, &GlobalTransform),
+        Or<(
+            With<crate::animation::VisualBody>,
+            With<crate::fx::PendingDeath>,
+        )>,
+    >,
+) {
+    for (entity, transform) in &bodies {
+        if !crate::fx::permitted_position(Some(&state), transform.translation()) {
+            commands.entity(entity).despawn();
+        }
     }
 }

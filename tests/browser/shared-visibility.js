@@ -123,6 +123,16 @@ function luminance(image, point) {
                 assert(level(a.debug.knowledge,point)==={unexplored:0,remembered:1,observed:2}[name],'Ground sample has wrong authoritative state: '+name);
                 levels[name]=luminance(hidden,project(a.scene,point));
             }
+            const minimap=a.scene.widgets?.find(widget=>widget.id===scenario.minimap_widget);
+            assert(minimap,'Scenario must identify its authored minimap_widget');
+            const mapLevels={};
+            for(const [name,point] of Object.entries(scenario.ground_samples)){
+                const [x,y,width,height]=minimap.rect;
+                const grid=a.debug.knowledge.grid;
+                mapLevels[name]=luminance(hidden,[x+point[0]/grid.size.x*width,y+(1-point[1]/grid.size.y)*height]);
+            }
+            result.minimap_luminance=mapLevels;
+            assert(mapLevels.observed>mapLevels.remembered+3&&mapLevels.remembered>mapLevels.unexplored+2,'Screenshot does not distinguish matching minimap fog states');
             result.fog_luminance=levels;
             assert(levels.observed>levels.remembered+3&&levels.remembered>levels.unexplored+2,'Screenshot does not distinguish three ground fog states');
         }

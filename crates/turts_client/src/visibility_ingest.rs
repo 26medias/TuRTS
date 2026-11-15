@@ -18,6 +18,14 @@ pub struct StateTransactions {
     pub rejected: u64,
 }
 
+impl StateTransactions {
+    pub fn retained_bytes(&self) -> usize {
+        self.assembler
+            .as_ref()
+            .map_or(0, StateTransactionAssembler::retained_bytes)
+    }
+}
+
 /// Split from ordinary receipt ingest so command results keep their own bounded path.
 #[allow(clippy::too_many_arguments)]
 pub fn receive_transactions(

@@ -388,6 +388,7 @@ pub fn debug_json(world: &World) -> String {
         "match_id_decimal": match_id_decimal,
         "slot": world.get_resource::<ReplicaState>().and_then(|state| state.welcome.map(|welcome| welcome.slot)),
         "units": units,
+        "visibility_transport": world.get_resource::<crate::visibility_ingest::StateTransactions>().map(|state| json!({"activated": state.activated, "rejected": state.rejected, "retained_bytes": state.retained_bytes()})),
         "knowledge": world.get_resource::<ReplicaState>().and_then(|state| state.replica.as_ref()).and_then(|replica| replica.knowledge.as_deref()),
         "last_frame": last_frame,
         "trace": trace,
