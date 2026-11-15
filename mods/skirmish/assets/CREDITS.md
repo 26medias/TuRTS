@@ -32,3 +32,10 @@ Source SHA-256: `60428e3abc09ba83e595d256e3af8c5c976b46cdae599f0802fc82b4a344516
 Changes: remove unused accessories, keep seven clips, scale to 1.7 units, shorten the sword prop to 60 percent, add a neutral team material, and export static and animated GLB files.
 Reproduce with `blender -b -t 4 -P scripts/qa/animation/prepare_swordsman.py -- SOURCE_DIRECTORY mods/skirmish/assets/models`.
 The source directory must contain `Knight.glb`. The original license is in `target/mc-evidence/swordsman/source/LICENSE.txt`.
+
+## Selection portraits (2026-11-14)
+
+`portraits/{base,barracks,worker,soldier,swordsman}.png` are static renders of the existing CC0 models listed above.
+No source mesh or texture changes. The blue material identifies the portrait only; world models retain slot colours.
+Render with `blender -b -t 4 -P scripts/art/render_skirmish_portraits.py -- mods/skirmish`.
+The script uses an orthographic camera, transparent background, area lights, and 24 Cycles samples.
