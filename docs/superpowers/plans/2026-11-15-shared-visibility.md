@@ -46,7 +46,14 @@ Add the paired outside-footprint/inside-clearance tests with all query metadata 
 Preserve SDK15 account basis, provisional debt, leases, fairness, and actor-local failure handling.
 Expose stale queries separately. Stock controllers can move to remembered points without targeting stale IDs.
 
-Implement one pending transaction per connection, plus one active baseline.
+Retain one active baseline, one first-unacknowledged transaction, and the existing <=8 MiB encoded successor ring per connection.
+Send successors after their preceding End without waiting for each activation ACK. Keep one incomplete client assembly.
+Use one registered serde StateTransactionFrame enum so batched Begin/Chunk/End order survives typed message extraction.
+Use the public registered NetId and Lightyear ToBytes framing; Transport::send_mut returns the real reliable MessageId.
+Keep a bounded frame-credit window. Carry cancelled submitted credit until its actual transport ACK or disconnect.
+Cancellation uses the last issued stamp as a retirement watermark. Discard every incomplete/staged ID through it in the same match/map.
+Keep an already complete active view. Reject late suffix frames/activation ACKs and unsent-End ACKs.
+Keep the oldest unacknowledged deadline; successor enqueue cannot reset it.
 Use match/map/tick/transaction/parent stamps and indexed chunks with checked total size.
 Encoded chunks are <=1,024 bytes and must fit the existing transport frame budget after its headers.
 Do not enlarge Lightyear transport limits. Register a reliable ordered state channel for transaction traffic.
@@ -99,3 +106,18 @@ Independent checks: export 4 PASS; real human wire 1 PASS; outbound 5 PASS; exac
 Current owners: publication agent fixes ordered pipelining and builds SV7; client agent fixes allocation preflight; root integrates and runs browser checks; the same foundation reviewer covers the final transport correction.
 Next checks: allocation preflight, new-match isolation, ordered delayed-ACK transport, SV6 browsers, SV7 frozen measurement, final full gates and cold-play probes.
 The qualified fog map identity is limited to 512 UTF-8 bytes so repeated stamps fit the fixed frame cap. Live hot package replacement is not part of this API; second installation refuses atomically, and each new match uses a fresh world.
+
+## Frozen delayed-ACK transport check
+
+The publication owner implements this focused SV4 regression; root runs it in the shared native target.
+Run two cases with activation-ACK round trips of 50 ms and 100 ms on a 20 Hz sender.
+Use an initial 1000-unit public snapshot and one patch per tick that updates 500 public unit positions.
+Use deterministic finite routes within a 128x128 map. Keep the same payload, queue limits, and channels in both cases.
+Warm up for 100 ticks, then measure 1200 ticks (60 simulated seconds) per case.
+Batch at least two complete successor transactions into one client application update.
+The client must activate every completed movement tick exactly once and in order.
+After warm-up, require no routine restart, oldest unacknowledged age <=1000 ms, and encoded successor backlog <=1 MiB with no positive end-to-end growth.
+These regression limits stay inside the unchanged hard 8 MiB post-base and 64 MiB total caps.
+Also cancel a delayed chain before its suffix arrives. Deliver its old frames and ACKs after replacement, then prove the replacement stays active and submitted credit is not released early.
+A slow viewer must still reach the existing bounded restart/disconnect policy without stopping a healthy viewer.
+The same foundation reviewer inspects the pipeline and runs its focused test. Do not repeat the whole approved feature review.
