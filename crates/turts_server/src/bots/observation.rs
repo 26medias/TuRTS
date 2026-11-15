@@ -32,6 +32,7 @@ pub(crate) struct ObservationBasis {
     pub pending_content: BTreeMap<ContentId, u64>,
     pub supply: Vec<SupplyObservation>,
     pub area: ObservedArea,
+    pub knowledge: Option<Arc<turts_mod_api::KnowledgeSnapshot>>,
     pub catalog: Arc<ContentCatalog>,
 }
 impl ObservationBasis {
@@ -120,11 +121,33 @@ impl ObservationBasis {
             affordable,
         })
     }
-    fn placement(&self, query: &PlacementQuery) -> Advice<PlacementAdvice> {
-        // Partial observation must not consult an unseen collision or anchor.
-        if !self.area.complete {
-            return Advice::NotObserved;
+    fn area_observed(&self, min: WorldPos, max: WorldPos) -> bool {
+        if self.area.complete {
+            return true;
         }
+        let Some(knowledge) = self.knowledge.as_ref() else {
+            return false;
+        };
+        let grid = knowledge.grid;
+        turts_rules::visibility::Grid {
+            width: grid.size.x,
+            height: grid.size.y,
+            cell_size: grid.cell_size,
+            columns: grid.columns,
+            rows: grid.rows,
+        }
+        .rectangle(
+            turts_rules::visibility::Point { x: min.x, y: min.y },
+            turts_rules::visibility::Point { x: max.x, y: max.y },
+            |cell| {
+                knowledge
+                    .observed
+                    .get(cell as usize / 8)
+                    .is_some_and(|byte| byte & (1 << (cell % 8)) != 0)
+            },
+        )
+    }
+    fn placement(&self, query: &PlacementQuery) -> Advice<PlacementAdvice> {
         let Some(actor) = self.own_unit(query.actor) else {
             return Advice::NotObserved;
         };
@@ -162,6 +185,54 @@ impl ObservationBasis {
         let radius = |definition: &turts_mod_api::ResolvedUnit| match definition.footprint {
             turts_mod_api::Footprint::Circle { radius } => radius,
         };
+        let output_radius = radius(output);
+        if p.x - output_radius < 0.0
+            || p.y - output_radius < 0.0
+            || p.x + output_radius > self.area.max.x
+            || p.y + output_radius > self.area.max.y
+        {
+            return Advice::Known(PlacementAdvice::Blocked);
+        }
+        // Public maxima determine the region. Hidden object presence never affects its size.
+        let max_unit_radius = self
+            .catalog
+            .units
+            .values()
+            .map(radius)
+            .fold(0.0_f32, f32::max);
+        let max_static_gap = self
+            .catalog
+            .units
+            .values()
+            .filter_map(|unit| unit.placement.map(|placement| placement.gap))
+            .fold(0.0_f32, f32::max);
+        let max_node_radius = self
+            .catalog
+            .nodes
+            .values()
+            .map(|node| node.radius)
+            .fold(0.0_f32, f32::max);
+        let unit_reach = f64::from(output_radius)
+            + f64::from(max_unit_radius)
+            + f64::from(config.gap.max(max_static_gap).max(0.0));
+        let node_reach = f64::from(output_radius)
+            + f64::from(max_node_radius)
+            + f64::from(config.node_clearance.max(0.0));
+        let reach = unit_reach.max(node_reach);
+        let axis = |coordinate: f32, extent: f32| {
+            (
+                (f64::from(coordinate) - reach).max(0.0) as f32,
+                (f64::from(coordinate) + reach).min(f64::from(extent)) as f32,
+            )
+        };
+        let (left, right) = axis(p.x, self.area.max.x);
+        let (bottom, top) = axis(p.y, self.area.max.y);
+        if !self.area_observed(
+            WorldPos { x: left, y: bottom },
+            WorldPos { x: right, y: top },
+        ) {
+            return Advice::NotObserved;
+        }
         let sources = self
             .units
             .iter()
@@ -459,7 +530,13 @@ impl BotQueries for PermittedQueries<'_> {
                     return Err(QueryError::Budget);
                 }
                 end = 1;
-                (QueryData::Placement(basis.placement(request)), 1, 1)
+                let advice = basis.placement(request);
+                coverage = if matches!(advice, Advice::Known(_)) {
+                    Coverage::Complete
+                } else {
+                    Coverage::NotObserved
+                };
+                (QueryData::Placement(advice), 1, 1)
             }
             Query::Affordability(request) => {
                 if offset != 0 {
@@ -1113,6 +1190,7 @@ mod tests {
             works: vec![],
             pending_content: BTreeMap::new(),
             supply: vec![],
+            knowledge: None,
             area: ObservedArea {
                 min: WorldPos { x: 0.0, y: 0.0 },
                 max: WorldPos { x: 20.0, y: 20.0 },

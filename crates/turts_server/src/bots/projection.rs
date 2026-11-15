@@ -430,6 +430,7 @@ pub(crate) fn project(
         works,
         pending_content,
         supply,
+        knowledge: permissions.knowledge(slot).map(Arc::new),
         area: ObservedArea {
             min: area.min,
             max: area.max,
