@@ -603,7 +603,7 @@ test("mp1-play.sh --url takes only a loopback game address and starts no Chrome 
     for (const url of ["http://example.com/", "https://127.0.0.1.example.com/", "http://localhost@example.com/", "ftp://127.0.0.1/", "http://127.0.0.1"+"x/"]) {
         const run = spawnSync("bash", [PLAY, "--url", url], { encoding: "utf8", env: { ...process.env, CHROME_BIN: fake }, timeout: 20000 });
         assert.equal(run.status, 2, `${url}: ${run.stdout}${run.stderr}`);
-        assert.match(run.stderr, /--url takes a loopback address/);
+        assert.match(run.stderr, /use a loopback URL with --url/);
         assert.equal(fs.existsSync(marker), false, `no Chrome for ${url}`);
     }
     assert.equal(spawnSync("bash", [PLAY, "--url"], { encoding: "utf8" }).status, 2, "a missing address is a usage error");

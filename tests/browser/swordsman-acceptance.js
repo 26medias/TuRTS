@@ -1,3 +1,4 @@
+const {waitForSync}=require('./harness/wait-sync');
 // Train and rally a swordsman through the HUD. Fight with a mixed army, then observe its death.
 const fs=require('node:fs'),net=require('node:net'),{spawn,spawnSync}=require('node:child_process');
 const {chromium}=require('playwright-core');
@@ -25,7 +26,7 @@ const ui=()=>page.evaluate(()=>JSON.parse(turts_ui()));
 const clickUnit=async(id,button='left')=>{const s=await read(),u=s.units.find(u=>u.unit_id===id);if(!u)throw Error('missing unit '+id);await page.mouse.click(...project(s,[u.translation[0],id===2?1:.75,u.translation[2]]),{button})};
 let scene=await wait(s=>s.units?.length===6&&s.models?.every(m=>m.ready),'models ready');await page.mouse.click(640,360);
 // Keep training, rally and combat in view.
-await clickUnit(2);await page.waitForFunction(()=>JSON.parse(turts_ui()).some(w=>w.kind==='button'&&w.visible&&w.text?.includes('Train Swordsman')),null,{timeout:5000});
+await clickUnit(2);await waitForSync(page,()=>JSON.parse(turts_ui()).some(w=>w.kind==='button'&&w.visible&&w.text?.includes('Train Swordsman')),null,{timeout:5000});
 result.buildMenu=await ui();for(const label of ['Train Crossbowman','Train Swordsman'])if(!result.buildMenu.some(w=>w.visible&&w.text?.includes(label)))throw Error('missing '+label);
 const train=result.buildMenu.find(w=>w.kind==='button'&&w.visible&&w.text?.includes('Train Swordsman'));
 if(!train.text.includes('80'))throw Error('missing sword cost');

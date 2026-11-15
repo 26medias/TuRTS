@@ -1,3 +1,4 @@
+const {waitForSync}=require('./harness/wait-sync');
 // Real rendered combat, warning, and camera probes. Every run owns a fresh silent browser.
 const fs=require('node:fs'),net=require('node:net'),{spawn,spawnSync}=require('node:child_process');
 const {chromium}=require('playwright-core');
@@ -50,7 +51,7 @@ let scene=await wait(s=>s.units?.length===4&&s.models?.every(m=>m.ready),'models
 if(mode==='camera'){
 scene=await read();const unit=scene.units.find(u=>u.unit_id===3);
 await page.mouse.click(...project(scene,[unit.translation[0],.75,unit.translation[2]]));
-await page.waitForFunction(()=>JSON.parse(turts_ui()).some(w=>w.id==='attack'&&w.visible),null,{timeout:5000});
+await waitForSync(page,()=>JSON.parse(turts_ui()).some(w=>w.id==='attack'&&w.visible),null,{timeout:5000});
 scene=await read();const before=project(scene,[unit.translation[0],0,unit.translation[2]]);
 await page.keyboard.down('ArrowRight');await sleep(300);await page.keyboard.up('ArrowRight');await sleep(80);
 const panned=await read(),after=project(panned,[unit.translation[0],0,unit.translation[2]]);
