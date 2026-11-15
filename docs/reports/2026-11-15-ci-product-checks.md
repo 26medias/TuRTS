@@ -21,3 +21,23 @@ The broad Node command did not pass in this isolated checkout. Its browser-backe
 The corrected hosted workflow has not run. A push and a new hosted run must verify it. No complete live browser probe was run for this repair. Maintenance of the optional legacy fault campaigns is parked.
 
 Remote findings remain in `target/mc-evidence/ci-product-checks/run-43724502859/job-failures.json`, `runner-failures.json`, and the individual job logs.
+
+
+## SDK16 browser fixture followup
+
+Two real local reproductions on the sealed SDK16 runtime found fixture/driver errors.
+The haul driver sampled its node beneath a previous unit hover tooltip. It now clears hover before inspecting the pixel.
+The final-change fixture blocked two old authored output points but left the engine's perimeter/fallback exits open.
+Its valid replacement is a public 4x4 map containing the original radius-2 producer at (2,2).
+Every legal radius-0.4 output center overlaps that producer, so OutputBlocked is real without invalid overlapping blockers.
+The unchanged recipe, duration and slot balances remain. Other fixtures keep their existing offsets and content.
+The small snapshot also preserves the legacy transport that this fault-injection scenario is meant to test.
+
+Both real browser cases now pass. Final-change proves blocked Job1, real matching loss, held resync, bounded overflow, successor recovery and eight terminal heartbeats.
+Focused Node checks pass 41 tests. Python fixture checks pass four tests. No product, API, protocol or game rule changed.
+Evidence and exact commands: `/home/julien/Projects/TuRTS/target/mc-evidence/ci-product-checks/43751041542-local/diagnosis.md`.
+The haul green is `cases-fixed/run-20261115T200052Z-gRxBgQ`; final-change green is `cases-fixed-tiny/run-20261115T201125Z-oHac8E` below that directory.
+The original failures and rejected invalid fixture attempts remain preserved.
+
+Hosted run 43751041542 reported a failed M2 step but did not publish case logs or artifacts.
+Its job remained in progress at completion when inspected. These local results do not establish its exact hosted failure cause.
