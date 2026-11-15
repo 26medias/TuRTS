@@ -281,3 +281,24 @@ pub(crate) fn check_order_changes(
          and no writer noted them (write through `orders::writer`, or note the input)"
     );
 }
+
+#[cfg(test)]
+mod repair_latch_tests {
+    use super::*;
+
+    #[test]
+    fn generated_replacements_edits_and_clears_preserve_the_stop_latch() {
+        let mut world = World::new();
+        world.init_resource::<OrderChanges>();
+        let entity = world.spawn((UnitId(77), UnitOrders::default())).id();
+        set_repair_stopped(&mut world, entity, true);
+        set_unit_orders(&mut world, entity, UnitOrders::default());
+        assert!(world.get::<UnitOrders>(entity).unwrap().repair_stopped);
+        edit_unit_orders(&mut world, entity, |orders| *orders = UnitOrders::default());
+        assert!(world.get::<UnitOrders>(entity).unwrap().repair_stopped);
+        clear_unit_orders(&mut world, entity);
+        assert!(world.get::<UnitOrders>(entity).unwrap().repair_stopped);
+        set_repair_stopped(&mut world, entity, false);
+        assert!(!world.get::<UnitOrders>(entity).unwrap().repair_stopped);
+    }
+}
