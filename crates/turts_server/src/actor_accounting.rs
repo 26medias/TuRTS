@@ -694,17 +694,90 @@ fn validate_paid_work(work: &WorkObservation, declared: &Amounts) -> Result<(), 
 #[allow(clippy::too_many_arguments)]
 fn terminal_work(
     _view: &WorldView,
-    _committed: &CommittedTick,
-    _catalog: &ContentCatalog,
-    _actor: &BotActor,
-    _key: &RequestKey,
-    _tracked: &TrackedRequest,
-    _result: &ActorResult,
-    _identity: &WorkIdentity,
-    _recipe: &ContentId,
-    _payment: PaymentPolicy,
+    committed: &CommittedTick,
+    catalog: &ContentCatalog,
+    actor: &BotActor,
+    key: &RequestKey,
+    tracked: &TrackedRequest,
+    result: &ActorResult,
+    identity: &WorkIdentity,
+    recipe: &ContentId,
+    payment: PaymentPolicy,
 ) -> Result<ObservedRequestEffect, String> {
-    Err("terminal work needs the immutable exact completion/removal receipt".into())
+    let matches = committed
+        .terminal_work
+        .iter()
+        .filter(|row| row.unit == identity.unit && row.job.0 == identity.id)
+        .collect::<Vec<_>>();
+    if matches.len() != 1 {
+        return Err("terminal work needs one immutable exact completion/removal receipt".into());
+    }
+    let terminal = matches[0];
+    if terminal.recipe != *recipe
+        || terminal.payment != Some(payment)
+        || terminal.construction != (identity.kind == WorkKind::Construction)
+    {
+        return Err("terminal work metadata differs from its actual admission".into());
+    }
+    let paid = reservation_amounts(&terminal.paid)?;
+    let reserved = reservation_amounts(&terminal.reserved)?;
+    if !reserved.is_empty() {
+        return Err("terminal work retained an active reservation".into());
+    }
+    if payment == PaymentPolicy::ChargeOverTime && tracked.flushed != paid {
+        return Err("terminal cumulative paid differs from exact flushed progress debits".into());
+    }
+    if payment != PaymentPolicy::ChargeOverTime {
+        let mut known = tracked.started.clone();
+        if let Some(hint) = &tracked.admitted_work {
+            for (key, amount) in reservation_amounts(&hint.paid)? {
+                if known.get(&key).is_some_and(|old| *old != amount) {
+                    return Err("admission and start payments disagree".into());
+                }
+                known.insert(key, amount);
+            }
+        }
+        if known != paid {
+            return Err("terminal paid rows lack their exact admission/start witness".into());
+        }
+    }
+    let costs = catalog
+        .production
+        .get(recipe)
+        .map(|row| &row.costs)
+        .or_else(|| catalog.technologies.get(recipe).map(|row| &row.costs))
+        .ok_or("terminal work content is absent from the locked catalog")?;
+    let declared = collect_amounts(costs.iter().map(|cost| {
+        (
+            cost_key(cost.source, &cost.resource, actor.slot, key.unit),
+            cost.amount,
+        )
+    }))?;
+    let completed = terminal.state == turts_sim::receipts::TerminalWorkState::Completed;
+    if completed && terminal.done != terminal.total {
+        return Err("completed work does not have full exact progress".into());
+    }
+    let work = WorkObservation {
+        identity: identity.clone(),
+        actor_unit: key.unit,
+        content: Some(recipe.clone()),
+        payment: Some(payment),
+        done: terminal.done,
+        total: terminal.total,
+        paid: rows(paid),
+        reserved: vec![],
+        state: if completed {
+            WorkState::Finished
+        } else {
+            WorkState::Failed
+        },
+    };
+    validate_paid_work(&work, &declared)?;
+    Ok(ObservedRequestEffect::observed_work(
+        key.clone(),
+        result.effect_watermark,
+        work,
+    ))
 }
 
 #[cfg(test)]
