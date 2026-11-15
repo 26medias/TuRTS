@@ -174,3 +174,77 @@ pub struct TerrainDesignation {
     pub cells: TerrainRect,
     pub target_elevation: i32,
 }
+
+/// Resolved public records. These contain no selected underground material or seed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolvedTerrainResourceRate {
+    pub resource: crate::ContentId,
+    pub per_world_cube: Ratio,
+}
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolvedTerrainMaterial {
+    pub id: crate::ContentId,
+    pub name: String,
+    pub surface_color: String,
+    pub hardness: u64,
+    pub work_per_world_cube: Ratio,
+    pub natural_outputs: Vec<ResolvedTerrainResourceRate>,
+    pub fill_inputs: Vec<ResolvedTerrainResourceRate>,
+    pub placed_removal: TerrainPlacedRemoval,
+}
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolvedTerrainMovementClass {
+    pub id: crate::ContentId,
+    pub name: String,
+    pub max_step: u32,
+    pub max_grade: Ratio,
+}
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ResolvedTerrainOperation {
+    Excavate,
+    Fill { material: crate::ContentId },
+}
+#[derive(Debug, Clone, PartialEq)]
+pub struct ResolvedTerrainTool {
+    pub id: crate::ContentId,
+    pub name: String,
+    pub operation: ResolvedTerrainOperation,
+    pub work_per_second: u64,
+    pub reach: f32,
+    pub allowed_materials: Vec<crate::ContentId>,
+    pub max_hardness: u64,
+    pub output_destination: TerrainOutputDestination,
+}
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolvedTerrainWeightedMaterial {
+    pub material: crate::ContentId,
+    pub weight: u64,
+}
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolvedTerrainDatumBand {
+    pub bottom: i32,
+    pub top: i32,
+    pub choices: Vec<ResolvedTerrainWeightedMaterial>,
+}
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolvedTerrainDef {
+    pub length_scale: u32,
+    pub cell_width: u32,
+    pub elevation_step: u32,
+    pub columns: u32,
+    pub rows: u32,
+    pub chunk_width: u32,
+    pub initial_elevation: i32,
+    pub initial_heights: Vec<TerrainHeightRect>,
+    pub floor: i32,
+    pub ceiling: i32,
+    pub generation: Vec<ResolvedTerrainDatumBand>,
+}
+
+/// Explicit timed unloading for physical terrain cargo; no gatherer capability is implied.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TerrainCargoDef {
+    pub unload_per_second: u64,
+    pub interaction_range: f32,
+}

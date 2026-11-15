@@ -139,6 +139,9 @@ fn validate_content_m2(
 ) -> Result<ContentCatalog, ModError> {
     let mut all_ids = BTreeSet::new();
     let mut catalog = ContentCatalog {
+        terrain_materials: Default::default(),
+        terrain_movement_classes: Default::default(),
+        terrain_tools: Default::default(),
         bots: BTreeMap::new(),
         combat: None,
         resources: BTreeMap::new(),
@@ -414,6 +417,18 @@ fn validate_content_m2(
         catalog.units.insert(
             id.clone(),
             ResolvedUnit {
+                terrain_class: value
+                    .terrain_class
+                    .as_deref()
+                    .map(|text| checked_content_ref(origin, &file, "terrain_class", text))
+                    .transpose()?,
+                terrain_cargo: value.terrain_cargo,
+                terrain_foundation: value.terrain_foundation,
+                terrain_tools: value
+                    .terrain_tools
+                    .iter()
+                    .map(|text| checked_content_ref(origin, &file, "terrain_tools", text))
+                    .collect::<Result<_, _>>()?,
                 vision: value.vision,
                 repairer: value
                     .repairer

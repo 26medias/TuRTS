@@ -89,6 +89,10 @@ pub struct ResolvedWeapon {
 }
 #[derive(Debug, Clone, PartialEq)]
 pub struct ResolvedUnit {
+    pub terrain_class: Option<ContentId>,
+    pub terrain_cargo: Option<crate::TerrainCargoDef>,
+    pub terrain_foundation: Option<crate::TerrainFoundation>,
+    pub terrain_tools: Vec<ContentId>,
     /// Validated API16 sight circle. It contains no private runtime facts.
     pub vision: Option<crate::visibility::VisionDef>,
     pub armour: Option<ArmourDef>,
@@ -186,6 +190,9 @@ pub struct ResolvedTechnology {
 /// Fully resolved definitions, keyed by their package-qualified ids.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ContentCatalog {
+    pub terrain_materials: BTreeMap<ContentId, crate::ResolvedTerrainMaterial>,
+    pub terrain_movement_classes: BTreeMap<ContentId, crate::ResolvedTerrainMovementClass>,
+    pub terrain_tools: BTreeMap<ContentId, crate::ResolvedTerrainTool>,
     /// Validated profiles with qualified references. Host factories activate separately.
     pub bots: BTreeMap<ContentId, crate::bots::BotDef>,
     pub combat: Option<CombatDef>,
