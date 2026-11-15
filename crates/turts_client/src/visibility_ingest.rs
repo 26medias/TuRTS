@@ -2,7 +2,7 @@
 use bevy::platform::time::Instant;
 use bevy::prelude::*;
 use lightyear::prelude::*;
-use turts_net_lightyear::ReliableChannel;
+use turts_net_lightyear::{KNOWLEDGE_FRAME_LIMIT_BYTES, ReliableChannel};
 use turts_net_protocol::{visibility::*, visibility_transaction::StateTransactionAssembler};
 
 use crate::ingest::ReplicaState;
@@ -68,7 +68,7 @@ pub fn receive_transactions(
                 transactions.assembler = Some(StateTransactionAssembler::new(
                     cancel.stamp.basis.match_id,
                     cancel.stamp.basis.map.clone(),
-                    MAX_STATE_CHUNK_BYTES,
+                    KNOWLEDGE_FRAME_LIMIT_BYTES,
                 ));
                 transactions.connection = Some(entity);
             }
@@ -88,7 +88,7 @@ pub fn receive_transactions(
                 transactions.assembler = Some(StateTransactionAssembler::new(
                     begin.stamp.basis.match_id,
                     begin.stamp.basis.map.clone(),
-                    MAX_STATE_CHUNK_BYTES,
+                    KNOWLEDGE_FRAME_LIMIT_BYTES,
                 ));
                 transactions.connection = Some(entity);
             }
