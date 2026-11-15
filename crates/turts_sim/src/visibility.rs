@@ -172,6 +172,7 @@ pub struct PreparedEventUnit {
 #[derive(Resource, Debug, Clone)]
 pub struct VisibilityState {
     definition: VisibilityDef,
+    context_finalized: bool,
     grid: VisibilityGrid,
     match_id: u64,
     map: ContentId,
@@ -252,6 +253,7 @@ pub fn prepare(
     };
     Ok(VisibilityState {
         definition: definition.clone(),
+        context_finalized: false,
         grid,
         match_id,
         map: map.clone(),
@@ -565,7 +567,10 @@ fn capture_units(world: &World) -> (Vec<VisibleUnit>, Vec<(u32, u8, WorldPos, f3
     (units, sources)
 }
 fn refresh(world: &mut World, phase: ObservationPhase) {
-    if !world.contains_resource::<VisibilityState>() {
+    if !world
+        .get_resource::<VisibilityState>()
+        .is_some_and(|state| state.context_finalized)
+    {
         return;
     }
     let (units, sources) = capture_units(world);
@@ -593,6 +598,49 @@ fn refresh(world: &mut World, phase: ObservationPhase) {
         .resource_mut::<VisibilityState>()
         .update(tick, phase, units, nodes, sources);
 }
+/// Finalize the real match identity and installed teams before initial publication.
+/// Match ID zero is reserved for explicitly initialized headless diagnostics.
+/// A server must use its real room match ID. Later context changes are refused.
+pub fn initialize_context(world: &mut World, match_id: u64, teams: &[u8]) -> Result<(), String> {
+    if world
+        .get_resource::<crate::Tick>()
+        .is_some_and(|tick| tick.0 != 0)
+    {
+        return Err("sight context can only be finalized at tick zero".into());
+    }
+    if teams.len() > usize::from(SLOT_COUNT) {
+        return Err("sight context contains too many slot teams".into());
+    }
+    let Some(state) = world.get_resource::<VisibilityState>() else {
+        return Ok(());
+    };
+    if state.context_finalized {
+        return if state.match_id == match_id && state.teams == teams {
+            Ok(())
+        } else {
+            Err("sight match context is already finalized".into())
+        };
+    }
+    let mut prepared = prepare(
+        match_id,
+        state.map.clone(),
+        &state.definition,
+        state.grid,
+        teams,
+    )?;
+    prepared.context_finalized = true;
+    world.insert_resource(prepared);
+    initialize(world);
+    Ok(())
+}
+/// AllVisible is ready without a restricted context. Restricted placeholders are
+/// fail closed; the host must finalize them before publication or bot setup.
+pub fn context_ready(world: &World) -> bool {
+    world
+        .get_resource::<VisibilityState>()
+        .is_none_or(|state| state.context_finalized)
+}
+
 pub fn initialize(world: &mut World) {
     refresh_start(world);
     refresh_tactical(world);
