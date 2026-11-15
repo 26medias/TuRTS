@@ -21,12 +21,12 @@ type Amounts = BTreeMap<SpendKey, u64>;
 #[derive(Debug, Clone)]
 pub(crate) struct TrackedRequest {
     pub command: Arc<EmittedCommand>,
-    pub result: Option<ActorResult>,
+    pub result: Option<Arc<ActorResult>>,
     pub admitted_work: Option<AdmittedWork>,
     accounted: Option<Watermark>,
     flushed: Amounts,
     started: Amounts,
-    last_effect: Option<ObservedRequestEffect>,
+    last_effect: Option<Arc<ObservedRequestEffect>>,
 }
 impl TrackedRequest {
     pub(crate) fn new(command: impl Into<Arc<EmittedCommand>>) -> Self {
@@ -41,7 +41,7 @@ impl TrackedRequest {
         }
     }
     pub(crate) fn finalize(&mut self, result: ActorResult, work: Option<AdmittedWork>) {
-        self.result = Some(result);
+        self.result = Some(Arc::new(result));
         self.admitted_work = work;
     }
 }
@@ -203,12 +203,14 @@ fn capture_request(
     // result, even inside the local staged copy that an outer failure discards.
     tracked.result = Some(result);
     let effect = prepared?;
-    if tracked.accounted == Some(watermark) && tracked.last_effect.as_ref() != Some(&effect) {
+    if tracked.accounted == Some(watermark) && tracked.last_effect.as_deref() != Some(&effect) {
         return Err("one accounting watermark describes different receipt effects".into());
     }
-    validate_advance(tracked.last_effect.as_ref(), &effect)?;
+    validate_advance(tracked.last_effect.as_deref(), &effect)?;
     tracked.accounted = Some(watermark);
-    tracked.last_effect = Some(effect.clone());
+    if tracked.last_effect.as_deref() != Some(&effect) {
+        tracked.last_effect = Some(Arc::new(effect.clone()));
+    }
     Ok(Some(effect))
 }
 pub(crate) const ROW_LIMIT_EXCEEDED: &str = "completed accounting row limit exceeded";
@@ -467,8 +469,16 @@ fn rows(amounts: Amounts) -> Vec<AccountAmount> {
         .map(|(account, amount)| AccountAmount { account, amount })
         .collect()
 }
-fn snapshot_amounts(rows: &[AccountAmount]) -> Result<Amounts, String> {
-    collect_amounts(rows.iter().map(|row| (row.account.clone(), row.amount)))
+fn snapshot_amounts(rows: &[AccountAmount]) -> Result<BTreeMap<&SpendKey, u64>, String> {
+    // Validation only needs to compare identities. Borrow them instead of
+    // repeatedly cloning resource strings from the same receipt each tick.
+    let mut amounts = BTreeMap::new();
+    for row in rows.iter().filter(|row| row.amount != 0) {
+        if amounts.insert(&row.account, row.amount).is_some() {
+            return Err("duplicate payment endpoint/resource row".into());
+        }
+    }
+    Ok(amounts)
 }
 fn validate_advance(
     previous: Option<&ObservedRequestEffect>,
@@ -510,7 +520,7 @@ fn prepare_effect(
         .as_ref()
         .filter(|effect| effect.terminal)
     {
-        return Ok(effect.clone());
+        return Ok(effect.as_ref().clone());
     }
     let member = turts_sim::receipts::CommandMember {
         slot: actor.slot,
@@ -762,9 +772,26 @@ fn check_funding_buffer(
         return Ok(());
     }
     let funding = funding.ok_or("paid-over-time work lacks its funding buffer")?;
-    let mut accounted = tracked.flushed.clone();
-    add_amounts(&mut accounted, &event_amounts(&funding.pending_charges)?)?;
-    if &accounted != paid {
+    let pending = event_amounts(&funding.pending_charges)?;
+    // Compare the exact sum without copying the cumulative flushed ledger.
+    for (key, actual) in paid {
+        let accounted = tracked
+            .flushed
+            .get(key)
+            .copied()
+            .unwrap_or(0)
+            .checked_add(pending.get(key).copied().unwrap_or(0))
+            .ok_or("receipt paid amount overflow")?;
+        if accounted != *actual {
+            return Err("live cumulative paid rows differ from flushed plus pending debits".into());
+        }
+    }
+    if tracked
+        .flushed
+        .keys()
+        .chain(pending.keys())
+        .any(|key| !paid.contains_key(key))
+    {
         return Err("live cumulative paid rows differ from flushed plus pending debits".into());
     }
     Ok(())
@@ -801,7 +828,7 @@ fn validate_paid_work(work: &WorkObservation, declared: &Amounts) -> Result<(), 
     if paid
         .keys()
         .chain(reserved.keys())
-        .any(|key| !declared.contains_key(key))
+        .any(|key| !declared.contains_key(*key))
     {
         return Err("paid work contains an unauthored endpoint or resource".into());
     }

@@ -314,7 +314,7 @@ pub(crate) fn actor_results(world: &World, actor: &BotActor) -> Vec<ActorResult>
             entry
                 .requests
                 .values()
-                .filter_map(|request| request.result.clone())
+                .filter_map(|request| request.result.as_deref().cloned())
                 .collect()
         })
         .unwrap_or_default()
