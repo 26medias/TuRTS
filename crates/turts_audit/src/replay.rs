@@ -1088,13 +1088,37 @@ fn validate_actor_records(
             }
         }
     }
+    // Index only witness identities. Do not scan the whole state-heavy log for
+    // each attempted order when validating a long match.
+    let mut witness_index = BTreeMap::<(u32, u8, u32), Vec<(usize, &EconomyLogRecord)>>::new();
+    for (index, record) in records.iter().enumerate() {
+        let key = match record {
+            EconomyLogRecord::CommandBoundary(command) => Some((
+                command.before.economy.tick,
+                command.input.slot.0,
+                command.input.seq,
+            )),
+            EconomyLogRecord::Admission {
+                tick, slot, seq, ..
+            } => Some((*tick, *slot, *seq)),
+            _ => None,
+        };
+        if let Some(key) = key {
+            witness_index.entry(key).or_default().push((index, record));
+        }
+    }
     let mut used = BTreeSet::new();
+    let mut last_command_witness = BTreeMap::<u32, usize>::new();
     for ((tick, ordinal), (actor, sequence, envelope)) in submissions {
         let Some(result) = results.get(&(tick, ordinal)) else {
             return Err("actor submission has no complete result".into());
         };
         let mut witnesses = Vec::new();
-        for (index, record) in records.iter().enumerate() {
+        for &(index, record) in witness_index
+            .get(&(tick, actor_slot(actor), sequence))
+            .into_iter()
+            .flatten()
+        {
             let matches = match record {
                 EconomyLogRecord::CommandBoundary(command) => {
                     command.before.economy.tick == tick
@@ -1150,6 +1174,15 @@ fn validate_actor_records(
             return Err(format!(
                 "actor admission {tick}/{ordinal} does not have one unique ordinary witness"
             ));
+        }
+        if matches!(records[witnesses[0]], EconomyLogRecord::CommandBoundary(_))
+            && last_command_witness
+                .insert(tick, witnesses[0])
+                .is_some_and(|old| old >= witnesses[0])
+        {
+            return Err(
+                "actor admission order differs from ordinary command execution order".into(),
+            );
         }
     }
     Ok(())
