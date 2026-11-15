@@ -1685,7 +1685,7 @@ impl AccountingOracle {
                 .iter_mut()
                 .find(|u| u.unit_id == *id)
                 .ok_or("MoveTo unit absent")?;
-            old.move_target = Some(target.clone());
+            old.move_target = Some(target);
             let view = expected
                 .units
                 .iter()
@@ -1896,8 +1896,7 @@ impl AccountingOracle {
             .iter()
             .find(|u| u.unit_id == unit)
             .ok_or("gather position absent")?
-            .pos
-            .clone();
+            .pos;
         let hz = u128::from(s.tick_hz.ok_or("gather clock absent")?);
         let node_id = old.deposit;
         let mut stage = old.stage;
@@ -1908,8 +1907,7 @@ impl AccountingOracle {
             .iter()
             .find(|u| u.unit_id == unit)
             .unwrap()
-            .move_target
-            .clone();
+            .move_target;
         let mut carry = old.rate_carry;
         let event_tick = s.economy.tick;
         let event_ordinal = s.next_event_ordinal;
@@ -2102,7 +2100,7 @@ impl AccountingOracle {
                 candidates.push((
                     d2,
                     unit_view.unit_id,
-                    unit_view.pos.clone(),
+                    unit_view.pos,
                     def.radius,
                     rule.effect.clone(),
                     available,
@@ -2806,8 +2804,7 @@ impl AccountingOracle {
             .iter()
             .find(|u| u.unit_id == producer)
             .ok_or("producer raw state missing")?
-            .pos
-            .clone();
+            .pos;
         let producer_def = self.unit_catalog(b, producer)?;
         let offsets = &producer_def
             .producer
@@ -2949,7 +2946,7 @@ impl AccountingOracle {
             unit_id: id,
             content_id: recipe.output_unit.to_string(),
             owner_slot: owner,
-            pos: candidate.clone(),
+            pos: candidate,
         });
         expected.units.sort_by_key(|u| u.unit_id);
         expected.economy.units.push(turts_sim::UnitState {
@@ -2966,7 +2963,7 @@ impl AccountingOracle {
                 unit_id: id,
                 unit_type: type_id,
                 owner_slot: owner,
-                pos: candidate.clone(),
+                pos: candidate,
                 move_target: output_def.movement_speed.map(|_| turts_mod_api::WorldPos {
                     x: rally.x.clamp(radius, bounds.x - radius),
                     y: rally.y.clamp(radius, bounds.y - radius),
@@ -3060,7 +3057,7 @@ impl AccountingOracle {
         modeled.economy.tick = tick;
         let hz = f32::from(b.tick_hz.ok_or("movement clock missing")?);
         for unit in &mut modeled.raw_units {
-            if let Some(target) = unit.move_target.clone() {
+            if let Some(target) = unit.move_target {
                 let def = self.unit_catalog(b, unit.unit_id)?;
                 let speed = def.movement_speed.ok_or("moving unit lacks speed")?;
                 let dx = target.x - unit.pos.x;
@@ -3084,7 +3081,7 @@ impl AccountingOracle {
                 .iter()
                 .find(|x| x.unit_id == unit.unit_id)
                 .ok_or("unit view missing")?;
-            unit.pos = raw.pos.clone();
+            unit.pos = raw.pos;
         }
         for unit in &mut modeled.economy.units {
             let raw = modeled

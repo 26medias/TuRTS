@@ -1633,7 +1633,7 @@ fn plain_candidate_from_command(
     *arrival_ordinal = arrival_ordinal.saturating_add(1);
     let prior = PlainCandidatePriorReplay {
         orders: unit_orders_for(&command.before, unit_id),
-        move_target: actor.move_target.clone(),
+        move_target: actor.move_target,
         movement_progress: command
             .before
             .movement_progress
@@ -2652,10 +2652,10 @@ fn expected_construct_refusal(
     if next_job.checked_add(1).is_none() {
         return Ok(Some(R::IdExhausted));
     }
-    if recipe.payment != turts_mod_api::PaymentPolicy::ChargeOverTime {
-        if let Some(reason) = expected_job_cost_refusal(before, unit, owner, &recipe.costs) {
-            return Ok(Some(reason));
-        }
+    if recipe.payment != turts_mod_api::PaymentPolicy::ChargeOverTime
+        && let Some(reason) = expected_job_cost_refusal(before, unit, owner, &recipe.costs)
+    {
+        return Ok(Some(reason));
     }
     if next_unit.checked_add(1).is_none() {
         return Ok(Some(R::IdExhausted));
@@ -2868,27 +2868,27 @@ fn validate_construct_operation(
                     current,
                 });
         }
-        if let Some(operating) = &mut expected.economy.operating {
-            if output.producer.is_some() || output.constructor.is_some() {
-                operating
-                    .rates
-                    .push(turts_sim::economy::views::OperatingRateView {
-                        unit: next_unit,
-                        producer: construct_capability_rate(
-                            before,
-                            owner,
-                            &output.producer_when_short,
-                        )?,
-                        constructor: construct_capability_rate(
-                            before,
-                            owner,
-                            output
-                                .constructor
-                                .as_ref()
-                                .map_or(&[], |capability| capability.when_short.as_slice()),
-                        )?,
-                    });
-            }
+        if let Some(operating) = &mut expected.economy.operating
+            && (output.producer.is_some() || output.constructor.is_some())
+        {
+            operating
+                .rates
+                .push(turts_sim::economy::views::OperatingRateView {
+                    unit: next_unit,
+                    producer: construct_capability_rate(
+                        before,
+                        owner,
+                        &output.producer_when_short,
+                    )?,
+                    constructor: construct_capability_rate(
+                        before,
+                        owner,
+                        output
+                            .constructor
+                            .as_ref()
+                            .map_or(&[], |capability| capability.when_short.as_slice()),
+                    )?,
+                });
         }
         if recipe.payment != PaymentPolicy::ChargeOverTime {
             for line in &lines {
@@ -3299,7 +3299,7 @@ fn validate_order_operation(
     let before_target = raw_move_target(&operation.before, unit_id);
     let after_target = raw_move_target(&operation.after, unit_id);
     let mut expected_orders = before_orders.clone();
-    let mut expected_target = before_target.clone();
+    let mut expected_target = before_target;
     match order.behaviour {
         turts_mod_api::Behaviour::SetRally => {
             let turts_sim::OrderTargetSim::Point(point) = order.target else {
@@ -4960,7 +4960,7 @@ fn validate_plain_candidate_promotion(
         .unwrap_or(queue.len());
     queue.insert(insert_at, promoted);
 
-    set_audit_move_target(expected, unit_id, candidate.prior.move_target.clone())?;
+    set_audit_move_target(expected, unit_id, candidate.prior.move_target)?;
     expected
         .movement_progress
         .retain(|row| row.unit_id != unit_id);
@@ -5696,14 +5696,14 @@ fn validate_pending_movement_dispatch(
         .iter_mut()
         .find(|unit| unit.unit_id == unit_id)
         .unwrap()
-        .move_target = Some(target.clone());
+        .move_target = Some(*target);
     if *expected != operation.after {
         let changed_raw_units: Vec<_> = expected
             .raw_units
             .iter()
             .zip(&operation.after.raw_units)
             .filter_map(|(left, right)| (left != right).then_some((left.unit_id, left, right)))
-            .map(|(id, left, right)| (id, left.move_target.clone(), right.move_target.clone()))
+            .map(|(id, left, right)| (id, left.move_target, right.move_target))
             .collect();
         return Err(format!(
             "movement dispatch for unit {unit_id} differs from its independently modeled envelope and slot (pool={}, progress={}, target={}, raw_diff={changed_raw_units:?}, orders={} expected_orders={:?} actual_orders={:?}, pending={} expected_pending={:?} actual_pending={:?}, scheduler={} expected={:?} actual={:?}, economy={}, units={})",
@@ -8306,7 +8306,7 @@ fn restore_plain_candidate_prior_audit(
         .iter_mut()
         .find(|raw| raw.unit_id == unit_id)
     {
-        raw.move_target = prior.move_target.clone();
+        raw.move_target = prior.move_target;
     }
     state.movement_progress.retain(|row| row.unit_id != unit_id);
     if let Some(progress) = &prior.movement_progress {
@@ -8637,7 +8637,7 @@ fn raw_move_target(state: &AuditState, unit_id: u32) -> Option<turts_mod_api::Wo
         .raw_units
         .iter()
         .find(|unit| unit.unit_id == unit_id)
-        .and_then(|unit| unit.move_target.clone())
+        .and_then(|unit| unit.move_target)
 }
 
 fn audit_unit_radius(state: &AuditState, unit_id: u32) -> f32 {
@@ -9351,7 +9351,7 @@ fn audit_gather_interaction_reached(
             }) else {
                 return false;
             };
-            (node.pos.clone(), definition.radius)
+            (node.pos, definition.radius)
         }
         turts_sim::economy::gather::GatherStage::Unloading => {
             let Some(receiver_id) = order.receiver else {
@@ -9371,7 +9371,7 @@ fn audit_gather_interaction_reached(
             else {
                 return false;
             };
-            (receiver.pos.clone(), receiver_type.radius)
+            (receiver.pos, receiver_type.radius)
         }
         _ => return false,
     };
@@ -9561,7 +9561,7 @@ fn validate_movement_transition(previous: &AuditState, current: &AuditState) -> 
             .iter()
             .find(|unit| unit.unit_id == expected_unit.unit_id)
             .ok_or_else(|| format!("movement removed unit {}", expected_unit.unit_id))?;
-        expected_unit.pos = raw.pos.clone();
+        expected_unit.pos = raw.pos;
     }
     for expected_unit in &mut expected.economy.units {
         let raw = expected

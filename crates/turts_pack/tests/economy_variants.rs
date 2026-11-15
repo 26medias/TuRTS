@@ -803,8 +803,7 @@ fn run_package_trace(dir: &Path) -> PackageTrace {
         .iter()
         .find(|u| u.unit_id == worker)
         .unwrap()
-        .pos
-        .clone();
+        .pos;
     let node = initial
         .nodes
         .iter()
