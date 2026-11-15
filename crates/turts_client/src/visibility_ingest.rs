@@ -91,6 +91,13 @@ pub fn receive_transactions(
             transactions.restricted = true;
             if transactions
                 .assembler
+                .as_ref()
+                .is_some_and(|a| a.is_obsolete(&begin.stamp))
+            {
+                continue;
+            }
+            if transactions
+                .assembler
                 .as_mut()
                 .is_none_or(|a| a.begin(begin.clone(), now_ms).is_err())
             {
@@ -105,6 +112,13 @@ pub fn receive_transactions(
             }
             if transactions
                 .assembler
+                .as_ref()
+                .is_some_and(|a| a.is_obsolete(&chunk.stamp))
+            {
+                continue;
+            }
+            if transactions
+                .assembler
                 .as_mut()
                 .is_none_or(|a| a.chunk(&chunk).is_err())
             {
@@ -115,6 +129,13 @@ pub fn receive_transactions(
     for (entity, mut receiver) in &mut ends {
         for end in receiver.receive() {
             if !current(entity) || transactions.connection != Some(entity) {
+                continue;
+            }
+            if transactions
+                .assembler
+                .as_ref()
+                .is_some_and(|a| a.is_obsolete(&end.stamp))
+            {
                 continue;
             }
             let staged = transactions.assembler.as_mut().map(|a| a.end(&end));
