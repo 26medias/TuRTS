@@ -6,13 +6,14 @@ Budget: the existing reviewer, one plan turn. No new panel or task-review loops.
 
 ## Current integration
 
-The pure core passed 39 tests before the final three seed/rollback regressions were added.
-The assembled workspace passed a non-test check at `d846fc6c`.
-Root owns participant tracing, integration checks, browser acceptance, and delivery.
-The execution owner now owns `actors.rs`, accounting, and real scheduled receipt tests.
-The host owner owns public bot scenarios, replay, and the complete-phase benchmark.
-The projection owner owns shared human permission projection and focused tests.
-Next: run all assembled native tests, fix failures, measure the phase, then run browser probes and the one foundation review.
+The assembled native and Node campaigns passed after their scoped repairs.
+The independent foundation review ran code. Its two findings are fixed and covered by focused passing regressions.
+The required 1,000-phase performance run failed: complete-phase p99 was 25.079 ms against 5 ms.
+The 40-phase diagnostic found repeated role-ID formatting and account reconstruction as the largest costs.
+Root owns integration, measured performance checks, browser acceptance, and delivery.
+The execution owner owns immutable command sharing and fresh account/receipt optimizations.
+The host owner owns allocation-free role matching and focused counting regressions.
+Next: measure those changes on the unchanged workload. Fix remaining measured costs. Then run the full performance acceptance and final browser probes.
 Main remains at the accepted SDK14 milestone until all public-bot acceptance checks pass.
 
 ## Delivery and ownership
