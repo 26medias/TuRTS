@@ -152,6 +152,13 @@ impl StateTransactions {
             return Err(stamp);
         }
         self.restricted = true;
+        if self
+            .assembler
+            .as_ref()
+            .is_some_and(|assembler| assembler.is_obsolete(&stamp))
+        {
+            return Ok(None);
+        }
         let reserved = self.early_bytes();
         if self.waiting_snapshot {
             let fresh = matches!(&frame, StateTransactionFrame::Begin(begin) if begin.kind == StateTransactionKind::Snapshot)
@@ -185,9 +192,6 @@ impl StateTransactions {
         let Some(assembler) = self.assembler.as_mut() else {
             return Err(stamp);
         };
-        if assembler.is_obsolete(&stamp) {
-            return Ok(None);
-        }
         let result = match frame {
             StateTransactionFrame::Begin(value) => assembler.begin(value, now_ms).map(|_| None),
             StateTransactionFrame::Chunk(value) => assembler.chunk(&value).map(|_| None),
