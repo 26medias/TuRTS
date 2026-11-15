@@ -1017,6 +1017,8 @@ mod tests {
             cancel_refunds: refunds,
         };
         let catalog = ContentCatalog {
+            bots: Default::default(),
+
             combat: None,
             resources: BTreeMap::from([(
                 cid("credits"),

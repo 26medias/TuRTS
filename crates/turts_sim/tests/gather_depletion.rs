@@ -120,6 +120,8 @@ fn catalog() -> ContentCatalog {
         interaction_range: 0.5,
     });
     ContentCatalog {
+        bots: Default::default(),
+
         combat: None,
         resources: BTreeMap::from([(
             ore.clone(),

@@ -2287,6 +2287,8 @@ mod m3_transaction_contract_tests {
     fn install_extraction_node(world: &mut World, item: &ContentId, remaining: u64) {
         let node_id = content("probe:deposit");
         let mut catalog = turts_mod_api::ContentCatalog {
+            bots: Default::default(),
+
             combat: None,
             resources: BTreeMap::new(),
             units: BTreeMap::new(),
@@ -2934,6 +2936,8 @@ mod operating_transaction_tests {
         })
         .collect();
         let catalog = ContentCatalog {
+            bots: Default::default(),
+
             combat: None,
             resources,
             units: BTreeMap::from([(definition.id.clone(), definition.clone())]),

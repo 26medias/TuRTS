@@ -706,6 +706,8 @@ mod operating_tests {
         })
         .collect();
         let catalog = ContentCatalog {
+            bots: Default::default(),
+
             combat: None,
             resources,
             units: [provider, consumer]

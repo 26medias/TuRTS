@@ -203,6 +203,8 @@ mod tests {
             )
             .unwrap();
         let mut catalog = ContentCatalog {
+            bots: Default::default(),
+
             combat: None,
             resources: BTreeMap::from([(
                 ore.clone(),

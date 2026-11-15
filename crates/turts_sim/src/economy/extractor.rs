@@ -203,6 +203,8 @@ mod tests {
             removal: None,
         };
         let catalog = ContentCatalog {
+            bots: Default::default(),
+
             combat: None,
             resources: BTreeMap::from([(
                 ore.clone(),

@@ -150,6 +150,8 @@ fn gatherer_app() -> (bevy_app::App, bevy_ecs::entity::Entity) {
         )
         .unwrap();
     let mut catalog = turts_mod_api::ContentCatalog {
+        bots: Default::default(),
+
         combat: None,
         resources: Default::default(),
         units: Default::default(),

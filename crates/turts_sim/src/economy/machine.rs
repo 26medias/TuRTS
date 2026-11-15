@@ -591,6 +591,8 @@ mod tests {
             })
             .collect();
         let catalog = ContentCatalog {
+            bots: Default::default(),
+
             combat: None,
             resources,
             units: BTreeMap::from([(machine_id, definition)]),

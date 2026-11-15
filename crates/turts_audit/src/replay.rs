@@ -9488,6 +9488,7 @@ mod tests {
         let unit_id = turts_mod_api::ContentId::new(&package, "walker");
         let move_id = turts_mod_api::ContentId::new(&package, "move");
         let mut catalog = ContentCatalog {
+            bots: Default::default(),
             combat: None,
             resources: BTreeMap::new(),
             units: BTreeMap::new(),
@@ -9948,6 +9949,7 @@ mod tests {
         let worker = ContentId::new(&package, "worker");
         let gather = ContentId::new(&package, "gather");
         let mut catalog = ContentCatalog {
+            bots: Default::default(),
             combat: None,
             resources: BTreeMap::from([(
                 item.clone(),
@@ -10190,6 +10192,7 @@ mod tests {
         let move_order = ContentId::new(&package, "move");
         let hold_order = ContentId::new(&package, "hold");
         let catalog = ContentCatalog {
+            bots: Default::default(),
             combat: None,
             resources: BTreeMap::from([(
                 item.clone(),
@@ -11090,6 +11093,7 @@ mod tests {
         let worker = ContentId::new(&package, "worker");
         let remove = ContentId::new(&package, "remove");
         let catalog = ContentCatalog {
+            bots: Default::default(),
             combat: None,
             resources: BTreeMap::from([
                 (
@@ -11317,6 +11321,7 @@ mod tests {
             denominator: 2,
         };
         let catalog = ContentCatalog {
+            bots: Default::default(),
             combat: None,
             resources: BTreeMap::from([
                 (
@@ -11601,6 +11606,7 @@ mod tests {
             destroyed: turts_mod_api::RefundRatio::ZERO,
         };
         let catalog = ContentCatalog {
+            bots: Default::default(),
             combat: None,
             resources: BTreeMap::from([
                 (
@@ -11847,6 +11853,7 @@ mod tests {
         let enable = ContentId::new(&package, "enable");
         let disable = ContentId::new(&package, "disable");
         let catalog = ContentCatalog {
+            bots: Default::default(),
             combat: None,
             resources: BTreeMap::from([(
                 ore.clone(),
@@ -12011,6 +12018,7 @@ mod tests {
             denominator: 2,
         };
         let catalog = ContentCatalog {
+            bots: Default::default(),
             combat: None,
             resources: BTreeMap::from([(
                 credits.clone(),
@@ -13293,6 +13301,7 @@ mod tests {
         let move_content = turts_mod_api::ContentId::new(&package, "move");
         let hold_content = turts_mod_api::ContentId::new(&package, "hold");
         let mut catalog = ContentCatalog {
+            bots: Default::default(),
             combat: None,
             resources: BTreeMap::new(),
             units: BTreeMap::new(),
@@ -13745,6 +13754,7 @@ mod tests {
         let move_order = turts_mod_api::ContentId::new(&package, "move");
         let hold_order = turts_mod_api::ContentId::new(&package, "hold");
         let mut catalog = ContentCatalog {
+            bots: Default::default(),
             combat: None,
             resources: BTreeMap::new(),
             units: BTreeMap::new(),
@@ -14956,6 +14966,7 @@ mod tests {
             description: String::new(),
         };
         let catalog = ContentCatalog {
+            bots: Default::default(),
             combat: None,
             resources: BTreeMap::new(),
             units,
@@ -19143,6 +19154,7 @@ mod tests {
         let order_id = ContentId::parse("fixture:move").unwrap();
         let unit_id = ContentId::parse("fixture:walker").unwrap();
         let mut catalog = ContentCatalog {
+            bots: Default::default(),
             combat: None,
             resources: BTreeMap::new(),
             units: BTreeMap::new(),
@@ -20103,6 +20115,7 @@ mod tests {
         let unit_id = turts_mod_api::ContentId::parse("test:walker").unwrap();
         let order_id = turts_mod_api::ContentId::parse("test:move").unwrap();
         let mut catalog = turts_mod_api::ContentCatalog {
+            bots: Default::default(),
             combat: None,
             resources: std::collections::BTreeMap::new(),
             units: std::collections::BTreeMap::new(),

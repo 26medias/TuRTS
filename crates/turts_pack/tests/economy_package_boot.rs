@@ -462,6 +462,8 @@ fn cedar_matches_the_public_ten_file_authoring_example() {
     assert!(archive.manifest.capabilities.is_empty());
     assert_eq!(archive.manifest.license, "LicenseRef-TBD");
     let expected_exports = Exports {
+        bots: Default::default(),
+
         units: vec!["units/depot.ron".into(), "units/worker.ron".into()],
         maps: vec!["maps/clearing.ron".into()],
         visuals: vec![

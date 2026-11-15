@@ -51,6 +51,8 @@ fn extractor_runs_in_fixed_extract_set() {
         removal: None,
     };
     let catalog = ContentCatalog {
+        bots: Default::default(),
+
         combat: None,
         resources: BTreeMap::from([(
             ore.clone(),

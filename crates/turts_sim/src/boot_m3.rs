@@ -768,6 +768,8 @@ mod tests {
         let first = ContentId::parse("forge:vein_a").unwrap();
         let second = ContentId::parse("forge:vein_b").unwrap();
         let catalog = ContentCatalog {
+            bots: Default::default(),
+
             combat: None,
             resources: BTreeMap::from([(
                 ore.clone(),
@@ -880,6 +882,8 @@ mod tests {
 
     fn empty_catalog() -> ContentCatalog {
         ContentCatalog {
+            bots: Default::default(),
+
             combat: None,
             resources: BTreeMap::new(),
             units: BTreeMap::new(),
@@ -944,6 +948,8 @@ mod tests {
             removal: None,
         };
         ContentCatalog {
+            bots: Default::default(),
+
             combat: None,
             resources: BTreeMap::from([(
                 shell.clone(),

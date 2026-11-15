@@ -1456,6 +1456,8 @@ mod m3_disabled_legacy_producer_tests {
                 removal: None,
             };
         let mut catalog = ContentCatalog {
+            bots: Default::default(),
+
             combat: None,
             resources: BTreeMap::new(),
             units: BTreeMap::new(),

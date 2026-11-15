@@ -537,6 +537,8 @@ mod tests {
             removal: None,
         };
         let mut catalog = ContentCatalog {
+            bots: Default::default(),
+
             combat: None,
             resources: BTreeMap::from([(
                 shell.clone(),

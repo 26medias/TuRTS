@@ -144,6 +144,8 @@ fn catalog(field: GeometricField, value: f32) -> ContentCatalog {
         );
     }
     ContentCatalog {
+        bots: Default::default(),
+
         combat: None,
         resources: BTreeMap::from([(
             ore.clone(),

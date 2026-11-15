@@ -147,6 +147,8 @@ fn old_packages_omit_m3_defaults_when_serialized_and_nonempty_fields_remain() {
     }
 
     let exports = serde_json::to_value(Exports {
+        bots: Default::default(),
+
         units: vec![],
         maps: vec![],
         visuals: vec![],
