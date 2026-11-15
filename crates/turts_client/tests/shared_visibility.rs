@@ -10,8 +10,11 @@ use turts_net_protocol::{visibility::*, visibility_transaction::*, *};
 
 fn setup() -> (Replica, StateTransactionStamp, StateTransactionPayload) {
     let archive = PackageArchive::parse(
-        &pack_dir(&std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../mods/base"))
-            .unwrap(),
+        &pack_dir(
+            &std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../../mods/visibility_probe"),
+        )
+        .unwrap(),
     )
     .unwrap();
     let content = ClientContent::from_archives(&[archive]).unwrap();
@@ -45,9 +48,13 @@ fn setup() -> (Replica, StateTransactionStamp, StateTransactionPayload) {
     };
     let state = Snapshot {
         tick: 10,
+        healths: vec![HealthRecord {
+            unit: UnitId(1),
+            current: 100,
+        }],
         units: vec![UnitSnapshot {
             unit_id: UnitId(1),
-            content_id: "base:command_center".into(),
+            content_id: "visibility_probe:scout".into(),
             owner_slot: SlotId(1),
             pos: Pos { x: 5., y: 1. },
             facing: None,
@@ -89,7 +96,7 @@ fn hidden_patch(stamp: &StateTransactionStamp) -> (StateTransactionStamp, StateT
         revealed_nodes: vec![],
         remembered_units: vec![RememberedUnit {
             unit: 1,
-            content: ContentId::parse("base:command_center").unwrap(),
+            content: ContentId::parse("visibility_probe:scout").unwrap(),
             owner: 1,
             position: WorldPos { x: 5., y: 1. },
             facing: None,
@@ -137,6 +144,8 @@ fn interrupted_transport_keeps_old_view_until_complete_activation_and_ack() {
 fn hide_removes_live_interpolation_and_health_without_inventing_death() {
     let (mut replica, stamp, payload) = setup();
     assert!(replica.activate_transaction(&stamp, &payload, Instant::now()));
+    assert_eq!(replica.healths[0].current, 100);
+    assert_eq!(replica.health_trace[&1].last().unwrap().current, 100);
     let (stamp, payload) = hidden_patch(&stamp);
     assert!(replica.activate_transaction(&stamp, &payload, Instant::now()));
     assert!(!replica.units.contains_key(&1));
@@ -210,6 +219,9 @@ fn public_two_human_scouting_fixture_loads_through_the_normal_engine() {
     );
     let mut app = turts_sim::headless_app(20);
     turts_pack::load_package(app.world_mut(), &archive).unwrap();
+    assert!(turts_sim::completed_world(app.world()).units.is_empty());
+    turts_sim::visibility::initialize_context(app.world_mut(), 7, &[0, 1]).unwrap();
+    turts_sim::initialize_completed_world(app.world_mut());
     let world = turts_sim::completed_world(app.world());
     assert_eq!(world.units.len(), 2);
     assert_eq!(world.nodes.len(), 1);
@@ -221,4 +233,68 @@ fn public_two_human_scouting_fixture_loads_through_the_normal_engine() {
             .collect::<std::collections::BTreeSet<_>>(),
         std::collections::BTreeSet::from([0, 1])
     );
+}
+
+#[test]
+fn observed_killing_hit_remains_available_for_alerts_in_atomic_views() {
+    for restricted in [false, true] {
+        let (mut replica, stamp, mut payload) = setup();
+        let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../mods/visibility_probe");
+        let archive = PackageArchive::parse(&pack_dir(&path).unwrap()).unwrap();
+        replica.set_context(ReplicaContext::new(
+            ClientContent::from_archives(&[archive]).unwrap(),
+            0,
+        ));
+        let unit = if let StateTransactionPayload::Snapshot {
+            state, knowledge, ..
+        } = &mut payload
+        {
+            state.units[0].content_id = "visibility_probe:scout".into();
+            state.units[0].owner_slot = SlotId(0);
+            state.healths = vec![HealthRecord {
+                unit: UnitId(1),
+                current: 100,
+            }];
+            if !restricted {
+                *knowledge = None;
+            }
+            state.units[0].clone()
+        } else {
+            unreachable!()
+        };
+        assert!(replica.activate_transaction(&stamp, &payload, Instant::now()));
+        let (stamp, mut patch) = hidden_patch(&stamp);
+        if let StateTransactionPayload::Patch {
+            state,
+            knowledge,
+            event_units,
+        } = &mut patch
+        {
+            state.removed = vec![UnitId(1)];
+            state.healths = vec![HealthRecord {
+                unit: UnitId(1),
+                current: 0,
+            }];
+            state
+                .records
+                .effects
+                .push(Effect::Destroyed { unit: UnitId(1) });
+            if restricted {
+                let delta = knowledge.as_mut().unwrap();
+                delta.coverage.clear();
+                delta.hidden_units.clear();
+                delta.remembered_units.clear();
+            } else {
+                *knowledge = None;
+            }
+            event_units.push(EventUnitObservation {
+                basis: stamp.basis.clone(),
+                unit,
+            });
+        }
+        assert!(replica.activate_transaction(&stamp, &patch, Instant::now()));
+        assert_eq!(replica.health_trace[&1].last().unwrap().current, 0);
+        assert!(!replica.units.contains_key(&1));
+    }
 }

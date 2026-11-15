@@ -12,6 +12,7 @@ pub struct StateTransactions {
     assembler: Option<StateTransactionAssembler>,
     connection: Option<Entity>,
     match_id: Option<u64>,
+    expected_map: Option<turts_mod_api::ContentId>,
     /// True once this connection uses atomic transport. Legacy deltas cannot bypass it.
     pub restricted: bool,
     pub activated: u64,
@@ -19,11 +20,49 @@ pub struct StateTransactions {
 }
 
 impl StateTransactions {
+    fn ensure_context(&mut self, entity: Entity, stamp: &StateTransactionStamp) -> bool {
+        if self.match_id != Some(stamp.basis.match_id)
+            || self.expected_map.as_ref() != Some(&stamp.basis.map)
+        {
+            return false;
+        }
+        if self.connection != Some(entity) {
+            self.assembler = Some(StateTransactionAssembler::new(
+                stamp.basis.match_id,
+                stamp.basis.map.clone(),
+                KNOWLEDGE_FRAME_LIMIT_BYTES,
+            ));
+            self.connection = Some(entity);
+        }
+        true
+    }
+
     pub fn retained_bytes(&self) -> usize {
         self.assembler
             .as_ref()
             .map_or(0, StateTransactionAssembler::retained_bytes)
     }
+}
+
+/// The server installs the first authored map from its locked root game package.
+fn expected_map(
+    archives: &[turts_mod_runtime::archive::PackageArchive],
+    root: &str,
+) -> Option<turts_mod_api::ContentId> {
+    let archive = archives
+        .iter()
+        .find(|archive| archive.manifest.id == root)?;
+    let maps = archive.maps().ok()?;
+    let (_, map) = maps.first()?;
+    Some(turts_mod_api::ContentId::new(&archive.id(), &map.id))
+}
+
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct ActivationBookkeeping<'w> {
+    hooks: ResMut<'w, crate::ingest::IngestHooks>,
+    counters: ResMut<'w, crate::ingest::IngestCounters>,
+    options: Res<'w, crate::ClientOpts>,
+    witnesses: ResMut<'w, crate::ingest::ReceiptWitnesses>,
 }
 
 /// Split from ordinary receipt ingest so command results keep their own bounded path.
@@ -39,10 +78,9 @@ pub fn receive_transactions(
     mut state: ResMut<ReplicaState>,
     mut selection: Option<ResMut<crate::ui_shared::Selection>>,
     mut presented: ResMut<crate::present::Presented>,
-    mut hooks: ResMut<crate::ingest::IngestHooks>,
-    mut counters: ResMut<crate::ingest::IngestCounters>,
-    options: Res<crate::ClientOpts>,
-    mut witnesses: ResMut<crate::ingest::ReceiptWitnesses>,
+    mut book: ActivationBookkeeping,
+    acquisition: Option<Res<crate::join::Acquisition>>,
+    acquired: Option<Res<crate::join::AcquiredPackages>>,
     attempt: Option<Res<crate::rejoin::RejoinController>>,
     time: Res<Time<Real>>,
 ) {
@@ -55,23 +93,19 @@ pub fn receive_transactions(
         *transactions = StateTransactions::default();
         transactions.match_id = welcome.map(|w| w.match_id);
     }
+    if transactions.expected_map.is_none()
+        && let (Some(acquisition), Some(acquired)) = (acquisition, acquired)
+        && let Some(root) = acquired.0.verified_root_mod.as_ref()
+    {
+        transactions.expected_map = expected_map(acquisition.accepted_archives(), &root.id);
+    }
     let mut refused = Vec::new();
     for (entity, mut receiver) in &mut cancels {
         for cancel in receiver.receive() {
-            if !current(entity) || welcome.is_none_or(|w| w.match_id != cancel.stamp.basis.match_id)
-            {
+            if !current(entity) || !transactions.ensure_context(entity, &cancel.stamp) {
                 continue;
             }
             // Control traffic can outrun the first ordered state frame.
-            // Establish the single map context before retiring that stamp.
-            if transactions.connection != Some(entity) {
-                transactions.assembler = Some(StateTransactionAssembler::new(
-                    cancel.stamp.basis.match_id,
-                    cancel.stamp.basis.map.clone(),
-                    KNOWLEDGE_FRAME_LIMIT_BYTES,
-                ));
-                transactions.connection = Some(entity);
-            }
             transactions.restricted = true;
             if let Some(assembler) = transactions.assembler.as_mut() {
                 assembler.cancel(&cancel.stamp);
@@ -80,17 +114,12 @@ pub fn receive_transactions(
     }
     for (entity, mut receiver) in &mut begins {
         for begin in receiver.receive() {
-            if !current(entity) || welcome.is_none_or(|w| w.match_id != begin.stamp.basis.match_id)
-            {
+            if !current(entity) {
                 continue;
             }
-            if transactions.connection != Some(entity) {
-                transactions.assembler = Some(StateTransactionAssembler::new(
-                    begin.stamp.basis.match_id,
-                    begin.stamp.basis.map.clone(),
-                    KNOWLEDGE_FRAME_LIMIT_BYTES,
-                ));
-                transactions.connection = Some(entity);
+            if !transactions.ensure_context(entity, &begin.stamp) {
+                refused.push((entity, begin.stamp));
+                continue;
             }
             transactions.restricted = true;
             if transactions
@@ -146,25 +175,25 @@ pub fn receive_transactions(
             match staged {
                 Some(Ok(Some(staged))) => {
                     crate::ingest::append_raw_world_dto(
-                        options.0.raw_world_log.as_deref(),
+                        book.options.0.raw_world_log.as_deref(),
                         "state_transaction",
                         &staged.payload,
                     );
-                    let epoch = witnesses.epoch_for(entity.to_bits());
-                    witnesses.record_message(epoch, true);
+                    let epoch = book.witnesses.epoch_for(entity.to_bits());
+                    book.witnesses.record_message(epoch, true);
                     let valid = state.replica.as_mut().is_some_and(|replica| {
                         replica.activate_transaction(&staged.stamp, &staged.payload, Instant::now())
                     });
                     if valid {
                         match &staged.payload {
                             StateTransactionPayload::Snapshot { .. } => {
-                                hooks.outstanding_request = false;
-                                counters.snapshots_applied =
-                                    counters.snapshots_applied.saturating_add(1);
+                                book.hooks.outstanding_request = false;
+                                book.counters.snapshots_applied =
+                                    book.counters.snapshots_applied.saturating_add(1);
                             }
                             StateTransactionPayload::Patch { .. } => {
-                                counters.deltas_received =
-                                    counters.deltas_received.saturating_add(1)
+                                book.counters.deltas_received =
+                                    book.counters.deltas_received.saturating_add(1)
                             }
                         }
                         // Remove old interpolation and selection in this same schedule step.
@@ -188,8 +217,8 @@ pub fn receive_transactions(
                             for (target, mut sender) in &mut acknowledgements {
                                 if target == entity {
                                     sender.send::<ReliableChannel>(ack.clone());
-                                    let epoch = witnesses.epoch_for(target.to_bits());
-                                    witnesses.record_message(epoch, true);
+                                    let epoch = book.witnesses.epoch_for(target.to_bits());
+                                    book.witnesses.record_message(epoch, true);
                                 }
                             }
                             transactions.activated += 1;
@@ -231,5 +260,61 @@ pub fn receive_transactions(
                 });
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use turts_mod_api::{ContentId, KnowledgeBasis, ObservationPhase};
+    use turts_mod_runtime::{archive::PackageArchive, pack::pack_dir};
+
+    #[test]
+    fn first_wrong_map_begin_cannot_pin_the_assembler() {
+        let archive = PackageArchive::parse(
+            &pack_dir(
+                &std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                    .join("../../mods/visibility_probe"),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        let map = expected_map(&[archive], "visibility_probe").unwrap();
+        assert_eq!(map, ContentId::parse("visibility_probe:field").unwrap());
+        let mut state = StateTransactions {
+            match_id: Some(7),
+            expected_map: Some(map.clone()),
+            ..Default::default()
+        };
+        let mut stamp = StateTransactionStamp {
+            basis: KnowledgeBasis {
+                match_id: 7,
+                map: ContentId::parse("wrong:first").unwrap(),
+                tick: 0,
+                phase: ObservationPhase::Completed,
+            },
+            transaction_id: 1,
+            parent_transaction_id: None,
+        };
+        let entity = Entity::from_bits(17);
+        assert!(!state.ensure_context(entity, &stamp));
+        assert!(state.assembler.is_none());
+        assert!(state.connection.is_none());
+        assert_eq!(state.retained_bytes(), 0);
+        stamp.basis.map = map;
+        assert!(state.ensure_context(entity, &stamp));
+        assert!(state.assembler.is_some());
+    }
+
+    #[test]
+    fn unverified_or_missing_root_never_selects_another_package_map() {
+        let archive = PackageArchive::parse(
+            &pack_dir(
+                &std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../mods/acme"),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert!(expected_map(&[archive], "visibility_probe").is_none());
     }
 }

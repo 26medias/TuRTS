@@ -411,10 +411,28 @@ impl Replica {
         }) {
             return false;
         }
-        // A hide is not a death. No health history or old effect can survive it.
-        candidate
-            .health_trace
-            .retain(|id, _| candidate.units.contains_key(id));
+        // Hide clears health history. An observed death keeps its killing hit for alerts.
+        match payload {
+            StateTransactionPayload::Patch {
+                knowledge: Some(delta),
+                ..
+            } => {
+                let hidden: HashSet<_> = delta.hidden_units.iter().copied().collect();
+                candidate.health_trace.retain(|id, _| !hidden.contains(id));
+            }
+            StateTransactionPayload::Snapshot {
+                knowledge: Some(_), ..
+            } => {
+                candidate.health_trace.retain(|id, _| {
+                    candidate.units.contains_key(id)
+                        || self
+                            .units
+                            .get(id)
+                            .is_none_or(|unit| unit.owner_slot == context.slot)
+                });
+            }
+            _ => {}
+        }
         self.commit(candidate, store, now);
         if matches!(payload, StateTransactionPayload::Snapshot { .. }) {
             self.snapshot_tick = Some(stamp.basis.tick);
