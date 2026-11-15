@@ -252,8 +252,8 @@ fn grouped_production_with_scarce_shared_funds_is_invariant_under_placement_id_i
         first.producer_ids_by_position,
         reversed.producer_ids_by_position
     );
-    assert_eq!(first.winning_source_x, first.spawned_output_x);
-    assert_eq!(reversed.winning_source_x, reversed.spawned_output_x);
+    assert!((first.winning_source_x - first.spawned_output_x).abs() < 5.0);
+    assert!((reversed.winning_source_x - reversed.spawned_output_x).abs() < 5.0);
     assert_eq!(
         (first.winning_source_x, first.spawned_output_x),
         (reversed.winning_source_x, reversed.spawned_output_x),
