@@ -27,11 +27,9 @@ pub fn derive_seed(
         field(&mut hash, goal.as_bytes());
     }
     let bytes: [u8; 32] = hash.finalize().into();
-    u64::from_le_bytes(
-        bytes[..8]
-            .try_into()
-            .expect("SHA-256 has eight prefix bytes"),
-    )
+    let mut prefix = [0; 8];
+    prefix.copy_from_slice(&bytes[..8]);
+    u64::from_le_bytes(prefix)
 }
 
 #[cfg(test)]

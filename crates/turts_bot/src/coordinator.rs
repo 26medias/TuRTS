@@ -2,7 +2,7 @@
 use crate::{controller::CoordinatorLimits, types::*};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
-use turts_mod_api::WorldPos;
+use turts_mod_api::{PaymentPolicy, WorldPos};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PendingCommitment {
@@ -11,6 +11,8 @@ pub struct PendingCommitment {
     pub declared: Vec<AccountAmount>,
     pub unpaid: Vec<AccountAmount>,
     pub work: Option<WorkIdentity>,
+    pub payment: Option<PaymentPolicy>,
+    pub observed_done: u64,
     pub created_at: Watermark,
     pub represented: bool,
 }
@@ -41,6 +43,11 @@ pub struct RejectedProposal {
 pub struct Selection {
     pub commands: Vec<EmittedCommand>,
     pub refused: Vec<RejectedProposal>,
+}
+
+struct ValidatedProposal {
+    members: Vec<VerifiedMember>,
+    anchor: WorldPos,
 }
 
 pub struct BotCoordinator {
@@ -80,6 +87,10 @@ impl BotCoordinator {
     }
     pub fn actor(&self) -> &BotActor {
         &self.actor
+    }
+    /// Receipt keys still needed after reconciliation and command emission.
+    pub fn tracked_requests(&self) -> Vec<RequestKey> {
+        self.pending.keys().cloned().collect()
     }
     pub fn pending(&self) -> Vec<PendingCommitment> {
         self.pending.values().cloned().collect()
@@ -245,9 +256,14 @@ impl BotCoordinator {
             {
                 return Err(ReconcileError::InvalidEffect);
             }
+            if effect.pending_placement && effect.work.is_some() {
+                return Err(ReconcileError::InvalidEffect);
+            }
             if let Some(work) = &effect.work {
                 if work.actor_unit != key.unit
                     || work.done > work.total
+                    || work.done < entry.observed_done
+                    || work.payment != entry.payment
                     || entry.work.as_ref().is_some_and(|old| old != &work.identity)
                     || amounts(&work.paid).map_err(|_| ReconcileError::InvalidEffect)? != paid
                     || amounts(&work.reserved).map_err(|_| ReconcileError::InvalidEffect)?
@@ -255,7 +271,20 @@ impl BotCoordinator {
                 {
                     return Err(ReconcileError::InvalidEffect);
                 }
+                if work.payment == Some(PaymentPolicy::ChargeOverTime) {
+                    if work.total == 0 || !reserved.is_empty() {
+                        return Err(ReconcileError::InvalidEffect);
+                    }
+                    for (account, full) in &declared {
+                        let expected = (u128::from(*full) * u128::from(work.done)
+                            / u128::from(work.total)) as u64;
+                        if paid.get(account).copied().unwrap_or(0) != expected {
+                            return Err(ReconcileError::InvalidEffect);
+                        }
+                    }
+                }
                 entry.work = Some(work.identity.clone());
+                entry.observed_done = work.done;
             }
             let mut remaining = Vec::new();
             for (account, full) in declared {
@@ -269,6 +298,16 @@ impl BotCoordinator {
                     .checked_sub(represented)
                     .ok_or(ReconcileError::InvalidEffect)?;
                 if amount > 0 {
+                    if entry.represented
+                        && amount
+                            > entry
+                                .unpaid
+                                .iter()
+                                .find(|old| old.account == account)
+                                .map_or(0, |old| old.amount)
+                    {
+                        return Err(ReconcileError::InvalidEffect);
+                    }
                     remaining.push(AccountAmount { account, amount });
                 }
             }
@@ -301,7 +340,7 @@ impl BotCoordinator {
         let mut candidates = Vec::new();
         let mut task_counts = BTreeMap::new();
         for proposal in &proposals {
-            *task_counts.entry(proposal.task.clone()).or_insert(0_u32) += 1;
+            *task_counts.entry(proposal.task.clone()).or_insert(0_usize) += 1;
         }
         for proposal in proposals {
             let reject = if !self.ready || self.basis != Some(basis) {
@@ -381,7 +420,7 @@ impl BotCoordinator {
     fn emit(
         &mut self,
         proposal: &Proposal,
-        verified: &VerifiedProposal,
+        verified: &ValidatedProposal,
         assigned: &BTreeSet<UnitId>,
         commands: u32,
         units: u32,
@@ -415,16 +454,20 @@ impl BotCoordinator {
             .ok_or(ProposalRejection::SequenceExhausted)?;
         let mut required = BTreeMap::<SpendKey, u128>::new();
         let mut touched_accounts = BTreeSet::new();
-        let mut pending_accounts = BTreeSet::new();
+        let mut pending_account_rows = 0_usize;
         for entry in self.pending.values() {
+            pending_account_rows = pending_account_rows
+                .checked_add(entry.declared.len())
+                .ok_or(ProposalRejection::Budget)?;
             for amount in &entry.unpaid {
-                pending_accounts.insert(amount.account.clone());
                 *required.entry(amount.account.clone()).or_default() += u128::from(amount.amount);
             }
         }
         for member in &verified.members {
+            pending_account_rows = pending_account_rows
+                .checked_add(member.costs.len())
+                .ok_or(ProposalRejection::Budget)?;
             for amount in &member.costs {
-                pending_accounts.insert(amount.account.clone());
                 touched_accounts.insert(amount.account.clone());
                 let old = required.entry(amount.account.clone()).or_default();
                 *old = old
@@ -432,7 +475,7 @@ impl BotCoordinator {
                     .ok_or(ProposalRejection::ArithmeticOverflow)?;
             }
         }
-        if pending_accounts.len() > self.limits.pending_accounts as usize {
+        if pending_account_rows > self.limits.pending_accounts as usize {
             return Err(ProposalRejection::Budget);
         }
         for (account, amount) in required {
@@ -468,6 +511,8 @@ impl BotCoordinator {
                     declared: member.costs.clone(),
                     unpaid: member.costs.clone(),
                     work: None,
+                    payment: member.payment,
+                    observed_done: 0,
                     created_at: watermark,
                     represented: false,
                 },
@@ -505,7 +550,7 @@ fn validate_verified(
     proposal: &Proposal,
     verified: VerifiedProposal,
     slot: u8,
-) -> Result<VerifiedProposal, ProposalRejection> {
+) -> Result<ValidatedProposal, ProposalRejection> {
     if proposal.actors.is_empty()
         || proposal.task.controller.is_empty()
         || proposal.task.goal.is_empty()
@@ -536,7 +581,16 @@ fn validate_verified(
     if actors != members {
         return Err(ProposalRejection::InvalidCosts);
     }
-    Ok(verified)
+    let anchor = verified
+        .members
+        .iter()
+        .min_by(|a, b| position_cmp(&a.anchor, &b.anchor))
+        .map(|member| member.anchor.clone())
+        .ok_or(ProposalRejection::InvalidAnchor)?;
+    Ok(ValidatedProposal {
+        members: verified.members,
+        anchor,
+    })
 }
 fn coordinate_cmp(a: f32, b: f32) -> std::cmp::Ordering {
     if a == b {
@@ -548,22 +602,14 @@ fn coordinate_cmp(a: f32, b: f32) -> std::cmp::Ordering {
 fn position_cmp(a: &WorldPos, b: &WorldPos) -> std::cmp::Ordering {
     coordinate_cmp(a.x, b.x).then_with(|| coordinate_cmp(a.y, b.y))
 }
-fn anchor(verified: &VerifiedProposal) -> &WorldPos {
-    &verified
-        .members
-        .iter()
-        .min_by(|a, b| position_cmp(&a.anchor, &b.anchor))
-        .expect("verified proposal has actors")
-        .anchor
-}
 fn rank_cmp(
     a: &Proposal,
-    av: &VerifiedProposal,
+    av: &ValidatedProposal,
     b: &Proposal,
-    bv: &VerifiedProposal,
+    bv: &ValidatedProposal,
 ) -> std::cmp::Ordering {
     b.priority
         .cmp(&a.priority)
-        .then_with(|| position_cmp(anchor(av), anchor(bv)))
+        .then_with(|| position_cmp(&av.anchor, &bv.anchor))
         .then(a.goal_order.cmp(&b.goal_order))
 }
