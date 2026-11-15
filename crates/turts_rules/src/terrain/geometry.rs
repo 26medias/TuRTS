@@ -204,12 +204,53 @@ struct Q {
     n: i128,
     d: i128,
 }
+#[inline]
 fn gcd(mut a: u128, mut b: u128) -> u128 {
-    while b != 0 {
-        (a, b) = (b, a % b);
+    if a == 0 {
+        return b;
     }
-    a
+    if b == 0 || a == b {
+        return a;
+    }
+    // Float coordinates yield dyadic denominators. Their GCD needs only the
+    // common power of two, including when the numerator uses all 128 bits.
+    if a.is_power_of_two() || b.is_power_of_two() {
+        return 1u128 << a.trailing_zeros().min(b.trailing_zeros());
+    }
+    let shift = a.trailing_zeros().min(b.trailing_zeros());
+    a >>= a.trailing_zeros();
+    b >>= b.trailing_zeros();
+    loop {
+        // Once the odd residues fit, use single-word arithmetic on native and
+        // WASM alike. No 128-bit division is needed in either branch.
+        if (a | b) <= u128::from(u64::MAX) {
+            let mut a = a as u64;
+            let mut b = b as u64;
+            loop {
+                if a > b {
+                    core::mem::swap(&mut a, &mut b);
+                }
+                b -= a;
+                if b == 0 {
+                    return u128::from(a) << shift;
+                }
+                b >>= b.trailing_zeros();
+            }
+        }
+        if a > b {
+            core::mem::swap(&mut a, &mut b);
+        }
+        b -= a;
+        if b == 0 {
+            return a << shift;
+        }
+        b >>= b.trailing_zeros();
+    }
 }
+
+#[cfg(test)]
+#[path = "geometry_gcd_tests.rs"]
+mod gcd_tests;
 impl Q {
     const ZERO: Self = Self { n: 0, d: 1 };
     fn new(mut n: i128, mut d: i128) -> ResultQ {
