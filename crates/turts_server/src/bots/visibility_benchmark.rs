@@ -227,8 +227,11 @@ struct Received {
 }
 fn capture_frames(
     mut received: ResMut<Received>,
-    mut frames: Query<(Entity, &mut MessageReceiver<StateTransactionFrame>)>,
-    mut cancels: Query<(Entity, &mut MessageReceiver<StateTransactionCancel>), With<Client>>,
+    mut frames: bevy::prelude::Query<(Entity, &mut MessageReceiver<StateTransactionFrame>)>,
+    mut cancels: bevy::prelude::Query<
+        (Entity, &mut MessageReceiver<StateTransactionCancel>),
+        With<Client>,
+    >,
 ) {
     for (entity, mut receiver) in &mut frames {
         received
@@ -281,9 +284,9 @@ impl Harness {
         app.insert_resource(turts_sim::MatchConfig::immediate(20));
         app.init_resource::<crate::stats::Stats>();
         app.insert_resource(crate::stats::MatchId(91));
-        session::install(
+        crate::session::install(
             &mut app,
-            session::Advertised {
+            crate::session::Advertised {
                 lockfile_hash: hash.clone(),
                 tick_hz: 20,
             },
@@ -385,7 +388,7 @@ impl Harness {
                         RemoteId(PeerId::Local(101 + u64::from(slot))),
                         Linked,
                         Connected,
-                        session::Session {
+                        crate::session::Session {
                             last_seq: None,
                             slot: turts_sim::SlotId(slot),
                             player_id: 101 + u64::from(slot),
@@ -509,7 +512,7 @@ impl Harness {
                     slot,
                     "order_move",
                     movers,
-                    turts_net_protocol::OrderTarget::Point(WorldPos {
+                    turts_net_protocol::OrderTarget::Point(turts_net_protocol::Pos {
                         x: if ((tick - 1) / 10).is_multiple_of(2) {
                             96.
                         } else {
@@ -594,7 +597,6 @@ impl Harness {
                         let staged = peer.assembler.end(&end).unwrap().unwrap();
                         if let StateTransactionPayload::Patch {
                             knowledge: Some(knowledge),
-                            state,
                             ..
                         } = &staged.payload
                         {
