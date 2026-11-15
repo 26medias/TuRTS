@@ -138,6 +138,7 @@ struct Peer {
     first_sent_ms: BTreeMap<u64, u64>,
     activation_acks: VecDeque<(u64, StateTransactionAck)>,
     transport_acks: Vec<(u64, u16)>,
+    cancellations: Vec<(u64, u64, String)>,
     issued_messages: BTreeSet<u16>,
     max_batch: usize,
     max_age_ms: u64,
@@ -272,6 +273,7 @@ impl Harness {
                     first_sent_ms: BTreeMap::new(),
                     activation_acks: VecDeque::new(),
                     transport_acks: vec![],
+                    cancellations: vec![],
                     issued_messages: BTreeSet::new(),
                     max_batch: 0,
                     max_age_ms: 0,
@@ -304,7 +306,29 @@ impl Harness {
         });
         for peer in &self.peers {
             if peer.restart_error.is_none() {
+                let previous_id = self
+                    .app
+                    .world()
+                    .get::<KnowledgeSender>(peer.server)
+                    .unwrap()
+                    .next_id;
                 assert!(queue_tick(self.app.world_mut(), peer.server, SlotId(0)).unwrap());
+                let mut sender = self
+                    .app
+                    .world_mut()
+                    .get_mut::<KnowledgeSender>(peer.server)
+                    .unwrap();
+                // Public enqueue uses Instant::now(). This test advances a virtual
+                // pump clock. Align ONLY newly enqueued timestamps, not deadlines
+                // or already-started work, so both sides use the same test clock.
+                let enqueued_at = self.epoch + Duration::from_millis(self.now_ms);
+                let sender = &mut *sender;
+                for pending in sender.pending.iter_mut().chain(sender.patches.iter_mut()) {
+                    if pending.encoded.begin().stamp.transaction_id > previous_id {
+                        assert!(pending.started.is_none());
+                        pending.created = enqueued_at;
+                    }
+                }
             }
         }
     }
@@ -378,6 +402,11 @@ impl Harness {
                 )
             };
             for cancel in cancels {
+                peer.cancellations.push((
+                    self.now_ms,
+                    cancel.stamp.transaction_id,
+                    format!("{:?}", cancel.reason),
+                ));
                 peer.assembler.cancel(&cancel.stamp);
             }
             if self.retain_received_frames {
@@ -465,7 +494,7 @@ impl Harness {
     fn evidence(&self, label: &str) {
         let rows = self.peers.iter().enumerate().map(|(index, peer)| serde_json::json!({
             "peer": index, "activation_ticks": peer.activations, "actual_transport_message_acks": peer.transport_acks,
-            "actual_issued_message_ids": peer.issued_messages, "max_transactions_in_one_client_update": peer.max_batch,
+            "actual_issued_message_ids": peer.issued_messages, "cancellations": peer.cancellations, "max_transactions_in_one_client_update": peer.max_batch,
             "max_unacknowledged_age_ms": peer.max_age_ms, "max_encoded_successor_bytes": peer.max_backlog,
             "first_measured_backlog_bytes": peer.first_measured_backlog, "final_backlog_bytes": peer.last_measured_backlog,
             "restart_error": peer.restart_error,
