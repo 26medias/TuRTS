@@ -93,6 +93,10 @@ pub trait WorldView {
         Some(0.)
     }
     /// None is an unobstructed ray outside the map; Err is an uncertified query.
+    #[allow(
+        clippy::result_unit_err,
+        reason = "This geometric predicate returns hit, clear or uncertified without an error payload"
+    )]
     fn surface_occlusion(
         &self,
         origin: glam::Vec3,

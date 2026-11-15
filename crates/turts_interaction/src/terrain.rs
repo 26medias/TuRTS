@@ -149,30 +149,30 @@ pub(crate) fn refresh(
         reason: None,
     };
     if let Some(reference) = core.terrain.reference {
-        if let (Some(start), Some(end)) = (core.terrain.start, pointer.and_then(|hit| hit.cell)) {
-            if let Some(rect) = rectangle(start, end, world) {
-                let count = u64::from(rect.max.x - rect.min.x) * u64::from(rect.max.y - rect.min.y);
-                preview.rectangle = Some(rect);
-                if count <= 256 {
-                    // Enumeration depends only on the submitted public rectangle.
-                    for y in rect.min.y..rect.max.y {
-                        for x in rect.min.x..rect.max.x {
-                            let cell = TerrainCell { x, y };
-                            let Some(elevation) = world.terrain_elevation(cell) else {
-                                preview.reason = Some("Terrain geometry unavailable".into());
-                                continue;
-                            };
-                            preview.cells.push(CellPreview {
-                                cell,
-                                elevation,
-                                current: world.terrain_current(cell),
-                            });
-                        }
+        if let (Some(start), Some(end)) = (core.terrain.start, pointer.and_then(|hit| hit.cell))
+            && let Some(rect) = rectangle(start, end, world)
+        {
+            let count = u64::from(rect.max.x - rect.min.x) * u64::from(rect.max.y - rect.min.y);
+            preview.rectangle = Some(rect);
+            if count <= 256 {
+                // Enumeration depends only on the submitted public rectangle.
+                for y in rect.min.y..rect.max.y {
+                    for x in rect.min.x..rect.max.x {
+                        let cell = TerrainCell { x, y };
+                        let Some(elevation) = world.terrain_elevation(cell) else {
+                            preview.reason = Some("Terrain geometry unavailable".into());
+                            continue;
+                        };
+                        preview.cells.push(CellPreview {
+                            cell,
+                            elevation,
+                            current: world.terrain_current(cell),
+                        });
                     }
-                    preview.can_submit = preview.cells.len() as u64 == count;
-                } else {
-                    preview.reason = Some("A work rectangle can contain at most 256 cells".into());
                 }
+                preview.can_submit = preview.cells.len() as u64 == count;
+            } else {
+                preview.reason = Some("A work rectangle can contain at most 256 cells".into());
             }
         }
         preview.target_elevation = Some(reference);
@@ -536,9 +536,10 @@ mod tests {
         }
     }
     fn core() -> Core {
-        let mut c = Core::default();
-        c.selected = vec![UnitId(1)];
-        c
+        Core {
+            selected: vec![UnitId(1)],
+            ..Default::default()
+        }
     }
     fn enter(c: &mut Core, w: &World) {
         on_input(

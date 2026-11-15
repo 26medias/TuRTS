@@ -568,7 +568,7 @@ const WRONG: &str="light";
 "#,
     )
     .unwrap();
-    let hits = scan_rust(&[scratch.clone()], &catalog).unwrap();
+    let hits = scan_rust(std::slice::from_ref(&scratch), &catalog).unwrap();
     for token in ["quarry:soil_layer", "quarry:spade", "quarry:light", "light"] {
         assert!(
             hits.iter().any(|hit| hit.token == token),

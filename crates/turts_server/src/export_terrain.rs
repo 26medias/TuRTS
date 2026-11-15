@@ -273,9 +273,8 @@ fn changed<T: Clone, K: Ord + Copy>(
     let after: BTreeMap<_, _> = new.iter().map(|row| (key(row), row)).collect();
     let rows = after
         .iter()
-        .filter_map(|(key, row)| {
-            (!before.get(key).is_some_and(|old| same(old, row))).then(|| (*row).clone())
-        })
+        .filter(|&(key, row)| !before.get(key).is_some_and(|old| same(old, row)))
+        .map(|(_, row)| (*row).clone())
         .collect();
     let cleared = before
         .keys()

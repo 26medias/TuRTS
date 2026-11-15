@@ -1154,7 +1154,7 @@ mod tests {
         for pattern in 0..4 {
             for unknown in [false, true] {
                 let surface = |cell: Cell| {
-                    if unknown && (cell.x + 2 * cell.y) % 7 == 0 {
+                    if unknown && (cell.x + 2 * cell.y).is_multiple_of(7) {
                         return None;
                     }
                     Some(match pattern {

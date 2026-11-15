@@ -459,7 +459,7 @@ impl PermittedBaseline {
         let event_units = event_facts
             .iter()
             .filter(|fact| !new_units.contains_key(&fact.unit.unit))
-            .map(|fact| event_observation(fact))
+            .map(event_observation)
             .collect();
         let knowledge = match (&self.knowledge, &next.knowledge) {
             (Some(old), Some(new)) => Some(knowledge_delta(

@@ -83,12 +83,12 @@ fn outside_http(path: &Path, served: Option<&Path>) -> std::io::Result<PathBuf> 
                 let entry = entry?;
                 let kind = entry.file_type()?;
                 if kind.is_symlink() {
-                    if let Ok(target) = entry.path().canonicalize() {
-                        if resolved.starts_with(target) {
-                            return Err(std::io::Error::other(
-                                "static_dir links to a private terrain path",
-                            ));
-                        }
+                    if let Ok(target) = entry.path().canonicalize()
+                        && resolved.starts_with(target)
+                    {
+                        return Err(std::io::Error::other(
+                            "static_dir links to a private terrain path",
+                        ));
                     }
                 } else if kind.is_dir() {
                     directories.push(entry.path());
