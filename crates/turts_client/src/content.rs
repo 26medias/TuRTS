@@ -1,5 +1,7 @@
 use std::collections::HashMap;
-use turts_mod_api::{CameraDef, ContentCatalog, InputMapDef, ModError, OrderRulesDef, Shape};
+use turts_mod_api::{
+    CameraDef, ContentCatalog, ContentId, InputMapDef, ModError, OrderRulesDef, Shape,
+};
 use turts_mod_runtime::{archive::PackageArchive, visuals::visuals_by_content};
 
 #[derive(Clone, Debug, PartialEq)]
@@ -173,8 +175,14 @@ impl ClientContent {
         // All libraries are available before profile references are checked. Importing
         // them loads definitions only; the server separately selects and installs bots.
         for archive in archives {
+            let profiles = archive.bots()?;
             let bots =
-                turts_mod_runtime::bots::validate_bots(&archive.id(), archive.bots()?, &catalog)?;
+                turts_mod_runtime::bots::validate_bots(&archive.id(), profiles.clone(), &catalog)?;
+            for (file, bot) in profiles {
+                catalog
+                    .source_files
+                    .insert(ContentId::new(&archive.id(), &bot.id), file);
+            }
             for (id, bot) in bots {
                 if catalog.bots.insert(id.clone(), bot).is_some() {
                     return Err(ModError::new(&id.package.0, "id", "duplicate bot profile"));

@@ -194,7 +194,13 @@ impl PackageArchive {
     /// Parse and resolve all gameplay content. Presentation files are never read here.
     pub fn content(&self) -> Result<ContentCatalog, ModError> {
         let mut catalog = self.content_for_catalog()?;
-        catalog.bots = crate::bots::validate_bots(&self.id(), self.bots()?, &catalog)?;
+        let profiles = self.bots()?;
+        catalog.bots = crate::bots::validate_bots(&self.id(), profiles.clone(), &catalog)?;
+        for (file, bot) in profiles {
+            catalog
+                .source_files
+                .insert(turts_mod_api::ContentId::new(&self.id(), &bot.id), file);
+        }
         Ok(catalog)
     }
 
