@@ -454,7 +454,7 @@ impl Harness {
                             .burst_at_ms
                             .is_some_and(|at| self.now_ms >= at && self.now_ms < at + TICK_MS)
                     {
-                        due = self.burst_at_ms.unwrap() + TICK_MS;
+                        due = self.burst_at_ms.unwrap() + TICK_MS + STEP_MS;
                     }
                     self.packets.push_back((due, to, packet.to_vec()));
                 }
