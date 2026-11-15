@@ -972,3 +972,102 @@ fn paid_site_cancel_replays_original_balance_and_inventory_refunds() {
         100
     );
 }
+
+#[test]
+fn multi_cost_repair_wait_and_income_recovery_reject_wrong_missing_resource() {
+    let mut fixture = repair_fixture();
+    fixture.catalog.resources.insert(
+        cid("gold"),
+        ResourceDef {
+            id: "gold".into(),
+            name: "Gold".into(),
+            unit_name: String::new(),
+            kind: ResourceKind::Balance,
+        },
+    );
+    fixture.map.slot_economy[0].balances.push(BalanceAmount {
+        balance: cid("gold").to_string(),
+        amount: 0,
+    });
+    fixture.unit("builder").income = Some(IncomeDef {
+        resource: cid("gold").to_string(),
+        amount: 1,
+        period_ms: 1000,
+    });
+    fixture
+        .unit("factory")
+        .repairer
+        .as_mut()
+        .unwrap()
+        .cost
+        .push(RepairCost {
+            resource: cid("gold").to_string(),
+            amount: 1,
+            per_health: 1,
+        });
+    let mut app = fixture.app();
+    let mut records = start(&mut app);
+    ticks(&mut app, &mut records, 45);
+    assert_records("repair-wait-income", &records);
+    let index=records.iter().position(|record|matches!(record,EconomyLogRecord::Operation(operation) if operation.before.raw_repairs!=operation.after.raw_repairs && operation.after.raw_repairs.iter().any(|row|row.action.as_ref().is_some_and(|action|matches!(action.state,turts_sim::economy::repair::RepairStatus::WaitingForFunds(_)))))).expect("real unaffordable repair waited");
+    let mut bad = records[..=index].to_vec();
+    let EconomyLogRecord::Operation(operation) = bad.last_mut().unwrap() else {
+        unreachable!()
+    };
+    operation
+        .after
+        .raw_repairs
+        .iter_mut()
+        .find(|row| row.repairer == 1)
+        .unwrap()
+        .action
+        .as_mut()
+        .unwrap()
+        .state = turts_sim::economy::repair::RepairStatus::WaitingForFunds(cid("credits"));
+    operation
+        .after
+        .economy
+        .repairs
+        .iter_mut()
+        .find(|row| row.repairer == 1)
+        .unwrap()
+        .state = turts_sim::economy::repair::RepairStatus::WaitingForFunds(cid("credits"));
+    assert!(
+        validate_records(&bad)
+            .unwrap_err()
+            .contains("first unaffordable")
+    );
+    let mut bad = records[..=index].to_vec();
+    let EconomyLogRecord::Operation(operation) = bad.last_mut().unwrap() else {
+        unreachable!()
+    };
+    operation
+        .after
+        .economy
+        .balances
+        .iter_mut()
+        .find(|row| row.resource == cid("credits"))
+        .unwrap()
+        .on_hand -= 1;
+    operation
+        .after
+        .raw_healths
+        .iter_mut()
+        .find(|row| row.unit == 2)
+        .unwrap()
+        .current += 1;
+    operation
+        .after
+        .economy
+        .m3
+        .raw_healths
+        .iter_mut()
+        .find(|row| row.unit == 2)
+        .unwrap()
+        .current += 1;
+    assert!(
+        validate_records(&bad)
+            .unwrap_err()
+            .contains("without an eligible heal tick")
+    );
+}

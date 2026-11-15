@@ -676,6 +676,18 @@ fn validate_repair_operation(operation: &OperationAudit) -> Result<(), String> {
             _ => None,
         };
         let Some((old, action)) = advancement else {
+            if previous != Some(next)
+                && let Some(action) = new_action
+                && let RepairStatus::WaitingForFunds(resource) = &action.state
+            {
+                validate_repair_wait(
+                    &operation.before,
+                    next.repairer,
+                    action,
+                    old_remainders,
+                    resource,
+                )?;
+            }
             if old_remainders != next.remainders.as_slice() {
                 return Err("repair Stop, retarget or wait reset fractional cost debt".into());
             }
@@ -1316,4 +1328,80 @@ fn validate_released_claims(operation: &OperationAudit) -> Result<(), String> {
 
 pub(crate) fn has_repairer(state: &AuditState, unit: u32) -> bool {
     unit_definition(state, unit).is_ok_and(|definition| definition.repairer.is_some())
+}
+
+fn validate_repair_wait(
+    state: &AuditState,
+    source: u32,
+    action: &turts_sim::economy::repair::RepairAction,
+    remainders: &[turts_sim::economy::repair::RepairRemainder],
+    resource: &ContentId,
+) -> Result<(), String> {
+    let definition = unit_definition(state, source)?
+        .repairer
+        .as_ref()
+        .ok_or("repair funding wait has no capability")?;
+    let maximum = unit_definition(state, action.target)?
+        .health_max
+        .ok_or("repair funding wait has no health maximum")?;
+    let health = state
+        .raw_healths
+        .iter()
+        .find(|row| row.unit == action.target)
+        .ok_or("repair funding wait has no target health")?
+        .current;
+    let next = action
+        .elapsed
+        .checked_add(1)
+        .ok_or("repair funding wait conceals clock overflow")?;
+    let hz = u128::from(
+        state
+            .tick_hz
+            .filter(|hz| *hz != 0)
+            .ok_or("repair wait has no tick rate")?,
+    );
+    let applied = (u128::from(definition.rate_per_second) * u128::from(next) / hz
+        - u128::from(definition.rate_per_second) * u128::from(action.elapsed) / hz)
+        .min(u128::from(
+            maximum
+                .checked_sub(health)
+                .ok_or("repair target exceeds maximum health")?,
+        ));
+    let owner = state
+        .raw_units
+        .iter()
+        .find(|unit| unit.unit_id == source)
+        .ok_or("repair funding source missing")?
+        .owner_slot;
+    let balances = accounts(state);
+    let mut missing = None;
+    for cost in &definition.cost {
+        if cost.per_health == 0 {
+            return Err("repair cost denominator is zero".into());
+        }
+        let id = ContentId::parse(&cost.resource).map_err(|_| "repair wait cost is invalid")?;
+        let remainder = remainders
+            .iter()
+            .find(|row| row.resource == id)
+            .map_or(0, |row| row.remainder);
+        let due = (applied * u128::from(cost.amount) + u128::from(remainder))
+            / u128::from(cost.per_health);
+        if due > u128::from(u64::MAX) {
+            return Err("repair funding wait conceals charge overflow".into());
+        }
+        let key = (Destination::Slot(owner), id.clone());
+        let available = balances
+            .get(&key)
+            .ok_or("repair wait names an absent Balance account")?
+            .checked_sub(reserved(state, &key))
+            .ok_or("repair reserved amount exceeds balance")?;
+        if available < due {
+            missing = Some(id);
+            break;
+        }
+    }
+    if missing.as_ref() != Some(resource) {
+        return Err("repair funding wait differs from first unaffordable authored resource".into());
+    }
+    Ok(())
 }
