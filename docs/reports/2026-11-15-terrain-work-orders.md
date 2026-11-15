@@ -54,3 +54,14 @@ No geometry approximation, workload reduction, timeout increase or memory-budget
 
 Four real terrain audit checks pass: ordinary dig/fill/depletion and failed fill; exact unloading; forged resource/depletion/revision rejection; and same-seed command replay with allocator inversion.
 Evidence: `terrain-work-orders/audit-stream-sixth.log`. The complete audit suite and independent feature review remain pending.
+
+The later trace isolated a16.47-second simulation tick during a route change. Both clients had valid activated state; the long tick starved the real transfer deadline.
+Whole-chunk flat certificates were too coarse after work changed a different part of the same chunk.
+Truth and permitted planning now certify the exact requested subrectangle inside a mixed chunk.
+The focused terrain suite passes33 tests. The diagnostic route-change tick now takes36.342ms without a restart.
+The earlier completed trace was unpinned; the new trace uses CPUs0,2,4 and6. This is not a controlled capacity comparison.
+Evidence: `terrain-work-orders/tw7-subrectangle-comparison.json` and `terrain-work-orders/tw7-tick11-perf-report.txt`.
+The unchanged full preflight and warmed acceptance remain pending.
+
+The prepared400-model terrain fixture passes normal typed package validation. Its73 source files remain unchanged after packing.
+Evidence: `terrain-work-orders/browser-fps-fixture-frozen-v2/typed-pack-result.json`.
