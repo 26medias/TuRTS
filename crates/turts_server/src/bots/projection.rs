@@ -515,6 +515,152 @@ mod tests {
             false
         }
     }
+    struct FootprintOnly(turts_mod_api::KnowledgeSnapshot);
+    impl ObservationPermissions for FootprintOnly {
+        fn unit_visible(&self, _: u8, _: u32, _: u8) -> bool {
+            false
+        }
+        fn node_visible(&self, _: u8, _: u32) -> bool {
+            false
+        }
+        fn area_observed(&self, _: u8, _: ObservationArea) -> bool {
+            false
+        }
+        fn knowledge(&self, _: u8) -> Option<turts_mod_api::KnowledgeSnapshot> {
+            Some(self.0.clone())
+        }
+    }
+    #[test]
+    fn unseen_objects_outside_footprint_inside_public_gap_or_clearance_keep_identical_unknown_metadata()
+     {
+        use turts_mod_api::*;
+        use turts_mod_runtime::{archive::PackageArchive, pack::pack_dir};
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../mods/cedar");
+        let archive = PackageArchive::parse(&pack_dir(&root).unwrap()).unwrap();
+        let cid = |local: &str| ContentId::parse(&format!("cedar:{local}")).unwrap();
+        for node_clearance in [false, true] {
+            let mut catalog = archive.content().unwrap();
+            catalog.units.get_mut(&cid("depot")).unwrap().constructor = Some(ResolvedConstructor {
+                buildings: vec![cid("hire")],
+                concurrent_sites: 1,
+                queue_capacity: 1,
+                progress: ConstructProgress::Autonomous,
+                when_short: vec![],
+            });
+            catalog.units.get_mut(&cid("worker")).unwrap().placement = Some(SitePlacementDef {
+                gap: if node_clearance { 0.0 } else { 10.0 },
+                node_clearance: if node_clearance { 10.0 } else { 0.0 },
+                in_build_area: false,
+                site_health: Ratio {
+                    numerator: 1,
+                    denominator: 1,
+                },
+            });
+            let mut app = turts_sim::headless_app(20);
+            let staged = turts_sim::stage_package(
+                app.world(),
+                catalog.clone(),
+                SourceDef {
+                    file: "advice/map".into(),
+                    value: archive.maps().unwrap().remove(0).1,
+                },
+                20,
+            )
+            .unwrap();
+            turts_sim::install_package(app.world_mut(), staged);
+            turts_sim::initialize_completed_world(app.world_mut());
+            let mut present = turts_sim::completed_world(app.world()).clone();
+            let actor = present
+                .units
+                .iter()
+                .find(|unit| unit.owner_slot == 0 && unit.content_id == cid("depot").to_string())
+                .unwrap()
+                .unit_id;
+            present
+                .units
+                .iter_mut()
+                .find(|unit| unit.owner_slot == 1)
+                .unwrap()
+                .pos = bevy::math::Vec2::new(40.0, 32.0);
+            present.nodes[0].pos = WorldPos { x: 40.0, y: 32.0 };
+            let mut absent = present.clone();
+            absent.units.retain(|unit| unit.owner_slot == 0);
+            absent.nodes.clear();
+            let mut observed = vec![0; 512];
+            for row in 31..=32 {
+                for column in 31..=32 {
+                    let cell = row * 64 + column;
+                    observed[cell / 8] |= 1 << (cell % 8);
+                }
+            }
+            let policy = FootprintOnly(KnowledgeSnapshot {
+                basis: KnowledgeBasis {
+                    match_id: 1,
+                    map: cid("clearing"),
+                    tick: present.tick,
+                    phase: ObservationPhase::Completed,
+                },
+                viewer: 0,
+                grid: VisibilityGrid {
+                    size: WorldPos { x: 64.0, y: 64.0 },
+                    cell_size: 1.0,
+                    columns: 64,
+                    rows: 64,
+                },
+                explored: observed.clone(),
+                observed,
+                remembered_units: vec![],
+                remembered_nodes: vec![],
+                retention_truncated: false,
+            });
+            let catalog = Arc::new(catalog);
+            let mut a = CandidateLease::new(
+                project(
+                    &present,
+                    0,
+                    9,
+                    catalog.clone(),
+                    vec![0, 1],
+                    WorldPos { x: 64.0, y: 64.0 },
+                    &policy,
+                )
+                .basis,
+                0,
+            );
+            let mut b = CandidateLease::new(
+                project(
+                    &absent,
+                    0,
+                    9,
+                    catalog,
+                    vec![0, 1],
+                    WorldPos { x: 64.0, y: 64.0 },
+                    &policy,
+                )
+                .basis,
+                0,
+            );
+            let query = Query::Placement(PlacementQuery {
+                actor,
+                production: cid("hire"),
+                point: WorldPos { x: 32.0, y: 32.0 },
+            });
+            let first = a
+                .queries("test", crate::bots::operator_quota())
+                .query(query.clone(), None, 64)
+                .unwrap();
+            let second = b
+                .queries("test", crate::bots::operator_quota())
+                .query(query, None, 64)
+                .unwrap();
+            assert_eq!(
+                first, second,
+                "all public rows, usage, continuations and coverage must agree"
+            );
+            assert_eq!(first.data, QueryData::Placement(Advice::NotObserved));
+            assert_eq!(first.coverage, Coverage::NotObserved);
+        }
+    }
     #[test]
     fn hidden_present_and_absent_worlds_have_identical_query_rows_and_metadata() {
         use turts_mod_runtime::{archive::PackageArchive, pack::pack_dir};
