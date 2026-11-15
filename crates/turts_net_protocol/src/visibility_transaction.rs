@@ -619,6 +619,34 @@ mod tests {
         assert_eq!(assembler.begin(encoded.begin().clone(), 1), Ok(()));
     }
     #[test]
+    fn cancellation_watermark_retires_early_successors_without_rolling_back_active_view() {
+        let mut assembler = assembler();
+        let mut base = encode_transaction(stamp(1, None), &payload(1, true), 768).unwrap();
+        let staged = receive(&mut assembler, &mut base);
+        assembler.activate(&staged.stamp).unwrap();
+        let pending = encode_transaction(stamp(2, None), &payload(2, true), 768).unwrap();
+        assembler.begin(pending.begin().clone(), 0).unwrap();
+        assert!(assembler.retained_bytes() > 0);
+        // Reliable control can overtake both the incomplete2 and not-yet-received3.
+        assembler.cancel(&stamp(3, None));
+        assert_eq!(assembler.retained_bytes(), 0);
+        assert_eq!(assembler.active(), Some(&stamp(1, None)));
+        for id in [2, 3] {
+            let old = encode_transaction(stamp(id, None), &payload(id, false), 768).unwrap();
+            assert!(assembler.is_obsolete(&old.begin().stamp));
+            assert_eq!(
+                assembler.begin(old.begin().clone(), 1),
+                Err(StateTransactionError::InvalidStamp)
+            );
+        }
+        let replacement = encode_transaction(stamp(4, None), &payload(4, false), 768).unwrap();
+        assert_eq!(assembler.begin(replacement.begin().clone(), 2), Ok(()));
+        // A delayed old cancellation must not remove a newer incomplete replacement.
+        assembler.cancel(&stamp(3, None));
+        assert!(assembler.retained_bytes() > 0);
+        assert_eq!(assembler.active(), Some(&stamp(1, None)));
+    }
+    #[test]
     fn patch_parent_and_context_are_checked_and_timeout_releases_the_buffer() {
         let mut assembler = assembler();
         let mut base = encode_transaction(stamp(1, None), &payload(1, true), 768).unwrap();
