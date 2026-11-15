@@ -130,15 +130,18 @@ pub(super) fn live_package_with_guard(package: &str, guard: Option<BotStartWhen>
         .join("../../mods")
         .join(package);
     let archive = PackageArchive::parse(&pack_dir(&root).unwrap()).unwrap();
+    live_archive(&archive, &format!("{package}:opponent"), guard)
+}
+fn live_archive(archive: &PackageArchive, profile: &str, guard: Option<BotStartWhen>) -> App {
     let mut app = turts_sim::headless_app(20);
-    turts_pack::load_package(app.world_mut(), &archive).unwrap();
+    turts_pack::load_package(app.world_mut(), archive).unwrap();
     app.insert_resource(ServerCatalog(archive.content().unwrap()));
     if let Some(guard) = guard {
         app.world_mut()
             .resource_mut::<ServerCatalog>()
             .0
             .bots
-            .get_mut(&ContentId::parse(&format!("{package}:opponent")).unwrap())
+            .get_mut(&ContentId::parse(profile).unwrap())
             .unwrap()
             .start_when = guard;
     }
@@ -164,7 +167,7 @@ pub(super) fn live_package_with_guard(package: &str, guard: Option<BotStartWhen>
         &mut app,
         &[BotConfig {
             slot: 1,
-            profile: format!("{package}:opponent"),
+            profile: profile.to_owned(),
             seed: 42,
         }],
     )
@@ -175,8 +178,12 @@ pub(super) fn live_package_with_guard(package: &str, guard: Option<BotStartWhen>
 #[test]
 fn public_balance_and_inventory_profiles_build_gather_produce_and_attack() {
     use turts_sim::economy::events::EconomyEventKind;
-    for package in ["skirmish", "stockyard"] {
-        let mut app = live_package(package);
+    for package in ["skirmish", "stockyard", "different_game"] {
+        let mut app = if package == "different_game" {
+            live_archive(&renamed_archive(), "different_game:rival", None)
+        } else {
+            live_package(package)
+        };
         let mut built = false;
         let mut gathered = false;
         let mut produced = false;
@@ -227,4 +234,104 @@ fn public_balance_and_inventory_profiles_build_gather_produce_and_attack() {
         );
         assert!(app.world().resource::<BotExecution>().error.is_none());
     }
+}
+
+fn renamed_archive() -> PackageArchive {
+    fn visit(
+        root: &std::path::Path,
+        path: &std::path::Path,
+        files: &mut std::collections::BTreeMap<String, Vec<u8>>,
+    ) {
+        for entry in std::fs::read_dir(path).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                visit(root, &path, files)
+            } else {
+                let key = path
+                    .strip_prefix(root)
+                    .unwrap()
+                    .to_str()
+                    .unwrap()
+                    .to_owned();
+                let bytes = std::fs::read(&path).unwrap();
+                let bytes = if key.ends_with(".ron") {
+                    let mut text = String::from_utf8(bytes)
+                        .unwrap()
+                        .replace("stockyard", "different_game");
+                    for (old, new) in [
+                        ("base", "citadel"),
+                        ("barracks", "hall"),
+                        ("builder", "carpenter"),
+                        ("worker", "porter"),
+                        ("soldier", "archer"),
+                        ("swordsman", "guard"),
+                        ("warrior", "giant"),
+                        ("tower", "beacon"),
+                        ("wood", "timber"),
+                        ("credits", "coins"),
+                        ("beds", "lodging"),
+                        ("trees", "grove"),
+                        ("train_worker", "recruit_porter"),
+                        ("train_soldier", "recruit_archer"),
+                        ("train_swordsman", "recruit_guard"),
+                        ("train_warrior", "recruit_giant"),
+                        ("build_barracks", "raise_hall"),
+                        ("build_tower", "raise_beacon"),
+                        ("order_gather", "collect"),
+                        ("order_attack", "assault"),
+                        ("order_move", "travel"),
+                        ("order_produce", "recruit"),
+                        ("order_construct", "raise"),
+                        ("home", "anchor"),
+                        ("workers", "porters"),
+                        ("builders", "carpenters"),
+                        ("trainers", "halls"),
+                        ("worker_trainers", "porter_halls"),
+                        ("defenses", "beacons"),
+                        ("ranged", "archers"),
+                        ("melee", "guards"),
+                        ("heavy", "giants"),
+                        ("army", "troops"),
+                        ("opponent", "rival"),
+                    ] {
+                        text = text
+                            .replace(
+                                &format!("\"different_game:{old}\""),
+                                &format!("\"different_game:{new}\""),
+                            )
+                            .replace(&format!("\"{old}\""), &format!("\"{new}\""));
+                    }
+                    text.into_bytes()
+                } else {
+                    bytes
+                };
+                files.insert(key, bytes);
+            }
+        }
+    }
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../mods/stockyard");
+    let mut files = std::collections::BTreeMap::new();
+    visit(&root, &root, &mut files);
+    let bytes = turts_mod_runtime::pack::pack_files(&files).unwrap();
+    let archive = PackageArchive::parse(&bytes).unwrap();
+    let catalog = archive.content().unwrap();
+    assert!(
+        catalog
+            .bots
+            .contains_key(&ContentId::parse("different_game:rival").unwrap())
+    );
+    assert!(!catalog.units.keys().any(|id| {
+        [
+            "base",
+            "barracks",
+            "builder",
+            "worker",
+            "soldier",
+            "swordsman",
+            "warrior",
+            "tower",
+        ]
+        .contains(&id.local.as_str())
+    }));
+    archive
 }
