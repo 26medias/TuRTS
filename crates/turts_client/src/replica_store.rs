@@ -27,6 +27,7 @@
 //! | `site_progress` | the unit is in `sites_completed`, or in `removed` |
 //! | `construction_queues` | the constructor is in `removed`, or the record has no orders |
 //! | `job_progress` | the producer is in `removed`, or the producer's `QueueState` no longer holds the job |
+//! | `repairs` | source removal, or an explicit clear/replacement for a surviving source |
 //! | `supply` | never: a supply record names a slot and a resource, and slots are permanent (D25) |
 //! | `match_state` | never: it names slots only; the next `match_state` replaces it |
 //!
@@ -39,7 +40,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use turts_mod_api::{ContentId, ResourceKind};
 use turts_net_protocol::{
     ConstructionQueue, EconomyState, HeldOrder, JobProgress, MatchState, RateRecord, RecordState,
-    SiteProgress, SlotOutcome, SupplyRecord, UnitSnapshot, WorldDelta,
+    RepairRecord, RepairState, SiteProgress, SlotOutcome, SupplyRecord, UnitSnapshot, WorldDelta,
 };
 use turts_rules::charge::{CancelCase, CancelRefunds};
 use turts_rules::progress;
@@ -71,6 +72,7 @@ pub struct RecordStore {
     match_state: MatchState,
     /// The progress record of each job in `economy.queues`, by (producer, job).
     job_progress: BTreeMap<(u32, u64), RateRecord>,
+    repairs: BTreeMap<u32, RepairRecord>,
 }
 
 impl Clone for RecordStore {
@@ -84,6 +86,7 @@ impl Clone for RecordStore {
             supply: self.supply.clone(),
             match_state: self.match_state.clone(),
             job_progress: self.job_progress.clone(),
+            repairs: self.repairs.clone(),
         }
     }
 }
@@ -110,6 +113,8 @@ pub(crate) struct StoreStep {
     construction_queues: Vec<(u32, Vec<HeldOrder>)>,
     supply: Vec<SupplyRecord>,
     match_state: Option<MatchState>,
+    repairs: Vec<RepairRecord>,
+    repairs_cleared: Vec<u32>,
 }
 
 impl RecordStore {
@@ -144,6 +149,15 @@ impl RecordStore {
         self.supply.get(&(slot, resource.to_string()))
     }
 
+    /// The accepted owner repair action for a source.
+    pub fn repair(&self, repairer: u32) -> Option<&RepairRecord> {
+        self.repairs.get(&repairer)
+    }
+
+    pub fn repairs(&self) -> impl Iterator<Item = &RepairRecord> {
+        self.repairs.values()
+    }
+
     /// The match state. The empty state until a `Snapshot` or a delta brings one.
     pub fn match_state(&self) -> &MatchState {
         &self.match_state
@@ -171,6 +185,7 @@ impl RecordStore {
             self.site_progress.remove(unit);
             self.construction_queues.remove(unit);
             self.drop_jobs_where(*unit, |_| true);
+            self.repairs.remove(unit);
         }
         self.sites.extend(step.sites_added);
         for unit in &step.sites_completed {
@@ -193,6 +208,12 @@ impl RecordStore {
             self.supply
                 .insert((record.slot.0, record.resource.clone()), record);
         }
+        for repairer in step.repairs_cleared {
+            self.repairs.remove(&repairer);
+        }
+        for record in step.repairs {
+            self.repairs.insert(record.repairer.0, record);
+        }
         if let Some(state) = step.match_state {
             self.match_state = state;
         }
@@ -213,15 +234,14 @@ impl RecordStore {
     }
 }
 
-/// A record in the form that `turts_rules::progress` evaluates. A job that waits for funds, and a
-/// held record (6.4, erratum E21), keep their value.
+/// Advance only actual Running/Slowed work. The held flag is display hysteresis, not a veto.
 pub(crate) fn rate_record(record: &RateRecord) -> progress::RateRecord {
     progress::RateRecord {
         done: record.done,
         total: record.total,
         per_tick: record.per_tick,
         at_tick: record.at_tick,
-        stalled: record.held || matches!(record.state, RecordState::WaitingForFunds(_)),
+        stalled: !matches!(record.state, RecordState::Running | RecordState::Slowed),
     }
 }
 
@@ -394,6 +414,58 @@ fn supply_rows(context: &ReplicaContext, records: &[SupplyRecord]) -> Option<Vec
     Some(records.to_vec())
 }
 
+fn repairer_definition<'a>(
+    context: &'a ReplicaContext,
+    units: &HashMap<u32, UnitReplica>,
+    removed: &HashSet<u32>,
+    repairer: u32,
+) -> Option<&'a turts_mod_api::RepairerDef> {
+    if !own_unit(context, units, removed, repairer) {
+        return None;
+    }
+    let id = ContentId::parse(&units.get(&repairer)?.content_id).ok()?;
+    context.content.catalog.units.get(&id)?.repairer.as_ref()
+}
+
+fn repair_rows(
+    context: &ReplicaContext,
+    units: &HashMap<u32, UnitReplica>,
+    removed: &HashSet<u32>,
+    is_site: impl Fn(u32) -> bool,
+    records: &[RepairRecord],
+) -> Option<Vec<RepairRecord>> {
+    if !unique(records, |record| record.repairer.0) {
+        return None;
+    }
+    for record in records {
+        let definition = repairer_definition(context, units, removed, record.repairer.0)?;
+        if removed.contains(&record.target.0)
+            || !units.contains_key(&record.target.0)
+            || is_site(record.repairer.0)
+            || is_site(record.target.0)
+        {
+            return None;
+        }
+        if let RepairState::WaitingForFunds(resource) = &record.state {
+            let id = ContentId::parse(resource).ok()?;
+            if !context
+                .content
+                .catalog
+                .resources
+                .get(&id)
+                .is_some_and(|resource| resource.kind == ResourceKind::Balance)
+                || !definition
+                    .cost
+                    .iter()
+                    .any(|cost| cost.resource == *resource && cost.amount > 0)
+            {
+                return None;
+            }
+        }
+    }
+    Some(records.to_vec())
+}
+
 /// Stage the store of a `Snapshot`: a whole new store. `units` and `economy` are those of the
 /// staged candidate. `None` rejects the Snapshot.
 pub(crate) fn stage_snapshot_store(
@@ -423,6 +495,16 @@ pub(crate) fn stage_snapshot_store(
             .filter(|(_, orders)| !orders.is_empty())
             .collect();
     let supply = supply_rows(context, &records.supply)?;
+    let repairs = repair_rows(
+        context,
+        units,
+        &no_removed,
+        |id| sites.contains(&id),
+        &records.repairs,
+    )?
+    .into_iter()
+    .map(|record| (record.repairer.0, record))
+    .collect();
     let match_state = records.match_state.clone().unwrap_or_default();
     if !valid_match_state(&match_state) {
         return None;
@@ -440,6 +522,7 @@ pub(crate) fn stage_snapshot_store(
         job_progress: held_jobs(&records.jobs, economy, &no_removed)?
             .into_iter()
             .collect(),
+        repairs,
     })
 }
 
@@ -476,6 +559,27 @@ pub(crate) fn stage_delta_step(
         .into_iter()
         .filter(|(unit, _)| !sites_completed.contains(unit))
         .collect();
+    let repair_is_site = |id| is_site(id) && !sites_completed.contains(&id);
+    let repairs = repair_rows(context, units, removed, repair_is_site, &records.repairs)?;
+    if !unique(&records.repairs_cleared, |id| id.0)
+        || records.repairs_cleared.iter().any(|id| {
+            repairer_definition(context, units, removed, id.0).is_none()
+                || repair_is_site(id.0)
+                || repairs.iter().any(|record| record.repairer == *id)
+        })
+    {
+        return None;
+    }
+    // A surviving action cannot silently retain a removed target. It needs a clear or replacement.
+    for record in base.repairs.values() {
+        if !removed.contains(&record.repairer.0)
+            && removed.contains(&record.target.0)
+            && !records.repairs_cleared.contains(&record.repairer)
+            && !repairs.iter().any(|next| next.repairer == record.repairer)
+        {
+            return None;
+        }
+    }
     if let Some(state) = &records.match_state
         && !valid_match_state(state)
     {
@@ -507,6 +611,8 @@ pub(crate) fn stage_delta_step(
         )?,
         supply: supply_rows(context, &records.supply)?,
         match_state: records.match_state.clone(),
+        repairs,
+        repairs_cleared: records.repairs_cleared.iter().map(|id| id.0).collect(),
     })
 }
 

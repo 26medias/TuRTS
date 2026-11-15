@@ -3,6 +3,68 @@
 use super::SourceContext;
 use turts_mod_api::PrimaryField;
 
+fn selected_repair<'a>(context: SourceContext<'a>) -> Option<&'a turts_net_protocol::RepairRecord> {
+    let id = context.selection.first()?;
+    let unit = context.replica.units.get(id)?;
+    if unit.owner_slot != context.owner_slot {
+        return None;
+    }
+    context.replica.repair(*id)
+}
+
+pub(in crate::widgets) fn primary_repair(
+    field: PrimaryField,
+    context: SourceContext<'_>,
+) -> serde_json::Value {
+    use turts_net_protocol::RepairState;
+    let Some(record) = selected_repair(context) else {
+        return serde_json::Value::Null;
+    };
+    match field {
+        PrimaryField::RepairState => serde_json::json!(match &record.state {
+            RepairState::Approaching => "approaching",
+            RepairState::Working => "working",
+            RepairState::WaitingForFunds(_) => "waiting_for_funds",
+        }),
+        PrimaryField::RepairTargetName => context
+            .replica
+            .units
+            .get(&record.target.0)
+            .and_then(|unit| turts_mod_api::ContentId::parse(&unit.content_id).ok())
+            .and_then(|id| context.content.catalog.units.get(&id))
+            .map_or(serde_json::Value::Null, |unit| serde_json::json!(unit.name)),
+        PrimaryField::RepairResourceName => match &record.state {
+            RepairState::WaitingForFunds(resource) => turts_mod_api::ContentId::parse(resource)
+                .ok()
+                .and_then(|id| context.content.catalog.resources.get(&id))
+                .map_or(serde_json::Value::Null, |resource| {
+                    serde_json::json!(resource.name)
+                }),
+            _ => serde_json::Value::Null,
+        },
+        _ => serde_json::Value::Null,
+    }
+}
+
+pub(in crate::widgets) fn predicate_repair_state(
+    kind: turts_mod_api::RepairStateKind,
+    context: &SourceContext<'_>,
+) -> bool {
+    use turts_mod_api::RepairStateKind;
+    use turts_net_protocol::RepairState;
+    selected_repair(*context).is_some_and(|record| {
+        matches!(
+            (&record.state, kind),
+            (RepairState::Approaching, RepairStateKind::Approaching)
+                | (RepairState::Working, RepairStateKind::Working)
+                | (
+                    RepairState::WaitingForFunds(_),
+                    RepairStateKind::WaitingForFunds
+                )
+        )
+    })
+}
+
 pub(in crate::widgets) fn primary_activity(_context: SourceContext<'_>) -> serde_json::Value {
     serde_json::Value::Null
 }

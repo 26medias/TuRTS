@@ -227,10 +227,8 @@ pub(super) fn predicate_matches(
                 turts_mod_api::Capability::Gatherer => unit.gatherer.is_some(),
                 turts_mod_api::Capability::Producer => unit.producer.is_some(),
                 turts_mod_api::Capability::Research => unit.research.is_some(),
-                // API 0.2.4 (row O6): the resolved unit has no constructor or repairer yet.
-                turts_mod_api::Capability::Constructor | turts_mod_api::Capability::Repairer => {
-                    false
-                }
+                turts_mod_api::Capability::Constructor => unit.constructor.is_some(),
+                turts_mod_api::Capability::Repairer => unit.repairer.is_some(),
             }),
         Predicate::GuideOpen => context.guide_open,
         // API 0.2.4 (row H25).
@@ -244,6 +242,7 @@ pub(super) fn predicate_matches(
             sources::unit_hud::predicate_primary_has_value(*field, context)
         }
         Predicate::SupplyShort(resource) => sources::hud::predicate_supply_short(resource, context),
+        Predicate::RepairStateIs(kind) => sources::unit_hud::predicate_repair_state(*kind, context),
         Predicate::MatchOver => sources::result::predicate_match_over(context),
         Predicate::OutcomeIs(kind) => sources::result::predicate_outcome_is(*kind, context),
         Predicate::OutcomeReasonIs(kind) => {
