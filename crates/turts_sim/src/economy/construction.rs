@@ -38,6 +38,8 @@ pub struct HeldConstruction {
 /// A site owns its job independently of the constructor that placed it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Site {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub funding: Option<super::production::FundingState>,
     pub constructor: u32,
     pub owner_slot: u8,
     pub recipe: ContentId,

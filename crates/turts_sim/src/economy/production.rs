@@ -21,8 +21,89 @@ pub enum JobStage {
     Running,
     OutputBlocked,
 }
+/// Charge-over-time state. Other payment policies retain `None` and the legacy audit shape.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FundingState {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub waiting_for_funds: Option<ContentId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub held_since_tick: Option<u32>,
+    #[serde(default, skip_serializing_if = "is_zero_u32")]
+    pub recovery_ticks: u32,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pending_charges: Vec<CostLine>,
+}
+
+fn is_zero_u32(value: &u32) -> bool {
+    *value == 0
+}
+
+impl FundingState {
+    pub(crate) fn wait(&mut self, resource: ContentId, tick: u32) -> bool {
+        let entering = self.waiting_for_funds.as_ref() != Some(&resource);
+        self.waiting_for_funds = Some(resource);
+        self.held_since_tick.get_or_insert(tick);
+        self.recovery_ticks = 0;
+        entering
+    }
+
+    pub(crate) fn advance(&mut self, tick_hz: u16) {
+        self.waiting_for_funds = None;
+        if self.held_since_tick.is_some() {
+            let threshold = u32::from(tick_hz);
+            if self.recovery_ticks < threshold {
+                self.recovery_ticks += 1;
+            }
+            if self.recovery_ticks >= threshold {
+                self.held_since_tick = None;
+                self.recovery_ticks = 0;
+            }
+        }
+    }
+
+    pub(crate) fn add_charges(&mut self, rows: &[ReservationLine]) -> Result<(), RejectReason> {
+        for row in rows {
+            let added = event_cost_line(row);
+            if let Some(pending) = self.pending_charges.iter_mut().find(|pending| {
+                pending.source == added.source && pending.resource == added.resource
+            }) {
+                pending.amount = pending
+                    .amount
+                    .checked_add(added.amount)
+                    .ok_or(RejectReason::ArithmeticOverflow)?;
+            } else {
+                self.pending_charges.push(added);
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Flush exact buffered debits at the operation's existing accounting boundary.
+pub(crate) fn flush_funding(
+    tx: &mut transaction::Transaction<'_>,
+    owner_slot: u8,
+    unit: u32,
+    job: u64,
+    funding: &mut Option<FundingState>,
+) -> Result<(), RejectReason> {
+    if let Some(funding) = funding
+        && !funding.pending_charges.is_empty()
+    {
+        tx.stage_event(
+            owner_slot,
+            EconomyEventKind::ProgressCharged {
+                unit,
+                job,
+                charged: std::mem::take(&mut funding.pending_charges),
+            },
+        )?;
+    }
+    Ok(())
+}
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ProductionJob {
+    pub(crate) funding: Option<FundingState>,
     pub(crate) id: JobId,
     pub(crate) recipe: ContentId,
     pub(crate) stage: JobStage,
