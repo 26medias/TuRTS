@@ -1405,3 +1405,22 @@ fn validate_repair_wait(
     }
     Ok(())
 }
+
+pub(crate) fn has_constructor(state: &AuditState, unit: u32) -> bool {
+    unit_definition(state, unit).is_ok_and(|definition| definition.constructor.is_some())
+}
+pub(crate) fn validate_constructor_stop(
+    operation: &OperationAudit,
+    unit: u32,
+) -> Result<(), String> {
+    let mut expected = operation.before.economy.construction.clone();
+    expected.held.remove(&unit);
+    if expected != operation.after.economy.construction
+        || operation.before.raw_queues != operation.after.raw_queues
+        || operation.before.economy.queues != operation.after.economy.queues
+        || accounts(&operation.before) != accounts(&operation.after)
+    {
+        return Err("Stop must clear only its held construction requests and preserve placed sites, hybrid jobs and accounts".into());
+    }
+    Ok(())
+}

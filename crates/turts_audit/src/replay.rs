@@ -1201,6 +1201,8 @@ fn expected_order_refusal(
         turts_mod_api::Behaviour::Stop | turts_mod_api::Behaviour::Hold => {
             capability.is_some_and(|entry| entry.movement || entry.weapon)
                 || crate::paid::has_repairer(before, unit_id)
+                || order.behaviour == turts_mod_api::Behaviour::Stop
+                    && crate::paid::has_constructor(before, unit_id)
         }
         turts_mod_api::Behaviour::Attack => match &order.target {
             turts_sim::OrderTargetSim::Unit(_) => capability.is_some_and(|entry| entry.weapon),
@@ -2251,6 +2253,7 @@ fn validate_order_operation(
             }
         }
         turts_mod_api::Behaviour::Stop => {
+            crate::paid::validate_constructor_stop(operation, unit_id)?;
             expected_orders = Default::default();
             expected_target = None;
         }
@@ -2401,7 +2404,8 @@ fn validate_order_operation(
             "Orders operation for unit {unit_id} changed its public position/state view"
         ));
     }
-    let replacing = order.queue == turts_sim::QueueMode::Replace;
+    let replacing = order.queue == turts_sim::QueueMode::Replace
+        || order.behaviour == turts_mod_api::Behaviour::Stop;
     let mut expected_pending = operation.before.pending_movement_orders.clone();
     let owner = operation
         .before
