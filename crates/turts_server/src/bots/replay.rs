@@ -375,6 +375,31 @@ mod tests {
         );
         path
     }
+    fn human_stop(app: &mut App, connection: Entity) {
+        let unit = turts_sim::completed_world(app.world())
+            .units
+            .iter()
+            .find(|unit| unit.owner_slot == 0 && unit.content_id == "stockyard:worker")
+            .expect("the human has an ordinary worker")
+            .unit_id;
+        app.world_mut()
+            .resource_mut::<session::StagedPlayerCommands>()
+            .0
+            .push_back(session::StagedPlayerCommand {
+                connection,
+                slot: SlotId(0),
+                envelope: turts_net_protocol::PlayerCommand {
+                    seq: 1,
+                    order: turts_net_protocol::OrderEnvelope {
+                        order: "stockyard:order_stop".into(),
+                        units: vec![turts_net_protocol::UnitId(unit)],
+                        target: OrderTarget::None,
+                        queue: QueueMode::Replace,
+                        group: 0,
+                    },
+                },
+            });
+    }
     #[test]
     fn recorded_and_regenerated_cot_pause_replay_compare_every_tick_and_command() {
         let mut app = fixture();
@@ -385,6 +410,7 @@ mod tests {
             .query_filtered::<Entity, With<session::Session>>()
             .single(app.world())
             .unwrap();
+        human_stop(&mut app, human);
         let mut paused_pending = 0;
         for _ in 0..400 {
             app.update();
@@ -417,11 +443,15 @@ mod tests {
                         paused_pending,
                         "pause must retain in-flight COT commitments even when authoritative work advances"
                     );
-                    app.world_mut().spawn(session::Session {
-                        last_seq: None,
-                        slot: SlotId(0),
-                        player_id: 7,
-                    });
+                    let reconnected = app
+                        .world_mut()
+                        .spawn(session::Session {
+                            last_seq: None,
+                            slot: SlotId(0),
+                            player_id: 7,
+                        })
+                        .id();
+                    human_stop(&mut app, reconnected);
                 }
             }
         }
@@ -430,6 +460,26 @@ mod tests {
         assert!(app.world().resource::<EconomyLogSink>().error.is_none());
         drop(app);
         let records = turts_audit::read_jsonl_file(&path).unwrap();
+        let human_epochs = records
+            .iter()
+            .filter_map(|record| match record {
+                EconomyLogRecord::Actor(ActorLogRecord::Submission {
+                    actor: ActorLogIdentity::Human { connection, .. },
+                    sequence,
+                    ..
+                }) => {
+                    assert_eq!(*sequence, 1);
+                    Some(*connection)
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            human_epochs.len(),
+            2,
+            "record inputs on both transport epochs"
+        );
+        assert_ne!(human_epochs[0], human_epochs[1]);
         turts_audit::validate_records(&records).unwrap();
         let mut mismatched = ReplayTape::from_records(&records).unwrap();
         mismatched.installation.bots[0].seed ^= 1;
