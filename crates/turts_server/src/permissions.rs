@@ -1,7 +1,7 @@
 //! Shared public-observation decisions. Ownership remains a separate privacy check.
 //!
-//! Production still uses all-visible public geometry. This interface supplies no fog,
-//! remembered sightings, death inference, or private enemy economy information.
+//! Authored fog uses the authoritative immutable simulation basis. Old packages use AllVisible.
+//! Ownership remains independent. No policy grants another slot's private economy.
 
 use turts_mod_api::WorldPos;
 
