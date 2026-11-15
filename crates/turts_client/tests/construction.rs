@@ -106,6 +106,8 @@ fn fixture(policy: PaymentPolicy, mutate: impl FnOnce(&mut ContentCatalog, &mut 
         cancel_refunds: refunds,
     };
     let mut catalog = ContentCatalog {
+        bots: Default::default(),
+
         combat: None,
         resources: BTreeMap::from([(
             cid("credits"),

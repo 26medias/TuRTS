@@ -767,6 +767,8 @@ mod tests {
         })
         .collect();
         ContentCatalog {
+            bots: Default::default(),
+
             combat: None,
             resources,
             units: units
@@ -879,6 +881,8 @@ mod tests {
         world.resource_mut::<ConstructionState>().sites.insert(
             3,
             super::super::construction::Site {
+                origin: None,
+
                 funding: None,
 
                 constructor_when_short: Vec::new(),

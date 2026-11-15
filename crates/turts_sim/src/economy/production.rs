@@ -381,6 +381,11 @@ pub fn cancel_production(
             )?;
         }
         flush_funding(tx, slot.0, producer, job.0, &mut current.funding)?;
+        tx.stage_job_terminal(
+            producer,
+            &current,
+            crate::receipts::TerminalWorkState::Cancelled,
+        );
         queue.remove(index);
         tx.stage_queues(queues);
         let refunded = refund
@@ -1242,6 +1247,11 @@ fn stage_output(
         return Err(RejectReason::UnknownJob);
     }
     let id = tx.allocate_unit_id()?;
+    tx.stage_job_terminal(
+        producer,
+        &queue[0],
+        crate::receipts::TerminalWorkState::Completed,
+    );
     queue.remove(0);
     tx.stage_queues(queues);
     tx.stage_spawn(transaction::SpawnWrite {
@@ -1456,6 +1466,8 @@ mod m3_disabled_legacy_producer_tests {
                 removal: None,
             };
         let mut catalog = ContentCatalog {
+            bots: Default::default(),
+
             combat: None,
             resources: BTreeMap::new(),
             units: BTreeMap::new(),

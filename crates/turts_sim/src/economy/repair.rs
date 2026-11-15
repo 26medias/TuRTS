@@ -798,6 +798,8 @@ mod tests {
         let mut target = unit("target");
         target.health = Some(HealthDef { max: 100 });
         let catalog = ContentCatalog {
+            bots: Default::default(),
+
             combat: None,
             resources: [(
                 id("credits"),

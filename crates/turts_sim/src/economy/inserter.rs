@@ -628,6 +628,8 @@ mod tests {
             }),
         );
         let catalog = ContentCatalog {
+            bots: Default::default(),
+
             combat: None,
             resources: BTreeMap::from([
                 (

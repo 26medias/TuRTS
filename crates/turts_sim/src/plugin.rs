@@ -387,7 +387,12 @@ fn publish_completed_tick(world: &mut World) {
         })
         .map(|row| row.repairer)
         .collect();
+    let terminal_work = world
+        .get_resource_mut::<crate::receipts::CommandWorkReceipts>()
+        .map(|mut receipts| receipts.drain_terminals())
+        .unwrap_or_default();
     let batch = CommittedTick {
+        terminal_work,
         repairs,
         repairs_cleared,
         job_progress: crate::economy::production::progress_changes(

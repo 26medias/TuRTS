@@ -16,6 +16,8 @@ fn manifest(id: &str, kind: PackageKind, dependencies: &[(&str, &str)]) -> Manif
                 .collect::<BTreeMap<_, _>>(),
         ),
         exports: Exports {
+            bots: Default::default(),
+
             units: vec![],
             maps: if kind == PackageKind::Game {
                 vec!["maps/game.ron".to_string()]
