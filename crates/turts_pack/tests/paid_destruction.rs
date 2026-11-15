@@ -747,6 +747,18 @@ fn grouped_manual_cancel_refuses_exact_site_position_ties_symmetrically() {
     let builder = id(&app, "builder");
     let a = build(&mut app, builder, 8.);
     let b = build(&mut app, builder, 30.);
+    assert!(
+        construction::construct(
+            app.world_mut(),
+            SlotId(0),
+            builder,
+            cid("build"),
+            Vec2::new(8., 24.)
+        )
+        .is_err(),
+        "normal public placement must refuse an overlapping site"
+    );
+    assert_eq!(live(&mut app).construction.sites.len(), 2);
     // Legal placement cannot overlap static sites. Supply the exact rank-tie boundary directly.
     // Accounts, health, paid work, runtime identities, and site state remain normally authored.
     for id in [a, b] {
