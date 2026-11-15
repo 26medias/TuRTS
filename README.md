@@ -32,7 +32,7 @@ From a source-built prepared folder, use `python3 -I -B scripts/skirmish_share.p
 Full local two-browser matches and public HTTPS/WSS orders pass scripted checks.
 Fast reload keeps the same army and slot. Human games wait in a ready lobby with colour choices and a cancellable three-second countdown.
 A full match played by two people and the full MP1 roster remain open.
-The computer now trains a paid mixed army of Crossbowmen, Swordsmen, and Warriors, and builds a Guard tower. It does not complete the general MP2 bot framework.
+The computer now trains a paid mixed army of Crossbowmen, Swordsmen, and Warriors, and builds a Guard tower. It now runs through the public mod bot framework. MP2 still needs shared remembered sightings and creator-authorized lobby selection.
 Terrain, fog, broader lifecycle features, and large-scale performance remain later work.
 
 ## Engine progress
@@ -50,11 +50,12 @@ The skirmish is its playable test bed. This table tracks delivered capabilities,
 | Damage system | Type tables, bonuses, optional armour curves, owner armour upgrades, automatic acquisition, Warriors, and Guard towers pass acceptance. | [Acceptance, independent review, and normal win](docs/reports/2026-11-14-damage-system.md). API 0.2.12; protocol 7. An independent test checks upgrade order and privacy in snapshots and deltas. The default game has no research lab yet. |
 | Operating resources | Mod-defined slot supply, exact shortage rates, weapon Disable, and periodic income pass native and browser checks. | [Acceptance and limits](docs/reports/2026-11-15-operating-resources.md). API 0.2.13; protocol 7. The default Skirmish balance stays unchanged. Gathered accounting and its display remain open; a future counter test must exclude periodic income. |
 | Paid work and repair | Exact incremental payment, construction cancellation, safe destruction refunds, and manual/automatic repair pass feature tests and the full browser fixture. | [Acceptance progress](docs/reports/2026-11-15-paid-work-and-repair.md). API 0.2.14; protocol 8. Acceptance and independent foundation review pass. Research ChargeOverTime and individual held-request cancellation remain open. |
-| Remaining engine scope | Public mod bots, editable terrain, discovery and fog, scripts, utilities, rooms, saves, statistics, and spectator/replay delivery remain open. | These capabilities follow the full project specification. Existing package loading and networking will be reused. |
+| Public mod bots | Portable profiles, public Rust controllers, bounded observations, exact account coordination, shared command admission, and headless recorded/regenerated replay are implemented. | [SDK15 report](docs/reports/2026-11-15-public-bot-foundation.md). Final Skirmish and Stockyard browser probes pass. BF8 passed at 4.906851 ms p99 before later financial/profile fixes; those fixes were not remeasured. Full human/reference readiness remains open. |
+| Remaining engine scope | Editable terrain, discovery and fog, scripts, utilities, rooms, saves, statistics, and spectator/replay delivery remain open. | These capabilities follow the full project specification. Existing package loading and networking will be reused. |
 
 Latest accepted build: `target/mc-evidence/skirmish-paid-work-prepared` (API 0.2.14; protocol 8).
-All three scripted player probes pass for this build.
-The full fresh-agent and manual readiness procedure was not repeated for this milestone.
+SDK15 candidate: `target/mc-evidence/skirmish-public-bots-prepared` (API 0.2.15; protocol 8), sealed from clean source `54a893bc`. Its public Skirmish win and Stockyard browser checks pass. All three cold-play product probes pass; the isolated checker reports PARTIAL-PASS with manual/reference checks open.
+The accepted launcher remains on the SDK14 build above until candidate integration. The full fresh-agent and manual readiness procedure was not repeated.
 See [working rules](AGENTS.md) for parallel delivery, review, and milestone integration.
 
 The older Forge industrial demonstration remains available below. It proves extraction, conveyors, inserters, recipes, research, and ammunition combat through the public mod API. Its two-slot and restart restrictions describe that demonstration.
