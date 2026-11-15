@@ -300,14 +300,34 @@ impl PermittedBaseline {
     }
 }
 fn changed<T: Clone + PartialEq, K: Ord>(old: &[T], new: &[T], key: impl Fn(&T) -> K) -> Vec<T> {
+    if new.is_empty() {
+        return Vec::new();
+    }
+    if old.is_empty() {
+        return new.to_vec();
+    }
     // One contiguous index replaces one tree allocation per old row. Stable
     // sorting keeps the last old duplicate as the comparison row, as before.
     let mut index = old.iter().map(|row| (key(row), row)).collect::<Vec<_>>();
     index.sort_by(|a, b| a.0.cmp(&b.0));
+    let mut end = 0;
     new.iter()
         .filter(|row| {
             let key = key(row);
-            let end = index.partition_point(|(old, _)| *old <= key);
+            if end > 0 && index[end - 1].0 > key {
+                end = index.partition_point(|(old, _)| *old <= key);
+            } else {
+                // Canonical ID-ordered families advance together in linear time.
+                // Bound the scan before binary fallback so arbitrary new ordering
+                // cannot turn this private index into a quadratic search.
+                let stop = (end + 8).min(index.len());
+                while end < stop && index[end].0 <= key {
+                    end += 1;
+                }
+                if end < index.len() && index[end].0 <= key {
+                    end += index[end..].partition_point(|(old, _)| *old <= key);
+                }
+            }
             end.checked_sub(1)
                 .and_then(|position| index.get(position))
                 .filter(|(old, _)| *old == key)
@@ -439,6 +459,13 @@ mod tests {
             vec![(7, 1), (3, 4)]
         );
         assert!(changed(&old, &[], |row| row.0).is_empty());
+        let old = (0..100).map(|key| (key, key * 2)).collect::<Vec<_>>();
+        assert!(changed(&old, &old, |row| row.0).is_empty());
+        let jumps = vec![(99, 0), (0, 0), (99, 198), (0, 1), (50, 100), (101, 1)];
+        assert_eq!(
+            changed(&old, &jumps, |row| row.0),
+            vec![(99, 0), (0, 1), (101, 1)]
+        );
     }
     fn basis(tick: u32) -> KnowledgeBasis {
         KnowledgeBasis {
