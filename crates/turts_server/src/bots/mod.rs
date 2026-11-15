@@ -73,6 +73,7 @@ struct BotInstance {
     period: u64,
     clock: ActiveClock,
     decision_step: u64,
+    next_basis: u64,
     lease: Option<CandidateLease>,
     last_diagnostic: Option<String>,
 }
@@ -109,7 +110,6 @@ impl ActiveClock {
 pub(crate) struct BotHost {
     bots: Vec<BotInstance>,
     catalog: Arc<turts_mod_api::ContentCatalog>,
-    next_basis: u64,
     pub private_projection_scans: u64,
     pub decisions: u64,
     limits: BotLimitsConfig,
@@ -213,6 +213,7 @@ fn install_with_registry_and_limits(
             period,
             clock: ActiveClock::default(),
             decision_step: 0,
+            next_basis: 0,
             lease: None,
             last_diagnostic: None,
         });
@@ -237,7 +238,6 @@ fn install_with_registry_and_limits(
     app.insert_resource(BotHost {
         bots,
         catalog,
-        next_basis: 0,
         private_projection_scans: 0,
         decisions: 0,
         limits,
@@ -405,12 +405,17 @@ fn drive_inner(world: &mut World, host: &mut BotHost, execution: &mut BotExecuti
                 continue;
             }
         };
-        let Some(next_basis) = host.next_basis.checked_add(1) else {
+        let Some(next_basis) = bot
+            .next_basis
+            .checked_add(1)
+            .filter(|value| *value < (1u64 << 56))
+        else {
             diagnose(bot, "observation sequence exhausted".into());
             continue;
         };
-        host.next_basis = next_basis;
-        let accounting_basis = next_basis;
+        bot.next_basis = next_basis;
+        // A different bot's private accounting or scheduler outcome cannot change these IDs.
+        let accounting_basis = (u64::from(bot.actor.slot) << 56) | next_basis;
         if let Err(error) = bot.coordinator.reconcile(accounting_basis, &batch) {
             diagnose(bot, format!("accounting basis refused: {error:?}"));
             continue;
