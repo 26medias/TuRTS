@@ -510,6 +510,26 @@ impl Transaction<'_> {
         if operating.is_none() && self.writes.operating_activations.is_empty() {
             return Ok(());
         }
+        // An operating creation cannot silently bypass the caller's common admission pass.
+        for unit in self.writes.spawned.iter().map(|spawn| spawn.id).chain(
+            self.writes
+                .completed_buildings
+                .iter()
+                .map(|(unit, _)| *unit),
+        ) {
+            let (_, definition) = self.operating_target(unit)?;
+            if (!definition.provides.is_empty()
+                || !definition.consumes.is_empty()
+                || definition.income.is_some())
+                && !self
+                    .writes
+                    .operating_activations
+                    .iter()
+                    .any(|write| write.unit == unit)
+            {
+                return Err(RejectReason::IntegrityViolation);
+            }
+        }
         // A health write cannot bypass admission by reviving an operating unit directly.
         for (&unit, health) in &self.writes.healths {
             if health.is_some_and(|health| health > 0)
@@ -536,9 +556,10 @@ impl Transaction<'_> {
         if self.writes.operating_activations.is_empty() {
             return Ok(());
         }
-        let mut tentative = operating.cloned().unwrap_or_default();
+        let empty = power::OperatingResources::default();
+        let mut tentative = std::borrow::Cow::Borrowed(operating.unwrap_or(&empty));
         for unit in self.operating_deactivations() {
-            tentative.remove(unit);
+            tentative.to_mut().remove(unit);
         }
         let now = self
             .world
@@ -548,6 +569,17 @@ impl Transaction<'_> {
         for activation in &self.writes.operating_activations {
             let unit = activation.unit;
             if self.writes.removed.iter().any(|write| write.unit == unit) {
+                return Err(RejectReason::IntegrityViolation);
+            }
+            let spawns = self
+                .writes
+                .spawned
+                .iter()
+                .filter(|spawn| spawn.id == unit)
+                .count();
+            if spawns > 1
+                || (spawns == 1 && crate::unit_index::unit_entity(self.world, unit).is_some())
+            {
                 return Err(RejectReason::IntegrityViolation);
             }
             let sites = self.writes.construction.as_ref().or_else(|| {
@@ -603,7 +635,11 @@ impl Transaction<'_> {
                 return Err(RejectReason::IntegrityViolation);
             }
             tentative.validate_activation(unit, &activation.supply)?;
-            tentative.apply_activation(unit, activation.supply.clone());
+            if self.writes.operating_activations.len() > 1 {
+                tentative
+                    .to_mut()
+                    .apply_activation(unit, activation.supply.clone());
+            }
         }
         Ok(())
     }
@@ -2942,6 +2978,21 @@ mod operating_transaction_tests {
     }
 
     #[test]
+    fn a_creation_without_its_required_grant_refuses_before_entity_or_charge_commit() {
+        let (mut app, definition) = fixture();
+        let world = app.world_mut();
+        let before = crate::audit_state(world);
+        let result = transact(world, |tx| {
+            tx.stage_account(Endpoint::Slot(0), id("test:credits"), Account::default());
+            spawn(tx, &definition).map(|_| ())
+        });
+        assert_eq!(result, Err(RejectReason::IntegrityViolation));
+        assert_eq!(crate::audit_state(world), before);
+        assert!(crate::unit_entity(world, 2).is_none());
+        assert!(income::clock_audit(world).is_empty());
+    }
+
+    #[test]
     fn a_committed_spawn_activates_after_its_rows_and_inside_its_audit_boundary() {
         let (mut app, definition) = fixture();
         let world = app.world_mut();
@@ -3145,5 +3196,104 @@ mod operating_transaction_tests {
         assert!(crate::unit_entity(world, 1).is_some());
         assert_eq!(*world.resource::<OperatingResources>(), state);
         assert_eq!(income::clock_audit(world), clocks);
+    }
+
+    #[test]
+    fn reversed_tentative_grants_refuse_the_whole_creation_batch() {
+        let (mut app, definition) = fixture();
+        let world = app.world_mut();
+        let mut tentative = world.resource::<OperatingResources>().clone();
+        let first = tentative.prepare_activation(&definition, 0).unwrap();
+        tentative.apply_activation(2, first.clone());
+        let second = tentative.prepare_activation(&definition, 0).unwrap();
+        let clock = prepared(world, &definition, 0).1;
+        let before = crate::audit_state(world);
+        let result = transact(world, |tx| {
+            let unit = spawn(tx, &definition)?;
+            tx.stage_operating_activation(unit, second, clock.clone())?;
+            let unit = spawn(tx, &definition)?;
+            tx.stage_operating_activation(unit, first, clock)
+        });
+        assert_eq!(result, Err(RejectReason::IntegrityViolation));
+        assert_eq!(crate::audit_state(world), before);
+        assert!(crate::unit_entity(world, 2).is_none());
+        assert!(crate::unit_entity(world, 3).is_none());
+        assert!(income::clock_audit(world).is_empty());
+    }
+
+    #[test]
+    fn a_real_combat_kill_releases_live_admission_but_preserves_this_ticks_supply() {
+        let (mut app, definition) = fixture();
+        let world = app.world_mut();
+        activate(world, &definition);
+        world.resource_mut::<OperatingResources>().begin_tick();
+        let mut attacker = definition.clone();
+        attacker.id = id("test:attacker");
+        attacker.provides.clear();
+        attacker.income = None;
+        attacker.producer = None;
+        attacker.weapon = Some(turts_mod_api::ResolvedWeapon {
+            range: 8.0,
+            range_mode: turts_mod_api::WeaponRangeMode::Centre,
+            cooldown_ms: 1000,
+            damage: 100,
+            ammo: None,
+            targets: turts_mod_api::TargetFilter {
+                slots: turts_mod_api::SlotRelation::Enemy,
+            },
+            damage_type: None,
+            bonus: Vec::new(),
+            when_short: Vec::new(),
+        });
+        world
+            .resource_mut::<InstalledCatalog>()
+            .0
+            .units
+            .insert(attacker.id.clone(), attacker.clone());
+        let mut additions = world.resource::<InstalledCatalog>().0.clone();
+        additions.units = BTreeMap::from([(attacker.id.clone(), attacker.clone())]);
+        let types = crate::registry::UnitTypes::from_catalog(
+            &additions,
+            world.resource::<crate::registry::UnitTypes>(),
+        )
+        .unwrap();
+        let kind = types.find("test:attacker").unwrap();
+        world.insert_resource(types);
+        world.spawn((
+            UnitId(2),
+            UnitType(kind),
+            Owner(SlotId(1)),
+            Position(Vec2::new(9.0, 10.0)),
+        ));
+        crate::boot_m3::apply_capability_rows(
+            world,
+            2,
+            crate::boot_m3::install_capability_rows(&attacker, Default::default()),
+        );
+        crate::economy::combat::run_combat(world);
+        assert!(crate::unit_entity(world, 1).is_none());
+        assert!(income::clock_audit(world).is_empty());
+        let state = world.resource::<OperatingResources>();
+        assert_eq!(state.income_amount(0, &id("test:credits")), 0);
+        assert_eq!(state.effects[&(0, id("test:power"))].provided, 10);
+        power::run_supply(world);
+        assert_eq!(
+            world.resource::<OperatingResources>().effects[&(0, id("test:power"))].provided,
+            0
+        );
+        assert!(
+            world
+                .resource::<PendingEconomyEvents>()
+                .0
+                .iter()
+                .any(|event| matches!(
+                    event.kind,
+                    EconomyEventKind::Destroyed {
+                        unit: 1,
+                        cause: RemoveCause::Killed { by: 2 },
+                        ..
+                    }
+                ))
+        );
     }
 }
