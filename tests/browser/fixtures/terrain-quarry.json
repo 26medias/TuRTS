@@ -1,1 +1,71 @@
-{"slot":0,"worker":"quarry:walker","rover":"quarry:crawler","dig":"quarry:spade","body_pick_height":0.6,"reference":[13.5,7.5,0],"rectangle":[[15.5,7.5,1],[16.5,8.5,1]],"cells":{"min":{"x":15,"y":7},"max":{"x":17,"y":9}},"target_elevation":0,"destination":[23,8,0],"require_unload":true}
+{
+  "slot": 0,
+  "worker": "quarry:walker",
+  "rover": "quarry:crawler",
+  "dig": "quarry:spade",
+  "body_pick_height": 0.6,
+  "reference": [
+    13.5,
+    7.5,
+    0
+  ],
+  "rectangle": [
+    [
+      15.5,
+      7.5,
+      1
+    ],
+    [
+      16.5,
+      8.5,
+      1
+    ]
+  ],
+  "cells": {
+    "min": {
+      "x": 15,
+      "y": 7
+    },
+    "max": {
+      "x": 17,
+      "y": 9
+    }
+  },
+  "target_elevation": 0,
+  "destination": [
+    23,
+    8,
+    0
+  ],
+  "require_unload": true,
+  "fill": "quarry:backfill",
+  "resource": "quarry:soil",
+  "depot": "quarry:depot",
+  "depot_pick_height": 1.0,
+  "cell_width": 1,
+  "elevation_step": 0.25,
+  "initial_ridge_elevation": 4,
+  "partial_cell": {
+    "x": 15,
+    "y": 10
+  },
+  "ghost_point": [
+    13.5,
+    10.5
+  ],
+  "ghost_reference": [
+    15.5,
+    10.5,
+    1
+  ],
+  "pause_order": "quarry:order_pause",
+  "resume_order": "quarry:order_resume",
+  "stop_order": "quarry:order_stop",
+  "unload_order": "quarry:order_unload",
+  "refusal_cell": {
+    "x": 4,
+    "y": 4
+  },
+  "output_destination": "Inventory",
+  "require_raised_picking": true
+}
