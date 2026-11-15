@@ -24,6 +24,8 @@ pub enum Error {
     FullOutput,
     InsufficientInput,
     StaleStep,
+    InvalidCount,
+    RunBoundary,
     Allocation,
 }
 
@@ -150,6 +152,7 @@ pub enum Operation {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct StepEffect {
     pub operation: Operation,
+    pub steps: u32,
     pub exposed: Exposed,
     /// Credit for Remove, debit for Fill. A physical/account destination is chosen by the adapter.
     pub amount: u64,
@@ -265,27 +268,65 @@ impl Column {
             exposed: self.exposed(),
         }
     }
+    /// Execution-only run length. It must never enter a preview, query or admission result.
+    /// Only the currently exposed interval is inspected, not the material below it.
+    pub fn exposed_run_steps(&self) -> u32 {
+        self.placed
+            .last()
+            .map(|row| (i64::from(row.top) - i64::from(row.bottom)) as u32)
+            .or_else(|| {
+                self.natural
+                    .last()
+                    .map(|row| (i64::from(row.top) - i64::from(row.bottom)) as u32)
+            })
+            .unwrap_or(0)
+    }
     pub fn stage_remove(
         &self,
         prism: Prism,
         terms: StepTerms,
         output_headroom: u64,
     ) -> Result<PreparedStep, Error> {
+        self.stage_remove_many(prism, terms, output_headroom, 1)
+    }
+    pub fn stage_remove_many(
+        &self,
+        prism: Prism,
+        terms: StepTerms,
+        output_headroom: u64,
+        steps: u32,
+    ) -> Result<PreparedStep, Error> {
+        if steps == 0 {
+            return Err(Error::InvalidCount);
+        }
         let exposed = self.exposed().ok_or(Error::Bedrock)?;
-        let required_work = prism.work(terms.work, u64::MAX)?;
-        let amount = match exposed.provenance {
+        if steps > self.exposed_run_steps() {
+            return Err(Error::RunBoundary);
+        }
+        let required_work = prism
+            .work(terms.work, u64::MAX)?
+            .checked_mul(u64::from(steps))
+            .ok_or(Error::ArithmeticOverflow)?;
+        let per_step = match exposed.provenance {
             Provenance::Natural => prism.amount(terms.material, u64::MAX)?,
             Provenance::NoYield => 0,
         };
+        let amount = per_step
+            .checked_mul(u64::from(steps))
+            .ok_or(Error::ArithmeticOverflow)?;
         if amount > output_headroom {
             return Err(Error::FullOutput);
         }
+        let after = i64::from(self.surface)
+            .checked_sub(i64::from(steps))
+            .and_then(|value| i32::try_from(value).ok());
         self.prepared(
             Operation::Remove,
             exposed,
             amount,
             required_work,
-            self.surface.checked_sub(1),
+            after,
+            steps,
         )
     }
     pub fn stage_fill(
@@ -295,11 +336,36 @@ impl Column {
         terms: StepTerms,
         input_available: u64,
     ) -> Result<PreparedStep, Error> {
+        self.stage_fill_many(material, prism, terms, input_available, 1)
+    }
+    pub fn stage_fill_many(
+        &self,
+        material: MaterialKey,
+        prism: Prism,
+        terms: StepTerms,
+        input_available: u64,
+        steps: u32,
+    ) -> Result<PreparedStep, Error> {
+        if steps == 0 {
+            return Err(Error::InvalidCount);
+        }
         if self.surface == self.ceiling {
             return Err(Error::Ceiling);
         }
-        let required_work = prism.work(terms.work, u64::MAX)?;
-        let amount = prism.amount(terms.material, u64::MAX)?;
+        let after = i64::from(self.surface)
+            .checked_add(i64::from(steps))
+            .and_then(|value| i32::try_from(value).ok());
+        if after.is_none_or(|after| after > self.ceiling) {
+            return Err(Error::Ceiling);
+        }
+        let required_work = prism
+            .work(terms.work, u64::MAX)?
+            .checked_mul(u64::from(steps))
+            .ok_or(Error::ArithmeticOverflow)?;
+        let amount = prism
+            .amount(terms.material, u64::MAX)?
+            .checked_mul(u64::from(steps))
+            .ok_or(Error::ArithmeticOverflow)?;
         if amount > input_available {
             return Err(Error::InsufficientInput);
         }
@@ -311,9 +377,11 @@ impl Column {
             },
             amount,
             required_work,
-            self.surface.checked_add(1),
+            after,
+            steps,
         )
     }
+    #[allow(clippy::too_many_arguments)]
     fn prepared(
         &self,
         operation: Operation,
@@ -321,6 +389,7 @@ impl Column {
         amount: u64,
         required_work: u64,
         after: Option<i32>,
+        steps: u32,
     ) -> Result<PreparedStep, Error> {
         let after = after.ok_or(Error::ArithmeticOverflow)?;
         if after < self.floor || after > self.ceiling {
@@ -328,12 +397,13 @@ impl Column {
         }
         let revision = self
             .revision
-            .checked_add(1)
+            .checked_add(u64::from(steps))
             .ok_or(Error::ArithmeticOverflow)?;
         Ok(PreparedStep {
             expected: self.expected(),
             effect: StepEffect {
                 operation,
+                steps,
                 exposed,
                 amount,
                 required_work,
@@ -752,6 +822,107 @@ mod tests {
         assert_eq!(column.placed_runs().len(), 2);
         assert_eq!(column.exposed().unwrap().material, 2);
     }
+    #[test]
+    fn homogeneous_batches_match_exact_sequential_columns_quantities_and_revisions() {
+        let terms = StepTerms {
+            material: Ratio {
+                numerator: 2,
+                denominator: 1,
+            },
+            work: Ratio {
+                numerator: 3,
+                denominator: 1,
+            },
+        };
+        for count in 1u32..=8 {
+            let original = Column::new(
+                -8,
+                8,
+                0,
+                vec![NaturalInterval {
+                    bottom: -8,
+                    top: 0,
+                    material: 7,
+                }],
+            )
+            .unwrap();
+            let mut batch = original.clone();
+            let mut sequential = original;
+            let staged = batch.stage_remove_many(prism(), terms, 16, count).unwrap();
+            let effect = batch.commit(staged).unwrap();
+            let mut total_amount = 0;
+            let mut total_work = 0;
+            for _ in 0..count {
+                let staged = sequential.stage_remove(prism(), terms, 16).unwrap();
+                let effect = sequential.commit(staged).unwrap();
+                total_amount += effect.amount;
+                total_work += effect.required_work;
+            }
+            assert_eq!(batch, sequential);
+            assert_eq!(effect.steps, count);
+            assert_eq!(effect.amount, total_amount);
+            assert_eq!(effect.required_work, total_work);
+            let staged = batch.stage_fill_many(9, prism(), terms, 16, count).unwrap();
+            let filled = batch.commit(staged).unwrap();
+            for _ in 0..count {
+                let staged = sequential.stage_fill(9, prism(), terms, 16).unwrap();
+                sequential.commit(staged).unwrap();
+            }
+            assert_eq!(batch, sequential);
+            assert_eq!(filled.amount, u64::from(count) * 2);
+            let staged = batch.stage_remove_many(prism(), terms, 0, count).unwrap();
+            assert_eq!(batch.commit(staged).unwrap().amount, 0);
+            for _ in 0..count {
+                let staged = sequential.stage_remove(prism(), terms, 0).unwrap();
+                sequential.commit(staged).unwrap();
+            }
+            assert_eq!(batch, sequential);
+            assert_eq!(batch.revision(), u64::from(count) * 3);
+        }
+    }
+    #[test]
+    fn batch_boundary_count_capacity_and_overflow_refusals_are_atomic() {
+        let mut column = column();
+        let before = column.clone();
+        assert!(matches!(
+            column.stage_remove_many(prism(), TERMS, 99, 0),
+            Err(Error::InvalidCount)
+        ));
+        assert!(matches!(
+            column.stage_remove_many(prism(), TERMS, 99, 4),
+            Err(Error::RunBoundary)
+        ));
+        assert!(matches!(
+            column.stage_remove_many(prism(), TERMS, 1, 2),
+            Err(Error::FullOutput)
+        ));
+        assert!(matches!(
+            column.stage_fill_many(1, prism(), TERMS, 1, 2),
+            Err(Error::InsufficientInput)
+        ));
+        assert!(matches!(
+            column.stage_fill_many(1, prism(), TERMS, 99, 4),
+            Err(Error::Ceiling)
+        ));
+        let too_much_work = StepTerms {
+            work: Ratio {
+                numerator: u64::MAX,
+                denominator: 1,
+            },
+            ..TERMS
+        };
+        assert!(matches!(
+            column.stage_remove_many(prism(), too_much_work, 99, 2),
+            Err(Error::ArithmeticOverflow)
+        ));
+        assert_eq!(column, before);
+        let stale = column.stage_remove_many(prism(), TERMS, 99, 2).unwrap();
+        remove(&mut column);
+        let before = column.clone();
+        assert_eq!(column.commit(stale), Err(Error::StaleStep));
+        assert_eq!(column, before);
+    }
+
     #[test]
     fn seeded_tapes_match_independent_unit_prism_stack_and_conserve_every_commit() {
         // Oracle stores each individual prism and provenance. It has no intervals, runs,
