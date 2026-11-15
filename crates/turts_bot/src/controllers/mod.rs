@@ -57,6 +57,9 @@ struct Scan {
     cursor: Option<QueryCursor>,
     units: Vec<UnitObservation>,
     nodes: Vec<NodeObservation>,
+    remembered_units: Vec<turts_mod_api::RememberedUnit>,
+    remembered_nodes: Vec<turts_mod_api::RememberedNode>,
+    retention_truncated: bool,
     complete: Option<QueryData>,
 }
 struct StockController {
@@ -79,6 +82,9 @@ impl StockController {
                     cursor: None,
                     units: Vec::new(),
                     nodes: Vec::new(),
+                    remembered_units: Vec::new(),
+                    remembered_nodes: Vec::new(),
+                    retention_truncated: false,
                     complete: None,
                 });
                 self.scans.len() - 1
@@ -103,6 +109,14 @@ impl StockController {
             match page.data {
                 QueryData::Units(mut rows) => scan.units.append(&mut rows),
                 QueryData::Nodes(mut rows) => scan.nodes.append(&mut rows),
+                QueryData::RememberedUnits(mut memory) => {
+                    scan.remembered_units.append(&mut memory.rows);
+                    scan.retention_truncated |= memory.retention_truncated;
+                }
+                QueryData::RememberedNodes(mut memory) => {
+                    scan.remembered_nodes.append(&mut memory.rows);
+                    scan.retention_truncated |= memory.retention_truncated;
+                }
                 data => {
                     scan.complete = Some(data.clone());
                     return Some(data);
@@ -110,10 +124,17 @@ impl StockController {
             }
             match page.state {
                 PageState::Complete => {
-                    let data = if matches!(query, Query::Nodes(_)) {
-                        QueryData::Nodes(std::mem::take(&mut scan.nodes))
-                    } else {
-                        QueryData::Units(std::mem::take(&mut scan.units))
+                    let data = match query {
+                        Query::Nodes(_) => QueryData::Nodes(std::mem::take(&mut scan.nodes)),
+                        Query::RememberedUnits(_) => QueryData::RememberedUnits(RememberedRows {
+                            rows: std::mem::take(&mut scan.remembered_units),
+                            retention_truncated: scan.retention_truncated,
+                        }),
+                        Query::RememberedNodes(_) => QueryData::RememberedNodes(RememberedRows {
+                            rows: std::mem::take(&mut scan.remembered_nodes),
+                            retention_truncated: scan.retention_truncated,
+                        }),
+                        _ => QueryData::Units(std::mem::take(&mut scan.units)),
                     };
                     scan.complete = Some(data.clone());
                     return Some(data);

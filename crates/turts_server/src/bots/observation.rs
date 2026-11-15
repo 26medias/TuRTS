@@ -32,6 +32,7 @@ pub(crate) struct ObservationBasis {
     pub pending_content: BTreeMap<ContentId, u64>,
     pub supply: Vec<SupplyObservation>,
     pub area: ObservedArea,
+    pub knowledge: Option<Arc<turts_mod_api::KnowledgeSnapshot>>,
     pub catalog: Arc<ContentCatalog>,
 }
 impl ObservationBasis {
@@ -41,6 +42,15 @@ impl ObservationBasis {
             .sort_by(|a, b| physical(a.position, &a.content, b.position, &b.content));
         self.nodes
             .sort_by(|a, b| physical(a.position, &a.content, b.position, &b.content));
+        if let Some(knowledge) = &mut self.knowledge {
+            let knowledge = Arc::make_mut(knowledge);
+            knowledge
+                .remembered_units
+                .sort_by(|a, b| physical(a.position, &a.content, b.position, &b.content));
+            knowledge
+                .remembered_nodes
+                .sort_by(|a, b| physical(a.position, &a.content, b.position, &b.content));
+        }
         self.accounts.sort_by(|a, b| a.account.cmp(&b.account));
         self.works.sort_by(|a, b| a.identity.cmp(&b.identity));
         self.unit_index = self
@@ -120,11 +130,33 @@ impl ObservationBasis {
             affordable,
         })
     }
-    fn placement(&self, query: &PlacementQuery) -> Advice<PlacementAdvice> {
-        // Partial observation must not consult an unseen collision or anchor.
-        if !self.area.complete {
-            return Advice::NotObserved;
+    fn area_observed(&self, min: WorldPos, max: WorldPos) -> bool {
+        if self.area.complete {
+            return true;
         }
+        let Some(knowledge) = self.knowledge.as_ref() else {
+            return false;
+        };
+        let grid = knowledge.grid;
+        turts_rules::visibility::Grid {
+            width: grid.size.x,
+            height: grid.size.y,
+            cell_size: grid.cell_size,
+            columns: grid.columns,
+            rows: grid.rows,
+        }
+        .rectangle(
+            turts_rules::visibility::Point { x: min.x, y: min.y },
+            turts_rules::visibility::Point { x: max.x, y: max.y },
+            |cell| {
+                knowledge
+                    .observed
+                    .get(cell as usize / 8)
+                    .is_some_and(|byte| byte & (1 << (cell % 8)) != 0)
+            },
+        )
+    }
+    fn placement(&self, query: &PlacementQuery) -> Advice<PlacementAdvice> {
         let Some(actor) = self.own_unit(query.actor) else {
             return Advice::NotObserved;
         };
@@ -162,6 +194,62 @@ impl ObservationBasis {
         let radius = |definition: &turts_mod_api::ResolvedUnit| match definition.footprint {
             turts_mod_api::Footprint::Circle { radius } => radius,
         };
+        let output_radius = radius(output);
+        if p.x - output_radius < 0.0
+            || p.y - output_radius < 0.0
+            || p.x + output_radius > self.area.max.x
+            || p.y + output_radius > self.area.max.y
+        {
+            return Advice::Known(PlacementAdvice::Blocked);
+        }
+        // Public maxima determine the region. Hidden object presence never affects its size.
+        let max_unit_radius = self
+            .catalog
+            .units
+            .values()
+            .map(radius)
+            .fold(0.0_f32, f32::max);
+        let max_static_gap = self
+            .catalog
+            .units
+            .values()
+            .filter_map(|unit| unit.placement.map(|placement| placement.gap))
+            .fold(0.0_f32, f32::max);
+        let max_node_radius = self
+            .catalog
+            .nodes
+            .values()
+            .map(|node| node.radius)
+            .fold(0.0_f32, f32::max);
+        let Some(region) = turts_rules::visibility_advice::required_region(
+            rules::Point { x: p.x, y: p.y },
+            output_radius,
+            config.gap,
+            config.node_clearance,
+            turts_rules::visibility_advice::PublicPlacementMaxima {
+                unit_radius: max_unit_radius,
+                static_gap: max_static_gap,
+                node_radius: max_node_radius,
+            },
+            rules::Point {
+                x: self.area.max.x,
+                y: self.area.max.y,
+            },
+        ) else {
+            return Advice::NotObserved;
+        };
+        if !self.area_observed(
+            WorldPos {
+                x: region.min.x,
+                y: region.min.y,
+            },
+            WorldPos {
+                x: region.max.x,
+                y: region.max.y,
+            },
+        ) {
+            return Advice::NotObserved;
+        }
         let sources = self
             .units
             .iter()
@@ -334,11 +422,8 @@ impl BotQueries for PermittedQueries<'_> {
         let mut examined = 0usize;
         let mut end = offset;
         let mut tied = false;
-        let mut coverage = if basis.area.complete {
-            Coverage::Complete
-        } else {
-            Coverage::NotObserved
-        };
+        // This enumerates permitted rows completely. It never asserts hidden-world absence.
+        let mut coverage = Coverage::Complete;
         let (data, total, returned) = match &query {
             Query::Units(filter) => {
                 validate_radius(filter.center, filter.radius)?;
@@ -445,6 +530,92 @@ impl BotQueries for PermittedQueries<'_> {
                     n,
                 )
             }
+            Query::RememberedUnits(filter) => {
+                validate_radius(filter.center, filter.radius)?;
+                let source = basis
+                    .knowledge
+                    .as_ref()
+                    .map_or(&[][..], |knowledge| knowledge.remembered_units.as_slice());
+                let mut rows = vec![];
+                for row in source.iter().skip(offset) {
+                    if examined >= max_scan || rows.len() >= max_rows {
+                        break;
+                    }
+                    examined += 1;
+                    end += 1;
+                    if basis.relation(row.owner, filter.relation)
+                        && (filter.content.is_empty() || filter.content.contains(&row.content))
+                        && within(row.position, filter.center, filter.radius)
+                    {
+                        rows.push(row.clone());
+                    }
+                }
+                if end < source.len() && end > 0 {
+                    tied = physical(
+                        source[end - 1].position,
+                        &source[end - 1].content,
+                        source[end].position,
+                        &source[end].content,
+                    ) == Ordering::Equal;
+                }
+                let count = rows.len();
+                (
+                    QueryData::RememberedUnits(RememberedRows {
+                        rows,
+                        retention_truncated: basis
+                            .knowledge
+                            .as_ref()
+                            .is_some_and(|knowledge| knowledge.retention_truncated),
+                    }),
+                    source.len(),
+                    count,
+                )
+            }
+            Query::RememberedNodes(filter) => {
+                validate_radius(filter.center, filter.radius)?;
+                let source = basis
+                    .knowledge
+                    .as_ref()
+                    .map_or(&[][..], |knowledge| knowledge.remembered_nodes.as_slice());
+                let mut rows = vec![];
+                for row in source.iter().skip(offset) {
+                    if examined >= max_scan || rows.len() >= max_rows {
+                        break;
+                    }
+                    examined += 1;
+                    end += 1;
+                    if (filter.resources.is_empty()
+                        || basis
+                            .catalog
+                            .nodes
+                            .get(&row.content)
+                            .is_some_and(|definition| filter.resources.contains(&definition.item)))
+                        && within(row.position, filter.center, filter.radius)
+                    {
+                        rows.push(row.clone());
+                    }
+                }
+                if end < source.len() && end > 0 {
+                    tied = physical(
+                        source[end - 1].position,
+                        &source[end - 1].content,
+                        source[end].position,
+                        &source[end].content,
+                    ) == Ordering::Equal;
+                }
+                let count = rows.len();
+                (
+                    QueryData::RememberedNodes(RememberedRows {
+                        rows,
+                        retention_truncated: basis
+                            .knowledge
+                            .as_ref()
+                            .is_some_and(|knowledge| knowledge.retention_truncated),
+                    }),
+                    source.len(),
+                    count,
+                )
+            }
             Query::Placement(request) => {
                 if offset != 0 {
                     return Err(QueryError::InvalidContinuation);
@@ -459,7 +630,13 @@ impl BotQueries for PermittedQueries<'_> {
                     return Err(QueryError::Budget);
                 }
                 end = 1;
-                (QueryData::Placement(basis.placement(request)), 1, 1)
+                let advice = basis.placement(request);
+                coverage = if matches!(advice, Advice::Known(_)) {
+                    Coverage::Complete
+                } else {
+                    Coverage::NotObserved
+                };
+                (QueryData::Placement(advice), 1, 1)
             }
             Query::Affordability(request) => {
                 if offset != 0 {
@@ -1113,6 +1290,7 @@ mod tests {
             works: vec![],
             pending_content: BTreeMap::new(),
             supply: vec![],
+            knowledge: None,
             area: ObservedArea {
                 min: WorldPos { x: 0.0, y: 0.0 },
                 max: WorldPos { x: 20.0, y: 20.0 },
@@ -1120,6 +1298,104 @@ mod tests {
             },
             catalog: Arc::new(empty_catalog()),
         }
+    }
+    #[test]
+    fn remembered_queries_are_separate_bounded_and_pinned_to_the_candidate_basis() {
+        use turts_mod_api::{
+            KnowledgeBasis, KnowledgeSnapshot, ObservationPhase, RememberedUnit, VisibilityGrid,
+        };
+        let mut current = basis();
+        let mut knowledge = Arc::new(KnowledgeSnapshot {
+            basis: KnowledgeBasis {
+                match_id: 1,
+                map: ContentId::parse("fixture:map").unwrap(),
+                tick: current.tick,
+                phase: ObservationPhase::Completed,
+            },
+            viewer: 0,
+            grid: VisibilityGrid {
+                size: WorldPos { x: 20.0, y: 20.0 },
+                cell_size: 1.0,
+                columns: 20,
+                rows: 20,
+            },
+            observed: vec![0; 50],
+            explored: vec![255; 50],
+            remembered_units: [(8, 8.0), (7, 7.0)]
+                .into_iter()
+                .map(|(unit, x)| RememberedUnit {
+                    unit,
+                    content: ContentId::parse("fixture:enemy").unwrap(),
+                    owner: 1,
+                    position: WorldPos { x, y: 4.0 },
+                    facing: None,
+                    site: false,
+                    last_seen_tick: 2,
+                })
+                .collect(),
+            remembered_nodes: vec![],
+            retention_truncated: true,
+        });
+        current.knowledge = Some(knowledge.clone());
+        current.area.complete = false;
+        let mut lease = CandidateLease::new(current, 0);
+        Arc::make_mut(&mut knowledge).remembered_units[0].position.x = 19.0;
+        let mut q = lease.queries(
+            "memory",
+            BotQuota {
+                queries: 4,
+                candidates: 4,
+                rows: 4,
+                proposals: 0,
+            },
+        );
+        let first = q
+            .query(
+                Query::RememberedUnits(UnitQuery {
+                    relation: turts_mod_api::SlotRelation::Any,
+                    content: vec![],
+                    center: None,
+                    radius: None,
+                }),
+                None,
+                1,
+            )
+            .unwrap();
+        assert_eq!(first.coverage, Coverage::Complete);
+        assert_eq!(first.usage.candidates, 1);
+        assert_eq!(first.completed_tick, 5);
+        let QueryData::RememberedUnits(first_rows) = first.data else {
+            panic!()
+        };
+        assert!(first_rows.retention_truncated);
+        assert_eq!(first_rows.rows[0].unit, 7);
+        assert_eq!(first_rows.rows[0].last_seen_tick, 2);
+        let PageState::More(cursor) = first.state else {
+            panic!()
+        };
+        let second = q
+            .query(
+                Query::RememberedUnits(UnitQuery {
+                    relation: turts_mod_api::SlotRelation::Any,
+                    content: vec![],
+                    center: None,
+                    radius: None,
+                }),
+                Some(cursor),
+                1,
+            )
+            .unwrap();
+        let QueryData::RememberedUnits(second_rows) = second.data else {
+            panic!()
+        };
+        assert_eq!(
+            second_rows.rows[0].position.x, 8.0,
+            "a newer memory cannot change a pinned lease"
+        );
+        assert_eq!(second.state, PageState::Complete);
+        let lookup = q.query(Query::LookupUnit(7), None, 1).unwrap();
+        assert_eq!(lookup.data, QueryData::Lookup(Advice::NotObserved));
+        assert_eq!(lookup.coverage, Coverage::NotObserved);
     }
     #[test]
     fn a_supply_goal_accepts_one_indivisible_provider_crossing_the_target() {

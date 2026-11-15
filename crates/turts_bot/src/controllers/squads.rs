@@ -21,7 +21,7 @@ impl StockController {
             let Some(anchor) = unique_first(anchors) else {
                 continue;
             };
-            let target_content = rule
+            let target_content: Vec<ContentId> = rule
                 .target_roles
                 .iter()
                 .flat_map(|name| {
@@ -38,7 +38,7 @@ impl StockController {
             let Some(QueryData::Units(mut targets)) = self.collect(
                 Query::Units(UnitQuery {
                     relation: SlotRelation::Enemy,
-                    content: target_content,
+                    content: target_content.clone(),
                     center: None,
                     radius: None,
                 }),
@@ -57,16 +57,49 @@ impl StockController {
             }) {
                 continue;
             }
-            let (binding, target) = match target {
-                Some(target) => (&rule.attack_order, BotTarget::Unit(target.unit)),
-                None if units.iter().any(|u| {
-                    distance(u.position, anchor.position)
-                        > rule.assemble_radius * rule.assemble_radius
-                }) =>
+            let remembered = if target.is_none() {
+                match self.collect(
+                    Query::RememberedUnits(UnitQuery {
+                        relation: SlotRelation::Enemy,
+                        content: target_content,
+                        center: None,
+                        radius: None,
+                    }),
+                    queries,
+                ) {
+                    Some(QueryData::RememberedUnits(mut memory)) => {
+                        memory.rows.retain(|row| !row.site);
+                        memory
+                            .rows
+                            .sort_by(|a, b| memory_rank(a, b, anchor.position));
+                        memory
+                            .rows
+                            .first()
+                            .filter(|first| {
+                                memory.rows.get(1).is_none_or(|next| {
+                                    memory_rank(first, next, anchor.position)
+                                        != std::cmp::Ordering::Equal
+                                })
+                            })
+                            .map(|row| row.position)
+                    }
+                    _ => None,
+                }
+            } else {
+                None
+            };
+            let (binding, target) = match (target, remembered) {
+                (Some(target), _) => (&rule.attack_order, BotTarget::Unit(target.unit)),
+                (None, Some(point)) => (&rule.move_order, BotTarget::Point(point)),
+                (None, None)
+                    if units.iter().any(|u| {
+                        distance(u.position, anchor.position)
+                            > rule.assemble_radius * rule.assemble_radius
+                    }) =>
                 {
                     (&rule.move_order, BotTarget::Point(anchor.position))
                 }
-                None => continue,
+                (None, None) => continue,
             };
             if let Some(order) = self.order(frame, binding, target) {
                 let _ = out.propose(Proposal {
@@ -118,4 +151,24 @@ fn target_rank(
         .then_with(|| coordinate(a.position.x, b.position.x))
         .then_with(|| coordinate(a.position.y, b.position.y))
         .then_with(|| a.content.cmp(&b.content))
+}
+
+fn memory_rank(
+    a: &turts_mod_api::RememberedUnit,
+    b: &turts_mod_api::RememberedUnit,
+    anchor: WorldPos,
+) -> std::cmp::Ordering {
+    let coordinate = |a: f32, b: f32| {
+        if a == b {
+            std::cmp::Ordering::Equal
+        } else {
+            a.total_cmp(&b)
+        }
+    };
+    distance(anchor, a.position)
+        .total_cmp(&distance(anchor, b.position))
+        .then_with(|| coordinate(a.position.x, b.position.x))
+        .then_with(|| coordinate(a.position.y, b.position.y))
+        .then_with(|| a.content.cmp(&b.content))
+        .then_with(|| b.last_seen_tick.cmp(&a.last_seen_tick))
 }
