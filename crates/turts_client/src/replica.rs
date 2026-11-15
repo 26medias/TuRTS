@@ -356,7 +356,7 @@ impl Replica {
                         }
                     }
                 }
-                let Some((candidate, step)) = self.stage_delta(&current, &self.store, &delta)
+                let Some((candidate, step)) = self.stage_delta_owned(current, &self.store, &delta)
                 else {
                     return false;
                 };
@@ -906,8 +906,16 @@ impl Replica {
         store: &RecordStore,
         delta: &WorldDelta,
     ) -> Option<(Candidate, StoreStep)> {
+        self.stage_delta_owned(current.clone(), store, delta)
+    }
+
+    fn stage_delta_owned(
+        &self,
+        mut next: Candidate,
+        store: &RecordStore,
+        delta: &WorldDelta,
+    ) -> Option<(Candidate, StoreStep)> {
         let context = self.context.as_ref()?;
-        let mut next = current.clone();
         let removed: HashSet<u32> = delta.removed.iter().map(|id| id.0).collect();
         if removed.len() != delta.removed.len()
             || removed.iter().any(|id| !next.units.contains_key(id))
