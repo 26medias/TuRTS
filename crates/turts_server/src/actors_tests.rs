@@ -558,7 +558,7 @@ fn independent_review_one_accounting_row_exhaustion_keeps_the_other_actor_advanc
         row_limit,
     )
     .unwrap();
-    install_bot_actors(app.world_mut(), &[other.clone()]).unwrap();
+    install_bot_actors(app.world_mut(), std::slice::from_ref(&other)).unwrap();
     configure_actor_limits(app.world_mut(), prepared);
     stage_bot_command(
         app.world_mut(),

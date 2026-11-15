@@ -86,27 +86,28 @@ fn regenerated_presence_pauses_and_retains_pending_state_without_reading_live_se
         .unwrap()
         .start_when = BotStartWhen::HumanPresent;
     install(&mut app, &[config(1)]).unwrap();
-    let mut execution = app.world_mut().resource_mut::<BotExecution>();
-    execution.mode = BotExecutionMode::RegenerateAndCompare;
-    for (tick, present, ended) in [
-        (0, true, false),
-        (1, false, false),
-        (2, false, false),
-        (3, true, false),
-        (4, true, true),
-    ] {
-        execution.inputs.insert(
-            tick,
-            LifecycleInput {
-                scheduler_tick: tick,
-                human_present: present,
-                running: true,
-                ended,
-                defeated: vec![],
-            },
-        );
+    {
+        let mut execution = app.world_mut().resource_mut::<BotExecution>();
+        execution.mode = BotExecutionMode::RegenerateAndCompare;
+        for (tick, present, ended) in [
+            (0, true, false),
+            (1, false, false),
+            (2, false, false),
+            (3, true, false),
+            (4, true, true),
+        ] {
+            execution.inputs.insert(
+                tick,
+                LifecycleInput {
+                    scheduler_tick: tick,
+                    human_present: present,
+                    running: true,
+                    ended,
+                    defeated: vec![],
+                },
+            );
+        }
     }
-    drop(execution);
     for (tick, active) in [(0, 1), (1, 1), (2, 1), (3, 2), (4, 2)] {
         app.world_mut().resource_mut::<Tick>().0 = tick;
         drive(app.world_mut());
@@ -474,7 +475,6 @@ fn real_allocator_inversion_preserves_public_profile_physical_choices() {
         },
         20,
     )
-    .err()
-    .expect("coincident sources must be refused before allocation");
+    .expect_err("coincident sources must be refused before allocation");
     assert!(error.to_string().contains("overlap"), "{error}");
 }

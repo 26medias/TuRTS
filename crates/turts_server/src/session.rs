@@ -567,16 +567,16 @@ pub fn admit_player_commands(world: &mut World) {
         });
         match admit_actor_envelope(world, staged.slot, &staged.envelope, admitted, newer) {
             Ok(commands) => {
-                if let Some(identity) = identity.clone() {
-                    if let Err(error) = participant_trace::accept(
+                if let Some(identity) = identity.clone()
+                    && let Err(error) = participant_trace::accept(
                         world,
                         staged.slot.0,
                         staged.envelope.seq,
                         ordinal,
                         identity,
-                    ) {
-                        participant_trace::fail(world, error);
-                    }
+                    )
+                {
+                    participant_trace::fail(world, error);
                 }
                 world.resource_mut::<PendingOrderCommands>().0.insert(
                     (staged.slot.0, staged.envelope.seq),
@@ -763,17 +763,17 @@ fn record_admission_rejection(
             reason,
         });
     order_result.tick = tick;
-    if let Some((identity, ordinal)) = trace {
-        if let Err(error) = participant_trace::rejection(
+    if let Some((identity, ordinal)) = trace
+        && let Err(error) = participant_trace::rejection(
             world,
             &identity,
             Some(ordinal),
             &staged.envelope,
             &order_result,
             reason,
-        ) {
-            participant_trace::fail(world, error);
-        }
+        )
+    {
+        participant_trace::fail(world, error);
     }
     if let Some(mut sender) = world.get_mut::<MessageSender<OrderResult>>(staged.connection) {
         sender.send::<ReliableChannel>(order_result);

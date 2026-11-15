@@ -235,22 +235,22 @@ fn account_rows(
             .units
             .get(&id)
             .ok_or("own unit definition is absent from the installed catalog")?;
-        if let Some(inventory) = &definition.inventory {
-            if main_inventories.contains(&unit.unit_id) {
-                for resource in &inventory.accepts {
-                    insert_account(
-                        &mut rows,
-                        SpendKey {
-                            endpoint: SourceEndpoint::Inventory {
-                                unit: unit.unit_id,
-                                port: InventoryPort::Main,
-                            },
-                            resource: resource.clone(),
+        if let Some(inventory) = &definition.inventory
+            && main_inventories.contains(&unit.unit_id)
+        {
+            for resource in &inventory.accepts {
+                insert_account(
+                    &mut rows,
+                    SpendKey {
+                        endpoint: SourceEndpoint::Inventory {
+                            unit: unit.unit_id,
+                            port: InventoryPort::Main,
                         },
-                        (0, 0),
-                        budget,
-                    )?;
-                }
+                        resource: resource.clone(),
+                    },
+                    (0, 0),
+                    budget,
+                )?;
             }
         }
     }
@@ -322,9 +322,9 @@ fn insert_account(
     amount: (u64, u64),
     budget: &mut RowBudget,
 ) -> Result<(), String> {
-    if !rows.contains_key(&key) {
+    if let std::collections::btree_map::Entry::Vacant(e) = rows.entry(key) {
         budget.take(1)?;
-        rows.insert(key, amount);
+        e.insert(amount);
     }
     Ok(())
 }
@@ -435,10 +435,10 @@ fn validate_advance(
                 return Err("cumulative paid amount moved backwards".into());
             }
         }
-        if let (Some(old), Some(work)) = (&previous.work, &next.work) {
-            if old.identity != work.identity || old.total != work.total || work.done < old.done {
-                return Err("work identity or progress moved backwards".into());
-            }
+        if let (Some(old), Some(work)) = (&previous.work, &next.work)
+            && (old.identity != work.identity || old.total != work.total || work.done < old.done)
+        {
+            return Err("work identity or progress moved backwards".into());
         }
     }
     Ok(())

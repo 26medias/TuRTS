@@ -144,11 +144,12 @@ pub(crate) fn install(
         }
     }
     crate::session::participant_trace::enable_replay(app.world_mut())?;
-    let mut execution = app.world_mut().resource_mut::<BotExecution>();
-    execution.mode = mode;
-    execution.inputs = inputs;
-    execution.error = None;
-    drop(execution);
+    {
+        let mut execution = app.world_mut().resource_mut::<BotExecution>();
+        execution.mode = mode;
+        execution.inputs = inputs;
+        execution.error = None;
+    }
     if mode == BotExecutionMode::RecordedCommands {
         actors::record_installation(
             app.world_mut(),
@@ -182,10 +183,10 @@ fn prepare(world: &mut World) {
     let Some(mut playback) = world.remove_resource::<Playback>() else {
         return;
     };
-    if playback.error.is_none() {
-        if let Err(error) = prepare_inner(world, &mut playback) {
-            playback.error = Some(error)
-        }
+    if playback.error.is_none()
+        && let Err(error) = prepare_inner(world, &mut playback)
+    {
+        playback.error = Some(error)
     }
     world.insert_resource(playback);
 }
@@ -247,10 +248,10 @@ fn verify(world: &mut World) {
     let Some(mut playback) = world.remove_resource::<Playback>() else {
         return;
     };
-    if playback.error.is_none() {
-        if let Err(error) = verify_inner(world, &mut playback) {
-            playback.error = Some(error)
-        }
+    if playback.error.is_none()
+        && let Err(error) = verify_inner(world, &mut playback)
+    {
+        playback.error = Some(error)
     }
     world.insert_resource(playback);
 }
@@ -434,26 +435,26 @@ mod tests {
                 app.world_mut().despawn(human);
                 pause = Some(tick);
             }
-            if let Some(start) = pause {
-                if tick == start + 40 {
-                    assert_eq!(
-                        app.world().resource::<BotHost>().bots[0]
-                            .coordinator
-                            .pending()
-                            .len(),
-                        paused_pending,
-                        "pause must retain in-flight COT commitments even when authoritative work advances"
-                    );
-                    let reconnected = app
-                        .world_mut()
-                        .spawn(session::Session {
-                            last_seq: None,
-                            slot: SlotId(0),
-                            player_id: 7,
-                        })
-                        .id();
-                    human_stop(&mut app, reconnected);
-                }
+            if let Some(start) = pause
+                && tick == start + 40
+            {
+                assert_eq!(
+                    app.world().resource::<BotHost>().bots[0]
+                        .coordinator
+                        .pending()
+                        .len(),
+                    paused_pending,
+                    "pause must retain in-flight COT commitments even when authoritative work advances"
+                );
+                let reconnected = app
+                    .world_mut()
+                    .spawn(session::Session {
+                        last_seq: None,
+                        slot: SlotId(0),
+                        player_id: 7,
+                    })
+                    .id();
+                human_stop(&mut app, reconnected);
             }
         }
         assert!(pause.is_some(), "fixture must pause real admitted COT work");

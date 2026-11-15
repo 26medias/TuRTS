@@ -235,7 +235,7 @@ fn install_with_registry_and_limits(
             .lockfile_hash
             .clone(),
         engine_api: turts_mod_api::ENGINE_API_VERSION.to_string(),
-        protocol: u32::from(turts_net_protocol::NET_PROTOCOL_VERSION),
+        protocol: turts_net_protocol::NET_PROTOCOL_VERSION,
         bots: installed_bots,
         limits: artifact_limits(limits)?,
     };

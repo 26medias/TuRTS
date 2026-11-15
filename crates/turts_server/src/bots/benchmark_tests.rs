@@ -101,7 +101,7 @@ fn finish_pre(world: &mut World) {
     let mut meter = world.resource_mut::<Meter>();
     let elapsed = nanos(meter.pre.take().unwrap());
     let new_group = if meter.baseline {
-        (tick - 1) % 20 == 0
+        (tick - 1).is_multiple_of(20)
     } else {
         decision != meter.seen_decisions
     };
@@ -599,6 +599,7 @@ fn run(mut app: App) -> (serde_json::Value, u64) {
 }
 #[test]
 #[ignore = "BF8 pinned-core release measurement; run with taskset on four cores and --release --ignored --exact"]
+#[allow(clippy::assertions_on_constants)] // Reject an accidental unoptimized measurement.
 fn bf8_two_bots_1000_units_complete_phase_budget() {
     assert!(!cfg!(debug_assertions), "BF8 must use the release profile");
     let status = std::fs::read_to_string("/proc/self/status")
@@ -660,6 +661,7 @@ fn active_cot_world(world: &World) -> usize {
 
 #[test]
 #[ignore = "short release workload preflight before the BF8 pinned performance run"]
+#[allow(clippy::assertions_on_constants)] // Reject an accidental unoptimized measurement.
 fn bf8_workload_preflight_admits_all_factories_and_keeps_collection_and_combat_active() {
     assert!(
         !cfg!(debug_assertions),
@@ -687,26 +689,26 @@ fn bf8_workload_preflight_admits_all_factories_and_keeps_collection_and_combat_a
         if ready.is_none() && workload_ready(jobs, meter.extracted, meter.shots) {
             ready = Some((meter.groups, meter.extracted, meter.shots));
         }
-        if let Some((interval, items, shots)) = ready {
-            if meter.groups >= interval + 4 {
-                assert_eq!(jobs, 100);
-                assert_eq!((meter.min_units, meter.max_units), (1000, 1000));
-                assert!(
-                    meter.extracted > items && meter.shots > shots,
-                    "subsequent three active intervals must still collect and fight"
-                );
-                let report = serde_json::json!({"acceptance":"BF8 workload preflight","warmup_intervals":interval,"checked_active_intervals":3,"end_interval":meter.groups,"active_cot_jobs":jobs,"additional_items":meter.extracted-items,"additional_shots":meter.shots-shots,"workload":definition});
-                println!("BF8_PREFLIGHT {}", serde_json::to_string(&report).unwrap());
-                if let Some(directory) = std::env::var_os("TURTS_BOT_EVIDENCE_DIR") {
-                    std::fs::create_dir_all(&directory).unwrap();
-                    std::fs::write(
-                        std::path::PathBuf::from(directory).join("bf8-preflight.json"),
-                        serde_json::to_vec_pretty(&report).unwrap(),
-                    )
-                    .unwrap();
-                }
-                return;
+        if let Some((interval, items, shots)) = ready
+            && meter.groups >= interval + 4
+        {
+            assert_eq!(jobs, 100);
+            assert_eq!((meter.min_units, meter.max_units), (1000, 1000));
+            assert!(
+                meter.extracted > items && meter.shots > shots,
+                "subsequent three active intervals must still collect and fight"
+            );
+            let report = serde_json::json!({"acceptance":"BF8 workload preflight","warmup_intervals":interval,"checked_active_intervals":3,"end_interval":meter.groups,"active_cot_jobs":jobs,"additional_items":meter.extracted-items,"additional_shots":meter.shots-shots,"workload":definition});
+            println!("BF8_PREFLIGHT {}", serde_json::to_string(&report).unwrap());
+            if let Some(directory) = std::env::var_os("TURTS_BOT_EVIDENCE_DIR") {
+                std::fs::create_dir_all(&directory).unwrap();
+                std::fs::write(
+                    std::path::PathBuf::from(directory).join("bf8-preflight.json"),
+                    serde_json::to_vec_pretty(&report).unwrap(),
+                )
+                .unwrap();
             }
+            return;
         }
     }
     let meter = app.world().resource::<Meter>();
