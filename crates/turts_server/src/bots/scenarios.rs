@@ -335,3 +335,145 @@ fn renamed_archive() -> PackageArchive {
     }));
     archive
 }
+
+fn allocated_profile(archive: &PackageArchive, map: turts_mod_api::MapDef) -> App {
+    let catalog = archive.content().unwrap();
+    let mut app = turts_sim::headless_app(20);
+    let staged = turts_sim::stage_package(
+        app.world(),
+        catalog.clone(),
+        turts_mod_api::SourceDef {
+            file: "maps/allocator-inversion.ron".into(),
+            value: map,
+        },
+        20,
+    )
+    .unwrap();
+    turts_sim::install_package(app.world_mut(), staged);
+    app.insert_resource(ServerCatalog(catalog));
+    app.init_resource::<crate::stats::Stats>();
+    app.insert_resource(crate::stats::MatchId(1));
+    session::install(
+        &mut app,
+        session::Advertised {
+            lockfile_hash: "0".repeat(64),
+            tick_hz: 20,
+        },
+    );
+    app.world_mut()
+        .resource_mut::<Slots>()
+        .claim_at(SlotId(0), 7)
+        .unwrap();
+    app.world_mut().spawn(session::Session {
+        last_seq: None,
+        slot: SlotId(0),
+        player_id: 7,
+    });
+    install(&mut app, &[config(1)]).unwrap();
+    turts_sim::initialize_completed_world(app.world_mut());
+    app
+}
+fn physical_unit(view: &turts_sim::WorldView, id: u32) -> serde_json::Value {
+    let unit = view.units.iter().find(|unit| unit.unit_id == id).unwrap();
+    serde_json::json!({"content":unit.content_id,"owner":unit.owner_slot,"x_bits":unit.pos.x.to_bits(),"y_bits":unit.pos.y.to_bits()})
+}
+fn physical_decisions(
+    view: &turts_sim::WorldView,
+    commands: &[EmittedCommand],
+) -> Vec<serde_json::Value> {
+    commands.iter().map(|command|{
+        let target=match &command.order.target {
+            BotTarget::Unit(id)=>serde_json::json!({"unit":physical_unit(view,*id)}),
+            BotTarget::Node(id)=>{let node=view.nodes.iter().find(|node|node.id.0==*id).unwrap();serde_json::json!({"node":node.content_id,"x_bits":node.pos.x.to_bits(),"y_bits":node.pos.y.to_bits()})},
+            BotTarget::Point(point)=>serde_json::json!({"point":[point.x.to_bits(),point.y.to_bits()]}),
+            BotTarget::ContentAtPoint{content,point}=>serde_json::json!({"content":content,"point":[point.x.to_bits(),point.y.to_bits()]}),
+            BotTarget::Content(content)=>serde_json::json!({"content":content}),
+            BotTarget::None=>serde_json::Value::Null,
+            BotTarget::Job(id)=>serde_json::json!({"job":id}),
+        };
+        // Keep emitted command and actor order. Only opaque subject identifiers are normalized.
+        serde_json::json!({"sequence":command.sequence,"controller":command.task.controller,"goal":command.task.goal,"order":command.order.content,"queue":command.order.queue,"group":command.order.group,"actors":command.units.iter().map(|id|physical_unit(view,*id)).collect::<Vec<_>>(),"target":target})
+    }).collect()
+}
+#[test]
+fn real_allocator_inversion_preserves_public_profile_physical_choices() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../mods/stockyard");
+    let archive = PackageArchive::parse(&pack_dir(&root).unwrap()).unwrap();
+    let map = archive.maps().unwrap().remove(0).1;
+    let mut bindings = Vec::new();
+    let mut choices = Vec::new();
+    for reversed in [false, true] {
+        let mut map = map.clone();
+        if reversed {
+            map.placements.reverse();
+        }
+        let mut app = allocated_profile(&archive, map);
+        let before = turts_sim::completed_world(app.world()).clone();
+        bindings.push(
+            before
+                .units
+                .iter()
+                .map(|unit| {
+                    (
+                        (
+                            unit.content_id.clone(),
+                            unit.owner_slot,
+                            unit.pos.x.to_bits(),
+                            unit.pos.y.to_bits(),
+                        ),
+                        unit.unit_id,
+                    )
+                })
+                .collect::<std::collections::BTreeMap<_, _>>(),
+        );
+        for _ in 0..6 {
+            app.update();
+            if !app.world().resource::<BotExecution>().generated.is_empty() {
+                break;
+            }
+        }
+        let commands = &app.world().resource::<BotExecution>().generated;
+        assert!(
+            !commands.is_empty(),
+            "public profile must emit a real first decision"
+        );
+        choices.push(physical_decisions(&before, commands));
+    }
+    assert_eq!(
+        bindings[0].keys().collect::<Vec<_>>(),
+        bindings[1].keys().collect::<Vec<_>>()
+    );
+    assert!(
+        bindings[0]
+            .iter()
+            .any(|(physical, id)| bindings[1][physical] != *id),
+        "map reversal must change actual allocated unit identifiers"
+    );
+    assert_eq!(
+        choices[0], choices[1],
+        "actual ID allocation cannot change ordered physical/content choices"
+    );
+    // The authoritative map boundary refuses coincident footprints. The framework's
+    // hypothetical exact-rank tie remains covered by the controller tie regression.
+    let mut overlapping = map;
+    let source = overlapping
+        .placements
+        .iter()
+        .find(|unit| unit.owner_slot == 1 && unit.unit == "stockyard:barracks")
+        .unwrap()
+        .clone();
+    overlapping.placements.push(source);
+    let app = turts_sim::headless_app(20);
+    let error = turts_sim::stage_package(
+        app.world(),
+        archive.content().unwrap(),
+        turts_mod_api::SourceDef {
+            file: "maps/coincident-source.ron".into(),
+            value: overlapping,
+        },
+        20,
+    )
+    .err()
+    .expect("coincident sources must be refused before allocation");
+    assert!(error.to_string().contains("overlap"), "{error}");
+}
