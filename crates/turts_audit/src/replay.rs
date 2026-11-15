@@ -3,7 +3,7 @@ use std::io::{BufRead, BufReader};
 
 use turts_sim::{AuditState, CommandAudit, EconomyEvent, OperationAudit};
 
-use crate::EconomyLogRecord;
+use crate::{ActorLogIdentity, ActorLogRecord, ActorPhase, EconomyLogRecord};
 
 struct ActiveOrderSpan {
     command: CommandAudit,
@@ -107,6 +107,7 @@ pub fn validate_records(records: &[EconomyLogRecord]) -> Result<(), String> {
         return Err("economy log contains more than one Initial record".into());
     }
 
+    validate_actor_records(records, initial)?;
     crate::paid::validate_published_state(initial)?;
     validate_operating_state(initial)?;
     let mut cursor = initial.clone();
@@ -127,6 +128,11 @@ pub fn validate_records(records: &[EconomyLogRecord]) -> Result<(), String> {
     let mut movement_pending = true;
 
     for record in records.iter().skip(1) {
+        // Actor metadata has already been checked against ordinary evidence. It
+        // contributes no gameplay mutation and cannot interrupt an operation span.
+        if matches!(record, EconomyLogRecord::Actor(_)) {
+            continue;
+        }
         if let Some(((slot, pool_id), context)) = pending_dispatch_members.first_key_value() {
             let expected_member = context.request.unit_ids.get(context.next_member_index);
             let next_is_member_dispatch = match record {
@@ -161,6 +167,7 @@ pub fn validate_records(records: &[EconomyLogRecord]) -> Result<(), String> {
             );
         }
         match record {
+            EconomyLogRecord::Actor(_) => unreachable!("actor metadata checked separately"),
             EconomyLogRecord::Initial(_) => unreachable!("initial count checked above"),
             EconomyLogRecord::CommandBoundary(command) => {
                 if command.result.slot != command.input.slot
@@ -873,6 +880,411 @@ pub fn validate_records(records: &[EconomyLogRecord]) -> Result<(), String> {
         ));
     }
     Ok(())
+}
+
+/// Actor metadata never replaces the ordinary state-transition evidence. Each
+/// attempt and complete result must have one independently validated witness.
+fn validate_actor_records(
+    records: &[EconomyLogRecord],
+    initial: &AuditState,
+) -> Result<(), String> {
+    let mut lifecycle = None;
+    let mut previous_phase = None;
+    let mut last_ordinal = 0;
+    let mut submissions = BTreeMap::new();
+    let mut results = BTreeMap::new();
+    let mut claims = initial.claims.clone();
+    let mut bindings = BTreeMap::new();
+    let mut latest_actor_tick = initial.economy.tick;
+    for record in records.iter().skip(1) {
+        let actor_record = match record {
+            EconomyLogRecord::Claim {
+                player_id, slot, ..
+            } => {
+                // The ordinary validator separately checks claim order and ownership.
+                if let Some(claim) = claims.get_mut(usize::from(*slot)) {
+                    *claim = Some(*player_id);
+                }
+                continue;
+            }
+            EconomyLogRecord::Actor(record) => record,
+            _ => continue,
+        };
+        let tick = match actor_record {
+            ActorLogRecord::Lifecycle { tick, .. }
+            | ActorLogRecord::Submission { tick, .. }
+            | ActorLogRecord::Result { tick, .. } => *tick,
+        };
+        if tick < latest_actor_tick {
+            return Err("actor records have decreasing admission ticks".into());
+        }
+        latest_actor_tick = tick;
+        match actor_record {
+            ActorLogRecord::Lifecycle { tick, phase, .. } => {
+                if lifecycle.is_some_and(|old| *tick <= old) {
+                    return Err("actor lifecycle tick is duplicated or out of order".into());
+                }
+                let rank = |phase| match phase {
+                    ActorPhase::Waiting => 0,
+                    ActorPhase::Running => 1,
+                    ActorPhase::Ended => 2,
+                };
+                if previous_phase.is_some_and(|old| rank(*phase) < rank(old)) {
+                    return Err("actor lifecycle phase moved backwards".into());
+                }
+                previous_phase = Some(*phase);
+                lifecycle = Some(*tick);
+                last_ordinal = 0;
+            }
+            ActorLogRecord::Submission {
+                tick,
+                ordinal,
+                actor,
+                sequence,
+                task,
+                envelope,
+            } => {
+                if lifecycle != Some(*tick) {
+                    return Err(
+                        "actor submission has no preceding lifecycle input for its tick".into(),
+                    );
+                }
+                if *ordinal == 0 || *ordinal <= last_ordinal {
+                    return Err(
+                        "actor submission admission ordinal is duplicated or out of order".into(),
+                    );
+                }
+                last_ordinal = *ordinal;
+                if envelope.seq != *sequence {
+                    return Err("actor submission sequence differs from its envelope".into());
+                }
+                let slot = actor_slot(actor);
+                if usize::from(slot) >= claims.len() {
+                    return Err("actor submission has an out-of-range slot".into());
+                }
+                match actor {
+                    ActorLogIdentity::Human { player_id, slot } => {
+                        if claims[usize::from(*slot)] != Some(*player_id) || task.is_some() {
+                            return Err(
+                                "human actor differs from its trusted claim or carries a bot task"
+                                    .into(),
+                            );
+                        }
+                    }
+                    ActorLogIdentity::Bot { profile, .. } => {
+                        if turts_mod_api::ContentId::parse(&profile.to_string()).as_ref()
+                            != Ok(profile)
+                            || task.as_ref().is_none_or(|task| {
+                                task.controller.is_empty()
+                                    || task.goal.is_empty()
+                                    || task.instance.is_empty()
+                            })
+                        {
+                            return Err("bot actor has an invalid profile or task identity".into());
+                        }
+                    }
+                }
+                if bindings
+                    .insert(slot, actor.clone())
+                    .is_some_and(|old| old != *actor)
+                {
+                    return Err("a trusted actor slot changed identity within one log".into());
+                }
+                if submissions
+                    .insert((*tick, *ordinal), (actor, *sequence, envelope))
+                    .is_some()
+                {
+                    return Err("duplicate actor submission association".into());
+                }
+            }
+            ActorLogRecord::Result {
+                tick,
+                ordinal,
+                actor,
+                sequence,
+                result,
+            } => {
+                let Some((submitted_actor, submitted_sequence, _)) =
+                    submissions.get(&(*tick, *ordinal))
+                else {
+                    return Err("actor result has no preceding submission".into());
+                };
+                if *submitted_actor != actor
+                    || *submitted_sequence != *sequence
+                    || result.seq != *sequence
+                    || result.tick != *tick
+                {
+                    return Err("actor result identity differs from its submission".into());
+                }
+                if results.insert((*tick, *ordinal), result).is_some() {
+                    return Err("duplicate actor result association".into());
+                }
+            }
+        }
+    }
+    let mut used = BTreeSet::new();
+    for ((tick, ordinal), (actor, sequence, envelope)) in submissions {
+        let Some(result) = results.get(&(tick, ordinal)) else {
+            return Err("actor submission has no complete result".into());
+        };
+        let mut witnesses = Vec::new();
+        for (index, record) in records.iter().enumerate() {
+            let matches = match record {
+                EconomyLogRecord::CommandBoundary(command) => {
+                    command.before.economy.tick == tick
+                        && command.input.slot.0 == actor_slot(actor)
+                        && command.input.seq == sequence
+                        && actor_command_matches(envelope, command)
+                        && actor_result_matches(result, command)
+                }
+                EconomyLogRecord::Admission {
+                    ordinal: admission_ordinal,
+                    player_id,
+                    slot,
+                    seq,
+                    tick: admission_tick,
+                    reason,
+                    raw_envelope,
+                    wire_format,
+                    connection,
+                    ..
+                } => {
+                    let identity_matches = match actor {
+                        ActorLogIdentity::Human {
+                            player_id: expected,
+                            ..
+                        } => player_id == expected,
+                        ActorLogIdentity::Bot { slot, .. } => {
+                            *connection == 0 && *player_id == u64::MAX - u64::from(*slot)
+                        }
+                    };
+                    *admission_ordinal == ordinal
+                        && *admission_tick == tick
+                        && *slot == actor_slot(actor)
+                        && *seq == sequence
+                        && identity_matches
+                        && wire_format == "postcard"
+                        && postcard::from_bytes::<turts_net_protocol::PlayerCommand>(raw_envelope)
+                            .as_ref()
+                            == Ok(envelope)
+                        && actor_refusal_matches(result, envelope, *reason)
+                }
+                _ => false,
+            };
+            if matches {
+                witnesses.push(index);
+            }
+        }
+        if witnesses.len() != 1 || !used.insert(witnesses[0]) {
+            return Err(format!(
+                "actor admission {tick}/{ordinal} does not have one unique ordinary witness"
+            ));
+        }
+    }
+    Ok(())
+}
+fn actor_slot(actor: &ActorLogIdentity) -> u8 {
+    match actor {
+        ActorLogIdentity::Human { slot, .. } | ActorLogIdentity::Bot { slot, .. } => *slot,
+    }
+}
+fn actor_refusal_matches(
+    result: &turts_net_protocol::OrderResult,
+    envelope: &turts_net_protocol::PlayerCommand,
+    reason: turts_net_protocol::CommandRejectReason,
+) -> bool {
+    result.accepted.is_empty()
+        && result.job_id.is_none()
+        && result.envelope == envelope.order.units.is_empty().then_some(reason)
+        && result.refused
+            == envelope
+                .order
+                .units
+                .iter()
+                .map(|unit| turts_net_protocol::UnitRefusal {
+                    unit: *unit,
+                    reason,
+                })
+                .collect::<Vec<_>>()
+}
+fn actor_command_matches(
+    envelope: &turts_net_protocol::PlayerCommand,
+    command: &CommandAudit,
+) -> bool {
+    use turts_net_protocol::OrderTarget as W;
+    use turts_sim::orders::OrderTargetSim as S;
+    let turts_sim::CommandKind::Order(order) = &command.input.kind else {
+        return false;
+    };
+    let target_matches = match (&envelope.order.target, &order.target) {
+        (W::None, S::None) => true,
+        (W::Point(a), S::Point(b)) => {
+            a.x.to_bits() == b.x.to_bits() && a.y.to_bits() == b.y.to_bits()
+        }
+        (W::Unit(a), S::Unit(b)) => a.0 == *b,
+        (W::Node(a), S::Node(b)) => a.0 == b.0,
+        (W::Job(a), S::Job(b)) => a.0 == b.0,
+        (W::Content(a), S::Content(b)) => turts_mod_api::ContentId::parse(a).as_ref() == Ok(b),
+        (
+            W::ContentAtPoint {
+                content: a,
+                point: ap,
+            },
+            S::ContentAtPoint {
+                content: b,
+                point: bp,
+            },
+        ) => {
+            turts_mod_api::ContentId::parse(a).as_ref() == Ok(b)
+                && ap.x.to_bits() == bp.x.to_bits()
+                && ap.y.to_bits() == bp.y.to_bits()
+        }
+        (W::Content(a) | W::ContentAtPoint { content: a, .. }, S::Invalid) => {
+            turts_mod_api::ContentId::parse(a).is_err()
+        }
+        _ => false,
+    };
+    let queue_matches = matches!(
+        (envelope.order.queue, order.queue),
+        (
+            turts_net_protocol::QueueMode::Replace,
+            turts_sim::orders::QueueMode::Replace
+        ) | (
+            turts_net_protocol::QueueMode::Append,
+            turts_sim::orders::QueueMode::Append
+        )
+    );
+    turts_mod_api::ContentId::parse(&envelope.order.order).as_ref() == Ok(&order.order)
+        && envelope
+            .order
+            .units
+            .iter()
+            .map(|unit| unit.0)
+            .eq(order.units.iter().copied())
+        && envelope.order.group == order.group
+        && queue_matches
+        && target_matches
+}
+fn actor_result_matches(result: &turts_net_protocol::OrderResult, command: &CommandAudit) -> bool {
+    let mut expected = turts_net_protocol::OrderResult {
+        seq: command.input.seq,
+        tick: command.before.economy.tick,
+        accepted: Vec::new(),
+        refused: Vec::new(),
+        envelope: None,
+        job_id: None,
+    };
+    let turts_sim::CommandKind::Order(order) = &command.input.kind else {
+        return false;
+    };
+    if !command.result.units.accepted.is_empty() || !command.result.units.refused.is_empty() {
+        expected.accepted = command
+            .result
+            .units
+            .accepted
+            .iter()
+            .copied()
+            .map(turts_net_protocol::UnitId)
+            .collect();
+        expected.refused = command
+            .result
+            .units
+            .refused
+            .iter()
+            .map(|(unit, reason)| turts_net_protocol::UnitRefusal {
+                unit: turts_net_protocol::UnitId(*unit),
+                reason: actor_wire_reason(*reason),
+            })
+            .collect();
+        expected.job_id = command
+            .result
+            .outcome
+            .as_ref()
+            .ok()
+            .and_then(|applied| applied.job_id)
+            .map(|id| turts_net_protocol::JobId(id.0));
+        if expected.accepted.is_empty() && order.units.is_empty() {
+            expected.envelope = expected.refused.first().map(|row| row.reason);
+        }
+    } else {
+        match command.result.outcome {
+            Ok(applied) => {
+                expected.accepted = order
+                    .units
+                    .iter()
+                    .copied()
+                    .map(turts_net_protocol::UnitId)
+                    .collect();
+                expected.job_id = applied.job_id.map(|id| turts_net_protocol::JobId(id.0));
+            }
+            Err(reason) => {
+                let reason = actor_wire_reason(reason);
+                expected.refused = order
+                    .units
+                    .iter()
+                    .map(|unit| turts_net_protocol::UnitRefusal {
+                        unit: turts_net_protocol::UnitId(*unit),
+                        reason,
+                    })
+                    .collect();
+                expected.envelope = order.units.is_empty().then_some(reason);
+            }
+        }
+    }
+    result == &expected
+}
+
+fn actor_wire_reason(reason: turts_sim::RejectReason) -> turts_net_protocol::CommandRejectReason {
+    use turts_net_protocol::CommandRejectReason;
+    use turts_sim::RejectReason as R;
+    match reason {
+        R::MatchOver => CommandRejectReason::MatchOver,
+        R::SlotDefeated => CommandRejectReason::SlotDefeated,
+        R::SiteOutsideMap => CommandRejectReason::SiteOutsideMap,
+        R::SiteOutOfArea => CommandRejectReason::SiteOutOfArea,
+        R::SiteBlocked => CommandRejectReason::SiteBlocked,
+        R::SiteNearBuilding => CommandRejectReason::SiteNearBuilding,
+        R::SiteNearResource => CommandRejectReason::SiteNearResource,
+        R::ConstructionQueueFull => CommandRejectReason::ConstructionQueueFull,
+        R::EmptyCommand => CommandRejectReason::EmptyCommand,
+        R::TooManyUnits => CommandRejectReason::TooManyUnits,
+        R::DuplicateUnit => CommandRejectReason::DuplicateUnit,
+        R::UnknownUnit => CommandRejectReason::UnknownUnit,
+        R::NotOwner => CommandRejectReason::NotOwner,
+        R::NotMobile => CommandRejectReason::NotMobile,
+        R::TargetNotFinite => CommandRejectReason::TargetNotFinite,
+        R::TargetOutsideMap => CommandRejectReason::TargetOutsideMap,
+        R::MissingCapability => CommandRejectReason::MissingCapability,
+        R::UnknownNode => CommandRejectReason::UnknownNode,
+        R::IncompatibleItem => CommandRejectReason::IncompatibleItem,
+        R::NodeDepleted => CommandRejectReason::NodeDepleted,
+        R::UnknownRecipe => CommandRejectReason::UnknownRecipe,
+        R::RecipeNotEnabled => CommandRejectReason::RecipeNotEnabled,
+        R::QueueFull => CommandRejectReason::QueueFull,
+        R::RateLimited => CommandRejectReason::RateLimited,
+        R::InsufficientBalance | R::UnknownBalance => CommandRejectReason::InsufficientBalance,
+        R::InsufficientItems | R::UnknownInventory | R::InvalidAmount => {
+            CommandRejectReason::InsufficientItems
+        }
+        R::UnknownJob => CommandRejectReason::UnknownJob,
+        R::RefundDestinationFull => CommandRejectReason::RefundDestinationFull,
+        R::RefundDestinationOverflow => CommandRejectReason::RefundDestinationOverflow,
+        R::ArithmeticOverflow => CommandRejectReason::ArithmeticOverflow,
+        R::IdExhausted => CommandRejectReason::IdExhausted,
+        R::BadSequence => CommandRejectReason::BadSequence,
+        R::NotRemovable => CommandRejectReason::NotRemovable,
+        R::NotToggleable => CommandRejectReason::NotToggleable,
+        R::PrerequisitesMissing => CommandRejectReason::PrerequisitesMissing,
+        R::AlreadyResearched => CommandRejectReason::AlreadyResearched,
+        R::ResearchInProgress => CommandRejectReason::ResearchInProgress,
+        R::IntegrityViolation => CommandRejectReason::Internal,
+        R::NotApplicable => CommandRejectReason::NotApplicable,
+        R::TargetInvalid => CommandRejectReason::TargetInvalid,
+        R::TargetGone => CommandRejectReason::TargetGone,
+        R::OutOfRange => CommandRejectReason::OutOfRange,
+        R::NotQueueable => CommandRejectReason::NotQueueable,
+        R::Blocked => CommandRejectReason::Blocked,
+    }
 }
 
 fn validate_order_result(command: &CommandAudit) -> Result<(), String> {
@@ -15821,7 +16233,9 @@ mod tests {
                     alter_radius(before);
                     alter_radius(state);
                 }
-                EconomyLogRecord::Claim { .. } | EconomyLogRecord::Admission { .. } => {}
+                EconomyLogRecord::Claim { .. }
+                | EconomyLogRecord::Admission { .. }
+                | EconomyLogRecord::Actor(_) => {}
             }
         }
         let radius_error = validate_records(&forged_radius).unwrap_err();
