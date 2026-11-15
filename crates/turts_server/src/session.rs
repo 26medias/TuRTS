@@ -1646,15 +1646,9 @@ mod tests {
 /// the ambiguity check of the schedule makes it an error.
 pub(crate) fn assert_fixed_pre_update_is_totally_ordered(mut app: App) {
     use bevy::ecs::schedule::{LogLevel, ScheduleBuildSettings};
-    #[derive(Resource, Default)]
-    struct Probe(u32);
-    app.init_resource::<Probe>();
-    // Construction now has a real exclusive system. It already detects a missing admission
-    // edge. A second probe in that same set would introduce an unrelated within-set conflict.
-    app.add_systems(
-        FixedPreUpdate,
-        (|mut probe: ResMut<Probe>| probe.0 += 1).in_set(SimSet::Supply),
-    );
+    // Supply and Construction now have real exclusive systems. They detect missing
+    // admission edges directly. A synthetic probe in either set would instead add
+    // an unrelated conflict between two systems within the same phase.
     app.edit_schedule(FixedPreUpdate, |schedule| {
         schedule.set_build_settings(ScheduleBuildSettings {
             ambiguity_detection: LogLevel::Error,

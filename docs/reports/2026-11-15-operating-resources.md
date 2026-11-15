@@ -75,3 +75,6 @@ No final-release performance claim is made here. This draft does not authorize a
 
 OR5 was corrected through a narrow two-turn Anvil review: `anvil-stat-clarification.md`.
 It preserves the future Gathered exclusion without treating a Null HUD source as a working counter.
+
+The old formula check counted two state adapters by name. Its exact baseline now records those adapters.
+No numeric gameplay formula or product behavior changed for this repair.
