@@ -32,8 +32,8 @@ From a source-built prepared folder, use `python3 -I -B scripts/skirmish_share.p
 Full local two-browser matches and public HTTPS/WSS orders pass scripted checks.
 Fast reload keeps the same army and slot. Human games wait in a ready lobby with colour choices and a cancellable three-second countdown.
 A full match played by two people and the full MP1 roster remain open.
-The computer now trains a paid mixed army of Crossbowmen, Swordsmen, and Warriors, and builds a Guard tower. It now runs through the public mod bot framework. MP2 still needs shared remembered sightings and creator-authorized lobby selection.
-Terrain, fog, broader lifecycle features, and large-scale performance remain later work.
+The computer now trains a paid mixed army of Crossbowmen, Swordsmen, and Warriors, and builds a Guard tower. It now runs through the public mod bot framework. Shared remembered sightings now use the same engine authority as human players. Creator-authorized lobby selection remains open.
+Authored map fog and bounded remembered sightings are now available to mods. Editable terrain, terrain occlusion, broader lifecycle features, and large-scale performance remain later work.
 
 ## Engine progress
 
@@ -46,19 +46,21 @@ The skirmish is its playable test bed. This table tracks delivered capabilities,
 | Playable skirmish | Building, harvesting, paid mixed armies, rally points, Victory, Defeat, and restart pass browser checks. | [Normal-stat win and loss report](docs/reports/2026-11-14-full-skirmish.md). Full game content remains open. |
 | Human multiplayer | Two browser clients, public HTTPS/WSS hosting, ready lobby, colour selection, and reload recovery pass scripted checks. | [Two-player report](docs/reports/2026-11-14-two-player-skirmish.md), [lobby report](docs/reports/2026-11-14-ready-lobby.md), [rejoin report](docs/reports/2026-11-14-fast-rejoin.md). A full match between two people remains unverified. |
 | Presentation | Models, animations, effects, minimap, ground blending, and selected-unit portraits and health are delivered. | [Ground report](docs/reports/2026-11-14-ground-blending.md), [selection report](docs/reports/2026-11-14-unit-selection-panel.md). Custom shader support remains open. |
-| Browser performance | The release reaches 59.20 FPS at 400 units on High. The last 2,000-unit High check reached 28.81 FPS. | [Current measurements](docs/measurements/models.md). The new workload includes Warriors. Low reaches 40.27 FPS at 2,000 units. One local host; larger-scale performance remains open. |
+| Browser performance | All nine 400-unit High cases pass at 59.9-60.0 FPS, including fog and both zoom limits. The last 2,000-unit High check reached 28.81 FPS on an earlier build. | [Visibility measurements](docs/measurements/shared-visibility.md), [larger-model measurements](docs/measurements/models.md). No new 2,000-unit or hosting-capacity claim. |
 | Damage system | Type tables, bonuses, optional armour curves, owner armour upgrades, automatic acquisition, Warriors, and Guard towers pass acceptance. | [Acceptance, independent review, and normal win](docs/reports/2026-11-14-damage-system.md). API 0.2.12; protocol 7. An independent test checks upgrade order and privacy in snapshots and deltas. The default game has no research lab yet. |
 | Operating resources | Mod-defined slot supply, exact shortage rates, weapon Disable, and periodic income pass native and browser checks. | [Acceptance and limits](docs/reports/2026-11-15-operating-resources.md). API 0.2.13; protocol 7. The default Skirmish balance stays unchanged. Gathered accounting and its display remain open; a future counter test must exclude periodic income. |
 | Paid work and repair | Exact incremental payment, construction cancellation, safe destruction refunds, and manual/automatic repair pass feature tests and the full browser fixture. | [Acceptance progress](docs/reports/2026-11-15-paid-work-and-repair.md). API 0.2.14; protocol 8. Acceptance and independent foundation review pass. Research ChargeOverTime and individual held-request cancellation remain open. |
 | Public mod bots | Portable profiles, public Rust controllers, bounded observations, exact account coordination, shared command admission, and headless recorded/regenerated replay are implemented. | [SDK15 report](docs/reports/2026-11-15-public-bot-foundation.md). Final Skirmish and Stockyard browser probes pass. BF8 passed at 4.906851 ms p99 before later financial/profile fixes; those fixes were not remeasured. Full human/reference readiness remains open. |
-| Remaining engine scope | Editable terrain, discovery and fog, scripts, utilities, rooms, saves, statistics, and spectator/replay delivery remain open. | These capabilities follow the full project specification. Existing package loading and networking will be reused. |
+| Shared visibility | Authored fog, team sharing, bounded stale sightings, hidden-target command rules, and atomic permitted human/bot state pass acceptance. | [SDK16 report](docs/reports/2026-11-15-shared-visibility.md). API 0.2.16; protocol 9. Independent code-running review, 2,924 native tests, full network acceptance, 60,000 measured server ticks, nine High camera cases, and scripted player probes pass. |
+| Remaining engine scope | Editable terrain, geological discovery and terrain occlusion, scripts, utilities, rooms, saves, statistics, and spectator/replay delivery remain open. | M4 terrain implementation is active on a separate branch. It is not in the accepted build. These capabilities follow the full project specification. |
 
-Latest accepted build: `target/mc-evidence/skirmish-public-bots-prepared` (API 0.2.15; protocol 8), sealed from clean source `54a893bc`.
-All three local launchers use the frozen `TuRTS-public-bots-play` checkout and this prepared build.
-The normal launcher was started and its populated browser world was captured after the switch.
-The public Skirmish win and Stockyard browser checks pass. All three cold-play product probes pass.
-The isolated checker reports PARTIAL-PASS with manual/reference checks open. The full fresh-agent and manual readiness procedure was not repeated.
-The two-human and Internet modes retain their tested launch flags. Their full matches were not repeated for SDK15.
+Latest accepted build: `target/mc-evidence/skirmish-shared-visibility-final-prepared` (API 0.2.16; protocol 9), sealed from clean source `81c37e1f`.
+All three local launchers use the frozen `TuRTS-shared-visibility-play` checkout and this prepared build.
+The actual normal launcher loads a populated world, models and minimap, with sound off and gzip WASM delivery.
+The final two-slot fog probe and all three scripted cold-play product probes pass.
+The checker reports PARTIAL-PASS with manual/reference checks open. The full fresh-agent and manual readiness procedure was not repeated.
+The two-human and Internet modes retain their tested launch flags. Their full matches and a new normal-stat victory were not repeated for SDK16.
+Default Skirmish uses its existing AllVisible map. Mods can opt into the new shared knowledge provider.
 Tested milestones are merged and pushed to main under the CEO's standing approval.
 CI keeps native, WebAssembly, process, browser, and test-tool checks. Historical fault campaigns remain manual. The SDK15 browser oracle now checks owner work and repair data against audit history. The [CI repair report](docs/reports/2026-11-15-ci-product-checks.md) records local validation and limits. The corrected hosted workflow has not run yet. Prior hosted browser runner losses remain unexplained.
 See [working rules](AGENTS.md) for parallel delivery, review, and milestone integration.

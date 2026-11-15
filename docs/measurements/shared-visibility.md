@@ -1,6 +1,6 @@
 # Shared visibility measurements
 
-Status: SDK16 acceptance is open. The accepted launcher still runs SDK15.
+Status: SDK16 native and final browser acceptance pass. The accepted launchers now run SDK16.
 Evidence root: `/home/julien/Projects/TuRTS/target/mc-evidence/`.
 
 ## Original SV7 timing contract: failed diagnostics
@@ -120,3 +120,20 @@ The native result does not establish browser frame rate or later hosting capacit
 
 Evidence under `shared-visibility/`: `final-sv7-native.log`, `sv7-v2-full-1000.json`, and `final-v2-machine.json`.
 The JSON retains every service sample, work counter, wire count, and deadline result.
+
+## Final detailed-model browser acceptance
+
+The sealed source `81c37e1f` passes all nine cases in Chrome 157.0.8103.38.
+The same 400 mixed detailed units run on High at normal, near and far authored zoom limits.
+Fog normal reaches 59.902 FPS; every other case reaches approximately 60.0 FPS.
+Frame p95 is 16.7-16.8 ms. Peak recorded WASM memory is 230,686,720 bytes.
+Visible model draw groups and offscreen fallback counts match the actual GLB material groups.
+No model detail, texture, shadow, source count, camera range or workload was reduced.
+Every test Chrome used a fresh profile and --alsa-output-device=null on an owned Xvfb display.
+No agent build or competing test browser ran during this matrix.
+
+Host inventory reports an NVIDIA GeForce RTX 3080 and driver 580.178.04.
+The browser reports a non-fallback WebGPU adapter but exposes no device description.
+The recorded timings describe this host; they do not establish other GPU performance.
+Evidence: `shared-visibility-sv7-browser-final/result.json` and each case's raw frame samples/screenshots.
+The final two-browser scouting result is `shared-visibility-final-sv6/browser/result.json`.
