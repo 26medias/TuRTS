@@ -85,7 +85,7 @@ impl ObservationBasis {
             && !definition
                 .constructor
                 .as_ref()
-                .is_some_and(|p| p.buildings.contains(&recipe.output_unit))
+                .is_some_and(|p| p.buildings.contains(production))
         {
             return None;
         }

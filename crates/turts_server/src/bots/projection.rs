@@ -206,6 +206,40 @@ pub(crate) fn project(
                 }),
         );
     }
+    // Empty own accepted accounts are known zero, not unobserved endpoints.
+    let mut known = accounts
+        .iter()
+        .map(|a| a.account.clone())
+        .collect::<std::collections::BTreeSet<_>>();
+    for unit in units.iter().filter(|u| u.owner_slot == slot) {
+        let Some(definition) = catalog.units.get(&unit.content) else {
+            continue;
+        };
+        for (definition, port) in [
+            (definition.inventory.as_ref(), InventoryPort::Main),
+            (definition.output_inventory.as_ref(), InventoryPort::Output),
+        ] {
+            let Some(definition) = definition else {
+                continue;
+            };
+            for resource in &definition.accepts {
+                let account = SpendKey {
+                    endpoint: SourceEndpoint::Inventory {
+                        unit: unit.unit,
+                        port,
+                    },
+                    resource: resource.clone(),
+                };
+                if known.insert(account.clone()) {
+                    accounts.push(AccountObservation {
+                        account,
+                        on_hand: 0,
+                        reserved: 0,
+                    });
+                }
+            }
+        }
+    }
     let exact_jobs = view
         .operating
         .as_ref()
