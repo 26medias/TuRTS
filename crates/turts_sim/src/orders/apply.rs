@@ -376,10 +376,10 @@ pub(crate) fn apply_order(
             continue;
         }
         let result = if plain_gather {
-            apply_unit_order(world, slot, entity, *unit_id, order, command)
+            apply_unit_order(world, slot, seq, entity, *unit_id, order, command)
         } else {
             crate::economy::transaction::capture_unit_order_operation(world, *unit_id, |world| {
-                apply_unit_order(world, slot, entity, *unit_id, order, command)
+                apply_unit_order(world, slot, seq, entity, *unit_id, order, command)
             })
         };
         match result {
@@ -839,6 +839,7 @@ pub(super) fn clamp_target(world: &World, target: Vec2, radius: f32) -> Vec2 {
 fn apply_unit_order(
     world: &mut World,
     slot: SlotId,
+    seq: u32,
     entity: bevy_ecs::entity::Entity,
     unit_id: u32,
     order: Order,
@@ -1124,7 +1125,12 @@ fn apply_unit_order(
             let OrderTargetSim::ContentAtPoint { content, point } = order.target else {
                 return Err(R::TargetInvalid);
             };
-            crate::economy::construction::construct(world, slot, unit_id, content, point)
+            let origin = world
+                .get_resource::<crate::receipts::CommandWorkReceipts>()
+                .and_then(|receipts| receipts.member(slot, seq, unit_id));
+            crate::economy::construction::construct_with_origin(
+                world, slot, unit_id, content, point, origin,
+            )
         }
         Behaviour::SetRally => {
             let OrderTargetSim::Point(point) = order.target else {

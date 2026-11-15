@@ -6,11 +6,12 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use bevy_ecs::prelude::Resource;
+use serde::{Deserialize, Serialize};
 
 use crate::{JobId, SlotId};
 
 /// A command member, independent of network connections and bot implementations.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct CommandMember {
     pub slot: u8,
     pub sequence: u32,
@@ -29,6 +30,16 @@ impl CommandWorkReceipts {
     /// Register an admitted envelope. This grants no command permission.
     pub fn watch(&mut self, slot: SlotId, sequence: u32) {
         self.watched.insert((slot.0, sequence));
+    }
+
+    pub(crate) fn member(&self, slot: SlotId, sequence: u32, unit: u32) -> Option<CommandMember> {
+        self.watched
+            .contains(&(slot.0, sequence))
+            .then_some(CommandMember {
+                slot: slot.0,
+                sequence,
+                unit,
+            })
     }
 
     pub(crate) fn record(&mut self, slot: SlotId, sequence: u32, unit: u32, job: JobId) {

@@ -31,6 +31,8 @@ pub struct ConstructionLimit(pub u16);
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct HeldConstruction {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origin: Option<crate::receipts::CommandMember>,
     pub recipe: ContentId,
     pub point: Vec2,
 }
@@ -38,6 +40,8 @@ pub struct HeldConstruction {
 /// A site owns its job independently of the constructor that placed it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Site {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origin: Option<crate::receipts::CommandMember>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub funding: Option<super::production::FundingState>,
     pub constructor: u32,
@@ -200,6 +204,18 @@ pub fn construct(
     recipe: ContentId,
     point: Vec2,
 ) -> Result<Option<crate::JobId>, RejectReason> {
+    construct_with_origin(world, slot, constructor, recipe, point, None)
+}
+
+/// The origin identifies ordinary accepted work. It changes no validation or payment.
+pub(crate) fn construct_with_origin(
+    world: &mut World,
+    slot: SlotId,
+    constructor: u32,
+    recipe: ContentId,
+    point: Vec2,
+    origin: Option<crate::receipts::CommandMember>,
+) -> Result<Option<crate::JobId>, RejectReason> {
     let entity = unit_entity(world, constructor).ok_or(RejectReason::UnknownUnit)?;
     if world.get::<Owner>(entity) != Some(&Owner(slot)) {
         return Err(RejectReason::NotOwner);
@@ -264,7 +280,7 @@ pub fn construct(
             .count()
             < concurrent;
     if has_room && state.held.get(&constructor).is_none_or(Vec::is_empty) {
-        place(world, slot, constructor, recipe, point, false).map(Some)
+        place(world, slot, constructor, recipe, point, false, origin).map(Some)
     } else {
         transaction::transact(world, |tx| {
             let mut state = tx.construction();
@@ -272,7 +288,11 @@ pub fn construct(
                 .held
                 .entry(constructor)
                 .or_default()
-                .push(HeldConstruction { recipe, point });
+                .push(HeldConstruction {
+                    recipe,
+                    point,
+                    origin,
+                });
             tx.stage_construction(state);
             Ok(None)
         })
@@ -286,6 +306,7 @@ fn place(
     recipe_id: ContentId,
     point: Vec2,
     held: bool,
+    origin: Option<crate::receipts::CommandMember>,
 ) -> Result<crate::JobId, RejectReason> {
     let catalog = &world.resource::<InstalledCatalog>().0;
     let recipe = catalog
@@ -374,6 +395,7 @@ fn place(
         state.sites.insert(
             id,
             Site {
+                origin,
                 constructor,
                 owner_slot: slot.0,
                 recipe: recipe_id.clone(),
@@ -552,7 +574,17 @@ pub(crate) fn run_construction(world: &mut World) {
             {
                 break;
             }
-            if place(world, owner.0, constructor, order.recipe, order.point, true).is_err() {
+            if place(
+                world,
+                owner.0,
+                constructor,
+                order.recipe,
+                order.point,
+                true,
+                order.origin,
+            )
+            .is_err()
+            {
                 break;
             }
         }
