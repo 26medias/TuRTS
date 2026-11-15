@@ -538,6 +538,7 @@ pub(crate) fn remove_unit(
             .unwrap_or(turts_mod_api::RefundRatio::ZERO);
         append_desired_refunds(&site.charged, ratio, &mut desired)?;
         crate::economy::production::flush_funding(tx, owner, unit, site.job.0, &mut site.funding)?;
+        tx.stage_site_terminal(unit, &site, crate::receipts::TerminalWorkState::Destroyed);
     }
     construction.held.remove(&unit);
     tx.stage_construction(construction);
@@ -571,6 +572,7 @@ pub(crate) fn remove_unit(
             if let Some(reservation) = &job.reservation {
                 super::release_reservation(tx, reservation)?;
             }
+            tx.stage_job_terminal(unit, job, crate::receipts::TerminalWorkState::Destroyed);
         }
         jobs.clear();
         tx.stage_queues(queues);

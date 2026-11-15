@@ -373,7 +373,7 @@ fn place(
             health.max, ratio, 0, total,
         ));
     }
-    transaction::transact(world, |tx| {
+    let job = transaction::transact(world, |tx| {
         let job = tx.allocate_job_id()?;
         match recipe.payment {
             PaymentPolicy::ChargeOnQueue => transaction::charge_costs(tx, &lines)?,
@@ -431,7 +431,11 @@ fn place(
             capability_rows,
         });
         Ok(job)
-    })
+    })?;
+    if let Some(origin) = origin {
+        crate::receipts::capture_origin_work(world, origin, job);
+    }
+    Ok(job)
 }
 
 /// Place held requests before commands. A blocked or unpaid head keeps its place in the queue.
@@ -466,6 +470,7 @@ pub fn cancel_site(world: &mut World, slot: SlotId, id: u32) -> Result<(), Rejec
         }
         let mut funding = site.funding.clone();
         super::production::flush_funding(tx, slot.0, id, site.job.0, &mut funding)?;
+        tx.stage_site_terminal(id, &site, crate::receipts::TerminalWorkState::Cancelled);
         let mut construction = tx.construction();
         construction
             .sites
@@ -752,6 +757,13 @@ pub(crate) fn advance_site(world: &mut World, id: u32) {
             );
         }
         if let Some(rows) = rows {
+            let mut terminal = state
+                .sites
+                .get(&id)
+                .cloned()
+                .ok_or(RejectReason::IntegrityViolation)?;
+            terminal.done = done;
+            tx.stage_site_terminal(id, &terminal, crate::receipts::TerminalWorkState::Completed);
             state.sites.remove(&id);
             state.completed.push(id);
             tx.stage_completed_building(id, rows)?;
