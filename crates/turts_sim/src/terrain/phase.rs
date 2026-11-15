@@ -33,6 +33,7 @@ pub struct TerrainPhase {
     memory: BTreeMap<u8, super::history::MemoryTable>,
     coverage: Option<Arc<super::history::Coverage>>,
     initial: Arc<[i32]>,
+    initial_ranges: Arc<[(i32, i32)]>,
     materials: Arc<[ContentId]>,
     ground: BTreeMap<u32, Ground>,
     work: Vec<super::TerrainWorkView>,
@@ -159,6 +160,57 @@ impl TerrainPhase {
             provenance: row.provenance,
         })
     }
+    /// Optimistic movement uses authorized current/stale facts, then public initial geometry.
+    /// This is not a clearance answer for placement/work queries, where Unknown stays Unknown.
+    pub(crate) fn planning_elevation(&self, viewer: u8, cell: Cell) -> Option<i32> {
+        let cell = TerrainCell {
+            x: cell.x,
+            y: cell.y,
+        };
+        let (chunk, offset) = self.location(cell)?;
+        self.memory
+            .get(&viewer)
+            .and_then(|memory| memory.get(chunk))
+            .and_then(|chunk| chunk.rows.as_ref())
+            .and_then(|rows| rows[offset])
+            .map(|row| row.elevation)
+            .or_else(|| self.initial_elevation(cell))
+    }
+    pub(crate) fn planning_rectangle(
+        &self,
+        viewer: u8,
+        min: Cell,
+        max: Cell,
+        lease: &mut BTreeMap<usize, u64>,
+    ) -> bool {
+        let mut height = None;
+        let mut flat = true;
+        for cy in min.y / self.chunk_width..=max.y / self.chunk_width {
+            for cx in min.x / self.chunk_width..=max.x / self.chunk_width {
+                let index =
+                    (u64::from(cy) * u64::from(self.chunk_columns) + u64::from(cx)) as usize;
+                let memory = self
+                    .memory
+                    .get(&viewer)
+                    .and_then(|memory| memory.get(index));
+                lease.insert(index, memory.map_or(0, |chunk| chunk.geometry_revision));
+                let Some((low, high)) = memory
+                    .and_then(|chunk| chunk.planning_range)
+                    .or_else(|| self.initial_ranges.get(index).copied())
+                else {
+                    return false;
+                };
+                flat &= low == high && height.is_none_or(|height| height == low);
+                height = Some(low);
+            }
+        }
+        flat
+    }
+    pub(crate) fn planning_lease_valid(&self, viewer: u8, lease: &BTreeMap<usize, u64>) -> bool {
+        lease
+            .iter()
+            .all(|(index, revision)| self.knowledge_revision(viewer, *index) == *revision)
+    }
     pub(crate) fn knowledge_revision(&self, viewer: u8, chunk: usize) -> u64 {
         self.memory
             .get(&viewer)
@@ -265,6 +317,7 @@ pub(crate) fn capture_phase(world: &mut World, phase: ObservationPhase) {
         memory: history.slots,
         coverage: history.coverage,
         initial: Arc::clone(&terrain.initial),
+        initial_ranges: Arc::clone(&terrain.initial_ranges),
         materials: Arc::clone(&terrain.materials),
         ground,
         work,

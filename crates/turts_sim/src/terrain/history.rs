@@ -23,6 +23,7 @@ impl Remembered {
 pub(super) struct MemoryChunk {
     pub(super) geometry_revision: u64,
     pub(super) rows: Option<Vec<Option<Remembered>>>,
+    pub(super) planning_range: Option<(i32, i32)>,
 }
 pub(super) type MemoryTable = PagedChunks<MemoryChunk>;
 #[derive(Clone)]
@@ -157,6 +158,29 @@ fn set_row(
     edit.geometry_changed |= current.map(|row| row.facts()) != Some(row.facts());
     edit.rows[offset] = Some(row);
 }
+fn planning_range(terrain: &TerrainState, chunk: usize, rows: &[Option<Remembered>]) -> (i32, i32) {
+    let cx = chunk as u64 % u64::from(terrain.chunk_columns);
+    let cy = chunk as u64 / u64::from(terrain.chunk_columns);
+    let x0 = cx as u32 * terrain.chunk_width;
+    let y0 = cy as u32 * terrain.chunk_width;
+    let width = terrain.chunk_width.min(terrain.grid.columns - x0);
+    rows.iter()
+        .enumerate()
+        .map(|(offset, row)| {
+            row.map_or_else(
+                || {
+                    let x = x0 + offset as u32 % width;
+                    let y = y0 + offset as u32 / width;
+                    terrain.initial
+                        [(u64::from(y) * u64::from(terrain.grid.columns) + u64::from(x)) as usize]
+                },
+                |row| row.elevation,
+            )
+        })
+        .fold((i32::MAX, i32::MIN), |(low, high), height| {
+            (low.min(height), high.max(height))
+        })
+}
 fn update_slot(
     terrain: &TerrainState,
     history: &mut SlotHistory,
@@ -262,6 +286,7 @@ fn update_slot(
                 index,
                 Arc::new(MemoryChunk {
                     geometry_revision: revision,
+                    planning_range: Some(planning_range(terrain, index, &edit.rows)),
                     rows: Some(edit.rows),
                 }),
             )
@@ -352,6 +377,7 @@ pub(super) fn capture(world: &mut World, phase: ObservationPhase) -> Option<Capt
                         index,
                         Arc::new(MemoryChunk {
                             geometry_revision: 1,
+                            planning_range: Some(planning_range(terrain, index, &edit.rows)),
                             rows: Some(edit.rows),
                         }),
                     )

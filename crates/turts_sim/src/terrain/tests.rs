@@ -1002,3 +1002,122 @@ fn unchanged_current_surface_retains_sample_tick_without_refresh_traffic() {
         Some(changed)
     );
 }
+
+#[test]
+fn paired_unseen_ridge_worlds_plan_and_report_equally_until_physical_contact() {
+    let create = || {
+        let mut fixture = Fixture::configured(4000, 1000, 20, |catalog, map| {
+            map.visibility = Some(VisibilityDef {
+                cell_size: 2.0,
+                sharing: VisionSharing::OwnSlot,
+                memory_limit: None,
+            });
+            map.placements[0].pos = WorldPos { x: 1.5, y: 4.5 };
+            map.placements[1].pos = WorldPos { x: 1.5, y: 6.5 };
+            let mut enemy = catalog.units[&id("harvester")].clone();
+            enemy.id = id("private_worker");
+            enemy.name = "Private worker".into();
+            enemy.vision = Some(VisionDef { radius: 6.0 });
+            catalog.units.insert(enemy.id.clone(), enemy);
+            map.placements.push(Placement {
+                unit: id("private_worker").to_string(),
+                owner_slot: 1,
+                pos: WorldPos { x: 6.5, y: 4.5 },
+                contents: vec![ItemStack {
+                    item: id("ore").to_string(),
+                    amount: 160,
+                }],
+                facing: None,
+                start_order: None,
+            });
+        });
+        crate::visibility::initialize_context(fixture.app.world_mut(), 77, &[0, 1]).unwrap();
+        fixture
+    };
+    let mut flat = create();
+    let mut ridge = create();
+    let enemy = ridge.unit_at(6.5, 4.5);
+    ridge.command_slot(
+        SlotId(1),
+        vec![enemy],
+        Behaviour::TerrainWork,
+        OrderTargetSim::TerrainWork {
+            tool: id("fill"),
+            cells: TerrainRect {
+                min: TerrainCell { x: 3, y: 0 },
+                max: TerrainCell { x: 4, y: 8 },
+            },
+            target_elevation: 40,
+        },
+        QueueMode::Replace,
+    );
+    for _ in 0..8 {
+        flat.tick();
+        ridge.tick();
+    }
+    assert_eq!(flat.height(3, 4), 20);
+    assert_eq!(ridge.height(3, 4), 40);
+    for fixture in [&mut flat, &mut ridge] {
+        fixture.command(
+            Behaviour::Move,
+            OrderTargetSim::Point(crate::Vec2::new(5.5, 4.5)),
+            QueueMode::Replace,
+        );
+    }
+    let owned = |fixture: &Fixture| {
+        let entity = crate::unit_entity(fixture.app.world(), fixture.worker).unwrap();
+        (
+            fixture
+                .app
+                .world()
+                .get::<crate::Position>(entity)
+                .unwrap()
+                .0,
+            fixture
+                .app
+                .world()
+                .get::<crate::MoveTarget>(entity)
+                .map(|target| target.0),
+            fixture
+                .app
+                .world()
+                .get::<navigation::TerrainMotionWait>(entity)
+                .is_some(),
+        )
+    };
+    for tick in 1..=6 {
+        flat.tick();
+        ridge.tick();
+        assert_eq!(
+            owned(&flat),
+            owned(&ridge),
+            "unknown ridge must not change an early route or wait before contact, tick{tick}"
+        );
+        let left = phase(flat.app.world(), ObservationPhase::Completed).unwrap();
+        let right = phase(ridge.app.world(), ObservationPhase::Completed).unwrap();
+        for y in 0..8 {
+            for x in 0..8 {
+                assert_eq!(
+                    left.surface(0, TerrainCell { x, y }),
+                    right.surface(0, TerrainCell { x, y })
+                );
+            }
+        }
+    }
+    for _ in 0..40 {
+        flat.tick();
+        ridge.tick();
+    }
+    assert!(owned(&flat).0.x > 3.5);
+    assert!(
+        owned(&ridge).0.x <= 2.75,
+        "physical certification prevents crossing the unseen cliff"
+    );
+    assert!(
+        phase(ridge.app.world(), ObservationPhase::Completed)
+            .unwrap()
+            .surface(0, TerrainCell { x: 3, y: 4 })
+            .is_none(),
+        "contact does not grant a neighboring cell's height/material"
+    );
+}

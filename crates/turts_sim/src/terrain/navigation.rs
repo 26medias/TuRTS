@@ -13,7 +13,7 @@ use std::{
 use turts_mod_api::ContentId;
 use turts_rules::terrain::{
     Ratio,
-    geometry::{Budget, Cell, Point, Traversal},
+    geometry::{Budget, Cell, Grid, Point, Surface, Traversal},
 };
 const SEARCH_POPS_PER_TICK: usize = 256;
 const MAX_ACTIVE_SEARCHES: usize = 16;
@@ -31,6 +31,7 @@ pub struct NavigationDiagnostics {
 }
 #[derive(Clone, PartialEq, Eq)]
 struct Key {
+    viewer: u8,
     kind: u32,
     radius: u32,
     goal_x: u32,
@@ -81,6 +82,44 @@ pub(crate) fn order_changed(world: &mut World, unit: u32) {
         navigation.entries.remove(&unit);
     }
 }
+trait TerrainRead: Surface {
+    fn grid(&self) -> Grid;
+    fn rectangle(&self, minimum: Cell, maximum: Cell, lease: &mut BTreeMap<usize, u64>) -> bool;
+    fn valid_lease(&self, lease: &BTreeMap<usize, u64>) -> bool;
+}
+impl TerrainRead for TerrainState {
+    fn grid(&self) -> Grid {
+        self.grid
+    }
+    fn rectangle(&self, minimum: Cell, maximum: Cell, lease: &mut BTreeMap<usize, u64>) -> bool {
+        self.rectangle_certificate(minimum, maximum, lease)
+    }
+    fn valid_lease(&self, lease: &BTreeMap<usize, u64>) -> bool {
+        self.lease_valid(lease)
+    }
+}
+/// A planner cannot access live columns or private revision counters through this type.
+struct Planning<'a> {
+    phase: &'a super::TerrainPhase,
+    viewer: u8,
+}
+impl Surface for Planning<'_> {
+    fn elevation(&self, cell: Cell) -> Option<i32> {
+        self.phase.planning_elevation(self.viewer, cell)
+    }
+}
+impl TerrainRead for Planning<'_> {
+    fn grid(&self) -> Grid {
+        self.phase.grid()
+    }
+    fn rectangle(&self, minimum: Cell, maximum: Cell, lease: &mut BTreeMap<usize, u64>) -> bool {
+        self.phase
+            .planning_rectangle(self.viewer, minimum, maximum, lease)
+    }
+    fn valid_lease(&self, lease: &BTreeMap<usize, u64>) -> bool {
+        self.phase.planning_lease_valid(self.viewer, lease)
+    }
+}
 fn point(point: Vec2) -> Point {
     Point {
         x: f64::from(point.x),
@@ -90,8 +129,8 @@ fn point(point: Vec2) -> Point {
 fn bits(value: f32) -> u32 {
     if value == 0.0 { 0 } else { value.to_bits() }
 }
-fn centre(terrain: &TerrainState, cell: Cell) -> Vec2 {
-    let width = f64::from(terrain.grid.cell_width) / f64::from(terrain.grid.length_scale);
+fn centre(terrain: &impl TerrainRead, cell: Cell) -> Vec2 {
+    let width = f64::from(terrain.grid().cell_width) / f64::from(terrain.grid().length_scale);
     Vec2::new(
         ((f64::from(cell.x) + 0.5) * width) as f32,
         ((f64::from(cell.y) + 0.5) * width) as f32,
@@ -131,7 +170,7 @@ fn profile(world: &World, unit: &MovementFrameUnit) -> Option<Traversal> {
 /// Certify the entire segment. A flat chunk rectangle is an exact sufficient certificate;
 /// otherwise use the common analytic swept-disk predicate. End support is always checked.
 fn clear(
-    terrain: &TerrainState,
+    terrain: &impl TerrainRead,
     from: Vec2,
     to: Vec2,
     radius: f32,
@@ -141,10 +180,10 @@ fn clear(
     // Also lease rejected edge neighborhoods. A later local edit can open an old no-route
     // result; failing endpoint support must not make the blocking chunk invisible to caches.
     if let (Ok(first), Ok(last)) = (
-        terrain.grid.point_to_cell(point(from)),
-        terrain.grid.point_to_cell(point(to)),
+        terrain.grid().point_to_cell(point(from)),
+        terrain.grid().point_to_cell(point(to)),
     ) {
-        let width = f64::from(terrain.grid.cell_width) / f64::from(terrain.grid.length_scale);
+        let width = f64::from(terrain.grid().cell_width) / f64::from(terrain.grid().length_scale);
         let reach = (f64::from(radius) / width).ceil() as u32;
         let reach = reach.saturating_add(1);
         let minimum = Cell {
@@ -156,17 +195,17 @@ fn clear(
                 .x
                 .max(last.x)
                 .saturating_add(reach)
-                .min(terrain.grid.columns - 1),
+                .min(terrain.grid().columns - 1),
             y: first
                 .y
                 .max(last.y)
                 .saturating_add(reach)
-                .min(terrain.grid.rows - 1),
+                .min(terrain.grid().rows - 1),
         };
-        terrain.rectangle_certificate(minimum, maximum, lease);
+        terrain.rectangle(minimum, maximum, lease);
     }
     let mut budget = Budget::new(GEOMETRY_BUDGET);
-    let Ok(first) = terrain.grid.disk_support(
+    let Ok(first) = terrain.grid().disk_support(
         terrain,
         point(from),
         f64::from(radius),
@@ -175,7 +214,7 @@ fn clear(
     ) else {
         return false;
     };
-    let Ok(last) = terrain.grid.disk_support(
+    let Ok(last) = terrain.grid().disk_support(
         terrain,
         point(to),
         f64::from(radius),
@@ -195,10 +234,10 @@ fn clear(
         maximum.x = maximum.x.max(cell.x);
         maximum.y = maximum.y.max(cell.y);
     }
-    if terrain.rectangle_certificate(minimum, maximum, lease) {
+    if terrain.rectangle(minimum, maximum, lease) {
         return true;
     }
-    let sweep = terrain.grid.sweep(
+    let sweep = terrain.grid().sweep(
         terrain,
         point(from),
         point(to),
@@ -207,6 +246,44 @@ fn clear(
         &mut budget,
     );
     sweep.result.is_ok() && sweep.numerator == sweep.denominator
+}
+fn physical_prefix(
+    terrain: &TerrainState,
+    from: Vec2,
+    to: Vec2,
+    radius: f32,
+    profile: Traversal,
+) -> Vec2 {
+    let mut low = 0u32;
+    let mut high = 1u32 << 20;
+    let candidate = |part: u32| {
+        let fraction = f64::from(part) / f64::from(1u32 << 20);
+        Vec2::new(
+            (f64::from(from.x) + (f64::from(to.x) - f64::from(from.x)) * fraction) as f32,
+            (f64::from(from.y) + (f64::from(to.y) - f64::from(from.y)) * fraction) as f32,
+        )
+    };
+    while high - low > 1 {
+        let middle = low + (high - low) / 2;
+        if clear(
+            terrain,
+            from,
+            candidate(middle),
+            radius,
+            profile,
+            &mut BTreeMap::new(),
+        ) {
+            low = middle;
+        } else {
+            high = middle;
+        }
+    }
+    let point = candidate(low);
+    if clear(terrain, from, point, radius, profile, &mut BTreeMap::new()) {
+        point
+    } else {
+        from
+    }
 }
 fn heuristic(from: Cell, to: Cell) -> u64 {
     let dx = u64::from(from.x.abs_diff(to.x));
@@ -230,7 +307,7 @@ fn start_search(start: Cell, goal: Cell) -> Search {
     }
 }
 fn search_step(
-    terrain: &TerrainState,
+    terrain: &Planning<'_>,
     search: &mut Search,
     radius: f32,
     profile: Traversal,
@@ -285,7 +362,7 @@ fn search_step(
                 ) else {
                     continue;
                 };
-                if x >= terrain.grid.columns || y >= terrain.grid.rows {
+                if x >= terrain.grid().columns || y >= terrain.grid().rows {
                     continue;
                 }
                 let next = Cell { x, y };
@@ -301,7 +378,7 @@ fn search_step(
                 );
                 if !segment_clear
                     || terrain
-                        .grid
+                        .grid()
                         .transition(terrain, cell, next, profile, &mut budget)
                         .is_err()
                 {
@@ -343,7 +420,7 @@ fn state_lease(state: &RouteState) -> &BTreeMap<usize, u64> {
     }
 }
 fn waypoint(
-    terrain: &TerrainState,
+    terrain: &Planning<'_>,
     navigation: &mut TerrainNavigation,
     unit: &MovementFrameUnit,
     goal: Vec2,
@@ -361,6 +438,7 @@ fn waypoint(
         return Some(goal);
     }
     let key = Key {
+        viewer: unit.owner_slot,
         kind: unit.unit_type,
         radius: bits(unit.radius),
         goal_x: bits(goal.x),
@@ -370,7 +448,7 @@ fn waypoint(
     if navigation
         .entries
         .get(&unit.unit_id)
-        .is_some_and(|entry| entry.key != key || !terrain.lease_valid(state_lease(&entry.state)))
+        .is_some_and(|entry| entry.key != key || !terrain.valid_lease(state_lease(&entry.state)))
     {
         navigation.entries.remove(&unit.unit_id);
         navigation.diagnostics.invalidations =
@@ -389,8 +467,8 @@ fn waypoint(
             return None;
         }
         let (Ok(start), Ok(destination)) = (
-            terrain.grid.point_to_cell(point(unit.position)),
-            terrain.grid.point_to_cell(point(goal)),
+            terrain.grid().point_to_cell(point(unit.position)),
+            terrain.grid().point_to_cell(point(goal)),
         ) else {
             return None;
         };
@@ -407,7 +485,7 @@ fn waypoint(
     }
     let entry = navigation.entries.get_mut(&unit.unit_id)?;
     if let RouteState::Searching(search) = &mut entry.state {
-        if terrain.grid.point_to_cell(point(unit.position)).ok() != Some(search.start) {
+        if terrain.grid().point_to_cell(point(unit.position)).ok() != Some(search.start) {
             navigation.entries.remove(&unit.unit_id);
             return None;
         }
@@ -421,7 +499,7 @@ fn waypoint(
     let RouteState::Ready(route) = &mut entry.state else {
         return None;
     };
-    let width = terrain.grid.cell_width as f32 / terrain.grid.length_scale as f32;
+    let width = terrain.grid().cell_width as f32 / terrain.grid().length_scale as f32;
     while route.cursor < route.cells.len() {
         let point = centre(terrain, route.cells[route.cursor]);
         if unit.position.distance(point) <= width * 0.25 {
@@ -470,6 +548,7 @@ pub(crate) fn step(
         .unwrap_or_default();
     let (outputs, waiting) = {
         let terrain = world.resource::<TerrainState>();
+        let start_phase = super::phase(world, turts_mod_api::ObservationPhase::Start);
         let profiles = frame
             .units
             .iter()
@@ -514,8 +593,20 @@ pub(crate) fn step(
             if unit.speed.is_none() {
                 continue;
             }
-            let waypoint = profiles[index]
-                .and_then(|profile| waypoint(terrain, &mut navigation, unit, goal, profile));
+            let waypoint = profiles[index].and_then(|profile| {
+                start_phase.as_ref().and_then(|phase| {
+                    waypoint(
+                        &Planning {
+                            phase,
+                            viewer: unit.owner_slot,
+                        },
+                        &mut navigation,
+                        unit,
+                        goal,
+                        profile,
+                    )
+                })
+            });
             if let Some(point) = waypoint {
                 if point != goal {
                     candidate.units[index].target = Some(point);
@@ -547,7 +638,7 @@ pub(crate) fn step(
                         &mut lease,
                     )
                 }) {
-                    unsafe_indices.push(index);
+                    unsafe_indices.push((index, output.position));
                 }
             }
             if unsafe_indices.is_empty() {
@@ -556,9 +647,23 @@ pub(crate) fn step(
             }
             navigation.diagnostics.solver_retries =
                 navigation.diagnostics.solver_retries.saturating_add(1);
-            for index in unsafe_indices {
-                candidate.units[index].speed = None;
-                candidate.units[index].target = None;
+            for (index, proposed) in unsafe_indices {
+                let original = &frame.units[index];
+                let prefix = profiles[index].map_or(original.position, |profile| {
+                    physical_prefix(
+                        terrain,
+                        original.position,
+                        proposed,
+                        original.radius,
+                        profile,
+                    )
+                });
+                candidate.units[index].speed = if prefix == original.position {
+                    None
+                } else {
+                    original.speed
+                };
+                candidate.units[index].target = (prefix != original.position).then_some(prefix);
                 candidate.units[index].progress = None;
                 candidate.units[index].plain_progress = None;
                 waiting.insert(frame.units[index].unit_id);

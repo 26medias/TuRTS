@@ -151,6 +151,7 @@ pub(crate) struct TerrainState {
     pub(crate) columns: Vec<Column>,
     pub(crate) materials: Arc<[ContentId]>,
     pub(super) initial: Arc<[i32]>,
+    pub(super) initial_ranges: Arc<[(i32, i32)]>,
     pub(super) chunks: ChunkTable,
     table_revision: u64,
     dirty_chunks: Vec<bool>,
@@ -543,6 +544,11 @@ pub(crate) fn prepare(
         materials: materials.into(),
         initial: initial.into(),
         dirty_chunks: vec![false; chunk_count],
+        initial_ranges: chunks
+            .iter()
+            .map(|chunk| (chunk.minimum, chunk.maximum))
+            .collect::<Vec<_>>()
+            .into(),
         chunks: ChunkTable::new(chunks)?,
         table_revision: 0,
         step_observations: BTreeMap::new(),
