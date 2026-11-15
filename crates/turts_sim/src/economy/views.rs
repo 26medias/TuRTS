@@ -410,7 +410,19 @@ pub struct OperatingRateView {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OperatingJobView {
+    pub unit: u32,
+    pub job: u64,
+    pub done: u64,
+    pub total: u64,
+    pub held: bool,
+    pub held_since_tick: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OperatingView {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub jobs: Vec<OperatingJobView>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub holds: Vec<super::operating::OperatingHold>,
     pub rate_q: u64,
@@ -483,6 +495,25 @@ fn operating_view(world: &World) -> Option<OperatingView> {
     }
     rates.sort_by_key(|row| row.unit);
     Some(OperatingView {
+        jobs: world
+            .get_resource::<ProductionQueues>()
+            .map_or_else(Vec::new, |queues| {
+                queues
+                    .0
+                    .iter()
+                    .filter(|(unit, _)| crate::unit_entity(world, **unit).is_some())
+                    .flat_map(|(unit, queue)| {
+                        queue.iter().map(|job| OperatingJobView {
+                            unit: *unit,
+                            job: job.id.0,
+                            done: job.elapsed_ticks,
+                            total: job.total,
+                            held: job.held,
+                            held_since_tick: job.held_since_tick,
+                        })
+                    })
+                    .collect()
+            }),
         holds: super::operating::holds(world),
         rate_q: power::rate_q(world),
         supply: power::supply_rows(world)
