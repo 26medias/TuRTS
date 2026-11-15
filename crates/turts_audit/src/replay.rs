@@ -888,6 +888,9 @@ fn validate_actor_records(
     records: &[EconomyLogRecord],
     initial: &AuditState,
 ) -> Result<(), String> {
+    let mut installation = None::<&crate::ActorInstallation>;
+    let mut installed_bots = BTreeMap::new();
+    let mut human_connections = BTreeMap::new();
     let mut lifecycle = None;
     let mut previous_phase = None;
     let mut last_ordinal = 0;
@@ -910,7 +913,51 @@ fn validate_actor_records(
             EconomyLogRecord::Actor(record) => record,
             _ => continue,
         };
+        if let ActorLogRecord::Installation(header) = actor_record {
+            if installation.is_some() || lifecycle.is_some() {
+                return Err("actor installation is duplicated or follows runtime inputs".into());
+            }
+            let hash_valid = |value: &str| {
+                value.len() == 64
+                    && value
+                        .bytes()
+                        .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+            };
+            if header.engine_api != turts_mod_api::ENGINE_API_VERSION
+                || header.protocol != turts_net_protocol::NET_PROTOCOL_VERSION
+                || !hash_valid(&header.locked_package_hash)
+                || header.bots.is_empty()
+                || header.limits.projection_rows == 0
+                || header.limits.lease_steps == 0
+                || header.limits.page_rows == 0
+                || header.limits.cursor_records == 0
+            {
+                return Err(
+                    "actor installation has unsupported versions, digests or limits".into(),
+                );
+            }
+            for bot in &header.bots {
+                if turts_mod_api::ContentId::parse(&bot.profile.to_string()).as_ref()
+                    != Ok(&bot.profile)
+                    || !hash_valid(&bot.profile_hash)
+                    || initial.claims.get(usize::from(bot.slot))
+                        != Some(&Some(u64::MAX - u64::from(bot.slot)))
+                    || installed_bots.insert(bot.slot, &bot.profile).is_some()
+                {
+                    return Err(
+                        "actor installation has an invalid bot identity or reserved slot claim"
+                            .into(),
+                    );
+                }
+            }
+            installation = Some(header);
+            continue;
+        }
+        if installation.is_none() {
+            return Err("actor record has no preceding installation".into());
+        }
         let tick = match actor_record {
+            ActorLogRecord::Installation(_) => unreachable!("installation handled above"),
             ActorLogRecord::Lifecycle { tick, .. }
             | ActorLogRecord::Submission { tick, .. }
             | ActorLogRecord::Result { tick, .. } => *tick,
@@ -920,6 +967,7 @@ fn validate_actor_records(
         }
         latest_actor_tick = tick;
         match actor_record {
+            ActorLogRecord::Installation(_) => unreachable!("installation handled above"),
             ActorLogRecord::Lifecycle { tick, phase, .. } => {
                 if lifecycle.is_some_and(|old| *tick <= old) {
                     return Err("actor lifecycle tick is duplicated or out of order".into());
@@ -963,17 +1011,35 @@ fn validate_actor_records(
                     return Err("actor submission has an out-of-range slot".into());
                 }
                 match actor {
-                    ActorLogIdentity::Human { player_id, slot } => {
-                        if claims[usize::from(*slot)] != Some(*player_id) || task.is_some() {
+                    ActorLogIdentity::Human {
+                        player_id,
+                        slot,
+                        connection,
+                    } => {
+                        if *connection == 0
+                            || installed_bots.contains_key(slot)
+                            || claims[usize::from(*slot)] != Some(*player_id)
+                            || task.is_some()
+                        {
                             return Err(
                                 "human actor differs from its trusted claim or carries a bot task"
                                     .into(),
                             );
                         }
+                        if human_connections
+                            .insert(*connection, (*player_id, *slot))
+                            .is_some_and(|old| old != (*player_id, *slot))
+                        {
+                            return Err(
+                                "a human connection token changed its player or slot".into()
+                            );
+                        }
                     }
-                    ActorLogIdentity::Bot { profile, .. } => {
-                        if turts_mod_api::ContentId::parse(&profile.to_string()).as_ref()
-                            != Ok(profile)
+                    ActorLogIdentity::Bot { profile, slot } => {
+                        if installed_bots.get(slot).copied() != Some(profile)
+                            || claims[usize::from(*slot)] != Some(u64::MAX - u64::from(*slot))
+                            || turts_mod_api::ContentId::parse(&profile.to_string()).as_ref()
+                                != Ok(profile)
                             || task.as_ref().is_none_or(|task| {
                                 task.controller.is_empty()
                                     || task.goal.is_empty()
@@ -986,7 +1052,7 @@ fn validate_actor_records(
                 }
                 if bindings
                     .insert(slot, actor.clone())
-                    .is_some_and(|old| old != *actor)
+                    .is_some_and(|old| !same_actor_slot_identity(&old, actor))
                 {
                     return Err("a trusted actor slot changed identity within one log".into());
                 }
@@ -1052,8 +1118,13 @@ fn validate_actor_records(
                     let identity_matches = match actor {
                         ActorLogIdentity::Human {
                             player_id: expected,
+                            connection: expected_connection,
                             ..
-                        } => *connection != 0 && player_id == expected,
+                        } => {
+                            *connection != 0
+                                && connection == expected_connection
+                                && player_id == expected
+                        }
                         ActorLogIdentity::Bot { slot, .. } => {
                             *connection == 0 && *player_id == u64::MAX - u64::from(*slot)
                         }
@@ -1082,6 +1153,24 @@ fn validate_actor_records(
         }
     }
     Ok(())
+}
+fn same_actor_slot_identity(a: &ActorLogIdentity, b: &ActorLogIdentity) -> bool {
+    match (a, b) {
+        (
+            ActorLogIdentity::Human {
+                player_id: a,
+                slot: sa,
+                ..
+            },
+            ActorLogIdentity::Human {
+                player_id: b,
+                slot: sb,
+                ..
+            },
+        ) => a == b && sa == sb,
+        (ActorLogIdentity::Bot { .. }, ActorLogIdentity::Bot { .. }) => a == b,
+        _ => false,
+    }
 }
 fn actor_slot(actor: &ActorLogIdentity) -> u8 {
     match actor {
@@ -20294,6 +20383,20 @@ mod tests {
             OrderEnvelope, OrderResult, OrderTarget, PlayerCommand, Pos, QueueMode, UnitId,
         };
         let mut records = valid_point_move_records();
+        for record in &mut records {
+            match record {
+                EconomyLogRecord::Initial(state) => state.claims[0] = Some(u64::MAX),
+                EconomyLogRecord::CommandBoundary(command) => {
+                    command.before.claims[0] = Some(u64::MAX);
+                    command.after.claims[0] = Some(u64::MAX);
+                }
+                EconomyLogRecord::Operation(operation) => {
+                    operation.before.claims[0] = Some(u64::MAX);
+                    operation.after.claims[0] = Some(u64::MAX);
+                }
+                _ => {}
+            }
+        }
         validate_records(&records).expect("ordinary foundation fixture");
         let EconomyLogRecord::CommandBoundary(boundary) = &records[1] else {
             unreachable!()
@@ -20348,6 +20451,34 @@ mod tests {
         );
         records.insert(2, submission);
         records.insert(3, result);
+        records.insert(
+            1,
+            EconomyLogRecord::Actor(ActorLogRecord::Installation(crate::ActorInstallation {
+                locked_package_hash: "ab".repeat(32),
+                engine_api: turts_mod_api::ENGINE_API_VERSION.into(),
+                protocol: turts_net_protocol::NET_PROTOCOL_VERSION,
+                bots: vec![crate::ActorBotInstallation {
+                    slot: 0,
+                    profile: turts_mod_api::ContentId::parse("fixture:policy").unwrap(),
+                    seed: 17,
+                    profile_hash: "cd".repeat(32),
+                }],
+                limits: crate::ActorOperatorLimits {
+                    queries: 32,
+                    candidates: 4096,
+                    rows: 1024,
+                    proposals: 32,
+                    commands: 8,
+                    affected_units: 256,
+                    pending_requests: 64,
+                    pending_accounts: 512,
+                    projection_rows: 65536,
+                    lease_steps: 8,
+                    page_rows: 64,
+                    cursor_records: 1024,
+                },
+            })),
+        );
         validate_records(&records).expect("actor records supplement a valid ordinary operation");
         let mut missing_operation = records.clone();
         missing_operation.retain(|record| !matches!(record, EconomyLogRecord::Operation(_)));
@@ -20358,7 +20489,7 @@ mod tests {
         );
         let mut changed_result = records.clone();
         if let EconomyLogRecord::Actor(ActorLogRecord::Result { result, .. }) =
-            &mut changed_result[3]
+            &mut changed_result[4]
         {
             result.accepted[0] = UnitId(2);
         }
@@ -20369,7 +20500,7 @@ mod tests {
         );
         let mut changed_target = records;
         if let EconomyLogRecord::Actor(ActorLogRecord::Submission { envelope, .. }) =
-            &mut changed_target[2]
+            &mut changed_target[3]
         {
             envelope.order.target = OrderTarget::Point(Pos { x: 9.0, y: 8.0 });
         }

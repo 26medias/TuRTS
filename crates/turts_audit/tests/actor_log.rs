@@ -14,15 +14,46 @@ fn bot() -> ActorLogIdentity {
         slot: 0,
     }
 }
+fn header(slot: u8) -> EconomyLogRecord {
+    EconomyLogRecord::Actor(ActorLogRecord::Installation(
+        turts_audit::ActorInstallation {
+            locked_package_hash: "ab".repeat(32),
+            engine_api: turts_mod_api::ENGINE_API_VERSION.into(),
+            protocol: turts_net_protocol::NET_PROTOCOL_VERSION,
+            bots: vec![turts_audit::ActorBotInstallation {
+                slot,
+                profile: turts_mod_api::ContentId::parse("fixture:policy").unwrap(),
+                seed: 17,
+                profile_hash: "cd".repeat(32),
+            }],
+            limits: turts_audit::ActorOperatorLimits {
+                queries: 32,
+                candidates: 4096,
+                rows: 1024,
+                proposals: 32,
+                commands: 8,
+                affected_units: 256,
+                pending_requests: 64,
+                pending_accounts: 512,
+                projection_rows: 65536,
+                lease_steps: 8,
+                page_rows: 64,
+                cursor_records: 1024,
+            },
+        },
+    ))
+}
 fn refusal_stream(human: bool) -> Vec<EconomyLogRecord> {
     let mut app = turts_sim::headless_app(20);
     let mut state = turts_sim::audit_state(app.world_mut());
     let tick = state.economy.tick;
+    state.claims[usize::from(human)] = Some(u64::MAX - u64::from(human));
     let actor = if human {
         state.claims[0] = Some(44);
         ActorLogIdentity::Human {
             player_id: 44,
             slot: 0,
+            connection: 1,
         }
     } else {
         bot()
@@ -59,6 +90,7 @@ fn refusal_stream(human: bool) -> Vec<EconomyLogRecord> {
     let raw = postcard::to_slice(&command, &mut buffer).unwrap().to_vec();
     vec![
         EconomyLogRecord::Initial(state.clone()),
+        header(u8::from(human)),
         EconomyLogRecord::Actor(ActorLogRecord::Lifecycle {
             tick,
             humans_present: human,
@@ -127,13 +159,13 @@ fn actor_logs_round_trip_and_leave_legacy_encoding_unchanged() {
 fn lifecycle_must_precede_attempts_and_cannot_move_backwards() {
     let records = refusal_stream(false);
     let mut absent = records.clone();
-    absent.remove(1);
+    absent.remove(2);
     assert!(validate_records(&absent).unwrap_err().contains("lifecycle"));
     let mut late = records.clone();
-    late.swap(1, 2);
+    late.swap(2, 3);
     assert!(validate_records(&late).unwrap_err().contains("lifecycle"));
     let mut backwards = records;
-    let EconomyLogRecord::Actor(ActorLogRecord::Lifecycle { tick, .. }) = backwards[1] else {
+    let EconomyLogRecord::Actor(ActorLogRecord::Lifecycle { tick, .. }) = backwards[2] else {
         unreachable!()
     };
     backwards.push(EconomyLogRecord::Actor(ActorLogRecord::Lifecycle {
@@ -154,17 +186,18 @@ fn missing_duplicate_or_wrong_source_results_are_rejected() {
             .contains("complete result")
     );
     let mut duplicate = records.clone();
-    duplicate.push(records[4].clone());
+    duplicate.push(records[5].clone());
     assert!(
         validate_records(&duplicate)
             .unwrap_err()
             .contains("duplicate actor result")
     );
     let mut wrong_source = records.clone();
-    if let EconomyLogRecord::Actor(ActorLogRecord::Result { actor, .. }) = &mut wrong_source[4] {
+    if let EconomyLogRecord::Actor(ActorLogRecord::Result { actor, .. }) = &mut wrong_source[5] {
         *actor = ActorLogIdentity::Human {
             player_id: u64::MAX,
             slot: 0,
+            connection: 1,
         };
     }
     assert!(
@@ -173,7 +206,7 @@ fn missing_duplicate_or_wrong_source_results_are_rejected() {
             .contains("identity")
     );
     let mut duplicate_attempt = records.clone();
-    duplicate_attempt.insert(3, records[2].clone());
+    duplicate_attempt.insert(4, records[3].clone());
     assert!(
         validate_records(&duplicate_attempt)
             .unwrap_err()
@@ -184,7 +217,7 @@ fn missing_duplicate_or_wrong_source_results_are_rejected() {
 fn every_per_unit_outcome_and_exact_admitted_envelope_are_checked() {
     let records = refusal_stream(false);
     let mut lost_member = records.clone();
-    if let EconomyLogRecord::Actor(ActorLogRecord::Result { result, .. }) = &mut lost_member[4] {
+    if let EconomyLogRecord::Actor(ActorLogRecord::Result { result, .. }) = &mut lost_member[5] {
         result.refused.pop();
     }
     assert!(
@@ -193,7 +226,7 @@ fn every_per_unit_outcome_and_exact_admitted_envelope_are_checked() {
             .contains("ordinary witness")
     );
     let mut changed_reason = records.clone();
-    if let EconomyLogRecord::Actor(ActorLogRecord::Result { result, .. }) = &mut changed_reason[4] {
+    if let EconomyLogRecord::Actor(ActorLogRecord::Result { result, .. }) = &mut changed_reason[5] {
         result.refused[0].reason = CommandRejectReason::NotOwner;
     }
     assert!(
@@ -203,7 +236,7 @@ fn every_per_unit_outcome_and_exact_admitted_envelope_are_checked() {
     );
     let mut changed_envelope = records.clone();
     if let EconomyLogRecord::Actor(ActorLogRecord::Submission { envelope, .. }) =
-        &mut changed_envelope[2]
+        &mut changed_envelope[3]
     {
         envelope.order.group += 1;
     }
@@ -213,14 +246,14 @@ fn every_per_unit_outcome_and_exact_admitted_envelope_are_checked() {
             .contains("ordinary witness")
     );
     let mut missing_witness = records.clone();
-    missing_witness.remove(3);
+    missing_witness.remove(4);
     assert!(
         validate_records(&missing_witness)
             .unwrap_err()
             .contains("ordinary witness")
     );
     let mut duplicate_witness = records.clone();
-    duplicate_witness.insert(4, records[3].clone());
+    duplicate_witness.insert(5, records[4].clone());
     assert!(
         validate_records(&duplicate_witness)
             .unwrap_err()
@@ -230,7 +263,7 @@ fn every_per_unit_outcome_and_exact_admitted_envelope_are_checked() {
 #[test]
 fn actor_metadata_does_not_authorize_gameplay_changes_or_invalid_claims() {
     let mut changed_state = refusal_stream(false);
-    if let EconomyLogRecord::Admission { after, .. } = &mut changed_state[3] {
+    if let EconomyLogRecord::Admission { after, .. } = &mut changed_state[4] {
         after.economy.tick += 1;
     }
     assert!(
@@ -252,23 +285,112 @@ fn actor_metadata_does_not_authorize_gameplay_changes_or_invalid_claims() {
         state.claims[0] = Some(u64::MAX);
     }
     if let EconomyLogRecord::Actor(ActorLogRecord::Submission { actor, task, .. }) =
-        &mut fabricated_human[2]
+        &mut fabricated_human[3]
     {
         *actor = ActorLogIdentity::Human {
             player_id: u64::MAX,
             slot: 0,
+            connection: 1,
         };
         *task = None;
     }
-    if let EconomyLogRecord::Actor(ActorLogRecord::Result { actor, .. }) = &mut fabricated_human[4]
+    if let EconomyLogRecord::Actor(ActorLogRecord::Result { actor, .. }) = &mut fabricated_human[5]
     {
         *actor = ActorLogIdentity::Human {
             player_id: u64::MAX,
             slot: 0,
+            connection: 1,
         };
     }
     assert!(
         validate_records(&fabricated_human)
+            .unwrap_err()
+            .contains("trusted claim")
+    );
+}
+
+#[test]
+fn installation_binds_bot_identity_versions_limits_and_reserved_claims() {
+    let records = refusal_stream(false);
+    let mut absent = records.clone();
+    absent.remove(1);
+    assert!(
+        validate_records(&absent)
+            .unwrap_err()
+            .contains("installation")
+    );
+    let mut duplicate = records.clone();
+    duplicate.insert(2, records[1].clone());
+    assert!(
+        validate_records(&duplicate)
+            .unwrap_err()
+            .contains("installation")
+    );
+    for field in ["profile", "slot", "protocol", "lease", "digest"] {
+        let mut changed = records.clone();
+        if let EconomyLogRecord::Actor(ActorLogRecord::Installation(header)) = &mut changed[1] {
+            match field {
+                "profile" => {
+                    header.bots[0].profile = turts_mod_api::ContentId::parse("other:bot").unwrap()
+                }
+                "slot" => header.bots[0].slot = 1,
+                "protocol" => header.protocol += 1,
+                "lease" => header.limits.lease_steps = 0,
+                "digest" => header.bots[0].profile_hash = "invalid".into(),
+                _ => unreachable!(),
+            }
+        }
+        assert!(validate_records(&changed).is_err(), "changed {field}");
+    }
+    let mut wrong_claim = records;
+    if let EconomyLogRecord::Initial(state) = &mut wrong_claim[0] {
+        state.claims[0] = Some(99);
+    }
+    assert!(
+        validate_records(&wrong_claim)
+            .unwrap_err()
+            .contains("reserved slot claim")
+    );
+}
+#[test]
+fn reconnect_connections_are_distinct_trusted_input_epochs() {
+    let first = refusal_stream(true);
+    let mut records = first.clone();
+    let mut next = first[3..].to_vec();
+    for record in &mut next {
+        match record {
+            EconomyLogRecord::Actor(ActorLogRecord::Submission {
+                actor: ActorLogIdentity::Human { connection, .. },
+                ordinal,
+                ..
+            })
+            | EconomyLogRecord::Actor(ActorLogRecord::Result {
+                actor: ActorLogIdentity::Human { connection, .. },
+                ordinal,
+                ..
+            }) => {
+                *connection = 2;
+                *ordinal = 2;
+            }
+            EconomyLogRecord::Admission {
+                connection,
+                ordinal,
+                ..
+            } => {
+                *connection = 2;
+                *ordinal = 2;
+            }
+            _ => unreachable!(),
+        }
+    }
+    records.extend(next);
+    // The sequence repeats, but the transport epoch is a different trusted input.
+    validate_records(&records).unwrap();
+    if let EconomyLogRecord::Admission { connection, .. } = &mut records[7] {
+        *connection = 3;
+    }
+    assert!(
+        validate_records(&records)
             .unwrap_err()
             .contains("ordinary witness")
     );
