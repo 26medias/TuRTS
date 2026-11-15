@@ -251,6 +251,15 @@ pub fn drive(world: &mut World) {
         };
         let hz = world.resource::<Advertised>().tick_hz;
         let match_id = world.resource::<crate::stats::MatchId>().0;
+        // No restricted world is published before the lobby's final teams exist.
+        // A failed context must stop this start instead of exposing placeholder sight.
+        if let Err(error) = turts_sim::visibility::initialize_context(world, match_id, &start.teams)
+        {
+            eprintln!("turts_server: cannot initialize match visibility: {error}");
+            world.send_event(bevy::app::AppExit::error());
+            world.insert_resource(lobby);
+            return;
+        }
         let tick = world.resource::<Tick>().0;
         for claim in &plan.claims {
             let entity = Entity::from_bits(claim.connection.0);

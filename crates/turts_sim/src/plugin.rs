@@ -159,6 +159,12 @@ impl Plugin for SimPlugin {
             .add_systems(FixedPreUpdate, advance_tick.in_set(SimSet::Advance))
             .add_systems(
                 FixedPreUpdate,
+                crate::visibility::refresh_start
+                    .in_set(SimSet::Advance)
+                    .after(advance_tick),
+            )
+            .add_systems(
+                FixedPreUpdate,
                 drain_commands.in_set(SimSet::Commands).after(advance_tick),
             )
             .add_systems(
@@ -177,6 +183,13 @@ impl Plugin for SimPlugin {
                 FixedPreUpdate,
                 crate::economy::construction::run_construction
                     .in_set(SimSet::Construction)
+                    .run_if(not_stopped),
+            )
+            .add_systems(
+                FixedUpdate,
+                crate::visibility::refresh_tactical
+                    .in_set(SimSet::Acquire)
+                    .before(crate::economy::acquire::run_acquire)
                     .run_if(not_stopped),
             )
             .add_systems(
@@ -257,6 +270,7 @@ fn not_stopped(stopped: Option<Res<MatchStopped>>) -> bool {
 }
 
 fn publish_completed_tick(world: &mut World) {
+    crate::visibility::refresh_completed(world);
     let tick = world.resource::<Tick>().0;
     let changed = world.resource::<ChangedThisTick>().0.clone();
     let mut completed = world_view(world);

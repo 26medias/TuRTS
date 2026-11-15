@@ -7,7 +7,9 @@ use turts_mod_api::{ModError, PackageKind, SourceDef};
 use turts_mod_runtime::archive::{MANIFEST_PATH, PackageArchive};
 use turts_mod_runtime::pack::pack_dir;
 use turts_mod_runtime::visuals::visuals_by_content;
-use turts_sim::{DEFAULT_TICK_HZ, SimClock, headless_app, install_package, stage_package};
+use turts_sim::{
+    DEFAULT_TICK_HZ, SimClock, headless_app, install_package, stage_package_with_map_identity,
+};
 
 /// Validate the complete portable catalog and map, then install them atomically.
 pub fn load_package(world: &mut World, archive: &PackageArchive) -> Result<(), ModError> {
@@ -25,7 +27,7 @@ pub fn load_package(world: &mut World, archive: &PackageArchive) -> Result<(), M
     let tick_hz = world
         .get_resource::<SimClock>()
         .map_or(DEFAULT_TICK_HZ, |clock| clock.tick_hz);
-    let staged = stage_package(
+    let staged = stage_package_with_map_identity(
         world,
         catalog,
         SourceDef {
@@ -33,6 +35,10 @@ pub fn load_package(world: &mut World, archive: &PackageArchive) -> Result<(), M
             value: map.clone(),
         },
         tick_hz,
+        turts_mod_api::ContentId {
+            package: turts_mod_api::PackageId(archive.manifest.id.clone()),
+            local: map.id.clone(),
+        },
     )?;
     let matches = archive.match_defs()?;
     let construction_limit = matches
