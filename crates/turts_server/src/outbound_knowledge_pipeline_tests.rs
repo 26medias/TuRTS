@@ -17,6 +17,118 @@ const WARMUP_TICKS: u32 = 100;
 const MEASURED_TICKS: u32 = 1200;
 const FINAL_TICK: u32 = WARMUP_TICKS + MEASURED_TICKS;
 
+#[derive(Resource, Default)]
+struct CapturedFrames {
+    frames: BTreeMap<Entity, Vec<StateTransactionFrame>>,
+    cancels: BTreeMap<Entity, Vec<StateTransactionCancel>>,
+}
+fn capture_frames(
+    mut frames: Query<(Entity, &mut MessageReceiver<StateTransactionFrame>)>,
+    mut cancels: Query<(Entity, &mut MessageReceiver<StateTransactionCancel>)>,
+    mut captured: ResMut<CapturedFrames>,
+) {
+    for (entity, mut receiver) in &mut frames {
+        captured
+            .frames
+            .entry(entity)
+            .or_default()
+            .extend(receiver.receive());
+    }
+    for (entity, mut receiver) in &mut cancels {
+        if captured.frames.contains_key(&entity) {
+            captured
+                .cancels
+                .entry(entity)
+                .or_default()
+                .extend(receiver.receive());
+        }
+    }
+}
+#[derive(Resource, Clone, Copy)]
+struct PumpClock {
+    epoch: Instant,
+    now: Instant,
+}
+#[derive(Default)]
+struct PumpReport {
+    transport_acks: Vec<u16>,
+    issued: BTreeSet<u16>,
+    first_sent: Vec<(u64, u64)>,
+    age_ms: u64,
+    backlog: usize,
+    error: Option<String>,
+}
+#[derive(Resource, Default)]
+struct PumpReports(BTreeMap<Entity, PumpReport>);
+fn pump_in_production_schedule(world: &mut World) {
+    let clock = *world.resource::<PumpClock>();
+    let entities = world
+        .iter_entities()
+        .filter(|entity| entity.contains::<KnowledgeSender>())
+        .map(|entity| entity.id())
+        .collect::<Vec<_>>();
+    for entity in entities {
+        if world
+            .resource::<PumpReports>()
+            .0
+            .get(&entity)
+            .is_some_and(|report| report.error.is_some())
+        {
+            continue;
+        }
+        let mut sender = world.entity_mut(entity).take::<KnowledgeSender>().unwrap();
+        let old_ids = sender.outstanding.clone();
+        let transport_acks = world
+            .get::<Transport>(entity)
+            .unwrap()
+            .channel_send(lightyear::transport::channel::ChannelKind::of::<
+                KnowledgeChannel,
+            >())
+            .unwrap()
+            .message_acks()
+            .iter()
+            .map(|id| id.0)
+            .collect::<Vec<_>>();
+        let error = pump_one(world, entity, &mut sender, clock.now).err();
+        for id in old_ids.difference(&sender.outstanding) {
+            assert!(
+                transport_acks.contains(id),
+                "only actual transport MessageIds release frame credit"
+            );
+        }
+        let first_sent = sender
+            .pending
+            .iter()
+            .chain(sender.patches.iter())
+            .filter_map(|pending| {
+                pending.started.map(|started| {
+                    (
+                        pending.encoded.begin().stamp.transaction_id,
+                        started.duration_since(clock.epoch).as_millis() as u64,
+                    )
+                })
+            })
+            .collect();
+        let age_ms = sender.pending.as_ref().map_or(0, |pending| {
+            clock
+                .now
+                .saturating_duration_since(pending.started.unwrap_or(pending.created))
+                .as_millis() as u64
+        });
+        assert!(sender.retained() <= MAX_PENDING_STATE_BYTES as usize);
+        let report = PumpReport {
+            transport_acks,
+            issued: sender.outstanding.clone(),
+            first_sent,
+            age_ms,
+            backlog: sender.patch_bytes,
+            error,
+        };
+        world.entity_mut(entity).insert(sender);
+        world.resource_mut::<PumpReports>().0.insert(entity, report);
+    }
+}
+
 struct Peer {
     client: Entity,
     server: Entity,
@@ -80,6 +192,13 @@ impl Harness {
             tick_duration: Duration::from_millis(TICK_MS),
         });
         app.add_plugins(turts_net_lightyear::ProtocolPlugin);
+        app.init_resource::<CapturedFrames>()
+            .init_resource::<PumpReports>();
+        app.add_systems(PreUpdate, capture_frames.after(MessageSystems::Receive));
+        app.add_systems(
+            PostUpdate,
+            pump_in_production_schedule.before(MessageSystems::Send),
+        );
         app.finish();
         app.cleanup();
         app.insert_resource(bevy::time::TimeUpdateStrategy::ManualDuration(
@@ -213,84 +332,49 @@ impl Harness {
                     .unwrap()
                     .send::<ReliableChannel>(ack);
             }
-            if peer.restart_error.is_some() {
-                continue;
-            }
-            let mut sender = self
-                .app
-                .world_mut()
-                .entity_mut(peer.server)
-                .take::<KnowledgeSender>()
-                .unwrap();
-            let old_ids = sender.outstanding.clone();
-            let transport_acks = self
-                .app
-                .world()
-                .get::<Transport>(peer.server)
-                .unwrap()
-                .channel_send(lightyear::transport::channel::ChannelKind::of::<
-                    KnowledgeChannel,
-                >())
-                .unwrap()
-                .message_acks()
-                .iter()
-                .map(|id| id.0)
-                .collect::<Vec<_>>();
-            for id in &transport_acks {
-                peer.transport_acks.push((self.now_ms, *id));
-            }
-            if let Err(error) = pump_one(self.app.world_mut(), peer.server, &mut sender, now) {
-                peer.restart_error = Some(error);
-            }
-            for id in old_ids.difference(&sender.outstanding) {
-                assert!(
-                    transport_acks.contains(id),
-                    "only actual transport MessageIds release frame credit"
-                );
-            }
-            peer.issued_messages
-                .extend(sender.outstanding.iter().copied());
-            for pending in sender.pending.iter().chain(sender.patches.iter()) {
-                if let Some(started) = pending.started {
-                    peer.first_sent_ms
-                        .entry(pending.encoded.begin().stamp.transaction_id)
-                        .or_insert(started.duration_since(self.epoch).as_millis() as u64);
-                }
-            }
-            if self.now_ms >= u64::from(WARMUP_TICKS) * TICK_MS {
-                if let Some(pending) = &sender.pending {
-                    let age = now
-                        .saturating_duration_since(pending.started.unwrap_or(pending.created))
-                        .as_millis() as u64;
-                    peer.max_age_ms = peer.max_age_ms.max(age);
-                }
-                peer.max_backlog = peer.max_backlog.max(sender.patch_bytes);
-                peer.first_measured_backlog
-                    .get_or_insert(sender.patch_bytes);
-                peer.last_measured_backlog = sender.patch_bytes;
-            }
-            assert!(sender.retained() <= MAX_PENDING_STATE_BYTES as usize);
-            self.app.world_mut().entity_mut(peer.server).insert(sender);
         }
+        self.app.insert_resource(PumpClock {
+            epoch: self.epoch,
+            now,
+        });
         self.app.update();
         for peer in &mut self.peers {
-            let cancels = self
+            let report = self
                 .app
                 .world_mut()
-                .get_mut::<MessageReceiver<StateTransactionCancel>>(peer.client)
-                .unwrap()
-                .receive()
-                .collect::<Vec<_>>();
+                .resource_mut::<PumpReports>()
+                .0
+                .remove(&peer.server)
+                .unwrap_or_default();
+            peer.transport_acks.extend(
+                report
+                    .transport_acks
+                    .into_iter()
+                    .map(|id| (self.now_ms, id)),
+            );
+            peer.issued_messages.extend(report.issued);
+            for (id, sent) in report.first_sent {
+                peer.first_sent_ms.entry(id).or_insert(sent);
+            }
+            if let Some(error) = report.error {
+                peer.restart_error = Some(error);
+            }
+            if self.now_ms >= u64::from(WARMUP_TICKS) * TICK_MS {
+                peer.max_age_ms = peer.max_age_ms.max(report.age_ms);
+                peer.max_backlog = peer.max_backlog.max(report.backlog);
+                peer.first_measured_backlog.get_or_insert(report.backlog);
+                peer.last_measured_backlog = report.backlog;
+            }
+            let (cancels, frames) = {
+                let mut captured = self.app.world_mut().resource_mut::<CapturedFrames>();
+                (
+                    captured.cancels.remove(&peer.client).unwrap_or_default(),
+                    captured.frames.remove(&peer.client).unwrap_or_default(),
+                )
+            };
             for cancel in cancels {
                 peer.assembler.cancel(&cancel.stamp);
             }
-            let frames = self
-                .app
-                .world_mut()
-                .get_mut::<MessageReceiver<StateTransactionFrame>>(peer.client)
-                .unwrap()
-                .receive()
-                .collect::<Vec<_>>();
             let mut activations = 0;
             for frame in frames {
                 assert!(frame.encoded_bytes().unwrap() <= FRAME_LIMIT);
@@ -421,7 +505,18 @@ fn frozen_20hz_pipeline_preserves_every_tick_at_50_and_100_ms_activation_ack_rtt
         }
         let peer = &harness.peers[0];
         harness.evidence(&format!("pipeline-rtt-{rtt_ms}"));
-        assert_eq!(peer.activations, (0..=FINAL_TICK).collect::<Vec<_>>());
+        assert_eq!(
+            peer.activations.len(),
+            FINAL_TICK as usize + 1,
+            "all movement ticks must activate"
+        );
+        assert!(
+            peer.activations
+                .iter()
+                .enumerate()
+                .all(|(index, tick)| index as u32 == *tick),
+            "activation ticks must be exact-once and ordered"
+        );
         assert!(peer.max_batch >= 2);
         assert!(peer.restart_error.is_none());
         assert!(peer.max_age_ms <= 1000);
@@ -465,7 +560,14 @@ fn a_nonreturning_viewer_restarts_and_disconnects_without_stalling_the_healthy_v
             .is_some_and(|reason| reason.contains("three times"))
     );
     assert!(harness.peers[1].restart_error.is_none());
-    assert_eq!(harness.peers[1].activations, (0..=320).collect::<Vec<_>>());
+    assert_eq!(harness.peers[1].activations.len(), 321);
+    assert!(
+        harness.peers[1]
+            .activations
+            .iter()
+            .enumerate()
+            .all(|(index, tick)| index as u32 == *tick)
+    );
     let healthy = harness
         .app
         .world()
