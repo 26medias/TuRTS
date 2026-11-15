@@ -6,7 +6,7 @@ use crate::{
     actors,
     config::{BotConfig, BotLimitsConfig},
     orders::ServerCatalog,
-    permissions::AllVisible,
+    permissions::ObservationPolicy,
     session,
 };
 use bevy::prelude::*;
@@ -251,6 +251,7 @@ fn install_with_registry_and_limits(
     actors::configure_actor_limits(app.world_mut(), prepared_limits);
     actors::install(app);
     app.init_resource::<BotExecution>();
+    app.init_resource::<ObservationPolicy>();
     app.insert_resource(BotHost {
         bots,
         catalog,
@@ -394,6 +395,7 @@ fn drive_inner(world: &mut World, host: &mut BotHost, execution: &mut BotExecuti
         execution.input_trace.push(input.clone())
     }
     let hz = world.resource::<SimClock>().tick_hz;
+    let policy = world.resource::<ObservationPolicy>().0.clone();
     let teams = world
         .get_resource::<MatchConfig>()
         .map_or_else(Vec::new, |c| c.teams.clone());
@@ -437,6 +439,15 @@ fn drive_inner(world: &mut World, host: &mut BotHost, execution: &mut BotExecuti
             diagnose(bot, format!("accounting basis refused: {error:?}"));
             continue;
         }
+        if let Err(error) = actors::acknowledge(
+            world,
+            &bot.actor,
+            batch.watermark,
+            &bot.coordinator.tracked_requests(),
+        ) {
+            diagnose(bot, error);
+            continue;
+        }
         let view = turts_sim::completed_world(world);
         if projection::source_rows(view) > host.limits.projection_rows {
             diagnose(bot, "observation host row limit reached".into());
@@ -453,7 +464,7 @@ fn drive_inner(world: &mut World, host: &mut BotHost, execution: &mut BotExecuti
                 x: size.x,
                 y: size.y,
             },
-            &AllVisible,
+            policy.as_ref(),
         );
         host.private_projection_scans = host
             .private_projection_scans
@@ -530,14 +541,7 @@ fn drive_inner(world: &mut World, host: &mut BotHost, execution: &mut BotExecuti
                 diagnose(bot, format!("command admission refused: {error:?}"))
             }
         }
-        if let Err(error) = actors::acknowledge(
-            world,
-            &bot.actor,
-            batch.watermark,
-            &bot.coordinator.tracked_requests(),
-        ) {
-            diagnose(bot, error)
-        }
+
         if bot.last_failure_step != Some(bot.decision_step) {
             bot.last_diagnostic = None;
         }
