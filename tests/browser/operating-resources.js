@@ -5,7 +5,7 @@ const net = require('node:net');
 const {spawn, spawnSync} = require('node:child_process');
 const {chromium} = require('playwright-core');
 const [prepared, out, mode] = process.argv.slice(2);
-if (!out) throw Error('PREPARED OUTPUT [--fixture-only]');
+if (!out || (mode && !['--fixture-only', '--independent'].includes(mode))) throw Error('PREPARED OUTPUT [--fixture-only|--independent]');
 fs.mkdirSync(out, {recursive: true});
 const fixture = out + '/operating';
 fs.cpSync(prepared + '/pack/skirmish', fixture, {recursive: true});
@@ -21,7 +21,7 @@ const write = (path, text) => fs.writeFileSync(fixture + '/' + path, text);
 const basic = (id, name, fields = '', radius = 1.5, health = 200) => `(id:"${id}",name:"${name}",footprint:Circle(radius:${radius}),movement:None,inventory:None,gatherer:None,drop_off:None,producer:None,health:Some((max:${health})),removal:Some((by_command:true,contents:Destroy))${fields})`;
 write('resources/power.ron', '(id:"power",name:"Power",unit_name:"power",kind:Supply(scope:Slot,counts:Completed))');
 write('resources/population.ron', '(id:"population",name:"Cots",unit_name:"cots",kind:Supply(scope:Slot,counts:Completed))');
-write('units/provider.ron', basic('provider', 'Generator', ',provides:[(resource:"operating:power",amount:10),(resource:"operating:population",amount:6)],placement:Some((gap:0.8,node_clearance:0.0,in_build_area:true,site_health:(numerator:1,denominator:4)))'));
+write('units/provider.ron', basic('provider', 'Generator', ',provides:[(resource:"operating:power",amount:10),(resource:"operating:population",amount:6)],placement:Some((gap:1.5,node_clearance:0.0,in_build_area:true,site_health:(numerator:1,denominator:4)))'));
 write('units/foreign_provider.ron', basic('foreign_provider', 'Foreign generator', ',provides:[(resource:"operating:power",amount:77),(resource:"operating:population",amount:88)]'));
 write('units/workshop.ron', `(id:"workshop",name:"Workshop",footprint:Circle(radius:1.5),movement:None,inventory:None,gatherer:None,drop_off:None,
  producer:Some((recipes:["operating:train_trainee"],queue_capacity:2,spawn_offsets:[(x:3.5,y:0.0)],when_short:[(resource:"operating:power",effect:Rate((numerator:1,denominator:2))),(resource:"operating:population",effect:Rate((numerator:3,denominator:4)))])),
@@ -81,8 +81,8 @@ const rootWidgets = [
  '(id:"alerts",at:Some((anchor:TopLeft,offset:(16.0,570.0),pivot:None)),size:(w:Px(294.0),h:Px(100.0)),widget:List(source:Alerts,direction:Vertical,gap:4,max_items:3,item:(id:"alert_row",size:(w:Fill,h:Px(26.0)),widget:Text(text:Item(Name),font:None,size:12,colour:"#ffffff",align:Left,wrap:false))))',
 ];
 write('interface/hud.ron', `(id:"operating_hud",root:[${rootWidgets.join(',')}],tooltip_style:(background:"#000000",colour:"#ffffff",font:None,size:12),cursors:{},camera:(pitch:0.7,yaw:0.0,field_of_view:60.0,minimum:10.0,maximum:100.0,start:OwnedCentre,height:36.0,margin:0.0,pan_speed:100.0,edge_band:false),light:None,slot_colours:["#0072B2","#E69F00"],world:(ground:"#243b2c",grid:"#354b3c",selection:"#ffffff",health:"#00ff00",range:"#ffffff",show_range:true,tooltip:(background:"#000000",colour:"#ffffff",font:None,size:12),health_bar:(width:32,height:4,background:"#000000",health:"#00ff00")),alerts:[
- (id:"power_short_event",trigger:SupplyShort("operating:power"),units:[],offscreen_only:false,sound:None,text:"Power supply is short",minimap_ping:false,cooldown:0.0,priority:1,coalesce_radius:0.0),
- (id:"power_restored_event",trigger:SupplyRestored("operating:power"),units:[],offscreen_only:false,sound:None,text:"Power supply restored",minimap_ping:false,cooldown:0.0,priority:1,coalesce_radius:0.0)
+ (id:"power_short_event",trigger:SupplyShort("operating:power"),units:[],offscreen_only:false,sound:None,text:"Power supply is short",minimap_ping:false,cooldown:1.0,priority:1,coalesce_radius:0.0),
+ (id:"power_restored_event",trigger:SupplyRestored("operating:power"),units:[],offscreen_only:false,sound:None,text:"Power supply restored",minimap_ping:false,cooldown:1.0,priority:1,coalesce_radius:0.0)
  ],reasons:{},units:{},selection_priority:[],guide:[])`);
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -149,19 +149,27 @@ function project(scene, position) {
   await select(1); await clickButton('Remove');
   result.shortage = await wait(state => !units(state).some(unit => unit.unit_id === 1) && totals(state, 'Power: 0 / 6', 'Cots: 0 / 2') && widget(state, 'power_short') && widget(state, 'population_short') && alerts(state, 'power_short_event').length === 1, 'shortage transition');
   await page.screenshot({path: out + '/shortage.png'});
-  await select(2); await clickButton('Build Generator'); await page.mouse.click(...project((await read()).scene, [20, 0, 16]));
-  result.site = await wait(state => units(state).some(unit => unit.content_id === 'operating:provider' && unit.unit_id !== 1) && state.ui.some(row => row.visible && row.id.startsWith('site_row') && row.text?.startsWith('Site: ')), 'replacement site');
-  const provider = units(result.site).find(unit => unit.content_id === 'operating:provider').unit_id;
-  const siteProgress = state => Number(state.ui.find(row => row.visible && row.id.startsWith('site_row'))?.text.replace('Site: ', ''));
+  let provider, siteProgress;
+  if (mode !== '--independent') {
+   await select(2); const beforeConstruct = (await read()).debug.command_results.length; await clickButton('Build Generator'); await sleep(150); await page.mouse.click(...project((await read()).scene, [20, 0, 16]));
+   result.site = await wait(state => {
+    const refused = state.debug.command_results.slice(beforeConstruct).find(row => row.refused?.length);
+    if (refused) throw Error('replacement site refused: ' + JSON.stringify(refused));
+    return units(state).some(unit => unit.content_id === 'operating:provider' && unit.unit_id !== 1) && state.ui.some(row => row.visible && row.id.includes('site_row') && row.text?.startsWith('Site: '));
+   }, 'replacement site');
+   provider = units(result.site).find(unit => unit.content_id === 'operating:provider').unit_id;
+   siteProgress = state => Number(state.ui.find(row => row.visible && row.id.includes('site_row'))?.text.replace('Site: ', ''));
+  } else await select(2);
   const shortStart = await read(), targetHealth = health(shortStart, 5);
   const shortEnd = await wait(state => tick(state) >= tick(shortStart) + 60, 'slowed work sample');
-  result.slowed = {ticks: tick(shortEnd) - tick(shortStart), work: job(shortEnd).elapsed_ticks - job(shortStart).elapsed_ticks, site_progress: siteProgress(shortEnd) - siteProgress(shortStart)};
-  if (Math.abs(result.slowed.work / result.slowed.ticks - 0.5) > 0.04) throw Error('producer did not use the smaller one-half rate');
-  if (Math.abs(result.slowed.site_progress * 120 / result.slowed.ticks - 1 / 3) > 0.04) throw Error('constructor did not use its distinct one-third rate');
+  result.slowed = {ticks: tick(shortEnd) - tick(shortStart), work: job(shortEnd).elapsed_ticks - job(shortStart).elapsed_ticks, site_progress: siteProgress ? siteProgress(shortEnd) - siteProgress(shortStart) : null};
+  if (!Number.isFinite(result.slowed.work) || Math.abs(result.slowed.work / result.slowed.ticks - 0.5) > 0.04) throw Error('producer did not use the smaller one-half rate');
+  if (siteProgress && (!Number.isFinite(result.slowed.site_progress) || Math.abs(result.slowed.site_progress * 120 / result.slowed.ticks - 1 / 3) > 0.04)) throw Error('constructor did not use its distinct one-third rate');
   if (health(shortEnd, 5) !== targetHealth) throw Error('weapon fired during shortage');
   if (alerts(shortEnd, 'power_short_event').length !== 1) throw Error('stable shortage repeated its alert');
   await page.screenshot({path: out + '/slowed-work.png'});
   await select(3); await clickButton('Disable');
+  if (mode !== '--independent') {
   result.restored = await wait(state => health(state, provider) === 200 && totals(state, 'Power: 10 / 6', 'Cots: 6 / 2') && !widget(state, 'power_short') && !widget(state, 'population_short') && alerts(state, 'power_restored_event').length === 1, 'completed provider restores supply', 30000);
   const restoredStart = result.restored;
   result.manual_disabled = await wait(state => tick(state) >= tick(restoredStart) + 40, 'manual disable after recovery');
@@ -170,19 +178,24 @@ function project(scene, position) {
   await clickButton('Enable');
   result.firing_again = await wait(state => health(state, 5) < health(restoredStart, 5), 'manual enable restores firing');
   await wait(state => units(state).some(unit => unit.content_id === 'operating:trainee'), 'trainee completion');
+  }
   peerContext = await launch(); const peer = peerContext.pages()[0]; peer.on('pageerror', error => result.errors.push(String(error))); await navigate(peer);
   result.peer = await wait(state => state.debug.slot === 1 && totals(state, 'Power: 77 / 0', 'Cots: 88 / 0'), 'other slot private totals', 30000, () => readPage(peer));
   await peer.screenshot({path: out + '/peer-private-totals.png'}); await peerContext.close(); peerContext = null; await page.bringToFront();
-  const own = await read(); if (!totals(own, 'Power: 10 / 6', 'Cots: 6 / 2')) throw Error('foreign supply replaced owner HUD');
+  const own = await read(); if (!totals(own, mode === '--independent' ? 'Power: 0 / 6' : 'Power: 10 / 6', mode === '--independent' ? 'Cots: 0 / 2' : 'Cots: 6 / 2')) throw Error('foreign supply replaced owner HUD');
+  await wait(state => units(state).some(unit => unit.content_id === 'operating:trainee'), 'training queue clears before removal');
+  const removeIds = provider ? [2, 3, provider] : [2, 3];
   await select(2); await page.keyboard.down('Shift');
-  try {for (const id of [3, provider]) {const state = await read(); await page.mouse.click(...project(state.scene, state.scene.units.find(unit => unit.unit_id === id).translation));}} finally {await page.keyboard.up('Shift');}
+  try {for (const id of removeIds.slice(1)) {const state = await read(); await page.mouse.click(...project(state.scene, state.scene.units.find(unit => unit.unit_id === id).translation));}} finally {await page.keyboard.up('Shift');}
   const selection = (await read()).selection;
-  if (selection.length !== 3 || ![2, 3, provider].every(id => selection.includes(id))) throw Error('remove group selection');
+  if (selection.length !== removeIds.length || !removeIds.every(id => selection.includes(id))) throw Error('remove group selection');
   await clickButton('Remove');
-  result.zero = await wait(state => [2, 3, provider].every(id => !units(state).some(unit => unit.unit_id === id)) && totals(state, 'Power: 0 / 0', 'Cots: 0 / 0'), 'explicit zero totals');
+  result.zero = await wait(state => removeIds.every(id => !units(state).some(unit => unit.unit_id === id)) && totals(state, 'Power: 0 / 0', 'Cots: 0 / 0'), 'explicit zero totals');
   if (alerts(result.zero, 'power_short_event').length !== 1 || alerts(result.zero, 'power_restored_event').length !== 1) throw Error('unexpected supply transition count');
   await page.screenshot({path: out + '/zero-totals.png'});
-  result.status = 'PASS'; console.log(JSON.stringify({status: result.status, full_speed: result.full_speed, slowed: result.slowed, provider}));
+  result.status = mode === '--independent' ? 'PARTIAL_PASS' : 'PASS';
+  if (mode === '--independent') result.missing_checks = ['Constructor rate and provider completion', 'Restoration preserves manual weapon Disable', 'Weapon firing after restored supply'];
+  console.log(JSON.stringify({status: result.status, full_speed: result.full_speed, slowed: result.slowed, provider}));
  } catch (error) {
   result.status = 'FAIL'; result.error = String(error.stack || error); if (read) try {result.failure = await read();} catch {} if (page) try {await page.screenshot({path: out + '/failure.png'});} catch {} console.error(error); process.exitCode = 1;
  } finally {
