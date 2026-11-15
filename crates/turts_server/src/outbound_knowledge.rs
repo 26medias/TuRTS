@@ -777,3 +777,7 @@ mod tests {
         assert!(sender.pending.is_none());
     }
 }
+
+#[cfg(test)]
+#[path = "outbound_knowledge_pipeline_tests.rs"]
+mod pipeline_tests;
