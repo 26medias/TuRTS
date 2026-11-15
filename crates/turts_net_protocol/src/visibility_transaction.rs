@@ -219,6 +219,17 @@ impl StateTransactionAssembler {
     pub fn active(&self) -> Option<&StateTransactionStamp> {
         self.active.as_ref()
     }
+    /// Delayed frames from an already completed or cancelled stream cannot restart a basis.
+    pub fn is_obsolete(&self, stamp: &StateTransactionStamp) -> bool {
+        stamp.basis.match_id == self.match_id
+            && stamp.basis.map == self.map
+            && (stamp.transaction_id < self.highest_seen
+                || stamp.transaction_id == self.highest_seen
+                    && self
+                        .pending
+                        .as_ref()
+                        .is_none_or(|pending| pending.begin.stamp != *stamp))
+    }
     pub fn retained_bytes(&self) -> usize {
         self.pending
             .as_ref()
