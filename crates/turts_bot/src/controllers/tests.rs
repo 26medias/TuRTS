@@ -70,7 +70,7 @@ fn run(
     run_with_metadata(policy, profile, queries, 1, &[], &[])
 }
 fn run_with_metadata(
-    policy: &mut StockController,
+    policy: &mut dyn BotController,
     profile: &BotDef,
     queries: &mut dyn BotQueries,
     basis: BasisId,
@@ -418,4 +418,142 @@ fn large_squads_select_within_affected_unit_quota_by_physical_rank() {
     assert_eq!(selected.len(), 256);
     assert_eq!(selected.first().unwrap().unit, 300);
     assert_eq!(selected.last().unwrap().unit, 45);
+}
+
+fn squad_profile() -> BotDef {
+    let mut p = profile();
+    p.knowledge.roles.push(BotRole {
+        key: "home".into(),
+        units: vec!["fixture:home".into()],
+        requires: vec![],
+    });
+    p.knowledge.orders.extend([
+        BotOrderBinding {
+            key: "attack".into(),
+            order: "fixture:attack".into(),
+            actor_role: "workers".into(),
+        },
+        BotOrderBinding {
+            key: "move".into(),
+            order: "fixture:move".into(),
+            actor_role: "workers".into(),
+        },
+    ]);
+    p.knowledge.squads = vec![turts_mod_api::BotSquadRule {
+        key: "main".into(),
+        role: "workers".into(),
+        min_units: 1,
+        anchor_role: "home".into(),
+        attack_order: "attack".into(),
+        move_order: "move".into(),
+        defend_radius: 18.0,
+        assemble_radius: 8.0,
+        target_roles: vec![],
+        priority: 50,
+    }];
+    p.controllers = vec![BotControllerDef {
+        key: "policy".into(),
+        factory: "engine:squads".into(),
+        config: BotValue::Null,
+        quota: turts_mod_api::BotQuota {
+            queries: 8,
+            candidates: 1024,
+            rows: 256,
+            proposals: 8,
+        },
+    }];
+    p
+}
+fn squad_pages(targets: Vec<UnitObservation>) -> Pages {
+    let mut home = unit(11, 54., 24.);
+    home.content = id("fixture:home");
+    Pages(VecDeque::from([
+        page(
+            QueryData::Units(vec![unit(10, 50., 28.)]),
+            PageState::Complete,
+        ),
+        page(QueryData::Units(vec![home]), PageState::Complete),
+        page(QueryData::Units(targets), PageState::Complete),
+    ]))
+}
+#[test]
+fn equidistant_squad_targets_use_geometry_after_id_and_registration_inversion() {
+    let p = squad_profile();
+    let actor = BotActor {
+        slot: 0,
+        profile: id("fixture:opponent"),
+    };
+    for inverted_registry in [false, true] {
+        for (lower_id, upper_id) in [(1, 99), (99, 1)] {
+            for reverse_page in [false, true] {
+                let mut registry = ControllerRegistry::new();
+                let mut factories = [("squads", Policy::Squads), ("economy", Policy::Economy)];
+                if inverted_registry {
+                    factories.reverse();
+                }
+                for (name, policy) in factories {
+                    registry
+                        .register(
+                            id(&format!("engine:{name}")),
+                            std::sync::Arc::new(StockFactory(policy)),
+                        )
+                        .unwrap();
+                }
+                let mut controllers = registry
+                    .activate(
+                        &actor,
+                        &p,
+                        42,
+                        turts_mod_api::BotQuota {
+                            queries: 32,
+                            candidates: 4096,
+                            rows: 1024,
+                            proposals: 32,
+                        },
+                    )
+                    .unwrap();
+                let mut lower = unit(lower_id, 14., 20.);
+                lower.owner_slot = 1;
+                lower.own = None;
+                let mut upper = unit(upper_id, 14., 28.);
+                upper.owner_slot = 1;
+                upper.own = None;
+                let mut rows = vec![lower, upper];
+                if reverse_page {
+                    rows.reverse();
+                }
+                let proposals = run_with_metadata(
+                    controllers[0].controller.as_mut(),
+                    &p,
+                    &mut squad_pages(rows),
+                    1,
+                    &[],
+                    &[],
+                );
+                assert_eq!(
+                    proposals.len(),
+                    1,
+                    "a distinct equal-distance target must not freeze the squad"
+                );
+                assert_eq!(proposals[0].order.target, BotTarget::Unit(lower_id));
+            }
+        }
+    }
+}
+#[test]
+fn complete_physical_target_ties_remain_refused_with_inverted_ids() {
+    for ids in [[1, 99], [99, 1]] {
+        let rows = ids
+            .into_iter()
+            .map(|id| {
+                let mut target = unit(id, 14., 20.);
+                target.owner_slot = 1;
+                target.own = None;
+                target
+            })
+            .collect();
+        let mut controller = controller();
+        controller.policy = Policy::Squads;
+        assert!(run(&mut controller, &squad_profile(), &mut squad_pages(rows)).is_empty());
+    }
 }
