@@ -517,7 +517,11 @@ fn armour_completion_order_is_private_and_preserved_in_snapshot_and_delta() {
         export::snapshot_for(&view, SlotId(0)).research,
         export::delta_for(&batch, &view, SlotId(0)).research,
     ] {
-        assert_eq!(records.len(), 1, "research must contain only the recipient slot");
+        assert_eq!(
+            records.len(),
+            1,
+            "research must contain only the recipient slot"
+        );
         assert_eq!(records[0].slot, wire::SlotId(0));
         assert_eq!(
             records[0].armour_order,
