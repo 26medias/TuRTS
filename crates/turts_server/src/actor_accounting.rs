@@ -54,6 +54,62 @@ pub(crate) fn build_batch(
     watermark: Watermark,
     row_limit: usize,
 ) -> Result<ReconcileBatch, String> {
+    validate_completed_input(view, committed, watermark)?;
+    let mut budget = RowBudget(row_limit);
+    let accounts = account_rows(view, catalog, actor, &mut budget)?;
+    let mut staged = requests.clone();
+    let mut included = Vec::new();
+    let mut unapplied = Vec::new();
+    for (key, tracked) in &mut staged {
+        budget.take(1)?;
+        let Some(effect) =
+            capture_request(view, committed, catalog, actor, key, tracked, watermark)?
+        else {
+            unapplied.push(key.clone());
+            continue;
+        };
+        budget.take(effect.paid.len())?;
+        budget.take(effect.reserved.len())?;
+        if let Some(work) = &effect.work {
+            budget.take(1)?;
+            budget.take(work.paid.len())?;
+            budget.take(work.reserved.len())?;
+        }
+        included.push(effect);
+    }
+    *requests = staged;
+    Ok(ReconcileBatch {
+        watermark,
+        accounts,
+        included,
+        unapplied,
+        complete: true,
+    })
+}
+/// Preserve exact current receipt facts even when the separate account-row
+/// publication is over budget. This stores one cumulative effect per retained
+/// request, not historical ticks or complete account/world snapshots.
+pub(crate) fn capture_receipts(
+    view: &WorldView,
+    committed: &CommittedTick,
+    catalog: &ContentCatalog,
+    actor: &BotActor,
+    requests: &mut BTreeMap<RequestKey, TrackedRequest>,
+    watermark: Watermark,
+) -> Result<(), String> {
+    validate_completed_input(view, committed, watermark)?;
+    let mut staged = requests.clone();
+    for (key, tracked) in &mut staged {
+        capture_request(view, committed, catalog, actor, key, tracked, watermark)?;
+    }
+    *requests = staged;
+    Ok(())
+}
+fn validate_completed_input(
+    view: &WorldView,
+    committed: &CommittedTick,
+    watermark: Watermark,
+) -> Result<(), String> {
     if view.tick != committed.tick || watermark.completed_tick != view.tick {
         return Err("accounting view, events and watermark are not one completed tick".into());
     }
@@ -68,76 +124,61 @@ pub(crate) fn build_batch(
     {
         return Err("accounting events do not belong to one ordered completed tick".into());
     }
-    let mut budget = RowBudget(row_limit);
-    let accounts = account_rows(view, catalog, actor, &mut budget)?;
-    let mut staged = requests.clone();
-    let mut included = Vec::new();
-    let mut unapplied = Vec::new();
-    for (key, tracked) in &mut staged {
-        budget.take(1)?;
-        if key.actor != *actor
-            || tracked.command.actor != *actor
-            || key.sequence != tracked.command.sequence
-            || !tracked.command.units.contains(&key.unit)
-        {
-            return Err("tracked request differs from its trusted actor command".into());
-        }
-        if tracked.accounted.is_some_and(|old| watermark < old) {
-            return Err("receipt accounting watermark moved backwards".into());
-        }
-        let Some(result) = tracked
-            .result
-            .clone()
-            .filter(|result| result.effect_watermark <= watermark)
-        else {
-            if tracked.last_effect.is_some() {
-                return Err("represented request lost its admission result".into());
-            }
-            unapplied.push(key.clone());
-            continue;
-        };
-        if result.request != *key {
-            return Err("receipt result names a different request".into());
-        }
-        let effect = if !result.accepted {
-            if tracked.admitted_work.is_some() || result.work.is_some() {
-                return Err("refused request unexpectedly owns admitted work".into());
-            }
-            ObservedRequestEffect::refusal(key.clone(), result.effect_watermark)
-        } else {
-            prepare_effect(view, committed, catalog, actor, key, tracked, &result)?
-        };
-        if tracked.accounted == Some(watermark) && tracked.last_effect.as_ref() != Some(&effect) {
-            return Err("one accounting watermark describes different receipt effects".into());
-        }
-        validate_advance(tracked.last_effect.as_ref(), &effect)?;
-        budget.take(effect.paid.len())?;
-        budget.take(effect.reserved.len())?;
-        if let Some(work) = &effect.work {
-            budget.take(1)?;
-            budget.take(work.paid.len())?;
-            budget.take(work.reserved.len())?;
-        }
-        tracked.accounted = Some(watermark);
-        tracked.last_effect = Some(effect.clone());
-        included.push(effect);
-    }
-    *requests = staged;
-    Ok(ReconcileBatch {
-        watermark,
-        accounts,
-        included,
-        unapplied,
-        complete: true,
-    })
+    Ok(())
 }
+fn capture_request(
+    view: &WorldView,
+    committed: &CommittedTick,
+    catalog: &ContentCatalog,
+    actor: &BotActor,
+    key: &RequestKey,
+    tracked: &mut TrackedRequest,
+    watermark: Watermark,
+) -> Result<Option<ObservedRequestEffect>, String> {
+    if key.actor != *actor
+        || tracked.command.actor != *actor
+        || key.sequence != tracked.command.sequence
+        || !tracked.command.units.contains(&key.unit)
+    {
+        return Err("tracked request differs from its trusted actor command".into());
+    }
+    if tracked.accounted.is_some_and(|old| watermark < old) {
+        return Err("receipt accounting watermark moved backwards".into());
+    }
+    let Some(result) = tracked
+        .result
+        .clone()
+        .filter(|result| result.effect_watermark <= watermark)
+    else {
+        if tracked.last_effect.is_some() {
+            return Err("represented request lost its admission result".into());
+        }
+        return Ok(None);
+    };
+    if result.request != *key {
+        return Err("receipt result names a different request".into());
+    }
+    let effect = if !result.accepted {
+        if tracked.admitted_work.is_some() || result.work.is_some() {
+            return Err("refused request unexpectedly owns admitted work".into());
+        }
+        ObservedRequestEffect::refusal(key.clone(), result.effect_watermark)
+    } else {
+        prepare_effect(view, committed, catalog, actor, key, tracked, &result)?
+    };
+    if tracked.accounted == Some(watermark) && tracked.last_effect.as_ref() != Some(&effect) {
+        return Err("one accounting watermark describes different receipt effects".into());
+    }
+    validate_advance(tracked.last_effect.as_ref(), &effect)?;
+    tracked.accounted = Some(watermark);
+    tracked.last_effect = Some(effect.clone());
+    Ok(Some(effect))
+}
+pub(crate) const ROW_LIMIT_EXCEEDED: &str = "completed accounting row limit exceeded";
 struct RowBudget(usize);
 impl RowBudget {
     fn take(&mut self, rows: usize) -> Result<(), String> {
-        self.0 = self
-            .0
-            .checked_sub(rows)
-            .ok_or("completed accounting row limit exceeded")?;
+        self.0 = self.0.checked_sub(rows).ok_or(ROW_LIMIT_EXCEEDED)?;
         Ok(())
     }
 }
