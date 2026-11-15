@@ -67,6 +67,16 @@ pub(crate) fn preview(
             lines.line(corners[i], corners[(i + 1) % 4], color);
         }
         let surface = terrain.layout.elevation_height(cell.elevation) + 0.025;
+        // Keep cuts visible on their permitted top while the target lies below it.
+        for i in 0..4 {
+            let a = corners[i];
+            let b = corners[(i + 1) % 4];
+            lines.line(
+                Vec3::new(a.x, surface, a.z),
+                Vec3::new(b.x, surface, b.z),
+                color,
+            );
+        }
         for point in corners {
             lines.line(Vec3::new(point.x, surface, point.z), point, color);
         }
