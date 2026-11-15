@@ -54,6 +54,8 @@ Bound all queued copies/encoding/staging at 64 MiB and post-base patches at 8 Mi
 Use bounded incremental sending; ordinary command results must not sit behind an unlimited state queue.
 Require complete assembly and activation acknowledgement before advancing that connection's baseline.
 Cancel/release/restart from latest permitted state on overflow or 5-second timeout; apply the spec's restart/disconnect policy.
+Release cancellable application buffers immediately; carry bounded in-flight reliable credit until ACK/disconnect.
+Use the vendored WebSocket byte permits and cancellation-aware writes to bound backend retransmission queues.
 Superseded stamps cannot reactivate. Ordinary large patches use the same atomic transport without routine full resync.
 Do not retain raw worlds for every tick. Retain bounded permitted differences while the base transfers.
 Provide SV4 paired-world, interruption/reorder/duplicate, byte-cap, slow-viewer, and healthy-viewer isolation tests.

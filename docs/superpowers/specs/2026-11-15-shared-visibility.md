@@ -150,7 +150,11 @@ Duplicates must be identical. Wrong stamps, gaps, conflicting chunks, and excess
 Overflow or a 5-second unacknowledged transaction cancels it and restarts from the latest permitted completed basis.
 Ignore cancelled transaction IDs. After three restarts in a rolling 30 seconds, disconnect that slow client explicitly.
 Disconnect immediately if a single permitted basis exceeds 64 MiB. Never fall back to AllVisible or truncate state.
-Cancellation releases queued payloads and staging. State transport backpressure cannot stall simulation or other viewers.
+Cancellation releases unsent application payloads and receiver staging immediately.
+Already submitted reliable frames remain charged to a bounded window until acknowledgement or disconnect.
+They cannot activate a cancelled stamp. A retransmission never creates uncharged retained bytes.
+The WebSocket bridge also has a byte permit cap, held through a blocked write and released on completion or cancellation.
+State transport backpressure cannot stall simulation or other viewers.
 Reliable gameplay results keep their bounded ordinary path. A slow state transfer cannot accumulate unlimited transport messages.
 Retain no per-tick world history. Logical baselines, unsent changes, transport queues, and decoder allocations count in memory evidence.
 Initial snapshots, resync, reconnect, visibility loss/reveal, and late initial observation include only permitted knowledge.
