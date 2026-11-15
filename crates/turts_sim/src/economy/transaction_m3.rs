@@ -12,12 +12,12 @@ use crate::{
         combat::{Healths, Weapons},
         conveyor::{BeltLine, Conveyors, ItemTable},
         events::{
-            DestroyedLine, DestroyedLocation, EconomyEventKind, NextEventOrdinal,
+            CostLine, DestroyedLine, DestroyedLocation, EconomyEventKind, NextEventOrdinal,
             PendingEconomyEvents, RemoveCause, RemovedThisTick, SpawnedThisTick,
         },
         extractor::{ExtractorState, Extractors},
         inserter::Inserters,
-        ledger::{Account, EconomyLedger, Endpoint, ReservationClaim},
+        ledger::{Account, EconomyLedger, Endpoint, ReservationClaim, ReservationLine},
         research::{Disabled, ResearchState},
     },
 };
@@ -365,16 +365,16 @@ pub(crate) fn extract_from_node(
 
 #[allow(dead_code)] // used from Task 11
 fn append_desired_refunds(
-    charged: &[super::ledger::ReservationLine],
+    charged: &[ReservationLine],
     ratio: turts_mod_api::RefundRatio,
-    desired: &mut Vec<super::ledger::ReservationLine>,
+    desired: &mut Vec<ReservationLine>,
 ) -> Result<(), RejectReason> {
     let ratio = turts_rules::Ratio::new(u64::from(ratio.numerator), u64::from(ratio.denominator))
         .ok_or(RejectReason::IntegrityViolation)?;
     for line in charged {
         let amount = turts_rules::charge::refund(line.amount, ratio);
         if amount != 0 {
-            desired.push(super::ledger::ReservationLine {
+            desired.push(ReservationLine {
                 amount,
                 ..line.clone()
             });
@@ -384,15 +384,15 @@ fn append_desired_refunds(
 }
 
 fn split_refund_rows(
-    out: &mut Vec<super::events::CostLine>,
+    out: &mut Vec<CostLine>,
     endpoint: Endpoint,
     resource: &ContentId,
     mut amount: u128,
 ) {
     while amount != 0 {
         let part = amount.min(u128::from(u64::MAX)) as u64;
-        out.push(super::production::event_cost_line(
-            &super::ledger::ReservationLine {
+        out.push(crate::economy::production::event_cost_line(
+            &ReservationLine {
                 endpoint,
                 resource: resource.clone(),
                 amount: part,
@@ -407,7 +407,7 @@ fn mandatory_refunds(
     tx: &mut Transaction<'_>,
     unit: u32,
     owner: u8,
-    mut desired: Vec<super::ledger::ReservationLine>,
+    mut desired: Vec<ReservationLine>,
 ) -> Result<(), RejectReason> {
     if desired.is_empty() {
         return Ok(());
@@ -464,13 +464,11 @@ fn mandatory_refunds(
                 let batch: Option<Vec<_>> = amounts
                     .iter()
                     .map(|(resource, amount)| {
-                        u64::try_from(*amount)
-                            .ok()
-                            .map(|amount| super::ledger::ReservationLine {
-                                endpoint,
-                                resource: resource.clone(),
-                                amount,
-                            })
+                        u64::try_from(*amount).ok().map(|amount| ReservationLine {
+                            endpoint,
+                            resource: resource.clone(),
+                            amount,
+                        })
                     })
                     .collect();
                 let received = !destroyed
@@ -498,7 +496,7 @@ fn mandatory_refunds(
             unit,
             desired: desired
                 .iter()
-                .map(super::production::event_cost_line)
+                .map(crate::economy::production::event_cost_line)
                 .collect(),
             credited,
             discarded,
@@ -539,7 +537,7 @@ pub(crate) fn remove_unit(
             .map(|recipe| recipe.cancel_refunds.destroyed)
             .unwrap_or(turts_mod_api::RefundRatio::ZERO);
         append_desired_refunds(&site.charged, ratio, &mut desired)?;
-        super::production::flush_funding(tx, owner, unit, site.job.0, &mut site.funding)?;
+        crate::economy::production::flush_funding(tx, owner, unit, site.job.0, &mut site.funding)?;
     }
     construction.held.remove(&unit);
     tx.stage_construction(construction);
@@ -562,7 +560,13 @@ pub(crate) fn remove_unit(
                     })
                     .unwrap_or(turts_mod_api::RefundRatio::ZERO);
                 append_desired_refunds(&job.charged, ratio, &mut desired)?;
-                super::production::flush_funding(tx, owner, unit, job.id.0, &mut job.funding)?;
+                crate::economy::production::flush_funding(
+                    tx,
+                    owner,
+                    unit,
+                    job.id.0,
+                    &mut job.funding,
+                )?;
             }
             if let Some(reservation) = &job.reservation {
                 super::release_reservation(tx, reservation)?;
