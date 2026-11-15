@@ -319,14 +319,24 @@ pub fn queue_tick(world: &mut World, entity: Entity, slot: SlotId) -> Result<boo
         }
         return queue_full(world, entity, slot);
     };
+    #[cfg(test)]
+    let profile = crate::bot_profile::start();
     let policy = crate::permissions::completed(world);
     let next =
         PermittedBaseline::capture(turts_sim::completed_world(world), slot, policy.0.as_ref());
+    #[cfg(test)]
+    crate::bot_profile::finish("visibility.capture_permitted", profile);
     if sender.tip.state.tick == next.state.tick {
         world.entity_mut(entity).insert(sender);
         return Ok(true);
     }
+    #[cfg(test)]
+    let profile = crate::bot_profile::start();
     let facts = turts_sim::visibility::event_units(world, slot.0);
+    #[cfg(test)]
+    crate::bot_profile::finish("visibility.event_facts", profile);
+    #[cfg(test)]
+    let profile = crate::bot_profile::start();
     let payload = if sender.tip.knowledge.is_none() && next.knowledge.is_none() {
         sender.tip.all_visible_patch(
             &next,
@@ -339,6 +349,8 @@ pub fn queue_tick(world: &mut World, entity: Entity, slot: SlotId) -> Result<boo
             .tip
             .patch(&next, turts_sim::committed_tick(world), slot, &facts)
     };
+    #[cfg(test)]
+    crate::bot_profile::finish("visibility.permitted_diff", profile);
     let parent = sender
         .patches
         .back()
@@ -350,25 +362,38 @@ pub fn queue_tick(world: &mut World, entity: Entity, slot: SlotId) -> Result<boo
                 .map(|p| p.encoded.begin().stamp.transaction_id)
         })
         .or_else(|| sender.active.as_ref().map(|stamp| stamp.transaction_id));
+    #[cfg(test)]
+    let profile = crate::bot_profile::start();
     sender.tip = next;
+    #[cfg(test)]
+    crate::bot_profile::finish("visibility.old_tip_drop", profile);
     if parent.is_none() {
         sender.full(Instant::now())?;
     } else {
         let stamp = sender.stamp(parent)?;
+        #[cfg(test)]
+        let profile = crate::bot_profile::start();
         let size = postcard::experimental::serialized_size(&payload).map_err(|e| e.to_string())?;
-        if sender.patch_bytes.saturating_add(size) > MAX_POST_BASE_PATCH_BYTES as usize
+        let over_budget = sender.patch_bytes.saturating_add(size)
+            > MAX_POST_BASE_PATCH_BYTES as usize
             || sender
                 .retained()
                 .saturating_add(size)
                 .saturating_add(sender.tip.retained_bytes())
-                > MAX_PENDING_STATE_BYTES as usize
-        {
+                > MAX_PENDING_STATE_BYTES as usize;
+        #[cfg(test)]
+        crate::bot_profile::finish("visibility.retained_admission_and_size", profile);
+        if over_budget {
             let cancel = sender.cancel(StateTransactionCancelReason::BufferLimit);
             emit_cancel(world, entity, cancel);
             sender.restart(Instant::now())?;
         } else {
+            #[cfg(test)]
+            let profile = crate::bot_profile::start();
             let encoded = encode_transaction(stamp, &payload, FRAME_LIMIT)
                 .map_err(|e| format!("Cannot encode permitted patch: {e:?}"))?;
+            #[cfg(test)]
+            crate::bot_profile::finish("visibility.encode", profile);
             if sender.pending.is_none() {
                 sender.pending = Some(Pending::new(encoded, Instant::now()));
             } else if sender.patch_bytes.saturating_add(encoded.retained_bytes())

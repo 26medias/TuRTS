@@ -869,6 +869,7 @@ impl Harness {
     }
     fn interval(&mut self, index: usize, resync: bool) -> Sample {
         let profiling = self.app.world().resource::<Cpu>().profiling;
+        crate::bot_profile::activate(profiling && resync);
         *self.app.world_mut().resource_mut::<Cpu>() = Cpu {
             profiling,
             ..Default::default()
@@ -1020,6 +1021,7 @@ impl Harness {
                 sample.reveals
             );
         }
+        crate::bot_profile::activate(false);
         sample
     }
 }
@@ -1038,6 +1040,7 @@ fn run(intervals: usize, acceptance: bool) {
         vec![(true, false)]
     };
     for (fog, concentrated) in modes {
+        crate::bot_profile::reset();
         let mut harness = Harness::new(fog, concentrated);
         harness.app.world_mut().resource_mut::<Cpu>().profiling = !acceptance;
         println!("SV7_AUTHORED {}", harness.authored);
@@ -1058,7 +1061,7 @@ fn run(intervals: usize, acceptance: bool) {
         let pass = sum["p99_ns"].as_u64().unwrap() <= 5_000_000;
         all.push(serde_json::json!({"fog":fog,"concentrated":concentrated,"authored":harness.authored,
             "server":quantiles(samples.iter().map(|s|s.server_ns).collect()),"client":quantiles(samples.iter().map(|s|s.client_ns).collect()),
-            "sum":sum,"threshold_pass":pass,"samples":samples}));
+            "sum":sum,"threshold_pass":pass,"queue_subphases":crate::bot_profile::summary(),"samples":samples}));
     }
     let artifact = serde_json::json!({"acceptance":acceptance,"diagnostic_only":!acceptance,
         "warmup_intervals":WARMUP,"measured_intervals":intervals,"ticks_per_interval":20,
