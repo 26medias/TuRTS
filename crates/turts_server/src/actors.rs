@@ -340,10 +340,23 @@ pub(crate) fn acknowledge(
         .map(|effect| effect.request.clone())
         .collect::<BTreeSet<_>>();
     let retained = retained.iter().collect::<BTreeSet<_>>();
+    let forgotten = entry
+        .requests
+        .iter()
+        .filter(|(key, _)| represented.contains(*key) && !retained.contains(*key))
+        .filter_map(|(_, tracked)| tracked.admitted_work.as_ref().map(|work| work.job.0))
+        .collect::<BTreeSet<_>>();
     entry
         .requests
         .retain(|key, _| !represented.contains(key) || retained.contains(key));
     entry.acknowledged = Some(watermark);
+    let _ = book;
+    if let Some(mut receipts) = world.get_resource_mut::<turts_sim::receipts::CommandWorkReceipts>()
+    {
+        for job in forgotten {
+            receipts.forget_job(job);
+        }
+    }
     Ok(())
 }
 
@@ -360,6 +373,16 @@ pub(crate) fn record_installation(world: &mut World, record: ActorLogRecord) -> 
 }
 pub(crate) fn record_lifecycle(world: &mut World, record: ActorLogRecord) -> Result<(), String> {
     crate::session::participant_trace::record(world, record)
+}
+pub(crate) fn actor_trace(world: &World) -> &[ActorLogRecord] {
+    crate::session::participant_trace::actor_trace(world)
+}
+pub(crate) fn stage_recorded_human(
+    world: &mut World,
+    actor: ActorLogIdentity,
+    envelope: PlayerCommand,
+) -> Result<(), String> {
+    crate::session::participant_trace::stage_recorded_human(world, actor, envelope)
 }
 
 fn wire_command(command: &EmittedCommand) -> PlayerCommand {
@@ -437,7 +460,7 @@ pub(crate) fn dispatch_staged(world: &mut World) {
         ) {
             Ok(ordinal) => ordinal,
             Err(error) => {
-                fail_pipeline(world, error);
+                crate::session::participant_trace::fail(world, error);
                 return;
             }
         };
@@ -467,7 +490,7 @@ pub(crate) fn dispatch_staged(world: &mut World) {
                     ordinal,
                     identity,
                 ) {
-                    fail_pipeline(world, error);
+                    crate::session::participant_trace::fail(world, error);
                     return;
                 }
                 world
@@ -487,7 +510,7 @@ pub(crate) fn dispatch_staged(world: &mut World) {
                 if let Err(error) = crate::session::participant_trace::rejection(
                     world, &identity, ordinal, &envelope, &result, reason,
                 ) {
-                    fail_pipeline(world, error);
+                    crate::session::participant_trace::fail(world, error);
                     return;
                 }
                 finalize_members(world, &command.actor, &envelope, &result, BTreeMap::new());
@@ -595,7 +618,7 @@ pub(crate) fn publish_completed(world: &mut World) {
         let mut result = crate::orders::to_wire(&results, &envelope);
         result.tick = tick;
         if let Err(error) = crate::session::participant_trace::result(world, slot, seq, &result) {
-            fail_pipeline(world, error);
+            crate::session::participant_trace::fail(world, error);
             return;
         }
         let hints = world
@@ -635,34 +658,38 @@ pub(crate) fn publish_completed(world: &mut World) {
             }
         }
     }
-    let view = turts_sim::completed_world(world).clone();
-    let committed = turts_sim::committed_tick(world).clone();
-    let catalog = world.resource::<crate::orders::ServerCatalog>().0.clone();
-    let mut book = world.resource_mut::<BotActors>();
-    let row_limit = book.row_limit;
-    for entry in book.entries.values_mut() {
-        let watermark = Watermark {
-            completed_tick: tick,
-            revision: u64::from(tick),
-        };
-        match crate::actor_accounting::build_batch(
-            &view,
-            &committed,
-            &catalog,
-            &entry.actor,
-            &mut entry.requests,
-            watermark,
-            row_limit,
-        ) {
-            Ok(batch) => entry.published = Some(batch),
-            Err(error) => {
-                let _ = book;
-                fail_pipeline(world, error);
-                return;
-            }
+    // The completed resources remain borrowed in place. Only actor bookkeeping
+    // leaves the World, so publication does not clone the package or full world.
+    let mut book = world
+        .remove_resource::<BotActors>()
+        .expect("actor book was checked above");
+    let result = (|| {
+        let view = turts_sim::completed_world(world);
+        let committed = turts_sim::committed_tick(world);
+        let catalog = &world.resource::<crate::orders::ServerCatalog>().0;
+        let row_limit = book.row_limit;
+        for entry in book.entries.values_mut() {
+            let watermark = Watermark {
+                completed_tick: tick,
+                revision: u64::from(tick),
+            };
+            entry.published = Some(crate::actor_accounting::build_batch(
+                view,
+                committed,
+                catalog,
+                &entry.actor,
+                &mut entry.requests,
+                watermark,
+                row_limit,
+            )?);
         }
+        book.last_published_tick = Some(tick);
+        Ok::<(), String>(())
+    })();
+    world.insert_resource(book);
+    if let Err(error) = result {
+        fail_pipeline(world, error);
     }
-    book.last_published_tick = Some(tick);
 }
 
 #[cfg(test)]
