@@ -319,17 +319,20 @@ pub fn queue_tick(world: &mut World, entity: Entity, slot: SlotId) -> Result<boo
         }
         return queue_full(world, entity, slot);
     };
-    #[cfg(test)]
-    let profile = crate::bot_profile::start();
-    let policy = crate::permissions::completed(world);
-    let next =
-        PermittedBaseline::capture(turts_sim::completed_world(world), slot, policy.0.as_ref());
-    #[cfg(test)]
-    crate::bot_profile::finish("visibility.capture_permitted", profile);
-    if sender.tip.state.tick == next.state.tick {
+    if sender.tip.state.tick == turts_sim::completed_world(world).tick {
         world.entity_mut(entity).insert(sender);
         return Ok(true);
     }
+    #[cfg(test)]
+    let profile = crate::bot_profile::start();
+    let policy = crate::permissions::completed(world);
+    let next = sender.tip.capture_reusing_metadata(
+        turts_sim::completed_world(world),
+        slot,
+        policy.0.as_ref(),
+    );
+    #[cfg(test)]
+    crate::bot_profile::finish("visibility.capture_permitted", profile);
     #[cfg(test)]
     let profile = crate::bot_profile::start();
     let facts = turts_sim::visibility::event_units(world, slot.0);

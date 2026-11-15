@@ -632,3 +632,79 @@ fn borrowed_permitted_capture_matches_the_previous_projection_for_every_referenc
         );
     }
 }
+
+#[test]
+fn recycled_live_names_preserve_snapshot_and_removed_endpoint_patch_bytes() {
+    let old_view = mixed_owner_view();
+    let slot = SlotId(0);
+    let mut next_view = old_view.clone();
+    next_view.tick = old_view.tick + 1;
+    next_view
+        .units
+        .iter_mut()
+        .find(|u| u.unit_id == 1)
+        .unwrap()
+        .pos
+        .x += 1.;
+    next_view.units.retain(|u| u.unit_id != 90);
+    let old = export::PermittedBaseline::capture(&old_view, slot, &permissions::AllVisible);
+    let expected = export::PermittedBaseline::capture(&next_view, slot, &permissions::AllVisible);
+    let mut recycled = old.clone();
+    let original_name = recycled
+        .state
+        .units
+        .iter()
+        .find(|u| u.unit_id.0 == 1)
+        .unwrap()
+        .content_id
+        .as_ptr();
+    let next = recycled.capture_reusing_metadata(&next_view, slot, &permissions::AllVisible);
+    assert_eq!(next.state, expected.state);
+    assert_eq!(
+        next.state
+            .units
+            .iter()
+            .find(|u| u.unit_id.0 == 1)
+            .unwrap()
+            .content_id
+            .as_ptr(),
+        original_name
+    );
+    assert!(
+        !recycled
+            .state
+            .units
+            .iter()
+            .find(|u| u.unit_id.0 == 90)
+            .unwrap()
+            .content_id
+            .is_empty(),
+        "removed endpoint keeps its truthful old name"
+    );
+    let context = turts_mod_api::KnowledgeBasis {
+        match_id: 1,
+        map: turts_mod_api::ContentId::parse("forge:fixture").unwrap(),
+        tick: next_view.tick,
+        phase: turts_mod_api::ObservationPhase::Completed,
+    };
+    let batch = CommittedTick {
+        tick: next_view.tick,
+        removed: vec![90],
+        effects: vec![
+            turts_sim::economy::events::EffectRow::Fired {
+                unit: 1,
+                target: 90,
+                weapon: 0,
+                reduced: false,
+            },
+            turts_sim::economy::events::EffectRow::Destroyed { unit: 90 },
+        ],
+        ..Default::default()
+    };
+    let before = old.all_visible_patch(&expected, &batch, slot, &context);
+    let after = recycled.all_visible_patch(&next, &batch, slot, &context);
+    assert_eq!(
+        postcard::to_allocvec(&after).unwrap(),
+        postcard::to_allocvec(&before).unwrap()
+    );
+}
