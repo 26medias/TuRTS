@@ -45,6 +45,11 @@ pub struct Selection {
     pub refused: Vec<RejectedProposal>,
 }
 
+struct ValidatedProposal {
+    members: Vec<VerifiedMember>,
+    anchor: WorldPos,
+}
+
 pub struct BotCoordinator {
     actor: BotActor,
     limits: CoordinatorLimits,
@@ -415,7 +420,7 @@ impl BotCoordinator {
     fn emit(
         &mut self,
         proposal: &Proposal,
-        verified: &VerifiedProposal,
+        verified: &ValidatedProposal,
         assigned: &BTreeSet<UnitId>,
         commands: u32,
         units: u32,
@@ -545,7 +550,7 @@ fn validate_verified(
     proposal: &Proposal,
     verified: VerifiedProposal,
     slot: u8,
-) -> Result<VerifiedProposal, ProposalRejection> {
+) -> Result<ValidatedProposal, ProposalRejection> {
     if proposal.actors.is_empty()
         || proposal.task.controller.is_empty()
         || proposal.task.goal.is_empty()
@@ -576,7 +581,16 @@ fn validate_verified(
     if actors != members {
         return Err(ProposalRejection::InvalidCosts);
     }
-    Ok(verified)
+    let anchor = verified
+        .members
+        .iter()
+        .min_by(|a, b| position_cmp(&a.anchor, &b.anchor))
+        .map(|member| member.anchor.clone())
+        .ok_or(ProposalRejection::InvalidAnchor)?;
+    Ok(ValidatedProposal {
+        members: verified.members,
+        anchor,
+    })
 }
 fn coordinate_cmp(a: f32, b: f32) -> std::cmp::Ordering {
     if a == b {
@@ -588,22 +602,14 @@ fn coordinate_cmp(a: f32, b: f32) -> std::cmp::Ordering {
 fn position_cmp(a: &WorldPos, b: &WorldPos) -> std::cmp::Ordering {
     coordinate_cmp(a.x, b.x).then_with(|| coordinate_cmp(a.y, b.y))
 }
-fn anchor(verified: &VerifiedProposal) -> &WorldPos {
-    &verified
-        .members
-        .iter()
-        .min_by(|a, b| position_cmp(&a.anchor, &b.anchor))
-        .expect("verified proposal has actors")
-        .anchor
-}
 fn rank_cmp(
     a: &Proposal,
-    av: &VerifiedProposal,
+    av: &ValidatedProposal,
     b: &Proposal,
-    bv: &VerifiedProposal,
+    bv: &ValidatedProposal,
 ) -> std::cmp::Ordering {
     b.priority
         .cmp(&a.priority)
-        .then_with(|| position_cmp(anchor(av), anchor(bv)))
+        .then_with(|| position_cmp(&av.anchor, &bv.anchor))
         .then(a.goal_order.cmp(&b.goal_order))
 }
