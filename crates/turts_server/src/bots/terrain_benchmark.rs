@@ -437,6 +437,17 @@ fn run(intervals: usize, acceptance: bool, warmup: usize) {
                     println!("TW7_SAMPLE fog={fog} rtt={rtt} interval={index}/{intervals}");
                 }
             }
+            // Inspect private depletion only after every timed service boundary.
+            let audit = turts_sim::terrain::privileged_audit(harness.app.world()).unwrap();
+            for worker in &workload.workers {
+                let column = audit.columns_state.iter().find(|row| row.cell == worker.cell).unwrap();
+                assert_eq!(column.natural_top, -1, "natural depletion persists through every cycle");
+                assert_eq!(column.surface, 0);
+                assert_eq!(column.revision, 2 * (warmup + intervals) as u64);
+                assert_eq!(column.placed.len(), 1);
+                assert_eq!((column.placed[0].bottom, column.placed[0].top), (-1, 0));
+                assert_eq!(column.placed[0].material, id("tw7_loam"));
+            }
             let server = samples
                 .iter()
                 .flat_map(|sample| sample.full_server_tick_ns.iter().copied())
