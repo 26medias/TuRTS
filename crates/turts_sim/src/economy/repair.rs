@@ -459,7 +459,7 @@ fn heal_source(world: &mut World, source: u32, repairer: &RepairerDef) {
     let Some(owner) = owner else {
         return;
     };
-    let mut state = source_state(world, source);
+    let mut remainders = source_state(world, source).remainders;
     let mut debits = Vec::with_capacity(repairer.cost.len());
     for cost in &repairer.cost {
         let (Ok(resource), Some(per)) = (
@@ -469,14 +469,14 @@ fn heal_source(world: &mut World, source: u32, repairer: &RepairerDef) {
             hold(world, source, RejectReason::IntegrityViolation);
             return;
         };
-        let remainder = state.remainders.get(&resource).copied().unwrap_or(0);
+        let remainder = remainders.get(&resource).copied().unwrap_or(0);
         let Some((amount, next)) =
             turts_rules::heal::repair_charge_with_remainder(applied, cost.amount, per, remainder)
         else {
             hold(world, source, RejectReason::ArithmeticOverflow);
             return;
         };
-        state.remainders.insert(resource.clone(), next);
+        remainders.insert(resource.clone(), next);
         if amount != 0 {
             debits.push(ReservationLine {
                 endpoint: Endpoint::Slot(owner),
@@ -509,6 +509,8 @@ fn heal_source(world: &mut World, source: u32, repairer: &RepairerDef) {
                     .ok_or(RejectReason::ArithmeticOverflow)?,
             );
         }
+        let mut state = tx.repair_state(source);
+        state.remainders = remainders;
         if let Some(action) = state.action.as_mut() {
             action.elapsed = next_elapsed;
             action.state = RepairStatus::Working;
@@ -1181,5 +1183,26 @@ mod tests {
         order_changed(app.world_mut(), 1);
         super::super::combat::run_combat(app.world_mut());
         assert_eq!(hp(&app, 4), 9, "replacement clears repair suppression");
+    }
+    #[test]
+    fn a_preexisting_move_target_suppresses_idle_auto_repair() {
+        let mut app = app(
+            &[
+                (1, "repairer", 0, Vec2::new(8.0, 8.0)),
+                (3, "target", 0, Vec2::new(10.0, 8.0)),
+            ],
+            100,
+        );
+        let source = unit_entity(app.world(), 1).unwrap();
+        app.world_mut()
+            .entity_mut(source)
+            .insert(MoveTarget(Vec2::new(4.0, 12.0)));
+        run_repair(app.world_mut());
+        assert_eq!(hp(&app, 3), 10);
+        assert!(!active_action(app.world(), 1));
+        assert_eq!(
+            app.world().get::<MoveTarget>(source).unwrap().0,
+            Vec2::new(4.0, 12.0)
+        );
     }
 }
