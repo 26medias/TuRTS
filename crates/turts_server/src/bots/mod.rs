@@ -314,7 +314,7 @@ fn lifecycle(world: &World, execution: &BotExecution, tick: u32) -> Result<Lifec
             .collect(),
     })
 }
-fn drive(world: &mut World) {
+pub(crate) fn drive(world: &mut World) {
     let Some(mut host) = world.remove_resource::<BotHost>() else {
         return;
     };
