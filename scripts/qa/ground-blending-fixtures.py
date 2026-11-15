@@ -79,6 +79,14 @@ def main():
         copy['maps/field.ron'] = (text[:a] + ground + text[b:]).encode()
         copy['manifest.ron'] = copy['manifest.ron'].replace(b'^0.2.10', b'^0.2.11')
         write(output / (scene + '.tar'), copy)
+        # The measurement driver repacks this directory with the actual release packer.
+        for name, data in copy.items():
+            relative = Path(name)
+            if relative.is_absolute() or '..' in relative.parts:
+                raise ValueError('unsafe fixture path: ' + name)
+            target = output / scene / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(data)
         shutil.copyfile(battle / (scene + '-commands.json'), output / (scene + '-commands.json'))
 
 
