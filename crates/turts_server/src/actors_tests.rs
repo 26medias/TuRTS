@@ -300,7 +300,7 @@ fn a_real_weapon_kill_after_the_first_cot_step_keeps_its_exact_terminal_debit() 
         seq: 98,
         order: OrderEnvelope {
             order: id("order_hold_fire").to_string(),
-            units: vec![turts_net_protocol::UnitId(5)],
+            units: vec![turts_net_protocol::UnitId(5), turts_net_protocol::UnitId(6)],
             target: OrderTarget::None,
             queue: turts_net_protocol::QueueMode::Replace,
             group: 0,
