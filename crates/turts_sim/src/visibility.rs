@@ -728,3 +728,7 @@ pub fn event_units(world: &World, viewer: u8) -> Vec<EventUnitFact> {
         })
         .unwrap_or_default()
 }
+
+#[cfg(test)]
+#[path = "visibility_tests.rs"]
+mod tests;
