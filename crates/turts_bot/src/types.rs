@@ -191,6 +191,36 @@ pub struct VerifiedMember {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct VerifiedProposal {
     pub members: Vec<VerifiedMember>,
+    /// All authored roles/supplies contributed by the output, including incidental roles.
+    pub fulfillment: Vec<FulfillmentClaim>,
+}
+impl VerifiedProposal {
+    pub fn new(members: Vec<VerifiedMember>) -> Self {
+        Self {
+            members,
+            fulfillment: Vec::new(),
+        }
+    }
+}
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub enum FulfillmentKey {
+    Role(String),
+    Supply(ContentId),
+}
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FulfillmentClaim {
+    pub key: FulfillmentKey,
+    /// Complete current owned + authoritatively pending contribution at the accounting basis.
+    pub observed: u64,
+    /// Only the actual authored goal supplies a cap; incidental contributions use None.
+    pub cap: Option<u64>,
+    /// Contribution of each accepted member of this ordinary group order.
+    pub contribution: u64,
+}
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PendingFulfillment {
+    pub key: FulfillmentKey,
+    pub contribution: u64,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ProposalRejection {
@@ -208,6 +238,9 @@ pub enum ProposalRejection {
     EqualRank,
     ArithmeticOverflow,
     AccountingUnresolved,
+    InvalidFulfillment,
+    InconsistentFulfillment(FulfillmentKey),
+    FulfillmentSatisfied(FulfillmentKey),
     SequenceExhausted,
 }
 
