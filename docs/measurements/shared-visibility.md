@@ -1,6 +1,6 @@
 # Shared visibility measurements
 
-Status: SDK16 acceptance is open. The accepted launcher still runs SDK15.
+Status: SDK16 native and final browser acceptance pass. The accepted launchers now run SDK16.
 Evidence root: `/home/julien/Projects/TuRTS/target/mc-evidence/`.
 
 ## Original SV7 timing contract: failed diagnostics
@@ -52,9 +52,9 @@ including both RTT cases, cancellation, ring overflow, and fatal sequence exhaus
 ## Remaining measurement work
 
 The independent audit found no product derivation for the original 5 ms summed-second allocation.
-A deadline-based amendment is under Anvil review. It has no acceptance result yet.
+The same independent reviewer approved the deadline amendment before fresh measurements.
 Keep the workload and original failed evidence unchanged.
-Run fresh full-server and per-client timing after the amended contract and plan are approved.
+The full native campaign below passes. Final browser measurement remains open.
 Run all nine browser cases on the final build. Record final source identity and machine details.
 
 
@@ -96,3 +96,44 @@ Client tick p99 is4.086/4.048 ms. Whole-batch p99 is0.736/0.670 ms.
 Evidence: `shared-visibility/sv7-v2-diagnostic-spatial-cache`.
 The complete simulation suite passes409 tests with one ignored measurement: `shared-visibility-sim-spatial-cache-tests.log`.
 These are10 measured intervals. The full1,000-interval three-mode acceptance remains required.
+
+## Final native acceptance
+
+Source `4502569234f385b913dd19081dee40f491d141f2` passes the complete frozen v2 campaign.
+Each mode ran 100 warm-up intervals and 1,000 measured intervals of 20 ticks.
+All three modes retained the fixed workload, resync schedule, and application/transport ACK drains.
+The command exited 0 after 1,398.84 seconds. No agent build, test browser, or profiler competed during timing.
+The CEO's applications remained untouched.
+
+| Mode | Server p99, ms | Server p99.9, ms | Maximum, ms | Maximum debt, ms | Client tick p99, ms | Result |
+| --- | ---: | ---: | ---: | ---: | --- | --- |
+| Fog | 33.226 | 36.585 | 53.408 | 3.408 | 3.299 / 3.267 | PASS |
+| Equivalent AllVisible | 33.028 | 36.179 | 48.003 | 0 | 2.524 / 2.486 | PASS |
+| Concentrated AllVisible | 33.544 | 36.564 | 49.427 | 0 | 3.163 / 3.113 | PASS |
+
+Final debt is zero in every mode. Both clients pass their per-tick and whole-batch limits.
+The largest client tick is 9.407 ms; the largest complete batch is 6.501 ms.
+Every measured interval moves all 500 required movers. The original v1 ceiling still fails.
+Its summed-work p99 values are 61.997, 51.698, and 58.825 ms respectively.
+Combined retained state peaks below 8.985 MB per peer. Absolute process high-water RSS reaches 116.6 MiB.
+The native result does not establish browser frame rate or later hosting capacity.
+
+Evidence under `shared-visibility/`: `final-sv7-native.log`, `sv7-v2-full-1000.json`, and `final-v2-machine.json`.
+The JSON retains every service sample, work counter, wire count, and deadline result.
+
+## Final detailed-model browser acceptance
+
+The sealed source `81c37e1f` passes all nine cases in Chrome 157.0.8103.38.
+The same 400 mixed detailed units run on High at normal, near and far authored zoom limits.
+Fog normal reaches 59.902 FPS; every other case reaches approximately 60.0 FPS.
+Frame p95 is 16.7-16.8 ms. Peak recorded WASM memory is 230,686,720 bytes.
+Visible model draw groups and offscreen fallback counts match the actual GLB material groups.
+No model detail, texture, shadow, source count, camera range or workload was reduced.
+Every test Chrome used a fresh profile and --alsa-output-device=null on an owned Xvfb display.
+No agent build or competing test browser ran during this matrix.
+
+Host inventory reports an NVIDIA GeForce RTX 3080 and driver 580.178.04.
+The browser reports a non-fallback WebGPU adapter but exposes no device description.
+The recorded timings describe this host; they do not establish other GPU performance.
+Evidence: `shared-visibility-sv7-browser-final/result.json` and each case's raw frame samples/screenshots.
+The final two-browser scouting result is `shared-visibility-final-sv6/browser/result.json`.

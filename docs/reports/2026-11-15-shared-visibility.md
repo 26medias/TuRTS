@@ -1,7 +1,7 @@
 # Shared visibility acceptance
 
-Status: implementation and focused native checks are in progress. This milestone is not accepted.
-SDK15 remains the playable build on main. Tested main commits are pushed under standing CEO approval.
+Status: SV1-SV7 pass. Independent foundation review passes. The tested milestone is ready for main.
+The three local launchers now use the sealed SDK16 build. Tested main commits are pushed under standing CEO approval.
 
 ## Scope
 
@@ -18,19 +18,20 @@ The subdirectory `shared-visibility/` holds independent review logs.
 
 | Row | Evidence run | Current result |
 | --- | --- | --- |
-| SV1 | `shared-visibility-authored-tests.log`: 4 authoring tests. `shared-visibility-new-match-tests.log`: populated second install refuses without changing knowledge; fresh match has no old memory. Client fixture tests load two structurally different packages, including renamed Stockyard. | These focused checks PASS. API-floor and full compatibility campaign remain. |
-| SV2 | `shared-visibility-core-tests-fixed.log`: 15 simulation tests and 5 shared-rule tests. Actual movement, construction completion, overlapping sources, teams, healthless/disabled sources, source death, and exact boundary rules pass. | Focused checks PASS. The complete simulation suite now passes 409 tests with 1 ignored measurement. Exact circle-oracle checks pass 6 tests. Full row coverage remains under review. |
-| SV3 | Same simulation log: hidden movement/death equality, stale sightings, observed empty locations, whole-oldest-tick retention, sticky truncation, and bounded large-circle cache. | Focused checks PASS. Long-cycle memory measurement remains. |
-| SV4 | `shared-visibility/review-export.log`, `review-human-wire.log`, `review-outbound-green.log`, and `review.md`. Initial protocol assembly tests: `shared-visibility-core-tests-fixed.log` (7 PASS). Client atomic tests: `shared-visibility-client-fixtures-tests.log` (7 PASS). Verified-map guards: `shared-visibility-client-identity-tests.log` (2 PASS). Allocation preflight: `shared-visibility-client-budget-tests-fixed.log` (3 PASS). | Focused checks PASS. Ordered 50/100 ms RTT, cancellation, overflow, and sender-failure checks also pass. The complete client library passes 405 tests with 1 ignored measurement; 8 visibility integrations pass. Final independent review remains. |
-| SV5 | Simulation hidden attack, queued target loss, extraction, and hidden/absent node tests pass. The independent simulation run includes repeated command replay across all phase knowledge bases: `shared-visibility/review-sim-visibility.log`. | These checks PASS. Full public placement/query metadata coverage remains. |
-| SV6 | `shared-visibility-sv6-first/browser/result.json`: two silent browsers pass scouting, stale memory, hidden movement, old-location clearing, ground/minimap fog, and no hidden model/health/picking. | Intermediate browser PASS. Final-build rerun and cold-play probes remain. |
-| SV7 | `docs/measurements/shared-visibility.md` records four timing diagnostics and two intermediate browser observations. | Original 5 ms budget FAIL. Earlier v2 diagnostics FAIL. The latest short v2 diagnostic passes after spatial lookup/order fixes. No full acceptance pass claimed. Final timing and nine-case browser campaign remain. |
+| SV1 | Authoring, API-floor, new-match and package compatibility checks: `shared-visibility/final-native.log`, `shared-visibility-api16-authored-tests.log`, `shared-visibility-new-match-tests.log`. | PASS. Old packages keep AllVisible; both authored sharing modes and rejection boundaries are covered. |
+| SV2 | Exact coverage, source lifecycle, teams, phase ordering and reversed creation/peer order: `shared-visibility/review-final-sim-release.log`, `shared-visibility-viewer-order-tests.log`, `shared-visibility/final-native.log`. | PASS. Includes real movement, completion, healthless/disabled sources and sight-source death. |
+| SV3 | Stale observations, hidden-state equality, observed empty/death clearing and retention limits: simulation logs above; `shared-visibility/sv7-v2-full-1000.json`. | PASS. Long repeated hide/reveal/resync campaign retains bounded state; no duplicate history. |
+| SV4 | Independent code-running review: `shared-visibility/review.md`. Atomic protocol/client/socket/export tests and final killing-health process logs under `shared-visibility/`. | PASS. Includes complete 50/100 ms delayed-ACK delivery, cancellation, cap/restart/isolation, authorized finite effects and health zero without resync. |
+| SV5 | Ordinary real-tick target-loss tests, command replay, public placement/query metadata and hidden/absent pairs: `shared-visibility-query-metadata-tests.log`, `shared-visibility/final-native.log`, independent simulation logs. | PASS. Includes appending repair behind an active move without cancelling it. |
+| SV6 | Final sealed build: `shared-visibility-final-sv6/browser/result.json`; three probes and checker in `shared-visibility-final-cold-fixed/`. | PASS. Two-slot scouting and all scripted cold probes pass. Checker PARTIAL-PASS; manual/reference checks remain open. |
+| SV7 | Native raw samples: `shared-visibility/sv7-v2-full-1000.json`. Nine High-detail camera cases: `shared-visibility-sv7-browser-final/result.json`. | PASS v2. The 60,000-tick campaign and both clients meet the declared deadline bounds. All nine 400-unit browser cases reach 59.9-60.0 FPS. Original v1 ceiling still fails. |
 
 ## Independent review
 
-The whole-feature review remains open for the final performance and activation changes.
+The independent foundation review passes with no unresolved material finding.
 Current evidence: `shared-visibility/review.md`.
 The reviewer ran 4 export checks, 1 real human wire check, 16 simulation checks, and 5 outbound checks.
+The final independent release execution also passes 409 simulation, 3 delayed-ACK pipeline, 8 protocol assembly, and 7 export tests.
 Four exact vendored socket tests also pass, including cancellation of a blocked write and byte-permit release.
 The vendor test originally failed to compile because its assertion called Display on an error without that trait.
 The assertion now matches the explicit cancellation reason and passes.
@@ -84,3 +85,45 @@ The regression requires no healing on every intervening tick, a real refusal, an
 The complete simulation suite passes 407 tests: `shared-visibility-sim-predicate-tests.log`.
 Additional raw API package gating, paginated/private query metadata, and reversed real-wire peer-order checks pass.
 Evidence: `shared-visibility-api16-authored-tests.log`, `shared-visibility-query-metadata-tests.log`, and `shared-visibility-viewer-order-tests.log`.
+
+## Final native candidate
+
+`shared-visibility/final-native.log` passes 2,924 workspace tests, with 47 ignored measurements/process cases.
+Strict workspace Clippy, formatting, the WASM check, probe-neutral hashes, and production boundary checks pass.
+The 21 tooling commands pass. The updated AllVisible browser-oracle unit checks pass all 46 tests.
+The full process acceptance cases pass, including lossy transport, killing health zero without resync, reorder/stall, both HD1 commands, and the current clean native reference.
+Evidence: `final-clippy.log`, `final-format.log`, `final-wasm-check.log`, `final-probe-neutral.log`, `final-boundary.log`, `final-tooling/`, and `final-process-acceptance/` under `shared-visibility/`.
+
+The final 1,000-interval native performance campaign passes all three modes and 60,000 measured server ticks.
+Full-server p99 is 33.226 ms with fog, 33.028 ms in equivalent AllVisible, and 33.544 ms with concentrated units.
+Both native clients pass every timing limit. See `docs/measurements/shared-visibility.md` for raw evidence and limits.
+The final browser build, nine High-detail camera cases, and cold player probes remain unverified.
+
+An obsolete HD1 cache check expected the old wrapper marker. It now verifies both current native and host markers.
+Completed debug test executables were removed after their processes ended. This freed 13.84 GiB without removing evidence or shared libraries.
+
+## Final browser and launcher handoff
+
+Prepared build: `/home/julien/Projects/TuRTS/target/mc-evidence/skirmish-shared-visibility-final-prepared`.
+Frozen play source: `/home/julien/Projects/TuRTS-shared-visibility-play`, clean `81c37e1f`.
+The prepare seal records source `ba4754436644`, package `af93c034d490`, and 80 runtime artifacts.
+All nine browser cases preserve High models, textures, normal maps, shadows, and authored camera bounds.
+All three scripted cold probes pass. No fresh human/reference campaign was run.
+
+The actual global normal launcher starts this build, loads all models and minimap, and shows sound off.
+Its fresh silent Chrome profile was removed after the check. Owned Xvfb was stopped.
+Evidence: `shared-visibility-final-launcher/browser/result.json`, `game.png`, and display cleanup record.
+WASM transferred as gzip: 15,371,667 compressed bytes from 61,816,960 raw bytes.
+The two-human and public Internet launchers keep their tested flags. Full matches in those modes were not repeated.
+
+A Cargo wrapper diagnostic polluted the prepared compiler-version field.
+The wrapper now answers version queries without cache invalidation. Two direct regression checks pass outside Git.
+Only that manifest metadata field was corrected; the original seal and proof of identical source/artifact hashes remain in `shared-visibility/cargo-version-metadata-repair.json` and its adjacent backup.
+No server or browser binary changed after the measured candidate.
+
+CI's two overlapping-unit clicks now search authored visual centers. Exact selection oracles remain.
+The merged focused Node campaign passes all 50 tests: `shared-visibility/final-ci-browser-oracles.log`.
+Original CI image replay also passes. A new hosted browser CI run remains to be observed after push.
+
+Editable terrain, geological discovery and terrain occlusion remain outside SDK16.
+M4 implementation continues separately; it is not part of this accepted build.
