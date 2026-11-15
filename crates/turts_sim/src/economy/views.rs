@@ -274,6 +274,8 @@ pub struct RawReservationAudit {
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RawJobAudit {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub funding: Option<super::production::FundingState>,
     pub id: u64,
     pub recipe: ContentId,
     pub stage: crate::economy::production::JobStage,
@@ -329,6 +331,8 @@ pub struct CatalogNodeAudit {
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CatalogUnitAudit {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repairer: Option<turts_mod_api::RepairerDef>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub provides: Vec<turts_mod_api::SupplyAmount>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -421,6 +425,8 @@ pub struct OperatingRateView {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OperatingJobView {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub funding: Option<super::production::FundingState>,
     pub unit: u32,
     pub job: u64,
     pub done: u64,
@@ -514,6 +520,7 @@ fn operating_view(world: &World) -> Option<OperatingView> {
                     .filter(|(unit, _)| crate::unit_entity(world, **unit).is_some())
                     .flat_map(|(unit, queue)| {
                         queue.iter().map(|job| OperatingJobView {
+                            funding: job.funding.clone(),
                             unit: *unit,
                             job: job.id.0,
                             done: job.elapsed_ticks,
@@ -541,6 +548,8 @@ fn operating_view(world: &World) -> Option<OperatingView> {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AuditState {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub raw_repairs: Vec<super::repair::RepairAuditRow>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub raw_operating_holds: Vec<super::operating::OperatingHold>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -623,6 +632,8 @@ pub struct RawPhysicalEscapeAudit {
 }
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct EconomyStateView {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub repairs: Vec<super::repair::RepairRow>,
     pub balances: Vec<BalanceView>,
     pub inventories: Vec<InventoryView>,
     pub orders: Vec<OrderView>,
@@ -820,6 +831,10 @@ pub fn world_view(world: &mut World) -> WorldView {
     unit_orders.sort_by_key(|record| record.unit_id);
     let m3 = super::views_m3::m3_world_view(world);
     let mut view = WorldView {
+        economy: EconomyStateView {
+            repairs: super::repair::status_rows(world),
+            ..EconomyStateView::default()
+        },
         operating: operating_view(world),
         match_outcomes: world
             .get_resource::<crate::outcome::MatchOutcomes>()
@@ -1064,6 +1079,7 @@ pub(crate) fn raw_queue_view((producer, jobs): (u32, Vec<ProductionJob>)) -> Raw
         jobs: jobs
             .into_iter()
             .map(|job| RawJobAudit {
+                funding: job.funding.clone(),
                 elapsed_ticks: crate::economy::production::job_elapsed_ticks(&job),
                 id: job.id.0,
                 recipe: job.recipe,
@@ -1194,6 +1210,7 @@ pub fn audit_state(world: &mut World) -> AuditState {
                     .units
                     .iter()
                     .map(|(id, d)| CatalogUnitAudit {
+                        repairer: d.repairer.clone(),
                         provides: d.provides.clone(),
                         consumes: d.consumes.clone(),
                         income: d.income.clone(),
@@ -1453,6 +1470,7 @@ pub fn audit_state(world: &mut World) -> AuditState {
     };
     let m3 = super::views_m3::m3_audit_state(world);
     AuditState {
+        raw_repairs: super::repair::audit_rows(world),
         raw_operating_holds: super::operating::holds(world),
         raw_operating: super::power::audit_state(world),
         raw_income_clocks: super::income::clock_audit(world)

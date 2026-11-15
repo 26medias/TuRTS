@@ -767,6 +767,7 @@ pub fn progress_rows(view: &super::views::WorldView) -> Vec<super::events::RateR
         .sites
         .iter()
         .map(|(id, site)| super::events::RateRecordRow {
+            production: Some(site.recipe.clone()),
             unit: *id,
             owner_slot: site.owner_slot,
             job: None,

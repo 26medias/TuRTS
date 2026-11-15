@@ -532,3 +532,19 @@ This three-type workload differs from the earlier two-type workload. These sampl
 No quality or detail was reduced. GPU process RSS and other hardware were not measured.
 Evidence: `target/mc-evidence/damage-system/final/summary.md` and the three measurement folders beneath it.
 All final scripted player probes, the ordinary win, and the independent foundation review pass.
+
+## Operating-resource release, 2026-11-15
+
+Runtime source: `4ed93660`. API 0.2.13; protocol 7.
+The same three-type 400-unit battle stays fully visible and damaged.
+Shared skins and environment checks pass. No compiler ran during sampling.
+
+| Scene | Quality | FPS | p50 ms | p95 ms | WASM high-water MiB |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 400 units | High | 59.403 | 16.70 | 16.70 | 210.56 |
+| 400 units | Low | 59.004 | 16.70 | 16.80 | 186.88 |
+
+The 30 FPS High floor passes without a quality change.
+The 2,000-unit and panning workloads were not repeated. GPU process RSS and other hardware were not measured.
+Evidence: `target/mc-evidence/operating-resources/final/summary.md` and `final/measure-400/result.json`.
+The actual global launcher and all three scripted player probes pass.

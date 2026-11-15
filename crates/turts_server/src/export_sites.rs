@@ -29,6 +29,11 @@ pub(super) fn site_progress(batch: &CommittedTick, slot: SlotId) -> Vec<wire::Si
         .iter()
         .filter(|row| row.owner_slot == slot.0 && batch.removed.binary_search(&row.unit).is_err())
         .map(|row| wire::SiteProgress {
+            production: row
+                .production
+                .as_ref()
+                .expect("site progress carries its validated recipe")
+                .to_string(),
             unit: wire::UnitId(row.unit),
             progress: rate_record(row),
         })

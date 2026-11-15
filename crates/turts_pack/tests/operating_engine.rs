@@ -667,3 +667,80 @@ fn ordinary_operating_outputs_keep_their_queue_fifo_order() {
     );
     assert_eq!(balance(&audit(&mut app)), 986);
 }
+
+#[test]
+fn spawned_and_completed_income_wait_a_full_period_from_their_actual_activation() {
+    let mut fixture = Fixture::new();
+    fixture.ticks("build_relay", 3);
+    for (name, amount) in [("product", 5), ("relay", 7)] {
+        fixture.unit(name).income = Some(IncomeDef {
+            resource: cid("credits").to_string(),
+            amount,
+            period_ms: 1_050,
+        });
+    }
+    let mut app = fixture.app();
+    let factory = unit_id(&app, "factory");
+    let builder = unit_id(&app, "builder");
+    let site = build(&mut app, builder, "build_relay", 40.0, 20.0);
+    queue(&mut app, factory, "train");
+    let initial = balance(&audit(&mut app));
+    assert!(audit(&mut app).raw_income_clocks.is_empty());
+    let mut product_activation = None;
+    let mut site_activation = None;
+    while product_activation.is_none() || site_activation.is_none() {
+        app.update();
+        let state = audit(&mut app);
+        let tick = state.economy.tick;
+        assert!(tick < 8, "both ordinary creations must complete");
+        if let Some(product) = state
+            .economy
+            .units
+            .iter()
+            .find(|unit| unit.content_id == cid("product").to_string())
+        {
+            product_activation.get_or_insert((product.unit_id, tick));
+        }
+        if !state.economy.construction.sites.contains_key(&site) {
+            site_activation.get_or_insert(tick);
+        }
+        assert_eq!(balance(&state), initial, "no payment at activation");
+        assert_eq!(
+            state.raw_income_clocks.len(),
+            usize::from(product_activation.is_some()) + usize::from(site_activation.is_some())
+        );
+    }
+    let (product, product_tick) = product_activation.unwrap();
+    let site_tick = site_activation.unwrap();
+    assert!(
+        site_tick > product_tick,
+        "the two paths activate on different ticks"
+    );
+    let sources = [(product, product_tick, 5), (site, site_tick, 7)];
+    loop {
+        let state = audit(&mut app);
+        let tick = state.economy.tick;
+        let expected = initial
+            + sources
+                .iter()
+                .map(|(_, activation, amount)| u64::from((tick - activation) / 21) * amount)
+                .sum::<u64>();
+        assert_eq!(balance(&state), expected, "income at tick {tick}");
+        for &(unit, activation, _) in &sources {
+            let clock = state
+                .raw_income_clocks
+                .iter()
+                .find(|row| row.unit == unit)
+                .unwrap();
+            assert_eq!(clock.activation_tick, activation);
+            assert_eq!(
+                clock.next_due,
+                u64::from(activation) + u64::from(((tick - activation) / 21 + 1) * 21)
+            );
+        }
+        if tick >= site_tick + 42 {
+            break;
+        }
+        app.update();
+    }
+}

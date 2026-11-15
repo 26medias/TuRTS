@@ -86,6 +86,9 @@ impl Core {
                     (SmartTarget::ForeignUnit, SmartTarget::ForeignUnitWeaponTarget) => {
                         weapon_eligible
                     }
+                    (SmartTarget::OwnUnit, SmartTarget::OwnDamaged) => {
+                        target_unit.is_some_and(|target| world.can_repair(unit, target))
+                    }
                     (SmartTarget::Node, SmartTarget::ResourceNodeAccepted) => gather_eligible,
                     (candidate, authored) => candidate == authored,
                 };

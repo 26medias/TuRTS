@@ -352,6 +352,15 @@ fn begin_action(
         .as_ref()
         .filter(|action| action.target == target && action.automatic == automatic)
         .map_or(0, |action| action.elapsed);
+    let status = state
+        .action
+        .as_ref()
+        .filter(|action| action.target == target && action.automatic == automatic)
+        .filter(|action| {
+            status == RepairStatus::Working
+                && matches!(action.state, RepairStatus::WaitingForFunds(_))
+        })
+        .map_or(status, |action| action.state.clone());
     state.action = Some(RepairAction {
         target,
         automatic,
@@ -415,8 +424,13 @@ fn hold(world: &mut World, source: u32, reason: RejectReason) {
             reason,
             since_tick: tick,
         });
-        let _ = save_state(world, source, state);
     }
+    if let Some(action) = state.action.as_mut()
+        && matches!(action.state, RepairStatus::WaitingForFunds(_))
+    {
+        action.state = RepairStatus::Working;
+    }
+    let _ = save_state(world, source, state);
 }
 
 fn heal_source(world: &mut World, source: u32, repairer: &RepairerDef) {
@@ -459,7 +473,7 @@ fn heal_source(world: &mut World, source: u32, repairer: &RepairerDef) {
     let Some(owner) = owner else {
         return;
     };
-    let mut state = source_state(world, source);
+    let mut remainders = source_state(world, source).remainders;
     let mut debits = Vec::with_capacity(repairer.cost.len());
     for cost in &repairer.cost {
         let (Ok(resource), Some(per)) = (
@@ -469,14 +483,14 @@ fn heal_source(world: &mut World, source: u32, repairer: &RepairerDef) {
             hold(world, source, RejectReason::IntegrityViolation);
             return;
         };
-        let remainder = state.remainders.get(&resource).copied().unwrap_or(0);
+        let remainder = remainders.get(&resource).copied().unwrap_or(0);
         let Some((amount, next)) =
             turts_rules::heal::repair_charge_with_remainder(applied, cost.amount, per, remainder)
         else {
             hold(world, source, RejectReason::ArithmeticOverflow);
             return;
         };
-        state.remainders.insert(resource.clone(), next);
+        remainders.insert(resource.clone(), next);
         if amount != 0 {
             debits.push(ReservationLine {
                 endpoint: Endpoint::Slot(owner),
@@ -509,6 +523,8 @@ fn heal_source(world: &mut World, source: u32, repairer: &RepairerDef) {
                     .ok_or(RejectReason::ArithmeticOverflow)?,
             );
         }
+        let mut state = tx.repair_state(source);
+        state.remainders = remainders;
         if let Some(action) = state.action.as_mut() {
             action.elapsed = next_elapsed;
             action.state = RepairStatus::Working;
@@ -611,11 +627,14 @@ pub(crate) fn run_repair(world: &mut World) {
             }
             continue;
         }
-        let explicit = orders.is_some_and(|orders| {
-            orders.repair_stopped || orders.current.is_some() || !orders.queue.is_empty()
-        }) || world
-            .get_resource::<crate::orders::PendingMovementOrders>()
-            .is_some_and(|pending| pending.pending_member_counts.contains_key(&source))
+        let old = source_state(world, source).action;
+        let explicit = (old.is_none() && world.get::<MoveTarget>(entity).is_some())
+            || orders.is_some_and(|orders| {
+                orders.repair_stopped || orders.current.is_some() || !orders.queue.is_empty()
+            })
+            || world
+                .get_resource::<crate::orders::PendingMovementOrders>()
+                .is_some_and(|pending| pending.pending_member_counts.contains_key(&source))
             || world
                 .get_resource::<super::EconomyOrders>()
                 .and_then(|orders| orders.0.get(&source))
@@ -631,7 +650,6 @@ pub(crate) fn run_repair(world: &mut World) {
             }
             continue;
         }
-        let old = source_state(world, source).action;
         let target = if let Some(action) = old.as_ref() {
             if !action.automatic
                 || !eligible_target(world, source, action.target, &repairer)
@@ -707,5 +725,509 @@ pub(crate) fn run_repair(world: &mut World) {
             continue;
         }
         heal_source(world, *source, repairer);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::ledger::{Account, EconomyLedger};
+    use super::*;
+    use turts_mod_api::{
+        ContentCatalog, Footprint, HealthDef, MovementDef, RepairCost, ResourceDef, ResourceKind,
+        SlotRelation, TargetFilter,
+    };
+    fn id(local: &str) -> ContentId {
+        ContentId::parse(&format!("test:{local}")).unwrap()
+    }
+    fn unit(local: &str) -> ResolvedUnit {
+        ResolvedUnit {
+            id: id(local),
+            name: local.into(),
+            footprint: Footprint::Circle { radius: 0.5 },
+            acquire: None,
+            armour: None,
+            movement: None,
+            inventory: None,
+            gatherer: None,
+            drop_off: None,
+            producer: None,
+            constructor: None,
+            repairer: None,
+            placement: None,
+            build_area: None,
+            output_inventory: None,
+            extractor: None,
+            conveyor: None,
+            inserter: None,
+            machine: None,
+            research: None,
+            health: None,
+            weapon: None,
+            removal: None,
+            provides: vec![],
+            consumes: vec![],
+            income: None,
+        }
+    }
+    fn app(placements: &[(u32, &str, u8, Vec2)], funds: u64) -> bevy_app::App {
+        let mut source = unit("repairer");
+        source.movement = Some(MovementDef { speed: 4.0 });
+        source.repairer = Some(RepairerDef {
+            rate_per_second: 20,
+            reach: 3.0,
+            cost: vec![RepairCost {
+                resource: id("credits").to_string(),
+                amount: 1,
+                per_health: 1,
+            }],
+            targets: TargetFilter {
+                slots: SlotRelation::Same,
+            },
+            classes: vec![],
+            auto_range: Some(12.0),
+        });
+        let mut target = unit("target");
+        target.health = Some(HealthDef { max: 100 });
+        let catalog = ContentCatalog {
+            combat: None,
+            resources: [(
+                id("credits"),
+                ResourceDef {
+                    id: "credits".into(),
+                    name: "credits".into(),
+                    unit_name: String::new(),
+                    kind: ResourceKind::Balance,
+                },
+            )]
+            .into(),
+            units: [source, target]
+                .into_iter()
+                .map(|unit| (unit.id.clone(), unit))
+                .collect(),
+            nodes: BTreeMap::new(),
+            production: BTreeMap::new(),
+            recipes: BTreeMap::new(),
+            technologies: BTreeMap::new(),
+            orders: BTreeMap::new(),
+            order_queue_depths: BTreeMap::new(),
+            source_files: BTreeMap::new(),
+        };
+        let types = UnitTypes::from_catalog(&catalog, &UnitTypes::default()).unwrap();
+        let mut app = crate::headless_app(20);
+        let world = app.world_mut();
+        let mut healths = Healths::default();
+        for &(unit_id, kind, owner, position) in placements {
+            let type_id = types.find(&id(kind).to_string()).unwrap();
+            world.spawn((
+                UnitId(unit_id),
+                UnitType(type_id),
+                Owner(crate::SlotId(owner)),
+                Position(position),
+                UnitOrders::default(),
+            ));
+            if kind == "target" {
+                healths.0.insert(unit_id, 10);
+            }
+        }
+        world.insert_resource(types);
+        world.insert_resource(InstalledCatalog(catalog));
+        world.insert_resource(healths);
+        world.insert_resource(ConstructionState::default());
+        world.insert_resource(crate::world::MapBounds {
+            size: Vec2::splat(64.0),
+        });
+        let mut ledger = EconomyLedger::default();
+        ledger.balances.insert(
+            (0, id("credits")),
+            Account {
+                on_hand: funds,
+                reserved: 0,
+            },
+        );
+        world.insert_resource(ledger);
+        app
+    }
+    fn hp(app: &bevy_app::App, target: u32) -> u64 {
+        app.world().resource::<Healths>().0[&target]
+    }
+    fn funds(app: &bevy_app::App) -> u64 {
+        app.world().resource::<EconomyLedger>().balances[&(0, id("credits"))].on_hand
+    }
+
+    #[test]
+    fn physical_source_priority_survives_reversed_id_order() {
+        for (left, right) in [(1, 2), (2, 1)] {
+            let mut app = app(
+                &[
+                    (left, "repairer", 0, Vec2::new(8.0, 8.0)),
+                    (right, "repairer", 0, Vec2::new(10.0, 6.0)),
+                    (3, "target", 0, Vec2::new(10.0, 8.0)),
+                ],
+                1,
+            );
+            run_repair(app.world_mut());
+            assert_eq!(hp(&app, 3), 11);
+            assert_eq!(funds(&app), 0);
+            let rows = status_rows(app.world());
+            assert_eq!(
+                rows.iter().find(|row| row.repairer == left).unwrap().state,
+                RepairStatus::Working
+            );
+            assert_eq!(
+                rows.iter().find(|row| row.repairer == right).unwrap().state,
+                RepairStatus::WaitingForFunds(id("credits"))
+            );
+        }
+    }
+
+    #[test]
+    fn coincident_target_tie_does_not_acquire_by_identity() {
+        let mut app = app(
+            &[
+                (1, "repairer", 0, Vec2::new(8.0, 8.0)),
+                (3, "target", 0, Vec2::new(10.0, 8.0)),
+                (4, "target", 0, Vec2::new(10.0, 8.0)),
+            ],
+            100,
+        );
+        run_repair(app.world_mut());
+        assert!(!active_action(app.world(), 1));
+        assert!(status_rows(app.world()).is_empty());
+        assert_eq!((hp(&app, 3), hp(&app, 4), funds(&app)), (10, 10, 100));
+    }
+
+    #[test]
+    fn coincident_sources_hold_without_payment_and_project_working() {
+        let mut app = app(
+            &[
+                (1, "repairer", 0, Vec2::new(8.0, 8.0)),
+                (2, "repairer", 0, Vec2::new(8.0, 8.0)),
+                (3, "target", 0, Vec2::new(10.0, 8.0)),
+            ],
+            100,
+        );
+        run_repair(app.world_mut());
+        assert_eq!((hp(&app, 3), funds(&app)), (10, 100));
+        assert!(
+            status_rows(app.world())
+                .iter()
+                .all(|row| row.state == RepairStatus::Working)
+        );
+        let rows = audit_rows(app.world());
+        assert_eq!(rows.len(), 2);
+        assert!(rows.iter().all(
+            |row| row.hold.as_ref().unwrap().reason == RejectReason::Blocked
+                && row.action.as_ref().unwrap().elapsed == 0
+        ));
+    }
+
+    #[test]
+    fn arithmetic_hold_does_not_mutate_health_clock_or_balance() {
+        let mut app = app(
+            &[
+                (1, "repairer", 0, Vec2::new(8.0, 8.0)),
+                (3, "target", 0, Vec2::new(10.0, 8.0)),
+            ],
+            100,
+        );
+        let state = RepairUnitState {
+            action: Some(RepairAction {
+                target: 3,
+                automatic: true,
+                elapsed: u64::MAX,
+                state: RepairStatus::WaitingForFunds(id("credits")),
+            }),
+            ..Default::default()
+        };
+        let mut runtime = RepairRuntime::default();
+        runtime.units.insert(1, state);
+        app.world_mut().insert_resource(runtime);
+        run_repair(app.world_mut());
+        assert_eq!((hp(&app, 3), funds(&app)), (10, 100));
+        let rows = audit_rows(app.world());
+        assert_eq!(rows[0].action.as_ref().unwrap().elapsed, u64::MAX);
+        assert_eq!(
+            rows[0].hold.as_ref().unwrap().reason,
+            RejectReason::ArithmeticOverflow
+        );
+        assert_eq!(status_rows(app.world())[0].state, RepairStatus::Working);
+    }
+
+    #[test]
+    fn manual_validation_rejects_foreign_full_dead_missing_and_unfinished_targets() {
+        let mut app = app(
+            &[
+                (1, "repairer", 0, Vec2::new(8.0, 8.0)),
+                (3, "target", 0, Vec2::new(10.0, 8.0)),
+                (4, "target", 1, Vec2::new(20.0, 8.0)),
+            ],
+            100,
+        );
+        assert!(validate_order(app.world(), 1, 3).is_ok());
+        assert_eq!(
+            validate_order(app.world(), 1, 4),
+            Err(RejectReason::TargetInvalid)
+        );
+        assert_eq!(
+            validate_order(app.world(), 1, 999),
+            Err(RejectReason::TargetGone)
+        );
+        app.world_mut().resource_mut::<Healths>().0.insert(3, 100);
+        assert_eq!(
+            validate_order(app.world(), 1, 3),
+            Err(RejectReason::TargetInvalid)
+        );
+        app.world_mut().resource_mut::<Healths>().0.insert(3, 0);
+        assert_eq!(
+            validate_order(app.world(), 1, 3),
+            Err(RejectReason::TargetInvalid)
+        );
+        app.world_mut().resource_mut::<Healths>().0.insert(3, 10);
+        let site = serde_json::from_value(serde_json::json!({ "constructor": 1, "owner_slot": 0, "recipe": "test:site", "job": 1, "done": 0, "total": 10, "charged": [] })).unwrap();
+        app.world_mut()
+            .resource_mut::<ConstructionState>()
+            .sites
+            .insert(3, site);
+        assert_eq!(
+            validate_order(app.world(), 1, 3),
+            Err(RejectReason::TargetInvalid)
+        );
+    }
+
+    #[test]
+    fn replacing_an_action_preserves_debt_and_removal_clears_only_its_sources() {
+        let mut app = app(
+            &[
+                (1, "repairer", 0, Vec2::new(8.0, 8.0)),
+                (3, "target", 0, Vec2::new(10.0, 8.0)),
+            ],
+            100,
+        );
+        app.world_mut()
+            .resource_mut::<InstalledCatalog>()
+            .0
+            .units
+            .get_mut(&id("repairer"))
+            .unwrap()
+            .repairer
+            .as_mut()
+            .unwrap()
+            .cost[0]
+            .per_health = 4;
+        run_repair(app.world_mut());
+        app.world_mut()
+            .resource_mut::<RepairRuntime>()
+            .units
+            .get_mut(&1)
+            .unwrap()
+            .remainders
+            .insert(id("credits"), 3);
+        order_changed(app.world_mut(), 1);
+        let state = source_state(app.world(), 1);
+        assert!(state.action.is_none());
+        assert_eq!(state.remainders[&id("credits")], 3);
+        begin_action(app.world_mut(), 1, 3, true, RepairStatus::Working).unwrap();
+        remove_unit(app.world_mut(), 3);
+        assert!(!active_action(app.world(), 1));
+        assert_eq!(source_state(app.world(), 1).remainders[&id("credits")], 3);
+        remove_unit(app.world_mut(), 1);
+        assert!(audit_rows(app.world()).is_empty());
+    }
+    #[test]
+    fn authored_armour_class_filter_is_exact() {
+        let mut app = app(
+            &[
+                (1, "repairer", 0, Vec2::new(8.0, 8.0)),
+                (3, "target", 0, Vec2::new(10.0, 8.0)),
+            ],
+            100,
+        );
+        app.world_mut()
+            .resource_mut::<InstalledCatalog>()
+            .0
+            .units
+            .get_mut(&id("repairer"))
+            .unwrap()
+            .repairer
+            .as_mut()
+            .unwrap()
+            .classes = vec![id("metal").to_string()];
+        assert_eq!(
+            validate_order(app.world(), 1, 3),
+            Err(RejectReason::TargetInvalid)
+        );
+        app.world_mut()
+            .resource_mut::<InstalledCatalog>()
+            .0
+            .units
+            .get_mut(&id("target"))
+            .unwrap()
+            .armour = Some(turts_mod_api::ArmourDef {
+            class: id("metal").to_string(),
+            flat: 0,
+            tags: vec![],
+            points: 0,
+            flat_by_type: vec![],
+        });
+        assert!(validate_order(app.world(), 1, 3).is_ok());
+        app.world_mut()
+            .resource_mut::<InstalledCatalog>()
+            .0
+            .units
+            .get_mut(&id("repairer"))
+            .unwrap()
+            .repairer
+            .as_mut()
+            .unwrap()
+            .classes = vec![id("wood").to_string()];
+        assert_eq!(
+            validate_order(app.world(), 1, 3),
+            Err(RejectReason::TargetInvalid)
+        );
+    }
+
+    #[test]
+    fn real_supply_shortage_does_not_slow_repair() {
+        use turts_mod_api::{
+            ResolvedProducer, ResolvedWeapon, ShortEffect, SupplyAmount, SupplyCounts, SupplyScope,
+            WeaponRangeMode, WhenShort,
+        };
+        let mut app = app(
+            &[
+                (1, "repairer", 0, Vec2::new(8.0, 8.0)),
+                (3, "target", 0, Vec2::new(10.0, 8.0)),
+            ],
+            100,
+        );
+        {
+            let mut catalog = app.world_mut().resource_mut::<InstalledCatalog>();
+            catalog.0.resources.insert(
+                id("power"),
+                ResourceDef {
+                    id: "power".into(),
+                    name: "power".into(),
+                    unit_name: String::new(),
+                    kind: ResourceKind::Supply {
+                        scope: SupplyScope::Slot,
+                        counts: SupplyCounts::Completed,
+                    },
+                },
+            );
+            let source = catalog.0.units.get_mut(&id("repairer")).unwrap();
+            source.consumes = vec![SupplyAmount {
+                resource: id("power").to_string(),
+                amount: 1,
+            }];
+            source.producer = Some(ResolvedProducer {
+                recipes: vec![],
+                queue_capacity: 1,
+                spawn_offsets: vec![],
+                when_short: vec![WhenShort {
+                    resource: id("power").to_string(),
+                    effect: ShortEffect::Rate(turts_mod_api::Ratio {
+                        numerator: 1,
+                        denominator: 2,
+                    }),
+                }],
+            });
+            source.weapon = Some(ResolvedWeapon {
+                damage_type: None,
+                bonus: vec![],
+                range: 10.0,
+                range_mode: WeaponRangeMode::Centre,
+                cooldown_ms: 1000,
+                damage: 1,
+                ammo: None,
+                targets: TargetFilter {
+                    slots: SlotRelation::Other,
+                },
+                when_short: vec![WhenShort {
+                    resource: id("power").to_string(),
+                    effect: ShortEffect::Disable,
+                }],
+            });
+        }
+        super::super::power::initialize(app.world_mut()).unwrap();
+        assert!(!super::super::power::weapon_enabled(app.world(), 1));
+        assert_eq!(
+            super::super::power::rate_factor(app.world(), 1),
+            turts_rules::Ratio::new(1, 2).unwrap()
+        );
+        for _ in 0..5 {
+            run_repair(app.world_mut());
+        }
+        assert_eq!(hp(&app, 3), 15);
+        assert_eq!(funds(&app), 95);
+    }
+
+    #[test]
+    fn last_repair_tick_suppresses_auto_fire_and_replacement_restores_it() {
+        let mut app = app(
+            &[
+                (1, "repairer", 0, Vec2::new(8.0, 8.0)),
+                (3, "target", 0, Vec2::new(10.0, 8.0)),
+                (4, "target", 1, Vec2::new(12.0, 8.0)),
+            ],
+            100,
+        );
+        app.world_mut().resource_mut::<Healths>().0.insert(3, 99);
+        app.world_mut()
+            .resource_mut::<InstalledCatalog>()
+            .0
+            .units
+            .get_mut(&id("repairer"))
+            .unwrap()
+            .weapon = Some(turts_mod_api::ResolvedWeapon {
+            damage_type: None,
+            bonus: vec![],
+            range: 10.0,
+            range_mode: turts_mod_api::WeaponRangeMode::Centre,
+            cooldown_ms: 1,
+            damage: 1,
+            ammo: None,
+            targets: TargetFilter {
+                slots: SlotRelation::Other,
+            },
+            when_short: vec![],
+        });
+        let mut weapons = super::super::combat::Weapons::default();
+        weapons.0.insert(1, Default::default());
+        app.world_mut().insert_resource(weapons);
+        run_repair(app.world_mut());
+        assert_eq!(hp(&app, 3), 100);
+        assert!(
+            status_rows(app.world()).is_empty(),
+            "full target clears owner status immediately"
+        );
+        super::super::combat::run_combat(app.world_mut());
+        assert_eq!(
+            hp(&app, 4),
+            10,
+            "no automatic shot on the final healing tick"
+        );
+        order_changed(app.world_mut(), 1);
+        super::super::combat::run_combat(app.world_mut());
+        assert_eq!(hp(&app, 4), 9, "replacement clears repair suppression");
+    }
+    #[test]
+    fn a_preexisting_move_target_suppresses_idle_auto_repair() {
+        let mut app = app(
+            &[
+                (1, "repairer", 0, Vec2::new(8.0, 8.0)),
+                (3, "target", 0, Vec2::new(10.0, 8.0)),
+            ],
+            100,
+        );
+        let source = unit_entity(app.world(), 1).unwrap();
+        app.world_mut()
+            .entity_mut(source)
+            .insert(MoveTarget(Vec2::new(4.0, 12.0)));
+        run_repair(app.world_mut());
+        assert_eq!(hp(&app, 3), 10);
+        assert!(!active_action(app.world(), 1));
+        assert_eq!(
+            app.world().get::<MoveTarget>(source).unwrap().0,
+            Vec2::new(4.0, 12.0)
+        );
     }
 }

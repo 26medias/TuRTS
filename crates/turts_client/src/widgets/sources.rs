@@ -683,6 +683,9 @@ fn production_queue(context: SourceContext<'_>) -> SourceData {
                 job_name(context, &job.recipe)
             };
             item.set(ItemField::Name, name);
+            if let Some(record) = context.replica.job_progress(selected, job.id.0) {
+                hud::set_work_state(&mut item, record, context);
+            }
             item.set(
                 ItemField::Progress,
                 if job.duration_ticks == 0 {
@@ -745,6 +748,7 @@ fn capability_matches(order: &turts_mod_api::OrderDef, unit: &turts_mod_api::Res
                 || unit.machine.is_some()
                 || unit.research.is_some()
                 || unit.producer.is_some()
+                || unit.constructor.is_some()
                 || unit.weapon.is_some()
         }
         Behaviour::Stop | Behaviour::Hold => unit.movement.is_some() || unit.weapon.is_some(),

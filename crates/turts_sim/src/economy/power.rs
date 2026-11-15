@@ -121,9 +121,10 @@ pub(crate) fn has_operating_resources(catalog: &ContentCatalog) -> bool {
         || catalog.units.values().any(|unit| {
             !unit.provides.is_empty() || !unit.consumes.is_empty() || unit.income.is_some()
         })
-        || catalog.productions.values().any(|production| {
-            production.payment == turts_mod_api::PaymentPolicy::ChargeOverTime
-        })
+        || catalog
+            .productions
+            .values()
+            .any(|production| production.payment == turts_mod_api::PaymentPolicy::ChargeOverTime)
 }
 
 impl OperatingResources {

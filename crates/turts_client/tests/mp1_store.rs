@@ -383,25 +383,20 @@ fn a_job_record_for_a_job_that_no_queue_holds_is_dropped() {
     assert!(replica.job_progress(OWN, 44).is_some());
 }
 
-/// A job that waits for funds, and a held record, keep their value (6.4, E21) whatever `per_tick`
-/// says.
+/// Non-advancing states freeze their counters even if a malformed rate is nonzero.
 #[test]
-fn a_waiting_or_held_job_keeps_its_value() {
+fn non_advancing_job_states_keep_their_value() {
     let _guard = serial();
     let now = Instant::now();
-    for stalled in [
-        |record: &mut RateRecord| {
-            record.state = RecordState::WaitingForFunds("base:credits".into())
-        },
-        |record: &mut RateRecord| {
-            record.held = true;
-            record.held_since_tick = 10;
-        },
+    for state in [
+        RecordState::WaitingForFunds("base:credits".into()),
+        RecordState::Held,
+        RecordState::OutputBlocked,
     ] {
         let mut replica = replica();
         let mut first = snapshot(10);
         first.records.jobs[0].progress = rate(10, 100, 1, 10);
-        stalled(&mut first.records.jobs[0].progress);
+        first.records.jobs[0].progress.state = state.clone();
         applied(&mut replica, &first);
         for tick in 11..=20 {
             assert_eq!(
@@ -409,11 +404,46 @@ fn a_waiting_or_held_job_keeps_its_value() {
                 DeltaOutcome::Applied
             );
         }
+        assert_eq!(replica.job_elapsed_ticks(OWN, 44), 10, "state {state:?}");
+    }
+}
+
+/// The display hold survives affordable work. Actual Running/Slowed rates still advance.
+#[test]
+fn active_held_records_predict_exact_fractional_job_and_site_progress() {
+    let _guard = serial();
+    for (state, per_tick, expected_raw, expected_ticks) in [
+        (RecordState::Running, 6, 120, 20),
+        (RecordState::Slowed, 3, 90, 15),
+    ] {
+        let mut replica = replica();
+        let mut first = snapshot(10);
+        let mut progress = rate(60, 600, per_tick, 10);
+        progress.state = state.clone();
+        progress.held = true;
+        progress.held_since_tick = 10;
+        first.records.jobs[0].progress = progress.clone();
+        first.records.sites[0].progress = progress;
+        applied(&mut replica, &first);
+        for tick in 11..=20 {
+            assert_eq!(
+                replica.apply_delta(&delta(tick), Instant::now()),
+                DeltaOutcome::Applied
+            );
+        }
+        assert_eq!(replica.job_value(OWN, 44), Some(expected_raw), "{state:?}");
         assert_eq!(
             replica.job_elapsed_ticks(OWN, 44),
-            10,
-            "a waiting or held job keeps its value"
+            expected_ticks,
+            "{state:?}"
         );
+        assert_eq!(replica.site_value(SITE), Some(expected_raw), "{state:?}");
+        assert_eq!(
+            replica.site_paid(SITE, 120),
+            Some(expected_raw / 5),
+            "display hold must not freeze the paid progress"
+        );
+        assert!(replica.job_progress(OWN, 44).unwrap().held);
     }
 }
 

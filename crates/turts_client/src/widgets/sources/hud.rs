@@ -34,6 +34,7 @@ pub(in crate::widgets) fn source_sites(context: SourceContext<'_>) -> SourceData
             row.set(ItemField::Name, name);
             row.set(ItemField::Action, WidgetAction::Select { unit: id });
             row.set(ItemField::Enabled, true);
+            set_work_state(&mut row, record, context);
             row.set(
                 ItemField::Progress,
                 done as f64 / record.total.max(1) as f64,
@@ -87,4 +88,35 @@ pub(in crate::widgets) fn predicate_item_has(
     _context: &SourceContext<'_>,
 ) -> bool {
     false
+}
+
+/// The display hold is separate from the actual advancing rate.
+pub(in crate::widgets) fn set_work_state(
+    row: &mut ItemData,
+    record: &turts_net_protocol::RateRecord,
+    context: SourceContext<'_>,
+) {
+    use turts_net_protocol::RecordState;
+    let (key, fallback, resource) = match &record.state {
+        RecordState::WaitingForFunds(resource) => {
+            ("waiting_for_funds", "Waiting for funds", Some(resource))
+        }
+        RecordState::Slowed => ("slowed", "Slowed", None),
+        RecordState::OutputBlocked => ("output_blocked", "Exit blocked", None),
+        RecordState::Held => ("held", "Held", None),
+        RecordState::Running if record.held => ("held", "Held", None),
+        RecordState::Running => return,
+    };
+    let label = context
+        .interface
+        .and_then(|interface| interface.states.get(key))
+        .map_or(fallback, String::as_str);
+    let label = match resource {
+        Some(resource) => format!(
+            "{label}: {}",
+            super::resource_name(resource, context.content)
+        ),
+        None => label.to_owned(),
+    };
+    row.set(ItemField::State, label);
 }
