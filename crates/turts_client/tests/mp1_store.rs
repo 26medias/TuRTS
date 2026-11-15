@@ -1742,6 +1742,9 @@ fn site_refund_uses_its_authoritative_recipe_and_rejects_unknown_or_wrong_output
         Some(alternate.to_string().as_str())
     );
     for production in ["base:missing".to_owned(), wrong.to_string()] {
+        let mut replica = Replica::new(20);
+        replica.set_context(ReplicaContext::new(content.clone(), 0));
+        applied(&mut replica, &first);
         let mut bad = first.clone();
         bad.tick = 20;
         bad.records.sites[0].production = production.clone();
