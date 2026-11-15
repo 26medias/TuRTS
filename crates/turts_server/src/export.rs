@@ -102,6 +102,7 @@ fn snapshot_projected_reusing(
         rows.windows(2)
             .all(|pair| pair[0].unit_id.0 < pair[1].unit_id.0)
     });
+    let mut reuse_cursor = 0;
     wire::Snapshot {
         tick: view.tick,
         units: view
@@ -113,9 +114,16 @@ fn snapshot_projected_reusing(
                     reuse
                         .as_deref_mut()
                         .and_then(|rows| {
-                            let index = rows
-                                .binary_search_by_key(&unit.unit_id, |row| row.unit_id.0)
-                                .ok()?;
+                            let index = if rows
+                                .get(reuse_cursor)
+                                .is_some_and(|row| row.unit_id.0 == unit.unit_id)
+                            {
+                                reuse_cursor
+                            } else {
+                                rows.binary_search_by_key(&unit.unit_id, |row| row.unit_id.0)
+                                    .ok()?
+                            };
+                            reuse_cursor = index + 1;
                             (rows[index].content_id == unit.content_id)
                                 .then(|| std::mem::take(&mut rows[index].content_id))
                         })
