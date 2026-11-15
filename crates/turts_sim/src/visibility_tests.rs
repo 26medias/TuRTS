@@ -226,6 +226,12 @@ fn retention_discards_a_whole_oldest_tick_group_and_the_flag_stays_set() {
 }
 
 fn scene(armed: bool) -> bevy_app::App {
+    scene_with(armed, |_, _| {})
+}
+fn scene_with(
+    armed: bool,
+    edit: impl FnOnce(&mut turts_mod_api::ContentCatalog, &mut turts_mod_api::MapDef),
+) -> bevy_app::App {
     let bytes =
         pack_dir(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../mods/cedar"))
             .unwrap();
@@ -277,6 +283,7 @@ fn scene(armed: bool) -> bevy_app::App {
     ];
     map.nodes.clear();
     map.belts.clear();
+    edit(&mut catalog, &mut map);
     let mut app = headless_app(20);
     let staged = stage_package(app.world(), catalog, SourceDef { file, value: map }, 20).unwrap();
     install_package(app.world_mut(), staged);
@@ -385,4 +392,141 @@ fn ordinary_hidden_attack_and_auto_fire_do_not_read_a_hidden_target() {
     move_to(&mut app, 0, 1, 22.0, 1000);
     run(&mut app, 160);
     assert!(app.world().resource::<crate::economy::combat::Healths>().0[&2] < 100);
+}
+
+#[test]
+fn sight_without_health_and_manually_disabled_sight_sources_remain_valid() {
+    let no_health = scene_with(false, |catalog, _| {
+        catalog.units.get_mut(&id("worker")).unwrap().health = None;
+    });
+    assert!(
+        basis(no_health.world(), ObservationPhase::Completed)
+            .unwrap()
+            .point_observed(0, p(9.0, 8.0))
+    );
+    let mut disabled = scene(true);
+    move_to(&mut disabled, 0, 1, 22.0, 1);
+    run(&mut disabled, 160);
+    apply_command(
+        disabled.world_mut(),
+        &Command {
+            slot: SlotId(0),
+            seq: 2,
+            kind: CommandKind::SetEnabled {
+                unit_id: 1,
+                enabled: false,
+            },
+        },
+    )
+    .outcome
+    .unwrap();
+    run(&mut disabled, 5);
+    assert!(
+        basis(disabled.world(), ObservationPhase::Completed)
+            .unwrap()
+            .unit_permitted(0, 2)
+    );
+}
+
+#[test]
+fn final_source_death_keeps_authorized_shot_handles_and_last_seen_memory() {
+    let mut app = scene_with(true, |catalog, map| {
+        map.placements[0].pos = p(22.0, 8.0);
+        let enemy = catalog.units.get_mut(&id("other")).unwrap();
+        enemy.vision = Some(VisionDef { radius: 40.0 });
+        enemy.weapon = Some(ResolvedWeapon {
+            damage_type: None,
+            bonus: vec![],
+            range: 30.0,
+            range_mode: WeaponRangeMode::Centre,
+            cooldown_ms: 100,
+            damage: 200,
+            ammo: None,
+            targets: TargetFilter {
+                slots: turts_mod_api::SlotRelation::Enemy,
+            },
+            when_short: vec![],
+        });
+    });
+    run(&mut app, 1);
+    assert!(
+        crate::unit_entity(app.world(), 1).is_none(),
+        "ordinary enemy fire killed the sight source"
+    );
+    assert_eq!(
+        app.world().resource::<crate::economy::combat::Healths>().0[&2],
+        99,
+        "the physically earlier source fired before its death"
+    );
+    let completed = basis(app.world(), ObservationPhase::Completed).unwrap();
+    assert!(!completed.unit_permitted(0, 2));
+    assert!(
+        completed
+            .knowledge(0)
+            .unwrap()
+            .observed
+            .iter()
+            .all(|byte| *byte == 0)
+    );
+    let memory = completed.knowledge(0).unwrap();
+    assert_eq!(memory.remembered_units.len(), 1);
+    assert_eq!(
+        (
+            memory.remembered_units[0].unit,
+            memory.remembered_units[0].last_seen_tick
+        ),
+        (2, 1)
+    );
+    let witnesses = event_units(app.world(), 0);
+    assert!(witnesses.iter().any(|row| row.unit.unit == 1));
+    assert!(witnesses.iter().any(|row| row.unit.unit == 2));
+    assert!(
+        witnesses
+            .iter()
+            .all(|row| row.basis.phase == ObservationPhase::Tactical)
+    );
+}
+
+fn attack(app: &mut bevy_app::App, queue: crate::QueueMode, seq: u32) {
+    use crate::orders::{OrderCommand, OrderTargetSim};
+    apply_command(
+        app.world_mut(),
+        &Command {
+            slot: SlotId(0),
+            seq,
+            kind: CommandKind::Order(Box::new(OrderCommand {
+                order: id("attack"),
+                behaviour: turts_mod_api::Behaviour::Attack,
+                target_kind: turts_mod_api::TargetKind::Unit,
+                policy: None,
+                units: vec![1],
+                target: OrderTargetSim::Unit(2),
+                queue,
+                group: 0,
+                allowed_units: vec![],
+                queue_depth: 16,
+            })),
+        },
+    )
+    .outcome
+    .unwrap();
+}
+#[test]
+fn explicit_attack_finishes_when_the_target_leaves_sight_without_a_death_claim() {
+    let mut app = scene_with(true, |_, map| map.placements[1].pos = p(10.0, 8.0));
+    attack(&mut app, crate::QueueMode::Replace, 1);
+    move_to(&mut app, 1, 2, 40.0, 1);
+    run(&mut app, 240);
+    let source = crate::unit_entity(app.world(), 1).unwrap();
+    let orders = app.world().get::<crate::UnitOrders>(source).unwrap();
+    assert!(orders.current.is_none());
+    assert!(
+        orders.last_failure.is_none(),
+        "loss of sight does not assert TargetGone"
+    );
+    assert_eq!(
+        app.world().get::<crate::Position>(source).unwrap().0,
+        Vec2::new(8.0, 8.0)
+    );
+    assert!(crate::unit_entity(app.world(), 2).is_some());
 }
