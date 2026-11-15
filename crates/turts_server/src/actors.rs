@@ -6,6 +6,7 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use bevy::prelude::*;
+use turts_audit::ActorLogRecord;
 use turts_bot::{ActorResult, BotActor, EmittedCommand, ReconcileBatch, RequestKey, Watermark};
 use turts_net_protocol::CommandRejectReason;
 use turts_sim::{SlotId, Slots};
@@ -50,6 +51,9 @@ impl BotActors {
 /// Validate the complete installation before changing any permanent slot claim.
 /// The host validates profiles and creates all factories before calling this port.
 pub(crate) fn install_bot_actors(world: &mut World, actors: &[BotActor]) -> Result<(), String> {
+    if actors.is_empty() {
+        return Ok(());
+    }
     let current = world.resource::<Slots>();
     let mut claims = Slots::new(current.count());
     for (slot, owner) in current.owners().into_iter().enumerate() {
@@ -74,7 +78,14 @@ pub(crate) fn install_bot_actors(world: &mut World, actors: &[BotActor]) -> Resu
     }
     world.insert_resource(claims);
     world.init_resource::<BotActors>();
+    world.init_resource::<crate::session::ReservedParticipantIds>();
     world.init_resource::<turts_sim::receipts::CommandWorkReceipts>();
+    for actor in actors {
+        world
+            .resource_mut::<crate::session::ReservedParticipantIds>()
+            .0
+            .insert(u64::MAX - u64::from(actor.slot));
+    }
     let mut book = world.resource_mut::<BotActors>();
     for actor in actors {
         book.entries.insert(
@@ -223,4 +234,58 @@ pub(crate) fn human_present(world: &World) -> bool {
     world
         .iter_entities()
         .any(|entity| entity.contains::<crate::session::Session>())
+}
+
+#[derive(Resource, Default)]
+struct ActorLogState {
+    installed: bool,
+    lifecycle_tick: Option<u32>,
+}
+
+/// The host publishes its locked installation once, before guards and submissions.
+pub(crate) fn record_installation(world: &mut World, record: ActorLogRecord) -> Result<(), String> {
+    if !matches!(&record, ActorLogRecord::Installation(_)) {
+        return Err("actor installation port requires an Installation record".into());
+    }
+    world.init_resource::<ActorLogState>();
+    if world.resource::<ActorLogState>().installed {
+        return Err("actor installation was already recorded".into());
+    }
+    if let Some(mut sink) = world.get_resource_mut::<crate::economylog::EconomyLogSink>() {
+        sink.write_actor(record);
+        if let Some(error) = &sink.error {
+            return Err(error.clone());
+        }
+    }
+    world.resource_mut::<ActorLogState>().installed = true;
+    Ok(())
+}
+
+/// Lifecycle is trusted runtime input. It is recorded before this tick's decisions.
+pub(crate) fn record_lifecycle(world: &mut World, record: ActorLogRecord) -> Result<(), String> {
+    let ActorLogRecord::Lifecycle { tick, .. } = &record else {
+        return Err("actor lifecycle port requires a Lifecycle record".into());
+    };
+    if *tick != world.resource::<turts_sim::Tick>().0 {
+        return Err("actor lifecycle does not name the current fixed tick".into());
+    }
+    let state = world
+        .get_resource::<ActorLogState>()
+        .ok_or("actor installation is missing")?;
+    if !state.installed
+        || state
+            .lifecycle_tick
+            .is_some_and(|previous| *tick <= previous)
+    {
+        return Err("actor lifecycle input is duplicate or precedes installation".into());
+    }
+    let tick = *tick;
+    if let Some(mut sink) = world.get_resource_mut::<crate::economylog::EconomyLogSink>() {
+        sink.write_actor(record);
+        if let Some(error) = &sink.error {
+            return Err(error.clone());
+        }
+    }
+    world.resource_mut::<ActorLogState>().lifecycle_tick = Some(tick);
+    Ok(())
 }

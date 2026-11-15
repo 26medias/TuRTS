@@ -45,6 +45,10 @@ pub struct Session {
     pub player_id: u64,
 }
 
+/// Internal participants have no transport session and cannot be claimed through Hello.
+#[derive(Resource, Default)]
+pub(crate) struct ReservedParticipantIds(pub(crate) BTreeSet<u64>);
+
 /// Whole tick_hz-scaled admission tokens, retained for the slot across reconnects.
 #[derive(Resource, Default)]
 pub struct RateLimitBuckets(BTreeMap<u8, ClientBuckets>);
@@ -248,7 +252,7 @@ pub fn receive_hello(
     match_id: Res<crate::stats::MatchId>,
     live_sessions: Query<&Session, Without<Disconnected>>,
     mut diagnostics: Option<ResMut<SessionDiagnostics>>,
-    computer: Option<Res<crate::computer::ComputerPlayer>>,
+    reserved: Option<Res<ReservedParticipantIds>>,
     mut lobby: Option<ResMut<crate::lobby::HostedLobby>>,
 ) {
     let mut accepted_in_batch = BTreeSet::new();
@@ -287,9 +291,9 @@ pub fn receive_hello(
                 continue;
             }
 
-            let has_live_session = computer
+            let has_live_session = reserved
                 .as_ref()
-                .is_some_and(|bot| bot.player_id == hello.player_id)
+                .is_some_and(|participants| participants.0.contains(&hello.player_id))
                 || live_sessions
                     .iter()
                     .any(|session| session.player_id == hello.player_id);
