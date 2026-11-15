@@ -754,7 +754,10 @@ mod tests {
 
     #[test]
     fn terrain_workload_and_maximum_grid_obey_the_existing_decode_memory_cap() {
-        for (width, expected) in [(128u32, Ok(())), (1024, Err(StateTransactionError::MemoryLimit))] {
+        for (width, expected) in [
+            (128u32, Ok(())),
+            (1024, Err(StateTransactionError::MemoryLimit)),
+        ] {
             let mut value = payload(1, false);
             let StateTransactionPayload::Snapshot { state, .. } = &mut value else {
                 unreachable!();
@@ -763,7 +766,10 @@ mod tests {
                 materials: vec!["fixture:surface".into()],
                 surfaces: (0..width * width)
                     .map(|index| crate::TerrainSurfaceRecord {
-                        cell: turts_mod_api::TerrainCell { x: index % width, y: index / width },
+                        cell: turts_mod_api::TerrainCell {
+                            x: index % width,
+                            y: index / width,
+                        },
                         elevation: 0,
                         material: Some(crate::TerrainMaterialId(0)),
                         provenance: Some(turts_mod_api::TerrainProvenance::Natural),
@@ -774,9 +780,17 @@ mod tests {
                 ..Default::default()
             });
             let bytes = postcard::to_allocvec(&value).unwrap();
-            let result = decode::payload(&bytes, (MAX_PENDING_STATE_BYTES as usize).saturating_sub(bytes.len()))
-                .map(|decoded| assert_eq!(decoded, value));
-            eprintln!("TERRAIN_DECODE_BOUNDARY width={width} cells={} encoded_bytes={} cap={} result={result:?}", width * width, bytes.len(), MAX_PENDING_STATE_BYTES);
+            let result = decode::payload(
+                &bytes,
+                (MAX_PENDING_STATE_BYTES as usize).saturating_sub(bytes.len()),
+            )
+            .map(|decoded| assert_eq!(decoded, value));
+            eprintln!(
+                "TERRAIN_DECODE_BOUNDARY width={width} cells={} encoded_bytes={} cap={} result={result:?}",
+                width * width,
+                bytes.len(),
+                MAX_PENDING_STATE_BYTES
+            );
             assert_eq!(result, expected);
         }
     }

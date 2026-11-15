@@ -25,8 +25,11 @@ fn balance(app: &App) -> u64 {
 fn fixture(policy: PaymentPolicy, mutate: impl FnOnce(&mut ContentCatalog, &mut MapDef)) -> App {
     let mut app = turts_sim::headless_app(20);
     let tower = ResolvedUnit {
-        terrain_class: None, terrain_cargo: None, terrain_foundation: None, terrain_tools: vec![],
-vision: None,
+        terrain_class: None,
+        terrain_cargo: None,
+        terrain_foundation: None,
+        terrain_tools: vec![],
+        vision: None,
         consumes: Vec::new(),
         income: None,
         provides: Vec::new(),

@@ -2,10 +2,11 @@
 
 Status: Anvil spec and plan approved by the same reviewer. Each needed one turn and one focused recheck.
 Current predecessor: SDK16 accepted and pushed on main at `52ac9b5e`; its tested launcher remains available.
-Common API and runtime libraries pass 67 tests; dedicated terrain validation passes six tests.
-The simulation checkpoint passes four real terrain tests and 413 library tests, with one ignored measurement.
-The client store scaffold passes four tests. Full client compatibility exposed a positional optional-field bug; the shared repair is committed and its affected tests are being rerun.
-Root owns server/protocol integration. The simulation owner continues navigation and claim/rollback tests. The client owner continues rendering, controls and content. The API owner completes the public tool-list source.
+Common API/runtime checks pass, including the four public tool-source cases. The simulation passes439 library tests, with one ignored measurement. The client passes422 library tests and10 package/visibility integration tests before the final anchor-current addition.
+Root integrates protocol10, private host seed/provenance, public bot terrain queries and the assembled server checks.
+The API owner wires checked terrain exports and atomic publication. The simulation owner completes independent terrain audit certification. The client owner updates anchor metadata and prepares the final browser checks.
+The independent reviewer has seven whole-feature acceptance tests prepared. The review starts after the assembled candidate compiles.
+The frozen TW7 workload driver is committed. Timing, final browser work and the complete gate campaign remain unrun.
 The rechecks closed material accounting, geological coverage, permitted previews, and shared terrain geometry.
 Independent M4 implementation may proceed in separate worktrees against the reviewed SDK16 source while its final acceptance runs.
 Do not publish M4 or switch its playable launcher before SDK16 is accepted. Merge the final SDK16 source before M4 acceptance.

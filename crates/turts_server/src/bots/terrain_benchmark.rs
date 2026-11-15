@@ -440,8 +440,15 @@ fn run(intervals: usize, acceptance: bool, warmup: usize) {
             // Inspect private depletion only after every timed service boundary.
             let audit = turts_sim::terrain::privileged_audit(harness.app.world()).unwrap();
             for worker in &workload.workers {
-                let column = audit.columns_state.iter().find(|row| row.cell == worker.cell).unwrap();
-                assert_eq!(column.natural_top, -1, "natural depletion persists through every cycle");
+                let column = audit
+                    .columns_state
+                    .iter()
+                    .find(|row| row.cell == worker.cell)
+                    .unwrap();
+                assert_eq!(
+                    column.natural_top, -1,
+                    "natural depletion persists through every cycle"
+                );
                 assert_eq!(column.surface, 0);
                 assert_eq!(column.revision, 2 * (warmup + intervals) as u64);
                 assert_eq!(column.placed.len(), 1);
