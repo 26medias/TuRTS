@@ -59,7 +59,7 @@ function luminance(image, point) {
             const profile=fs.mkdtempSync(path.join(os.tmpdir(),'turts-sv6-')); profiles.push(profile);
             const context=await chromium.launchPersistentContext(profile,{
                 executablePath,headless:false,viewport:{width:1280,height:720},env:{...process.env,DISPLAY:display},
-                args:['--alsa-output-device=null','--enable-unsafe-webgpu','--enable-features=Vulkan','--use-angle=vulkan','--disable-vulkan-surface','--no-first-run','--no-default-browser-check'],
+                args:['--disable-background-timer-throttling','--disable-renderer-backgrounding','--disable-backgrounding-occluded-windows','--alsa-output-device=null','--enable-unsafe-webgpu','--enable-features=Vulkan','--use-angle=vulkan','--disable-vulkan-surface','--no-first-run','--no-default-browser-check'],
             });
             contexts.push(context);
             const page=context.pages()[0];
@@ -105,11 +105,15 @@ function luminance(image, point) {
         await capture('01-observed',pages[0],a);
         const oldEnemy=a.debug.replicated_world.units.find(row=>row.unit_id===enemyId);
         await move(pages[0],scoutId,scenario.withdraw);
-        a=await wait(pages[0],s=>s.debug.knowledge.remembered_units.some(row=>row.unit===enemyId),'Withdraw did not produce stale sighting');
+        a=await wait(pages[0],s=>{
+            const unit=s.debug.replicated_world.units.find(row=>row.unit_id===scoutId);
+            return unit&&Math.hypot(unit.pos[0]-scenario.withdraw[0],unit.pos[1]-scenario.withdraw[1])<1
+                &&s.debug.knowledge.remembered_units.some(row=>row.unit===enemyId);
+        },'Withdraw did not finish with a stale sighting');
         const stale=a.debug.knowledge.remembered_units.find(row=>row.unit===enemyId);
         assert(!a.debug.units.some(row=>row.unit_id===enemyId),'Hidden live interpolation survived');
         assert(!a.debug.replicated_world.healths.some(row=>row.unit===enemyId),'Hidden health survived');
-        const hidden=await capture('02-remembered',pages[0],a);
+        let hidden=await capture('02-remembered',pages[0],a);
         await click(pages[0],project(a.scene,oldEnemy.pos));
         a=await read(pages[0]);
         assert(!a.debug.selection.includes(enemyId),'Stale sighting remained a command selection target');
@@ -117,6 +121,7 @@ function luminance(image, point) {
         b=await wait(pages[1],s=>{const u=s.debug.replicated_world.units.find(row=>row.unit_id===enemyId);return u&&Math.hypot(u.pos[0]-scenario.enemy_destination[0],u.pos[1]-scenario.enemy_destination[1])<1;},'Enemy did not move while hidden');
         a=await read(pages[0]);
         assert(JSON.stringify(a.debug.knowledge.remembered_units.find(row=>row.unit===enemyId))===JSON.stringify(stale),'Hidden movement changed stale public facts');
+        hidden=await capture('02-hidden-movement',pages[0],a);
         if(scenario.ground_samples){
             const levels={};
             for(const [name,point] of Object.entries(scenario.ground_samples)){
