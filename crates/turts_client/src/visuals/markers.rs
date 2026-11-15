@@ -24,6 +24,14 @@ pub(super) fn retained_marker(
             point: Pos { x, y },
             ..
         } => Vec2::new(*x, *y),
+        OrderTarget::TerrainWork(work) => {
+            let terrain = replica.terrain.as_ref()?;
+            let width = terrain.layout.cell_width();
+            Vec2::new(
+                (work.cells.min.x as f32 + work.cells.max.x as f32) * width * 0.5,
+                (work.cells.min.y as f32 + work.cells.max.y as f32) * width * 0.5,
+            )
+        }
         OrderTarget::None | OrderTarget::Job(_) | OrderTarget::Content(_) => return None,
     };
     Some(RetainedMarker {

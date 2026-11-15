@@ -758,6 +758,8 @@ fn capability_matches(order: &turts_mod_api::OrderDef, unit: &turts_mod_api::Res
             _ => false,
         },
         Behaviour::Gather => unit.gatherer.is_some(),
+        Behaviour::TerrainWork => !unit.terrain_tools.is_empty(),
+        Behaviour::UnloadCargo => unit.terrain_cargo.is_some(),
         Behaviour::SetRally => unit.producer.is_some(),
         Behaviour::Produce => unit.producer.is_some() || unit.research.is_some(),
         Behaviour::CancelProduction => match order.target {
@@ -1492,6 +1494,10 @@ mod tests {
 
     fn resolved_unit(id: &str, movement: Option<MovementDef>) -> turts_mod_api::ResolvedUnit {
         turts_mod_api::ResolvedUnit {
+            terrain_class: None,
+            terrain_cargo: None,
+            terrain_foundation: None,
+            terrain_tools: vec![],
             vision: None,
             consumes: Vec::new(),
             income: None,

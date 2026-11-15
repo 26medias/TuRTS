@@ -307,6 +307,9 @@ pub(crate) fn sync_client_notice(
                 turts_mod_api::TargetKind::Node => "click a resource",
                 turts_mod_api::TargetKind::Job => "choose a job",
                 turts_mod_api::TargetKind::Content => "choose an item",
+                turts_mod_api::TargetKind::TerrainDesignation => {
+                    "choose an observed reference level, then drag a work rectangle"
+                }
                 turts_mod_api::TargetKind::None => return None,
             };
             Some(format!("{}: {target}. Right-click cancels.", order.name))

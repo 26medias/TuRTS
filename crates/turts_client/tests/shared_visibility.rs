@@ -95,6 +95,7 @@ fn hidden_patch(stamp: &StateTransactionStamp) -> (StateTransactionStamp, StateT
         revealed_units: vec![],
         revealed_nodes: vec![],
         remembered_units: vec![RememberedUnit {
+            ground_elevation: None,
             unit: 1,
             content: ContentId::parse("visibility_probe:scout").unwrap(),
             owner: 1,

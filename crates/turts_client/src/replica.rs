@@ -255,6 +255,7 @@ struct AtomicPatch {
     health_append: Vec<(u32, HealthTraceEntry)>,
     health_forget: Vec<u32>,
     store: StoreStep,
+    terrain: Option<crate::terrain::store::Patch>,
 }
 
 /// A public health value observed in a coherent server tick. Equal values are omitted.
@@ -279,6 +280,7 @@ pub struct Replica {
     pub knowledge: Option<std::sync::Arc<turts_mod_api::KnowledgeSnapshot>>,
     /// Event-local permitted identities. These do not become live picking targets.
     pub event_units: Vec<turts_net_protocol::visibility::EventUnitObservation>,
+    pub terrain: Option<crate::terrain::store::PermittedTerrain>,
     /// Bounded visual events from committed live deltas only. Never replayed by snapshots.
     pub visual_events: VecDeque<VisualEvent>,
     next_visual_event: u64,
@@ -344,6 +346,7 @@ impl Replica {
             tick_hz,
             knowledge: None,
             event_units: Vec::new(),
+            terrain: None,
             visual_events: VecDeque::new(),
             next_visual_event: 0,
             units: HashMap::new(),
@@ -543,6 +546,55 @@ impl Replica {
         }) {
             return false;
         }
+        let terrain = match (&context.content.terrain, payload) {
+            (None, StateTransactionPayload::Snapshot { state, .. })
+                if state.records.terrain.is_none() =>
+            {
+                None
+            }
+            (
+                Some(layout),
+                StateTransactionPayload::Snapshot {
+                    state,
+                    knowledge,
+                    event_units,
+                },
+            ) => {
+                let Some(rows) = state.records.terrain.as_ref() else {
+                    return false;
+                };
+                let dictionary = context
+                    .content
+                    .catalog
+                    .terrain_materials
+                    .keys()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>();
+                let authority = crate::terrain::authority::View {
+                    context,
+                    units: &candidate.units,
+                    basis: &stamp.basis,
+                    knowledge: knowledge.as_ref(),
+                    event_units,
+                    layout,
+                    budget: std::cell::RefCell::new(turts_rules::terrain::geometry::Budget::new(
+                        4_194_304,
+                    )),
+                };
+                let Ok(terrain) = crate::terrain::store::PermittedTerrain::stage_snapshot(
+                    layout.clone(),
+                    &stamp.basis,
+                    &dictionary,
+                    rows,
+                    &authority,
+                    self.terrain.as_ref(),
+                ) else {
+                    return false;
+                };
+                Some(terrain)
+            }
+            _ => return false,
+        };
         // Hide clears health history. An observed death keeps its killing hit for alerts.
         match payload {
             StateTransactionPayload::Patch {
@@ -573,6 +625,7 @@ impl Replica {
         }
         self.knowledge = knowledge.map(std::sync::Arc::new);
         self.event_units = event_units.clone();
+        self.terrain = terrain;
         self.visual_events.clear();
         for effect in effects {
             self.next_visual_event += 1;
@@ -833,6 +886,33 @@ impl Replica {
             .collect();
         let health_forget =
             knowledge_delta.map_or_else(Vec::new, |visibility| visibility.hidden_units.clone());
+        let terrain = match (
+            &context.content.terrain,
+            &self.terrain,
+            &delta.records.terrain,
+        ) {
+            (None, None, None) => None,
+            (Some(layout), Some(current), rows) => {
+                let empty = turts_net_protocol::TerrainDelta::default();
+                let authority = crate::terrain::authority::View {
+                    context,
+                    units: &final_units,
+                    basis: &stamp.basis,
+                    knowledge,
+                    event_units,
+                    layout,
+                    budget: std::cell::RefCell::new(turts_rules::terrain::geometry::Budget::new(
+                        4_194_304,
+                    )),
+                };
+                Some(
+                    current
+                        .stage_delta(&stamp.basis, rows.as_ref().unwrap_or(&empty), &authority)
+                        .ok()?,
+                )
+            }
+            _ => return None,
+        };
         Some(AtomicPatch {
             spawned,
             positions,
@@ -850,6 +930,7 @@ impl Replica {
             health_append,
             health_forget,
             store,
+            terrain,
         })
     }
 
@@ -937,6 +1018,12 @@ impl Replica {
         }
         self.unit_orders.extend(patch.orders_changed);
         self.store.apply(patch.store);
+        if let Some(terrain) = patch.terrain {
+            self.terrain
+                .as_mut()
+                .expect("validated terrain basis")
+                .commit(terrain);
+        }
         for (id, entry) in patch.health_append {
             let history = self.health_trace.entry(id).or_default();
             history.push(entry);
@@ -986,6 +1073,24 @@ impl Replica {
         // Fixed candidates, store steps, stamps, and small hash tables.
         budget.bytes(64 * 1024)?;
         budget.value(payload)?;
+        if let Some(terrain) = &self.terrain {
+            budget.value(&terrain.surfaces)?;
+            budget.value(&terrain.anchors)?;
+            budget.value(&terrain.work)?;
+            budget.value(terrain.materials.as_ref())?;
+            budget.bytes(
+                terrain
+                    .geometry
+                    .retained_bytes()
+                    .ok_or(Limit)?
+                    .checked_mul(4)
+                    .ok_or(Limit)?,
+            )?;
+            let cells = (terrain.layout.grid.columns as usize)
+                .checked_mul(terrain.layout.grid.rows as usize)
+                .ok_or(Limit)?;
+            budget.bytes(cells.checked_mul(std::mem::size_of::<i32>()).ok_or(Limit)?)?;
+        }
         // Health histories stay borrowed during staging. New append/forget rows are covered by the payload budget.
         if let StateTransactionPayload::Patch {
             state, knowledge, ..
@@ -1089,6 +1194,7 @@ impl Replica {
     }
 
     pub fn set_context(&mut self, context: ReplicaContext) {
+        self.terrain = None;
         self.context = Some(context);
     }
 
@@ -1150,6 +1256,16 @@ impl Replica {
     }
 
     pub fn apply_snapshot(&mut self, snapshot: &Snapshot, now: Instant) -> SnapshotOutcome {
+        // Terrain/account/unit facts must enter through their one atomic transaction.
+        if snapshot.records.terrain.is_some()
+            || self
+                .context
+                .as_ref()
+                .is_some_and(|context| context.content.terrain.is_some())
+        {
+            self.resync.get_or_insert_with(Vec::new);
+            return SnapshotOutcome::Invalid;
+        }
         if self
             .last_applied_tick
             .is_some_and(|applied| snapshot.tick <= applied)
@@ -1252,6 +1368,15 @@ impl Replica {
     /// lost delta gives exactly one resync, at the grace. A duplicate or old delta is discarded.
     /// Memory: at most `max_buffered_batches` held deltas, and a hold ends at the grace.
     pub fn apply_delta(&mut self, delta: &WorldDelta, now: Instant) -> DeltaOutcome {
+        if delta.records.terrain.is_some()
+            || self
+                .context
+                .as_ref()
+                .is_some_and(|context| context.content.terrain.is_some())
+        {
+            self.resync.get_or_insert_with(Vec::new);
+            return DeltaOutcome::ResyncRequested;
+        }
         self.highest_observed_tick = Some(
             self.highest_observed_tick
                 .map_or(delta.tick, |high| high.max(delta.tick)),

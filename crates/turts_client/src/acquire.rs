@@ -153,7 +153,11 @@ pub fn build_acquired_with_root(
     lockfile_hash: String,
     verified_root_mod: Option<VerifiedRootMod>,
 ) -> Result<Acquired, String> {
-    let mut content = ClientContent::from_archives(archives).map_err(|error| error.to_string())?;
+    let mut content = ClientContent::from_archives_for_root(
+        archives,
+        verified_root_mod.as_ref().map(|root| root.id.as_str()),
+    )
+    .map_err(|error| error.to_string())?;
     let presentation = presentation_from_archives(archives, verified_root_mod.as_ref())?;
     for (id, model) in &presentation.model_visuals {
         if let Some((min, max)) = presentation.model_bounds.get(&model.asset) {

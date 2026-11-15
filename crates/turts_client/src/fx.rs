@@ -320,7 +320,13 @@ pub fn update_combat(
             unit.unit_id,
             Actor {
                 content: unit.content_id.clone(),
-                position: world_to_scene(unit.pos),
+                position: world_to_scene(unit.pos)
+                    + Vec3::Y
+                        * crate::terrain::render::live_height(
+                            replica.terrain.as_ref(),
+                            unit.unit_id,
+                        )
+                        .unwrap_or(0.),
                 height,
             },
         );
@@ -330,7 +336,10 @@ pub fn update_combat(
         let unit = &observation.unit;
         fx.actors.entry(unit.unit_id.0).or_insert_with(|| Actor {
             content: unit.content_id.clone(),
-            position: world_to_scene(unit.pos),
+            position: world_to_scene(unit.pos)
+                + Vec3::Y
+                    * crate::terrain::render::live_height(replica.terrain.as_ref(), unit.unit_id.0)
+                        .unwrap_or(0.),
             height: 1.6,
         });
     }
@@ -1314,6 +1323,10 @@ pub(crate) mod timeline_tests {
     fn fx5_damage_thresholds_start_and_stop_the_authored_loops() {
         let mut app = app();
         let unit = turts_mod_api::ResolvedUnit {
+            terrain_class: None,
+            terrain_cargo: None,
+            terrain_foundation: None,
+            terrain_tools: vec![],
             vision: None,
             consumes: Vec::new(),
             income: None,
