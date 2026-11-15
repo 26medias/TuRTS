@@ -464,3 +464,28 @@ The five-second warm-up and ten-second sample stay unchanged. No compiler or oth
 Evidence: `target/mc-evidence/shared-skin-palettes/final/`, one `result.json` per row folder.
 Receipt: `target/mc-evidence/shared-skins-final-checks/receipt.json`: command 0, wrapper 0, source unchanged.
 No new static detailed-model measurement runs. This change affects skin rendering.
+
+
+## 2026-11-14: blended ground layers
+
+Release source `91f5790e`. Same RTX 3080, i9-14900K, Linux, Chrome WebGPU, and 1280x720 viewport.
+All rows draw the authored ground overlay with six masks. All actors remain visible and take damage.
+The battle placement and command files remain the same as the shared-skin measurement.
+Only the ground presentation and required API floor change in these fixture packages.
+Five seconds of warm-up precede ten seconds of sampling. Scene observation runs every 500 ms.
+No compiler or other test browser runs during measurement.
+
+| Scene | Quality | Mean FPS | p50 ms | p95 ms | WASM high-water MiB |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 400 | High | 59.50 | 16.70 | 16.80 | 193.9 |
+| 400 | Low | 59.20 | 16.70 | 16.80 | 172.8 |
+| 2000 | High | 31.00 | 33.30 | 50.00 | 387.7 |
+| 2000 | Low | 38.24 | 33.30 | 33.40 | 349.4 |
+| 400, moving camera | High | 58.90 | 16.70 | 16.80 | 193.7 |
+| 400, moving camera | Low | 59.20 | 16.70 | 16.80 | 172.9 |
+
+The 400-unit High row passes the 30 FPS threshold.
+The 2,000-unit scene remains a stress test. Mean FPS does not prove every frame is fast.
+Evidence: `target/mc-evidence/ground-blending/final/{battle400-measure,battle2000-measure,pan}/result.json`.
+GPU host identity: `target/mc-evidence/ground-blending/hardware.json`.
+GPU allocation high-water and draw-call counts remain unavailable. WASM memory is not total GPU or browser memory.

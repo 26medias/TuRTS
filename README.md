@@ -9,7 +9,7 @@
 
 TuRTS is a mod-first real-time strategy engine built with Rust and Bevy. It has a browser WebAssembly client, a native client, and an authoritative headless server. Game content is delivered as packages through the public mod API.
 
-**Current playable demo: a medieval fantasy skirmish against the computer.** Build Barracks, harvest timber, train Villagers, Crossbowmen, and Swordsmen, set rally points, fight, and reach Victory or Defeat. New skirmish starts another match. The browser build includes models, textures, team colours, graphics quality, pointer-centred zoom, walking and work animations, shot animation, construction rise, falling bodies, combat effects, attack warnings, a minimap, wider grass, a map boundary, distance haze, and antialiasing.
+**Current playable demo: a medieval fantasy skirmish against the computer.** Build Barracks, harvest timber, train Villagers, Crossbowmen, and Swordsmen, set rally points, fight, and reach Victory or Defeat. New skirmish starts another match. The browser build includes models, textures, team colours, graphics quality, pointer-centred zoom, walking and work animations, shot animation, construction rise, falling bodies, combat effects, attack warnings, a minimap, wider grass, a map boundary, distance haze, antialiasing, dirt clearings, and soft timber paths.
 
 The local tested launcher is:
 
@@ -17,7 +17,7 @@ The local tested launcher is:
 bash target/mc-evidence/play-skirmish.sh
 ```
 
-[Rendering measurements](docs/measurements/models.md) record about 59 FPS for 400 fighting units on the local RTX 3080. The 2,000-unit stress battle reaches about 31 FPS High and 39 FPS Low. Hit sparks now appear above the armour.
+[Rendering measurements](docs/measurements/models.md) record about 59 FPS for 400 fighting units on the local RTX 3080. The 2,000-unit stress battle reaches about 31 FPS High and 38 FPS Low. Hit sparks now appear above the armour.
 
 That launcher uses prepared local artifacts. To build from source, use `bash scripts/skirmish-play.sh --prepare /absolute/path/to/prepared`, then `bash scripts/skirmish-play.sh --prepared /absolute/path/to/prepared --silent`. Test browsers must use a fresh profile and `--alsa-output-device=null`.
 
