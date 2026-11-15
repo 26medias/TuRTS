@@ -834,29 +834,36 @@ pub fn receive_resync(
 /// Send one owner-specific `Snapshot` from the latest completed world to each session that waits
 /// for one. Welcome and Snapshot leave in this order on the ordered reliable channel.
 pub fn send_snapshots(world: &mut World, mut due: Local<QueryState<Entity, With<SnapshotDue>>>) {
-    let entities: Vec<Entity> = due.iter(world).collect();
-    if entities.is_empty() {
+    if !turts_sim::visibility::context_ready(world) {
         return;
     }
-    let payloads: Vec<_> = entities
-        .into_iter()
-        .filter_map(|entity| {
-            let slot = world.get::<Session>(entity).map(|session| session.slot);
-            let payload = slot.map(|slot| {
-                let policy = crate::permissions::completed(world);
-                let (message, history) = export::snapshot_for_with_permissions(
-                    &world.resource::<CompletedWorld>().0,
-                    slot,
-                    policy.0.as_ref(),
-                );
-                world.entity_mut(entity).insert(history);
-                (entity, message)
-            });
+    let entities: Vec<Entity> = due.iter(world).collect();
+    for entity in entities {
+        let Some(slot) = world.get::<Session>(entity).map(|session| session.slot) else {
             world.entity_mut(entity).remove::<SnapshotDue>();
-            payload
-        })
-        .collect();
-    for (entity, message) in payloads {
+            continue;
+        };
+        match crate::outbound::knowledge::queue_full(world, entity, slot) {
+            Ok(true) => {
+                world.entity_mut(entity).remove::<SnapshotDue>();
+                continue;
+            }
+            Err(reason) => {
+                crate::outbound::knowledge::disconnect(world, entity, reason);
+                continue;
+            }
+            Ok(false) => {}
+        }
+        let policy = crate::permissions::completed(world);
+        let (message, history) = export::snapshot_for_with_permissions(
+            &world.resource::<CompletedWorld>().0,
+            slot,
+            policy.0.as_ref(),
+        );
+        world
+            .entity_mut(entity)
+            .insert(history)
+            .remove::<SnapshotDue>();
         if let Some(mut sender) = world.get_mut::<MessageSender<Snapshot>>(entity) {
             sender.send::<ReliableChannel>(message);
             world.resource_mut::<ReliableTraffic>().record(entity);

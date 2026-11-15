@@ -1,5 +1,7 @@
 //! Atomic permitted snapshots and ordinary visibility transitions. No raw truth enters a baseline.
 use super::{export_observation, snapshot_for};
+#[path = "export_visibility_memory.rs"]
+mod memory;
 use crate::permissions::ObservationPermissions;
 use std::collections::{BTreeMap, BTreeSet};
 use turts_mod_api::{CoverageRun, KnowledgeDelta, KnowledgeSnapshot};
@@ -12,6 +14,9 @@ pub struct PermittedBaseline {
     pub knowledge: Option<KnowledgeSnapshot>,
 }
 impl PermittedBaseline {
+    pub fn retained_bytes(&self) -> usize {
+        memory::baseline(self)
+    }
     pub fn capture(view: &WorldView, slot: SlotId, policy: &dyn ObservationPermissions) -> Self {
         let projected = export_observation::project_view(view, slot, policy);
         Self {

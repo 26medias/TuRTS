@@ -1,6 +1,8 @@
 //! Protocol 4 snapshots, world deltas, and fixed-tick order results.
 
 use crate::export;
+#[path = "outbound_knowledge.rs"]
+pub(crate) mod knowledge;
 use crate::session::PendingOrderCommands;
 use crate::session::{ReliableTraffic, Session};
 use crate::stats::Stats;
@@ -11,6 +13,7 @@ use turts_net_protocol::messages::*;
 use turts_sim::{CommandResults, Tick as SimTick, committed_tick, completed_world};
 
 pub fn install(app: &mut App) {
+    knowledge::install(app);
     app.add_systems(
         FixedLast,
         (
@@ -49,6 +52,17 @@ pub fn send_final_snapshots(world: &mut World) {
         .collect::<Vec<_>>();
     for (entity, slot) in recipients {
         let policy = crate::permissions::completed(world);
+        match knowledge::queue_tick(world, entity, slot) {
+            Ok(true) => {
+                world.entity_mut(entity).insert(FinalSnapshotSent);
+                continue;
+            }
+            Err(reason) => {
+                knowledge::disconnect(world, entity, reason);
+                continue;
+            }
+            Ok(false) => {}
+        }
         let (snapshot, history) =
             export::snapshot_for_with_permissions(completed_world(world), slot, policy.0.as_ref());
         world.entity_mut(entity).insert(history);
@@ -120,6 +134,14 @@ pub fn send_deltas(world: &mut World) {
     }
     let policy = crate::permissions::completed(world);
     for (entity, slot) in recipients {
+        match knowledge::queue_tick(world, entity, slot) {
+            Ok(true) => continue,
+            Err(reason) => {
+                knowledge::disconnect(world, entity, reason);
+                continue;
+            }
+            Ok(false) => {}
+        }
         let previous = world
             .get::<export::ObservationHistory>(entity)
             .cloned()
