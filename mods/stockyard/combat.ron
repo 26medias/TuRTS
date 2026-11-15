@@ -1,0 +1,11 @@
+(
+ damage_types: ["pierce", "blade"], armour_classes: ["light", "heavy", "structure"], minimum: 1,
+ cells: [
+  (damage: "stockyard:pierce", armour: "stockyard:light", ratio: (numerator: 1, denominator: 1)),
+  (damage: "stockyard:pierce", armour: "stockyard:heavy", ratio: (numerator: 3, denominator: 4)),
+  (damage: "stockyard:pierce", armour: "stockyard:structure", ratio: (numerator: 1, denominator: 4)),
+  (damage: "stockyard:blade", armour: "stockyard:light", ratio: (numerator: 1, denominator: 1)),
+  (damage: "stockyard:blade", armour: "stockyard:heavy", ratio: (numerator: 1, denominator: 1)),
+  (damage: "stockyard:blade", armour: "stockyard:structure", ratio: (numerator: 3, denominator: 4)),
+ ],
+)

@@ -47,6 +47,7 @@ impl ClientContent {
     pub fn from_archives(archives: &[PackageArchive]) -> Result<Self, ModError> {
         let shapes = visuals_by_content(archives)?;
         let mut catalog = ContentCatalog {
+            bots: Default::default(),
             combat: None,
             resources: Default::default(),
             units: Default::default(),
@@ -70,7 +71,7 @@ impl ClientContent {
         let mut selection_priority = Vec::new();
         let mut camera = None;
         for archive in archives {
-            let part = archive.content()?;
+            let part = archive.content_for_catalog()?;
             if let Some(table) = part.combat
                 && catalog.combat.replace(table).is_some()
             {
@@ -166,6 +167,17 @@ impl ClientContent {
                 }
                 if selection_priority.is_empty() && !interface.selection_priority.is_empty() {
                     selection_priority = interface.selection_priority;
+                }
+            }
+        }
+        // All libraries are available before profile references are checked. Importing
+        // them loads definitions only; the server separately selects and installs bots.
+        for archive in archives {
+            let bots =
+                turts_mod_runtime::bots::validate_bots(&archive.id(), archive.bots()?, &catalog)?;
+            for (id, bot) in bots {
+                if catalog.bots.insert(id.clone(), bot).is_some() {
+                    return Err(ModError::new(&id.package.0, "id", "duplicate bot profile"));
                 }
             }
         }

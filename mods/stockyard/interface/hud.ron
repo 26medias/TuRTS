@@ -1,0 +1,72 @@
+(
+    id: "hud_main",
+    root: [
+        (id: "stockyard_minimap", at: Some((anchor: BottomRight, offset: (-16.0, -16.0), pivot: None)), size: (w: Px(200.0), h: Px(144.0)), layer: 20, tooltip: Some(Literal("Map: left-click or drag to look. Right-click to send selected units.")), widget: MinimapView(background: Some(Colour("#101f18")), frame: "#ffffff", unit_size: 4.0, ping: Some("#ff4040"))),
+ (id:"attack_warnings",at:Some((anchor:TopRight,offset:(-12.0,108.0),pivot:None)),size:(w:Px(320.0),h:Px(120.0)),layer:60,widget:List(source:Alerts,direction:Vertical,gap:4,max_items:3,item:(id:"warning_row",size:(w:Px(320.0),h:Px(24.0)),widget:Button(icon:None,label:Some(Item(Name)),action:Item(Action),hotkey_label:false)))),
+ (id: "match_result", at: Some((anchor: Centre, offset: (0.0, 0.0), pivot: None)), size: (w: Px(520.0), h: Px(160.0)), layer: 100, visible: [MatchOver], widget: Box(fill: Some(Colour("#10251c")), border: None, children: [
+  (id: "result_title", at: Some((anchor: TopLeft, offset: (24.0, 20.0), pivot: None)), size: (w: Px(472.0), h: Px(52.0)), widget: Text(text: Bind(Outcome), font: None, size: 36, colour: "#ffffff", align: Centre, wrap: false)),
+  (id: "victory_detail", at: Some((anchor: TopLeft, offset: (24.0, 90.0), pivot: None)), size: (w: Px(472.0), h: Px(44.0)), visible: [OutcomeIs(Victory)], widget: Text(text: Literal("You destroyed the enemy castle."), font: None, size: 16, colour: "#ffffff", align: Centre, wrap: true)),
+  (id: "defeat_detail", at: Some((anchor: TopLeft, offset: (24.0, 90.0), pivot: None)), size: (w: Px(472.0), h: Px(44.0)), visible: [OutcomeIs(Defeat)], widget: Text(text: Literal("The enemy destroyed your castle."), font: None, size: 16, colour: "#ffffff", align: Centre, wrap: true)),
+  (id: "draw_detail", at: Some((anchor: TopLeft, offset: (24.0, 90.0), pivot: None)), size: (w: Px(472.0), h: Px(44.0)), visible: [OutcomeIs(Draw)], widget: Text(text: Literal("Both castles are destroyed."), font: None, size: 16, colour: "#ffffff", align: Centre, wrap: true)),
+ ])),
+
+ (id: "building_sites", at: Some((anchor: BottomLeft, offset: (16.0, -8.0), pivot: None)), size: (w: Px(300.0), h: Px(88.0)), widget: List(source: Sites, direction: Vertical, gap: 6, max_items: 2, item: (id: "building_site", size: (w: Fill, h: Px(38.0)), widget: Box(fill: Some(Colour("#183127")), border: None, children: [
+  (id: "building_status", at: Some((anchor: TopLeft, offset: (4.0, 2.0), pivot: None)), size: (w: Px(292.0), h: Px(24.0)), widget: Text(text: Format("Building {0}", [Item(Name)]), font: None, size: 14, colour: "#ffffff", align: Left, wrap: false)),
+  (id: "building_progress", at: Some((anchor: TopLeft, offset: (4.0, 28.0), pivot: None)), size: (w: Px(292.0), h: Px(6.0)), widget: Bar(value: Item(Progress), max: Literal("1"), fill: Colour("#33dd66"), background: Colour("#12241b"), direction: Horizontal)),
+ ])))),
+
+ (id: "objective_backdrop", at: Some((anchor: Top, offset: (0.0, 6.0), pivot: None)), size: (w: Px(656.0), h: Px(84.0)), layer: -1, widget: Box(fill: Some(Colour("#10251c")), border: None, children: [])),
+ (id: "objective", at: Some((anchor: Top, offset: (0.0, 12.0), pivot: None)), size: (w: Px(640.0), h: Px(66.0)), widget: Text(text: Literal("Build Barracks or a Guard tower from your castle. Select a villager and right-click timber. Train units at Barracks. Warriors break buildings. Destroy the enemy castle."), font: None, size: 16, colour: "#ffffff", align: Centre, wrap: true)),
+ (id: "credits_backdrop", at: Some((anchor: TopRight, offset: (-12.0, 58.0), pivot: None)), size: (w: Px(188.0), h: Px(40.0)), layer: -1, widget: Box(fill: Some(Colour("#10251c")), border: None, children: [])),
+ (id: "credits", at: Some((anchor: TopRight, offset: (-16.0, 64.0), pivot: None)), size: (w: Px(180.0), h: Px(28.0)), widget: Text(text: Format("Credits: {0}", [Balance("stockyard:credits")]), font: None, size: 18, colour: "#ffffff", align: Right, wrap: false)),
+ (id: "attack", at: Some((anchor: TopLeft, offset: (204.0, 124.0), pivot: None)), size: (w: Px(106.0), h: Px(24.0)), layer: 2, visible: [PrimaryOwned, PrimaryHas(Weapon)], widget: Button(icon: None, label: Some(Literal("Attack")), action: Order("stockyard:order_attack"), hotkey_label: true)),
+
+        (id: "hud_order_move_button", at: Some((anchor: TopLeft, offset: (16.0, 16.0), pivot: None)), size: (w: Px(128.0), h: Px(28.0)), visible: [PrimaryOwned, PrimaryHas(Movement)], widget: Button(icon: None, label: Some(Literal("Move")), action: Order("stockyard:order_move"), hotkey_label: true)),
+        (id: "hud_order_stop_button", at: Some((anchor: TopLeft, offset: (16.0, 50.0), pivot: None)), size: (w: Px(128.0), h: Px(28.0)), visible: [PrimaryOwned, PrimaryHas(Movement)], widget: Button(icon: None, label: Some(Literal("Stop")), action: Order("stockyard:order_stop"), hotkey_label: true)),
+        (id: "hud_order_gather_button", at: Some((anchor: TopLeft, offset: (16.0, 84.0), pivot: None)), size: (w: Px(128.0), h: Px(28.0)), visible: [PrimaryOwned, PrimaryHas(Gatherer)], widget: Button(icon: None, label: Some(Literal("Harvest")), action: Order("stockyard:order_gather"), hotkey_label: true)),
+        (id: "selection_panel", at: Some((anchor: TopLeft, offset: (16.0, 118.0), pivot: None)), size: (w: Px(300.0), h: Px(96.0)), visible: [SelectionNotEmpty], widget: Box(fill: Some(Colour("#10251c")), border: None, children: [
+            (id: "selection_portrait", at: Some((anchor: TopLeft, offset: (6.0, 6.0), pivot: None)), size: (w: Px(52.0), h: Px(52.0)), widget: Image(image: Bind(SelectionPrimary(Portrait)), nine_slice: None, tint: None)),
+            (id: "selection_name", tooltip: Some(SelectionPrimary(WeaponDetails)), at: Some((anchor: TopLeft, offset: (66.0, 6.0), pivot: None)), size: (w: Px(116.0), h: Px(22.0)), widget: Text(text: Bind(SelectionPrimary(Name)), font: None, size: 16, colour: "#ffffff", align: Left, wrap: false)),
+            (id: "selection_health", at: Some((anchor: TopLeft, offset: (66.0, 32.0), pivot: None)), size: (w: Px(228.0), h: Px(8.0)), widget: Bar(value: SelectionPrimary(Health), max: SelectionPrimary(MaxHealth), fill: Colour("#33dd66"), background: Colour("#541e1e"), direction: Horizontal)),
+            (id: "selection_health_text", at: Some((anchor: TopLeft, offset: (66.0, 42.0), pivot: None)), size: (w: Px(228.0), h: Px(18.0)), widget: Text(text: Format("Health: {0} / {1}", [SelectionPrimary(Health), SelectionPrimary(MaxHealth)]), font: None, size: 12, colour: "#ffffff", align: Left, wrap: false)),
+            (id: "selection_armour", at: Some((anchor: TopLeft, offset: (6.0, 64.0), pivot: None)), size: (w: Px(288.0), h: Px(28.0)), visible: [PrimaryHasValue(Armour)], tooltip: Some(SelectionPrimary(Armour)), widget: Text(text: Format("Armour: {0}", [SelectionPrimary(Armour)]), font: None, size: 12, colour: "#d4eaff", align: Left, wrap: true)),
+        ])),
+        (id: "m2_build_rows", at: Some((anchor: TopLeft, offset: (16.0, 222.0), pivot: None)), size: (w: Px(300.0), h: Px(92.0)), visible: [SelectionSingle, PrimaryOwned], tooltip: Some(Format("{0}: {1}", [Item(Name), Item(Reason)])), widget: List(source: BuildMenu, direction: Vertical, gap: 4, max_items: 3, item: (id: "m2_build_item", size: (w: Fill, h: Px(28.0)), widget: Button(icon: None, label: Some(Format("{0} - {1}", [Item(Name), Item(Cost)])), action: Item(Action), hotkey_label: false)))),
+        (id: "m2_job_rows", at: Some((anchor: TopLeft, offset: (16.0, 322.0), pivot: None)), size: (w: Px(300.0), h: Px(136.0)), visible: [SelectionSingle, PrimaryOwned], widget: List(source: ProductionQueue, direction: Vertical, gap: 4, max_items: 5, item: (id: "m2_job", size: (w: Fill, h: Px(24.0)), widget: Box(fill: None, border: None, children: [
+            (id: "m2_job_line", at: Some((anchor: TopLeft, offset: (0.0, 0.0), pivot: None)), size: (w: Px(232.0), h: Px(24.0)), widget: Text(text: Format("{0}: {1}s", [Item(Name), Item(RemainingSeconds)]), font: None, size: 12, colour: "#ffffff", align: Left, wrap: false)),
+            (id: "m2_job_cancel", at: Some((anchor: TopLeft, offset: (236.0, 0.0), pivot: None)), size: (w: Px(64.0), h: Px(24.0)), widget: Button(icon: None, label: Some(Literal("Cancel")), action: Item(CancelAction), hotkey_label: false)),
+        ])))),
+        (id: "sound_switch_off", at: Some((anchor: Bottom, offset: (166.0, -8.0), pivot: None)), size: (w: Px(124.0), h: Px(28.0)), layer: 50, visible: [Not(SoundOn)], widget: Box(fill: Some(Colour("#4d1f1f")), border: None, children: [
+            (id: "sound_off_button", at: Some((anchor: TopLeft, offset: (2.0, 2.0), pivot: None)), size: (w: Px(120.0), h: Px(24.0)), widget: Button(icon: None, label: Some(Bind(SoundState)), action: Input("toggle_sound"), hotkey_label: false)),
+        ])),
+        (id: "sound_switch_on", at: Some((anchor: Bottom, offset: (166.0, -8.0), pivot: None)), size: (w: Px(124.0), h: Px(28.0)), layer: 50, visible: [SoundOn], widget: Box(fill: Some(Colour("#1f6138")), border: None, children: [
+            (id: "sound_on_button", at: Some((anchor: TopLeft, offset: (2.0, 2.0), pivot: None)), size: (w: Px(120.0), h: Px(24.0)), widget: Button(icon: None, label: Some(Bind(SoundState)), action: Input("toggle_sound"), hotkey_label: false)),
+        ])),
+    ],
+    tooltip_style: (background: "#000000", colour: "#ffffff", font: None, size: 12),
+    cursors: {},
+    camera: (pitch: 0.7, yaw: 0.0, field_of_view: 60.0, minimum: 10.0, maximum: 100.0,
+        start: OwnedCentre, height: 36.0, margin: 0.0, pan_speed: 100.0, edge_band: true),
+    light: None,
+    slot_colours: ["#0072B2", "#E69F00", "#009E73", "#D55E00", "#56B4E9", "#CC79A7", "#F0E442", "#000000"],
+    world: (ground: "#243b2c", grid: "#354b3c", selection: "#ffffff", health: "#00ff00",
+        range: "#ffffff", show_range: true,
+        tooltip: (background: "#000000", colour: "#ffffff", font: None, size: 12),
+        health_bar: (width: 32, height: 4, background: "#000000", health: "#00ff00")),
+    alerts: [
+        (id:"base_attacked",trigger:OwnUnitDamaged,units:["stockyard:base","stockyard:barracks"],offscreen_only:true,sound:None,text:"Your castle is under attack (J)",minimap_ping:true,cooldown:10.0,priority:10,coalesce_radius:20.0),
+        (id:"units_attacked",trigger:OwnUnitDamaged,units:["stockyard:worker","stockyard:soldier","stockyard:swordsman","stockyard:warrior"],offscreen_only:true,sound:None,text:"Your units are under attack (J)",minimap_ping:true,cooldown:10.0,priority:9,coalesce_radius:20.0),
+    ],
+    reasons: {},
+    units: {
+        "stockyard:warrior": (icon: Some("portrait_warrior"), portrait: Some("portrait_warrior"), responses: {}),
+        "stockyard:tower": (icon: Some("portrait_tower"), portrait: Some("portrait_tower"), responses: {}),
+        "stockyard:base": (icon: Some("portrait_base"), portrait: Some("portrait_base"), responses: {}),
+        "stockyard:barracks": (icon: Some("portrait_barracks"), portrait: Some("portrait_barracks"), responses: {}),
+        "stockyard:worker": (icon: Some("portrait_worker"), portrait: Some("portrait_worker"), responses: {}),
+        "stockyard:soldier": (icon: Some("portrait_soldier"), portrait: Some("portrait_soldier"), responses: {}),
+        "stockyard:swordsman": (icon: Some("portrait_swordsman"), portrait: Some("portrait_swordsman"), responses: {})
+    },
+    selection_priority: [],
+    guide: [],
+)

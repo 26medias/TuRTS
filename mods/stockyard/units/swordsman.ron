@@ -1,0 +1,3 @@
+(id: "swordsman", name: "Swordsman", footprint: Circle(radius: 0.6), movement: Some((speed: 4.5)),
+ inventory: None, gatherer: None, drop_off: None, producer: None,
+ health: Some((max: 300)), weapon: Some((range: 0.6, range_mode: Surface, cooldown_ms: 800, damage: 25, damage_type: Some("stockyard:blade"), ammo: None, targets: (slots: Enemy))), removal: Some((by_command: true, contents: Destroy)), armour: Some((class: "stockyard:heavy", flat: 0)), acquire: Some((range: 14.0, leash: 18.0)))

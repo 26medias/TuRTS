@@ -1,6 +1,7 @@
 (
- id: "skirmish", version: "0.2.0", kind: Game, engine_api: "^0.2.12", dependencies: {},
+ id: "skirmish", version: "0.2.0", kind: Game, engine_api: "^0.2.15", dependencies: {},
  exports: (
+  bots: ["bots/opponent.ron"],
   units: ["units/base.ron", "units/barracks.ron", "units/worker.ron", "units/soldier.ron", "units/swordsman.ron", "units/warrior.ron", "units/tower.ron"],
   maps: ["maps/field.ron"],
   combat: ["combat.ron"],

@@ -1,0 +1,19 @@
+(effects: [
+ (id:"hit_reduced",layers:[(kind:Sparks(count:8,speed:3.0,spread_deg:150.0,gravity:9.0),colour:"#b7d1e5",size:0.24,offset:(0.0,0.65,0.0),ms:250),(kind:Flash(radius:0.25),colour:"#d4eaff",ms:80)],cost:Small),
+ (id:"bolt", layers:[(kind:Projectile(speed:30.0,arc_height:0.05,trail:Some("stockyard:bolt_trail")),colour:"#bfa56a",size:0.24,ms:300)],cost:Small),
+ (id:"bolt_trail",layers:[(kind:Trail(width:0.08,ms:100),colour:"#eee1b4",ms:100)],cost:Small),
+ (id:"release",layers:[(kind:Flash(radius:0.14),colour:"#fff2ce",ms:60)],cost:Small),
+ (id:"hit",layers:[(kind:Sparks(count:8,speed:3.0,spread_deg:150.0,gravity:9.0),colour:"#ffd27a",size:0.24,offset:(0.0,0.65,0.0),ms:250),(kind:Flash(radius:0.25),colour:"#fff2ce",ms:80)],cost:Small),
+ (id:"unit_death",layers:[(kind:Burst(radius_start:0.2,radius_end:0.8),colour:"#b6a17b",size:0.3,ms:550)],cost:Small),
+ (id:"building_death",layers:[
+  (kind:Burst(radius_start:0.5,radius_end:3.0),colour:"#b6a17b",ms:700),
+  (kind:Debris(count:12,speed:3.0),colour:"#8d7150",size:0.3,ms:1500),
+  (kind:Smoke(rate:8.0,rise:1.0,spread:1.0),colour:"#77716a",size:0.9,end_size:Some(2.0),ms:3000),
+  (kind:Decal(size:4.0,ms:60000),colour:"#30271d",ms:1000),
+  (kind:Shake(strength:0.15,ms:350),ms:350),
+ ],cost:Large),
+ (id:"damage_smoke",layers:[(kind:Smoke(rate:5.0,rise:0.8,spread:0.5),colour:"#74716b",size:0.5,end_size:Some(1.2),offset:(0.0,0.1,0.0),ms:1500,looping:true)],cost:Medium),
+ (id:"damage_fire",layers:[(kind:Fire(rate:8.0,height:1.3),colour:"#ff8b27",end_colour:Some("#df291000"),size:0.45,end_size:Some(0.05),offset:(0.0,-0.35,0.0),ms:700,looping:true,blend:Add)],cost:Small),
+ (id:"chop",layers:[(kind:Sparks(count:4,speed:1.8,spread_deg:160.0,gravity:5.0),colour:"#c59a62",size:0.1,ms:400)],cost:Small),
+ (id:"site_dust",layers:[(kind:Smoke(rate:3.0,rise:0.2,spread:1.5),colour:"#b6a17b",size:0.4,end_size:Some(0.8),ms:800,looping:true)],cost:Small),
+])
