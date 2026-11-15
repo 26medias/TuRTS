@@ -106,6 +106,7 @@ pub fn validate_records(records: &[EconomyLogRecord]) -> Result<(), String> {
         return Err("economy log contains more than one Initial record".into());
     }
 
+    validate_operating_state(initial)?;
     let mut cursor = initial.clone();
     let mut tick_start = initial.clone();
     let mut commands = BTreeMap::new();
@@ -215,6 +216,9 @@ pub fn validate_records(records: &[EconomyLogRecord]) -> Result<(), String> {
                     ));
                 }
                 last_operation = Some(operation.operation_id);
+                validate_operating_state(&operation.before)?;
+                validate_operating_state(&operation.after)?;
+                validate_income_operation(operation)?;
 
                 if operation.before.economy.tick != operation.after.economy.tick {
                     return Err(format!(
@@ -757,6 +761,7 @@ pub fn validate_records(records: &[EconomyLogRecord]) -> Result<(), String> {
                 state,
                 events,
             } => {
+                validate_operating_state(state)?;
                 reconcile_plain_candidate_dispatches(
                     &mut cursor,
                     state,
@@ -7520,6 +7525,286 @@ fn validate_clock_continuity(
             "{label} before snapshot is discontinuous from the prior modeled state"
         ))
     }
+}
+
+/// Derive admission contributions and income clock payloads from the immutable
+/// catalog. The live totals are not trusted as a second copy of themselves.
+fn validate_operating_state(state: &AuditState) -> Result<(), String> {
+    use turts_mod_api::{ContentId, ResourceKind};
+    use turts_sim::economy::views::{OperatingContributionAudit, SupplyView};
+    let Some(operating) = &state.raw_operating else {
+        let declared = state.catalog.as_ref().is_some_and(|catalog| {
+            catalog
+                .resource_kinds
+                .iter()
+                .any(|(_, kind)| matches!(kind, ResourceKind::Supply { .. }))
+                || catalog.units.iter().any(|unit| {
+                    !unit.provides.is_empty() || !unit.consumes.is_empty() || unit.income.is_some()
+                })
+        });
+        if declared || !state.raw_income_clocks.is_empty() {
+            return Err("income clocks have no operating admission state".into());
+        }
+        return Ok(());
+    };
+    let catalog = state
+        .catalog
+        .as_ref()
+        .ok_or("operating state has no catalog")?;
+    let mut supply = BTreeMap::<(u8, ContentId), (u64, u64)>::new();
+    for slot in 0..state.claims.len() {
+        for (resource, kind) in &catalog.resource_kinds {
+            if matches!(kind, ResourceKind::Supply { .. }) {
+                supply.insert((slot as u8, resource.clone()), (0, 0));
+            }
+        }
+    }
+    let mut income = BTreeMap::<(u8, ContentId), u64>::new();
+    let mut active = Vec::new();
+    let mut income_sources = BTreeSet::new();
+    for unit in &state.raw_units {
+        if state
+            .raw_healths
+            .iter()
+            .any(|health| health.unit == unit.unit_id && health.current == 0)
+            || state.economy.construction.sites.contains_key(&unit.unit_id)
+        {
+            continue;
+        }
+        let definition = state
+            .unit_types
+            .iter()
+            .find(|kind| kind.type_id == unit.unit_type)
+            .and_then(|kind| {
+                catalog
+                    .units
+                    .iter()
+                    .find(|definition| definition.id.to_string() == kind.content_id)
+            })
+            .ok_or("operating unit has no catalog definition")?;
+        let mut rows = BTreeMap::<ContentId, (u64, u64)>::new();
+        for (provided, source) in [(true, &definition.provides), (false, &definition.consumes)] {
+            for row in source {
+                let id = ContentId::parse(&row.resource)
+                    .map_err(|_| "operating supply reference is invalid")?;
+                let entry = rows.entry(id).or_default();
+                if provided {
+                    entry.0 = row.amount;
+                } else {
+                    entry.1 = row.amount;
+                }
+            }
+        }
+        for (id, (provided, consumed)) in &rows {
+            let total = supply
+                .get_mut(&(unit.owner_slot, id.clone()))
+                .ok_or("operating contribution has no supply account")?;
+            total.0 = total
+                .0
+                .checked_add(*provided)
+                .ok_or("operating provided total overflows")?;
+            total.1 = total
+                .1
+                .checked_add(*consumed)
+                .ok_or("operating consumed total overflows")?;
+        }
+        let payload = definition
+            .income
+            .as_ref()
+            .map(|definition| {
+                ContentId::parse(&definition.resource).map(|id| (id, definition.amount))
+            })
+            .transpose()
+            .map_err(|_| "income reference is invalid")?;
+        if let Some((resource, amount)) = &payload {
+            income_sources.insert(unit.unit_id);
+            let total = income
+                .entry((unit.owner_slot, resource.clone()))
+                .or_default();
+            *total = total
+                .checked_add(*amount)
+                .ok_or("income active total overflows")?;
+            let clocks = state
+                .raw_income_clocks
+                .iter()
+                .filter(|clock| clock.unit == unit.unit_id)
+                .collect::<Vec<_>>();
+            if clocks.len() != 1 {
+                return Err("income source has missing or duplicate clocks".into());
+            }
+            let clock = clocks[0];
+            let period = u64::from(definition.income.as_ref().unwrap().period_ms)
+                .checked_mul(u64::from(
+                    state.tick_hz.ok_or("income clock has no tick rate")?,
+                ))
+                .ok_or("income period overflows")?
+                .div_ceil(1000)
+                .max(1);
+            if clock.owner_slot != unit.owner_slot
+                || &clock.resource != resource
+                || clock.amount != *amount
+                || clock.period_ticks != period
+                || clock.activation_tick > state.economy.tick
+                || clock.next_due < u64::from(clock.activation_tick) + period
+                || clock.next_due > u64::from(state.economy.tick) + period
+            {
+                return Err(
+                    "income clock differs from catalog payload or activation deadline".into(),
+                );
+            }
+        }
+        if !rows.is_empty() || payload.is_some() {
+            active.push(OperatingContributionAudit {
+                unit: unit.unit_id,
+                slot: unit.owner_slot,
+                supply: rows
+                    .into_iter()
+                    .map(|(id, (provided, consumed))| (id, provided, consumed))
+                    .collect(),
+                income: payload,
+            });
+        }
+    }
+    active.sort_by_key(|row| row.unit);
+    let supply = supply
+        .into_iter()
+        .map(|((slot, resource), (provided, consumed))| SupplyView {
+            slot,
+            resource,
+            provided,
+            consumed,
+        })
+        .collect::<Vec<_>>();
+    // Removal keeps zero account baselines. They carry no active income.
+    for (slot, resource, amount) in &operating.live_income {
+        if *amount == 0 {
+            if usize::from(*slot) >= state.claims.len()
+                || !catalog
+                    .resource_kinds
+                    .iter()
+                    .any(|(id, kind)| id == resource && matches!(kind, ResourceKind::Balance))
+            {
+                return Err("income zero baseline has no declared balance account".into());
+            }
+            income.entry((*slot, resource.clone())).or_default();
+        }
+    }
+    let income = income
+        .into_iter()
+        .map(|((slot, resource), amount)| (slot, resource, amount))
+        .collect::<Vec<_>>();
+    if active != operating.active
+        || supply != operating.live_supply
+        || income != operating.live_income
+    {
+        return Err(
+            "operating live contributions or totals differ from catalog and active units".into(),
+        );
+    }
+    if state
+        .raw_income_clocks
+        .iter()
+        .any(|clock| !income_sources.contains(&clock.unit))
+    {
+        return Err("income clock belongs to an inactive source".into());
+    }
+    Ok(())
+}
+
+/// Income is independently modeled from the pre-operation clocks. Event and
+/// ledger edits must be one account batch and cannot change unrelated state.
+fn validate_income_operation(operation: &OperationAudit) -> Result<(), String> {
+    use turts_sim::EconomyEventKind;
+    let Some(first) = operation
+        .events
+        .iter()
+        .find(|event| matches!(event.kind, EconomyEventKind::IncomeCredited { .. }))
+    else {
+        return Ok(());
+    };
+    let EconomyEventKind::IncomeCredited { balance, .. } = &first.kind else {
+        unreachable!()
+    };
+    if operation.phase != turts_sim::economy::transaction::AuditPhase::Other {
+        return Err("income credit is outside the automatic phase".into());
+    }
+    let before = &operation.before;
+    let now = before.economy.tick;
+    let mut due = before
+        .raw_income_clocks
+        .iter()
+        .filter(|clock| {
+            clock.owner_slot == first.owner_slot
+                && &clock.resource == balance
+                && clock.next_due <= u64::from(now)
+        })
+        .collect::<Vec<_>>();
+    due.sort_by(|a, b| {
+        let pos = |id| {
+            before
+                .raw_units
+                .iter()
+                .find(|unit| unit.unit_id == id)
+                .map(|unit| &unit.pos)
+        };
+        match (pos(a.unit), pos(b.unit)) {
+            (Some(a), Some(b)) => a.x.total_cmp(&b.x).then_with(|| a.y.total_cmp(&b.y)),
+            _ => std::cmp::Ordering::Equal,
+        }
+    });
+    if due.is_empty() || operation.events.len() != due.len() {
+        return Err("income credit omits or invents an account's due source".into());
+    }
+    let mut expected = before.clone();
+    let mut total = 0_u64;
+    for (clock, event) in due.iter().zip(&operation.events) {
+        if Some(event.ordinal) != expected.next_event_ordinal
+            || event.ordinal.checked_add(1).is_none()
+            || event.owner_slot != clock.owner_slot
+            || event.tick != now
+            || event.kind
+                != (EconomyEventKind::IncomeCredited {
+                    unit: clock.unit,
+                    balance: clock.resource.clone(),
+                    credited: clock.amount,
+                })
+        {
+            return Err(
+                "income credit differs from the due clock amount or coordinate order".into(),
+            );
+        }
+        total = total
+            .checked_add(clock.amount)
+            .ok_or("income batch overflows")?;
+        let next = expected
+            .raw_income_clocks
+            .iter_mut()
+            .find(|row| row.unit == clock.unit)
+            .ok_or("income source clock is missing")?;
+        next.next_due = u64::from(now)
+            .checked_add(clock.period_ticks)
+            .ok_or("income deadline overflows")?;
+        expected.append_order_event(event.clone());
+    }
+    for clock in &mut expected.raw_income_clocks {
+        if clock.owner_slot == first.owner_slot && &clock.resource == balance {
+            clock.held = None;
+        }
+    }
+    let account = expected
+        .economy
+        .balances
+        .iter_mut()
+        .find(|row| row.slot == first.owner_slot && &row.resource == balance)
+        .ok_or("income account is missing")?;
+    account.on_hand = account
+        .on_hand
+        .checked_add(total)
+        .ok_or("income account overflows")?;
+    if expected != operation.after {
+        return Err("income batch changed state outside its checked credit and clock delta".into());
+    }
+    Ok(())
 }
 
 fn validate_operation_continuity(
