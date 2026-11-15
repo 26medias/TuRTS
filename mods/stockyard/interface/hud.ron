@@ -16,7 +16,7 @@
  ])))),
 
  (id: "objective_backdrop", at: Some((anchor: Top, offset: (0.0, 6.0), pivot: None)), size: (w: Px(656.0), h: Px(84.0)), layer: -1, widget: Box(fill: Some(Colour("#10251c")), border: None, children: [])),
- (id: "objective", at: Some((anchor: Top, offset: (0.0, 12.0), pivot: None)), size: (w: Px(640.0), h: Px(66.0)), widget: Text(text: Literal("Build Barracks or a Guard tower from your castle. Select a villager and right-click timber. Train units at Barracks. Warriors break buildings. Destroy the enemy castle."), font: None, size: 16, colour: "#ffffff", align: Centre, wrap: true)),
+ (id: "objective", at: Some((anchor: Top, offset: (0.0, 12.0), pivot: None)), size: (w: Px(640.0), h: Px(66.0)), widget: Text(text: Literal("Select the Timber yard to build. Select a villager and right-click timber. Train units at Barracks. Warriors break buildings. Destroy the enemy castle."), font: None, size: 16, colour: "#ffffff", align: Centre, wrap: true)),
  (id: "credits_backdrop", at: Some((anchor: TopRight, offset: (-12.0, 58.0), pivot: None)), size: (w: Px(188.0), h: Px(40.0)), layer: -1, widget: Box(fill: Some(Colour("#10251c")), border: None, children: [])),
  (id: "credits", at: Some((anchor: TopRight, offset: (-16.0, 64.0), pivot: None)), size: (w: Px(180.0), h: Px(28.0)), widget: Text(text: Format("Credits: {0}", [Balance("stockyard:credits")]), font: None, size: 18, colour: "#ffffff", align: Right, wrap: false)),
  (id: "attack", at: Some((anchor: TopLeft, offset: (204.0, 124.0), pivot: None)), size: (w: Px(106.0), h: Px(24.0)), layer: 2, visible: [PrimaryOwned, PrimaryHas(Weapon)], widget: Button(icon: None, label: Some(Literal("Attack")), action: Order("stockyard:order_attack"), hotkey_label: true)),

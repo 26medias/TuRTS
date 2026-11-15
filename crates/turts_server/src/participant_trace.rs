@@ -24,6 +24,7 @@ struct TrustedReplay {
     sequences: BTreeMap<u64, (u64, u8, Option<u32>)>,
 }
 
+#[cfg(test)]
 pub(crate) fn enable_replay(world: &mut World) -> Result<(), String> {
     if world.resource::<Tick>().0 != 0 || world.contains_resource::<TrustedReplay>() {
         return Err("trusted replay must be enabled once before tick one".into());
@@ -36,6 +37,7 @@ pub(crate) fn replay_enabled(world: &World) -> bool {
     world.contains_resource::<TrustedReplay>()
 }
 
+#[cfg(test)]
 pub(crate) fn actor_trace(world: &World) -> &[ActorLogRecord] {
     world
         .get_resource::<Trace>()
@@ -222,6 +224,7 @@ pub(crate) fn rejection(
     )
 }
 
+#[cfg(test)]
 pub(crate) fn stage_recorded_human(
     world: &mut World,
     identity: ActorLogIdentity,

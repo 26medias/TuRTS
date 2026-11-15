@@ -1,6 +1,7 @@
 //! Human wire projections share the bot observation permission boundary.
 #[path = "../src/export.rs"]
 mod export;
+#[allow(dead_code)] // This fixture uses projection permissions without the bot host.
 #[path = "../src/permissions.rs"]
 mod permissions;
 

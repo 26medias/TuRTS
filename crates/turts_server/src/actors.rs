@@ -366,9 +366,11 @@ pub(crate) fn record_installation(world: &mut World, record: ActorLogRecord) -> 
 pub(crate) fn record_lifecycle(world: &mut World, record: ActorLogRecord) -> Result<(), String> {
     crate::session::participant_trace::record(world, record)
 }
+#[cfg(test)]
 pub(crate) fn actor_trace(world: &World) -> &[ActorLogRecord] {
     crate::session::participant_trace::actor_trace(world)
 }
+#[cfg(test)]
 pub(crate) fn stage_recorded_human(
     world: &mut World,
     actor: ActorLogIdentity,
