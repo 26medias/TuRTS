@@ -66,6 +66,8 @@ pub enum StateTransactionCancelReason {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct StateTransactionCancel {
+    /// Retirement watermark: discard pending/staged IDs through this stamp's ID
+    /// in the same match/map context. Keep an already active complete view.
     pub stamp: StateTransactionStamp,
     pub reason: StateTransactionCancelReason,
 }
