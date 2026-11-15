@@ -42,6 +42,8 @@ fn id(local: &str) -> ContentId {
 
 fn unit(local: &str, radius: f32) -> ResolvedUnit {
     ResolvedUnit {
+        acquire: None,
+        armour: None,
         constructor: None,
         placement: None,
         build_area: None,
@@ -112,6 +114,7 @@ fn catalog() -> ContentCatalog {
         interaction_range: 0.5,
     });
     ContentCatalog {
+        combat: None,
         resources: BTreeMap::from([(
             ore.clone(),
             ResourceDef {

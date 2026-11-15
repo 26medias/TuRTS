@@ -222,12 +222,25 @@ pub(super) fn apply_overlays(world: &mut World, writes: &mut WriteSet) {
         apply_key_overlay(&mut orders.0, std::mem::take(&mut writes.orders));
     }
     if !writes.research.is_empty() {
-        let mut research = world.resource_mut::<ResearchState>();
         for ((slot, technology), completed) in std::mem::take(&mut writes.research) {
+            let has_armour = world
+                .get_resource::<crate::bootstrap::InstalledCatalog>()
+                .and_then(|catalog| catalog.0.technologies.get(&technology))
+                .is_some_and(|definition| {
+                    definition.effects.iter().any(|effect| {
+                        matches!(effect, turts_mod_api::ResolvedEffect::ArmourModifier { .. })
+                    })
+                });
+            let mut research = world.resource_mut::<ResearchState>();
             if completed.is_some() {
-                research.completed.insert((slot, technology));
+                if research.completed.insert((slot, technology.clone())) && has_armour {
+                    research.armour_order.push((slot, technology));
+                }
             } else {
-                research.completed.remove(&(slot, technology));
+                research.completed.remove(&(slot, technology.clone()));
+                research
+                    .armour_order
+                    .retain(|entry| entry != &(slot, technology.clone()));
             }
         }
     }

@@ -405,6 +405,7 @@ mod produce_hook_observation_tests {
         let replica = replica_state.replica.as_mut().unwrap();
         replica.last_applied_tick = Some(90);
         replica.research.push(ResearchRecord {
+            armour_order: Vec::new(),
             slot: SlotId(0),
             completed: vec!["forge:hardened_shells".into()],
         });

@@ -846,7 +846,8 @@ mod m3_disabled_legacy_producer_tests {
                 consumes: Vec::new(),
                 income: None,
                 provides: Vec::new(),
-
+                acquire: None,
+                armour: None,
                 constructor: None,
                 placement: None,
                 build_area: None,
@@ -869,6 +870,7 @@ mod m3_disabled_legacy_producer_tests {
                 removal: None,
             };
         let mut catalog = ContentCatalog {
+            combat: None,
             resources: BTreeMap::new(),
             units: BTreeMap::new(),
             nodes: BTreeMap::new(),

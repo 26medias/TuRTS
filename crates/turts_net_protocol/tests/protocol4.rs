@@ -13,8 +13,8 @@ where
 }
 
 #[test]
-fn protocol_version_is_6_and_version_4_is_old() {
-    assert_eq!(NET_PROTOCOL_VERSION, 6);
+fn protocol_version_is_7_and_version_4_is_old() {
+    assert_eq!(NET_PROTOCOL_VERSION, 7);
     let old_hello = Hello {
         player_id: 17,
         protocol_version: 4,
@@ -92,6 +92,7 @@ fn postcard_roundtrip_every_new_record() {
             current: 0,
         }],
         research: vec![ResearchRecord {
+            armour_order: vec!["forge:hardened_shells".into()],
             slot: SlotId(0),
             completed: vec!["forge:hardened_shells".into()],
         }],

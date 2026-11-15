@@ -174,7 +174,8 @@ mod tests {
             consumes: Vec::new(),
             income: None,
             provides: Vec::new(),
-
+            acquire: None,
+            armour: None,
             constructor: None,
             placement: None,
             build_area: None,
@@ -200,6 +201,7 @@ mod tests {
             removal: None,
         };
         let catalog = ContentCatalog {
+            combat: None,
             resources: BTreeMap::from([(
                 ore.clone(),
                 ResourceDef {

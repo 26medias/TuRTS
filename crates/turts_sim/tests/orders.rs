@@ -888,6 +888,7 @@ fn append_behind_hold_or_gather_is_not_queueable() {
         turts_mod_api::Behaviour::Gather,
     ] {
         app.world_mut().entity_mut(entity).insert(UnitOrders {
+            acquired: None,
             rally: None,
             current: Some(Order {
                 order: ContentId::parse("fixture:current").unwrap(),
@@ -924,6 +925,7 @@ fn append_rejects_when_hold_or_gather_is_queued() {
         turts_mod_api::Behaviour::Gather,
     ] {
         app.world_mut().entity_mut(entity).insert(UnitOrders {
+            acquired: None,
             rally: None,
             current: Some(Order {
                 order: ContentId::parse("fixture:current").unwrap(),

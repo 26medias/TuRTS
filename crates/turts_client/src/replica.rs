@@ -1837,6 +1837,29 @@ fn valid_m3_records(
         }) {
             return false;
         }
+        let expected = completed
+            .iter()
+            .filter(|id| {
+                context
+                    .content
+                    .catalog
+                    .technologies
+                    .get(*id)
+                    .is_some_and(|technology| {
+                        technology.effects.iter().any(|effect| {
+                            matches!(effect, turts_mod_api::ResolvedEffect::ArmourModifier { .. })
+                        })
+                    })
+            })
+            .cloned()
+            .collect::<HashSet<_>>();
+        let mut ordered = HashSet::new();
+        if record.armour_order.iter().any(|text| {
+            parse_id(text).is_none_or(|id| !expected.contains(&id) || !ordered.insert(id))
+        }) || ordered != expected
+        {
+            return false;
+        }
     }
     true
 }

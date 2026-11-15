@@ -85,6 +85,7 @@ pub struct Exports {
 
 /// A map that rejects duplicate keys during deserialization.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(transparent)]
 pub struct UniqueMap<K, V>(pub BTreeMap<K, V>);
 
 impl<'de, K, V> Deserialize<'de> for UniqueMap<K, V>
@@ -305,6 +306,8 @@ pub enum WeaponRangeMode {
     #[default]
     Centre,
     Surface,
+    /// Range to the target footprint, without adding the source radius (API 0.2.12).
+    TargetSurface,
 }
 
 impl WeaponRangeMode {
@@ -316,6 +319,7 @@ impl WeaponRangeMode {
     pub fn centre_reach(self, range: f32, source_radius: f32, target_radius: f32) -> f32 {
         match self {
             Self::Centre => range,
+            Self::TargetSurface => (range + target_radius).min(f32::MAX),
             Self::Surface => (range + source_radius + target_radius).min(f32::MAX),
         }
     }
@@ -334,6 +338,9 @@ pub struct WeaponDef {
     /// API 0.2.4, row U2: a damage type of the combat table.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub damage_type: Option<ContentRef>,
+    /// API 0.2.12: additive rows that match a target class or tag.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub bonus: Vec<DamageBonus>,
     /// API 0.2.4, row U6.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub when_short: Vec<WhenShort>,
@@ -361,6 +368,11 @@ pub enum WeaponStat {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub enum EffectDef {
+    ArmourModifier {
+        unit: ContentRef,
+        stat: ArmourStat,
+        add: u64,
+    },
     WeaponModifier {
         unit: ContentRef,
         stat: WeaponStat,
@@ -471,6 +483,55 @@ pub struct ArmourDef {
     pub class: ContentRef,
     #[serde(default)]
     pub flat: u64,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tags: Vec<ContentRef>,
+    #[serde(default, skip_serializing_if = "is_zero_u64")]
+    pub points: u64,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub flat_by_type: Vec<(ContentRef, u64)>,
+}
+
+fn is_zero_u64(value: &u64) -> bool {
+    *value == 0
+}
+
+/// API 0.2.12: one additive weapon bonus against a target class or tag.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DamageBonus {
+    pub against: ContentRef,
+    pub add: u64,
+}
+
+/// API 0.2.12: the optional points-based armour curve.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub enum ArmourCurve {
+    #[default]
+    None,
+    Ratio {
+        k: Ratio,
+    },
+    Percent {
+        per_point: Ratio,
+        #[serde(default = "RefundRatio::one")]
+        cap: Ratio,
+    },
+}
+
+impl ArmourCurve {
+    pub fn is_none(&self) -> bool {
+        matches!(self, Self::None)
+    }
+}
+
+/// API 0.2.12: a slot-owned armour upgrade.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub enum ArmourStat {
+    Flat,
+    Points,
+    FlatByType(ContentRef),
 }
 
 /// API 0.2.4, row U4: how far an idle unit looks for a target, and how far it chases one.
@@ -1038,6 +1099,10 @@ fn effect_ms() -> u32 {
 pub struct CombatDef {
     pub damage_types: Vec<String>,
     pub armour_classes: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tags: Vec<String>,
+    #[serde(default, skip_serializing_if = "ArmourCurve::is_none")]
+    pub curve: ArmourCurve,
     pub cells: Vec<DamageCell>,
     pub minimum: u64,
 }

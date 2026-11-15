@@ -267,6 +267,19 @@ pub fn derive_tokens(root: &Path) -> Result<TokenCatalog, ScanError> {
                     turts_mod_api::EffectDef::WeaponModifier { unit, .. } => {
                         add_id(&mut c, &p, &path, "effects.unit", unit, "unit-ref");
                     }
+                    turts_mod_api::EffectDef::ArmourModifier { unit, stat, .. } => {
+                        add_id(&mut c, &p, &path, "effects.unit", unit, "unit-ref");
+                        if let turts_mod_api::ArmourStat::FlatByType(damage_type) = stat {
+                            add_id(
+                                &mut c,
+                                &p,
+                                &path,
+                                "effects.stat.FlatByType",
+                                damage_type,
+                                "damage-type-ref",
+                            );
+                        }
+                    }
                 }
             }
         }

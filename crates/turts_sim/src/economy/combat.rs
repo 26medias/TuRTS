@@ -68,6 +68,8 @@ struct WeaponParameters {
     range_mode: turts_mod_api::WeaponRangeMode,
     radius: f32,
     damage: u64,
+    damage_type: Option<String>,
+    bonus: Vec<turts_mod_api::DamageBonus>,
     modifier: Result<u64, RejectReason>,
     cooldown_ticks: Result<u32, RejectReason>,
     ammo: Option<(ContentId, u64)>,
@@ -83,7 +85,7 @@ struct CombatIndex<'a> {
     max_radius: f32,
 }
 
-/// Run each enabled weapon once, in ascending unit-id order.
+/// Run each enabled weapon once, in coordinate order. Identity never gives firing priority.
 pub(crate) fn run_combat(world: &mut World) {
     if !world.contains_resource::<Weapons>()
         || !world.contains_resource::<Healths>()
@@ -143,7 +145,13 @@ pub(crate) fn run_combat(world: &mut World) {
         .keys()
         .copied()
         .collect::<Vec<_>>();
-    weapon_ids.sort_unstable();
+    weapon_ids.sort_by(|left, right| {
+        let left = positions.get(left).copied().unwrap_or_default();
+        let right = positions.get(right).copied().unwrap_or_default();
+        left.x
+            .total_cmp(&right.x)
+            .then_with(|| left.y.total_cmp(&right.y))
+    });
     for weapon in weapon_ids {
         if world.resource::<Disabled>().0.contains(&weapon) {
             continue;
@@ -202,6 +210,10 @@ pub(crate) fn run_combat(world: &mut World) {
                 && matches!(order.target, crate::orders::OrderTargetSim::Point(_))
         }) && !stops_for_engage;
         let origin = positions[&weapon];
+        let ordered_attack = order.is_some_and(|order| {
+            order.behaviour == turts_mod_api::Behaviour::Attack
+                && matches!(order.target, crate::orders::OrderTargetSim::Unit(_))
+        });
         let focus = order.and_then(|order| match order.target {
             crate::orders::OrderTargetSim::Unit(target)
                 if order.behaviour == turts_mod_api::Behaviour::Attack =>
@@ -209,6 +221,13 @@ pub(crate) fn run_combat(world: &mut World) {
                 Some(target)
             }
             _ => None,
+        });
+        let focus = focus.or_else(|| {
+            world
+                .get::<crate::orders::UnitOrders>(entity)
+                .and_then(|orders| orders.acquired)
+                .filter(|state| !state.returning)
+                .map(|state| state.target)
         });
         let target = if suppressed_by_fire_policy
             || suppressed_by_engage
@@ -235,6 +254,15 @@ pub(crate) fn run_combat(world: &mut World) {
                 },
             );
         }
+        let hit = target
+            .filter(|_| {
+                world
+                    .resource::<Weapons>()
+                    .0
+                    .get(&weapon)
+                    .is_some_and(|state| state.cooldown <= 1)
+            })
+            .map(|target| resolve_hit(world, target, &parameters));
         let fire_enabled = power::weapon_enabled(world, weapon);
         let _ = transaction::transact(world, |tx| {
             tx.mark_m3();
@@ -268,7 +296,8 @@ pub(crate) fn run_combat(world: &mut World) {
                 target,
                 &parameters,
                 &mut state,
-                focus == Some(target),
+                ordered_attack && focus == Some(target),
+                hit.ok_or(RejectReason::UnknownUnit)?,
             )
         });
     }
@@ -278,7 +307,7 @@ fn weapon_parameters(
     world: &World,
     entity: bevy_ecs::world::EntityRef<'_>,
 ) -> Option<WeaponParameters> {
-    let owner = entity.get::<Owner>()?.0.0;
+    let owner = entity.get::<crate::Owner>()?.0.0;
     let unit_type = entity.get::<UnitType>()?.0;
     let type_entry = world.resource::<UnitTypes>().get(unit_type)?;
     let unit_def = ContentId::parse(&type_entry.content_id).ok()?;
@@ -305,6 +334,8 @@ fn weapon_parameters(
         range_mode: weapon_def.range_mode,
         radius: type_entry.radius,
         damage: weapon_def.damage,
+        damage_type: weapon_def.damage_type.clone(),
+        bonus: weapon_def.bonus.clone(),
         modifier,
         cooldown_ticks,
         ammo: weapon_def
@@ -453,7 +484,7 @@ fn choose_target(
             *candidates.radii.get(&id)?,
         );
         within_weapon_range(origin, position, reach)
-            .then(|| (position.distance_squared(origin), id))
+            .then(|| (position.distance_squared(origin), position, id))
     };
     if let Some(focus) = focus
         && matches(focus).is_some()
@@ -476,9 +507,100 @@ fn choose_target(
         .min_by(|left, right| {
             left.0
                 .total_cmp(&right.0)
-                .then_with(|| left.1.cmp(&right.1))
+                .then_with(|| left.1.x.total_cmp(&right.1.x))
+                .then_with(|| left.1.y.total_cmp(&right.1.y))
         })
-        .map(|(_, id)| id)
+        .map(|(_, _, id)| id)
+}
+
+fn resolve_hit(
+    world: &World,
+    target: u32,
+    parameters: &WeaponParameters,
+) -> Result<u64, RejectReason> {
+    use turts_rules::damage::{Curve, Hit};
+    let base = turts_rules::damage::base(parameters.damage, parameters.modifier?)
+        .ok_or(RejectReason::ArithmeticOverflow)?;
+    let catalog = &world.resource::<InstalledCatalog>().0;
+    let Some(table) = &catalog.combat else {
+        return Ok(base);
+    };
+    let entity = crate::unit_index::unit_entity(world, target).ok_or(RejectReason::UnknownUnit)?;
+    let unit = world
+        .get::<UnitType>(entity)
+        .and_then(|kind| world.resource::<UnitTypes>().get(kind.0))
+        .ok_or(RejectReason::UnknownUnit)?;
+    let owner = world
+        .get::<Owner>(entity)
+        .ok_or(RejectReason::UnknownUnit)?
+        .0
+        .0;
+    let armour = super::research::effective_armour(
+        world.resource::<ResearchState>(),
+        catalog,
+        owner,
+        &ContentId::parse(&unit.content_id).map_err(|_| RejectReason::IntegrityViolation)?,
+    )?;
+    let mut bonus = 0_u64;
+    for row in &parameters.bonus {
+        if armour
+            .as_ref()
+            .is_some_and(|armour| armour.class == row.against || armour.tags.contains(&row.against))
+        {
+            bonus = bonus
+                .checked_add(row.add)
+                .ok_or(RejectReason::ArithmeticOverflow)?;
+        }
+    }
+    let cell = table
+        .cells
+        .iter()
+        .find(|cell| {
+            parameters.damage_type.as_ref() == Some(&cell.damage)
+                && armour
+                    .as_ref()
+                    .is_some_and(|armour| armour.class == cell.armour)
+        })
+        .map_or(Some(turts_rules::Ratio::ONE), |cell| {
+            turts_rules::Ratio::new(
+                u64::from(cell.ratio.numerator),
+                u64::from(cell.ratio.denominator),
+            )
+        })
+        .ok_or(RejectReason::IntegrityViolation)?;
+    let ratio = |ratio: turts_mod_api::Ratio| {
+        turts_rules::Ratio::new(u64::from(ratio.numerator), u64::from(ratio.denominator))
+            .ok_or(RejectReason::IntegrityViolation)
+    };
+    let curve = match table.curve {
+        turts_mod_api::ArmourCurve::None => Curve::None,
+        turts_mod_api::ArmourCurve::Ratio { k } => Curve::Ratio { k: ratio(k)? },
+        turts_mod_api::ArmourCurve::Percent { per_point, cap } => Curve::Percent {
+            per_point: ratio(per_point)?,
+            cap: ratio(cap)?,
+        },
+    };
+    let (points, flat) = armour.as_ref().map_or((0, 0), |armour| {
+        (
+            armour.points,
+            parameters
+                .damage_type
+                .as_ref()
+                .and_then(|damage| armour.flat_by_type.iter().find(|(kind, _)| kind == damage))
+                .map_or(armour.flat, |(_, value)| *value),
+        )
+    });
+    Hit {
+        base,
+        bonus,
+        cell,
+        curve,
+        points,
+        flat,
+        minimum: table.minimum,
+    }
+    .resolve()
+    .ok_or(RejectReason::ArithmeticOverflow)
 }
 
 fn fire(
@@ -488,6 +610,7 @@ fn fire(
     parameters: &WeaponParameters,
     state: &mut WeaponState,
     ordered_attack: bool,
+    hit: Result<u64, RejectReason>,
 ) -> Result<(), RejectReason> {
     let ammo_amount = if let Some((item, per_shot)) = &parameters.ammo {
         tx.inventory(Endpoint::Inventory(weapon))?;
@@ -516,7 +639,9 @@ fn fire(
         .checked_add(parameters.modifier?)
         .ok_or(RejectReason::ArithmeticOverflow)?;
     let health = tx.health(target)?;
-    let applied = health.min(damage);
+    let hit = hit?;
+    let reduced = hit < damage;
+    let applied = turts_rules::damage::applied(hit, health);
     let remaining = health
         .checked_sub(applied)
         .ok_or(RejectReason::IntegrityViolation)?;
@@ -542,6 +667,7 @@ fn fire(
             ammo: ammo_amount,
             damage,
             applied,
+            reduced,
         },
     )?;
     if remaining == 0 {
@@ -577,12 +703,527 @@ mod tests {
         ContentId::parse(value).unwrap()
     }
 
+    #[test]
+    fn combat_visible_firing_priority_does_not_change_when_spawn_ids_swap() {
+        for reverse in [false, true] {
+            let mut first = weapon(0, 100);
+            first.health = Some(turts_mod_api::HealthDef { max: 100 });
+            first.weapon.as_mut().unwrap().ammo = None;
+            let mut second = first.clone();
+            second.id = cid(TARGET);
+            let mut placements = vec![placement(WEAPON, 0, 8., 5.), placement(TARGET, 1, 5., 5.)];
+            if reverse {
+                placements.reverse();
+            }
+            let mut app = app_with_units(20, vec![first, second], placements, BTreeMap::new());
+            app.world_mut().run_schedule(bevy_app::FixedUpdate);
+            let survivors = app
+                .world()
+                .iter_entities()
+                .filter_map(|entity| {
+                    Some((
+                        entity.get::<UnitId>()?.0,
+                        entity.get::<crate::Owner>()?.0.0,
+                        entity.get::<Position>()?.0,
+                    ))
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(survivors.len(), 1);
+            assert_eq!(
+                survivors[0].1, 1,
+                "spawn IDs must not reverse the surviving side"
+            );
+            assert_eq!(survivors[0].2, bevy_math::Vec2::new(5., 5.));
+        }
+    }
+
+    #[test]
+    fn acquisition_yields_to_a_real_player_move_command() {
+        let mut app = acquisition_fixture(true, 6., 5.);
+        app.update();
+        let actor = entity_of(&app, 1);
+        assert!(
+            app.world()
+                .get::<UnitOrders>(actor)
+                .unwrap()
+                .acquired
+                .is_some()
+        );
+        let result = crate::command::apply_command(
+            app.world_mut(),
+            &crate::command::Command {
+                slot: crate::SlotId(0),
+                seq: 1,
+                kind: crate::command::CommandKind::MoveTo {
+                    unit_ids: vec![1],
+                    target: bevy_math::Vec2::new(2., 5.),
+                },
+            },
+        );
+        assert!(result.outcome.is_ok(), "{result:?}");
+        for _ in 0..5 {
+            app.update();
+        }
+        assert!(app.world().get::<Position>(actor).unwrap().0.x < 5.);
+        assert!(
+            app.world()
+                .get::<UnitOrders>(actor)
+                .unwrap()
+                .acquired
+                .is_none()
+        );
+        for _ in 0..25 {
+            app.update();
+        }
+        assert!(
+            app.world()
+                .get::<Position>(actor)
+                .unwrap()
+                .0
+                .distance(bevy_math::Vec2::new(2., 5.))
+                < 0.01
+        );
+    }
+
+    fn acquisition_fixture(mobile: bool, leash: f32, distance: f32) -> bevy_app::App {
+        let mut shooter = weapon(100, 10);
+        shooter.movement = mobile.then_some(turts_mod_api::MovementDef { speed: 4. });
+        shooter.acquire = Some(turts_mod_api::AcquireDef { range: 8., leash });
+        let def = shooter.weapon.as_mut().unwrap();
+        def.range = if mobile { 1.2 } else { 7.5 };
+        def.range_mode = turts_mod_api::WeaponRangeMode::TargetSurface;
+        def.ammo = None;
+        app_with_units(
+            20,
+            vec![shooter, unit(TARGET, Some(1000))],
+            vec![
+                placement(WEAPON, 0, 5., 5.),
+                placement(TARGET, 1, 5. + distance, 5.),
+            ],
+            BTreeMap::new(),
+        )
+    }
+
+    #[test]
+    fn acquisition_chases_fires_then_returns_after_target_leaves_the_leash() {
+        let mut app = acquisition_fixture(true, 6., 5.);
+        for _ in 0..50 {
+            app.update();
+        }
+        let actor = entity_of(&app, 1);
+        let position = app.world().get::<Position>(actor).unwrap().0;
+        assert!(
+            position.x > 5.5 && position.x < 9.,
+            "actual chase position {position:?}"
+        );
+        assert!(app.world().resource::<Healths>().0[&2] < 1000);
+        let target = entity_of(&app, 2);
+        app.world_mut()
+            .entity_mut(target)
+            .insert(Position(bevy_math::Vec2::new(25., 5.)));
+        app.update();
+        assert!(
+            app.world()
+                .get::<UnitOrders>(actor)
+                .unwrap()
+                .acquired
+                .unwrap()
+                .returning
+        );
+        for _ in 0..60 {
+            app.update();
+        }
+        assert!(
+            app.world()
+                .get::<Position>(actor)
+                .unwrap()
+                .0
+                .distance(bevy_math::Vec2::new(5., 5.))
+                < 0.01
+        );
+        assert!(
+            app.world()
+                .get::<UnitOrders>(actor)
+                .unwrap()
+                .acquired
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn acquisition_zero_leash_shoots_in_place_and_does_not_chase() {
+        for (distance, fires) in [(1.5, true), (4., false)] {
+            let mut app = acquisition_fixture(true, 0., distance);
+            for _ in 0..30 {
+                app.update();
+            }
+            let actor = entity_of(&app, 1);
+            assert_eq!(
+                app.world().get::<Position>(actor).unwrap().0,
+                bevy_math::Vec2::new(5., 5.)
+            );
+            assert_eq!(app.world().resource::<Healths>().0[&2] < 1000, fires);
+        }
+    }
+
+    #[test]
+    fn acquisition_static_tower_fires_without_moving() {
+        let mut app = acquisition_fixture(false, 0., 4.);
+        for _ in 0..30 {
+            app.update();
+        }
+        assert!(app.world().resource::<Healths>().0[&2] < 1000);
+        assert_eq!(
+            app.world().get::<Position>(entity_of(&app, 1)).unwrap().0,
+            bevy_math::Vec2::new(5., 5.)
+        );
+    }
+
+    #[test]
+    fn acquisition_blocked_chase_selects_an_enemy_already_in_reach() {
+        let mut app = acquisition_fixture(true, 6., 5.);
+        // Two more bodies use the same target definition: a friend blocks the chase,
+        // while a second enemy can be hit beside it.
+        let kind = app
+            .world()
+            .get::<crate::UnitType>(entity_of(&app, 2))
+            .unwrap()
+            .0;
+        app.world_mut().spawn((
+            UnitId(3),
+            crate::UnitType(kind),
+            crate::Owner(crate::SlotId(0)),
+            Position(bevy_math::Vec2::new(6.2, 5.)),
+        ));
+        app.world_mut().spawn((
+            UnitId(4),
+            crate::UnitType(kind),
+            crate::Owner(crate::SlotId(1)),
+            Position(bevy_math::Vec2::new(5., 6.5)),
+        ));
+        app.world_mut()
+            .resource_mut::<Healths>()
+            .0
+            .extend([(3, 1000), (4, 1000)]);
+        let actor = entity_of(&app, 1);
+        crate::orders::writer::edit_unit_orders(app.world_mut(), actor, |orders| {
+            orders.acquired = Some(crate::orders::AcquiredTarget {
+                home: bevy_math::Vec2::new(5., 5.),
+                target: 2,
+                returning: false,
+            })
+        });
+        app.world_mut()
+            .entity_mut(actor)
+            .insert(crate::world::MoveTarget(bevy_math::Vec2::new(8.3, 5.)));
+        app.update();
+        assert_eq!(
+            app.world()
+                .get::<UnitOrders>(actor)
+                .unwrap()
+                .acquired
+                .unwrap()
+                .target,
+            4
+        );
+        assert!(app.world().resource::<Healths>().0[&4] < 1000);
+        assert_eq!(app.world().resource::<Healths>().0[&2], 1000);
+        assert_eq!(app.world().resource::<Healths>().0[&3], 1000);
+    }
+
+    fn damage_fixture(damage: u64, damage_type: &str, class: &str, flat: u64) -> bevy_app::App {
+        let mut shooter = weapon(0, damage);
+        shooter.weapon.as_mut().unwrap().damage_type =
+            Some(format!("combat_fixture:{damage_type}"));
+        let mut target = unit(TARGET, Some(1000));
+        target.armour = Some(turts_mod_api::ArmourDef {
+            class: format!("combat_fixture:{class}"),
+            flat,
+            points: 0,
+            tags: vec![],
+            flat_by_type: vec![],
+        });
+        let mut app = app_with_units(
+            20,
+            vec![shooter, target],
+            vec![placement(WEAPON, 0, 5., 5.), placement(TARGET, 1, 8., 5.)],
+            BTreeMap::new(),
+        );
+        let cells = [
+            ("pierce", "light", 1, 1),
+            ("pierce", "heavy", 3, 4),
+            ("pierce", "structure", 1, 4),
+            ("blade", "light", 1, 1),
+            ("blade", "heavy", 1, 1),
+            ("blade", "structure", 3, 4),
+        ]
+        .into_iter()
+        .map(
+            |(damage, armour, numerator, denominator)| turts_mod_api::DamageCell {
+                damage: format!("combat_fixture:{damage}"),
+                armour: format!("combat_fixture:{armour}"),
+                ratio: turts_mod_api::Ratio {
+                    numerator,
+                    denominator,
+                },
+            },
+        )
+        .collect();
+        app.world_mut().resource_mut::<InstalledCatalog>().0.combat =
+            Some(turts_mod_api::CombatDef {
+                damage_types: vec!["pierce".into(), "blade".into()],
+                armour_classes: vec!["light".into(), "heavy".into(), "structure".into()],
+                tags: vec![],
+                curve: turts_mod_api::ArmourCurve::None,
+                cells,
+                minimum: 1,
+            });
+        app
+    }
+
+    #[test]
+    fn damage_pipeline_server_uses_the_table_and_default_game_weapon_matrix() {
+        for (damage, kind, expected) in [
+            (15, "pierce", [15, 9, 3]),
+            (20, "blade", [20, 18, 15]),
+            (18, "pierce", [18, 11, 4]),
+            (25, "blade", [25, 23, 18]),
+        ] {
+            for (index, class) in ["light", "heavy", "structure"].into_iter().enumerate() {
+                let mut app =
+                    damage_fixture(damage, kind, class, if class == "heavy" { 2 } else { 0 });
+                app.world_mut().run_schedule(bevy_app::FixedUpdate);
+                assert_eq!(
+                    app.world().resource::<Healths>().0[&2],
+                    1000 - expected[index],
+                    "{damage} {kind} against {class}"
+                );
+            }
+        }
+        let mut app = damage_fixture(15, "pierce", "heavy", 2);
+        app.world_mut()
+            .resource_mut::<InstalledCatalog>()
+            .0
+            .combat
+            .as_mut()
+            .unwrap()
+            .cells
+            .iter_mut()
+            .find(|cell| cell.damage.ends_with(":pierce") && cell.armour.ends_with(":heavy"))
+            .unwrap()
+            .ratio = turts_mod_api::Ratio {
+            numerator: 1,
+            denominator: 2,
+        };
+        app.world_mut().run_schedule(bevy_app::FixedUpdate);
+        assert_eq!(app.world().resource::<Healths>().0[&2], 995);
+        assert!(
+            crate::economy::events::visual_effects(
+                &app.world()
+                    .resource::<crate::economy::events::PendingEconomyEvents>()
+                    .0
+            )
+            .iter()
+            .any(|effect| matches!(
+                effect,
+                crate::economy::events::EffectRow::Fired { reduced: true, .. }
+            ))
+        );
+    }
+
+    #[test]
+    fn damage_pipeline_combines_table_and_curve_with_one_floor_on_the_server() {
+        let mut app = damage_fixture(15, "pierce", "heavy", 0);
+        let mut catalog = app.world_mut().resource_mut::<InstalledCatalog>();
+        let table = catalog.0.combat.as_mut().unwrap();
+        table.curve = turts_mod_api::ArmourCurve::Ratio {
+            k: turts_mod_api::Ratio {
+                numerator: 2,
+                denominator: 1,
+            },
+        };
+        table
+            .cells
+            .iter_mut()
+            .find(|cell| cell.damage.ends_with(":pierce") && cell.armour.ends_with(":heavy"))
+            .unwrap()
+            .ratio = turts_mod_api::Ratio {
+            numerator: 1,
+            denominator: 2,
+        };
+        catalog
+            .0
+            .units
+            .get_mut(&cid(TARGET))
+            .unwrap()
+            .armour
+            .as_mut()
+            .unwrap()
+            .points = 1;
+        app.world_mut().run_schedule(bevy_app::FixedUpdate);
+        assert_eq!(app.world().resource::<Healths>().0[&2], 995);
+    }
+
+    #[test]
+    fn damage_pipeline_adds_every_matching_bonus_and_rejects_overflow_atomically() {
+        for (bonus, expected) in [(3, Some(22)), (u64::MAX, None)] {
+            let mut app = damage_fixture(15, "blade", "heavy", 0);
+            let mut catalog = app.world_mut().resource_mut::<InstalledCatalog>();
+            catalog
+                .0
+                .units
+                .get_mut(&cid(TARGET))
+                .unwrap()
+                .armour
+                .as_mut()
+                .unwrap()
+                .tags = vec!["combat_fixture:organic".into()];
+            catalog
+                .0
+                .units
+                .get_mut(&cid(WEAPON))
+                .unwrap()
+                .weapon
+                .as_mut()
+                .unwrap()
+                .bonus = vec![
+                turts_mod_api::DamageBonus {
+                    against: "combat_fixture:heavy".into(),
+                    add: bonus,
+                },
+                turts_mod_api::DamageBonus {
+                    against: "combat_fixture:organic".into(),
+                    add: 4,
+                },
+                turts_mod_api::DamageBonus {
+                    against: "combat_fixture:structure".into(),
+                    add: 90,
+                },
+            ];
+            app.world_mut().run_schedule(bevy_app::FixedUpdate);
+            assert_eq!(
+                app.world().resource::<Healths>().0[&2],
+                1000 - expected.unwrap_or(0)
+            );
+            let ammo =
+                app.world().resource::<EconomyLedger>().inventories[&1].items[&cid(AMMO)].on_hand;
+            assert_eq!(
+                ammo,
+                if expected.is_some() { 9 } else { 10 },
+                "overflow must not consume ammunition"
+            );
+        }
+    }
+
+    #[test]
+    fn target_surface_reach_hits_at_two_point_six_but_not_two_point_eight() {
+        for (distance, fires) in [(2.6, true), (2.8, false)] {
+            let mut shooter = weapon(0, 20);
+            let weapon = shooter.weapon.as_mut().unwrap();
+            weapon.range = 1.2;
+            weapon.range_mode = turts_mod_api::WeaponRangeMode::TargetSurface;
+            let mut target = unit(TARGET, Some(100));
+            target.footprint = Footprint::Circle { radius: 1.5 };
+            let mut app = app_with_units(
+                20,
+                vec![shooter, target],
+                vec![
+                    placement(WEAPON, 0, 5., 5.),
+                    placement(TARGET, 1, 5. + distance, 5.),
+                ],
+                BTreeMap::new(),
+            );
+            app.world_mut().run_schedule(bevy_app::FixedUpdate);
+            assert_eq!(
+                app.world().resource::<Healths>().0[&2],
+                if fires { 80 } else { 100 },
+                "distance {distance}"
+            );
+        }
+    }
+
+    #[test]
+    fn damage_pipeline_repeats_every_health_value_on_every_tick() {
+        let run = || {
+            let mut app = damage_fixture(100, "pierce", "heavy", 2);
+            let mut catalog = app.world_mut().resource_mut::<InstalledCatalog>();
+            catalog.0.combat.as_mut().unwrap().curve = turts_mod_api::ArmourCurve::Ratio {
+                k: turts_mod_api::Ratio {
+                    numerator: 50,
+                    denominator: 3,
+                },
+            };
+            catalog
+                .0
+                .units
+                .get_mut(&cid(TARGET))
+                .unwrap()
+                .armour
+                .as_mut()
+                .unwrap()
+                .points = 5;
+            let technology = cid("combat_fixture:armour_upgrade");
+            app.world_mut()
+                .resource_mut::<InstalledCatalog>()
+                .0
+                .technologies
+                .insert(
+                    technology.clone(),
+                    turts_mod_api::ResolvedTechnology {
+                        id: technology.clone(),
+                        name: "Armour upgrade".into(),
+                        prerequisites: vec![],
+                        duration_ms: 100,
+                        costs: vec![],
+                        payment: turts_mod_api::PaymentPolicy::ChargeOnQueue,
+                        cancel_refunds: turts_mod_api::CancelRefunds {
+                            queued: turts_mod_api::Ratio::ONE,
+                            running: turts_mod_api::Ratio::ZERO,
+                            output_blocked: turts_mod_api::Ratio::ONE,
+                            destroyed: turts_mod_api::Ratio::ZERO,
+                        },
+                        effects: vec![
+                            turts_mod_api::ResolvedEffect::ArmourModifier {
+                                unit: cid(TARGET),
+                                stat: turts_mod_api::ArmourStat::Points,
+                                add: 2,
+                            },
+                            turts_mod_api::ResolvedEffect::ArmourModifier {
+                                unit: cid(TARGET),
+                                stat: turts_mod_api::ArmourStat::Flat,
+                                add: 1,
+                            },
+                        ],
+                    },
+                );
+            let mut healths = Vec::new();
+            for tick in 0..20 {
+                if tick == 5 {
+                    crate::economy::transaction::transact(app.world_mut(), |tx| {
+                        tx.stage_research_complete(1, technology.clone());
+                        Ok(())
+                    })
+                    .unwrap();
+                }
+                app.world_mut().run_schedule(bevy_app::FixedUpdate);
+                healths.push(app.world().resource::<Healths>().0.clone());
+            }
+            assert_eq!(healths[4][&2], 725);
+            assert_eq!(healths[5][&2], 676);
+            healths
+        };
+        let first = run();
+        assert!(first.windows(2).any(|pair| pair[0] != pair[1]));
+        assert_eq!(first, run());
+    }
+
     fn unit(id: &str, health: Option<u64>) -> ResolvedUnit {
         ResolvedUnit {
             consumes: Vec::new(),
             income: None,
             provides: Vec::new(),
-
+            acquire: None,
+            armour: None,
             constructor: None,
             placement: None,
             build_area: None,
@@ -617,7 +1258,8 @@ mod tests {
         });
         result.weapon = Some(ResolvedWeapon {
             when_short: Vec::new(),
-
+            bonus: Vec::new(),
+            damage_type: None,
             range: 8.0,
             range_mode: turts_mod_api::WeaponRangeMode::Centre,
             cooldown_ms,
@@ -667,6 +1309,7 @@ mod tests {
             .map(|definition| (definition.id.clone(), definition))
             .collect();
         let catalog = ContentCatalog {
+            combat: None,
             resources: BTreeMap::from([(
                 cid(AMMO),
                 ResourceDef {
@@ -783,6 +1426,7 @@ mod tests {
                     ammo,
                     damage,
                     applied,
+                    ..
                 } => Some((*weapon, *target, item.clone(), *ammo, *damage, *applied)),
                 _ => None,
             })
@@ -2086,21 +2730,32 @@ mod tests {
     }
 
     #[test]
-    fn nearest_target_wins_tie_lowest_unit_id() {
-        let mut app = app_with_units(
-            20,
-            vec![weapon(0, 10), unit(TARGET, Some(100))],
-            vec![
-                placement(WEAPON, 0, 5.0, 5.0),
-                placement(TARGET, 1, 6.0, 5.0),
-                placement(TARGET, 1, 4.0, 5.0),
-            ],
-            BTreeMap::new(),
-        );
-        app.update();
-        assert_eq!(fired_events(&app)[0].1, 2);
-        assert_eq!(app.world().resource::<Healths>().0[&2], 90);
-        assert_eq!(app.world().resource::<Healths>().0[&3], 100);
+    fn nearest_target_ties_use_coordinates_when_spawn_ids_swap() {
+        for reverse in [false, true] {
+            let mut targets = vec![placement(TARGET, 1, 6., 5.), placement(TARGET, 1, 4., 5.)];
+            if reverse {
+                targets.reverse();
+            }
+            let mut placements = vec![placement(WEAPON, 0, 5., 5.)];
+            placements.extend(targets);
+            let mut app = app_with_units(
+                20,
+                vec![weapon(0, 10), unit(TARGET, Some(100))],
+                placements,
+                BTreeMap::new(),
+            );
+            app.update();
+            let target = if reverse { 2 } else { 3 };
+            assert_eq!(fired_events(&app)[0].1, target);
+            assert_eq!(app.world().resource::<Healths>().0[&target], 90);
+            assert_eq!(
+                app.world()
+                    .get::<Position>(entity_of(&app, target))
+                    .unwrap()
+                    .0,
+                bevy_math::Vec2::new(4., 5.)
+            );
+        }
     }
 
     #[test]
@@ -2853,6 +3508,7 @@ mod tests {
         let mut invalid_weapon = weapon(u64::MAX, 10);
         invalid_weapon.weapon.as_mut().unwrap().cooldown_ms = u64::MAX;
         let catalog = ContentCatalog {
+            combat: None,
             resources: BTreeMap::from([(
                 cid(AMMO),
                 ResourceDef {

@@ -1,0 +1,6 @@
+(id: "tower", name: "Guard tower", footprint: Circle(radius: 1.0), movement: None,
+ inventory: None, gatherer: None, drop_off: None, producer: None,
+ health: Some((max: 400)), armour: Some((class: "skirmish:structure", flat: 0)), acquire: Some((range: 7.5, leash: 0.0)),
+ weapon: Some((range: 7.5, range_mode: TargetSurface, cooldown_ms: 800, damage: 18, damage_type: Some("skirmish:pierce"), ammo: None, targets: (slots: Enemy))),
+ placement: Some((gap: 1.5, node_clearance: 1.5, in_build_area: true, site_health: (numerator: 1, denominator: 4))),
+ removal: Some((by_command: true, contents: Destroy)))

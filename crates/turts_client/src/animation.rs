@@ -1097,6 +1097,7 @@ mod effect_freshness_tests {
             sequence: 50,
             tick: 1,
             effect: Effect::Fired {
+                reduced: false,
                 unit: UnitId(1),
                 target: UnitId(2),
                 weapon: 0,
@@ -1121,6 +1122,7 @@ mod effect_freshness_tests {
                 sequence: 1,
                 tick: 21,
                 effect: Effect::Fired {
+                    reduced: false,
                     unit: UnitId(1),
                     target: UnitId(2),
                     weapon: 0,
@@ -1140,6 +1142,7 @@ mod effect_freshness_tests {
             sequence: 1,
             tick: 9,
             effect: Effect::Fired {
+                reduced: false,
                 unit: UnitId(1),
                 target: UnitId(2),
                 weapon: 0,

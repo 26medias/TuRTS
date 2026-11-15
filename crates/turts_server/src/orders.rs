@@ -267,6 +267,7 @@ mod tests {
 
     fn empty_catalog() -> ContentCatalog {
         ContentCatalog {
+            combat: None,
             resources: Default::default(),
             units: Default::default(),
             nodes: Default::default(),

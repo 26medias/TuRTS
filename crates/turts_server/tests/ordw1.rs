@@ -300,6 +300,7 @@ fn ordw1_a_fired_effect_is_at_most_eight_bytes() {
     let batch = CommittedTick {
         tick: 9,
         effects: vec![EffectRow::Fired {
+            reduced: false,
             unit: 16_383,
             target: 16_383,
             weapon: 200,
@@ -436,6 +437,7 @@ fn effects_and_supply_go_to_the_right_viewer() {
         }],
         effects: vec![
             EffectRow::Fired {
+                reduced: false,
                 unit: 3,
                 target: 5,
                 weapon: 0,

@@ -8125,6 +8125,7 @@ mod tests {
                 before
                     .catalog
                     .get_or_insert_with(|| turts_sim::economy::views::CatalogAudit {
+                        combat: None,
                         resource_kinds: vec![],
                         nodes: vec![],
                         units: vec![],
@@ -8379,6 +8380,7 @@ mod tests {
         let unit_id = turts_mod_api::ContentId::new(&package, "walker");
         let move_id = turts_mod_api::ContentId::new(&package, "move");
         let mut catalog = ContentCatalog {
+            combat: None,
             resources: BTreeMap::new(),
             units: BTreeMap::new(),
             nodes: BTreeMap::new(),
@@ -8392,6 +8394,8 @@ mod tests {
         catalog.units.insert(
             unit_id.clone(),
             ResolvedUnit {
+                acquire: None,
+                armour: None,
                 constructor: None,
                 placement: None,
                 build_area: None,
@@ -8830,6 +8834,7 @@ mod tests {
         let worker = ContentId::new(&package, "worker");
         let gather = ContentId::new(&package, "gather");
         let mut catalog = ContentCatalog {
+            combat: None,
             resources: BTreeMap::from([(
                 item.clone(),
                 ResourceDef {
@@ -8842,6 +8847,8 @@ mod tests {
             units: BTreeMap::from([(
                 worker.clone(),
                 ResolvedUnit {
+                    acquire: None,
+                    armour: None,
                     constructor: None,
                     placement: None,
                     build_area: None,
@@ -8910,6 +8917,8 @@ mod tests {
         catalog.units.insert(
             depot.clone(),
             ResolvedUnit {
+                acquire: None,
+                armour: None,
                 constructor: None,
                 placement: None,
                 build_area: None,
@@ -9055,6 +9064,7 @@ mod tests {
         let move_order = ContentId::new(&package, "move");
         let hold_order = ContentId::new(&package, "hold");
         let catalog = ContentCatalog {
+            combat: None,
             resources: BTreeMap::from([(
                 item.clone(),
                 ResourceDef {
@@ -9067,6 +9077,8 @@ mod tests {
             units: BTreeMap::from([(
                 worker.clone(),
                 ResolvedUnit {
+                    acquire: None,
+                    armour: None,
                     constructor: None,
                     placement: None,
                     build_area: None,
@@ -9531,9 +9543,14 @@ mod tests {
         state.unit_types[0].content_id = producer_id.to_string();
         state.units[0].content_id = producer_id.to_string();
         state.catalog = Some(CatalogAudit {
+            combat: None,
             resource_kinds: vec![],
             nodes: vec![],
             units: vec![CatalogUnitAudit {
+                acquire: None,
+                armour: None,
+                weapon_bonus: Vec::new(),
+                weapon_damage_type: None,
                 constructor: None,
                 placement: None,
                 build_area: None,
@@ -9931,6 +9948,7 @@ mod tests {
         let worker = ContentId::new(&package, "worker");
         let remove = ContentId::new(&package, "remove");
         let catalog = ContentCatalog {
+            combat: None,
             resources: BTreeMap::from([
                 (
                     iron.clone(),
@@ -9954,6 +9972,8 @@ mod tests {
             units: BTreeMap::from([(
                 worker.clone(),
                 ResolvedUnit {
+                    acquire: None,
+                    armour: None,
                     constructor: None,
                     placement: None,
                     build_area: None,
@@ -10149,6 +10169,7 @@ mod tests {
             denominator: 2,
         };
         let catalog = ContentCatalog {
+            combat: None,
             resources: BTreeMap::from([
                 (
                     ore.clone(),
@@ -10172,6 +10193,8 @@ mod tests {
             units: BTreeMap::from([(
                 machine.clone(),
                 ResolvedUnit {
+                    acquire: None,
+                    armour: None,
                     constructor: None,
                     placement: None,
                     build_area: None,
@@ -10424,6 +10447,7 @@ mod tests {
             destroyed: turts_mod_api::RefundRatio::ZERO,
         };
         let catalog = ContentCatalog {
+            combat: None,
             resources: BTreeMap::from([
                 (
                     alpha.clone(),
@@ -10447,6 +10471,8 @@ mod tests {
             units: BTreeMap::from([(
                 producer.clone(),
                 ResolvedUnit {
+                    acquire: None,
+                    armour: None,
                     constructor: None,
                     placement: None,
                     build_area: None,
@@ -10659,6 +10685,7 @@ mod tests {
         let enable = ContentId::new(&package, "enable");
         let disable = ContentId::new(&package, "disable");
         let catalog = ContentCatalog {
+            combat: None,
             resources: BTreeMap::from([(
                 ore.clone(),
                 ResourceDef {
@@ -10671,6 +10698,8 @@ mod tests {
             units: BTreeMap::from([(
                 drill.clone(),
                 ResolvedUnit {
+                    acquire: None,
+                    armour: None,
                     constructor: None,
                     placement: None,
                     build_area: None,
@@ -10814,6 +10843,7 @@ mod tests {
             denominator: 2,
         };
         let catalog = ContentCatalog {
+            combat: None,
             resources: BTreeMap::from([(
                 credits.clone(),
                 ResourceDef {
@@ -10826,6 +10856,8 @@ mod tests {
             units: BTreeMap::from([(
                 lab.clone(),
                 ResolvedUnit {
+                    acquire: None,
+                    armour: None,
                     constructor: None,
                     placement: None,
                     build_area: None,
@@ -11211,6 +11243,7 @@ mod tests {
         let order_id = turts_mod_api::ContentId::parse("fixture:move").unwrap();
         let mut before = one_moving_unit_state();
         before.catalog = Some(turts_sim::economy::views::CatalogAudit {
+            combat: None,
             resource_kinds: vec![],
             nodes: vec![],
             units: vec![],
@@ -11302,6 +11335,7 @@ mod tests {
         let item = turts_mod_api::ContentId::parse("fixture:item").unwrap();
         let mut before = one_moving_unit_state();
         before.catalog = Some(CatalogAudit {
+            combat: None,
             resource_kinds: vec![],
             nodes: vec![CatalogNodeAudit {
                 id: node_content.clone(),
@@ -11309,6 +11343,10 @@ mod tests {
                 radius: 2.0,
             }],
             units: vec![CatalogUnitAudit {
+                acquire: None,
+                armour: None,
+                weapon_bonus: Vec::new(),
+                weapon_damage_type: None,
                 constructor: None,
                 placement: None,
                 build_area: None,
@@ -12073,6 +12111,7 @@ mod tests {
         let move_content = turts_mod_api::ContentId::new(&package, "move");
         let hold_content = turts_mod_api::ContentId::new(&package, "hold");
         let mut catalog = ContentCatalog {
+            combat: None,
             resources: BTreeMap::new(),
             units: BTreeMap::new(),
             nodes: BTreeMap::new(),
@@ -12086,6 +12125,8 @@ mod tests {
         catalog.units.insert(
             unit_content.clone(),
             ResolvedUnit {
+                acquire: None,
+                armour: None,
                 constructor: None,
                 placement: None,
                 build_area: None,
@@ -12180,6 +12221,7 @@ mod tests {
         for unit_id in [1, 2] {
             app.world_mut().entity_mut(entities[&unit_id]).insert((
                 turts_sim::UnitOrders {
+                    acquired: None,
                     rally: None,
                     current: Some(prior.clone()),
                     queue: std::collections::VecDeque::from([turts_sim::Order {
@@ -12513,6 +12555,7 @@ mod tests {
         let move_order = turts_mod_api::ContentId::new(&package, "move");
         let hold_order = turts_mod_api::ContentId::new(&package, "hold");
         let mut catalog = ContentCatalog {
+            combat: None,
             resources: BTreeMap::new(),
             units: BTreeMap::new(),
             nodes: BTreeMap::new(),
@@ -12526,6 +12569,8 @@ mod tests {
         catalog.units.insert(
             unit_id.clone(),
             ResolvedUnit {
+                acquire: None,
+                armour: None,
                 constructor: None,
                 placement: None,
                 build_area: None,
@@ -13655,6 +13700,8 @@ mod tests {
             (large.clone(), "Large", 0.8_f32),
         ] {
             let resolved = ResolvedUnit {
+                acquire: None,
+                armour: None,
                 constructor: None,
                 placement: None,
                 build_area: None,
@@ -13707,6 +13754,7 @@ mod tests {
             description: String::new(),
         };
         let catalog = ContentCatalog {
+            combat: None,
             resources: BTreeMap::new(),
             units,
             nodes: BTreeMap::new(),
@@ -16053,6 +16101,7 @@ mod tests {
             group: 77,
         };
         let mut orders = turts_sim::UnitOrders {
+            acquired: None,
             rally: None,
             current: Some(move_order.clone()),
             queue: std::collections::VecDeque::from([turts_sim::Order {
@@ -17031,6 +17080,10 @@ mod tests {
                 radius: 0.5,
             });
             let catalog_unit = turts_sim::economy::views::CatalogUnitAudit {
+                acquire: None,
+                armour: None,
+                weapon_bonus: Vec::new(),
+                weapon_damage_type: None,
                 constructor: None,
                 placement: None,
                 build_area: None,
@@ -17876,6 +17929,7 @@ mod tests {
         let order_id = ContentId::parse("fixture:move").unwrap();
         let unit_id = ContentId::parse("fixture:walker").unwrap();
         let mut catalog = ContentCatalog {
+            combat: None,
             resources: BTreeMap::new(),
             units: BTreeMap::new(),
             nodes: BTreeMap::new(),
@@ -17889,6 +17943,8 @@ mod tests {
         catalog.units.insert(
             unit_id.clone(),
             turts_mod_api::ResolvedUnit {
+                acquire: None,
+                armour: None,
                 constructor: None,
                 placement: None,
                 build_area: None,
@@ -17999,6 +18055,7 @@ mod tests {
         let node_content = turts_mod_api::ContentId::parse("fixture:node").unwrap();
         let item = turts_mod_api::ContentId::parse("fixture:item").unwrap();
         gather_before.catalog = Some(turts_sim::economy::views::CatalogAudit {
+            combat: None,
             resource_kinds: vec![],
             nodes: vec![turts_sim::economy::views::CatalogNodeAudit {
                 id: node_content.clone(),
@@ -18006,6 +18063,10 @@ mod tests {
                 radius: 2.0,
             }],
             units: vec![turts_sim::economy::views::CatalogUnitAudit {
+                acquire: None,
+                armour: None,
+                weapon_bonus: Vec::new(),
+                weapon_damage_type: None,
                 constructor: None,
                 placement: None,
                 build_area: None,
@@ -18807,6 +18868,7 @@ mod tests {
         let unit_id = turts_mod_api::ContentId::parse("test:walker").unwrap();
         let order_id = turts_mod_api::ContentId::parse("test:move").unwrap();
         let mut catalog = turts_mod_api::ContentCatalog {
+            combat: None,
             resources: std::collections::BTreeMap::new(),
             units: std::collections::BTreeMap::new(),
             nodes: std::collections::BTreeMap::new(),
@@ -18820,6 +18882,8 @@ mod tests {
         catalog.units.insert(
             unit_id.clone(),
             turts_mod_api::ResolvedUnit {
+                acquire: None,
+                armour: None,
                 constructor: None,
                 placement: None,
                 build_area: None,

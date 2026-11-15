@@ -574,7 +574,8 @@ mod tests {
             consumes: Vec::new(),
             income: None,
             provides: Vec::new(),
-
+            acquire: None,
+            armour: None,
             id: cid("tower"),
             name: "Tower".into(),
             footprint: Footprint::Circle { radius: 1.0 },
@@ -651,6 +652,7 @@ mod tests {
             cancel_refunds: refunds,
         };
         let catalog = ContentCatalog {
+            combat: None,
             resources: BTreeMap::from([(
                 cid("credits"),
                 ResourceDef {

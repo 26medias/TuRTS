@@ -747,21 +747,29 @@ fn research_records(
     rows: &[RawResearchAudit],
     only_slot: Option<SlotId>,
 ) -> Vec<wire::ResearchRecord> {
-    let mut by_slot = std::collections::BTreeMap::<u8, Vec<String>>::new();
+    let mut by_slot = std::collections::BTreeMap::<u8, Vec<&RawResearchAudit>>::new();
     for row in rows
         .iter()
         .filter(|row| only_slot.is_none_or(|slot| row.slot == slot.0))
     {
-        by_slot
-            .entry(row.slot)
-            .or_default()
-            .push(row.technology.to_string());
+        by_slot.entry(row.slot).or_default().push(row);
     }
     by_slot
         .into_iter()
-        .map(|(slot, completed)| wire::ResearchRecord {
-            slot: messages::SlotId(slot),
-            completed,
+        .map(|(slot, rows)| {
+            let mut armour = rows
+                .iter()
+                .filter_map(|row| {
+                    row.armour_ordinal
+                        .map(|ordinal| (ordinal, row.technology.to_string()))
+                })
+                .collect::<Vec<_>>();
+            armour.sort_by_key(|(ordinal, _)| *ordinal);
+            wire::ResearchRecord {
+                slot: messages::SlotId(slot),
+                completed: rows.iter().map(|row| row.technology.to_string()).collect(),
+                armour_order: armour.into_iter().map(|(_, id)| id).collect(),
+            }
         })
         .collect()
 }

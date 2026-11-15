@@ -26,10 +26,9 @@ fn parse<T: DeserializeOwned + Serialize + PartialEq + Debug>(what: &str, text: 
     value
 }
 
-/// A manifest is read only: `UniqueMap` writes `({})`, which no reader accepts (a defect of
-/// 0.2.3 that this task leaves as it is; no code writes a manifest back).
+/// Manifest maps must retain the public RON shape when written and read again.
 fn parse_manifest(what: &str, text: &str) -> Manifest {
-    ron::from_str(text).unwrap_or_else(|error| panic!("{what}: {error}\n{text}"))
+    parse(what, text)
 }
 
 const UNIT: &str = r#"id: "u", name: "U", footprint: Circle(radius: 1.0), movement: None, inventory: None, gatherer: None, drop_off: None, producer: None"#;

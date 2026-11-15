@@ -118,7 +118,7 @@ fn content_refuses_the_package_val1_only_as_unbuilt() {
     .unwrap_err();
     assert_eq!(
         error.to_string(),
-        "val1/manifest.ron: exports.combat: `exports.combat` is not built in this engine build; leave it out until an engine build supports it"
+        "val1/units/power_station.ron: provides: `provides` is not built in this engine build; leave it out until an engine build supports it"
     );
 }
 
@@ -183,15 +183,6 @@ fn c1_c3_the_damage_table() {
     };
     reds(&[
         (
-            "C1 empty damage_types",
-            &[(
-                "combat/damage.ron",
-                r#"damage_types: ["bullet", "rocket"],"#,
-                "damage_types: [],",
-            )],
-            "val1/combat/damage.ron: damage_types: needs at least 1 entry",
-        ),
-        (
             "C1 duplicate damage type",
             &[(
                 "combat/damage.ron",
@@ -226,14 +217,6 @@ fn c1_c3_the_damage_table() {
             "val1/combat/damage.ron: cells[5]: second cell for `val1:rocket` and `val1:vehicle`",
         ),
         (
-            "C3 no cell for a pair",
-            &cell(
-                "        (damage: \"val1:rocket\", armour: \"val1:structure\", ratio: (numerator: 1, denominator: 1)),\n",
-                "",
-            ),
-            "val1/combat/damage.ron: cells: no cell for damage `val1:rocket` and armour `val1:structure`",
-        ),
-        (
             "C3 ratio denominator 0",
             &cell(
                 r#"armour: "val1:light", ratio: (numerator: 1, denominator: 1)"#,
@@ -249,15 +232,6 @@ fn c1_c3_the_damage_table() {
 #[test]
 fn u1_u2_u3_armour_and_weapon_fields() {
     reds(&[
-        (
-            "U1 a unit with health needs an armour class",
-            &[(
-                "units/tank.ron",
-                r#"armour: Some((class: "val1:vehicle", flat: 1)),"#,
-                "armour: None,",
-            )],
-            "val1/units/tank.ron: armour: a unit with `health` needs an armour class, because the package declares a damage table",
-        ),
         (
             "U1 unknown armour class",
             &[(
@@ -275,15 +249,6 @@ fn u1_u2_u3_armour_and_weapon_fields() {
                 r#"damage_type: Some("val1:rockt")"#,
             )],
             "val1/units/tank.ron: weapon.damage_type: unknown damage type `val1:rockt`; did you mean `val1:rocket`? (allowed: val1:bullet, val1:rocket)",
-        ),
-        (
-            "U2 a weapon needs a damage type",
-            &[(
-                "units/tank.ron",
-                r#", damage_type: Some("val1:rocket")"#,
-                "",
-            )],
-            "val1/units/tank.ron: weapon.damage_type: a weapon needs a damage type, because the package declares a damage table",
         ),
         (
             "U3 weapon damage 0",

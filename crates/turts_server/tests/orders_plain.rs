@@ -83,6 +83,7 @@ fn app_with_walker() -> bevy_app::App {
 
 fn catalog() -> ContentCatalog {
     let mut catalog = ContentCatalog {
+        combat: None,
         resources: BTreeMap::new(),
         units: BTreeMap::new(),
         nodes: BTreeMap::new(),

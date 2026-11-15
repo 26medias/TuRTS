@@ -150,6 +150,7 @@ fn gatherer_app() -> (bevy_app::App, bevy_ecs::entity::Entity) {
         )
         .unwrap();
     let mut catalog = turts_mod_api::ContentCatalog {
+        combat: None,
         resources: Default::default(),
         units: Default::default(),
         nodes: Default::default(),
@@ -166,7 +167,8 @@ fn gatherer_app() -> (bevy_app::App, bevy_ecs::entity::Entity) {
             consumes: Vec::new(),
             income: None,
             provides: Vec::new(),
-
+            acquire: None,
+            armour: None,
             constructor: None,
             placement: None,
             build_area: None,
@@ -299,6 +301,7 @@ fn accepted_legacy_gather_clears_stale_movement_state_and_identity() {
         },
         MoveTarget(Vec2::new(30.0, 30.0)),
         UnitOrders {
+            acquired: None,
             rally: None,
             current: Some(Order {
                 order: ContentId::parse("test:move-a").unwrap(),
@@ -409,6 +412,7 @@ fn refused_legacy_gather_preserves_existing_order_and_queue() {
         ..Default::default()
     });
     let before = UnitOrders {
+        acquired: None,
         rally: None,
         current: Some(Order {
             order: ContentId::parse("test:move-a").unwrap(),
@@ -483,6 +487,7 @@ fn one_pending_slot_refuses_a_two_member_queued_group_atomically_before_movement
         group: 77,
     };
     app.world_mut().entity_mut(first).insert(UnitOrders {
+        acquired: None,
         rally: None,
         current: Some(move_order.clone()),
         queue: VecDeque::from([Order {
@@ -1413,6 +1418,7 @@ fn target_gone_queued_hold_refreshes_reservation_before_survivor_spread() {
         crate::Position(Vec2::new(8.0, 8.0)),
         MoveTarget(Vec2::new(40.0, 40.0)),
         UnitOrders {
+            acquired: None,
             rally: None,
             current: Some(Order {
                 order: ContentId::parse("test:follow-gone").unwrap(),
@@ -1511,6 +1517,7 @@ fn queued_self_follow_waits_for_the_shared_cap_before_advancing_hold() {
     };
     app.world_mut().entity_mut(entity).insert((
         UnitOrders {
+            acquired: None,
             rally: None,
             current: Some(missing_follow.clone()),
             queue: VecDeque::from([queued_self_follow.clone(), queued_hold.clone()]),
@@ -1577,6 +1584,7 @@ fn second_dispatch_refreshes_reservations_after_rate_limited_hold_continuation()
         crate::Position(Vec2::new(20.0, 20.0)),
         MoveTarget(Vec2::new(40.0, 40.0)),
         UnitOrders {
+            acquired: None,
             rally: None,
             current: Some(Order {
                 order: ContentId::parse("test:move-refused").unwrap(),
@@ -2226,6 +2234,7 @@ fn rejected_incompatible_gather_preserves_current_order_and_queue() {
         group: 0,
     };
     app.world_mut().entity_mut(entity).insert(UnitOrders {
+        acquired: None,
         rally: None,
         current: Some(before_order),
         queue: VecDeque::from([queued]),
@@ -2410,6 +2419,7 @@ fn accepted_legacy_move_to_cancels_a_modern_plain_candidate() {
     };
     app.world_mut().entity_mut(entity).insert((
         UnitOrders {
+            acquired: None,
             rally: None,
             current: Some(active.clone()),
             queue: VecDeque::from([Order {
@@ -2572,6 +2582,7 @@ fn refused_legacy_multi_move_to_preserves_gather_and_prior_orders() {
     };
     for entity in [first, second] {
         app.world_mut().entity_mut(entity).insert(UnitOrders {
+            acquired: None,
             rally: None,
             current: Some(current.clone()),
             queue: VecDeque::from([queued.clone()]),
@@ -2800,6 +2811,7 @@ fn admitted_legacy_multi_move_retains_current_until_dispatch_and_keeps_new_appen
     for (unit_id, entity) in [(1, first), (2, second)] {
         app.world_mut().entity_mut(entity).insert((
             UnitOrders {
+                acquired: None,
                 rally: None,
                 current: Some(current.clone()),
                 queue: VecDeque::from([Order {
@@ -2997,6 +3009,7 @@ fn gather_on_an_existing_empty_node_is_accepted_then_fails_as_depleted() {
 fn immediate_cancel_ignores_unit_order_queue_and_preserves_it_on_failure() {
     let (mut app, entity) = gatherer_app();
     let existing = UnitOrders {
+        acquired: None,
         rally: None,
         current: Some(Order {
             order: ContentId::parse("test:hold").unwrap(),
@@ -3087,7 +3100,8 @@ fn set_enabled_keeps_all_legacy_toggleable_capability_families() {
     let mut unit = base.clone();
     unit.weapon = Some(turts_mod_api::ResolvedWeapon {
         when_short: Vec::new(),
-
+        bonus: Vec::new(),
+        damage_type: None,
         range: 1.0,
         range_mode: turts_mod_api::WeaponRangeMode::Centre,
         cooldown_ms: 1,
@@ -3296,6 +3310,7 @@ fn depleted_gather_writes_last_failure() {
             crate::Owner(SlotId(0)),
             crate::Position(Vec2::new(8.0, 8.0)),
             UnitOrders {
+                acquired: None,
                 rally: None,
                 current: Some(Order {
                     order: order_id.clone(),
@@ -3399,6 +3414,7 @@ fn queued_gather_that_depletes_before_activation_fails_and_idles() {
             crate::Owner(SlotId(0)),
             crate::Position(Vec2::new(8.0, 8.0)),
             UnitOrders {
+                acquired: None,
                 rally: None,
                 current: None,
                 queue: VecDeque::from([Order {

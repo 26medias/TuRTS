@@ -306,6 +306,7 @@ fn m3_unit() -> UnitDef {
         }),
         health: Some(HealthDef { max: 100 }),
         weapon: Some(WeaponDef {
+            bonus: Vec::new(),
             range: 8.0,
             range_mode: turts_mod_api::WeaponRangeMode::Centre,
             cooldown_ms: 1000,

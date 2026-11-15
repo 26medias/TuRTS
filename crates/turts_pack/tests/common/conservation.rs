@@ -998,7 +998,10 @@ pub fn check_tick(
                                     unit,
                                     stat: turts_mod_api::WeaponStat::Damage,
                                     add,
-                                } = effect;
+                                } = effect
+                                else {
+                                    continue;
+                                };
                                 if unit == &shooter.to_string() {
                                     expected_damage =
                                         expected_damage.checked_add(u128::from(*add)).ok_or_else(

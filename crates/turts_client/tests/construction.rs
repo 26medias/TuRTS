@@ -23,6 +23,8 @@ fn balance(app: &App) -> u64 {
 fn fixture(policy: PaymentPolicy, mutate: impl FnOnce(&mut ContentCatalog, &mut MapDef)) -> App {
     let mut app = turts_sim::headless_app(20);
     let tower = ResolvedUnit {
+        acquire: None,
+        armour: None,
         id: cid("tower"),
         name: "Tower".into(),
         footprint: Footprint::Circle { radius: 1.0 },
@@ -97,6 +99,7 @@ fn fixture(policy: PaymentPolicy, mutate: impl FnOnce(&mut ContentCatalog, &mut 
         cancel_refunds: refunds,
     };
     let mut catalog = ContentCatalog {
+        combat: None,
         resources: BTreeMap::from([(
             cid("credits"),
             ResourceDef {
@@ -310,6 +313,8 @@ fn a_completed_building_with_a_queued_job_can_be_destroyed() {
             let mut enemy = catalog.units[&cid("soldier")].clone();
             enemy.id = cid("enemy");
             enemy.weapon = Some(ResolvedWeapon {
+                bonus: Vec::new(),
+                damage_type: None,
                 range: 10.0,
                 range_mode: turts_mod_api::WeaponRangeMode::Centre,
                 cooldown_ms: 50,

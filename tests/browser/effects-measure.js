@@ -35,10 +35,15 @@ if(count===400&&quality==='high'&&fps<30){result.status='NEEDS_CHEAPER_EFFECTS_P
 if(name==='burning200'&&row.states.some(s=>s.units!==210||!Array.from({length:10},(_,i)=>s.effects?.combat?.health?.[String(201+i)]).every(h=>h>0&&h<1000000)))throw Error('burning fixture lost a building or failed to ignite all ten');
 if(process.env.TURTS_EFFECT_MIXED==='1'){
  const first=row.states[0],last=row.states[row.states.length-1];
+ const placements=fs.readFileSync(fixtures+'/'+name+'/maps/field.ron','utf8');
+ const countKind=kind=>[...placements.matchAll(/unit:\s*"skirmish:([^"]+)"/g)].filter(match=>match[1]===kind).length;
+ const expectedMix={melee:countKind('swordsman')+countKind('warrior'),ranged:countKind('soldier')};
+ row.expected_mix=expectedMix;
+ if(expectedMix.melee+expectedMix.ranged!==count||!expectedMix.melee||!expectedMix.ranged)throw Error('fixture lacks the expected mixed infantry');
  const ids=Object.keys(first.effects.combat.health);
  row.damaged_units=ids.filter(id=>last.effects.combat.health[id]<first.effects.combat.health[id]).length;
  save();
- if(row.states.some(s=>s.visible!==count)||ids.length!==count||row.damaged_units!==count||!row.states.some(s=>s.melee===count/2&&s.ranged===count/2))throw Error('mixed combat stopped dealing damage or lost a visible actor');
+ if(row.states.some(s=>s.visible!==count)||ids.length!==count||row.damaged_units!==count||!row.states.some(s=>s.melee===expectedMix.melee&&s.ranged===expectedMix.ranged))throw Error('mixed combat stopped dealing damage or lost a visible actor');
 }else if(row.states.some(s=>s.shooting<(name==='burning200'?200:count)*.95))throw Error('combat row stopped shooting '+name);
 if(process.env.TURTS_SHARED_SKIN_CHECK==='1'&&row.states.some(s=>!s.shared_skins||s.shared_skins.shared_draws<count*2||s.shared_skins.ordinary_draws!==0||s.shared_skins.palettes<1||s.shared_skins.matrices>65536))throw Error('shared skin path or bounded palette missing');
 }if(!result.rows.length)throw Error('no benchmark scene selected');result.status='PASS';save();}catch(e){result.status='FAIL';result.error=String(e.stack||e);save();console.error(e);process.exitCode=1;}finally{if(context)await context.close();if(server){server.kill('SIGTERM');await new Promise(r=>server.once('exit',r));}if(profile)fs.rmSync(profile,{recursive:true,force:true});}})();

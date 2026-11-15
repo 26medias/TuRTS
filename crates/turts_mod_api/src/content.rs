@@ -77,6 +77,8 @@ pub struct ResolvedAmmo {
 }
 #[derive(Debug, Clone, PartialEq)]
 pub struct ResolvedWeapon {
+    pub damage_type: Option<ContentRef>,
+    pub bonus: Vec<DamageBonus>,
     pub range: f32,
     pub range_mode: crate::WeaponRangeMode,
     pub cooldown_ms: u64,
@@ -87,6 +89,8 @@ pub struct ResolvedWeapon {
 }
 #[derive(Debug, Clone, PartialEq)]
 pub struct ResolvedUnit {
+    pub armour: Option<ArmourDef>,
+    pub acquire: Option<AcquireDef>,
     pub id: ContentId,
     pub name: String,
     pub footprint: Footprint,
@@ -152,6 +156,11 @@ pub struct ResolvedRecipe {
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ResolvedEffect {
+    ArmourModifier {
+        unit: ContentId,
+        stat: ArmourStat,
+        add: u64,
+    },
     WeaponModifier {
         unit: ContentId,
         stat: WeaponStat,
@@ -173,6 +182,7 @@ pub struct ResolvedTechnology {
 /// Fully resolved definitions, keyed by their package-qualified ids.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ContentCatalog {
+    pub combat: Option<CombatDef>,
     pub resources: BTreeMap<ContentId, ResourceDef>,
     pub units: BTreeMap<ContentId, ResolvedUnit>,
     pub nodes: BTreeMap<ContentId, ResolvedNode>,

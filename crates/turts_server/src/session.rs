@@ -1326,13 +1326,12 @@ mod tests {
         assert_eq!(slots.slot_of(7), None, "a refused Hello takes no slot");
     }
 
-    /// Protocol 5 refuses a client of protocol 4 with the clear reason, and the client of 4 sees
-    /// "protocol version mismatch" (`client_screens.rs` maps it to a text).
+    /// Older clients receive a clear refusal before they can claim a slot.
     #[test]
     fn older_protocols_are_refused_before_a_slot_is_claimed() {
-        assert_eq!(turts_net_protocol::NET_PROTOCOL_VERSION, 6);
+        assert_eq!(turts_net_protocol::NET_PROTOCOL_VERSION, 7);
         let mut slots = Slots::new(2);
-        for version in [4, 5] {
+        for version in [4, 5, 6] {
             assert_eq!(
                 judge_hello(&hello(7, version, HASH), &advertised(), &mut slots, false),
                 Err("protocol version mismatch")
@@ -1747,6 +1746,7 @@ mod admission_tests {
             .unwrap();
         let id = ContentId::new(&package, "producer");
         let mut catalog = ContentCatalog {
+            combat: None,
             resources: BTreeMap::new(),
             units: BTreeMap::new(),
             nodes: BTreeMap::new(),
@@ -1760,6 +1760,8 @@ mod admission_tests {
         catalog.units.insert(
             id.clone(),
             ResolvedUnit {
+                acquire: None,
+                armour: None,
                 constructor: None,
                 placement: None,
                 build_area: None,
@@ -1829,6 +1831,7 @@ mod admission_tests {
     fn test_order_catalog() -> ContentCatalog {
         use turts_mod_api::{Behaviour, ContentId, OrderDef, TargetKind};
         let mut catalog = ContentCatalog {
+            combat: None,
             resources: BTreeMap::new(),
             units: BTreeMap::new(),
             nodes: BTreeMap::new(),
@@ -2299,6 +2302,8 @@ mod admission_tests {
             .insert(
                 id.clone(),
                 ResolvedUnit {
+                    acquire: None,
+                    armour: None,
                     constructor: None,
                     placement: None,
                     build_area: None,
@@ -2456,6 +2461,7 @@ mod admission_tests {
             .unwrap();
         let id = ContentId::new(&package, "producer");
         let mut catalog = ContentCatalog {
+            combat: None,
             resources: BTreeMap::new(),
             units: BTreeMap::new(),
             nodes: BTreeMap::new(),
@@ -2469,6 +2475,8 @@ mod admission_tests {
         catalog.units.insert(
             id.clone(),
             ResolvedUnit {
+                acquire: None,
+                armour: None,
                 constructor: None,
                 placement: None,
                 build_area: None,
@@ -2928,6 +2936,8 @@ mod admission_tests {
             .insert(
                 static_id.clone(),
                 ResolvedUnit {
+                    acquire: None,
+                    armour: None,
                     constructor: None,
                     placement: None,
                     build_area: None,
@@ -3214,6 +3224,8 @@ mod admission_tests {
             .insert(
                 static_id.clone(),
                 ResolvedUnit {
+                    acquire: None,
+                    armour: None,
                     constructor: None,
                     placement: None,
                     build_area: None,

@@ -959,6 +959,7 @@ pub(crate) fn clear_replaced_movement(
     entity: bevy_ecs::entity::Entity,
     unit_id: u32,
 ) {
+    edit_unit_orders(world, entity, |orders| orders.acquired = None);
     world
         .resource_mut::<PendingMovementOrders>()
         .cancel_units(slot.0, &[unit_id]);

@@ -1166,6 +1166,8 @@ mod tests {
 
     fn resolved_gatherer(id: ContentId, item: ContentId) -> turts_mod_api::ResolvedUnit {
         turts_mod_api::ResolvedUnit {
+            acquire: None,
+            armour: None,
             constructor: None,
             placement: None,
             build_area: None,

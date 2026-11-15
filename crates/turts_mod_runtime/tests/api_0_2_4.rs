@@ -170,7 +170,7 @@ macro_rules! raw_case {
 #[test]
 fn a1_a2_a3_new_export_groups() {
     for (feature, owner, group) in [
-        ("exports.combat", "L-DMG", "combat"),
+        ("exports.combat", "", "combat"),
         ("exports.match", "", "match"),
         ("exports.visual_effects", "", "visual_effects"),
     ] {
@@ -193,7 +193,7 @@ fn a1_a2_a3_new_export_groups() {
 raw_case!(
     u1_armour,
     "armour",
-    "L-DMG",
+    "",
     WORKER,
     "armour",
     &[(
@@ -205,19 +205,26 @@ raw_case!(
 raw_case!(
     u2_weapon_damage_type,
     "weapon.damage_type",
-    "L-DMG",
+    "",
     WORKER,
     "weapon.damage_type",
-    &[(
-        WORKER,
-        WORKER_TAIL,
-        "drop_off: None, producer: None, weapon: Some((range: 1.0, cooldown_ms: 1, damage: 1, ammo: None, targets: (slots: Other), damage_type: None)),"
-    )]
+    &[
+        (
+            WORKER,
+            WORKER_TAIL,
+            "drop_off: None, producer: None, weapon: Some((range: 1.0, cooldown_ms: 1, damage: 1, ammo: None, targets: (slots: Other), damage_type: None)),"
+        ),
+        (
+            WORKER,
+            "gatherer: Some((items: [\"cedar:wood\"], gather_per_second: 5,\n        unload_per_second: 10, interaction_range: 0.5)),",
+            "gatherer: None,"
+        )
+    ]
 );
 raw_case!(
     u4_acquire,
     "acquire",
-    "L-TGT",
+    "",
     WORKER,
     "acquire",
     &[(
@@ -775,11 +782,7 @@ fn h7_value_variants_in_a_text_widget() {
             "PrimaryField::Cargo",
             "UI2-HUD",
         ),
-        (
-            "Bind(SelectionPrimary(Armour))",
-            "PrimaryField::Armour",
-            "UI2-HUD",
-        ),
+        ("Bind(SelectionPrimary(Armour))", "PrimaryField::Armour", ""),
         ("Item(Role)", "ItemField::Role", "UI-HUD"),
         ("Item(State)", "ItemField::State", "UI-HUD"),
         ("Item(Paid)", "ItemField::Paid", "UI-HUD"),
@@ -819,11 +822,7 @@ fn h10_predicates_in_a_visible_list() {
             "UI-HUD",
         ),
         ("ItemHas(Count)", "Predicate::ItemHas", "UI-HUD"),
-        (
-            "PrimaryHasValue(Health)",
-            "Predicate::PrimaryHasValue",
-            "UI2-HUD",
-        ),
+        ("PrimaryHasValue(Health)", "Predicate::PrimaryHasValue", ""),
     ] {
         let widget = format!(
             r##"{ROOT}        (id: "t_new", at: Some((anchor: TopLeft, offset: (0.0, 0.0), pivot: None)), size: (w: Px(10.0), h: Px(10.0)), visible: [{predicate}], widget: Text(text: Literal("x"), font: None, size: 12, colour: "#ffffff", align: Left, wrap: false)),
@@ -948,9 +947,9 @@ fn a_package_with_no_new_feature_is_accepted_at_both_requirements() {
 /// that requires `^0.2.3` still accepts the engine.
 #[test]
 fn the_engine_api_retains_0_2_4_and_adds_0_2_5() {
-    assert_eq!(ENGINE_API_VERSION, "0.2.11");
-    assert_eq!(RELEASED_ENGINE_APIS.last(), Some(&"0.2.11"));
-    assert_eq!(RELEASED_ENGINE_APIS.len(), 13);
+    assert_eq!(ENGINE_API_VERSION, "0.2.12");
+    assert_eq!(RELEASED_ENGINE_APIS.last(), Some(&"0.2.12"));
+    assert_eq!(RELEASED_ENGINE_APIS.len(), 14);
 }
 
 /// The order rules keep their `rally` list on the way through the archive reader (the raw rules

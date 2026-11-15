@@ -295,6 +295,8 @@ pub struct DurationAudit {
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CatalogAudit {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub combat: Option<turts_mod_api::CombatDef>,
     pub resource_kinds: Vec<(ContentId, ResourceKind)>,
     pub nodes: Vec<CatalogNodeAudit>,
     pub units: Vec<CatalogUnitAudit>,
@@ -327,6 +329,14 @@ pub struct CatalogNodeAudit {
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CatalogUnitAudit {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub armour: Option<turts_mod_api::ArmourDef>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub acquire: Option<turts_mod_api::AcquireDef>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub weapon_damage_type: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub weapon_bonus: Vec<turts_mod_api::DamageBonus>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub constructor: Option<turts_mod_api::ResolvedConstructor>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1011,6 +1021,7 @@ pub fn audit_state(world: &mut World) -> AuditState {
         .map(|installed| {
             let c = &installed.0;
             CatalogAudit {
+                combat: c.combat.clone(),
                 resource_kinds: c
                     .resources
                     .iter()
@@ -1029,6 +1040,16 @@ pub fn audit_state(world: &mut World) -> AuditState {
                     .units
                     .iter()
                     .map(|(id, d)| CatalogUnitAudit {
+                        armour: d.armour.clone(),
+                        acquire: d.acquire,
+                        weapon_damage_type: d
+                            .weapon
+                            .as_ref()
+                            .and_then(|weapon| weapon.damage_type.clone()),
+                        weapon_bonus: d
+                            .weapon
+                            .as_ref()
+                            .map_or_else(Vec::new, |weapon| weapon.bonus.clone()),
                         constructor: d.constructor.clone(),
                         placement: d.placement,
                         build_area: d.build_area,

@@ -61,12 +61,6 @@ const fn use_line(feature: &'static str, owner: &'static str) -> UnbuiltLine {
 
 /// The lines of plan 5.3, in its order. A task deletes only the lines of its own name.
 pub(crate) const UNBUILT_FEATURES: &[UnbuiltLine] = &[
-    // L-DMG: `exports.combat` (A1), `armour` (U1), `weapon.damage_type` (U2).
-    line("exports.combat", "L-DMG"),
-    line("armour", "L-DMG"),
-    line("weapon.damage_type", "L-DMG"),
-    // L-TGT: `acquire` (U4).
-    line("acquire", "L-TGT"),
     // L-PWR: `kind: Supply` (S1), `provides`, `consumes` (U5), `*.when_short` (U6).
     line("kind: Supply", "L-PWR"),
     line("provides", "L-PWR"),
@@ -176,8 +170,6 @@ pub(crate) const UNBUILT_FEATURES: &[UnbuiltLine] = &[
     line("ItemField::CausesShortage", "UI2-HUD"),
     line("PrimaryField::Activity", "UI2-HUD"),
     line("PrimaryField::Cargo", "UI2-HUD"),
-    line("PrimaryField::Armour", "UI2-HUD"),
-    line("Predicate::PrimaryHasValue", "UI2-HUD"),
     line("world.cargo_bar", "UI2-HUD"),
     line("world.health_bar.scale_to_footprint", "UI2-HUD"),
     line("world.rally", "UI2-HUD"),
@@ -344,27 +336,13 @@ mod tests {
         let _ = RawDocuments::default();
     }
 
-    /// The lines of the lines of other lanes stay when one lane deletes its own: removing the
-    /// lines of one owner lets its features pass and keeps the others refused.
     #[test]
-    fn a_lane_removes_only_its_own_lines() {
-        let row = VERSION_TABLE
-            .iter()
-            .find(|row| row.name == "armour")
-            .unwrap();
-        let (manifest, raw) = raw_for(row, "^0.2.4", true);
-        let without_dmg: Vec<_> = UNBUILT_FEATURES
-            .iter()
-            .filter(|line| line.owner != "L-DMG")
-            .map(|line| super::UnbuiltLine {
-                feature: line.feature,
-                owner: line.owner,
-                detect: None,
-            })
-            .filter(|line| VERSION_TABLE.iter().any(|row| row.name == line.feature))
-            .collect();
-        check_unbuilt(&manifest, None, &raw, &without_dmg, VERSION_TABLE)
-            .expect("`armour` passes when L-DMG deleted its lines");
-        assert!(check_unbuilt(&manifest, None, &raw, UNBUILT_FEATURES, VERSION_TABLE).is_err());
+    fn completed_damage_and_acquisition_fields_are_not_refused_as_unbuilt() {
+        for name in ["armour", "exports.combat", "weapon.damage_type", "acquire"] {
+            let row = VERSION_TABLE.iter().find(|row| row.name == name).unwrap();
+            let (manifest, raw) = raw_for(row, "^0.2.4", true);
+            check_unbuilt(&manifest, None, &raw, UNBUILT_FEATURES, VERSION_TABLE)
+                .unwrap_or_else(|error| panic!("completed field {name}: {error}"));
+        }
     }
 }

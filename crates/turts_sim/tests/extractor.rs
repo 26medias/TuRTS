@@ -15,6 +15,8 @@ fn extractor_runs_in_fixed_extract_set() {
     let drill_id = ContentId::parse("probe:drill").unwrap();
     let node_id = ContentId::parse("probe:deposit").unwrap();
     let drill = ResolvedUnit {
+        acquire: None,
+        armour: None,
         constructor: None,
         placement: None,
         build_area: None,
@@ -43,6 +45,7 @@ fn extractor_runs_in_fixed_extract_set() {
         removal: None,
     };
     let catalog = ContentCatalog {
+        combat: None,
         resources: BTreeMap::from([(
             ore.clone(),
             ResourceDef {

@@ -2653,7 +2653,6 @@ mod tests {
             "cedar:depot".into(),
             UnitPresentation {
                 role: None,
-
                 icon: Some("icon_order_move".into()),
                 portrait: None,
                 responses: BTreeMap::from([("selected".into(), vec!["sound_select".into()])]),
@@ -2664,7 +2663,6 @@ mod tests {
             Primitive::Button {
                 font: Default::default(),
                 size: Default::default(),
-
                 icon: Some(ButtonIcon::Asset("icon_order_move".into())),
                 label: Some(TextValue::Literal("Select".into())),
                 action: ButtonAction::Input("select".into()),
@@ -2834,7 +2832,23 @@ mod tests {
         assert!(!ui_orders.is_empty());
         assert!(!ui_inputs.is_empty());
         assert!(ui_orders.iter().all(|order| order_ids.contains(order)));
-        assert!(ui_inputs.iter().all(|input| input_actions.contains(input)));
+        // The two sound controls use an engine action, outside the package rename map.
+        assert_eq!(
+            ui_inputs
+                .iter()
+                .filter(|input| input.as_str() == "toggle_sound")
+                .count(),
+            2,
+            "both engine sound actions must retain their identity"
+        );
+        assert!(ui_inputs.iter().any(|input| input_actions.contains(input)));
+        assert!(
+            ui_inputs
+                .iter()
+                .filter(|input| input.as_str() != "toggle_sound")
+                .all(|input| input_actions.contains(input)),
+            "package-defined input actions must use their renamed definitions"
+        );
         let mapping: serde_json::Value =
             serde_json::from_slice(&fs::read(stage.join("mapping.json")).unwrap()).unwrap();
         for category in ["orders", "input", "interface", "assets"] {

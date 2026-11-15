@@ -107,6 +107,7 @@ fn views_expose_no_pub_crate_types() {
         Err(RejectReason::ArithmeticOverflow)
     );
     let research = RawResearchAudit {
+        armour_ordinal: None,
         slot: 1,
         technology: ContentId::parse("fixture:tech").unwrap(),
     };

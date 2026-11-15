@@ -104,6 +104,8 @@ pub fn alert_state() -> (ReplicaState, AcquiredPackages) {
     content.catalog.units.insert(
         station_id.clone(),
         ResolvedUnit {
+            acquire: None,
+            armour: None,
             constructor: None,
             placement: None,
             build_area: None,
@@ -196,6 +198,7 @@ pub fn alert_state() -> (ReplicaState, AcquiredPackages) {
         destination: None,
     }];
     replica.research = vec![ResearchRecord {
+        armour_order: Vec::new(),
         slot: SlotId(0),
         completed: Vec::new(),
     }];

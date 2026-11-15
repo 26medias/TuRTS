@@ -576,6 +576,7 @@ fn replica_merges_new_records_through_one_helper() {
         current: 100,
     }];
     initial.research = vec![ResearchRecord {
+        armour_order: Vec::new(),
         slot: SlotId(0),
         completed: vec!["forge:hardened_shells".into()],
     }];
@@ -684,6 +685,7 @@ fn removed_unit_clears_all_records() {
         inv(3, InventoryPort::Output, "forge:shell", 1),
     ];
     initial.research.push(ResearchRecord {
+        armour_order: Vec::new(),
         slot: SlotId(0),
         completed: vec!["forge:hardened_shells".into()],
     });
@@ -888,6 +890,7 @@ fn late_join_replica_matches_server_view() {
         current: 0,
     }];
     view.research = vec![ResearchRecord {
+        armour_order: Vec::new(),
         slot: SlotId(0),
         completed: vec!["forge:hardened_shells".into()],
     }];
