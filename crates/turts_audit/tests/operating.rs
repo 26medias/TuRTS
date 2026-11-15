@@ -27,6 +27,9 @@ fn append_fields(bytes: &mut Vec<u8>, fields: &str) {
     *bytes = text.into_bytes();
 }
 fn run() -> Vec<EconomyLogRecord> {
+    run_with_removal(false)
+}
+fn run_with_removal(remove: bool) -> Vec<EconomyLogRecord> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../mods/cedar");
     let mut source = BTreeMap::new();
     files(&root, &root, &mut source);
@@ -98,9 +101,25 @@ fn run() -> Vec<EconomyLogRecord> {
     install_package(app.world_mut(), staged);
     app.world_mut().resource_mut::<AuditTrail>().enable();
     let mut records = vec![EconomyLogRecord::Initial(audit_state(app.world_mut()))];
-    for _ in 0..45 {
+    for step in 0..45 {
+        if remove && step == 22 {
+            app.world_mut()
+                .resource_mut::<turts_sim::CommandQueue>()
+                .0
+                .push_back(turts_sim::Command {
+                    slot: turts_sim::SlotId(0),
+                    seq: 1,
+                    kind: turts_sim::CommandKind::Remove { unit_id: 1 },
+                });
+        }
         app.update();
         let mut trail = app.world_mut().resource_mut::<AuditTrail>();
+        records.extend(
+            trail
+                .drain_commands()
+                .into_iter()
+                .map(EconomyLogRecord::CommandBoundary),
+        );
         records.extend(
             trail
                 .drain_operations()
@@ -200,4 +219,47 @@ fn replay_rejects_income_credit_tampered_with_consistent_record_shape() {
         .unwrap() = op.events[0].clone();
     let error = validate_records(&records).unwrap_err();
     assert!(error.contains("income"), "{error}");
+}
+
+#[test]
+fn operating_remove_releases_income_and_supply_in_recorded_stream() {
+    let records = run_with_removal(true);
+    validate_records(&records).unwrap();
+    let last = records
+        .iter()
+        .rev()
+        .find_map(|record| {
+            if let EconomyLogRecord::Tick { state, .. } = record {
+                Some(state)
+            } else {
+                None
+            }
+        })
+        .unwrap();
+    assert_eq!(last.raw_income_clocks.len(), 1);
+    assert_eq!(last.raw_income_clocks[0].unit, 2);
+    let operating = last.raw_operating.as_ref().unwrap();
+    assert!(
+        operating
+            .live_supply
+            .iter()
+            .any(|row| row.slot == 0 && row.provided == 10 && row.consumed == 2)
+    );
+    assert_eq!(operating.effects, operating.live_supply);
+    assert_eq!(
+        last.economy
+            .balances
+            .iter()
+            .find(|row| row.resource.to_string() == "cedar:credits" && row.slot == 0)
+            .unwrap()
+            .on_hand,
+        9
+    );
+    if let Ok(path) = std::env::var("TURTS_OPERATING_AUDIT_REMOVE_OUT") {
+        let text = records
+            .iter()
+            .map(|r| serde_json::to_string(r).unwrap() + "\n")
+            .collect::<String>();
+        std::fs::write(path, text).unwrap();
+    }
 }

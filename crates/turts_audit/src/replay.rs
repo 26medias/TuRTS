@@ -236,6 +236,17 @@ pub fn validate_records(records: &[EconomyLogRecord]) -> Result<(), String> {
                 }
                 let command_start = commands.remove(&operation.operation_id);
                 let is_command = command_start.is_some();
+                if let Some(command) = command_start
+                    && let turts_sim::CommandKind::Remove { unit_id } = command.input.kind
+                    && command.result.outcome.is_ok()
+                {
+                    validate_remove_order(
+                        unit_id,
+                        &operation.before,
+                        &operation.after,
+                        &operation.events,
+                    )?;
+                }
                 let require_direct_winners = is_pending_movement_dispatch_operation(operation)
                     && cursor.movement_dispatch.tick == Some(operation.before.economy.tick);
                 let inside_command_span = is_command || active_order_command.is_some();
@@ -5968,6 +5979,7 @@ fn validate_remove_order(
         }
     }
     expected.raw_healths.retain(|health| health.unit != unit_id);
+    remove_operating_contribution(&mut expected, unit_id)?;
     expected.disabled.retain(|unit| *unit != unit_id);
     if !expected.removed_units.contains(&unit_id) {
         expected.removed_units.push(unit_id);
@@ -7518,6 +7530,7 @@ fn validate_clock_continuity(
     };
     let mut advanced = previous.clone();
     advanced.economy.tick = next_tick;
+    advance_operating_snapshot(&mut advanced);
     if &advanced == current {
         Ok(())
     } else {
@@ -7529,6 +7542,59 @@ fn validate_clock_continuity(
 
 /// Derive admission contributions and income clock payloads from the immutable
 /// catalog. The live totals are not trusted as a second copy of themselves.
+fn remove_operating_contribution(state: &mut AuditState, unit: u32) -> Result<(), String> {
+    state.raw_operating_holds.retain(|hold| hold.unit != unit);
+    state.raw_income_clocks.retain(|clock| clock.unit != unit);
+    if let Some(operating) = &mut state.raw_operating
+        && let Some(index) = operating.active.iter().position(|row| row.unit == unit)
+    {
+        let removed = operating.active.remove(index);
+        for (resource, provided, consumed) in removed.supply {
+            let total = operating
+                .live_supply
+                .iter_mut()
+                .find(|row| row.slot == removed.slot && row.resource == resource)
+                .ok_or("operating removal has no supply account")?;
+            total.provided = total
+                .provided
+                .checked_sub(provided)
+                .ok_or("operating removal underflows provision")?;
+            total.consumed = total
+                .consumed
+                .checked_sub(consumed)
+                .ok_or("operating removal underflows consumption")?;
+        }
+        if let Some((resource, amount)) = removed.income {
+            let total = operating
+                .live_income
+                .iter_mut()
+                .find(|(slot, id, _)| *slot == removed.slot && *id == resource)
+                .ok_or("income removal has no account")?;
+            total.2 = total
+                .2
+                .checked_sub(amount)
+                .ok_or("income removal underflows")?;
+        }
+    }
+    if let Some(view) = &mut state.economy.operating {
+        view.jobs.retain(|row| row.unit != unit);
+        view.rates.retain(|row| row.unit != unit);
+        view.holds.retain(|row| row.unit != unit);
+    }
+    Ok(())
+}
+
+/// The first phase of the new tick freezes live totals. A removal during the
+/// previous tick must not change that previous tick's effects.
+fn advance_operating_snapshot(state: &mut AuditState) {
+    if let Some(operating) = &mut state.raw_operating {
+        operating.effects.clone_from(&operating.live_supply);
+        if let Some(view) = &mut state.economy.operating {
+            view.supply.clone_from(&operating.effects);
+        }
+    }
+}
+
 fn validate_operating_state(state: &AuditState) -> Result<(), String> {
     use turts_mod_api::{ContentId, ResourceKind};
     use turts_sim::economy::views::{OperatingContributionAudit, SupplyView};
@@ -8071,6 +8137,9 @@ fn validate_movement_transition(previous: &AuditState, current: &AuditState) -> 
     }
 
     let mut expected = previous.clone();
+    if expected.economy.tick != current.economy.tick {
+        advance_operating_snapshot(&mut expected);
+    }
     expected.economy.tick = current.economy.tick;
     let scheduler_initialized = expected.movement_dispatch.tick.is_some()
         || expected.pending_movement_orders.next_slot != 0
@@ -8281,6 +8350,9 @@ fn validate_tick_state(
     movement_pending: bool,
 ) -> Result<(), String> {
     let mut expected = previous.clone();
+    if expected.economy.tick != tick {
+        advance_operating_snapshot(&mut expected);
+    }
     expected.economy.tick = tick;
     expected.pending_events.clear();
     expected.next_event_ordinal = Some(0);
