@@ -1,6 +1,6 @@
 # Public bot foundation
 
-Status: draft for Anvil review. This document gives no implementation approval.
+Status: gate 1 findings incorporated. The plan needs the same reviewer before implementation.
 Baseline: SDK14 candidate `216cdd62`. Public authoring API: `0.2.15`. Network protocol stays `8`.
 Review budget: one Codex reviewer, reused for the spec and plan. Two review turns.
 
@@ -62,7 +62,8 @@ More elaborate strategy remains mod policy and later controller work.
 
 Library import does not install a bot. The game explicitly selects its definitions.
 Configuration and state do not leak between instances, matches, or packages.
-Reject malformed references, incompatible capability/recipe assignments, invalid periods, duplicate keys, and unknown controllers.
+Reject malformed references, incompatible capability/recipe assignments, invalid periods, and duplicate authored instance or goal keys.
+Portable loading does not reject an unavailable host factory. Host activation validates factory-specific configuration and availability.
 API version checks also detect explicitly written empty `bots` exports below `0.2.15`.
 Packages without bot exports retain their previous behavior and serialized audit shape.
 
@@ -72,8 +73,11 @@ The host supplies one completed-tick observation basis. Decisions do not read pa
 Queries expose own units, own accounts/reservations, own jobs/sites, public content definitions, permitted units/nodes, and match state.
 Private enemy accounts, paid amounts, orders, operating diagnostics, and repair debt are absent from the interface.
 Do not pass the full map definition or raw `WorldView` as public game knowledge.
-Placement and affordability queries use the same rules as ordinary commands.
-Their answers are advice. Command admission revalidates them against current authoritative state.
+Placement and affordability advice uses only the permitted observation provider and public rule definitions.
+Where coverage or an endpoint is not observed, return Unknown/NotObserved instead of consulting hidden state.
+Unknown coverage depends on permission, not on whether an unseen blocker exists there.
+Direct lookup cannot distinguish hidden from absent. Neither answer asserts death.
+Admission separately revalidates authoritative state. Its generic refusal must not disclose a hidden blocker or private account.
 
 The observation provider is a public boundary separate from controller policy.
 Human export and bot observations use a shared permission decision before projection.
@@ -86,6 +90,9 @@ A lost observation is not proof that its subject died. Only an authorized event 
 
 Every query declares a limit. Results report completion or a continuation and their observation tick.
 Partial results never masquerade as a complete count or an empty world.
+Pages use deterministic physical/content order and explicitly mark unresolved equal-rank boundaries.
+A controller cannot choose a candidate until all potentially better or equal candidates are resolved.
+Quota exhaustion retains selection state or explicitly restarts an expired selection. It never chooses a page prefix by identifier.
 Paging stays on the same immutable basis for one decision cycle. Expired continuations fail explicitly.
 The host bounds retained observation bases. A slow or exhausted bot cannot retain unbounded history or block the match.
 Owned aggregate counts and pending-task facts must remain usable when individual result pages are incomplete.
@@ -98,12 +105,20 @@ Two controllers cannot allocate the same available stock or assign one unit to c
 Track in-flight accepted work until its result or authoritative job/site state resolves it.
 Repeated decisions must not duplicate a pending build, reservation, or production target.
 
-Available funds exclude authoritative reservations and the coordinator's unspent commitments.
-ChargeOverTime jobs/sites retain a local commitment for their unpaid declared costs.
-This commitment is bot planning state. It does not manufacture an authoritative ledger reservation or spend money.
-As actual payment progresses, reduce that commitment without counting a debit twice.
-Failed or cancelled tasks release their planning commitments. A disabled task retains its outstanding commitment.
-Other actors can still change the world. A failed command therefore receives ordinary feedback and can trigger replanning.
+Commitments identify the ordinary source endpoint and qualified resource, not only the resource name.
+They also identify the authored task, emitted request, affected actor, and observation/result watermark.
+Two inventories containing the same item are different accounts.
+A provisional commitment persists while admission or per-unit feedback remains unresolved.
+An acknowledgement or result alone cannot release it against an older account basis.
+Reconcile only when an authoritative basis proves the exact debit, reservation, job/site, or terminal effect for that request.
+Partial group acceptance reconciles each actor separately. Unresolved members retain their commitments.
+The complete bounded reconciliation metadata accompanies account-basis advancement; partial result pages cannot corrupt that advancement.
+Available funds subtract authoritative reservations and only commitments not already represented by that same basis.
+ChargeOverTime jobs/sites retain their unpaid declared costs at that basis. Disabled work retains that commitment.
+This is planning state. It does not create an authoritative reservation or spend money.
+A failed/cancelled task releases its commitment only after the observed basis includes its refusal or terminal effect.
+Delayed feedback and reversed observation/result arrival must not double-count a debit or free funds early.
+Other actors can change the world. Ordinary command feedback therefore triggers replanning.
 
 Built-in choices and coordinator competition use authored priority, physical source position, and explicit authored goal order.
 Unit identifiers identify subjects. They never break a visible priority tie.
@@ -115,14 +130,22 @@ Reuse catalog/order resolution, sequence checks, resource checks, per-unit owner
 A bot actor does not impersonate a network connection. It cannot claim another actor's slot.
 Results return to its controller/coordinator. Rejected orders cannot silently count as completed work.
 Sequences use checked advancement. Exhaustion stops that actor's submissions with a diagnostic; it never wraps.
-Accepted bot commands enter the normal command log and same-build replay boundary.
+Bot commands enter the existing command log with actor/source identity and deterministic within-tick order.
+Recorded-command replay disables live bot submissions. It must not regenerate and replay the same bot command twice.
+A separate comparison mode regenerates bot requests against the same inputs and compares their canonical generated-command trace.
+Full replay delivery and its UI remain deferred.
 No bot can create a unit, change health, move an account, or complete research through a private mutation path.
 
 ## Scheduling and bounds
 
 Use fixed server ticks. Convert the authored decision period with checked ceiling conversion and a minimum of one tick.
 RateQ does not change a bot's decision clock.
-Stable match-local seeds supply any requested random choices. Frame time and connection timing are not random inputs.
+Derive controller/goal sub-seeds from the match seed, profile, slot, and stable authored instance/goal keys.
+Registration, list indices, frame time, and connection timing are not random inputs.
+MatchRunning is a per-step guard. HumanPresent also pauses decisions whenever no human is present.
+Paused time does not advance bot action timers or produce catch-up decisions.
+Pending requests, commitments, and controller memory survive a pause. Authoritative work already ordered can continue.
+On resume, reconcile a fresh permitted basis before emitting commands; expired selection leases restart explicitly.
 Run only started, non-ended matches. Stop submissions for defeated slots.
 A missed decision does not cause an unbounded catch-up burst.
 Bot decisions cannot wait for network, model inference, disk, or asynchronous external services.
@@ -170,10 +193,10 @@ Its policy is authored data. It requires no game-specific server edit or privile
 | BF1 | An external Rust test implements, composes, and replaces a controller through public APIs. A forbidden-edge check proves no renderer, Bevy, simulation, or private server dependency in the framework. |
 | BF2 | Whole-package validation loads profiles/libraries, including custom factories absent from clients. Invalid references, duplicate keys, periods, and API floors fail with paths. Host activation rejects unknown factories. Empty written exports also require API15. No import silently installs a bot. |
 | BF3 | A Balance/conversion package and an inventory/storage package both build, gather, produce, and attack through ordinary commands. Their actor arrangements differ. A renamed third fixture works without changing Rust strategy code. |
-| BF4 | Recovery interrupts an opening after an ordinary gatherer loss or supply-provider loss. Repeated decisions and COT work do not duplicate tasks, spend commitments twice, or assign conflicting unit tasks. Refusals trigger replanning. |
-| BF5 | Forged ownership, stale/exhausted sequence, invalid content, exhausted budgets, and private enemy state remain safe. A withholding provider has no alternate observation escape. Partial pages and expired continuations remain explicit. |
-| BF6 | Equal seeds and admitted commands repeat exact server state and bot decisions. Controller registration order and genuine creation-ID inversion preserve physical competition. Two instances and two matches share no mutable policy state. |
-| BF7 | Immediate bot-vs-bot can run without a human. Reconnect preserves bot state. Defeat/end stops commands. Invalid/duplicate/human-owned slot installation changes no ownership. No disconnected human takeover occurs. |
+| BF4 | Recovery interrupts an opening after an ordinary gatherer loss or supply-provider loss. Repeated decisions and COT work do not duplicate tasks, spend commitments twice, or assign conflicting unit tasks. Test separate same-item inventories, delayed feedback, partial acceptance, and both observation/result arrival orders. |
+| BF5 | Forged ownership, stale/exhausted sequence, invalid content, exhausted budgets, and private enemy state remain safe. Hidden-present and hidden-absent worlds with identical permitted state give identical spatial/direct-ID/placement/affordability advice. No missing lookup asserts death. Page/tie boundaries and expired continuations remain explicit. |
+| BF6 | Equal seeds and admitted commands repeat exact server state and bot decisions. Controller registration order and genuine creation-ID inversion preserve physical competition. Authored sub-seeds survive registration/list reordering. Recorded replay submits each bot command once; regeneration compares exact traces. Instances/matches share no mutable policy state. |
+| BF7 | Immediate bot-vs-bot can run without a human. HumanPresent pause/resume retains pending state and uses active-time timers. Reconnect preserves bot state. Defeat/end stops commands. Invalid/duplicate/human-owned slot installation changes no ownership. No disconnected human takeover occurs. |
 | BF8 | The defined local workload meets its phase budget. Query/candidate/result/proposal/command limits are exercised separately. One exhausted bot does not prevent the other bot or a human command from advancing. |
 | BF9 | A fresh silent browser completes the public Skirmish profile loop. A second package also runs its public profile in a browser. Final cold-play probes pass. One independent foundation review runs the completed code. |
 
