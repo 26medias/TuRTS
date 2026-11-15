@@ -7972,14 +7972,21 @@ fn validate_order_span_end(
     let turts_sim::CommandKind::Order(order) = &span.command.input.kind else {
         return Err("order span has non-order input".into());
     };
-    let expected_job_id =
-        if order.behaviour == turts_mod_api::Behaviour::Produce && !accepted.is_empty() {
-            Some(turts_sim::JobId(
-                span.command.before.allocators.next_values().2,
-            ))
-        } else {
-            None
-        };
+    let expected_job_id = if (order.behaviour == turts_mod_api::Behaviour::Produce
+        && !accepted.is_empty())
+        || (order.behaviour == turts_mod_api::Behaviour::Construct
+            && span.command.after.allocators.next_values().2
+                > span.command.before.allocators.next_values().2)
+    {
+        // Each Construct member operation independently proves whether it
+        // places or holds. The first placed member allocates this exact job;
+        // an envelope whose members all hold has no aggregate JobId.
+        Some(turts_sim::JobId(
+            span.command.before.allocators.next_values().2,
+        ))
+    } else {
+        None
+    };
     let actual_job_id = span
         .command
         .result

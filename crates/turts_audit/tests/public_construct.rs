@@ -262,3 +262,24 @@ fn the_global_site_cap_is_immutable_and_cannot_be_used_to_fake_a_held_request() 
             .contains("next allocated site")
     );
 }
+
+#[test]
+fn construct_aggregate_job_is_the_first_placed_job_and_held_has_none() {
+    for held in [false, true] {
+        let mut records = stream(PaymentPolicy::ChargeOverTime, held);
+        for record in &mut records {
+            if let EconomyLogRecord::CommandBoundary(command) = record {
+                command.result.outcome.as_mut().unwrap().job_id = if held {
+                    Some(turts_sim::JobId(999))
+                } else {
+                    None
+                };
+            }
+        }
+        assert!(
+            validate_records(&records)
+                .unwrap_err()
+                .contains("aggregate JobId")
+        );
+    }
+}
