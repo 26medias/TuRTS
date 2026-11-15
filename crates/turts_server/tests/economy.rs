@@ -2118,7 +2118,7 @@ fn owner_snapshot_from_audit(
 
     let world = &state.economy;
     let _ = next;
-    let snapshot = wire::Snapshot {
+    wire::Snapshot {
         tick: world.tick,
         units: world
             .units
@@ -2292,8 +2292,7 @@ fn owner_snapshot_from_audit(
                 .collect(),
             ..Default::default()
         },
-    };
-    snapshot
+    }
 }
 
 fn owner_report_projection_from_audit(
@@ -3185,7 +3184,7 @@ fn assert_raw_wire_owner_records(
             .get(&tick)
             .copied()
             .expect("wire tick exists in validated audit prefix");
-        let expected = owner_snapshot_from_audit(&state, None, slot);
+        let expected = owner_snapshot_from_audit(state, None, slot);
         let expected = serde_json::to_value(expected).unwrap();
         let economy = &dto["economy"];
         for balance in economy["balances"].as_array().expect("balance DTO list") {
