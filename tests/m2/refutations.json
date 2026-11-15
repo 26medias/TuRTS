@@ -1030,8 +1030,8 @@
     "kind": "browser",
     "runtime": "browser",
     "plant_path": "crates/turts_client/src/render.rs",
-    "anchor": "for unit in &presented.units {\n        kept.insert(unit.unit_id);",
-    "replacement": "for unit in &presented.units {\n        if unit.content_id == \"base:rifleman\" { continue; }\n        kept.insert(unit.unit_id);",
+    "anchor": "for unit in &presented.units {\n        let terrain = state",
+    "replacement": "for unit in &presented.units {\n        if unit.content_id == \"base:rifleman\" { continue; }\n        let terrain = state",
     "command": [
       "/bin/bash",
       "-c",
