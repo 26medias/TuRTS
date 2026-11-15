@@ -93,7 +93,19 @@ function project(scene,pos){const m=scene.clip_from_world,c=[0,1,2,3].map(r=>[..
   const select=async id=>{const s=await read(),u=s.scene.units.find(x=>x.unit_id===id);if(!u)throw Error('missing unit '+id);await page.mouse.click(...project(s.scene,u.translation));return wait(s=>s.debug.selection.length===1&&s.debug.selection[0]===id,'select '+id,5000);};
   const click=async label=>{const s=await wait(s=>s.ui.some(x=>x.kind==='button'&&x.visible&&x.enabled&&x.text===label),label,5000);const w=s.ui.find(x=>x.kind==='button'&&x.visible&&x.enabled&&x.text===label);await page.mouse.click(w.rect[0]+w.rect[2]/2,w.rect[1]+w.rect[3]/2);};
   const build=async(label,x,z)=>{await select(1);await click(label);await sleep(120);await page.mouse.click(...project((await read()).scene,[x,0,z]));};
-  const shot=async(name,s)=>{result[name]=s;save();await page.screenshot({path:out+'/'+name+'.png'});};
+  const shot=async(name,s)=>{
+   if(widget(s,'credits')?.text!==`Credits: ${balance(s)}`)throw Error(name+': displayed balance differs from the replica');
+   for(const progress of world(s).progress.sites){
+    const row=s.ui.find(x=>x.visible&&x.id.includes('site_row')&&x.id.includes(`\"unit\":${progress.unit}`));
+    if(!row)throw Error(name+': missing visible site row '+progress.unit);
+    const charges=progress.rate.charged,paid=charges.reduce((sum,cost)=>sum+cost.amount,0);
+    const paidLabel=charges.length?`${paid} Credits`:'0',refundLabel=charges.length?`${Math.floor(paid/2)} Credits`:'0';
+    if(!row.text.includes(`Paid ${paidLabel}; refund ${refundLabel}`))throw Error(name+': site payment display differs from exact charged rows');
+    const shown=Number(row.text.match(/^Site: ([0-9.e+-]+)/)?.[1]);
+    if(Math.abs(shown-progress.value/progress.rate.total)>1e-9)throw Error(name+': displayed site progress differs from the replica');
+   }
+   result[name]=s;save();await page.screenshot({path:out+'/'+name+'.png'});
+  };
   result.initial=await wait(s=>s.debug.slot===0&&s.scene.models?.length===4&&s.scene.models.every(x=>x.ready)&&health(s,3)===180,'one ordinary enemy shot');
   if(balance(result.initial)!==3||widget(result.initial,'credits')?.text!=='Credits: 3')throw Error('initial displayed balance mismatch');
   await page.mouse.click(640,360);
