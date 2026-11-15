@@ -1,1 +1,1 @@
-(id:"scraper",name:"Scraper",operation:Excavate,work_per_second:8,reach:1.5,allowed_materials:["terrain_stockyard:loam_layer"],max_hardness:1,output_destination:SlotBalances)
+(id:"scraper",name:"Scraper",operation:Excavate,work_per_second:3,reach:1.5,allowed_materials:["terrain_stockyard:loam_layer"],max_hardness:1,output_destination:SlotBalances)
