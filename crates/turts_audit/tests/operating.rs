@@ -52,11 +52,11 @@ fn run() -> Vec<EconomyLogRecord> {
     );
     append_fields(
         source.get_mut("units/depot.ron").unwrap(),
-        r#"health:Some((max:300)), provides:[(resource:"cedar:power",amount:10)], income:Some((resource:"cedar:credits",amount:3,period_ms:1050)),"#,
+        r#"health:Some((max:300)), removal:Some((by_command:true,contents:Destroy)), provides:[(resource:"cedar:power",amount:10)], income:Some((resource:"cedar:credits",amount:3,period_ms:1050)),"#,
     );
     append_fields(
         source.get_mut("units/worker.ron").unwrap(),
-        r#"health:Some((max:60)), consumes:[(resource:"cedar:power",amount:2)],"#,
+        r#"health:Some((max:60)), removal:Some((by_command:true,contents:Destroy)), consumes:[(resource:"cedar:power",amount:2)],"#,
     );
     let archive = turts_mod_runtime::archive::PackageArchive::parse(
         &turts_mod_runtime::pack::pack_files(&source).unwrap(),
