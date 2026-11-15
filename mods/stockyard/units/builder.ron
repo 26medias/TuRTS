@@ -1,0 +1,5 @@
+(id: "builder", name: "Timber yard", footprint: Circle(radius: 1.5), movement: None,
+ inventory: Some((capacity: 2000, accepts: ["stockyard:wood"])), gatherer: None,
+ drop_off: Some((rules: [(item: "stockyard:wood", effect: Store)])), producer: None,
+ constructor: Some((buildings: ["stockyard:build_barracks", "stockyard:build_tower"], concurrent_sites: 2, queue_capacity: 4)),
+ build_area: Some(20.0), health: Some((max: 700)), removal: Some((by_command: true, contents: Destroy)), armour: Some((class: "stockyard:structure", flat: 0)))

@@ -193,6 +193,14 @@ impl PackageArchive {
 
     /// Parse and resolve all gameplay content. Presentation files are never read here.
     pub fn content(&self) -> Result<ContentCatalog, ModError> {
+        let mut catalog = self.content_for_catalog()?;
+        catalog.bots = crate::bots::validate_bots(&self.id(), self.bots()?, &catalog)?;
+        Ok(catalog)
+    }
+
+    /// Gameplay phase of aggregate loading. The caller MUST validate `bots()` against
+    /// the final catalog before publishing it. Standalone callers must use `content()`.
+    pub fn content_for_catalog(&self) -> Result<ContentCatalog, ModError> {
         // The version table speaks first: the RAW rows need only the raw documents. A package
         // that writes a field of a newer API is told so before a content cross-check fails
         // for the same reason (an old API has no `input` group, so "unknown input action").
@@ -310,7 +318,6 @@ impl PackageArchive {
         }
         catalog.combat = combat.into_iter().next().map(|(_, table)| table);
         crate::content_m3::validate_m3(&self.manifest, &catalog)?;
-        catalog.bots = crate::bots::validate_bots(&origin, self.bots()?, &catalog)?;
         Ok(catalog)
     }
 

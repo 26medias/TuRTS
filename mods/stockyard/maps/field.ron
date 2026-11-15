@@ -1,0 +1,24 @@
+(environment: Some((background: "#B8D4DF", ground_margin: 64.0, boundary_colour: Some("#A7966D"), fog: Some((colour: "#B8D4DF", start: 80.0, end: 220.0, opacity: 0.2)), antialiasing: Fxaa)), ground: Some((base_colour: "stockyard:ground_grass", normal: None, tile_size: 8.0, overlay: Some((
+    colour: "#9B8057", base_colour: None, tile_size: 8.0, roughness: 1.0,
+    patches: [
+        (centre: (x: 10.0, y: 24.0), size: (x: 14.0, y: 14.0), feather: 3.0),
+        (centre: (x: 54.0, y: 24.0), size: (x: 14.0, y: 14.0), feather: 3.0),
+        (centre: (x: 21.0, y: 15.0), size: (x: 8.0, y: 8.0), feather: 2.0),
+        (centre: (x: 43.0, y: 15.0), size: (x: 8.0, y: 8.0), feather: 2.0),
+        (centre: (x: 16.0, y: 19.0), size: (x: 16.0, y: 4.5), rotation_deg: -39.3, feather: 1.5, opacity: 0.8),
+        (centre: (x: 48.0, y: 19.0), size: (x: 16.0, y: 4.5), rotation_deg: 39.3, feather: 1.5, opacity: 0.8),
+    ],
+)))), id: "field", size: (x: 64.0, y: 48.0), placements: [
+(unit: "stockyard:builder", owner_slot: 0, pos: (x: 10, y: 16), contents: [(item: "stockyard:wood", amount: 500)]),
+(unit: "stockyard:barracks", owner_slot: 0, pos: (x: 10, y: 32), contents: [(item: "stockyard:wood", amount: 500)]),
+(unit: "stockyard:builder", owner_slot: 1, pos: (x: 54, y: 16), contents: [(item: "stockyard:wood", amount: 500)]),
+(unit: "stockyard:barracks", owner_slot: 1, pos: (x: 54, y: 32), contents: [(item: "stockyard:wood", amount: 500)]),
+(unit: "stockyard:base", owner_slot: 0, pos: (x: 10.0, y: 24.0), contents: []),
+(unit: "stockyard:worker", owner_slot: 0, pos: (x: 14.0, y: 20.0), contents: []),
+(unit: "stockyard:soldier", owner_slot: 0, pos: (x: 14.0, y: 28.0), contents: []),
+(unit: "stockyard:base", owner_slot: 1, pos: (x: 54.0, y: 24.0), contents: []),
+(unit: "stockyard:worker", owner_slot: 1, pos: (x: 50.0, y: 20.0), contents: []),
+(unit: "stockyard:soldier", owner_slot: 1, pos: (x: 50.0, y: 28.0), contents: [])], nodes: [
+ (node: "stockyard:trees", pos: (x: 21.0, y: 15.0), remaining: 2000),
+ (node: "stockyard:trees", pos: (x: 43.0, y: 15.0), remaining: 2000)
+ ], slot_economy: [(slot: 0, balances: [(balance: "stockyard:credits", amount: 200)]), (slot: 1, balances: [(balance: "stockyard:credits", amount: 200)])])

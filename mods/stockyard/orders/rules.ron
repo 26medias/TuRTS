@@ -1,0 +1,7 @@
+(queue_depth: 16, smart: [
+ (target: Ground, needs: Producer, order: "stockyard:order_rally"),
+ (target: Ground, needs: Movement, order: "stockyard:order_move"),
+ (target: ForeignUnitWeaponTarget, needs: Weapon, order: "stockyard:order_attack"),
+ (target: ResourceNodeAccepted, needs: Gatherer, order: "stockyard:order_gather"),
+ (target: Node, needs: Movement, order: "stockyard:order_move"),
+ (target: Content, needs: Producer, order: "stockyard:order_produce")])

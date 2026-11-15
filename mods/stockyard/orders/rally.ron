@@ -1,0 +1,1 @@
+(id: "order_rally", name: "Rally point", behaviour: SetRally, target: Point, fire: None, engage: None, icon: "icon_order_move", hotkey: "key_rally", cursor: None, card: None, units: ["stockyard:base", "stockyard:barracks"], description: "New units move here.")
