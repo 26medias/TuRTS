@@ -1,6 +1,7 @@
 //! SV7: frozen real simulation workload, with atomic human and public bot consumers.
 //! The short driver is diagnostic. Only the fixed 1,000-interval driver is acceptance.
 use super::*;
+use lightyear::transport::plugin::TransportSystems;
 use lightyear::{
     link::recv_payload_from_bytes,
     prelude::server::{ClientOf, ServerPlugins},
@@ -407,10 +408,18 @@ impl Harness {
                 .before(turts_sim::plugin::VisibilityBoundary::CompletedAfter)
                 .after(begin_cpu),
         );
-        app.add_systems(PreUpdate, begin_cpu.before(MessageSystems::Receive));
         app.add_systems(
             PreUpdate,
-            end_client.after(MessageSystems::Receive).after(begin_cpu),
+            begin_cpu
+                .before(TransportSystems::Receive)
+                .before(MessageSystems::Receive),
+        );
+        app.add_systems(
+            PreUpdate,
+            end_client
+                .after(TransportSystems::Receive)
+                .after(MessageSystems::Receive)
+                .after(begin_cpu),
         );
         app.add_systems(
             PostUpdate,
@@ -418,7 +427,10 @@ impl Harness {
         );
         app.add_systems(
             PostUpdate,
-            end_send.after(MessageSystems::Send).after(begin_cpu),
+            end_send
+                .after(MessageSystems::Send)
+                .after(TransportSystems::Send)
+                .after(begin_cpu),
         );
         app.finish();
         app.cleanup();
