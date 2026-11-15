@@ -371,9 +371,32 @@ fn renamed_inventory_construction_package_uses_the_same_public_sight_provider() 
 
 #[test]
 fn position_only_atomic_patch_keeps_existing_health_history_allocation() {
-    let (mut replica, stamp, payload) = setup();
+    let (mut replica, stamp, mut payload) = setup();
+    if let StateTransactionPayload::Snapshot { state, .. } = &mut payload {
+        state.units[0].owner_slot = SlotId(0);
+        state.unit_orders.push(UnitOrderRecord {
+            unit: UnitId(1),
+            activity: Activity::Moving,
+            current: Some(OrderSummary {
+                order: "visibility_probe:order_move".into(),
+                target: OrderTarget::Point(Pos { x: 6., y: 1. }),
+            }),
+            queued: vec![],
+            last_failure: None,
+            rally: None,
+        });
+    }
     assert!(replica.activate_transaction(&stamp, &payload, Instant::now()));
+    replica.units.get_mut(&1).unwrap().samples.reserve(64);
     let history = replica.health_trace[&1].as_ptr();
+    let content = replica.units[&1].content_id.as_ptr();
+    let samples = replica.units[&1].samples.as_slices().0.as_ptr();
+    let order = replica.unit_orders[&1]
+        .current
+        .as_ref()
+        .unwrap()
+        .order
+        .as_ptr();
     let (stamp, mut payload) = hidden_patch(&stamp);
     if let StateTransactionPayload::Patch {
         state, knowledge, ..
@@ -390,6 +413,17 @@ fn position_only_atomic_patch_keeps_existing_health_history_allocation() {
     }
     assert!(replica.activate_transaction(&stamp, &payload, Instant::now()));
     assert_eq!(replica.health_trace[&1].as_ptr(), history);
+    assert_eq!(replica.units[&1].content_id.as_ptr(), content);
+    assert_eq!(replica.units[&1].samples.as_slices().0.as_ptr(), samples);
+    assert_eq!(
+        replica.unit_orders[&1]
+            .current
+            .as_ref()
+            .unwrap()
+            .order
+            .as_ptr(),
+        order
+    );
     assert_eq!(replica.health_trace[&1].last().unwrap().current, 100);
     assert_eq!(replica.units[&1].samples.back().unwrap().1.x, 5.5);
 }

@@ -29,6 +29,77 @@ pub struct UnitReplica {
     pub samples: VecDeque<(u32, Pos)>,
 }
 
+#[derive(Clone, Copy)]
+pub(crate) struct UnitFacts<'a> {
+    pub content_id: &'a str,
+    pub owner_slot: u8,
+    pub position: Option<Pos>,
+}
+
+pub(crate) trait UnitTable {
+    fn get(&self, id: &u32) -> Option<UnitFacts<'_>>;
+    fn rows(&self) -> impl Iterator<Item = (u32, UnitFacts<'_>)>;
+    fn contains_key(&self, id: &u32) -> bool {
+        self.get(id).is_some()
+    }
+}
+impl UnitTable for HashMap<u32, UnitReplica> {
+    fn get(&self, id: &u32) -> Option<UnitFacts<'_>> {
+        HashMap::get(self, id).map(|unit| UnitFacts {
+            content_id: &unit.content_id,
+            owner_slot: unit.owner_slot,
+            position: unit.samples.back().map(|(_, pos)| *pos),
+        })
+    }
+    fn rows(&self) -> impl Iterator<Item = (u32, UnitFacts<'_>)> {
+        self.iter().map(|(id, unit)| {
+            (
+                *id,
+                UnitFacts {
+                    content_id: &unit.content_id,
+                    owner_slot: unit.owner_slot,
+                    position: unit.samples.back().map(|(_, pos)| *pos),
+                },
+            )
+        })
+    }
+}
+
+#[derive(Clone, Copy)]
+struct UnitOverlay<'a> {
+    base: &'a HashMap<u32, UnitReplica>,
+    spawned: &'a HashMap<u32, &'a UnitSnapshot>,
+    positions: &'a HashMap<u32, Pos>,
+    removed: &'a HashSet<u32>,
+    include_removed: bool,
+}
+impl UnitTable for UnitOverlay<'_> {
+    fn get(&self, id: &u32) -> Option<UnitFacts<'_>> {
+        if !self.include_removed && self.removed.contains(id) {
+            return None;
+        }
+        let mut unit = if let Some(unit) = self.spawned.get(id) {
+            UnitFacts {
+                content_id: &unit.content_id,
+                owner_slot: unit.owner_slot.0,
+                position: Some(unit.pos),
+            }
+        } else {
+            UnitTable::get(self.base, id)?
+        };
+        if let Some(position) = self.positions.get(id) {
+            unit.position = Some(*position);
+        }
+        Some(unit)
+    }
+    fn rows(&self) -> impl Iterator<Item = (u32, UnitFacts<'_>)> {
+        self.base
+            .keys()
+            .chain(self.spawned.keys())
+            .filter_map(|id| self.get(id).map(|unit| (*id, unit)))
+    }
+}
+
 /// The position of one unit at a presentation time.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Presented {
@@ -118,11 +189,31 @@ impl Default for ReplicaConfig {
 pub struct ReplicaContext {
     pub content: ClientContent,
     pub slot: u8,
+    unit_ids: HashMap<String, ContentId>,
 }
 
 impl ReplicaContext {
     pub fn new(content: ClientContent, slot: u8) -> Self {
-        Self { content, slot }
+        let unit_ids = content
+            .catalog
+            .units
+            .keys()
+            .map(|id| (id.to_string(), id.clone()))
+            .collect();
+        Self {
+            content,
+            slot,
+            unit_ids,
+        }
+    }
+    pub(crate) fn unit_definition(&self, text: &str) -> Option<&turts_mod_api::ResolvedUnit> {
+        if let Some(id) = self.unit_ids.get(text) {
+            return self.content.catalog.units.get(id);
+        }
+        self.content
+            .catalog
+            .units
+            .get(&ContentId::parse(text).ok()?)
     }
 }
 
@@ -142,6 +233,25 @@ struct Candidate {
     health_latest: HashMap<u32, u64>,
     health_forget: HashSet<u32>,
     tick: u32,
+}
+
+struct AtomicPatch {
+    spawned: Vec<(u32, UnitReplica)>,
+    positions: Vec<(u32, Pos)>,
+    removed: HashSet<u32>,
+    nodes: Option<HashMap<NodeId, NodeState>>,
+    economy: Option<EconomyState>,
+    belts: Option<Vec<BeltPieceRecord>>,
+    inserters: Option<Vec<InserterRecord>>,
+    extractors: Option<Vec<ExtractorRecord>>,
+    weapons: Option<Vec<WeaponRecord>>,
+    healths: Option<Vec<HealthRecord>>,
+    research: Option<Vec<ResearchRecord>>,
+    orders_changed: HashMap<u32, UnitOrderRecord>,
+    orders_cleared: HashSet<u32>,
+    health_append: Vec<(u32, HealthTraceEntry)>,
+    health_forget: Vec<u32>,
+    store: StoreStep,
 }
 
 /// A public health value observed in a coherent server tick. Equal values are omitted.
@@ -298,6 +408,14 @@ impl Replica {
                 .is_some_and(|tick| stamp.basis.tick < tick)
         {
             return false;
+        }
+        if let StateTransactionPayload::Patch {
+            state,
+            knowledge,
+            event_units,
+        } = payload
+        {
+            return self.activate_atomic_patch(stamp, state, knowledge.as_ref(), event_units, now);
         }
         let (mut candidate, store, knowledge, effects, event_units) = match payload {
             StateTransactionPayload::Snapshot {
@@ -471,6 +589,380 @@ impl Replica {
         true
     }
 
+    fn stage_atomic_patch(
+        &self,
+        stamp: &turts_net_protocol::visibility::StateTransactionStamp,
+        delta: &WorldDelta,
+        knowledge_delta: Option<&turts_mod_api::KnowledgeDelta>,
+        event_units: &[turts_net_protocol::visibility::EventUnitObservation],
+        knowledge: Option<&turts_mod_api::KnowledgeSnapshot>,
+    ) -> Option<AtomicPatch> {
+        let context = self.context.as_ref()?;
+        if delta.tick != stamp.basis.tick
+            || self.last_applied_tick != Some(delta.base_tick)
+            || delta.tick <= delta.base_tick
+            || stamp.parent_transaction_id.is_none()
+        {
+            return None;
+        }
+        let mut removed: HashSet<_> = delta.removed.iter().map(|id| id.0).collect();
+        if removed.len() != delta.removed.len() {
+            return None;
+        }
+        if let Some(visibility) = knowledge_delta {
+            for id in &visibility.hidden_units {
+                let unit = self.units.get(id)?;
+                if unit.owner_slot == context.slot || !removed.insert(*id) {
+                    return None;
+                }
+            }
+            if visibility
+                .revealed_units
+                .iter()
+                .any(|id| !delta.spawned.iter().any(|row| row.unit_id.0 == *id))
+                || visibility
+                    .revealed_nodes
+                    .iter()
+                    .any(|id| !delta.nodes.iter().any(|row| row.id.0 == *id))
+            {
+                return None;
+            }
+        }
+        if removed.iter().any(|id| !self.units.contains_key(id)) {
+            return None;
+        }
+        let mut spawned = HashMap::with_capacity(delta.spawned.len());
+        for unit in &delta.spawned {
+            if !valid_unit(context, unit)
+                || self.units.contains_key(&unit.unit_id.0)
+                || removed.contains(&unit.unit_id.0)
+                || spawned.insert(unit.unit_id.0, unit).is_some()
+            {
+                return None;
+            }
+        }
+        let mut positions = HashMap::with_capacity(delta.positions.len());
+        for row in &delta.positions {
+            if !finite_pos(row.pos)
+                || positions.insert(row.unit_id.0, row.pos).is_some()
+                || (!self.units.contains_key(&row.unit_id.0)
+                    && !spawned.contains_key(&row.unit_id.0))
+            {
+                return None;
+            }
+        }
+        let during = UnitOverlay {
+            base: &self.units,
+            spawned: &spawned,
+            positions: &positions,
+            removed: &removed,
+            include_removed: true,
+        };
+        let final_units = UnitOverlay {
+            include_removed: false,
+            ..during
+        };
+        let mut nodes = None;
+        if !delta.nodes.is_empty()
+            || knowledge_delta.is_some_and(|visibility| !visibility.hidden_nodes.is_empty())
+        {
+            let mut next = self.nodes.clone();
+            if let Some(visibility) = knowledge_delta {
+                for id in &visibility.hidden_nodes {
+                    next.remove(&NodeId(*id))?;
+                }
+            }
+            let mut seen = HashSet::new();
+            for node in &delta.nodes {
+                if !valid_node(context, node) || !seen.insert(node.id) {
+                    return None;
+                }
+                next.insert(node.id, node.clone());
+            }
+            nodes = Some(next);
+        }
+        let final_nodes = nodes.as_ref().unwrap_or(&self.nodes);
+        if !validate_delta_m3(context, &during, final_nodes, delta, &removed) {
+            return None;
+        }
+        let economy_changed = !delta.economy.balances.is_empty()
+            || !delta.economy.inventories.is_empty()
+            || !delta.economy.orders.is_empty()
+            || !delta.economy.queues.is_empty()
+            || removed.iter().any(|id| {
+                self.units
+                    .get(id)
+                    .is_some_and(|unit| unit.owner_slot == context.slot)
+            });
+        let mut economy = None;
+        if economy_changed {
+            let mut next = self.economy.clone();
+            if !merge_economy(&mut next, &delta.economy) {
+                return None;
+            }
+            next.inventories
+                .retain(|row| !removed.contains(&row.unit.0));
+            next.orders.retain(|row| {
+                !removed.contains(&row.unit.0)
+                    && row.receiver.is_none_or(|id| !removed.contains(&id.0))
+            });
+            next.queues.retain(|row| !removed.contains(&row.producer.0));
+            economy = Some(next);
+        }
+        let economy_view = economy.as_ref().unwrap_or(&self.economy);
+        let belts = stage_rows(&self.belts, &delta.belts, &removed, |row| row.piece.0)?;
+        let inserters = stage_rows(&self.inserters, &delta.inserters, &removed, |row| {
+            row.unit.0
+        })?;
+        let extractors = stage_rows(&self.extractors, &delta.extractors, &removed, |row| {
+            row.unit.0
+        })?;
+        let weapons = stage_rows(&self.weapons, &delta.weapons, &removed, |row| row.unit.0)?;
+        let healths = stage_rows(&self.healths, &delta.healths, &removed, |row| row.unit.0)?;
+        let research = stage_rows(&self.research, &delta.research, &HashSet::new(), |row| {
+            u32::from(row.slot.0)
+        })?;
+        let records = M3Records {
+            belts: staged_slice(&belts, &self.belts),
+            inserters: staged_slice(&inserters, &self.inserters),
+            extractors: staged_slice(&extractors, &self.extractors),
+            weapons: staged_slice(&weapons, &self.weapons),
+            healths: staged_slice(&healths, &self.healths),
+            research: staged_slice(&research, &self.research),
+        };
+        if !valid_economy(context, &final_units, final_nodes, economy_view)
+            || !valid_m3_records(context, &final_units, final_nodes, records)
+        {
+            return None;
+        }
+        let orders_changed = stage_unit_orders(context, &delta.unit_orders, &during)?;
+        let mut orders_cleared = HashSet::new();
+        for id in &delta.records.orders_cleared {
+            if during
+                .get(&id.0)
+                .is_none_or(|unit| unit.owner_slot != context.slot)
+                || removed.contains(&id.0)
+                || orders_changed.contains_key(&id.0)
+                || !orders_cleared.insert(id.0)
+            {
+                return None;
+            }
+        }
+        let store = replica_store::stage_delta_step(
+            context,
+            &self.store,
+            &during,
+            economy_view,
+            delta,
+            &removed,
+        )?;
+        if let Some(knowledge) = knowledge {
+            if knowledge.basis != stamp.basis
+                || knowledge.viewer != context.slot
+                || !crate::visibility::valid_snapshot(knowledge)
+                || !valid_known_view(context, &final_units, final_nodes, knowledge)
+            {
+                return None;
+            }
+        }
+        let mut transient = HashSet::new();
+        for row in event_units {
+            if row.basis.match_id != stamp.basis.match_id
+                || row.basis.map != stamp.basis.map
+                || (if knowledge.is_some() {
+                    row.basis.tick != stamp.basis.tick
+                } else {
+                    row.basis.tick > stamp.basis.tick
+                        || row.basis.phase != turts_mod_api::ObservationPhase::Completed
+                })
+                || !valid_unit(context, &row.unit)
+                || !transient.insert(row.unit.unit_id.0)
+            {
+                return None;
+            }
+        }
+        let endpoint = |id: UnitId| final_units.contains_key(&id.0) || transient.contains(&id.0);
+        if delta.records.effects.iter().any(|effect| match effect {
+            turts_net_protocol::Effect::Fired { unit, target, .. } => {
+                !endpoint(*unit) || !endpoint(*target)
+            }
+            turts_net_protocol::Effect::Destroyed { unit }
+            | turts_net_protocol::Effect::Credited { unit, .. } => !endpoint(*unit),
+        }) {
+            return None;
+        }
+        let positions = final_units
+            .rows()
+            .map(|(id, unit)| Some((id, unit.position?)))
+            .collect::<Option<Vec<_>>>()?;
+        let spawned = delta
+            .spawned
+            .iter()
+            .map(|unit| {
+                (
+                    unit.unit_id.0,
+                    UnitReplica {
+                        content_id: unit.content_id.clone(),
+                        owner_slot: unit.owner_slot.0,
+                        facing: unit.facing,
+                        samples: VecDeque::from([(delta.tick, unit.pos)]),
+                    },
+                )
+            })
+            .collect();
+        let health_append = delta
+            .healths
+            .iter()
+            .filter(|row| {
+                self.health_trace
+                    .get(&row.unit.0)
+                    .and_then(|history| history.last())
+                    .is_none_or(|last| last.current != row.current)
+            })
+            .map(|row| {
+                (
+                    row.unit.0,
+                    HealthTraceEntry {
+                        tick: delta.tick,
+                        current: row.current,
+                    },
+                )
+            })
+            .collect();
+        let health_forget =
+            knowledge_delta.map_or_else(Vec::new, |visibility| visibility.hidden_units.clone());
+        Some(AtomicPatch {
+            spawned,
+            positions,
+            removed,
+            nodes,
+            economy,
+            belts,
+            inserters,
+            extractors,
+            weapons,
+            healths,
+            research,
+            orders_changed,
+            orders_cleared,
+            health_append,
+            health_forget,
+            store,
+        })
+    }
+
+    fn activate_atomic_patch(
+        &mut self,
+        stamp: &turts_net_protocol::visibility::StateTransactionStamp,
+        delta: &WorldDelta,
+        knowledge_delta: Option<&turts_mod_api::KnowledgeDelta>,
+        event_units: &[turts_net_protocol::visibility::EventUnitObservation],
+        now: Instant,
+    ) -> bool {
+        let knowledge = match (&self.knowledge, knowledge_delta) {
+            (None, None) => None,
+            (Some(current), Some(delta)) if delta.basis == stamp.basis => {
+                let Some(next) = crate::visibility::stage_delta(current, delta) else {
+                    return false;
+                };
+                Some(next)
+            }
+            _ => return false,
+        };
+        let Some(patch) = self.stage_atomic_patch(
+            stamp,
+            delta,
+            knowledge_delta,
+            event_units,
+            knowledge.as_ref(),
+        ) else {
+            return false;
+        };
+        // Validation is complete. No fallible record operation follows this boundary.
+        self.units.retain(|id, _| !patch.removed.contains(id));
+        self.units.extend(patch.spawned);
+        for (id, position) in patch.positions {
+            if let Some(unit) = self.units.get_mut(&id) {
+                if unit
+                    .samples
+                    .back()
+                    .is_some_and(|(tick, _)| *tick == delta.tick)
+                {
+                    if let Some((_, point)) = unit.samples.back_mut() {
+                        *point = position;
+                    }
+                } else {
+                    unit.samples.push_back((delta.tick, position));
+                }
+                while unit
+                    .samples
+                    .front()
+                    .is_some_and(|(tick, _)| *tick < delta.tick.saturating_sub(PRUNE_TICKS))
+                {
+                    unit.samples.pop_front();
+                }
+            }
+        }
+        if let Some(value) = patch.nodes {
+            self.nodes = value;
+        }
+        if let Some(value) = patch.economy {
+            self.economy = value;
+        }
+        if let Some(value) = patch.belts {
+            self.belts = value;
+        }
+        if let Some(value) = patch.inserters {
+            self.inserters = value;
+        }
+        if let Some(value) = patch.extractors {
+            self.extractors = value;
+        }
+        if let Some(value) = patch.weapons {
+            self.weapons = value;
+        }
+        if let Some(value) = patch.healths {
+            self.healths = value;
+        }
+        if let Some(value) = patch.research {
+            self.research = value;
+        }
+        self.unit_orders
+            .retain(|id, _| !patch.removed.contains(id) && !patch.orders_cleared.contains(id));
+        self.unit_orders.extend(patch.orders_changed);
+        self.store.apply(patch.store);
+        for (id, entry) in patch.health_append {
+            let history = self.health_trace.entry(id).or_default();
+            history.push(entry);
+            if history.len() > HEALTH_TRACE_WINDOW {
+                history.drain(..history.len() - HEALTH_TRACE_WINDOW);
+            }
+        }
+        for id in patch.health_forget {
+            self.health_trace.remove(&id);
+        }
+        self.knowledge = knowledge.map(std::sync::Arc::new);
+        self.event_units = event_units.to_vec();
+        self.visual_events.clear();
+        for effect in &delta.records.effects {
+            self.next_visual_event += 1;
+            self.visual_events.push_back(VisualEvent {
+                sequence: self.next_visual_event,
+                tick: delta.tick,
+                effect: effect.clone(),
+            });
+        }
+        self.last_applied_tick = Some(delta.tick);
+        self.latest_receipt = Some(now);
+        self.resync = None;
+        self.reorder.clear();
+        self.highest_observed_tick = Some(delta.tick);
+        self.gap_anchor = None;
+        self.gap_seen = false;
+        self.tail_lost = false;
+        true
+    }
+
     /// Refuse before allocating a candidate, knowledge copy, or validation set.
     /// The estimate includes the decoded payload, candidate storage, and temporary expansions.
     fn preflight_transaction(
@@ -489,49 +981,98 @@ impl Replica {
         budget.bytes(64 * 1024)?;
         budget.value(payload)?;
         // Health histories stay borrowed during staging. New append/forget rows are covered by the payload budget.
-        if matches!(payload, StateTransactionPayload::Patch { .. }) {
-            let table =
-                |capacity: usize, row: usize| capacity.checked_mul(row * 4 + 64).ok_or(Limit);
-            budget.bytes(table(
-                self.units.capacity(),
-                std::mem::size_of::<(u32, UnitReplica)>(),
-            )?)?;
-            for unit in self.units.values() {
-                budget.bytes(
-                    unit.content_id
+        if let StateTransactionPayload::Patch {
+            state, knowledge, ..
+        } = payload
+        {
+            let mut removed: HashSet<_> = state.removed.iter().map(|id| id.0).collect();
+            if let Some(knowledge) = knowledge {
+                removed.extend(knowledge.hidden_units.iter().copied());
+            }
+            let context = self.context.as_ref().ok_or(Limit)?;
+            // The staged final-position vector and validator indexes contain IDs, not unit strings or histories.
+            let rows = self
+                .units
+                .len()
+                .saturating_add(self.healths.len())
+                .saturating_add(self.weapons.len())
+                .saturating_add(self.economy.inventories.len())
+                .saturating_add(self.economy.orders.len())
+                .saturating_add(self.economy.queues.len());
+            budget.bytes(rows.checked_mul(64).ok_or(Limit)?)?;
+            for (id, unit) in &self.units {
+                if !removed.contains(id) && unit.samples.len() == unit.samples.capacity() {
+                    let growth = unit
+                        .samples
                         .capacity()
-                        .checked_mul(4)
+                        .max(2)
+                        .checked_mul(2)
+                        .and_then(|n| n.checked_mul(std::mem::size_of::<(u32, Pos)>() * 2))
                         .and_then(|n| n.checked_add(128))
-                        .ok_or(Limit)?,
-                )?;
+                        .ok_or(Limit)?;
+                    budget.bytes(growth)?;
+                }
+            }
+            if !state.spawned.is_empty() {
                 budget.bytes(
-                    unit.samples
+                    self.units
                         .capacity()
-                        .checked_mul(std::mem::size_of::<(u32, Pos)>() * 4)
+                        .checked_mul(std::mem::size_of::<(u32, UnitReplica)>() * 4 + 64)
                         .ok_or(Limit)?,
                 )?;
             }
-            budget.bytes(table(
-                self.nodes.capacity(),
-                std::mem::size_of::<(NodeId, NodeState)>(),
-            )?)?;
-            budget.value(&self.nodes)?;
-            budget.bytes(table(
-                self.unit_orders.capacity(),
-                std::mem::size_of::<(u32, UnitOrderRecord)>(),
-            )?)?;
-            budget.value(&self.unit_orders)?;
-            budget.value(&self.economy)?;
-            budget.value(&self.belts)?;
-            budget.value(&self.inserters)?;
-            budget.value(&self.extractors)?;
-            budget.value(&self.weapons)?;
-            budget.value(&self.healths)?;
-            budget.value(&self.research)?;
+            if !state.nodes.is_empty()
+                || knowledge
+                    .as_ref()
+                    .is_some_and(|delta| !delta.hidden_nodes.is_empty())
+            {
+                budget.value(&self.nodes)?;
+            }
+            if !state.unit_orders.is_empty() {
+                budget.bytes(
+                    self.unit_orders
+                        .capacity()
+                        .checked_mul(std::mem::size_of::<(u32, UnitOrderRecord)>() * 4 + 64)
+                        .ok_or(Limit)?,
+                )?;
+            }
+            if !state.economy.balances.is_empty()
+                || !state.economy.inventories.is_empty()
+                || !state.economy.orders.is_empty()
+                || !state.economy.queues.is_empty()
+                || removed.iter().any(|id| {
+                    self.units
+                        .get(id)
+                        .is_some_and(|unit| unit.owner_slot == context.slot)
+                })
+            {
+                budget.value(&self.economy)?;
+            }
+            if rows_changed(&self.belts, &state.belts, &removed, |row| row.piece.0) {
+                budget.value(&self.belts)?;
+            }
+            if rows_changed(&self.inserters, &state.inserters, &removed, |row| {
+                row.unit.0
+            }) {
+                budget.value(&self.inserters)?;
+            }
+            if rows_changed(&self.extractors, &state.extractors, &removed, |row| {
+                row.unit.0
+            }) {
+                budget.value(&self.extractors)?;
+            }
+            if rows_changed(&self.weapons, &state.weapons, &removed, |row| row.unit.0) {
+                budget.value(&self.weapons)?;
+            }
+            if rows_changed(&self.healths, &state.healths, &removed, |row| row.unit.0) {
+                budget.value(&self.healths)?;
+            }
+            if !state.research.is_empty() {
+                budget.value(&self.research)?;
+            }
             if let Some(knowledge) = self.knowledge.as_deref() {
                 budget.value(knowledge)?;
             }
-            self.store.charge_staging(&mut budget)?;
         }
         Ok(())
     }
@@ -1471,15 +2012,13 @@ fn finite_pos(pos: Pos) -> bool {
 }
 
 fn valid_unit(context: &ReplicaContext, unit: &UnitSnapshot) -> bool {
-    finite_pos(unit.pos)
-        && parse_id(&unit.content_id)
-            .is_some_and(|id| context.content.catalog.units.contains_key(&id))
+    finite_pos(unit.pos) && context.unit_definition(&unit.content_id).is_some()
 }
 
 fn stage_unit_orders(
     context: &ReplicaContext,
     records: &[UnitOrderRecord],
-    units: &HashMap<u32, UnitReplica>,
+    units: &impl UnitTable,
 ) -> Option<HashMap<u32, UnitOrderRecord>> {
     let mut staged = HashMap::with_capacity(records.len());
     for record in records {
@@ -1533,7 +2072,7 @@ fn merge_unit_orders(
     mut table: HashMap<u32, UnitOrderRecord>,
     records: &[UnitOrderRecord],
     cleared: &[UnitId],
-    units: &HashMap<u32, UnitReplica>,
+    units: &impl UnitTable,
     removed: &HashSet<u32>,
 ) -> Option<HashMap<u32, UnitOrderRecord>> {
     let changed = stage_unit_orders(context, records, units)?;
@@ -1573,7 +2112,7 @@ fn valid_node(context: &ReplicaContext, node: &NodeState) -> bool {
 
 fn valid_economy(
     context: &ReplicaContext,
-    units: &HashMap<u32, UnitReplica>,
+    units: &impl UnitTable,
     nodes: &HashMap<NodeId, NodeState>,
     economy: &EconomyState,
 ) -> bool {
@@ -1916,6 +2455,36 @@ pub(crate) fn replace_keyed<T: Clone, K: Eq + std::hash::Hash>(
     true
 }
 
+fn rows_changed<T>(
+    current: &[T],
+    changes: &[T],
+    removed: &HashSet<u32>,
+    key: impl Fn(&T) -> u32,
+) -> bool {
+    !changes.is_empty()
+        || (!removed.is_empty() && current.iter().any(|row| removed.contains(&key(row))))
+}
+
+fn stage_rows<T: Clone>(
+    current: &[T],
+    changes: &[T],
+    removed: &HashSet<u32>,
+    key: impl Fn(&T) -> u32,
+) -> Option<Option<Vec<T>>> {
+    if !rows_changed(current, changes, removed, &key) {
+        return Some(None);
+    }
+    let mut next = current.to_vec();
+    if !replace_keyed(&mut next, changes, &key) {
+        return None;
+    }
+    next.retain(|row| !removed.contains(&key(row)));
+    Some(Some(next))
+}
+fn staged_slice<'a, T>(staged: &'a Option<Vec<T>>, current: &'a [T]) -> &'a [T] {
+    staged.as_deref().unwrap_or(current)
+}
+
 fn merge_m3_records(candidate: &mut Candidate, delta: &WorldDelta) -> bool {
     replace_keyed(&mut candidate.belts, &delta.belts, |record| record.piece.0)
         && replace_keyed(&mut candidate.inserters, &delta.inserters, |record| {
@@ -1934,7 +2503,7 @@ fn merge_m3_records(candidate: &mut Candidate, delta: &WorldDelta) -> bool {
 
 fn validate_delta_m3(
     context: &ReplicaContext,
-    units: &HashMap<u32, UnitReplica>,
+    units: &impl UnitTable,
     nodes: &HashMap<NodeId, NodeState>,
     delta: &WorldDelta,
     removed: &HashSet<u32>,
@@ -1991,7 +2560,7 @@ fn unique_by<T, K: Eq + std::hash::Hash>(records: &[T], key: impl Fn(&T) -> K) -
 
 fn unit_definition<'a>(
     context: &'a ReplicaContext,
-    units: &HashMap<u32, UnitReplica>,
+    units: &impl UnitTable,
     id: u32,
     owner_only: bool,
 ) -> Option<&'a turts_mod_api::ResolvedUnit> {
@@ -1999,15 +2568,10 @@ fn unit_definition<'a>(
     if owner_only && unit.owner_slot != context.slot {
         return None;
     }
-    let content_id = parse_id(&unit.content_id)?;
-    context.content.catalog.units.get(&content_id)
+    context.unit_definition(unit.content_id)
 }
 
-fn valid_health(
-    context: &ReplicaContext,
-    units: &HashMap<u32, UnitReplica>,
-    record: &HealthRecord,
-) -> bool {
+fn valid_health(context: &ReplicaContext, units: &impl UnitTable, record: &HealthRecord) -> bool {
     unit_definition(context, units, record.unit.0, false)
         .and_then(|definition| definition.health.as_ref())
         .is_some_and(|health| record.current <= health.max)
@@ -2079,7 +2643,7 @@ impl Candidate {
 
 fn valid_m3_records(
     context: &ReplicaContext,
-    units: &HashMap<u32, UnitReplica>,
+    units: &impl UnitTable,
     nodes: &HashMap<NodeId, NodeState>,
     candidate: M3Records<'_>,
 ) -> bool {
@@ -2218,6 +2782,15 @@ fn valid_known_entities(
     candidate: &Candidate,
     knowledge: &turts_mod_api::KnowledgeSnapshot,
 ) -> bool {
+    valid_known_view(context, &candidate.units, &candidate.nodes, knowledge)
+}
+
+fn valid_known_view(
+    context: &ReplicaContext,
+    units: &impl UnitTable,
+    nodes: &HashMap<NodeId, NodeState>,
+    knowledge: &turts_mod_api::KnowledgeSnapshot,
+) -> bool {
     use crate::visibility::{FogCell, position_state};
     let current = |pos: Pos| {
         position_state(knowledge, turts_mod_api::WorldPos { x: pos.x, y: pos.y })
@@ -2233,12 +2806,10 @@ fn valid_known_entities(
         .iter()
         .map(|row| row.node)
         .collect();
-    candidate.units.iter().all(|(id, unit)| {
-        (unit.owner_slot == context.slot
-            || unit.samples.back().is_some_and(|(_, pos)| current(*pos)))
-            && !stale_units.contains(id)
-    }) && candidate
-        .nodes
+    units.rows().all(|(id, unit)| {
+        (unit.owner_slot == context.slot || unit.position.is_some_and(current))
+            && !stale_units.contains(&id)
+    }) && nodes
         .values()
         .all(|node| current(node.pos) && !stale_nodes.contains(&node.id.0))
         && knowledge
