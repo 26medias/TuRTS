@@ -615,6 +615,21 @@ pub fn validate_terrain_map(
     map: &MapDef,
     catalog: &ContentCatalog,
 ) -> Result<Option<ResolvedTerrainDef>, ModError> {
+    if map.terrain.is_some()
+        && origin
+            .0
+            .len()
+            .saturating_add(1)
+            .saturating_add(map.id.len())
+            > MAX_VISIBILITY_MAP_ID_BYTES
+    {
+        return Err(error(
+            origin,
+            file,
+            "id",
+            "qualified terrain map identity exceeds 512 UTF-8 bytes for atomic state framing",
+        ));
+    }
     let Some(heights) = initial_elevations(origin, file, map)? else {
         return Ok(None);
     };

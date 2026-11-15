@@ -84,6 +84,25 @@ fn edit(files: &mut BTreeMap<String, Vec<u8>>, path: &str, before: &str, after: 
     files.insert(path.into(), text.replacen(before, after, 1).into_bytes());
 }
 #[test]
+fn all_visible_terrain_identity_fits_the_required_atomic_frame() {
+    let a = archive(&files("terrain_fixture", true));
+    let catalog = a.content().unwrap();
+    let (file, mut map) = a.maps().unwrap().remove(0);
+    assert!(map.visibility.is_none());
+    let remaining = MAX_VISIBILITY_MAP_ID_BYTES - a.id().0.len() - 1;
+    map.id = "x".repeat(remaining);
+    assert!(validate_terrain_map(&a.id(), &file, &map, &catalog).is_ok());
+    map.id.push('x');
+    let error = validate_terrain_map(&a.id(), &file, &map, &catalog).unwrap_err();
+    assert_eq!(error.field, "id");
+    map.terrain = None;
+    assert_eq!(
+        validate_terrain_map(&a.id(), &file, &map, &catalog).unwrap(),
+        None
+    );
+}
+
+#[test]
 fn two_public_packages_resolve_physical_and_balance_tools_without_private_geology() {
     for (name, physical) in [("quarry_fixture", true), ("renamed_badlands", false)] {
         let archive = archive(&files(name, physical));
