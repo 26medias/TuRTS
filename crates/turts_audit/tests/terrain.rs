@@ -520,3 +520,116 @@ fn identical_explicit_replace_discards_uncommitted_fraction_without_repeating_yi
         (-2, -2, 2)
     );
 }
+
+#[test]
+fn ordinary_disable_enable_preserves_partial_terrain_work_and_fractional_rate() {
+    let mut fixture = Fixture::new(false);
+    let mut records = vec![EconomyLogRecord::Initial(turts_sim::audit_state(
+        fixture.app.world_mut(),
+    ))];
+    fixture.work("spade", -1);
+    fixture.tick(&mut records, 10);
+    let before = turts_sim::audit_state(fixture.app.world_mut())
+        .raw_terrain
+        .unwrap()
+        .work
+        .into_iter()
+        .find(|work| work.unit == fixture.unit)
+        .unwrap();
+    assert!(before.done > 0 && before.carry > 0);
+    fixture.order("order_pause", OrderTargetSim::None, QueueMode::Replace);
+    fixture.tick(&mut records, 5);
+    let paused = turts_sim::audit_state(fixture.app.world_mut());
+    assert!(paused.disabled.contains(&fixture.unit));
+    let work = paused
+        .raw_terrain
+        .as_ref()
+        .unwrap()
+        .work
+        .iter()
+        .find(|work| work.unit == fixture.unit)
+        .unwrap();
+    assert_eq!((work.done, work.carry), (before.done, before.carry));
+    fixture.order("order_resume", OrderTargetSim::None, QueueMode::Replace);
+    fixture.tick(&mut records, 20);
+    save("ordinary-disabled-enabled-worker", &records);
+    validate_records(&records).unwrap();
+    let state = final_state(&records);
+    assert!(!state.disabled.contains(&fixture.unit));
+    let column = state
+        .raw_terrain
+        .as_ref()
+        .unwrap()
+        .columns_state
+        .iter()
+        .find(|column| column.cell == rect().min)
+        .unwrap();
+    assert_eq!((column.surface, column.revision), (-1, 1));
+}
+
+#[test]
+fn disabled_explicit_unload_retains_both_fractional_clocks_and_saved_work() {
+    let mut fixture = Fixture::new(false);
+    let mut records = vec![EconomyLogRecord::Initial(turts_sim::audit_state(
+        fixture.app.world_mut(),
+    ))];
+    fixture.work("spade", -2);
+    fixture.tick(&mut records, 41);
+    let initial = turts_sim::audit_state(fixture.app.world_mut());
+    let work = initial
+        .raw_terrain
+        .as_ref()
+        .unwrap()
+        .work
+        .iter()
+        .find(|row| row.unit == fixture.unit)
+        .unwrap()
+        .clone();
+    let depot = initial
+        .raw_units
+        .iter()
+        .find(|row| row.pos == WorldPos { x: 1.5, y: 3.5 })
+        .unwrap()
+        .unit_id;
+    fixture.order(
+        "order_unload",
+        OrderTargetSim::Unit(depot),
+        QueueMode::Append,
+    );
+    fixture.tick(&mut records, 1);
+    let active = turts_sim::audit_state(fixture.app.world_mut());
+    let carry = active.raw_terrain.as_ref().unwrap().cargo_carries.clone();
+    assert!(
+        carry
+            .iter()
+            .any(|(unit, carry)| *unit == fixture.unit && *carry > 0)
+    );
+    fixture.order("order_pause", OrderTargetSim::None, QueueMode::Replace);
+    fixture.tick(&mut records, 5);
+    let paused = turts_sim::audit_state(fixture.app.world_mut());
+    assert!(paused.disabled.contains(&fixture.unit));
+    assert_eq!(paused.raw_terrain.as_ref().unwrap().cargo_carries, carry);
+    assert_eq!(
+        paused
+            .raw_terrain
+            .as_ref()
+            .unwrap()
+            .work
+            .iter()
+            .find(|row| row.unit == fixture.unit),
+        Some(&work)
+    );
+    assert_eq!(paused.raw_terrain.as_ref().unwrap().paused.len(), 1);
+    fixture.order("order_resume", OrderTargetSim::None, QueueMode::Replace);
+    fixture.tick(&mut records, 35);
+    save("disabled-unload-both-clocks", &records);
+    validate_records(&records).unwrap();
+    assert!(
+        final_state(&records)
+            .raw_terrain
+            .as_ref()
+            .unwrap()
+            .paused
+            .is_empty()
+    );
+}

@@ -850,7 +850,86 @@ pub(crate) fn validate_records(records: &[EconomyLogRecord]) -> Result<(), Strin
     let Some(EconomyLogRecord::Initial(initial)) = records.first() else {
         return Ok(());
     };
+    if initial.raw_terrain.is_none() {
+        // Keep legacy streams linear. No separately verified terrain component may
+        // appear later and be reconciled into a trusted flat starting state.
+        let supplied = records.iter().any(|record| match record {
+            EconomyLogRecord::Initial(state) => state.raw_terrain.is_some(),
+            EconomyLogRecord::Operation(operation) => {
+                operation.before.raw_terrain.is_some()
+                    || operation.after.raw_terrain.is_some()
+                    || operation.events.iter().any(|event| {
+                        matches!(event.kind, EconomyEventKind::TerrainStepCommitted { .. })
+                    })
+            }
+            EconomyLogRecord::CommandBoundary(command) => {
+                command.before.raw_terrain.is_some() || command.after.raw_terrain.is_some()
+            }
+            EconomyLogRecord::Tick {
+                before,
+                state,
+                events,
+                ..
+            } => {
+                before.raw_terrain.is_some()
+                    || state.raw_terrain.is_some()
+                    || events.iter().any(|event| {
+                        matches!(event.kind, EconomyEventKind::TerrainStepCommitted { .. })
+                    })
+            }
+            EconomyLogRecord::Admission { before, after, .. } => {
+                before.raw_terrain.is_some() || after.raw_terrain.is_some()
+            }
+            _ => false,
+        });
+        return if supplied {
+            Err("terrain appeared in a flat initial-state stream".into())
+        } else {
+            Ok(())
+        };
+    }
     validate_state(initial)?;
+    let reset_spans = records
+        .iter()
+        .filter_map(|record| {
+            let EconomyLogRecord::CommandBoundary(command) = record else {
+                return None;
+            };
+            let turts_sim::CommandKind::Order(order) = &command.input.kind else {
+                return None;
+            };
+            if order.behaviour == Behaviour::Stop
+                || (order.queue == turts_sim::QueueMode::Replace
+                    && matches!(
+                        order.behaviour,
+                        Behaviour::Move
+                            | Behaviour::Hold
+                            | Behaviour::Attack
+                            | Behaviour::Gather
+                            | Behaviour::Repair
+                            | Behaviour::TerrainWork
+                            | Behaviour::UnloadCargo
+                    ))
+            {
+                Some((
+                    command.operation_id,
+                    (
+                        command.operation_end_id.unwrap_or(command.operation_id),
+                        command
+                            .result
+                            .units
+                            .accepted
+                            .iter()
+                            .copied()
+                            .collect::<BTreeSet<_>>(),
+                    ),
+                ))
+            } else {
+                None
+            }
+        })
+        .collect::<BTreeMap<_, _>>();
+    let empty = BTreeSet::new();
     let mut previous = initial;
     let mut credits = Credits::default();
     for record in records.iter().skip(1) {
@@ -882,42 +961,12 @@ pub(crate) fn validate_records(records: &[EconomyLogRecord]) -> Result<(), Strin
                     {
                         return Err("failed/passive terrain operation changed accounts without committed work or funded progress".into());
                     }
-                    let resets = records
-                        .iter()
-                        .filter_map(|record| {
-                            if let EconomyLogRecord::CommandBoundary(command) = record {
-                                if command.operation_id <= operation.operation_id
-                                    && command.operation_end_id.unwrap_or(command.operation_id)
-                                        >= operation.operation_id
-                                {
-                                    if let turts_sim::CommandKind::Order(order) =
-                                        &command.input.kind
-                                    {
-                                        if order.behaviour == Behaviour::Stop
-                                            || (order.queue == turts_sim::QueueMode::Replace
-                                                && matches!(
-                                                    order.behaviour,
-                                                    Behaviour::Move
-                                                        | Behaviour::Hold
-                                                        | Behaviour::Attack
-                                                        | Behaviour::Gather
-                                                        | Behaviour::Repair
-                                                        | Behaviour::TerrainWork
-                                                        | Behaviour::UnloadCargo
-                                                ))
-                                        {
-                                            return Some(command.result.units.accepted.clone());
-                                        }
-                                    }
-                                }
-                                None
-                            } else {
-                                None
-                            }
-                        })
-                        .flatten()
-                        .collect::<BTreeSet<_>>();
-                    credits.passive(&operation.before, &operation.after, &resets)?;
+                    let resets = reset_spans
+                        .range(..=operation.operation_id)
+                        .next_back()
+                        .filter(|(_, (end, _))| *end >= operation.operation_id)
+                        .map_or(&empty, |(_, (_, units))| units);
+                    credits.passive(&operation.before, &operation.after, resets)?;
                 }
                 validate_state(&operation.after)?;
                 previous = &operation.after;
