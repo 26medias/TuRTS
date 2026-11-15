@@ -4,7 +4,9 @@
 //! a mutable world or an unrestricted host callback.
 pub mod budget;
 pub mod controller;
+pub mod proposals;
 pub mod query;
+pub mod registry;
 pub mod seed;
 pub mod types;
 
@@ -14,3 +16,6 @@ pub use seed::derive_seed;
 pub use controller::*;
 pub use query::*;
 pub use types::*;
+
+pub use proposals::*;
+pub use registry::*;

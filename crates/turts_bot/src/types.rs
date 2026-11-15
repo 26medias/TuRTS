@@ -190,6 +190,7 @@ pub enum ProposalRejection {
     UnknownActor,
     NotObserved,
     InvalidOrder,
+    InvalidTask,
     InvalidCosts,
     InvalidAnchor,
     DuplicateActor,
