@@ -26,6 +26,7 @@ struct MinimapChildren {
     pings: HashMap<u64, [Entity; 2]>,
     frame: Vec<Entity>,
     fog: Vec<Entity>,
+    fog_basis: Option<(turts_mod_api::KnowledgeBasis, Vec2)>,
     remembered: HashMap<(bool, u32), Entity>,
 }
 
@@ -164,7 +165,13 @@ fn sync_minimap(world: &mut World) {
             .take::<MinimapChildren>()
             .unwrap_or_default();
 
-        sync_fog(world, root, &mut children.fog, knowledge.as_ref(), size);
+        let fog_basis = knowledge
+            .as_ref()
+            .map(|knowledge| (knowledge.basis.clone(), size));
+        if children.fog_basis != fog_basis {
+            sync_fog(world, root, &mut children.fog, knowledge.as_deref(), size);
+            children.fog_basis = fog_basis;
+        }
         let remembered = knowledge
             .as_ref()
             .map(|knowledge| {

@@ -343,7 +343,6 @@ pub fn setup_scene(
     acquired: Option<Res<AcquiredPackages>>,
     acquisition: Option<Res<Acquisition>>,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
     mut images: ResMut<Assets<Image>>,
     settings: Res<crate::models::GraphicsSettings>,
     mut model_state: ResMut<crate::models::ModelState>,

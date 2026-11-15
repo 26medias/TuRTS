@@ -25,19 +25,13 @@ pub fn cell_state(knowledge: &KnowledgeSnapshot, cell: u32) -> FogCell {
 }
 
 pub fn position_state(knowledge: &KnowledgeSnapshot, position: WorldPos) -> Option<FogCell> {
-    let grid = &knowledge.grid;
-    if !position.x.is_finite()
-        || !position.y.is_finite()
-        || position.x < 0.0
-        || position.y < 0.0
-        || position.x > grid.size.x
-        || position.y > grid.size.y
-    {
-        return None;
-    }
-    let x = ((position.x / grid.cell_size).floor() as u32).min(grid.columns - 1);
-    let y = ((position.y / grid.cell_size).floor() as u32).min(grid.rows - 1);
-    Some(cell_state(knowledge, y * grid.columns + x))
+    let shape = knowledge.grid;
+    let grid = turts_rules::visibility::Grid::checked(shape.size.x, shape.size.y, shape.cell_size)?;
+    let cell = grid.cell(turts_rules::visibility::Point {
+        x: position.x,
+        y: position.y,
+    })?;
+    Some(cell_state(knowledge, cell))
 }
 
 pub fn valid_snapshot(knowledge: &KnowledgeSnapshot) -> bool {
@@ -147,22 +141,24 @@ pub fn stage_delta(
         }
         end = stop;
     }
-    next.remembered_units.retain(|row| {
-        !delta.forgotten_units.contains(&row.unit)
-            && !delta.revealed_units.contains(&row.unit)
-            && !delta
-                .remembered_units
-                .iter()
-                .any(|changed| changed.unit == row.unit)
-    });
-    next.remembered_nodes.retain(|row| {
-        !delta.forgotten_nodes.contains(&row.node)
-            && !delta.revealed_nodes.contains(&row.node)
-            && !delta
-                .remembered_nodes
-                .iter()
-                .any(|changed| changed.node == row.node)
-    });
+    let unit_changes: HashSet<_> = delta
+        .forgotten_units
+        .iter()
+        .copied()
+        .chain(delta.revealed_units.iter().copied())
+        .chain(delta.remembered_units.iter().map(|row| row.unit))
+        .collect();
+    let node_changes: HashSet<_> = delta
+        .forgotten_nodes
+        .iter()
+        .copied()
+        .chain(delta.revealed_nodes.iter().copied())
+        .chain(delta.remembered_nodes.iter().map(|row| row.node))
+        .collect();
+    next.remembered_units
+        .retain(|row| !unit_changes.contains(&row.unit));
+    next.remembered_nodes
+        .retain(|row| !node_changes.contains(&row.node));
     next.remembered_units
         .extend(delta.remembered_units.iter().cloned());
     next.remembered_nodes

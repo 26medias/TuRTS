@@ -51,6 +51,9 @@ pub struct Facts {
     pub obstacles: Vec<Obstacle>,
     pub nodes: Vec<Circle>,
     pub queues: BTreeMap<u32, QueueFill>,
+    /// Shared immutable basis. Stale rows never become placement obstacles.
+    pub knowledge: Option<std::sync::Arc<turts_mod_api::KnowledgeSnapshot>>,
+    pub public_maxima: turts_rules::visibility_advice::PublicPlacementMaxima,
 }
 
 impl Core {
@@ -87,6 +90,28 @@ fn ghost(core: &Core, px: Vec2, world: &dyn WorldView, view: &Viewport) -> Optio
         in_build_area: recipe.in_build_area,
         queue: facts.queues.get(&core.placement.constructor).copied(),
     };
+    if let Some(knowledge) = facts.knowledge.as_deref() {
+        let region = turts_rules::visibility_advice::required_region(
+            site.footprint.centre,
+            recipe.radius,
+            recipe.gap,
+            recipe.node_clearance,
+            facts.public_maxima,
+            Point {
+                x: bounds.x,
+                y: bounds.y,
+            },
+        );
+        if region.is_none_or(|region| !observed_region(knowledge, region)) {
+            return Some(Ghost {
+                content: core.placement.content.clone(),
+                point,
+                radius: recipe.radius,
+                valid: false,
+                reason: Some("placement_unknown".into()),
+            });
+        }
+    }
     let verdict = placement::check(
         &site,
         &placement::View {
@@ -277,4 +302,32 @@ pub fn update(
         None
     };
     effects.push(Effect::Placement(Output { ghost: shown }));
+}
+
+fn observed_region(
+    knowledge: &turts_mod_api::KnowledgeSnapshot,
+    region: turts_rules::visibility_advice::AdviceRegion,
+) -> bool {
+    let shape = knowledge.grid;
+    let Some(grid) =
+        turts_rules::visibility::Grid::checked(shape.size.x, shape.size.y, shape.cell_size)
+    else {
+        return false;
+    };
+    grid.rectangle(
+        turts_rules::visibility::Point {
+            x: region.min.x,
+            y: region.min.y,
+        },
+        turts_rules::visibility::Point {
+            x: region.max.x,
+            y: region.max.y,
+        },
+        |cell| {
+            knowledge
+                .observed
+                .get(cell as usize / 8)
+                .is_some_and(|byte| byte & (1 << (cell % 8)) != 0)
+        },
+    )
 }

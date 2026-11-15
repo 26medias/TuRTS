@@ -116,6 +116,7 @@ fn layers(effect: &turts_mod_api::VisualEffectDef) -> Vec<EffectLayer> {
 }
 #[allow(clippy::too_many_arguments)]
 pub fn emit_effects(
+    state: Option<Res<ReplicaState>>,
     fx: Res<CombatPresentation>,
     acquired: Option<Res<AcquiredPackages>>,
     settings: Res<crate::models::GraphicsSettings>,
@@ -479,12 +480,20 @@ pub fn emit_effects(
     }
     emitters.loop_seen.retain(|_, last| fx.now - *last < 5.);
     emitters.shakes.retain(|shake| shake.until > fx.now);
-    emitters.lights.retain(|light| light.until > fx.now);
-    emitters.lines.retain(|line| line.until > fx.now);
+    emitters.lights.retain(|light| {
+        light.until > fx.now && super::permitted_position(state.as_deref(), light.position)
+    });
+    emitters.lines.retain(|line| {
+        line.until > fx.now
+            && super::permitted_position(state.as_deref(), line.source)
+            && super::permitted_position(state.as_deref(), line.target)
+    });
     while emitters.lines.len() > 4096 {
         emitters.lines.pop_front();
     }
-    emitters.decals.retain(|decal| decal.until > fx.now);
+    emitters.decals.retain(|decal| {
+        decal.until > fx.now && super::permitted_position(state.as_deref(), decal.position)
+    });
 }
 fn noise(seed: u64, index: u16) -> (f32, f32) {
     let a = seed

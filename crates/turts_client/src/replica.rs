@@ -161,7 +161,7 @@ pub struct VisualEvent {
 #[derive(Debug, Clone)]
 pub struct Replica {
     /// Complete permitted knowledge, committed with the gameplay tables. None is AllVisible.
-    pub knowledge: Option<turts_mod_api::KnowledgeSnapshot>,
+    pub knowledge: Option<std::sync::Arc<turts_mod_api::KnowledgeSnapshot>>,
     /// Event-local permitted identities. These do not become live picking targets.
     pub event_units: Vec<turts_net_protocol::visibility::EventUnitObservation>,
     /// Bounded visual events from committed live deltas only. Never replayed by snapshots.
@@ -404,7 +404,10 @@ impl Replica {
             .health_trace
             .retain(|id, _| candidate.units.contains_key(id));
         self.commit(candidate, store, now);
-        self.knowledge = knowledge;
+        if matches!(payload, StateTransactionPayload::Snapshot { .. }) {
+            self.snapshot_tick = Some(stamp.basis.tick);
+        }
+        self.knowledge = knowledge.map(std::sync::Arc::new);
         self.event_units = event_units.clone();
         self.visual_events.clear();
         for effect in effects {
@@ -2053,20 +2056,28 @@ fn valid_known_entities(
         position_state(knowledge, turts_mod_api::WorldPos { x: pos.x, y: pos.y })
             == Some(FogCell::Observed)
     };
+    let stale_units: HashSet<_> = knowledge
+        .remembered_units
+        .iter()
+        .map(|row| row.unit)
+        .collect();
+    let stale_nodes: HashSet<_> = knowledge
+        .remembered_nodes
+        .iter()
+        .map(|row| row.node)
+        .collect();
     candidate.units.iter().all(|(id, unit)| {
         (unit.owner_slot == context.slot
             || unit.samples.back().is_some_and(|(_, pos)| current(*pos)))
-            && !knowledge.remembered_units.iter().any(|row| row.unit == *id)
-    }) && candidate.nodes.values().all(|node| {
-        current(node.pos)
-            && !knowledge
-                .remembered_nodes
-                .iter()
-                .any(|row| row.node == node.id.0)
-    }) && knowledge
-        .remembered_units
-        .iter()
-        .all(|row| context.content.catalog.units.contains_key(&row.content))
+            && !stale_units.contains(id)
+    }) && candidate
+        .nodes
+        .values()
+        .all(|node| current(node.pos) && !stale_nodes.contains(&node.id.0))
+        && knowledge
+            .remembered_units
+            .iter()
+            .all(|row| context.content.catalog.units.contains_key(&row.content))
         && knowledge
             .remembered_nodes
             .iter()

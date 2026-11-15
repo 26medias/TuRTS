@@ -1248,3 +1248,39 @@ mod timeline_tests {
         assert_eq!(fx.released_deaths, HashSet::from([1]));
     }
 }
+
+/// Historical cosmetics cannot remain on ground that left the permitted view.
+pub(super) fn permitted_position(state: Option<&ReplicaState>, position: Vec3) -> bool {
+    let Some(replica) = state.and_then(|state| state.replica.as_ref()) else {
+        return true;
+    };
+    let Some(knowledge) = replica.knowledge.as_deref() else {
+        return true;
+    };
+    let point = turts_mod_api::WorldPos {
+        x: position.x,
+        y: position.z,
+    };
+    if crate::visibility::position_state(knowledge, point)
+        == Some(crate::visibility::FogCell::Observed)
+    {
+        return true;
+    }
+    let shape = knowledge.grid;
+    let Some(grid) =
+        turts_rules::visibility::Grid::checked(shape.size.x, shape.size.y, shape.cell_size)
+    else {
+        return false;
+    };
+    let cell = grid.cell(turts_rules::visibility::Point {
+        x: point.x,
+        y: point.y,
+    });
+    cell.is_some()
+        && replica.event_units.iter().any(|row| {
+            grid.cell(turts_rules::visibility::Point {
+                x: row.unit.pos.x,
+                y: row.unit.pos.y,
+            }) == cell
+        })
+}
