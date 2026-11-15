@@ -272,7 +272,7 @@ pub(crate) fn run(world: &mut World) {
         {
             continue;
         }
-        transaction::capture_unit_order_operation(world, actor.0, |world| {
+        transaction::capture_post_movement_order_operation(world, actor.0, |world| {
             one(world, actor.0, actor.1, actor.2)
         });
     }

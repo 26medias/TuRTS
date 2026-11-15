@@ -237,7 +237,7 @@ pub(crate) fn finish_terrain_order(world: &mut bevy_ecs::world::World, unit: u32
     let Some(slot) = world.get::<crate::Owner>(entity).map(|owner| owner.0) else {
         return;
     };
-    crate::economy::transaction::capture_unit_order_operation(world, unit, |world| {
+    crate::economy::transaction::capture_post_movement_order_operation(world, unit, |world| {
         writer::edit_unit_orders(world, entity, |orders| orders.current = None);
         if crate::terrain::pause::has_pending_resume(world, unit) {
             apply::clear_motion(world, slot, entity, unit);

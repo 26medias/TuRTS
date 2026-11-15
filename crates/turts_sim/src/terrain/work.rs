@@ -355,13 +355,17 @@ pub(crate) fn run(world: &mut World) {
         .collect::<Vec<_>>();
     for (unit, previous_owner) in invalid {
         if let Some(entity) = unit_entity(world, unit) {
-            crate::economy::transaction::capture_unit_order_operation(world, unit, |world| {
-                crate::orders::clear_replaced_movement(world, previous_owner, entity, unit);
-                crate::orders::writer::edit_unit_orders(world, entity, |orders| {
-                    orders.current = None;
-                    orders.queue.clear();
-                });
-            });
+            crate::economy::transaction::capture_post_movement_order_operation(
+                world,
+                unit,
+                |world| {
+                    crate::orders::clear_replaced_movement(world, previous_owner, entity, unit);
+                    crate::orders::writer::edit_unit_orders(world, entity, |orders| {
+                        orders.current = None;
+                        orders.queue.clear();
+                    });
+                },
+            );
         } else {
             order_changed(world, unit);
         }
