@@ -3800,6 +3800,15 @@ fn validate_automatic_order_operation(
     legacy_pending_move_to: bool,
     pending_dispatch_members: &mut BTreeMap<(u8, u64), PendingDispatchReplay>,
 ) -> Result<(), String> {
+    if operation.phase == turts_sim::economy::transaction::AuditPhase::PostMovementOrders
+        && operation.unit_id.is_some_and(|unit| {
+            unit_orders_for(&operation.before, unit)
+                .current
+                .is_some_and(|order| order.behaviour == turts_mod_api::Behaviour::UnloadCargo)
+        })
+    {
+        return Ok(());
+    }
     let unit_id = operation.unit_id.ok_or_else(|| {
         format!(
             "automatic Orders operation {} omits its unit subject",
@@ -6703,7 +6712,7 @@ fn start_next_audited_order(
     }
 }
 
-fn start_next_audited_order_if_not_pending(
+pub(super) fn start_next_audited_order_if_not_pending(
     state: &mut AuditState,
     unit_id: u32,
     orders: &mut turts_sim::UnitOrders,
@@ -6858,7 +6867,7 @@ fn clear_audited_gather_cycle(state: &mut AuditState, unit_id: u32) -> Result<()
     set_audit_move_target(state, unit_id, None)
 }
 
-fn set_audit_move_target(
+pub(super) fn set_audit_move_target(
     state: &mut AuditState,
     unit_id: u32,
     target: Option<turts_mod_api::WorldPos>,
@@ -6904,7 +6913,11 @@ fn clear_audit_gather(state: &mut AuditState, unit_id: u32) {
     }
 }
 
-fn store_audited_unit_orders(state: &mut AuditState, unit_id: u32, orders: turts_sim::UnitOrders) {
+pub(super) fn store_audited_unit_orders(
+    state: &mut AuditState,
+    unit_id: u32,
+    orders: turts_sim::UnitOrders,
+) {
     state.unit_orders.retain(|entry| entry.unit_id != unit_id);
     if orders != Default::default() {
         state

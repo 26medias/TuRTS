@@ -38,7 +38,7 @@ impl Fixture {
             placement.pos = if placement.unit == id("walker").to_string() {
                 WorldPos { x: 1.5, y: 1.5 }
             } else {
-                WorldPos { x: 1.5, y: 4.5 }
+                WorldPos { x: 1.5, y: 3.0 }
             };
         }
         let terrain = map.terrain.as_mut().unwrap();
@@ -81,6 +81,17 @@ impl Fixture {
         Self { app, unit, seq: 0 }
     }
     fn work(&mut self, tool: &str, elevation: i32) {
+        self.order(
+            "order_work",
+            OrderTargetSim::TerrainWork {
+                tool: id(tool),
+                cells: rect(),
+                target_elevation: elevation,
+            },
+            QueueMode::Replace,
+        );
+    }
+    fn order(&mut self, local: &str, target: OrderTargetSim, queue: QueueMode) {
         let state = turts_sim::audit_state(self.app.world_mut());
         let policy = state
             .catalog
@@ -88,7 +99,7 @@ impl Fixture {
             .unwrap()
             .order_definitions
             .iter()
-            .find(|row| row.id == id("order_work"))
+            .find(|row| row.id == id(local))
             .unwrap();
         self.seq += 1;
         let command = Command {
@@ -109,12 +120,8 @@ impl Fixture {
                     unit_capabilities: policy.unit_capabilities.clone(),
                 }),
                 units: vec![self.unit],
-                target: OrderTargetSim::TerrainWork {
-                    tool: id(tool),
-                    cells: rect(),
-                    target_elevation: elevation,
-                },
-                queue: QueueMode::Replace,
+                target,
+                queue,
                 group: 0,
                 allowed_units: policy.units.clone(),
                 queue_depth: policy.queue_depth,
@@ -371,4 +378,70 @@ fn same_seed_command_tape_and_real_allocator_inversion_preserve_physical_edits()
     };
     assert_eq!(physical(&first), physical(&inverted));
     save("real-allocator-inverted", &inverted);
+}
+
+#[test]
+fn actual_append_unload_preserves_partial_work_and_carry_in_recorded_stream() {
+    let mut fixture = Fixture::new(false);
+    let mut records = vec![EconomyLogRecord::Initial(turts_sim::audit_state(
+        fixture.app.world_mut(),
+    ))];
+    fixture.work("spade", -2);
+    fixture.tick(&mut records, 41);
+    let before = turts_sim::audit_state(fixture.app.world_mut());
+    let work = before
+        .raw_terrain
+        .as_ref()
+        .unwrap()
+        .work
+        .iter()
+        .find(|row| row.unit == fixture.unit)
+        .unwrap()
+        .clone();
+    assert!(work.done > 0 && work.carry > 0);
+    let depot = before
+        .raw_units
+        .iter()
+        .find(|unit| unit.pos == WorldPos { x: 1.5, y: 3.0 })
+        .unwrap()
+        .unit_id;
+    fixture.order(
+        "order_unload",
+        OrderTargetSim::Unit(depot),
+        QueueMode::Append,
+    );
+    fixture.tick(&mut records, 3);
+    let paused = turts_sim::audit_state(fixture.app.world_mut());
+    assert_eq!(
+        paused
+            .raw_terrain
+            .as_ref()
+            .unwrap()
+            .work
+            .iter()
+            .find(|row| row.unit == fixture.unit),
+        Some(&work)
+    );
+    assert!(
+        !paused
+            .raw_terrain
+            .as_ref()
+            .unwrap()
+            .cargo_carries
+            .is_empty()
+    );
+    fixture.tick(&mut records, 35);
+    save("append-unload-preserves-partial-work", &records);
+    validate_records(&records).unwrap_or_else(|error| panic!("unload stream: {error}"));
+    let final_state = final_state(&records);
+    assert!(final_state.raw_terrain.as_ref().unwrap().paused.is_empty());
+    let column = final_state
+        .raw_terrain
+        .as_ref()
+        .unwrap()
+        .columns_state
+        .iter()
+        .find(|row| row.cell == rect().min)
+        .unwrap();
+    assert_eq!((column.surface, column.natural_top), (-2, -2));
 }

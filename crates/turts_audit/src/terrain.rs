@@ -100,15 +100,6 @@ fn validate_state(state: &AuditState) -> Result<(), String> {
         return Ok(());
     };
     let catalog = state.catalog.as_ref().ok_or("terrain catalog missing")?;
-    if state.unit_orders.iter().any(|orders| {
-        orders
-            .orders
-            .current
-            .as_ref()
-            .is_some_and(|order| order.behaviour == Behaviour::UnloadCargo)
-    }) {
-        return Err("terrain unload timing model is not implemented yet".into());
-    }
 
     if terrain.length_scale == 0
         || terrain.cell_width == 0
@@ -160,6 +151,21 @@ fn validate_state(state: &AuditState) -> Result<(), String> {
         }
         if top != column.surface || top > terrain.ceiling {
             return Err("terrain surface differs from retained material runs".into());
+        }
+    }
+    let mut cargo_units = BTreeSet::new();
+    for (unit, carry) in &terrain.cargo_carries {
+        if !cargo_units.insert(*unit)
+            || *carry
+                >= u64::from(
+                    state
+                        .tick_hz
+                        .filter(|hz| *hz > 0)
+                        .ok_or("cargo clock has no tick rate")?,
+                )
+            || definition(state, *unit)?.terrain_cargo.is_none()
+        {
+            return Err("cargo fractional clock has invalid actor/remainder".into());
         }
     }
     let mut units = BTreeSet::new();
@@ -298,7 +304,12 @@ impl Credits {
             (earned % hz) as u64,
         ))
     }
-    fn passive(&mut self, before: &AuditState, after: &AuditState) -> Result<(), String> {
+    fn passive(
+        &mut self,
+        before: &AuditState,
+        after: &AuditState,
+        reset_cargo: &BTreeSet<u32>,
+    ) -> Result<(), String> {
         let (Some(old), Some(new)) = (&before.raw_terrain, &after.raw_terrain) else {
             if before.raw_terrain.is_some() != after.raw_terrain.is_some() {
                 return Err("terrain appeared/disappeared without package installation".into());
@@ -309,6 +320,20 @@ impl Credits {
             return Err(
                 "terrain column/depletion/revision changed without a committed step".into(),
             );
+        }
+        for (unit, carry) in &new.cargo_carries {
+            if !old.cargo_carries.contains(&(*unit, *carry)) {
+                return Err("cargo clock changed outside a timed utility operation".into());
+            }
+        }
+        for (unit, _) in &old.cargo_carries {
+            if !new.cargo_carries.iter().any(|(actor, _)| actor == unit)
+                && !reset_cargo.contains(unit)
+            {
+                return Err(
+                    "cargo fractional carry disappeared without cancellation/completion".into(),
+                );
+            }
         }
         for next in &new.work {
             let Some(prior) = old.work.iter().find(|row| {
@@ -738,16 +763,41 @@ pub(crate) fn validate_records(records: &[EconomyLogRecord]) -> Result<(), Strin
         match record {
             EconomyLogRecord::Operation(operation) => {
                 validate_state(&operation.before)?;
-                credits.passive(previous, &operation.before)?;
-                if !step(operation, &mut credits)? {
-                    credits.passive(&operation.before, &operation.after)?;
+                credits.passive(previous, &operation.before, &BTreeSet::new())?;
+                if !step(operation, &mut credits)? && !cargo(operation)? {
+                    let resets = records
+                        .iter()
+                        .filter_map(|record| {
+                            if let EconomyLogRecord::CommandBoundary(command) = record {
+                                if command.operation_id <= operation.operation_id
+                                    && command.operation_end_id.unwrap_or(command.operation_id)
+                                        >= operation.operation_id
+                                {
+                                    if let turts_sim::CommandKind::Order(order) =
+                                        &command.input.kind
+                                    {
+                                        if order.queue == turts_sim::QueueMode::Replace
+                                            || order.behaviour == Behaviour::Stop
+                                        {
+                                            return Some(command.result.units.accepted.clone());
+                                        }
+                                    }
+                                }
+                                None
+                            } else {
+                                None
+                            }
+                        })
+                        .flatten()
+                        .collect::<BTreeSet<_>>();
+                    credits.passive(&operation.before, &operation.after, &resets)?;
                 }
                 validate_state(&operation.after)?;
                 previous = &operation.after;
             }
             EconomyLogRecord::Tick { state, .. } => {
                 validate_state(state)?;
-                credits.passive(previous, state)?;
+                credits.passive(previous, state, &BTreeSet::new())?;
                 previous = state;
             }
             _ => {}
@@ -865,4 +915,271 @@ pub(crate) fn target_refusal(
         return Ok(Some(R::MissingCapability));
     }
     Ok(None)
+}
+
+pub(crate) fn automatic_operation(operation: &OperationAudit) -> bool {
+    operation.unit_id.is_some_and(|unit| {
+        work_order(&operation.before, unit).is_some_and(|order| {
+            matches!(
+                order.behaviour,
+                Behaviour::TerrainWork | Behaviour::UnloadCargo
+            )
+        })
+    })
+}
+fn set_cargo_carry(state: &mut AuditState, unit: u32, carry: Option<u64>) {
+    let raw = state.raw_terrain.as_mut().unwrap();
+    raw.cargo_carries.retain(|(actor, _)| *actor != unit);
+    if let Some(carry) = carry {
+        raw.cargo_carries.push((unit, carry));
+        raw.cargo_carries.sort_by_key(|(actor, _)| *actor);
+    }
+}
+fn cargo(operation: &OperationAudit) -> Result<bool, String> {
+    if operation.phase != turts_sim::economy::transaction::AuditPhase::PostMovementOrders {
+        return Ok(false);
+    }
+    let Some(unit) = operation.unit_id else {
+        return Ok(false);
+    };
+    let Some(order) = work_order(&operation.before, unit)
+        .filter(|order| order.behaviour == Behaviour::UnloadCargo)
+    else {
+        return Ok(false);
+    };
+    let OrderTargetSim::Unit(depot) = order.target else {
+        return Err("cargo utility lacks its depot".into());
+    };
+    let mut expected = operation.before.clone();
+    if target_refusal(&operation.before, unit, &order.target, true)?.is_some()
+        || operation.before.disabled.contains(&unit)
+    {
+        if expected != operation.after || !operation.events.is_empty() {
+            return Err("inactive cargo utility changed state".into());
+        }
+        return Ok(true);
+    }
+    let actor = operation
+        .before
+        .raw_units
+        .iter()
+        .find(|row| row.unit_id == unit)
+        .unwrap();
+    let receiver = operation
+        .before
+        .raw_units
+        .iter()
+        .find(|row| row.unit_id == depot)
+        .unwrap();
+    let actor_definition = definition(&operation.before, unit)?;
+    let receiver_definition = definition(&operation.before, depot)?;
+    let cargo = actor_definition
+        .terrain_cargo
+        .as_ref()
+        .ok_or("cargo utility has no authored rate")?;
+    let bodies = actor_definition.radius + receiver_definition.radius;
+    let from = bevy::math::Vec2::new(actor.pos.x, actor.pos.y);
+    let to = bevy::math::Vec2::new(receiver.pos.x, receiver.pos.y);
+    let dx = f64::from(actor.pos.x) - f64::from(receiver.pos.x);
+    let dy = f64::from(actor.pos.y) - f64::from(receiver.pos.y);
+    let reach = f64::from(bodies) + f64::from(cargo.interaction_range);
+    if dx * dx + dy * dy > reach * reach {
+        let target = to + (from - to).normalize_or_zero() * bodies;
+        crate::replay::set_audit_move_target(&mut expected, unit, Some(target))?;
+        if expected != operation.after || !operation.events.is_empty() {
+            return Err("cargo approach differs from public depot surface goal".into());
+        }
+        return Ok(true);
+    }
+    crate::replay::set_audit_move_target(&mut expected, unit, None)?;
+    let stock = operation
+        .before
+        .economy
+        .inventories
+        .iter()
+        .find(|row| row.unit == unit)
+        .map(|inventory| {
+            inventory
+                .items
+                .iter()
+                .filter_map(|row| {
+                    row.on_hand
+                        .checked_sub(row.reserved)
+                        .filter(|amount| *amount > 0)
+                        .map(|amount| (row.resource.clone(), amount))
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    if stock.is_empty() {
+        let mut orders = operation
+            .before
+            .unit_orders
+            .iter()
+            .find(|row| row.unit_id == unit)
+            .map(|row| row.orders.clone())
+            .unwrap_or_default();
+        orders.current = None;
+        let resume = terrain(&operation.before)?
+            .paused
+            .iter()
+            .find(|pause| pause.unit == unit && orders.queue.front() == Some(&pause.work));
+        set_cargo_carry(&mut expected, unit, None);
+        let raw = expected.raw_terrain.as_mut().unwrap();
+        raw.paused.retain(|pause| pause.unit != unit);
+        if resume.is_none() {
+            raw.work.retain(|row| row.unit != unit);
+            raw.claims.retain(|row| row.unit != unit);
+        }
+        expected
+            .pending_movement_orders
+            .cancel_units(actor.owner_slot, &[unit]);
+        expected.movement_progress.retain(|row| row.unit_id != unit);
+        expected
+            .plain_movement_progress
+            .retain(|row| row.unit_id != unit);
+        crate::replay::start_next_audited_order_if_not_pending(&mut expected, unit, &mut orders)?;
+        if resume.is_none()
+            && let Some(order) = orders
+                .current
+                .as_ref()
+                .filter(|order| order.behaviour == Behaviour::TerrainWork)
+        {
+            expected
+                .raw_terrain
+                .as_mut()
+                .unwrap()
+                .work
+                .push(TerrainWorkAudit {
+                    owner: turts_sim::SlotId(actor.owner_slot),
+                    unit,
+                    order: order.clone(),
+                    cell: None,
+                    done: 0,
+                    carry: 0,
+                    banked: false,
+                    required: None,
+                    wait: turts_sim::terrain::TerrainWorkWait::Unknown,
+                    source_revision: None,
+                });
+            expected
+                .raw_terrain
+                .as_mut()
+                .unwrap()
+                .work
+                .sort_by_key(|row| row.unit);
+        }
+        crate::replay::store_audited_unit_orders(&mut expected, unit, orders);
+        if expected != operation.after || !operation.events.is_empty() {
+            return Err("cargo completion does not preserve exact paused work and queue".into());
+        }
+        return Ok(true);
+    }
+    let carry = terrain(&operation.before)?
+        .cargo_carries
+        .iter()
+        .find(|(actor, _)| *actor == unit)
+        .map_or(0, |(_, carry)| *carry);
+    let hz = u128::from(
+        operation
+            .before
+            .tick_hz
+            .filter(|hz| *hz > 0)
+            .ok_or("cargo tick rate missing")?,
+    );
+    let earned = u128::from(cargo.unload_per_second) + u128::from(carry);
+    let mut budget = u64::try_from(earned / hz).map_err(|_| "cargo rate budget overflow")?;
+    let next_carry = (earned % hz) as u64;
+    if budget == 0 {
+        set_cargo_carry(&mut expected, unit, Some(next_carry));
+    }
+    let mut events = Vec::new();
+    for (item, available) in stock {
+        if budget == 0 {
+            break;
+        }
+        if !receiver_definition.drop_off.iter().any(|row| {
+            row.item == item
+                && matches!(
+                    row.effect,
+                    turts_sim::economy::views::CatalogDropOffEffectAudit::Store
+                )
+        }) {
+            continue;
+        }
+        let Some((_, accepts)) = &receiver_definition.inventory else {
+            continue;
+        };
+        if !accepts.contains(&item) {
+            continue;
+        }
+        let Some(inventory) = expected
+            .economy
+            .inventories
+            .iter()
+            .find(|row| row.unit == depot)
+        else {
+            continue;
+        };
+        let used = inventory
+            .items
+            .iter()
+            .try_fold(0u64, |sum, row| sum.checked_add(row.on_hand))
+            .ok_or("cargo depot inventory overflows")?;
+        let headroom = inventory
+            .capacity
+            .checked_sub(used)
+            .ok_or("cargo depot exceeds capacity")?;
+        let amount = budget.min(available).min(headroom);
+        if amount == 0 {
+            continue;
+        }
+        change_account(
+            &mut expected,
+            &CostLine {
+                source: EventSource::Inventory(unit),
+                resource: item.clone(),
+                amount,
+            },
+            false,
+        )?;
+        change_account(
+            &mut expected,
+            &CostLine {
+                source: EventSource::Inventory(depot),
+                resource: item.clone(),
+                amount,
+            },
+            true,
+        )?;
+        let event = turts_sim::EconomyEvent {
+            tick: operation.before.economy.tick,
+            ordinal: operation
+                .before
+                .next_event_ordinal
+                .ok_or("cargo ordinal missing")?
+                .checked_add(events.len() as u64)
+                .ok_or("cargo ordinal overflow")?,
+            owner_slot: actor.owner_slot,
+            kind: EconomyEventKind::Stored {
+                from: unit,
+                to: depot,
+                item,
+                amount,
+            },
+        };
+        events.push(event);
+        budget -= amount;
+    }
+    if !events.is_empty() {
+        set_cargo_carry(&mut expected, unit, Some(next_carry));
+        for event in &events {
+            expected.pending_events.push(event.clone());
+            expected.next_event_ordinal = event.ordinal.checked_add(1);
+        }
+    }
+    if events != operation.events || expected != operation.after {
+        return Err("cargo store/carry differs from exact authored timed transfer".into());
+    }
+    Ok(true)
 }
