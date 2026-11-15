@@ -142,9 +142,11 @@ pub(crate) fn install_with_registry(
             .get(&id)
             .ok_or_else(|| format!("{field}.profile: unknown profile `{id}`"))?
             .clone();
-        let period =
-            turts_rules::clock::try_ms_to_ticks(u64::from(profile.decision_ms), u32::from(hz))
-                .map_err(|e| format!("{field}.decision_ms: {e:?}"))?;
+        let period = u64::from(profile.decision_ms)
+            .checked_mul(u64::from(hz))
+            .and_then(|ticks| ticks.checked_add(999))
+            .map(|ticks| ticks / 1000)
+            .ok_or_else(|| format!("{field}.decision_ms: decision clock overflow"))?;
         if profile.decision_ms == 0 || period == 0 {
             return Err(format!(
                 "{field}.decision_ms: decision period must be positive"
@@ -313,22 +315,7 @@ fn drive_inner(world: &mut World, host: &mut BotHost, execution: &mut BotExecuti
             .is_none_or(|lease| lease.expired(bot.decision_step) || !lease.retained())
         {
             // A candidate basis owns only permitted immutable facts. Account batches remain fresh.
-            let projected = projection::project(
-                view,
-                bot.actor.slot,
-                accounting_basis,
-                host.catalog.clone(),
-                teams.clone(),
-                WorldPos {
-                    x: size.x,
-                    y: size.y,
-                },
-                &AllVisible,
-            );
-            host.private_projection_scans = host
-                .private_projection_scans
-                .saturating_add(projected.private_scanned as u64);
-            bot.lease = Some(CandidateLease::new(projected.basis, bot.decision_step));
+            bot.lease = Some(CandidateLease::new(current.clone(), bot.decision_step));
         }
         let counts = role_counts(&current, &bot.profile);
         let supply = view

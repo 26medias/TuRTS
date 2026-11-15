@@ -98,6 +98,9 @@ fn run() -> Result<(), String> {
                 definition.start
             })
     });
+    if !bot_configuration.is_empty() && policy != turts_mod_api::StartPolicy::Immediate {
+        return Err("public bots require the Immediate start policy; ready-lobby bot administration is not implemented".into());
+    }
     if policy == turts_mod_api::StartPolicy::Immediate {
         app.insert_resource(turts_sim::MatchConfig::immediate(cfg.tick_hz));
     } else {
