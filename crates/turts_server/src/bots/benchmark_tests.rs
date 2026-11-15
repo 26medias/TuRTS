@@ -369,7 +369,24 @@ fn fixture(bots: bool) -> (App, serde_json::Value) {
     for squad in &mut profile.knowledge.squads {
         squad.target_roles = vec!["home".into()];
     }
-    let profile_hash = turts_audit::actor_profile_hash(profile).unwrap();
+    // Use the public portable validator too. Synthetic authoring is not a way
+    // around ordinary profile/order/role compatibility checks.
+    let authored_profiles = std::mem::take(&mut catalog.bots);
+    let sources = authored_profiles
+        .into_iter()
+        .map(|(id, profile)| {
+            catalog.source_files.remove(&id);
+            ("benchmark/opponent.ron".to_owned(), profile)
+        })
+        .collect();
+    catalog.bots = turts_mod_runtime::bots::validate_bots(
+        &turts_mod_api::PackageId("stockyard".into()),
+        sources,
+        &catalog,
+    )
+    .unwrap();
+    let profile_hash =
+        turts_audit::actor_profile_hash(&catalog.bots[&content("opponent")]).unwrap();
     let mut map = MapDef {
         id: "bot_workload".into(),
         environment: None,
