@@ -2,16 +2,23 @@
 //!
 //! Private economy records are filtered by owner before any wire values are built. The
 //! visibility filter is in one place: [`unit_exists`] and the owner filters below (design 6.8).
-//! In MP1 every existing unit is visible to every viewer.
+//! AllVisible preserves the old projection. Authored fog sanitizes the view before this writer.
 //!
-//! Removal rule (design 6.8): a record in a delta never names a unit that the same delta
-//! removes. `unit_orders` records and `orders_cleared` skip a removed unit; the weapon record
+//! Removal rule (design 6.8): a final health update can name a unit removed in the same delta.
+//! Other records omit removed units. `unit_orders` and `orders_cleared` skip them; the weapon record
 //! drops a `last_target` that does not exist and is resent when its target leaves
 //! ([`weapon_records`]); the site, job and queue writers skip a removed owner.
 
 use turts_mod_api::Cost;
+#[path = "export_visibility.rs"]
+mod export_visibility;
+// Legacy standalone export fixtures include this module without the atomic sender.
+#[cfg_attr(test, allow(unused_imports))]
+pub use export_visibility::PermittedBaseline;
 #[path = "export_observation.rs"]
 mod export_observation;
+#[path = "export_permitted.rs"]
+mod export_permitted;
 pub use export_observation::{ObservationChanged, ObservationHistory};
 
 pub fn snapshot_for_with_permissions(
@@ -63,24 +70,78 @@ use turts_sim::{
     world::UnitState,
 };
 
-/// Build the owner-specific reliable snapshot from one completed world view.
+/// Build a snapshot from an already-permitted completed view. Live transport applies the shared
+/// permission provider first. Direct full-world use is only valid for AllVisible.
 pub fn snapshot_for(view: &WorldView, slot: SlotId) -> wire::Snapshot {
-    snapshot_projected(view, slot)
+    snapshot_projected(view, slot, None)
 }
 
-fn snapshot_projected(view: &WorldView, slot: SlotId) -> wire::Snapshot {
+pub(super) fn snapshot_permitted(
+    view: &WorldView,
+    slot: SlotId,
+    policy: &dyn crate::permissions::ObservationPermissions,
+) -> wire::Snapshot {
+    export_permitted::snapshot(view, slot, policy)
+}
+fn snapshot_projected(
+    view: &WorldView,
+    slot: SlotId,
+    permitted: Option<&export_permitted::Geometry>,
+) -> wire::Snapshot {
+    snapshot_projected_reusing(view, slot, permitted, None)
+}
+fn snapshot_projected_reusing(
+    view: &WorldView,
+    slot: SlotId,
+    permitted: Option<&export_permitted::Geometry>,
+    mut reuse: Option<&mut [wire::UnitSnapshot]>,
+) -> wire::Snapshot {
+    // Published simulation views and their baseline use canonical unit IDs.
+    // Defensive unsorted fixtures keep the ordinary cloning path.
+    let reusable = reuse.as_ref().is_some_and(|rows| {
+        rows.windows(2)
+            .all(|pair| pair[0].unit_id.0 < pair[1].unit_id.0)
+    });
+    let mut reuse_cursor = 0;
     wire::Snapshot {
         tick: view.tick,
         units: view
             .units
             .iter()
+            .filter(|unit| permitted.is_none_or(|p| p.unit(unit.unit_id)))
             .map(|unit| {
-                let mut snapshot = unit_snapshot(unit);
+                let content = if reusable {
+                    reuse
+                        .as_deref_mut()
+                        .and_then(|rows| {
+                            let index = if rows
+                                .get(reuse_cursor)
+                                .is_some_and(|row| row.unit_id.0 == unit.unit_id)
+                            {
+                                reuse_cursor
+                            } else {
+                                rows.binary_search_by_key(&unit.unit_id, |row| row.unit_id.0)
+                                    .ok()?
+                            };
+                            reuse_cursor = index + 1;
+                            (rows[index].content_id == unit.content_id)
+                                .then(|| std::mem::take(&mut rows[index].content_id))
+                        })
+                        .unwrap_or_else(|| unit.content_id.clone())
+                } else {
+                    unit.content_id.clone()
+                };
+                let mut snapshot = unit_snapshot_with_content(unit, content);
                 snapshot.site = view.construction.sites.contains_key(&unit.unit_id);
                 snapshot
             })
             .collect(),
-        nodes: view.nodes.iter().map(node_state).collect(),
+        nodes: view
+            .nodes
+            .iter()
+            .filter(|node| permitted.is_none_or(|p| p.node(node.id.0)))
+            .map(node_state)
+            .collect(),
         economy: wire::EconomyState {
             balances: view
                 .economy
@@ -145,7 +206,13 @@ fn snapshot_projected(view: &WorldView, slot: SlotId) -> wire::Snapshot {
             .filter(|record| owner_of(view, record.unit) == Some(slot.0))
             .map(|record| weapon_state(record, view.tick, view))
             .collect(),
-        healths: view.m3.raw_healths.iter().map(health_state).collect(),
+        healths: view
+            .m3
+            .raw_healths
+            .iter()
+            .filter(|row| permitted.is_none_or(|p| p.unit(row.unit)))
+            .map(health_state)
+            .collect(),
         research: research_records(&view.m3.research, Some(slot)),
         unit_orders: view
             .unit_orders
@@ -157,9 +224,7 @@ fn snapshot_projected(view: &WorldView, slot: SlotId) -> wire::Snapshot {
         records: wire::SnapshotRecords {
             repairs: export_repair::snapshot(&view.economy.repairs, slot),
             supply: export_supply::snapshot(view.operating.as_ref(), slot),
-            sites: turts_sim::economy::construction::progress_rows(view)
-                .iter()
-                .filter(|row| row.owner_slot == slot.0)
+            sites: turts_sim::economy::construction::progress_rows_for_slot(view, slot)
                 .map(|row| wire::SiteProgress {
                     production: row
                         .production
@@ -167,12 +232,10 @@ fn snapshot_projected(view: &WorldView, slot: SlotId) -> wire::Snapshot {
                         .expect("site progress carries its validated recipe")
                         .to_string(),
                     unit: wire::UnitId(row.unit),
-                    progress: export_jobs::rate_record(row),
+                    progress: export_jobs::rate_record(&row),
                 })
                 .collect(),
-            construction_queues: turts_sim::economy::construction::queue_rows(view)
-                .iter()
-                .filter(|row| row.owner_slot == slot.0)
+            construction_queues: turts_sim::economy::construction::queue_rows_for_slot(view, slot)
                 .map(|row| wire::ConstructionQueue {
                     constructor: wire::UnitId(row.constructor),
                     orders: row
@@ -344,9 +407,12 @@ fn owns_balance(record: &BalanceView, slot: SlotId) -> bool {
 }
 
 fn unit_snapshot(unit: &UnitState) -> messages::UnitSnapshot {
+    unit_snapshot_with_content(unit, unit.content_id.clone())
+}
+fn unit_snapshot_with_content(unit: &UnitState, content_id: String) -> messages::UnitSnapshot {
     messages::UnitSnapshot {
         unit_id: messages::UnitId(unit.unit_id),
-        content_id: unit.content_id.clone(),
+        content_id,
         owner_slot: messages::SlotId(unit.owner_slot),
         facing: unit.facing,
         pos: messages::Pos {

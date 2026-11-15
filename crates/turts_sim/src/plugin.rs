@@ -66,6 +66,17 @@ pub enum SimSet {
     Collect,
 }
 
+/// Ordering anchors around the three immutable sight phases.
+/// These markers add no systems or state. Hosts can bracket sight without
+/// including tick bookkeeping, target acquisition, or full-world publication.
+#[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum VisibilityBoundary {
+    StartBefore,
+    TacticalAfter,
+    CompletedBefore,
+    CompletedAfter,
+}
+
 /// Adds the simulation to an app that has `bevy_time::TimePlugin`. `MapBounds` is not inserted
 /// here: `load_map` inserts it.
 pub struct SimPlugin {
@@ -154,9 +165,21 @@ impl Plugin for SimPlugin {
                 FixedPreUpdate,
                 crate::economy::transaction::begin_tick_audit
                     .in_set(SimSet::Advance)
+                    .in_set(VisibilityBoundary::StartBefore)
                     .before(advance_tick),
             )
-            .add_systems(FixedPreUpdate, advance_tick.in_set(SimSet::Advance))
+            .add_systems(
+                FixedPreUpdate,
+                advance_tick
+                    .in_set(SimSet::Advance)
+                    .in_set(VisibilityBoundary::StartBefore),
+            )
+            .add_systems(
+                FixedPreUpdate,
+                crate::visibility::refresh_start
+                    .in_set(SimSet::Advance)
+                    .after(advance_tick),
+            )
             .add_systems(
                 FixedPreUpdate,
                 drain_commands.in_set(SimSet::Commands).after(advance_tick),
@@ -181,8 +204,16 @@ impl Plugin for SimPlugin {
             )
             .add_systems(
                 FixedUpdate,
+                crate::visibility::refresh_tactical
+                    .in_set(SimSet::Acquire)
+                    .before(crate::economy::acquire::run_acquire)
+                    .run_if(not_stopped),
+            )
+            .add_systems(
+                FixedUpdate,
                 crate::economy::acquire::run_acquire
                     .in_set(SimSet::Acquire)
+                    .in_set(VisibilityBoundary::TacticalAfter)
                     .run_if(not_stopped),
             )
             .add_systems(
@@ -222,10 +253,13 @@ impl Plugin for SimPlugin {
             .add_systems(
                 FixedPostUpdate,
                 (
-                    collect_changes,
-                    crate::orders::writer::collect_order_inputs,
-                    publish_completed_tick,
-                    crate::economy::transaction::finish_tick_audit,
+                    collect_changes.in_set(VisibilityBoundary::CompletedBefore),
+                    crate::orders::writer::collect_order_inputs
+                        .in_set(VisibilityBoundary::CompletedBefore),
+                    crate::visibility::refresh_completed,
+                    publish_completed_tick.in_set(VisibilityBoundary::CompletedAfter),
+                    crate::economy::transaction::finish_tick_audit
+                        .in_set(VisibilityBoundary::CompletedAfter),
                 )
                     .chain()
                     .in_set(SimSet::Collect)

@@ -3,7 +3,10 @@ pub mod wasm {
     use {
         crate::{
             JsError,
-            session::{SessionError, SessionFrontend},
+            session::{
+                MAX_WEBSOCKET_SEND_QUEUE_BYTES, SessionError, SessionFrontend,
+                send_budget::{QueuedPacket, SendBudget},
+            },
         },
         aeronet_io::{connection::DisconnectReason, packet::RecvPacket},
         bevy_platform::time::Instant,
@@ -32,7 +35,7 @@ pub mod wasm {
         socket.set_binary_type(BinaryType::Arraybuffer);
 
         let (tx_packet_b2f, rx_packet_b2f) = mpsc::unbounded::<RecvPacket>();
-        let (tx_packet_f2b, rx_packet_f2b) = mpsc::unbounded::<Bytes>();
+        let (tx_packet_f2b, rx_packet_f2b) = mpsc::unbounded::<QueuedPacket>();
         let (tx_user_dc, rx_user_dc) = oneshot::channel::<String>();
 
         let (mut tx_dc_reason, rx_dc_reason) = mpsc::channel::<DisconnectReason>(1);
@@ -103,6 +106,7 @@ pub mod wasm {
             SessionFrontend {
                 rx_packet_b2f,
                 tx_packet_f2b,
+                send_budget: SendBudget::default(),
                 tx_user_dc,
             },
             SessionBackend {
@@ -115,7 +119,7 @@ pub mod wasm {
 
     async fn send_loop(
         socket: WebSocket,
-        mut rx_packet_f2b: mpsc::UnboundedReceiver<Bytes>,
+        mut rx_packet_f2b: mpsc::UnboundedReceiver<QueuedPacket>,
         mut rx_dropped: oneshot::Receiver<()>,
     ) -> Result<Never, SessionError> {
         loop {
@@ -125,8 +129,14 @@ pub mod wasm {
             }
             .ok_or(SessionError::FrontendClosed)?;
 
+            if u64::from(socket.buffered_amount()) + packet.payload.len() as u64
+                > MAX_WEBSOCKET_SEND_QUEUE_BYTES as u64
+            {
+                _ = socket.close_with_code_and_reason(1009, "outgoing queue limit exceeded");
+                return Err(SessionError::SendQueueFull);
+            }
             socket
-                .send_with_u8_array(&packet)
+                .send_with_u8_array(&packet.payload)
                 .map_err(JsError::from)
                 .map_err(SessionError::Send)?;
         }
@@ -158,12 +168,14 @@ pub mod wasm {
 #[cfg(not(target_family = "wasm"))]
 pub mod native {
     use {
-        crate::session::{SessionError, SessionFrontend},
+        crate::session::{
+            SessionError, SessionFrontend,
+            send_budget::{QueuedPacket, SendBudget},
+        },
         aeronet_io::{connection::DisconnectReason, packet::RecvPacket},
         bevy_platform::time::Instant,
-        bytes::Bytes,
         futures::{
-            SinkExt, StreamExt,
+            FutureExt, SinkExt, StreamExt,
             channel::{mpsc, oneshot},
             never::Never,
         },
@@ -181,7 +193,7 @@ pub mod native {
     pub struct SessionBackend<S> {
         stream: WebSocketStream<S>,
         tx_packet_b2f: mpsc::UnboundedSender<RecvPacket>,
-        rx_packet_f2b: mpsc::UnboundedReceiver<Bytes>,
+        rx_packet_f2b: mpsc::UnboundedReceiver<QueuedPacket>,
         rx_user_dc: oneshot::Receiver<String>,
     }
 
@@ -189,13 +201,14 @@ pub mod native {
         stream: WebSocketStream<S>,
     ) -> (SessionFrontend, SessionBackend<S>) {
         let (tx_packet_b2f, rx_packet_b2f) = mpsc::unbounded::<RecvPacket>();
-        let (tx_packet_f2b, rx_packet_f2b) = mpsc::unbounded::<Bytes>();
+        let (tx_packet_f2b, rx_packet_f2b) = mpsc::unbounded::<QueuedPacket>();
         let (tx_user_dc, rx_user_dc) = oneshot::channel::<String>();
 
         (
             SessionFrontend {
                 rx_packet_b2f,
                 tx_packet_f2b,
+                send_budget: SendBudget::default(),
                 tx_user_dc,
             },
             SessionBackend {
@@ -226,11 +239,21 @@ pub mod native {
                     }
                     packet = rx_packet_f2b.next() => {
                         let packet = packet.ok_or(SessionError::FrontendClosed)?;
-                        Self::send(&mut stream, packet).await?;
+                        let send = Self::send(&mut stream, packet).fuse();
+                        futures::pin_mut!(send);
+                        futures::select! {
+                            result = send => result?,
+                            reason = rx_user_dc => {
+                                let reason = reason.map_err(|_| SessionError::FrontendClosed)?;
+                                return Err(DisconnectReason::by_user(reason));
+                            }
+                        }
                     }
                     reason = rx_user_dc => {
                         let reason = reason.map_err(|_| SessionError::FrontendClosed)?;
-                        Self::close(&mut stream, reason.clone()).await?;
+                        // Graceful close is best effort. Backpressure must not
+                        // retain a disconnected session and its packet permits.
+                        _ = Self::close(&mut stream, reason.clone()).now_or_never();
                         return Err(DisconnectReason::by_user(reason));
                     }
                 }
@@ -271,10 +294,12 @@ pub mod native {
 
         async fn send(
             stream: &mut WebSocketStream<S>,
-            packet: Bytes,
+            packet: QueuedPacket,
         ) -> Result<(), DisconnectReason> {
-            let msg = Message::binary(packet);
+            let QueuedPacket { payload, permit } = packet;
+            let msg = Message::binary(payload);
             stream.send(msg).await.map_err(SessionError::Connection)?;
+            drop(permit);
             Ok(())
         }
 
@@ -291,6 +316,44 @@ pub mod native {
                 .await
                 .map_err(SessionError::Connection)?;
             Ok(())
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+        use bytes::Bytes;
+
+        #[test]
+        fn disconnect_cancels_a_blocked_write_and_releases_queued_packet_credit() {
+            futures::executor::block_on(async {
+                // Keep a live peer that never drains its one-byte buffer.
+                let (socket, _blocked_peer) = tokio::io::duplex(1);
+                let stream = WebSocketStream::from_raw_socket(
+                    socket,
+                    tokio_tungstenite::tungstenite::protocol::Role::Server,
+                    None,
+                )
+                .await;
+                let (frontend, backend) = split(stream);
+                let budget = frontend.send_budget.clone();
+                for _ in 0..2 {
+                    frontend
+                        .tx_packet_f2b
+                        .unbounded_send(budget.packet(Bytes::from(vec![0; 1024])).unwrap())
+                        .unwrap();
+                }
+                let mut task = Box::pin(backend.start());
+                assert!(futures::poll!(task.as_mut()).is_pending());
+                assert!(budget.used() >= 2048);
+                frontend
+                    .tx_user_dc
+                    .send("blocked-write test".into())
+                    .unwrap();
+                let error = task.await.unwrap_err();
+                assert!(matches!(error, DisconnectReason::ByUser(reason) if reason == "blocked-write test"));
+                assert_eq!(budget.used(), 0);
+            });
         }
     }
 }

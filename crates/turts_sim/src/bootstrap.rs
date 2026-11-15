@@ -29,12 +29,18 @@ pub struct InstalledCatalog(pub ContentCatalog);
 #[derive(bevy_ecs::prelude::Resource, Debug, Clone, PartialEq, Eq)]
 pub struct ProductionDurations(pub BTreeMap<ContentId, u64>);
 
+/// The qualified map loaded by the package path, including AllVisible maps.
+#[derive(bevy_ecs::prelude::Resource, Debug, Clone, PartialEq, Eq)]
+pub struct InstalledMapIdentity(pub ContentId);
+
 /// Income periods checked against the selected server tick rate, keyed by unit definition.
 #[derive(bevy_ecs::prelude::Resource, Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct IncomePeriods(pub(crate) BTreeMap<ContentId, u64>);
 
 #[derive(Debug)]
 pub struct StagedPackage {
+    map_identity: ContentId,
+    visibility: Option<crate::visibility::VisibilityState>,
     types: UnitTypes,
     bounds: MapBounds,
     units: Vec<(u32, UnitTypeId, u8, Vec2)>,
@@ -67,6 +73,27 @@ pub fn stage_package(
         .or_else(|| catalog.resources.keys().next())
         .or_else(|| catalog.production.keys().next())
         .map_or_else(String::new, |id| id.package.0.clone());
+    let identity = ContentId {
+        package: turts_mod_api::PackageId(if package.is_empty() {
+            "engine".into()
+        } else {
+            package
+        }),
+        local: source_map.value.id.clone(),
+    };
+    stage_package_with_map_identity(world, catalog, source_map, tick_hz, identity)
+}
+
+/// The archive loader supplies its actual root namespace instead of inferring it
+/// from a catalog that can also contain imported library definitions.
+pub fn stage_package_with_map_identity(
+    world: &World,
+    catalog: ContentCatalog,
+    source_map: SourceDef<MapDef>,
+    tick_hz: u16,
+    map_identity: ContentId,
+) -> Result<StagedPackage, ModError> {
+    let package = map_identity.package.0.clone();
     let error =
         |field: &str, msg: String| ModError::new(&package, field, msg).with_file(&source_map.file);
     if tick_hz == 0 {
@@ -198,6 +225,12 @@ pub fn stage_package(
         ));
     }
     let map = &source_map.value;
+    if map_identity.local != map.id {
+        return Err(error(
+            "id",
+            "map identity differs from the authored map".into(),
+        ));
+    }
     if !map.size.x.is_finite() || map.size.x <= 0.0 || !map.size.y.is_finite() || map.size.y <= 0.0
     {
         return Err(error(
@@ -208,6 +241,37 @@ pub fn stage_package(
             ),
         ));
     }
+    let visibility = if let Some(definition) = &map.visibility {
+        if map_identity.to_string().len() > turts_mod_api::MAX_VISIBILITY_MAP_ID_BYTES {
+            return Err(error(
+                "id",
+                "qualified fog map identity exceeds 512 UTF-8 bytes".into(),
+            ));
+        }
+        let grid =
+            turts_rules::visibility::Grid::checked(map.size.x, map.size.y, definition.cell_size)
+                .ok_or_else(|| {
+                    error(
+                        "visibility.cell_size",
+                        "invalid or overflowing coverage grid".into(),
+                    )
+                })?;
+        let grid = turts_mod_api::VisibilityGrid {
+            size: turts_mod_api::WorldPos {
+                x: map.size.x,
+                y: map.size.y,
+            },
+            cell_size: definition.cell_size,
+            columns: grid.columns,
+            rows: grid.rows,
+        };
+        Some(
+            crate::visibility::prepare(0, map_identity.clone(), definition, grid, &[])
+                .map_err(|message| error("visibility", message))?,
+        )
+    } else {
+        None
+    };
     let existing = world.resource::<UnitTypes>();
     let slots = world.resource::<Slots>();
     let types = UnitTypes::from_catalog(&catalog, existing).map_err(|mut e| {
@@ -522,6 +586,8 @@ pub fn stage_package(
     operating.begin_tick();
     let operating = operating.initialized.then_some(operating);
     Ok(StagedPackage {
+        map_identity,
+        visibility,
         types,
         bounds: MapBounds {
             size: Vec2::new(map.size.x, map.size.y),
@@ -544,6 +610,11 @@ pub fn stage_package(
 
 /// Commit a fully validated package. This operation has no fallible steps.
 pub fn install_package(world: &mut World, staged: StagedPackage) {
+    world.insert_resource(InstalledMapIdentity(staged.map_identity));
+    world.remove_resource::<crate::visibility::VisibilityState>();
+    if let Some(visibility) = staged.visibility {
+        world.insert_resource(visibility);
+    }
     world.remove_resource::<crate::economy::repair::RepairRuntime>();
     world.remove_resource::<crate::economy::operating::OperatingHolds>();
     world.remove_resource::<OperatingResources>();
@@ -617,6 +688,7 @@ mod operating_tests {
     }
     fn definition(name: &str) -> turts_mod_api::ResolvedUnit {
         turts_mod_api::ResolvedUnit {
+            vision: None,
             repairer: None,
 
             id: cid(name),
@@ -736,6 +808,7 @@ mod operating_tests {
         let map = SourceDef {
             file: "maps/field.ron".into(),
             value: MapDef {
+                visibility: None,
                 id: "field".into(),
                 size: MapSize { x: 40.0, y: 30.0 },
                 placements: vec![

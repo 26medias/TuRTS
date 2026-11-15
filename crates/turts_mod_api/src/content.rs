@@ -89,6 +89,8 @@ pub struct ResolvedWeapon {
 }
 #[derive(Debug, Clone, PartialEq)]
 pub struct ResolvedUnit {
+    /// Validated API16 sight circle. It contains no private runtime facts.
+    pub vision: Option<crate::visibility::VisionDef>,
     pub armour: Option<ArmourDef>,
     pub acquire: Option<AcquireDef>,
     pub id: ContentId,

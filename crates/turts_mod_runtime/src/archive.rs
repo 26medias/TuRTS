@@ -337,7 +337,11 @@ impl PackageArchive {
 
     /// The exported map definitions as `(archive path, definition)`.
     pub fn maps(&self) -> Result<Vec<(String, MapDef)>, ModError> {
-        self.parse_exports("exports.maps", &self.manifest.exports.maps)
+        let maps = self.parse_exports("exports.maps", &self.manifest.exports.maps)?;
+        for (file, map) in &maps {
+            crate::visibility::validate_visibility(&self.id(), file, map)?;
+        }
+        Ok(maps)
     }
 
     /// The exported visual definitions as `(archive path, definition)`. Only the client

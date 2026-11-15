@@ -17,6 +17,7 @@ turts_net_protocol = { path = "../turts_net_protocol" }
 turts_net_lightyear = { path = "../turts_net_lightyear", features = ["server"] }
 bevy = { workspace = true }
 lightyear = { workspace = true, features = ["server"] }
+lightyear_serde = "=0.31.0"
 serde = { workspace = true }
 serde_json = { workspace = true }
 ron = { workspace = true }
@@ -26,6 +27,7 @@ tower-http = { workspace = true }
 postcard = { workspace = true }
 
 [dev-dependencies]
+turts_client = { path = "../turts_client" }
 libm = "=0.2.16"
 lightyear = { workspace = true, features = ["client"] }
 turts_net_lightyear = { path = "../turts_net_lightyear", features = ["client"] }

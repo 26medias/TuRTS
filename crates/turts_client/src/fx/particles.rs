@@ -73,6 +73,7 @@ pub struct Particle {
     pub cost: EffectCost,
     pub distance: f32,
     pub critical: bool,
+    pub authorized_event: bool,
     pub image: Option<String>,
     pub model: Option<String>,
     pub follow: Option<u32>,
@@ -93,6 +94,7 @@ pub struct ParticlePool {
     pub(super) slots: Vec<Slot>,
     pub limit: usize,
     active_count: usize,
+    epoch: u64,
     free: Vec<usize>,
     pub dropped: u64,
     pub dropped_by_cost: [u64; 3],
@@ -105,6 +107,16 @@ pub struct ParticlePool {
     materials: HashMap<(Option<String>, bool), Handle<ParticleMaterial>>,
 }
 impl ParticlePool {
+    pub(super) fn reset_epoch(&mut self, epoch: u64) {
+        if self.epoch != epoch {
+            self.epoch = epoch;
+            for slot in &mut self.slots {
+                slot.particle = None;
+            }
+            self.free = (0..self.slots.len()).collect();
+            self.active_count = 0;
+        }
+    }
     pub(super) fn material(
         &mut self,
         image: Option<String>,
@@ -248,6 +260,7 @@ pub fn register(app: &mut App) {
 }
 #[allow(clippy::too_many_arguments)]
 pub fn update_particles(
+    state: Option<Res<ReplicaState>>,
     time: Res<Time>,
     acquired: Option<Res<AcquiredPackages>>,
     decals: Res<super::emitters::Emitters>,
@@ -266,6 +279,7 @@ pub fn update_particles(
     )>,
     camera: Query<&GlobalTransform, With<Camera3d>>,
 ) {
+    pool.reset_epoch(combat.epoch);
     pool.limit = ParticlePool::capacity(settings.quality);
     let limit = pool.limit;
     let retained = limit.min(pool.slots.len());
@@ -327,6 +341,22 @@ pub fn update_particles(
             if p.age >= p.delay + p.life {
                 slot.particle = None;
             }
+        }
+        if slot.particle.as_ref().is_some_and(|particle| {
+            // An authorized event's captured path survives sight loss.
+            // Continuous particles still require current visibility.
+            !particle.authorized_event
+                && (!super::permitted_position(state.as_deref(), particle.position)
+                    || particle.follow.is_some_and(|id| {
+                        state
+                            .as_ref()
+                            .and_then(|state| state.replica.as_ref())
+                            .is_some_and(|replica| {
+                                replica.knowledge.is_some() && !replica.units.contains_key(&id)
+                            })
+                    }))
+        }) {
+            slot.particle = None;
         }
         if let Some(p) = slot.particle.as_mut() {
             let t = ((p.age - p.delay) / p.life.max(0.001)).clamp(0., 1.);
@@ -457,6 +487,7 @@ pub fn particle(
         cost,
         distance,
         critical,
+        authorized_event: false,
         image: layer.image.clone(),
         model: None,
         follow: None,
@@ -507,6 +538,70 @@ mod batch_tests {
         let layer: EffectLayer = ron::from_str("(kind:Flash())").unwrap();
         particle(&layer, Vec3::ZERO, cost, distance, critical)
     }
+    #[test]
+    fn an_authorized_projectile_outlives_sight_but_not_its_flight_or_context() {
+        let mut app = App::new();
+        let mut replica = crate::replica::Replica::new(20);
+        replica.knowledge = Some(std::sync::Arc::new(
+            crate::fx::timeline_tests::hidden_knowledge(),
+        ));
+        app.insert_resource(ReplicaState {
+            replica: Some(replica),
+            ..default()
+        })
+        .insert_resource(Time::<()>::default())
+        .init_resource::<ParticlePool>()
+        .init_resource::<CombatPresentation>()
+        .init_resource::<super::super::emitters::Emitters>()
+        .init_resource::<crate::models::GraphicsSettings>()
+        .init_resource::<Assets<Mesh>>()
+        .init_resource::<Assets<Image>>()
+        .init_resource::<Assets<ShaderBuffer>>()
+        .init_resource::<Assets<ParticleMaterial>>()
+        .add_systems(Update, update_particles);
+        let layer: EffectLayer = ron::from_str("(kind:Projectile(speed:1.0),ms:300)").unwrap();
+        for authorized_event in [false, true] {
+            let mut p = particle(&layer, Vec3::ZERO, EffectCost::Small, 0., true);
+            p.authorized_event = authorized_event;
+            p.follow = Some(77); // There is no current permitted actor to follow.
+            p.target = Some(Vec3::X);
+            let mut pool = app.world_mut().resource_mut::<ParticlePool>();
+            pool.limit = 512;
+            assert!(pool.spawn(p));
+        }
+        app.update();
+        let pool = app.world().resource::<ParticlePool>();
+        assert_eq!(
+            pool.active(),
+            1,
+            "only the authorized event survives hidden ground"
+        );
+        assert_eq!(
+            pool.slots
+                .iter()
+                .filter_map(|slot| slot.particle.as_ref())
+                .next()
+                .unwrap()
+                .target,
+            Some(Vec3::X)
+        );
+        app.world_mut()
+            .resource_mut::<Time>()
+            .advance_by(std::time::Duration::from_millis(350));
+        app.update();
+        assert_eq!(app.world().resource::<ParticlePool>().active(), 0);
+        let mut p = particle(&layer, Vec3::ZERO, EffectCost::Small, 0., true);
+        p.authorized_event = true;
+        assert!(app.world_mut().resource_mut::<ParticlePool>().spawn(p));
+        app.world_mut().resource_mut::<CombatPresentation>().epoch += 1;
+        app.update();
+        assert_eq!(
+            app.world().resource::<ParticlePool>().active(),
+            0,
+            "a new context retires even authorized old particles"
+        );
+    }
+
     #[test]
     fn fx7_an_effect_reserves_all_its_particles_or_none() {
         let mut pool = ParticlePool {

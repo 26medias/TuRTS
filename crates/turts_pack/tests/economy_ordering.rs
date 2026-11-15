@@ -36,6 +36,7 @@ fn app_with_units() -> bevy_app::App {
     let mut app = headless_app(20);
     let origin = PackageId(ORIGIN.to_string());
     let def = UnitDef {
+        vision: None,
         id: "walker".into(),
         name: "Walker".into(),
         movement: Some(turts_mod_api::MovementDef { speed: 3.0 }),
@@ -73,6 +74,7 @@ fn app_with_units() -> bevy_app::App {
         .register_unit_type(
             &origin,
             UnitDef {
+                vision: None,
                 id: "building".into(),
                 name: "Building".into(),
                 movement: None,
@@ -116,6 +118,7 @@ fn app_with_units() -> bevy_app::App {
         app.world_mut(),
         &origin,
         &MapDef {
+            visibility: None,
             environment: None,
             ground: None,
             id: "field".into(),

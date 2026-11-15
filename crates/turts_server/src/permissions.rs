@@ -1,7 +1,7 @@
 //! Shared public-observation decisions. Ownership remains a separate privacy check.
 //!
-//! Production still uses all-visible public geometry. This interface supplies no fog,
-//! remembered sightings, death inference, or private enemy economy information.
+//! Authored fog uses the authoritative immutable simulation basis. Old packages use AllVisible.
+//! Ownership remains independent. No policy grants another slot's private economy.
 
 use turts_mod_api::WorldPos;
 
@@ -17,6 +17,14 @@ pub trait ObservationPermissions {
     fn unit_visible(&self, viewer: u8, unit: u32, owner: u8) -> bool;
     fn node_visible(&self, viewer: u8, node: u32) -> bool;
     fn area_observed(&self, viewer: u8, area: ObservationArea) -> bool;
+
+    /// Immutable slot knowledge from this same phase, never a newer visibility lookup.
+    fn knowledge(&self, _viewer: u8) -> Option<turts_mod_api::KnowledgeSnapshot> {
+        None
+    }
+    fn knowledge_basis(&self) -> Option<&turts_mod_api::KnowledgeBasis> {
+        None
+    }
 
     /// Allows the unchanged production projection to avoid an extra filtered copy.
     fn all_public_geometry(&self, _viewer: u8) -> bool {
@@ -62,5 +70,33 @@ pub struct ObservationPolicy(pub std::sync::Arc<dyn ObservationPermissions + Sen
 impl Default for ObservationPolicy {
     fn default() -> Self {
         Self(std::sync::Arc::new(AllVisible))
+    }
+}
+
+impl ObservationPermissions for turts_sim::visibility::VisibilityBasis {
+    fn unit_visible(&self, viewer: u8, unit: u32, _owner: u8) -> bool {
+        self.unit_permitted(viewer, unit)
+    }
+    fn node_visible(&self, viewer: u8, node: u32) -> bool {
+        self.node_permitted(viewer, node)
+    }
+    fn area_observed(&self, viewer: u8, area: ObservationArea) -> bool {
+        turts_sim::visibility::VisibilityBasis::area_observed(self, viewer, area.min, area.max)
+    }
+    fn knowledge(&self, viewer: u8) -> Option<turts_mod_api::KnowledgeSnapshot> {
+        turts_sim::visibility::VisibilityBasis::knowledge(self, viewer)
+    }
+    fn knowledge_basis(&self) -> Option<&turts_mod_api::KnowledgeBasis> {
+        Some(self.stamp())
+    }
+}
+/// One authoritative completed basis for both human publication and bot candidate projection.
+pub fn completed(world: &bevy::prelude::World) -> ObservationPolicy {
+    match turts_sim::visibility::basis(world, turts_mod_api::ObservationPhase::Completed) {
+        Some(basis) => ObservationPolicy(basis),
+        None => world
+            .get_resource::<ObservationPolicy>()
+            .cloned()
+            .unwrap_or_default(),
     }
 }

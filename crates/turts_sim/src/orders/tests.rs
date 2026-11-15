@@ -109,6 +109,7 @@ fn gatherer_app() -> (bevy_app::App, bevy_ecs::entity::Entity) {
         .register_unit_type(
             &PackageId("test".into()),
             UnitDef {
+                vision: None,
                 id: "worker".into(),
                 name: "Worker".into(),
                 movement: Some(turts_mod_api::MovementDef { speed: 3.0 }),
@@ -166,6 +167,7 @@ fn gatherer_app() -> (bevy_app::App, bevy_ecs::entity::Entity) {
     catalog.units.insert(
         id.clone(),
         turts_mod_api::ResolvedUnit {
+            vision: None,
             repairer: None,
 
             consumes: Vec::new(),
@@ -824,6 +826,7 @@ fn production_dispatch_reuses_the_spatial_index_for_many_small_envelopes() {
         .register_unit_type(
             &turts_mod_api::PackageId("test".into()),
             UnitDef {
+                vision: None,
                 id: "post".into(),
                 name: "Post".into(),
                 movement: None,
@@ -3297,6 +3300,7 @@ fn depleted_gather_writes_last_failure() {
         .register_unit_type(
             &PackageId("test".into()),
             UnitDef {
+                vision: None,
                 id: "worker".into(),
                 name: "Worker".into(),
                 movement: Some(turts_mod_api::MovementDef { speed: 3.0 }),
@@ -3403,6 +3407,7 @@ fn queued_gather_that_depletes_before_activation_fails_and_idles() {
         .register_unit_type(
             &PackageId("test".into()),
             UnitDef {
+                vision: None,
                 id: "worker".into(),
                 name: "Worker".into(),
                 movement: Some(turts_mod_api::MovementDef { speed: 3.0 }),

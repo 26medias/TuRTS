@@ -76,12 +76,16 @@ struct WeaponParameters {
     targets: SlotRelation,
 }
 
+#[derive(Clone, Copy)]
+struct ObservedOwner {
+    slot: u8,
+    sight: Option<[bool; turts_mod_api::SLOT_COUNT as usize]>,
+}
+
 struct CombatIndex<'a> {
     grid: &'a crate::grid::UniformGrid,
     points: &'a [crate::grid::GridPoint],
-    positions: &'a BTreeMap<u32, bevy_math::Vec2>,
-    owners: &'a BTreeMap<u32, u8>,
-    radii: &'a BTreeMap<u32, f32>,
+    targets: &'a [(ObservedOwner, bevy_math::Vec2, f32)],
     max_radius: f32,
 }
 
@@ -100,6 +104,7 @@ pub(crate) fn run_combat(world: &mut World) {
     let mut positions = BTreeMap::new();
     let mut radii = BTreeMap::new();
     let mut max_radius = 0.0_f32;
+    let sight = crate::visibility::active_basis_shared(world);
     for entity in world.iter_entities() {
         let (Some(id), Some(position), Some(owner)) = (
             entity.get::<UnitId>(),
@@ -119,7 +124,15 @@ pub(crate) fn run_combat(world: &mut World) {
             id: id.0,
             position: position.0,
         });
-        owners.insert(id.0, owner.0.0);
+        owners.insert(
+            id.0,
+            ObservedOwner {
+                slot: owner.0.0,
+                sight: sight.as_ref().map(|basis| {
+                    std::array::from_fn(|viewer| basis.unit_permitted(viewer as u8, id.0))
+                }),
+            },
+        );
         positions.insert(id.0, position.0);
     }
     points.sort_unstable_by_key(|point| point.id);
@@ -131,12 +144,17 @@ pub(crate) fn run_combat(world: &mut World) {
         .filter_map(|unit| unit.weapon.as_ref().map(|weapon| weapon.range))
         .fold(f32::EPSILON, f32::max);
     let grid = crate::grid::UniformGrid::new(&points, cell_size);
+    // Candidate indices already name a point. Resolve immutable phase metadata
+    // once, rather than searching three maps for every weapon/candidate pair.
+    // Health remains a live lookup: an earlier shot can kill a later target.
+    let targets = points
+        .iter()
+        .map(|point| (owners[&point.id], positions[&point.id], radii[&point.id]))
+        .collect::<Vec<_>>();
     let combat_index = CombatIndex {
         grid: &grid,
         points: &points,
-        positions: &positions,
-        owners: &owners,
-        radii: &radii,
+        targets: &targets,
         max_radius,
     };
     let mut weapon_ids = world
@@ -466,30 +484,41 @@ fn choose_target(
     focus: Option<u32>,
 ) -> Option<u32> {
     let healths = &world.resource::<Healths>().0;
-    let matches = |id: u32| {
-        let health = healths.get(&id)?;
-        if *health == 0 {
-            return None;
-        }
-        let owner = *candidates.owners.get(&id)?;
+    let matches = |index: usize| {
+        let id = candidates.points[index].id;
+        let (target, position, radius) = candidates.targets[index];
+        let owner = target.slot;
         // One rule for every relation (`turts_rules::relation`); the team of a slot is the slot
         // itself until the match config gives teams.
         let relation_matches =
             crate::rules_adapter::holds_own_team(parameters.targets, parameters.owner, owner);
-        if !relation_matches {
+        if !relation_matches
+            || target.sight.as_ref().is_some_and(|slots| {
+                !slots
+                    .get(usize::from(parameters.owner))
+                    .copied()
+                    .unwrap_or(false)
+            })
+        {
             return None;
         }
-        let position = *candidates.positions.get(&id)?;
-        let reach = parameters.range_mode.centre_reach(
-            parameters.range,
-            parameters.radius,
-            *candidates.radii.get(&id)?,
-        );
+        let health = healths.get(&id)?;
+        if *health == 0 {
+            return None;
+        }
+        let reach = parameters
+            .range_mode
+            .centre_reach(parameters.range, parameters.radius, radius);
         within_weapon_range(origin, position, reach)
             .then(|| (position.distance_squared(origin), position, id))
     };
     if let Some(focus) = focus
-        && matches(focus).is_some()
+        && candidates
+            .points
+            .binary_search_by_key(&focus, |point| point.id)
+            .ok()
+            .and_then(matches)
+            .is_some()
     {
         return Some(focus);
     }
@@ -505,7 +534,7 @@ fn choose_target(
             ),
         )
         .into_iter()
-        .filter_map(|point_index| matches(candidates.points[point_index].id))
+        .filter_map(matches)
         .min_by(|left, right| {
             left.0
                 .total_cmp(&right.0)
@@ -1221,6 +1250,7 @@ mod tests {
 
     fn unit(id: &str, health: Option<u64>) -> ResolvedUnit {
         ResolvedUnit {
+            vision: None,
             repairer: None,
 
             consumes: Vec::new(),
@@ -1335,6 +1365,7 @@ mod tests {
             source_files: BTreeMap::new(),
         };
         let map = MapDef {
+            visibility: None,
             environment: None,
             ground: None,
             id: "combat_fixture:map".into(),
@@ -3539,6 +3570,7 @@ mod tests {
             source_files: BTreeMap::from([(cid(WEAPON), "units/weapon.ron".into())]),
         };
         let map = MapDef {
+            visibility: None,
             environment: None,
             ground: None,
             id: "combat_fixture:map".into(),

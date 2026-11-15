@@ -396,7 +396,7 @@ fn drive_inner(world: &mut World, host: &mut BotHost, execution: &mut BotExecuti
         execution.input_trace.push(input.clone())
     }
     let hz = world.resource::<SimClock>().tick_hz;
-    let policy = world.resource::<ObservationPolicy>().0.clone();
+    let policy = crate::permissions::completed(world).0;
     let teams = world
         .get_resource::<MatchConfig>()
         .map_or_else(Vec::new, |c| c.teams.clone());
@@ -687,3 +687,6 @@ mod replay;
 
 #[cfg(test)]
 mod benchmark_tests;
+
+#[cfg(test)]
+mod visibility_benchmark;

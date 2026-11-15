@@ -49,6 +49,7 @@ pub(in crate::orders) fn start_order(
     unit: u32,
     order: &Order,
 ) -> Result<(), crate::command::RejectReason> {
+    crate::visibility::validate_target(world, slot.0, &order.target)?;
     match (order.behaviour, &order.target) {
         (Behaviour::Move, OrderTargetSim::Point(point)) => {
             let target = clamp_target(world, *point, unit_radius(world, entity));

@@ -509,6 +509,7 @@ mod tests {
         let ore = cid("machine_fixture:ore");
         let part = cid("machine_fixture:part");
         let definition = ResolvedUnit {
+            vision: None,
             repairer: None,
 
             consumes: Vec::new(),
@@ -605,6 +606,7 @@ mod tests {
             source_files: BTreeMap::new(),
         };
         let map = MapDef {
+            visibility: None,
             environment: None,
             ground: None,
             id: "test_map".into(),

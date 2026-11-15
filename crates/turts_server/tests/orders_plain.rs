@@ -26,6 +26,7 @@ fn app_with_walker() -> bevy_app::App {
         .register_unit_type(
             &package,
             UnitDef {
+                vision: None,
                 id: "walker".into(),
                 name: "Walker".into(),
                 movement: Some(turts_mod_api::MovementDef { speed: 3.0 }),
@@ -60,6 +61,7 @@ fn app_with_walker() -> bevy_app::App {
         app.world_mut(),
         &package,
         &MapDef {
+            visibility: None,
             environment: None,
             ground: None,
             id: "field".into(),

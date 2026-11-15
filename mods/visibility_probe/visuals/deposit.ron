@@ -1,0 +1,1 @@
+(target: Node("visibility_probe:deposit"), shape: Cuboid(x: 1.6, y: 0.5, z: 1.6))

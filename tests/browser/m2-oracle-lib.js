@@ -70,8 +70,8 @@ function hasSingleDebugSelection(snapshot, unitId) {
 }
 
 // MC adds `unit_orders` to the replicated world and `max_health` to each unit (design 9.1 and
-// 9.2). The M2 key list stays exact otherwise, so a new private field still turns this red.
-const PUBLIC_WORLD_KEYS = ["belts", "economy", "extractors", "health_trace", "healths", "inserters", "nodes", "progress", "repairs", "research", "tick", "unit_orders", "units", "weapons"];
+// 9.2). SDK16 adds null knowledge for these AllVisible fixtures. Keep the key list exact.
+const PUBLIC_WORLD_KEYS = ["belts", "economy", "extractors", "health_trace", "healths", "inserters", "knowledge", "nodes", "progress", "repairs", "research", "tick", "unit_orders", "units", "weapons"];
 const PUBLIC_UNIT_KEYS = ["content_id", "facing", "max_health", "owner_slot", "pos", "unit_id"];
 
 function assertPublicProjectionSchema(snapshot, { requireCurrent = false } = {}) {
@@ -81,8 +81,9 @@ function assertPublicProjectionSchema(snapshot, { requireCurrent = false } = {})
     // The saved Task 16 fixture predates MC and has neither MC field.
     const legacyWorld = !worldKeys.includes("unit_orders");
     if(requireCurrent) assert(!legacyWorld,"current browser projection must expose owner order/work records");
-    assert.deepEqual(worldKeys, legacyWorld ? PUBLIC_WORLD_KEYS.filter((key) => !["unit_orders","progress","repairs"].includes(key)) : PUBLIC_WORLD_KEYS,
+    assert.deepEqual(worldKeys, legacyWorld ? PUBLIC_WORLD_KEYS.filter((key) => !["unit_orders","progress","repairs","knowledge"].includes(key)) : PUBLIC_WORLD_KEYS,
         "browser replicated-world debug must contain the permitted M2/M3 client state only");
+    if (!legacyWorld) assert.equal(view.knowledge, null, "M2 AllVisible fixtures must expose null knowledge");
     assert.deepEqual(Object.keys(view.economy).sort(), ["balances", "inventories", "orders", "queues"],
         "browser economy debug must expose the complete permitted owner projection");
     for (const balance of view.economy.balances) assert.deepEqual(Object.keys(balance).sort(), ["on_hand", "reserved", "resource"]);

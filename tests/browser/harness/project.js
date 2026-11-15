@@ -14,10 +14,10 @@ function basis(camera) {
     return { eye, forward, right, up };
 }
 
-function projectWorldPoint(point, camera, viewport) {
-    if (!pair(point) || !Number.isFinite(viewport.width) || !Number.isFinite(viewport.height) || viewport.width <= 0 || viewport.height <= 0) return null;
+function projectWorldPoint(point, camera, viewport, height = 0) {
+    if (!pair(point) || !Number.isFinite(height) || !Number.isFinite(viewport.width) || !Number.isFinite(viewport.height) || viewport.width <= 0 || viewport.height <= 0) return null;
     const { eye, forward, right, up } = basis(camera);
-    const delta = [point[0] - eye[0], -eye[1], point[1] - eye[2]];
+    const delta = [point[0] - eye[0], height - eye[1], point[1] - eye[2]];
     const z = dot(delta, forward);
     if (z <= 0) return null;
     const tan = Math.tan(camera.fov / 2);

@@ -1,0 +1,1 @@
+(target: Unit("visibility_probe:contact"), shape: Capsule(radius: 0.6, height: 1.2))

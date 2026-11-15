@@ -116,7 +116,7 @@ const { drive } = require("./m2-driver.js");
 const { judge } = require("./m2-oracle.js");
 const { deflateSync } = require("node:zlib");
 
-function blankPng(width = 64, height = 36) {
+function blankPng(width = 64, height = 36, rectangles = []) {
     const crcTable = Array.from({ length: 256 }, (_, n) => {
         let c = n;
         for (let k = 0; k < 8; k += 1) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
@@ -130,6 +130,13 @@ function blankPng(width = 64, height = 36) {
     };
     const header = Buffer.alloc(13); header.writeUInt32BE(width, 0); header.writeUInt32BE(height, 4); header.set([8, 2, 0, 0, 0], 8);
     const rows = Buffer.alloc((width * 3 + 1) * height);
+    for (const { x, y, w, h, colour } of rectangles) {
+        for (let py = y; py < y + h; py += 1) {
+            for (let px = x; px < x + w; px += 1) {
+                rows.set(colour, py * (width * 3 + 1) + 1 + px * 3);
+            }
+        }
+    }
     return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk("IHDR", header), chunk("IDAT", deflateSync(rows)), chunk("IEND", Buffer.alloc(0))]);
 }
 
@@ -237,7 +244,7 @@ test("the sampler needs one projection: equal ticks with different public worlds
 // A replicated world with the permitted keys only (m2-oracle-lib.js PUBLIC_WORLD_KEYS) and one unit.
 function world(tick, x) {
     return { slot: 0, replicated_world: { belts: [], economy: { balances: [], inventories: [], orders: [], queues: [] }, extractors: [],
-        health_trace: [], healths: [], inserters: [], nodes: [], research: [], tick, unit_orders: [], weapons: [], progress: {sites:[],jobs:[],construction_queues:[]}, repairs: [],
+        health_trace: [], healths: [], inserters: [], knowledge: null, nodes: [], research: [], tick, unit_orders: [], weapons: [], progress: {sites:[],jobs:[],construction_queues:[]}, repairs: [],
         units: [{ content_id: "acme:scout", facing: 0, max_health: 10, owner_slot: 0, pos: [x, 4], unit_id: 1 }] } };
 }
 
@@ -340,4 +347,42 @@ test("in both profiles a window that shows a wrong projection and then a right o
         await assert.rejects(waitForSharedTick(fakeView([[world(10, 4), world(10, 5)], [world(10, 5)]]), limits),
             /differ between owners at a shared coherent tick .* 1 shared ticks, 1 of them different, [1-9]\d* unstable/, limits.name);
     }
+});
+
+// Reduced silhouettes of the two overlapping-unit failures in CI run 43734968635.
+// Ground click coordinates come from the saved CI trace. Synthetic silhouettes
+// reproduce the nearer-mesh overlap; the driver receives pixels only.
+test("M2 clicks the producer mesh above a nearer output blocker", async () => {
+    const png = blankPng(1280, 720, [
+        { x: 488, y: 174, w: 29, h: 16, colour: [0, 114, 178] },
+        { x: 482, y: 190, w: 35, h: 28, colour: [0, 114, 178] },
+    ]);
+    const clicks = [];
+    const io = { use: async () => {}, wait: async () => {}, screenshot: async () => png,
+        save: async () => {}, click: async (x, y, button) => clicks.push({ x, y, button }) };
+    await drive(io, { m2: { package: "base", case_id: "E9-browser-base-loss-final_change" }, fixture_phase: "select" });
+    assert.equal(clicks.length, 2);
+    assert.ok(clicks[1].x >= 488 && clicks[1].x < 517 && clicks[1].y >= 174 && clicks[1].y < 190,
+        `click must land on the intended producer, above the front blocker: ${JSON.stringify(clicks[1])}`);
+});
+
+test("M2 selects the intended haul worker and samples the elevated node", async () => {
+    const png = blankPng(1280, 720, [
+        { x: 556, y: 220, w: 29, h: 27, colour: [0, 114, 178] },
+        { x: 606, y: 225, w: 7, h: 13, colour: [0, 114, 178] },
+        { x: 606, y: 238, w: 7, h: 13, colour: [0, 114, 178] },
+        { x: 684, y: 223, w: 12, h: 13, colour: [120, 90, 50] },
+        { x: 16, y: 190, w: 240, h: 28, colour: [33, 66, 77] },
+        { x: 16, y: 258, w: 240, h: 28, colour: [33, 66, 77] },
+    ]);
+    const clicks = [];
+    const saved = [];
+    const io = { use: async () => {}, wait: async () => {}, move: async () => {}, screenshot: async () => png,
+        save: async name => saved.push(name), click: async (x, y, button) => clicks.push({ x, y, button }) };
+    await drive(io, { m2: { package: "haul", case_id: "E9-browser-haul-economy" } });
+    const workerClick = clicks.find(click => click.button === "left" && click.x >= 606 && click.x < 613);
+    assert.ok(workerClick && workerClick.y >= 225 && workerClick.y < 238,
+        `worker click must avoid the front worker's silhouette: ${JSON.stringify(workerClick)}`);
+    assert.ok(clicks.some(click => click.button === "right" && click.x >= 684 && click.x < 696 && click.y >= 223 && click.y < 236));
+    assert.ok(!saved.some(name => name.endsWith("driver-stop.json")), JSON.stringify(saved));
 });

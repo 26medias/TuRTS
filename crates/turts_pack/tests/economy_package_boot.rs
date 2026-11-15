@@ -516,6 +516,7 @@ fn cedar_matches_the_public_ten_file_authoring_example() {
             .collect::<Vec<_>>(),
         [
             UnitDef {
+                vision: None,
                 id: "depot".into(),
                 name: "Timber Yard".into(),
                 footprint: Footprint::Circle { radius: 2.0 },
@@ -558,6 +559,7 @@ fn cedar_matches_the_public_ten_file_authoring_example() {
                 repairer: None,
             },
             UnitDef {
+                vision: None,
                 id: "worker".into(),
                 name: "Carrier".into(),
                 footprint: Footprint::Circle { radius: 0.5 },
@@ -689,6 +691,7 @@ fn cedar_matches_the_public_ten_file_authoring_example() {
     assert_eq!(
         archive.maps().unwrap()[0].1,
         MapDef {
+            visibility: None,
             environment: None,
             ground: None,
             id: "clearing".into(),

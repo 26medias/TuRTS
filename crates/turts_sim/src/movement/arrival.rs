@@ -427,16 +427,9 @@ pub(super) trait SpatialNeighbors {
 }
 impl SpatialNeighbors for crate::grid::UniformGrid {
     fn nearby(&self, points: &[crate::grid::GridPoint], position: Vec2, reach: f32) -> Vec<usize> {
-        let mut found = self.within(points, position, reach);
-        found.sort_by(|a, b| {
-            points[*a]
-                .position
-                .x
-                .total_cmp(&points[*b].position.x)
-                .then(points[*a].position.y.total_cmp(&points[*b].position.y))
-                .then(a.cmp(b))
-        });
-        found
+        // The grid caches exact float total-order keys and refreshes them on
+        // every point move. The result keeps the same(x,y,index) order.
+        self.within_spatial(points, position, reach)
     }
 }
 

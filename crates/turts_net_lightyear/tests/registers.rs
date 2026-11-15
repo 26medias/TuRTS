@@ -5,6 +5,11 @@ use bevy_time::TimePlugin;
 use lightyear::prelude::*;
 use turts_net_lightyear::{ProtocolPlugin, tick_duration};
 use turts_net_protocol::messages::*;
+use turts_net_protocol::visibility::{
+    StateTransactionAck, StateTransactionBegin, StateTransactionCancel, StateTransactionChunk,
+    StateTransactionEnd,
+};
+use turts_net_protocol::visibility_transaction::StateTransactionFrame;
 
 fn client_app() -> App {
     let mut app = App::new();
@@ -37,7 +42,7 @@ fn protocol_plugin_builds_on_client_and_server_apps() {
 }
 
 #[test]
-fn protocol_plugin_registers_nine_messages() {
+fn protocol_plugin_preserves_the_nine_original_messages() {
     let app = server_app();
     assert!(app.is_message_registered::<Hello>());
     assert!(app.is_message_registered::<Welcome>());
@@ -109,6 +114,18 @@ fn the_five_messages_follow_resync_request_in_the_plugin_source() {
     }
 }
 
+#[test]
+fn protocol_plugin_registers_the_six_state_transaction_messages_on_both_ends() {
+    for app in [server_app(), client_app()] {
+        assert!(app.is_message_registered::<StateTransactionFrame>());
+        assert!(app.is_message_registered::<StateTransactionBegin>());
+        assert!(app.is_message_registered::<StateTransactionChunk>());
+        assert!(app.is_message_registered::<StateTransactionEnd>());
+        assert!(app.is_message_registered::<StateTransactionAck>());
+        assert!(app.is_message_registered::<StateTransactionCancel>());
+    }
+}
+
 fn net_names(app: &App) -> Vec<&'static str> {
     let registry = app.world().resource::<MessageRegistry>();
     let map = &registry.kind_map;
@@ -119,14 +136,14 @@ fn net_names(app: &App) -> Vec<&'static str> {
 
 /// The wire index of a message is its place in the registry. Both ends must give the same index
 /// to each type, read from the lightyear `MessageRegistry` at run time and not from the plugin
-/// source. The five messages of protocol 5 follow `ResyncRequest`.
+/// source. Protocol 9 appends six transaction messages after the stable first fourteen.
 #[test]
-fn the_message_net_ids_are_equal_on_both_ends_and_the_five_follow_resync_request() {
+fn protocol9_message_net_ids_match_on_both_ends_and_preserve_the_first_fourteen() {
     let client = client_app();
     let server = server_app();
     let c = net_names(&client);
     let s = net_names(&server);
-    assert!(s.len() >= 15, "the registry holds the messages: {s:?}");
+    assert!(s.len() >= 20, "the registry holds the messages: {s:?}");
     assert_eq!(c, s, "the message net ids differ between the ends");
     // The whole list of protocol messages, in net id order: a swap of any two (for example `Hello`
     // and `Welcome`) changes the meaning of a message on the wire, and a client of protocol 4 would
@@ -152,13 +169,36 @@ fn the_message_net_ids_are_equal_on_both_ends_and_the_five_follow_resync_request
             "LobbyAction",
             "LobbyRefused",
             "MatchResult",
-            "LeaveMatch"
+            "LeaveMatch",
+            "StateTransactionFrame",
+            "StateTransactionBegin",
+            "StateTransactionChunk",
+            "StateTransactionEnd",
+            "StateTransactionAck",
+            "StateTransactionCancel",
         ]
     );
     let first = s
         .iter()
         .position(|name| name.starts_with("turts_net_protocol::"))
         .unwrap();
+    // Pin the actual registry IDs, including Lightyear's prefix. No inserted message may
+    // shift an old ID, and each new transaction message must follow the old fourteen.
+    for (offset, name) in ours.iter().enumerate() {
+        for app in [&client, &server] {
+            let registry = app.world().resource::<MessageRegistry>();
+            let net_id = u16::try_from(first + offset).unwrap();
+            let kind = registry
+                .kind_map
+                .kind(net_id)
+                .expect("registered message ID");
+            assert_eq!(
+                registry.kind_map.name(kind).unwrap().rsplit("::").next(),
+                Some(*name),
+                "message {name} must retain registry ID {net_id}",
+            );
+        }
+    }
     assert!(
         s[first..]
             .iter()

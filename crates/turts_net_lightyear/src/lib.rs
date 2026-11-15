@@ -8,8 +8,12 @@ pub mod protocol_plugin;
 
 use core::time::Duration;
 
-pub use channels::{ReliableChannel, StateChannel};
+pub use channels::{KnowledgeChannel, ReliableChannel, StateChannel};
 pub use protocol_plugin::ProtocolPlugin;
+
+/// Complete encoded knowledge-frame allowance, below the existing WebSocket MTU.
+/// Both transaction encoders and assemblers use this same bound.
+pub const KNOWLEDGE_FRAME_LIMIT_BYTES: usize = 1024;
 
 /// The length of one simulation tick for a tick rate in hertz.
 pub fn tick_duration(tick_hz: u16) -> Duration {

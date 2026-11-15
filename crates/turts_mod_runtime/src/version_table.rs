@@ -213,6 +213,8 @@ const fn variant_0_2_14(name: &'static str) -> VersionTableRow {
 /// detection kind that its design row names, and nowhere else. The order is the order of the
 /// first refusal when one package has several problems.
 pub(crate) const VERSION_TABLE: &[VersionTableRow] = &[
+    raw("visibility", "0.2.16", RawGroup::Maps, &["visibility"]),
+    raw("vision", "0.2.16", RawGroup::Units, &["vision"]),
     raw(
         "exports.bots",
         "0.2.15",
@@ -1144,6 +1146,33 @@ mod tests {
             tested, 48,
             "the remaining RAW rows first supported in 0.2.4"
         );
+    }
+
+    #[test]
+    fn visibility_fields_require_api16_even_when_explicitly_none() {
+        use super::support::raw_for;
+        let rows = VERSION_TABLE
+            .iter()
+            .filter(|row| row.since_api == "0.2.16")
+            .collect::<Vec<_>>();
+        assert_eq!(rows.len(), 2);
+        for row in rows {
+            let single = std::slice::from_ref(row);
+            let (manifest, raw) = raw_for(row, "^0.2.15", true);
+            let error = check_version_table(&manifest, None, &raw, single).unwrap_err();
+            assert!(
+                error.to_string().contains("needs engine api 0.2.16"),
+                "{error}"
+            );
+            assert!(
+                error.to_string().contains(&format!("f.ron: {}", row.name)),
+                "{error}"
+            );
+            let (manifest, raw) = raw_for(row, "^0.2.16", true);
+            check_version_table(&manifest, None, &raw, single).unwrap();
+            let (manifest, raw) = raw_for(row, "^0.2.15", false);
+            check_version_table(&manifest, None, &raw, single).unwrap();
+        }
     }
 
     #[test]

@@ -10252,6 +10252,7 @@ mod tests {
             .register_unit_type(
                 &package,
                 UnitDef {
+                    vision: None,
                     id: "walker".into(),
                     name: "Walker".into(),
                     footprint: Footprint::Circle { radius },
@@ -10300,6 +10301,7 @@ mod tests {
         catalog.units.insert(
             unit_id.clone(),
             ResolvedUnit {
+                vision: None,
                 repairer: None,
 
                 consumes: Vec::new(),
@@ -10546,6 +10548,7 @@ mod tests {
             .register_unit_type(
                 &PackageId::parse("fixture").unwrap(),
                 UnitDef {
+                    vision: None,
                     id: "walker".into(),
                     name: "Walker".into(),
                     movement: Some(turts_mod_api::MovementDef { speed: 3.0 }),
@@ -10647,6 +10650,7 @@ mod tests {
             .register_unit_type(
                 &PackageId::parse("fixture").unwrap(),
                 UnitDef {
+                    vision: None,
                     id: "walker".into(),
                     name: "Walker".into(),
                     movement: Some(turts_mod_api::MovementDef { speed: 3.0 }),
@@ -10760,6 +10764,7 @@ mod tests {
             units: BTreeMap::from([(
                 worker.clone(),
                 ResolvedUnit {
+                    vision: None,
                     repairer: None,
 
                     consumes: Vec::new(),
@@ -10836,6 +10841,7 @@ mod tests {
         catalog.units.insert(
             depot.clone(),
             ResolvedUnit {
+                vision: None,
                 repairer: None,
 
                 consumes: Vec::new(),
@@ -10875,6 +10881,7 @@ mod tests {
             },
         );
         let map = MapDef {
+            visibility: None,
             environment: None,
             ground: None,
             id: "field".into(),
@@ -11003,6 +11010,7 @@ mod tests {
             units: BTreeMap::from([(
                 worker.clone(),
                 ResolvedUnit {
+                    vision: None,
                     repairer: None,
 
                     consumes: Vec::new(),
@@ -11110,6 +11118,7 @@ mod tests {
             source_files: BTreeMap::new(),
         };
         let map = MapDef {
+            visibility: None,
             environment: None,
             ground: None,
             id: "field".into(),
@@ -11915,6 +11924,7 @@ mod tests {
             units: BTreeMap::from([(
                 worker.clone(),
                 ResolvedUnit {
+                    vision: None,
                     repairer: None,
 
                     consumes: Vec::new(),
@@ -11979,6 +11989,7 @@ mod tests {
             source_files: BTreeMap::new(),
         };
         let map = MapDef {
+            visibility: None,
             environment: None,
             ground: None,
             id: "field".into(),
@@ -12143,6 +12154,7 @@ mod tests {
             units: BTreeMap::from([(
                 machine.clone(),
                 ResolvedUnit {
+                    vision: None,
                     repairer: None,
 
                     consumes: Vec::new(),
@@ -12225,6 +12237,7 @@ mod tests {
             source_files: BTreeMap::new(),
         };
         let map = MapDef {
+            visibility: None,
             environment: None,
             ground: None,
             id: "field".into(),
@@ -12428,6 +12441,7 @@ mod tests {
             units: BTreeMap::from([(
                 producer.clone(),
                 ResolvedUnit {
+                    vision: None,
                     repairer: None,
 
                     consumes: Vec::new(),
@@ -12530,6 +12544,7 @@ mod tests {
             source_files: BTreeMap::new(),
         };
         let map = MapDef {
+            visibility: None,
             environment: None,
             ground: None,
             id: "field".into(),
@@ -12664,6 +12679,7 @@ mod tests {
             units: BTreeMap::from([(
                 drill.clone(),
                 ResolvedUnit {
+                    vision: None,
                     repairer: None,
 
                     consumes: Vec::new(),
@@ -12752,6 +12768,7 @@ mod tests {
             source_files: BTreeMap::new(),
         };
         let map = MapDef {
+            visibility: None,
             environment: None,
             ground: None,
             id: "field".into(),
@@ -12829,6 +12846,7 @@ mod tests {
             units: BTreeMap::from([(
                 lab.clone(),
                 ResolvedUnit {
+                    vision: None,
                     repairer: None,
 
                     consumes: Vec::new(),
@@ -12961,6 +12979,7 @@ mod tests {
             source_files: BTreeMap::new(),
         };
         let map = MapDef {
+            visibility: None,
             environment: None,
             ground: None,
             id: "field".into(),
@@ -14064,6 +14083,7 @@ mod tests {
             .register_unit_type(
                 &package,
                 UnitDef {
+                    vision: None,
                     id: "walker".into(),
                     name: "Walker".into(),
                     footprint: Footprint::Circle { radius: 0.5 },
@@ -14113,6 +14133,7 @@ mod tests {
         catalog.units.insert(
             unit_content.clone(),
             ResolvedUnit {
+                vision: None,
                 repairer: None,
 
                 consumes: Vec::new(),
@@ -14422,6 +14443,7 @@ mod tests {
             .register_unit_type(
                 &PackageId::parse("fixture").unwrap(),
                 UnitDef {
+                    vision: None,
                     id: "walker".into(),
                     name: "Walker".into(),
                     footprint: Footprint::Circle { radius: 0.5 },
@@ -14517,6 +14539,7 @@ mod tests {
             .register_unit_type(
                 &package,
                 UnitDef {
+                    vision: None,
                     id: "walker".into(),
                     name: "Walker".into(),
                     footprint: Footprint::Circle { radius: 0.5 },
@@ -14566,6 +14589,7 @@ mod tests {
         catalog.units.insert(
             unit_id.clone(),
             ResolvedUnit {
+                vision: None,
                 repairer: None,
 
                 consumes: Vec::new(),
@@ -15703,6 +15727,7 @@ mod tests {
             (large.clone(), "Large", 0.8_f32),
         ] {
             let resolved = ResolvedUnit {
+                vision: None,
                 repairer: None,
 
                 consumes: Vec::new(),
@@ -15776,6 +15801,7 @@ mod tests {
             source_files: BTreeMap::new(),
         };
         let map = MapDef {
+            visibility: None,
             environment: None,
             ground: None,
             id: "mixed-follow".into(),
@@ -19966,6 +19992,7 @@ mod tests {
         catalog.units.insert(
             unit_id.clone(),
             turts_mod_api::ResolvedUnit {
+                vision: None,
                 repairer: None,
 
                 consumes: Vec::new(),
@@ -20879,6 +20906,7 @@ mod tests {
             .register_unit_type(
                 &PackageId("test".into()),
                 UnitDef {
+                    vision: None,
                     id: "walker".into(),
                     name: "Walker".into(),
                     movement: Some(turts_mod_api::MovementDef { speed: 3.0 }),
@@ -20927,6 +20955,7 @@ mod tests {
         catalog.units.insert(
             unit_id.clone(),
             turts_mod_api::ResolvedUnit {
+                vision: None,
                 repairer: None,
 
                 consumes: Vec::new(),

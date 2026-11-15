@@ -359,7 +359,7 @@ pub fn step_frame_preserving_resting(
                 continue;
             };
             let occupied = grid
-                .nearby(&points, unit.position, unit.radius + max_radius)
+                .within_unsorted(&points, unit.position, unit.radius + max_radius)
                 .into_iter()
                 .any(|other_index| {
                     other_index != index
@@ -388,7 +388,7 @@ pub fn step_frame_preserving_resting(
                 continue;
             }
             let is_free = |slot: Vec2| {
-                grid.nearby(&points, slot, unit.radius + max_radius)
+                grid.within_unsorted(&points, slot, unit.radius + max_radius)
                     .into_iter()
                     .all(|other_index| {
                         other_index == index
@@ -405,7 +405,7 @@ pub fn step_frame_preserving_resting(
                 target_claims.get(&target_key(target)).copied().unwrap_or(0) > 1
             });
             let target_is_blocked_by_stationary = unit.target.is_some_and(|target| {
-                grid.nearby(&points, target, unit.radius + max_radius)
+                grid.within_unsorted(&points, target, unit.radius + max_radius)
                     .into_iter()
                     .any(|other_index| {
                         if other_index == index {
@@ -574,7 +574,7 @@ pub fn step_frame_preserving_resting(
             let target_occupied =
                 plain_spread_context.conflicts_with_reserved(target, unit.radius, unit.unit_id)
                     || grid
-                        .nearby(&points, target, unit.radius + max_radius)
+                        .within_unsorted(&points, target, unit.radius + max_radius)
                         .into_iter()
                         .any(|other_index| {
                             other_index != index
@@ -629,7 +629,7 @@ pub fn step_frame_preserving_resting(
             let desired = destination - unit.position;
             let step_limit = speed * dt;
             let destination_free = grid
-                .nearby(&points, destination, unit.radius + max_radius)
+                .within_unsorted(&points, destination, unit.radius + max_radius)
                 .into_iter()
                 .all(|other_index| {
                     other_index == index
@@ -811,7 +811,7 @@ pub fn step_frame_preserving_resting(
         let distance = position.distance(movement_target);
         if distance <= speed * dt || distance <= 0.025 {
             let occupied = grid
-                .nearby(&points, movement_target, unit.radius + max_radius)
+                .within_unsorted(&points, movement_target, unit.radius + max_radius)
                 .into_iter()
                 .any(|other_index| {
                     let other = &units[other_index];
@@ -964,7 +964,7 @@ pub fn step_frame_preserving_resting(
         let next_distance = position.distance(movement_target);
         if position == movement_target {
             let occupied = grid
-                .nearby(&points, movement_target, unit.radius + max_radius)
+                .within_unsorted(&points, movement_target, unit.radius + max_radius)
                 .into_iter()
                 .any(|other_index| {
                     let other = &units[other_index];
@@ -1032,7 +1032,7 @@ pub fn step_frame_preserving_resting(
                             let key = (progress.pool_id, slot.x.to_bits(), slot.y.to_bits());
                             key != old_slot_key
                                 && grid
-                                    .nearby(&points, slot, unit.radius + max_radius)
+                                    .within_unsorted(&points, slot, unit.radius + max_radius)
                                     .into_iter()
                                     .all(|other_index| {
                                         other_index == index

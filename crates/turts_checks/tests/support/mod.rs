@@ -324,6 +324,7 @@ pub fn derive_tokens(root: &Path) -> Result<TokenCatalog, ScanError> {
     for (word, reason, identifiers_only) in [
         ("field", "map id is an ordinary source identifier", false),
         ("builder", "generic Rust builder-pattern identifier", true),
+        ("deposit", "generic gather-order target handle", true),
         ("Item", "resource kind is a common Rust type word", false),
         ("Balance", "resource kind is a common Rust type word", false),
         ("Move", "engine behaviour name", false),
@@ -737,6 +738,22 @@ impl Scanner<'_> {
     }
 }
 impl<'a> Visit<'a> for Scanner<'_> {
+    fn visit_field(&mut self, field: &'a syn::Field) {
+        if !production_cfg(&field.attrs) {
+            return;
+        }
+        // A generic record member can share any mod's local content name.
+        // Keep checking its attributes and type, not its field spelling.
+        for attribute in &field.attrs {
+            self.visit_attribute(attribute);
+        }
+        self.visit_visibility(&field.vis);
+        self.visit_type(&field.ty);
+    }
+    fn visit_member(&mut self, _member: &'a syn::Member) {
+        // Member access and struct initializers do not dispatch on content IDs.
+        // Their value expressions are still visited by the ordinary traversal.
+    }
     fn visit_item(&mut self, i: &'a Item) {
         if !production_cfg(item_attrs(i)) {
             return;

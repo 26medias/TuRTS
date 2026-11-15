@@ -265,6 +265,7 @@ mod tests {
             .register_unit_type(
                 &PackageId("probe".into()),
                 UnitDef {
+                    vision: None,
                     id: "walker".into(),
                     name: "Walker".into(),
                     movement: Some(turts_mod_api::MovementDef { speed: 3.0 }),

@@ -5,6 +5,7 @@ use turts_mod_api::{EffectKind, EffectLayer, EffectLayerKind as Kind};
 
 #[derive(Clone, Default)]
 pub struct Line {
+    pub authorized_event: bool,
     pub source: Vec3,
     pub target: Vec3,
     pub colour: Color,
@@ -24,6 +25,7 @@ pub struct Line {
 }
 #[derive(Clone, Default)]
 pub struct Decal {
+    pub authorized_event: bool,
     pub id: u64,
     pub starts: f64,
     pub until: f64,
@@ -55,6 +57,7 @@ pub struct ShakePulse {
 }
 #[derive(Clone)]
 pub struct FlashLight {
+    pub authorized_event: bool,
     pub id: u64,
     pub starts: f64,
     pub until: f64,
@@ -71,6 +74,7 @@ pub struct Emitters {
     decal_serial: u64,
     loop_seen: HashMap<(String, u32), f64>,
     serial: u64,
+    epoch: u64,
     pub shakes: VecDeque<ShakePulse>,
     pub lights: VecDeque<FlashLight>,
 }
@@ -116,6 +120,7 @@ fn layers(effect: &turts_mod_api::VisualEffectDef) -> Vec<EffectLayer> {
 }
 #[allow(clippy::too_many_arguments)]
 pub fn emit_effects(
+    state: Option<Res<ReplicaState>>,
     fx: Res<CombatPresentation>,
     acquired: Option<Res<AcquiredPackages>>,
     settings: Res<crate::models::GraphicsSettings>,
@@ -125,6 +130,13 @@ pub fn emit_effects(
     mut sounds: ResMut<EffectSounds>,
     volume: Option<Res<crate::volume_settings::VolumeSettings>>,
 ) {
+    if emitters.epoch != fx.epoch {
+        *emitters = Emitters {
+            epoch: fx.epoch,
+            ..default()
+        };
+    }
+    pool.reset_epoch(fx.epoch);
     let Some(acquired) = acquired else {
         return;
     };
@@ -188,13 +200,14 @@ pub fn emit_effects(
         for layer in layers(effect) {
             emitters.serial = emitters.serial.wrapping_add(1);
             let seed = emitters.serial;
-            let base = particle(
+            let mut base = particle(
                 &layer,
                 emission.source,
                 effect.cost,
                 distance,
                 emission.critical,
             );
+            base.authorized_event = emission.authorized_event;
             let mut particles = Vec::new();
             match &layer.kind {
                 Kind::Flash { radius, light } => {
@@ -204,6 +217,7 @@ pub fn emit_effects(
                         }
                         let id = emitters.serial;
                         emitters.lights.push_back(FlashLight {
+                            authorized_event: emission.authorized_event,
                             id,
                             starts: fx.now + f64::from(layer.delay_ms) / 1000.,
                             until: fx.now + f64::from(layer.delay_ms + layer.ms) / 1000.,
@@ -336,6 +350,7 @@ pub fn emit_effects(
                     p.image = image.clone().or(p.image);
                     p.model = model.clone();
                     projectile_fallbacks.push(Line {
+                        authorized_event: emission.authorized_event,
                         source: p.start,
                         target: emission.target,
                         colour: Color::WHITE,
@@ -371,6 +386,7 @@ pub fn emit_effects(
                         trail_layer.map_or(Vec3::ZERO, |layer| Vec3::from_array(layer.offset));
                     // A moving ribbon also keeps the shot readable while the sprite pipeline warms.
                     emitters.lines.push_back(Line {
+                        authorized_event: emission.authorized_event,
                         source: particles[0].start + trail_offset,
                         target: emission.target + trail_offset,
                         colour,
@@ -396,6 +412,7 @@ pub fn emit_effects(
                 }
                 Kind::Tracer { width } | Kind::Trail { width, .. } => {
                     emitters.lines.push_back(Line {
+                        authorized_event: emission.authorized_event,
                         source: base.position,
                         target: emission.target + Vec3::from_array(layer.offset),
                         colour: Color::from(base.colour),
@@ -429,6 +446,7 @@ pub fn emit_effects(
                     emitters.decal_serial = emitters.decal_serial.wrapping_add(1);
                     let id = emitters.decal_serial;
                     emitters.decals.push_back(Decal {
+                        authorized_event: emission.authorized_event,
                         id,
                         starts: fx.now + f64::from(layer.delay_ms) / 1000.,
                         until: fx.now + f64::from(layer.delay_ms + ms) / 1000.,
@@ -463,6 +481,7 @@ pub fn emit_effects(
             // The informational line is independent of an authored trail's delay or transparency.
             emitters.lines.extend(projectile_fallbacks);
             emitters.lines.push_back(Line {
+                authorized_event: emission.authorized_event,
                 source: emission.source,
                 target: emission.source,
                 colour: Color::WHITE,
@@ -479,12 +498,25 @@ pub fn emit_effects(
     }
     emitters.loop_seen.retain(|_, last| fx.now - *last < 5.);
     emitters.shakes.retain(|shake| shake.until > fx.now);
-    emitters.lights.retain(|light| light.until > fx.now);
-    emitters.lines.retain(|line| line.until > fx.now);
+    emitters.lights.retain(|light| {
+        light.until > fx.now
+            && (light.authorized_event
+                || super::permitted_position(state.as_deref(), light.position))
+    });
+    emitters.lines.retain(|line| {
+        line.until > fx.now
+            && (line.authorized_event
+                || (super::permitted_position(state.as_deref(), line.source)
+                    && super::permitted_position(state.as_deref(), line.target)))
+    });
     while emitters.lines.len() > 4096 {
         emitters.lines.pop_front();
     }
-    emitters.decals.retain(|decal| decal.until > fx.now);
+    emitters.decals.retain(|decal| {
+        decal.until > fx.now
+            && (decal.authorized_event
+                || super::permitted_position(state.as_deref(), decal.position))
+    });
 }
 fn noise(seed: u64, index: u16) -> (f32, f32) {
     let a = seed
@@ -541,6 +573,71 @@ mod tests {
         app
     }
     #[test]
+    fn authorized_event_cosmetics_survive_hidden_ground_and_clear_on_context_reset() {
+        let mut app = app();
+        let mut replica = crate::replica::Replica::new(20);
+        replica.knowledge = Some(std::sync::Arc::new(
+            crate::fx::timeline_tests::hidden_knowledge(),
+        ));
+        app.insert_resource(ReplicaState {
+            replica: Some(replica),
+            ..default()
+        });
+        let defs: turts_mod_api::VisualEffectsDef = ron::from_str(r#"(effects:[
+            (id:"event",layers:[(kind:Projectile(speed:1.0)),(kind:Flash(radius:1.0,light:true)),(kind:Decal(size:2.0,ms:1000))])
+        ])"#).unwrap();
+        app.world_mut()
+            .resource_mut::<AcquiredPackages>()
+            .0
+            .presentation
+            .effects
+            .insert("test:event".into(), defs.effects[0].clone());
+        for authorized_event in [false, true] {
+            app.world_mut()
+                .resource_mut::<CombatPresentation>()
+                .emissions
+                .push(Emission {
+                    effect: "test:event".into(),
+                    source: Vec3::new(0., 0., 0.5),
+                    target: Vec3::new(0.5, 0., 0.5),
+                    critical: true,
+                    authorized_event,
+                    window: None,
+                    anchor: None,
+                    target_unit: Some(2),
+                });
+        }
+        app.update();
+        let emitters = app.world().resource::<Emitters>();
+        assert!(!emitters.lines.is_empty());
+        assert!(emitters.lines.iter().all(|line| line.authorized_event));
+        assert_eq!(
+            emitters.decals.len(),
+            1,
+            "unwitnessed cosmetics still require visible ground"
+        );
+        assert!(emitters.decals[0].authorized_event);
+        let pool = app.world().resource::<ParticlePool>();
+        assert!(
+            pool.slots
+                .iter()
+                .filter_map(|slot| slot.particle.as_ref())
+                .any(|particle| particle.authorized_event)
+        );
+        {
+            let mut fx = app.world_mut().resource_mut::<CombatPresentation>();
+            fx.emissions.clear();
+            fx.epoch += 1;
+        }
+        app.update();
+        let emitters = app.world().resource::<Emitters>();
+        assert!(emitters.lines.is_empty());
+        assert!(emitters.decals.is_empty());
+        assert!(emitters.lights.is_empty());
+        assert_eq!(app.world().resource::<ParticlePool>().active(), 0);
+    }
+
+    #[test]
     fn fx6_real_emitter_caps_decals_and_expires_them() {
         let mut app = app();
         app.world_mut()
@@ -551,6 +648,7 @@ mod tests {
                 source: Vec3::new(0., 0., 0.5),
                 target: Vec3::ZERO,
                 critical: false,
+                authorized_event: false,
                 window: None,
                 anchor: None,
                 target_unit: None,
@@ -592,6 +690,7 @@ mod tests {
                 source: Vec3::new(0., 0., 0.5),
                 target: Vec3::new(0.5, 0., 0.5),
                 critical: false,
+                authorized_event: false,
                 window: None,
                 anchor: None,
                 target_unit: None,
@@ -623,6 +722,7 @@ mod tests {
                 source: Vec3::new(0., 0., 0.5),
                 target: Vec3::ZERO,
                 critical: false,
+                authorized_event: false,
                 window: None,
                 anchor: None,
                 target_unit: None,
@@ -668,6 +768,7 @@ mod tests {
                     source: Vec3::new(0., 0., 0.5),
                     target: Vec3::new(0.5, 0., 0.5),
                     critical: true,
+                    authorized_event: false,
                     window: None,
                     anchor: None,
                     target_unit: None,
@@ -710,6 +811,7 @@ mod tests {
                 source: Vec3::new(0., 0., 0.5),
                 target: Vec3::new(0.5, 0., 0.5),
                 critical: true,
+                authorized_event: false,
                 window: None,
                 anchor: None,
                 target_unit: None,

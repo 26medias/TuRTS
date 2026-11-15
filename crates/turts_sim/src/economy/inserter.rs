@@ -516,6 +516,7 @@ mod tests {
         conveyor: Option<ResolvedConveyor>,
     ) -> ResolvedUnit {
         ResolvedUnit {
+            vision: None,
             repairer: None,
 
             consumes: Vec::new(),

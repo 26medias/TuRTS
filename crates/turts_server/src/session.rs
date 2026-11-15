@@ -166,9 +166,11 @@ fn retire_disconnected_session(
         staged
             .0
             .retain(|command| command.connection != trigger.entity);
-        commands
-            .entity(trigger.entity)
-            .remove::<(Session, SnapshotDue)>();
+        commands.entity(trigger.entity).remove::<(
+            Session,
+            SnapshotDue,
+            crate::outbound::knowledge::KnowledgeSender,
+        )>();
     }
 }
 
@@ -834,32 +836,36 @@ pub fn receive_resync(
 /// Send one owner-specific `Snapshot` from the latest completed world to each session that waits
 /// for one. Welcome and Snapshot leave in this order on the ordered reliable channel.
 pub fn send_snapshots(world: &mut World, mut due: Local<QueryState<Entity, With<SnapshotDue>>>) {
-    let entities: Vec<Entity> = due.iter(world).collect();
-    if entities.is_empty() {
+    if !turts_sim::visibility::context_ready(world) {
         return;
     }
-    let payloads: Vec<_> = entities
-        .into_iter()
-        .filter_map(|entity| {
-            let slot = world.get::<Session>(entity).map(|session| session.slot);
-            let payload = slot.map(|slot| {
-                let policy = world
-                    .get_resource::<crate::permissions::ObservationPolicy>()
-                    .cloned()
-                    .unwrap_or_default();
-                let (message, history) = export::snapshot_for_with_permissions(
-                    &world.resource::<CompletedWorld>().0,
-                    slot,
-                    policy.0.as_ref(),
-                );
-                world.entity_mut(entity).insert(history);
-                (entity, message)
-            });
+    let entities: Vec<Entity> = due.iter(world).collect();
+    for entity in entities {
+        let Some(slot) = world.get::<Session>(entity).map(|session| session.slot) else {
             world.entity_mut(entity).remove::<SnapshotDue>();
-            payload
-        })
-        .collect();
-    for (entity, message) in payloads {
+            continue;
+        };
+        match crate::outbound::knowledge::queue_full(world, entity, slot) {
+            Ok(true) => {
+                world.entity_mut(entity).remove::<SnapshotDue>();
+                continue;
+            }
+            Err(reason) => {
+                crate::outbound::knowledge::disconnect(world, entity, reason);
+                continue;
+            }
+            Ok(false) => {}
+        }
+        let policy = crate::permissions::completed(world);
+        let (message, history) = export::snapshot_for_with_permissions(
+            &world.resource::<CompletedWorld>().0,
+            slot,
+            policy.0.as_ref(),
+        );
+        world
+            .entity_mut(entity)
+            .insert(history)
+            .remove::<SnapshotDue>();
         if let Some(mut sender) = world.get_mut::<MessageSender<Snapshot>>(entity) {
             sender.send::<ReliableChannel>(message);
             world.resource_mut::<ReliableTraffic>().record(entity);
@@ -1005,6 +1011,266 @@ mod tests {
                 .push_raw(recv_payload_from_bytes(packet));
         }
         app.update();
+    }
+
+    #[derive(Resource, Default)]
+    struct VisibilityFrames(
+        BTreeMap<Entity, Vec<turts_net_protocol::visibility_transaction::StateTransactionFrame>>,
+    );
+    fn capture_visibility_frames(
+        mut receivers: Query<(
+            Entity,
+            &mut MessageReceiver<turts_net_protocol::visibility_transaction::StateTransactionFrame>,
+        )>,
+        mut captured: ResMut<VisibilityFrames>,
+    ) {
+        for (entity, mut receiver) in &mut receivers {
+            captured
+                .0
+                .entry(entity)
+                .or_default()
+                .extend(receiver.receive());
+        }
+    }
+    #[test]
+    fn real_human_hello_wire_installs_slot_specific_atomic_sight_before_acknowledgement() {
+        human_sight_by_slot(false, false);
+    }
+    #[test]
+    fn reversed_peer_creation_and_hello_order_preserve_slot_knowledge() {
+        let expected = human_sight_by_slot(false, false);
+        for (creation, hello) in [(true, false), (false, true), (true, true)] {
+            assert_eq!(
+                human_sight_by_slot(creation, hello),
+                expected,
+                "peer creation {creation}, Hello order {hello}"
+            );
+        }
+    }
+    fn human_sight_by_slot(
+        reverse_creation: bool,
+        reverse_hello: bool,
+    ) -> BTreeMap<u8, turts_mod_api::KnowledgeSnapshot> {
+        use lightyear::link::recv_payload_from_bytes;
+        use turts_mod_api::{
+            KnowledgeBasis, ObservationPhase, SourceDef, VisibilityDef, VisibilityGrid, VisionDef,
+            VisionSharing, WorldPos,
+        };
+        use turts_net_lightyear::KnowledgeChannel;
+        use turts_net_protocol::{
+            StateTransactionAck, StateTransactionBegin, StateTransactionCancel,
+            StateTransactionChunk, StateTransactionEnd, StateTransactionPayload,
+            visibility_transaction::{StateTransactionAssembler, StateTransactionFrame as Frame},
+        };
+        let mut app = hello_test_app();
+        crate::outbound::install(&mut app);
+        app.init_resource::<VisibilityFrames>().add_systems(
+            PreUpdate,
+            capture_visibility_frames
+                .after(MessageSystems::Receive)
+                .before(receive_hello),
+        );
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../mods/cedar");
+        let archive = turts_mod_runtime::archive::PackageArchive::parse(
+            &turts_mod_runtime::pack::pack_dir(&root).unwrap(),
+        )
+        .unwrap();
+        let mut catalog = archive.content().unwrap();
+        let worker = ContentId::parse("cedar:worker").unwrap();
+        catalog.units.get_mut(&worker).unwrap().vision = Some(VisionDef { radius: 8.0 });
+        let mut map = archive.maps().unwrap().remove(0).1;
+        let definition = VisibilityDef {
+            cell_size: 2.0,
+            sharing: VisionSharing::OwnSlot,
+            memory_limit: None,
+        };
+        map.visibility = Some(definition.clone());
+        let staged = turts_sim::stage_package(
+            app.world(),
+            catalog,
+            SourceDef {
+                file: "human-sight/map".into(),
+                value: map,
+            },
+            20,
+        )
+        .unwrap();
+        turts_sim::install_package(app.world_mut(), staged);
+        let map_id = ContentId::parse("cedar:clearing").unwrap();
+        let sight = turts_sim::visibility::prepare(
+            0,
+            map_id.clone(),
+            &definition,
+            VisibilityGrid {
+                size: WorldPos { x: 64.0, y: 64.0 },
+                cell_size: 2.0,
+                columns: 32,
+                rows: 32,
+            },
+            &[0, 1],
+        )
+        .unwrap();
+        app.insert_resource(sight);
+        turts_sim::visibility::initialize_context(app.world_mut(), 0, &[0, 1]).unwrap();
+        turts_sim::initialize_completed_world(app.world_mut());
+        let peer_ids = if reverse_creation {
+            [202, 101]
+        } else {
+            [101, 202]
+        };
+        let pairs = peer_ids.map(|id| spawn_hello_peers(&mut app, id));
+        for (client, server) in pairs {
+            app.world_mut().entity_mut(client).insert((
+                MessageReceiver::<Welcome>::default(),
+                MessageReceiver::<Frame>::default(),
+                MessageSender::<StateTransactionAck>::default(),
+                MessageSender::<StateTransactionCancel>::default(),
+            ));
+            app.world_mut().entity_mut(server).insert((
+                MessageSender::<StateTransactionBegin>::default(),
+                MessageSender::<StateTransactionChunk>::default(),
+                MessageSender::<StateTransactionEnd>::default(),
+                MessageSender::<StateTransactionCancel>::default(),
+                MessageReceiver::<StateTransactionAck>::default(),
+                MessageReceiver::<StateTransactionCancel>::default(),
+            ));
+            let registry = app.world().resource::<ChannelRegistry>();
+            let mut server_transport = Transport::default();
+            server_transport.add_channel_send_from_registry::<ReliableChannel>(registry);
+            server_transport.add_channel_receive_from_registry::<ReliableChannel>(registry);
+            server_transport.add_channel_send_from_registry::<KnowledgeChannel>(registry);
+            let mut client_transport = Transport::default();
+            client_transport.add_channel_send_from_registry::<ReliableChannel>(registry);
+            client_transport.add_channel_receive_from_registry::<ReliableChannel>(registry);
+            client_transport.add_channel_receive_from_registry::<KnowledgeChannel>(registry);
+            app.world_mut().entity_mut(server).insert(server_transport);
+            app.world_mut().entity_mut(client).insert(client_transport);
+        }
+        let hello_order = if reverse_hello { [1, 0] } else { [0, 1] };
+        for index in hello_order {
+            let (client, server) = pairs[index];
+            deliver_hello(&mut app, client, server, good(peer_ids[index]));
+        }
+        let mut assemblers = pairs
+            .iter()
+            .map(|(client, _)| {
+                (
+                    *client,
+                    StateTransactionAssembler::new(
+                        0,
+                        map_id.clone(),
+                        turts_net_lightyear::KNOWLEDGE_FRAME_LIMIT_BYTES,
+                    ),
+                )
+            })
+            .collect::<BTreeMap<_, _>>();
+        let mut installed = BTreeMap::new();
+        for step in 0..30 {
+            for (client, server) in pairs {
+                for (from, to) in [(server, client), (client, server)] {
+                    let packets = app
+                        .world_mut()
+                        .get_mut::<Link>(from)
+                        .unwrap()
+                        .send
+                        .drain()
+                        .collect::<Vec<_>>();
+                    for packet in packets {
+                        app.world_mut()
+                            .get_mut::<Link>(to)
+                            .unwrap()
+                            .recv
+                            .push_raw(recv_payload_from_bytes(packet));
+                    }
+                }
+            }
+            app.update();
+            let frames = std::mem::take(&mut app.world_mut().resource_mut::<VisibilityFrames>().0);
+            for (client, frames) in frames {
+                let assembler = assemblers.get_mut(&client).unwrap();
+                for frame in frames {
+                    assert!(
+                        frame.encoded_bytes().unwrap()
+                            <= turts_net_lightyear::KNOWLEDGE_FRAME_LIMIT_BYTES
+                    );
+                    match frame {
+                        Frame::Begin(begin) => assembler.begin(begin, step * 50).unwrap(),
+                        Frame::Chunk(chunk) => assembler.chunk(&chunk).unwrap(),
+                        Frame::End(end) => {
+                            if let Some(staged) = assembler.end(&end).unwrap() {
+                                assert!(
+                                    assembler.active().is_none(),
+                                    "no partial sight can activate"
+                                );
+                                let StateTransactionPayload::Snapshot {
+                                    state,
+                                    knowledge: Some(knowledge),
+                                    ..
+                                } = staged.payload
+                                else {
+                                    panic!("restricted initial state includes knowledge")
+                                };
+                                assert_eq!(
+                                    knowledge.basis,
+                                    KnowledgeBasis {
+                                        match_id: 0,
+                                        map: map_id.clone(),
+                                        tick: state.tick,
+                                        phase: ObservationPhase::Completed
+                                    }
+                                );
+                                assert!(
+                                    state
+                                        .units
+                                        .iter()
+                                        .all(|unit| unit.owner_slot.0 == knowledge.viewer)
+                                );
+                                let expected = turts_sim::completed_world(app.world())
+                                    .units
+                                    .iter()
+                                    .filter(|unit| {
+                                        turts_sim::visibility::basis(
+                                            app.world(),
+                                            ObservationPhase::Completed,
+                                        )
+                                        .unwrap()
+                                        .unit_permitted(knowledge.viewer, unit.unit_id)
+                                    })
+                                    .map(|unit| unit.unit_id)
+                                    .collect::<Vec<_>>();
+                                assert_eq!(
+                                    state
+                                        .units
+                                        .iter()
+                                        .map(|unit| unit.unit_id.0)
+                                        .collect::<Vec<_>>(),
+                                    expected
+                                );
+                                installed.insert(knowledge.viewer, knowledge);
+                                let ack = assembler.activate(&staged.stamp).unwrap();
+                                app.world_mut()
+                                    .get_mut::<MessageSender<StateTransactionAck>>(client)
+                                    .unwrap()
+                                    .send::<ReliableChannel>(ack);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        assert_eq!(installed.len(), 2);
+        assert_ne!(installed[&0].observed, installed[&1].observed);
+        for (_, server) in pairs {
+            assert!(
+                app.world()
+                    .get::<crate::outbound::knowledge::KnowledgeSender>(server)
+                    .unwrap()
+                    .active_stamp()
+                    .is_some(),
+                "server baseline advances only after real wire acknowledgement"
+            );
+        }
+        installed
     }
 
     #[derive(Resource, Default)]
@@ -1399,9 +1665,21 @@ mod tests {
     /// Older clients receive a clear refusal before they can claim a slot.
     #[test]
     fn older_protocols_are_refused_before_a_slot_is_claimed() {
-        assert_eq!(turts_net_protocol::NET_PROTOCOL_VERSION, 8);
+        assert_eq!(turts_net_protocol::NET_PROTOCOL_VERSION, 9);
         let mut slots = Slots::new(2);
-        for version in [4, 5, 6, 7] {
+        for version in [4, 5, 6, 7, 8] {
+            assert_eq!(
+                judge_hello(&hello(7, version, HASH), &advertised(), &mut slots, false),
+                Err("protocol version mismatch")
+            );
+            assert_eq!(slots.slot_of(7), None, "a refused Hello takes no slot");
+        }
+    }
+
+    #[test]
+    fn unknown_protocols_are_refused_before_a_slot_is_claimed() {
+        let mut slots = Slots::new(2);
+        for version in [0, 10, u32::MAX] {
             assert_eq!(
                 judge_hello(&hello(7, version, HASH), &advertised(), &mut slots, false),
                 Err("protocol version mismatch")
@@ -1773,6 +2051,7 @@ mod admission_tests {
             .register_unit_type(
                 &package,
                 UnitDef {
+                    vision: None,
                     id: "producer".into(),
                     name: "Producer".into(),
                     footprint: Footprint::Circle { radius: 1.0 },
@@ -1825,6 +2104,7 @@ mod admission_tests {
         catalog.units.insert(
             id.clone(),
             ResolvedUnit {
+                vision: None,
                 repairer: None,
 
                 consumes: Vec::new(),
@@ -2335,6 +2615,7 @@ mod admission_tests {
             .register_unit_type(
                 &package,
                 UnitDef {
+                    vision: None,
                     id: "lab".into(),
                     name: "Lab".into(),
                     footprint: Footprint::Circle { radius: 1.0 },
@@ -2376,6 +2657,7 @@ mod admission_tests {
             .insert(
                 id.clone(),
                 ResolvedUnit {
+                    vision: None,
                     repairer: None,
 
                     consumes: Vec::new(),
@@ -2504,6 +2786,7 @@ mod admission_tests {
             .register_unit_type(
                 &package,
                 UnitDef {
+                    vision: None,
                     id: "producer".into(),
                     name: "Producer".into(),
                     footprint: Footprint::Circle { radius: 1.0 },
@@ -2556,6 +2839,7 @@ mod admission_tests {
         catalog.units.insert(
             id.clone(),
             ResolvedUnit {
+                vision: None,
                 repairer: None,
 
                 consumes: Vec::new(),
@@ -3004,6 +3288,7 @@ mod admission_tests {
             .register_unit_type(
                 &PackageId::parse("test").unwrap(),
                 UnitDef {
+                    vision: None,
                     id: "static".into(),
                     name: "Static".into(),
                     footprint: Footprint::Circle { radius: 1.0 },
@@ -3042,6 +3327,7 @@ mod admission_tests {
             .insert(
                 static_id.clone(),
                 ResolvedUnit {
+                    vision: None,
                     repairer: None,
 
                     consumes: Vec::new(),
@@ -3308,6 +3594,7 @@ mod admission_tests {
             .register_unit_type(
                 &PackageId::parse("test").unwrap(),
                 UnitDef {
+                    vision: None,
                     id: "static".into(),
                     name: "Static".into(),
                     footprint: Footprint::Circle { radius: 1.0 },
@@ -3346,6 +3633,7 @@ mod admission_tests {
             .insert(
                 static_id.clone(),
                 ResolvedUnit {
+                    vision: None,
                     repairer: None,
 
                     consumes: Vec::new(),

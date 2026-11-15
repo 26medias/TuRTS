@@ -558,3 +558,73 @@ fn complete_physical_target_ties_remain_refused_with_inverted_ids() {
         assert!(run(&mut controller, &squad_profile(), &mut squad_pages(rows)).is_empty());
     }
 }
+
+#[test]
+fn squad_scouts_complete_remembered_pages_as_points_and_never_reuses_stale_ids() {
+    fn memory(unit: u32, x: f32) -> turts_mod_api::RememberedUnit {
+        turts_mod_api::RememberedUnit {
+            unit,
+            content: id("fixture:enemy"),
+            owner: 1,
+            position: WorldPos { x, y: 24.0 },
+            facing: None,
+            site: false,
+            last_seen_tick: 1,
+        }
+    }
+    for invert in [false, true] {
+        let mut controller = controller();
+        controller.policy = Policy::Squads;
+        let mut queries = squad_pages(vec![]);
+        let first = if invert {
+            memory(99, 60.0)
+        } else {
+            memory(1, 60.0)
+        };
+        let second = if invert {
+            memory(1, 70.0)
+        } else {
+            memory(99, 70.0)
+        };
+        queries.0.extend([
+            page(
+                QueryData::RememberedUnits(RememberedRows {
+                    rows: vec![first],
+                    retention_truncated: true,
+                }),
+                PageState::More(QueryCursor { basis: 1, token: 1 }),
+            ),
+            page(
+                QueryData::RememberedUnits(RememberedRows {
+                    rows: vec![second],
+                    retention_truncated: true,
+                }),
+                PageState::Complete,
+            ),
+        ]);
+        let proposals = run(&mut controller, &squad_profile(), &mut queries);
+        assert_eq!(proposals.len(), 1);
+        assert_eq!(proposals[0].order.content, id("fixture:move"));
+        assert_eq!(
+            proposals[0].order.target,
+            BotTarget::Point(WorldPos { x: 60.0, y: 24.0 })
+        );
+    }
+    let mut controller = controller();
+    controller.policy = Policy::Squads;
+    let mut queries = squad_pages(vec![]);
+    queries.0.extend([
+        page(
+            QueryData::RememberedUnits(RememberedRows {
+                rows: vec![memory(1, 60.0)],
+                retention_truncated: false,
+            }),
+            PageState::More(QueryCursor { basis: 1, token: 1 }),
+        ),
+        Err(QueryError::Budget),
+    ]);
+    assert!(
+        run(&mut controller, &squad_profile(), &mut queries).is_empty(),
+        "an incomplete memory prefix cannot choose a scout destination"
+    );
+}

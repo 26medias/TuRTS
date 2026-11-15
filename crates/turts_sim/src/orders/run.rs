@@ -288,6 +288,24 @@ pub(crate) fn run_orders(world: &mut World) {
             continue;
         }
         let current = current.unwrap();
+        let slot = world
+            .get::<crate::Owner>(entity)
+            .map_or(SlotId(0), |owner| owner.0);
+        if crate::visibility::validate_target(world, slot.0, &current.target).is_err() {
+            // Lost sight is not proof of death. End a live-target action without
+            // looking up its hidden position or reporting TargetGone.
+            crate::economy::transaction::capture_unit_order_operation(world, unit_id, |world| {
+                edit_unit_orders(world, entity, |orders| {
+                    orders.current = None;
+                    orders.last_failure = None;
+                });
+                crate::orders::clear_replaced_movement(world, slot, entity, unit_id);
+                clear_gather(world, unit_id);
+                crate::economy::repair::order_changed(world, unit_id);
+                start_next_queued_order(world, slot, entity, unit_id);
+            });
+            continue;
+        }
         if current.behaviour == Behaviour::Repair {
             if replacement_pending {
                 continue;
@@ -490,9 +508,10 @@ fn attack_point_has_target_in_range(
         return false;
     };
     let radius = index.radii.get(&unit_id).copied().unwrap_or(0.0);
+    let sight = crate::visibility::active_basis(world);
     index
         .grid
-        .within(
+        .within_unsorted(
             index.points,
             origin,
             weapon
@@ -502,6 +521,9 @@ fn attack_point_has_target_in_range(
         .into_iter()
         .any(|point_index| {
             let target = index.points[point_index].id;
+            if sight.is_some_and(|basis| !basis.unit_permitted(owner, target)) {
+                return false;
+            }
             let Some(target_owner) = index.owners.get(&target).copied() else {
                 return false;
             };

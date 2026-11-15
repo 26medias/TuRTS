@@ -34,7 +34,7 @@ fn derived_scan_rejects_all_plants_and_accepts_generic_field() {
     .unwrap();
     std::fs::write(
         src.join("generic.rs"),
-        "fn field() { let field = 2; }\n// base:rifleman\n",
+        "struct Generic { rifleman: usize }\nfn field() { let field = Generic { rifleman: 2 }; let _ = field.rifleman; }\n// base:rifleman\n",
     )
     .unwrap();
     std::fs::write(
@@ -131,7 +131,7 @@ fn flat_exemption_applies_only_to_identifiers() {
 }
 
 #[test]
-fn credit_exemption_applies_only_to_identifiers() {
+fn accounting_and_gather_handle_exemptions_apply_only_to_identifiers() {
     let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let catalog = derive_tokens(&repo.join("mods")).expect("all mod packages derive");
     let root = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("credit_identifier_only");
@@ -140,12 +140,12 @@ fn credit_exemption_applies_only_to_identifiers() {
     std::fs::create_dir_all(&src).unwrap();
     std::fs::write(
         src.join("identifier.rs"),
-        "fn ledger() { let credit = 1; { let r#credit = 2; } let base = 3; }",
+        "fn ledger() { let credit = 1; { let r#credit = 2; } let base = 3; let deposit = 4; }",
     )
     .unwrap();
     std::fs::write(
         src.join("literals.rs"),
-        "const A: &str = \"credit\"; const B: &[u8] = b\"credit\"; const C: &str = \"base:credits\"; const D: &str = \"resources/credits.ron\"; const E: &str = \"base\"; const F: &[u8] = b\"base\";",
+        "const A: &str = \"credit\"; const B: &[u8] = b\"credit\"; const C: &str = \"base:credits\"; const D: &str = \"resources/credits.ron\"; const E: &str = \"base\"; const F: &[u8] = b\"base\"; const G: &str = \"deposit\";",
     )
     .unwrap();
     std::fs::write(
@@ -167,6 +167,7 @@ fn credit_exemption_applies_only_to_identifiers() {
     );
     for (token, category) in [
         ("credit", "unit-name"),
+        ("deposit", "node"),
         ("base:credits", "resource-ref"),
         ("resources/credits.ron", "resource-export"),
     ] {

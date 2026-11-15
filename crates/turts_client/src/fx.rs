@@ -29,6 +29,8 @@ pub struct Emission {
     pub source: Vec3,
     pub target: Vec3,
     pub critical: bool,
+    /// Server-authorized discrete event; preserves only its captured finite cosmetics.
+    pub authorized_event: bool,
     pub window: Option<f32>,
     pub anchor: Option<u32>,
     pub target_unit: Option<u32>,
@@ -41,6 +43,17 @@ pub struct Impact {
     pub hit: Option<String>,
     pub position: Vec3,
     pub health: Option<u64>,
+}
+#[derive(Clone)]
+struct DeathPose {
+    actor: Actor,
+    until: f64,
+}
+/// A finite, already witnessed picture. It carries no live unit identity.
+#[derive(Component, Clone, Copy)]
+pub(crate) struct AuthorizedDeathPose {
+    pub epoch: u64,
+    pub until: f64,
 }
 #[derive(Clone, Copy)]
 pub struct HeldHealth {
@@ -56,13 +69,18 @@ pub struct CombatPresentation {
     pub impacts: VecDeque<Impact>,
     pub death_at: HashMap<u32, f64>,
     pub model_remove_at: HashMap<u32, f64>,
+    death_poses: HashMap<u32, DeathPose>,
     pub flashes: HashMap<u32, f64>,
     pub emissions: Vec<Emission>,
     pub destroyed: HashSet<u32>,
     pub released_deaths: HashSet<u32>,
     pub now: f64,
     snapshot: Option<u32>,
+    map: Option<turts_mod_api::ContentId>,
+    pub(super) epoch: u64,
     session: Option<u64>,
+    knowledge_match: Option<u64>,
+    active: bool,
     observed_tick: Option<u32>,
     coherent: bool,
     terminal_seen: bool,
@@ -85,6 +103,15 @@ pub fn flight_seconds(distance: f32, speed: f32) -> f64 {
     }
 }
 impl CombatPresentation {
+    pub(crate) fn authorized_death_pose(&self, id: u32) -> Option<AuthorizedDeathPose> {
+        self.death_poses
+            .get(&id)
+            .filter(|pose| pose.until > self.now)
+            .map(|pose| AuthorizedDeathPose {
+                epoch: self.epoch,
+                until: pose.until,
+            })
+    }
     fn emit(&mut self, effect: Option<&String>, source: Vec3, target: Vec3, critical: bool) {
         if let Some(effect) = effect {
             self.emissions.push(Emission {
@@ -92,10 +119,17 @@ impl CombatPresentation {
                 source,
                 target,
                 critical,
+                authorized_event: false,
                 window: None,
                 anchor: None,
                 target_unit: None,
             });
+        }
+    }
+    fn emit_authorized(&mut self, effect: Option<&String>, source: Vec3, target: Vec3) {
+        self.emit(effect, source, target, true);
+        if effect.is_some() {
+            self.emissions.last_mut().unwrap().authorized_event = true;
         }
     }
 }
@@ -118,9 +152,45 @@ pub fn update_combat(
     fx.now = time.elapsed_secs_f64();
     fx.emissions.clear();
     fx.released_deaths.clear();
-    let (Some(replica), Some(acquired)) = (state.replica.as_ref(), acquired) else {
+    let Some(replica) = state.replica.as_ref() else {
+        if fx.active {
+            let epoch = fx.epoch.wrapping_add(1);
+            *fx = CombatPresentation {
+                epoch,
+                now: time.elapsed_secs_f64(),
+                ..default()
+            };
+        }
         return;
     };
+    let now = fx.now;
+    fx.death_poses.retain(|_, pose| pose.until > now);
+    if replica.knowledge.is_some() {
+        let known = |id: &u32| {
+            replica.units.contains_key(id)
+                || replica
+                    .event_units
+                    .iter()
+                    .any(|row| row.unit.unit_id.0 == *id)
+        };
+        fx.actors.retain(|id, _| known(id));
+        fx.displayed_health
+            .retain(|id, _| replica.units.contains_key(id));
+        fx.health_tick
+            .retain(|id, _| replica.units.contains_key(id));
+        fx.held_health
+            .retain(|id, _| replica.units.contains_key(id));
+        // Pending impacts retain only an already authorized event pose until arrival.
+        // Later visibility loss must not cancel that event or retain its live actor.
+        let witnessed_deaths: HashSet<_> = fx.death_poses.keys().copied().collect();
+        fx.death_at
+            .retain(|id, _| known(id) || witnessed_deaths.contains(id));
+        fx.model_remove_at
+            .retain(|id, _| known(id) || witnessed_deaths.contains(id));
+        fx.flashes.retain(|id, _| known(id));
+        fx.loops.retain(|(id, _), _| replica.units.contains_key(id));
+        fx.work_phase.retain(|id, _| replica.units.contains_key(id));
+    }
     let session = state.welcome.map(|w| w.match_id);
     let terminal = replica
         .match_state()
@@ -133,11 +203,23 @@ pub fn update_combat(
                 turts_net_protocol::Outcome::Victory | turts_net_protocol::Outcome::Draw
             )
         });
-    let snapshot_changed = fx.snapshot != replica.snapshot_tick || fx.session != session;
+    let map = replica
+        .knowledge
+        .as_ref()
+        .map(|knowledge| knowledge.basis.map.clone());
+    let knowledge_match = replica
+        .knowledge
+        .as_ref()
+        .map(|knowledge| knowledge.basis.match_id);
+    let context_changed = !fx.active
+        || fx.session != session
+        || fx.map != map
+        || fx.knowledge_match != knowledge_match;
+    let snapshot_changed = fx.snapshot != replica.snapshot_tick;
     // The server ends with a reliable state snapshot, without a terminal delta's visual facts.
     // Show only newly missing, known actors at a fresh first outcome. Never invent a shot.
     let terminal_removed: Vec<_> = if snapshot_changed
-        && fx.session == session
+        && !context_changed
         && terminal
         && !fx.terminal_seen
         && fx.coherent
@@ -148,15 +230,60 @@ pub fn update_combat(
     {
         fx.actors
             .iter()
-            .filter(|(id, _)| !replica.units.contains_key(id) && !fx.death_at.contains_key(id))
+            .filter(|(id, _)| {
+                !replica.units.contains_key(id)
+                    && !fx.death_at.contains_key(id)
+                    && !fx.death_poses.contains_key(id)
+            })
             .map(|(&id, actor)| (id, actor.clone()))
             .collect()
     } else {
         Vec::new()
     };
-    let terminal_seen = terminal || (fx.session == session && fx.terminal_seen);
-    if snapshot_changed {
+    let terminal_seen = terminal || (!context_changed && fx.terminal_seen);
+    if snapshot_changed || context_changed {
+        let epoch = if context_changed {
+            fx.epoch.wrapping_add(1)
+        } else {
+            fx.epoch
+        };
+        let mut impacts = if context_changed {
+            VecDeque::new()
+        } else {
+            std::mem::take(&mut fx.impacts)
+        };
+        let (death_poses, death_at, model_remove_at, destroyed) = if context_changed {
+            (
+                HashMap::new(),
+                HashMap::new(),
+                HashMap::new(),
+                HashSet::new(),
+            )
+        } else {
+            let poses = std::mem::take(&mut fx.death_poses);
+            let mut pending = std::mem::take(&mut fx.death_at);
+            pending.retain(|id, _| poses.contains_key(id));
+            let mut models = std::mem::take(&mut fx.model_remove_at);
+            models.retain(|id, _| poses.contains_key(id));
+            let mut destroyed = std::mem::take(&mut fx.destroyed);
+            destroyed.retain(|id| poses.contains_key(id));
+            (poses, pending, models, destroyed)
+        };
+        // The new snapshot supplies current health. Retained event cosmetics must
+        // never release an earlier damage value over that newer authoritative basis.
+        for impact in &mut impacts {
+            impact.health = None;
+        }
         *fx = CombatPresentation {
+            epoch,
+            map,
+            knowledge_match,
+            active: true,
+            impacts,
+            death_poses,
+            death_at,
+            model_remove_at,
+            destroyed,
             now: time.elapsed_secs_f64(),
             snapshot: replica.snapshot_tick,
             session,
@@ -170,6 +297,9 @@ pub fn update_combat(
     for (id, actor) in &terminal_removed {
         fx.actors.insert(*id, actor.clone());
     }
+    let Some(acquired) = acquired else {
+        return;
+    };
     let package = &acquired.0.presentation;
     let now = fx.now;
     fx.model_remove_at.retain(|_, at| *at > now);
@@ -194,6 +324,15 @@ pub fn update_combat(
                 height,
             },
         );
+    }
+    // Authorized event endpoints can disappear before the completed state.
+    for observation in &replica.event_units {
+        let unit = &observation.unit;
+        fx.actors.entry(unit.unit_id.0).or_insert_with(|| Actor {
+            content: unit.content_id.clone(),
+            position: world_to_scene(unit.pos),
+            height: 1.6,
+        });
     }
     let destroyed_ticks: HashMap<_, _> = events
         .raw
@@ -247,13 +386,14 @@ pub fn update_combat(
             flight_seconds((start + offset).distance(end), speed)
         });
         let at = now + delay;
-        fx.emit(refs.and_then(|r| r.fire.as_ref()), start, end, true);
+        fx.emit_authorized(refs.and_then(|r| r.fire.as_ref()), start, end);
         if let Some(effect) = refs.and_then(|r| r.projectile.as_ref()) {
             fx.emissions.push(Emission {
                 effect: effect.clone(),
                 source: start,
                 target: end,
                 critical: true,
+                authorized_event: true,
                 window: None,
                 anchor: None,
                 target_unit: Some(target.0),
@@ -331,6 +471,9 @@ pub fn update_combat(
         .copied()
         .chain(terminal_removed.iter().map(|(id, _)| *id))
     {
+        if fx.death_poses.contains_key(&id) {
+            continue;
+        }
         fx.destroyed.insert(id);
         let at = *fx.death_at.entry(id).or_insert(now);
         let peak = fx
@@ -347,6 +490,19 @@ pub fn update_combat(
             })
             .map_or(0., |layer| f64::from(layer.delay_ms) / 1000.);
         fx.model_remove_at.insert(id, at + peak);
+        if events.destroyed.contains(&id)
+            && let Some(actor) = fx.actors.get(&id).cloned()
+        {
+            // VisualBody already has a 4.5-second lifetime. The pose only covers
+            // that lifetime plus the existing impact/model-removal deadline.
+            fx.death_poses.insert(
+                id,
+                DeathPose {
+                    actor,
+                    until: (at + 4.5).max(at + peak),
+                },
+            );
+        }
     }
     // Release each impact independently, even when projectile speeds differ.
     let pending = std::mem::take(&mut fx.impacts);
@@ -355,12 +511,16 @@ pub fn update_combat(
             let position = fx
                 .actors
                 .get(&impact.target)
+                .filter(|_| replica.knowledge.is_none())
                 .map_or(impact.position, |actor| {
                     actor.position + Vec3::Y * actor.height * 0.5
                 });
-            fx.emit(impact.hit.as_ref(), position, position, true);
-            fx.flashes.insert(impact.target, now + 0.1);
+            fx.emit_authorized(impact.hit.as_ref(), position, position);
+            if replica.units.contains_key(&impact.target) {
+                fx.flashes.insert(impact.target, now + 0.1);
+            }
             if let Some(health) = impact.health
+                && replica.units.contains_key(&impact.target)
                 && impact.tick >= fx.health_tick.get(&impact.target).copied().unwrap_or(0)
             {
                 fx.displayed_health.insert(impact.target, health);
@@ -393,16 +553,17 @@ pub fn update_combat(
         .filter_map(|(&id, &at)| (at <= now).then_some(id))
         .collect();
     for id in deaths {
-        if let Some(actor) = fx.actors.get(&id).cloned() {
-            fx.emit(
-                package
-                    .effect_visuals
-                    .get(&actor.content)
-                    .and_then(|r| r.death.as_ref()),
-                actor.position,
-                actor.position,
-                false,
-            );
+        let witnessed = fx.death_poses.get(&id).map(|pose| pose.actor.clone());
+        if let Some(actor) = witnessed.clone().or_else(|| fx.actors.get(&id).cloned()) {
+            let effect = package
+                .effect_visuals
+                .get(&actor.content)
+                .and_then(|r| r.death.as_ref());
+            if witnessed.is_some() {
+                fx.emit_authorized(effect, actor.position, actor.position);
+            } else {
+                fx.emit(effect, actor.position, actor.position, false);
+            }
         }
         fx.released_deaths.insert(id);
         fx.death_at.remove(&id);
@@ -532,6 +693,7 @@ pub fn update_combat(
                 source: position,
                 target: position,
                 critical: false,
+                authorized_event: false,
                 window,
                 anchor: Some(id),
                 target_unit: None,
@@ -553,7 +715,12 @@ pub fn update_combat(
         .units
         .keys()
         .copied()
-        .chain(fx.death_at.keys().copied())
+        .chain(
+            fx.death_at
+                .keys()
+                .filter(|id| !fx.death_poses.contains_key(id))
+                .copied(),
+        )
         .collect();
     fx.actors.retain(|id, _| retained.contains(id));
     fx.displayed_health.retain(|id, _| retained.contains(id));
@@ -609,7 +776,7 @@ pub fn release_deaths(
 }
 
 #[cfg(test)]
-mod timeline_tests {
+pub(crate) mod timeline_tests {
     use super::*;
     use crate::{
         acquire::{Acquired, PresentationContent},
@@ -719,6 +886,243 @@ mod timeline_tests {
             .resource_mut::<Time>()
             .advance_by(Duration::from_millis(millis));
         app.update();
+    }
+
+    pub(crate) fn hidden_knowledge() -> turts_mod_api::KnowledgeSnapshot {
+        use turts_mod_api::{
+            ContentId, KnowledgeBasis, KnowledgeSnapshot, ObservationPhase, VisibilityGrid,
+            WorldPos,
+        };
+        KnowledgeSnapshot {
+            basis: KnowledgeBasis {
+                match_id: 7,
+                map: ContentId::parse("test:map").unwrap(),
+                tick: 1,
+                phase: ObservationPhase::Completed,
+            },
+            viewer: 0,
+            grid: VisibilityGrid {
+                size: WorldPos { x: 64., y: 64. },
+                cell_size: 64.,
+                columns: 1,
+                rows: 1,
+            },
+            observed: vec![0],
+            explored: vec![1],
+            remembered_units: vec![],
+            remembered_nodes: vec![],
+            retention_truncated: false,
+        }
+    }
+
+    #[test]
+    fn authorized_delayed_impact_survives_final_sight_loss_at_its_captured_pose() {
+        let mut app = app();
+        app.world_mut()
+            .resource_mut::<ReplicaState>()
+            .replica
+            .as_mut()
+            .unwrap()
+            .knowledge = Some(std::sync::Arc::new(hidden_knowledge()));
+        app.world_mut()
+            .resource_mut::<AcquiredPackages>()
+            .0
+            .presentation
+            .effect_visuals
+            .get_mut("test:soldier")
+            .unwrap()
+            .hit = Some("test:hit".into());
+        app.update();
+        // Completed visibility is empty: only event-local witnesses retain the endpoints.
+        {
+            let mut state = app.world_mut().resource_mut::<ReplicaState>();
+            let replica = state.replica.as_mut().unwrap();
+            replica.units.clear();
+            let basis = replica.knowledge.as_ref().unwrap().basis.clone();
+            replica.event_units = [(1, 0.), (2, 6.)]
+                .into_iter()
+                .map(
+                    |(id, x)| turts_net_protocol::visibility::EventUnitObservation {
+                        basis: basis.clone(),
+                        unit: turts_net_protocol::UnitSnapshot {
+                            unit_id: UnitId(id),
+                            content_id: "test:soldier".into(),
+                            owner_slot: turts_net_protocol::SlotId(0),
+                            facing: None,
+                            pos: Pos { x, y: 0. },
+                            site: false,
+                        },
+                    },
+                )
+                .collect();
+        }
+        app.world_mut().resource_mut::<Presented>().units.clear();
+        shoot(&mut app, 90);
+        let captured = app.world().resource::<CombatPresentation>().impacts[0].position;
+        {
+            let mut state = app.world_mut().resource_mut::<ReplicaState>();
+            let replica = state.replica.as_mut().unwrap();
+            replica.units.clear();
+            replica.healths.clear();
+            replica.event_units.clear();
+        }
+        app.world_mut().resource_mut::<Presented>().units.clear();
+        advance(&mut app, 50);
+        let fx = app.world().resource::<CombatPresentation>();
+        assert_eq!(
+            fx.impacts.len(),
+            1,
+            "sight loss must not cancel an authorized event"
+        );
+        assert!(
+            fx.actors.is_empty(),
+            "event retention must not retain hidden actors"
+        );
+        assert!(fx.displayed_health.is_empty());
+        advance(&mut app, 300);
+        let fx = app.world().resource::<CombatPresentation>();
+        assert!(fx.impacts.is_empty());
+        let hit = fx
+            .emissions
+            .iter()
+            .find(|event| event.effect == "test:hit")
+            .unwrap();
+        assert_eq!(hit.source, captured);
+        assert_eq!(hit.target, captured);
+        assert!(hit.authorized_event);
+        assert!(
+            fx.displayed_health.is_empty(),
+            "delayed events must not recreate hidden health"
+        );
+    }
+
+    #[test]
+    fn a_witnessed_death_keeps_only_its_pose_through_sight_loss_and_resync() {
+        let mut app = app();
+        app.world_mut()
+            .resource_mut::<ReplicaState>()
+            .replica
+            .as_mut()
+            .unwrap()
+            .knowledge = Some(std::sync::Arc::new(hidden_knowledge()));
+        app.world_mut()
+            .resource_mut::<AcquiredPackages>()
+            .0
+            .presentation
+            .effect_visuals
+            .get_mut("test:soldier")
+            .unwrap()
+            .death = Some("test:death".into());
+        app.update();
+        {
+            let mut events = app.world_mut().resource_mut::<VisualEvents>();
+            events.raw = vec![
+                crate::replica::VisualEvent {
+                    sequence: 1,
+                    tick: 1,
+                    effect: Effect::Fired {
+                        unit: UnitId(1),
+                        target: UnitId(2),
+                        weapon: 0,
+                        reduced: false,
+                    },
+                },
+                crate::replica::VisualEvent {
+                    sequence: 2,
+                    tick: 1,
+                    effect: Effect::Destroyed { unit: UnitId(2) },
+                },
+            ];
+            events.destroyed = HashSet::from([2]);
+        }
+        app.update();
+        let fx = app.world().resource::<CombatPresentation>();
+        let death_at = fx.death_at[&2];
+        assert!(death_at > 0. && death_at <= 0.3);
+        let pose = fx.death_poses[&2].actor.position;
+        let epoch = fx.epoch;
+        {
+            let mut state = app.world_mut().resource_mut::<ReplicaState>();
+            let replica = state.replica.as_mut().unwrap();
+            replica.units.clear();
+            replica.healths.clear();
+            replica.event_units.clear();
+            replica.snapshot_tick = Some(2); // Recovery supplies no old visual events.
+            replica.last_applied_tick = Some(2);
+        }
+        app.world_mut().resource_mut::<Presented>().units.clear();
+        {
+            let mut events = app.world_mut().resource_mut::<VisualEvents>();
+            events.raw.clear();
+            events.destroyed.clear();
+        }
+        advance(&mut app, 50);
+        let fx = app.world().resource::<CombatPresentation>();
+        assert_eq!(fx.epoch, epoch);
+        assert_eq!(fx.death_at[&2], death_at);
+        assert!(fx.actors.is_empty());
+        assert!(fx.displayed_health.is_empty());
+        advance(&mut app, 300);
+        let fx = app.world().resource::<CombatPresentation>();
+        let death = fx
+            .emissions
+            .iter()
+            .find(|event| event.effect == "test:death")
+            .unwrap();
+        assert!(death.authorized_event);
+        assert_eq!(death.source, pose);
+        assert_eq!(fx.released_deaths, HashSet::from([2]));
+        assert!(!fx.death_at.contains_key(&2));
+        // A later snapshot cannot replay a death that was already released.
+        app.world_mut()
+            .resource_mut::<ReplicaState>()
+            .replica
+            .as_mut()
+            .unwrap()
+            .snapshot_tick = Some(3);
+        advance(&mut app, 50);
+        assert!(
+            app.world()
+                .resource::<CombatPresentation>()
+                .emissions
+                .is_empty()
+        );
+        advance(&mut app, 4500);
+        assert!(
+            app.world()
+                .resource::<CombatPresentation>()
+                .death_poses
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn a_map_context_reset_clears_authorized_pending_impacts() {
+        let mut app = app();
+        app.world_mut()
+            .resource_mut::<ReplicaState>()
+            .replica
+            .as_mut()
+            .unwrap()
+            .knowledge = Some(std::sync::Arc::new(hidden_knowledge()));
+        app.update();
+        shoot(&mut app, 90);
+        assert_eq!(
+            app.world().resource::<CombatPresentation>().impacts.len(),
+            1
+        );
+        let epoch = app.world().resource::<CombatPresentation>().epoch;
+        {
+            let mut state = app.world_mut().resource_mut::<ReplicaState>();
+            let knowledge = state.replica.as_mut().unwrap().knowledge.as_mut().unwrap();
+            std::sync::Arc::make_mut(knowledge).basis.map =
+                turts_mod_api::ContentId::parse("test:other_map").unwrap();
+        }
+        advance(&mut app, 300);
+        let fx = app.world().resource::<CombatPresentation>();
+        assert_ne!(fx.epoch, epoch);
+        assert!(fx.impacts.is_empty());
+        assert!(fx.emissions.is_empty());
     }
 
     #[test]
@@ -910,6 +1314,7 @@ mod timeline_tests {
     fn fx5_damage_thresholds_start_and_stop_the_authored_loops() {
         let mut app = app();
         let unit = turts_mod_api::ResolvedUnit {
+            vision: None,
             consumes: Vec::new(),
             income: None,
             provides: Vec::new(),
@@ -1005,21 +1410,95 @@ mod timeline_tests {
         );
     }
     #[test]
-    fn a_snapshot_clears_pending_hits_without_an_old_burst() {
+    fn a_same_context_snapshot_keeps_authorized_hits_without_rolling_back_newer_health() {
         let mut app = app();
+        app.world_mut()
+            .resource_mut::<AcquiredPackages>()
+            .0
+            .presentation
+            .effect_visuals
+            .get_mut("test:soldier")
+            .unwrap()
+            .hit = Some("test:hit".into());
         shoot(&mut app, 90);
+        let epoch = app.world().resource::<CombatPresentation>().epoch;
+        {
+            let mut state = app.world_mut().resource_mut::<ReplicaState>();
+            let replica = state.replica.as_mut().unwrap();
+            replica.snapshot_tick = Some(20);
+            replica.last_applied_tick = Some(20);
+            replica.healths[0].current = 99;
+        }
+        app.update();
+        let fx = app.world().resource::<CombatPresentation>();
+        assert_eq!(
+            fx.epoch, epoch,
+            "same-context resync preserves finite effect instances"
+        );
+        assert_eq!(fx.impacts.len(), 1);
+        assert!(
+            fx.emissions.is_empty(),
+            "a snapshot does not replay the shot"
+        );
+        assert_eq!(fx.displayed_health[&2], 99);
+        advance(&mut app, 300);
+        let fx = app.world().resource::<CombatPresentation>();
+        assert!(fx.impacts.is_empty());
+        assert!(
+            fx.emissions
+                .iter()
+                .any(|event| event.effect == "test:hit" && event.authorized_event)
+        );
+        assert_eq!(
+            fx.displayed_health[&2], 99,
+            "delayed damage cannot roll back snapshot health"
+        );
+    }
+
+    #[test]
+    fn a_knowledge_match_change_without_welcome_clears_authorized_impacts() {
+        let mut app = app();
         app.world_mut()
             .resource_mut::<ReplicaState>()
             .replica
             .as_mut()
             .unwrap()
-            .snapshot_tick = Some(20);
+            .knowledge = Some(std::sync::Arc::new(hidden_knowledge()));
         app.update();
+        shoot(&mut app, 90);
+        let epoch = app.world().resource::<CombatPresentation>().epoch;
+        assert_eq!(
+            app.world().resource::<CombatPresentation>().impacts.len(),
+            1
+        );
+        {
+            let mut state = app.world_mut().resource_mut::<ReplicaState>();
+            let knowledge = state.replica.as_mut().unwrap().knowledge.as_mut().unwrap();
+            std::sync::Arc::make_mut(knowledge).basis.match_id += 1;
+        }
+        advance(&mut app, 300);
         let fx = app.world().resource::<CombatPresentation>();
+        assert_ne!(fx.epoch, epoch);
         assert!(fx.impacts.is_empty());
         assert!(fx.emissions.is_empty());
-        assert_eq!(fx.displayed_health[&2], 90);
     }
+
+    #[test]
+    fn leaving_the_replica_retires_authorized_effect_epoch_once() {
+        let mut app = app();
+        shoot(&mut app, 90);
+        let epoch = app.world().resource::<CombatPresentation>().epoch;
+        app.world_mut().resource_mut::<ReplicaState>().replica = None;
+        app.update();
+        let fx = app.world().resource::<CombatPresentation>();
+        assert_ne!(fx.epoch, epoch);
+        assert!(fx.impacts.is_empty());
+        assert!(fx.emissions.is_empty());
+        let epoch = fx.epoch;
+        app.update();
+        assert_eq!(app.world().resource::<CombatPresentation>().epoch, epoch);
+    }
+
     fn prime_terminal_history(app: &mut App, tick: u32) {
         let mut state = app.world_mut().resource_mut::<ReplicaState>();
         let replica = state.replica.as_mut().unwrap();
@@ -1215,4 +1694,40 @@ mod timeline_tests {
         assert_eq!(fx.emissions[0].source, Vec3::ZERO);
         assert_eq!(fx.released_deaths, HashSet::from([1]));
     }
+}
+
+/// Historical cosmetics cannot remain on ground that left the permitted view.
+pub(super) fn permitted_position(state: Option<&ReplicaState>, position: Vec3) -> bool {
+    let Some(replica) = state.and_then(|state| state.replica.as_ref()) else {
+        return true;
+    };
+    let Some(knowledge) = replica.knowledge.as_deref() else {
+        return true;
+    };
+    let point = turts_mod_api::WorldPos {
+        x: position.x,
+        y: position.z,
+    };
+    if crate::visibility::position_state(knowledge, point)
+        == Some(crate::visibility::FogCell::Observed)
+    {
+        return true;
+    }
+    let shape = knowledge.grid;
+    let Some(grid) =
+        turts_rules::visibility::Grid::checked(shape.size.x, shape.size.y, shape.cell_size)
+    else {
+        return false;
+    };
+    let cell = grid.cell(turts_rules::visibility::Point {
+        x: point.x,
+        y: point.y,
+    });
+    cell.is_some()
+        && replica.event_units.iter().any(|row| {
+            grid.cell(turts_rules::visibility::Point {
+                x: row.unit.pos.x,
+                y: row.unit.pos.y,
+            }) == cell
+        })
 }

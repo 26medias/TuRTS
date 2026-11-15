@@ -26,6 +26,7 @@ fn valid_worker() -> SourceDef<UnitDef> {
     source(
         "units/worker.ron",
         UnitDef {
+            vision: None,
             id: "worker".into(),
             name: "Worker".into(),
             footprint: Footprint::Circle { radius: 0.5 },
@@ -233,6 +234,7 @@ fn public_validate_content_preserves_m3_unit_capabilities() {
     let turret = source(
         "units/turret.ron",
         UnitDef {
+            vision: None,
             id: "turret".into(),
             name: "Turret".into(),
             footprint: Footprint::Circle { radius: 1.0 },
@@ -383,6 +385,7 @@ fn duplicate_keys_and_cross_kind_ids_reject() {
         vec![source(
             "units/wood.ron",
             UnitDef {
+                vision: None,
                 id: "wood".into(),
                 name: "Wood".into(),
                 footprint: Footprint::Circle { radius: 1.0 },
@@ -475,6 +478,7 @@ fn capability_and_recipe_matrix() {
     let static_unit = source(
         "units/worker.ron",
         UnitDef {
+            vision: None,
             id: "worker".into(),
             name: "Worker".into(),
             footprint: Footprint::Circle { radius: 1.0 },
@@ -600,6 +604,7 @@ fn capability_and_recipe_matrix() {
     assert_eq!(error.file.as_deref(), Some("units/worker.ron"));
 
     let producer = UnitDef {
+        vision: None,
         id: "yard".into(),
         name: "Yard".into(),
         footprint: Footprint::Circle { radius: 1.0 },
@@ -718,6 +723,7 @@ fn capability_and_recipe_matrix() {
         .is_err()
     );
     let static_worker = UnitDef {
+        vision: None,
         id: "worker".into(),
         name: "Worker".into(),
         footprint: Footprint::Circle { radius: 1.0 },
@@ -779,6 +785,7 @@ fn capability_and_recipe_matrix() {
 #[test]
 fn late_producer_cost_errors_keep_definition_file_and_both_indexes() {
     let yard = UnitDef {
+        vision: None,
         id: "yard".into(),
         name: "Yard".into(),
         footprint: Footprint::Circle { radius: 1.0 },
@@ -816,6 +823,7 @@ fn late_producer_cost_errors_keep_definition_file_and_both_indexes() {
         repairer: None,
     };
     let worker = UnitDef {
+        vision: None,
         id: "worker".into(),
         name: "Worker".into(),
         footprint: Footprint::Circle { radius: 1.0 },

@@ -47,7 +47,7 @@ impl MovementSearch<'_> {
                     }
                     let free = self
                         .grid
-                        .within(self.points, candidate, radius + self.max_radius)
+                        .within_unsorted(self.points, candidate, radius + self.max_radius)
                         .into_iter()
                         .all(|index| {
                             index == self_index
@@ -111,7 +111,7 @@ impl MovementSearch<'_> {
                     }
                     let free = self
                         .grid
-                        .within(self.points, candidate, radius + self.max_radius)
+                        .within_unsorted(self.points, candidate, radius + self.max_radius)
                         .into_iter()
                         .all(|index| {
                             index == self_index
@@ -147,7 +147,7 @@ pub(super) fn body_overlaps_position(
     grid: &crate::grid::UniformGrid,
     max_radius: f32,
 ) -> bool {
-    grid.within(points, position, radius + max_radius)
+    grid.within_unsorted(points, position, radius + max_radius)
         .into_iter()
         .any(|index| {
             index != self_index

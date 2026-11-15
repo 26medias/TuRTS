@@ -818,10 +818,24 @@ fn site_step(view: &super::views::WorldView, unit: u32, site: &Site) -> u64 {
 }
 
 pub fn progress_rows(view: &super::views::WorldView) -> Vec<super::events::RateRecordRow> {
+    progress_rows_matching(view, None).collect()
+}
+/// Filter the owner before allocating progress rows or cloning payment endpoints.
+pub fn progress_rows_for_slot(
+    view: &super::views::WorldView,
+    slot: SlotId,
+) -> impl Iterator<Item = super::events::RateRecordRow> + '_ {
+    progress_rows_matching(view, Some(slot))
+}
+fn progress_rows_matching(
+    view: &super::views::WorldView,
+    slot: Option<SlotId>,
+) -> impl Iterator<Item = super::events::RateRecordRow> + '_ {
     view.construction
         .sites
         .iter()
-        .map(|(id, site)| super::events::RateRecordRow {
+        .filter(move |(_, site)| slot.is_none_or(|slot| site.owner_slot == slot.0))
+        .map(move |(id, site)| super::events::RateRecordRow {
             production: Some(site.recipe.clone()),
             unit: *id,
             owner_slot: site.owner_slot,
@@ -875,19 +889,34 @@ pub fn progress_rows(view: &super::views::WorldView) -> Vec<super::events::RateR
                 |hold| hold.since_tick,
             ),
         })
-        .collect()
 }
 
 pub fn queue_rows(view: &super::views::WorldView) -> Vec<super::events::ConstructionQueueRow> {
+    queue_rows_matching(view, None).collect()
+}
+/// Filter the owner before cloning any held recipe list.
+pub fn queue_rows_for_slot(
+    view: &super::views::WorldView,
+    slot: SlotId,
+) -> impl Iterator<Item = super::events::ConstructionQueueRow> + '_ {
+    queue_rows_matching(view, Some(slot))
+}
+fn queue_rows_matching(
+    view: &super::views::WorldView,
+    slot: Option<SlotId>,
+) -> impl Iterator<Item = super::events::ConstructionQueueRow> + '_ {
     view.construction
         .held
         .iter()
-        .filter_map(|(constructor, queue)| {
+        .filter_map(move |(constructor, queue)| {
             let owner_slot = view
                 .units
                 .iter()
                 .find(|unit| unit.unit_id == *constructor)?
                 .owner_slot;
+            if slot.is_some_and(|slot| slot.0 != owner_slot) {
+                return None;
+            }
             Some(super::events::ConstructionQueueRow {
                 constructor: *constructor,
                 owner_slot,
@@ -897,7 +926,6 @@ pub fn queue_rows(view: &super::views::WorldView) -> Vec<super::events::Construc
                     .collect(),
             })
         })
-        .collect()
 }
 
 /// Publish existing held lists and one empty replacement when a surviving source clears.
@@ -947,6 +975,7 @@ mod tests {
     fn fixture(policy: PaymentPolicy) -> App {
         let mut app = crate::headless_app(20);
         let tower = ResolvedUnit {
+            vision: None,
             repairer: None,
             consumes: Vec::new(),
             income: None,
@@ -1058,6 +1087,7 @@ mod tests {
             source_files: BTreeMap::new(),
         };
         let map = MapDef {
+            visibility: None,
             environment: None,
             ground: None,
             id: "field".into(),
@@ -1387,5 +1417,77 @@ mod tests {
             Err(RejectReason::NotApplicable)
         );
         assert_eq!(crate::audit_state(app.world_mut()), before);
+    }
+}
+
+#[cfg(test)]
+mod projection_tests {
+    use super::*;
+    #[test]
+    fn owner_scoped_construction_rows_match_global_rows_without_foreign_outputs() {
+        let recipe = ContentId::parse("fixture:building").unwrap();
+        let mut view = super::super::views::WorldView::default();
+        for owner in 0..2 {
+            let id = u32::from(owner) + 1;
+            view.units.push(crate::world::UnitState {
+                unit_id: id,
+                content_id: "fixture:builder".into(),
+                owner_slot: owner,
+                facing: None,
+                pos: Vec2::new(id as f32, 1.),
+            });
+            view.construction.held.insert(
+                id,
+                vec![HeldConstruction {
+                    origin: None,
+                    recipe: recipe.clone(),
+                    point: Vec2::new(8., 9.),
+                }],
+            );
+            view.construction.sites.insert(
+                10 + id,
+                Site {
+                    origin: None,
+                    funding: None,
+                    constructor: id,
+                    owner_slot: owner,
+                    recipe: recipe.clone(),
+                    job: crate::JobId(u64::from(id)),
+                    done: 2,
+                    total: 20,
+                    charged: vec![ReservationLine {
+                        endpoint: Endpoint::Slot(owner),
+                        resource: ContentId::parse("fixture:credits").unwrap(),
+                        amount: 7,
+                    }],
+                    constructor_when_short: vec![],
+                },
+            );
+        }
+        // A removed constructor's held list produces no row, as in the original writer.
+        view.construction.held.insert(
+            99,
+            vec![HeldConstruction {
+                origin: None,
+                recipe,
+                point: Vec2::ZERO,
+            }],
+        );
+        for slot in [SlotId(0), SlotId(1)] {
+            assert_eq!(
+                progress_rows_for_slot(&view, slot).collect::<Vec<_>>(),
+                progress_rows(&view)
+                    .into_iter()
+                    .filter(|r| r.owner_slot == slot.0)
+                    .collect::<Vec<_>>()
+            );
+            assert_eq!(
+                queue_rows_for_slot(&view, slot).collect::<Vec<_>>(),
+                queue_rows(&view)
+                    .into_iter()
+                    .filter(|r| r.owner_slot == slot.0)
+                    .collect::<Vec<_>>()
+            );
+        }
     }
 }

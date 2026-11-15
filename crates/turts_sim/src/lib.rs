@@ -19,6 +19,7 @@ pub mod registry;
 pub mod rules_adapter;
 pub mod slots;
 pub mod unit_index;
+pub mod visibility;
 pub mod world;
 
 use economy::GatherOrder;
@@ -35,7 +36,10 @@ pub struct SimClock {
 pub const DEFAULT_TICK_HZ: u16 = 20; // prototype constant: measure at M1
 
 pub use bevy_math::Vec2;
-pub use bootstrap::{StagedPackage, install_package, stage_package};
+pub use bootstrap::{
+    InstalledMapIdentity, StagedPackage, install_package, stage_package,
+    stage_package_with_map_identity,
+};
 pub use command::{
     Applied, Command, CommandKind, CommandQueue, CommandResult, CommandResults, RejectReason,
     apply_command, drain_commands,
@@ -166,6 +170,7 @@ pub fn spawn_synthetic_units(
 
 /// Publish the installed boot state as the first completed world without advancing a tick.
 pub fn initialize_completed_world(world: &mut bevy_ecs::world::World) {
+    visibility::initialize(world);
     let initial = world_view(world);
     world.insert_resource(CompletedWorld(initial));
 }

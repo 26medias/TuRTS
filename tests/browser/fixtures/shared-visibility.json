@@ -1,0 +1,15 @@
+{
+  "scout_content": "visibility_probe:scout",
+  "enemy_content": "visibility_probe:contact",
+  "node_content": "visibility_probe:deposit",
+  "observe": [28, 12],
+  "withdraw": [8, 12],
+  "revisit": [36, 12],
+  "enemy_destination": [52, 12],
+  "ground_samples": {
+    "observed": [8, 18],
+    "remembered": [28, 18],
+    "unexplored": [52, 36]
+  },
+  "minimap_widget": "visibility_probe_minimap"
+}

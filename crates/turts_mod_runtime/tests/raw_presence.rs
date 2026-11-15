@@ -113,7 +113,7 @@ fn a_library_below_its_api_is_refused() {
 /// The bump to 0.2.4 is in L0-API1 (this test said 0.2.3 in L0-RAW: an inversion).
 #[test]
 fn the_engine_api_version_is_the_bumped_one() {
-    assert_eq!(ENGINE_API_VERSION, "0.2.15");
+    assert_eq!(ENGINE_API_VERSION, "0.2.16");
 }
 
 // ---- Review repairs (M2, L4, L7): one presence source, the file named, RAW rows first ----
@@ -272,5 +272,55 @@ fn the_version_table_speaks_before_the_content_checks() {
     assert_eq!(
         refusal(&archive).to_string(),
         "acme/manifest.ron: engine_api: `exports.orders` needs engine api 0.2.3; `^0.2.2` admits 0.2.2"
+    );
+}
+
+#[test]
+fn api16_visibility_and_vision_are_gated_from_authored_packages_even_when_none() {
+    for (feature, file, unit_tail, map_tail) in [
+        ("vision", "units/turret.ron", ", vision: None", ""),
+        (
+            "vision",
+            "units/turret.ron",
+            ", vision: Some((radius: 3.0))",
+            "",
+        ),
+        ("visibility", "maps/map.ron", "", ", visibility: None"),
+        (
+            "visibility",
+            "maps/map.ron",
+            "",
+            ", visibility: Some((cell_size: 1.0, sharing: OwnSlot))",
+        ),
+    ] {
+        let old = unit_package("^0.2.15", "", unit_tail, map_tail);
+        assert_eq!(
+            refusal(&old).to_string(),
+            format!(
+                "zeta/manifest.ron: engine_api: `{feature}` needs engine api 0.2.16; `^0.2.15` admits 0.2.15 (written in {file}: {feature})"
+            )
+        );
+        let current = unit_package("^0.2.16", "", unit_tail, map_tail);
+        current
+            .content()
+            .unwrap_or_else(|error| panic!("{feature}: {error}"));
+        let maps = current.maps().unwrap();
+        assert_eq!(maps[0].1.visibility.is_some(), map_tail.contains("Some"));
+        let content = current.content().unwrap();
+        let unit = content.units.values().next().unwrap();
+        assert_eq!(unit.vision.is_some(), unit_tail.contains("Some"));
+    }
+    let legacy = unit_package("^0.2.15", "", "", "");
+    assert!(legacy.maps().unwrap()[0].1.visibility.is_none());
+    assert!(
+        legacy
+            .content()
+            .unwrap()
+            .units
+            .values()
+            .next()
+            .unwrap()
+            .vision
+            .is_none()
     );
 }

@@ -514,7 +514,13 @@ pub(crate) fn note_accepted_player_order(
         let no_current = world
             .get::<UnitOrders>(entity)
             .is_none_or(|orders| orders.current.is_none());
-        if queue == QueueMode::Append && no_current && !unit_has_pending_move(world, unit) {
+        if queue == QueueMode::Append
+            && no_current
+            && !unit_has_pending_move(world, unit)
+            && crate::economy::repair::active_action(world, unit)
+        {
+            // Only an actual repair action owns implicit approach motion. Plain
+            // player moves also have no current order and must keep their motion.
             // A queued explicit order must not wait for an implicit repair approach to finish.
             crate::economy::repair::clear_motion(world, unit);
         }
@@ -699,6 +705,7 @@ fn validate_member(
     {
         return Err(R::NotApplicable);
     }
+    crate::visibility::validate_target(world, slot.0, &command.target)?;
     validate_target(world, command)?;
     Ok(entity)
 }

@@ -85,6 +85,8 @@ pub enum Query {
     LookupUnit(UnitId),
     Accounts(Vec<SpendKey>),
     Works,
+    RememberedUnits(UnitQuery),
+    RememberedNodes(NodeQuery),
     Placement(PlacementQuery),
     Affordability(AffordabilityQuery),
 }
@@ -129,8 +131,16 @@ pub enum QueryData {
     Lookup(Advice<UnitObservation>),
     Accounts(Vec<AccountObservation>),
     Works(Vec<WorkObservation>),
+    RememberedUnits(RememberedRows<turts_mod_api::RememberedUnit>),
+    RememberedNodes(RememberedRows<turts_mod_api::RememberedNode>),
     Placement(Advice<PlacementAdvice>),
     Affordability(Advice<CostQuote>),
+}
+/// Stale permitted facts. These are never live handles or a current-health query.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RememberedRows<T> {
+    pub rows: Vec<T>,
+    pub retention_truncated: bool,
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct QueryPage {
@@ -138,6 +148,8 @@ pub struct QueryPage {
     pub completed_tick: u32,
     pub data: QueryData,
     pub state: PageState,
+    /// Complete enumeration of permitted rows; placement/hidden lookup can instead be NotObserved.
+    /// Complete never asserts that an unobserved region contains no other objects.
     pub coverage: Coverage,
     pub usage: BudgetUsage,
 }

@@ -123,6 +123,16 @@ fn eligible_target(
     repairer: &RepairerDef,
 ) -> Result<(u64, u64), RejectReason> {
     let source_entity = unit_entity(world, source).ok_or(RejectReason::UnknownUnit)?;
+    let own = world
+        .get::<Owner>(source_entity)
+        .ok_or(RejectReason::IntegrityViolation)?
+        .0
+        .0;
+    if crate::visibility::active_basis(world)
+        .is_some_and(|basis| !basis.unit_permitted(own, target))
+    {
+        return Err(RejectReason::TargetInvalid);
+    }
     let target_entity = unit_entity(world, target).ok_or(RejectReason::TargetGone)?;
     if !completed(world, target) {
         return Err(RejectReason::TargetInvalid);
@@ -274,6 +284,12 @@ pub(crate) fn audit_rows(world: &World) -> Vec<RepairAuditRow> {
 }
 
 fn positions(world: &World, source: u32, target: u32) -> Option<(Vec2, Vec2, f32)> {
+    let own = world.get::<Owner>(unit_entity(world, source)?)?.0.0;
+    if crate::visibility::active_basis(world)
+        .is_some_and(|basis| !basis.unit_permitted(own, target))
+    {
+        return None;
+    }
     let from = world.get::<Position>(unit_entity(world, source)?)?.0;
     let to = world.get::<Position>(unit_entity(world, target)?)?.0;
     Some((from, to, radius(world, source)? + radius(world, target)?))
@@ -750,6 +766,7 @@ mod tests {
     }
     fn unit(local: &str) -> ResolvedUnit {
         ResolvedUnit {
+            vision: None,
             id: id(local),
             name: local.into(),
             footprint: Footprint::Circle { radius: 0.5 },

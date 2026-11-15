@@ -1,6 +1,8 @@
 //! Protocol 4 snapshots, world deltas, and fixed-tick order results.
 
 use crate::export;
+#[path = "outbound_knowledge.rs"]
+pub(crate) mod knowledge;
 use crate::session::PendingOrderCommands;
 use crate::session::{ReliableTraffic, Session};
 use crate::stats::Stats;
@@ -11,6 +13,7 @@ use turts_net_protocol::messages::*;
 use turts_sim::{CommandResults, Tick as SimTick, committed_tick, completed_world};
 
 pub fn install(app: &mut App) {
+    knowledge::install(app);
     app.add_systems(
         FixedLast,
         (
@@ -48,10 +51,23 @@ pub fn send_final_snapshots(world: &mut World) {
         })
         .collect::<Vec<_>>();
     for (entity, slot) in recipients {
-        let policy = world
-            .get_resource::<crate::permissions::ObservationPolicy>()
-            .cloned()
-            .unwrap_or_default();
+        let policy = crate::permissions::completed(world);
+        let atomic = if world.get::<knowledge::KnowledgeSender>(entity).is_some() {
+            knowledge::queue_tick(world, entity, slot)
+        } else {
+            knowledge::queue_full(world, entity, slot)
+        };
+        match atomic {
+            Ok(true) => {
+                world.entity_mut(entity).insert(FinalSnapshotSent);
+                continue;
+            }
+            Err(reason) => {
+                knowledge::disconnect(world, entity, reason);
+                continue;
+            }
+            Ok(false) => {}
+        }
         let (snapshot, history) =
             export::snapshot_for_with_permissions(completed_world(world), slot, policy.0.as_ref());
         world.entity_mut(entity).insert(history);
@@ -121,11 +137,16 @@ pub fn send_deltas(world: &mut World) {
     if recipients.is_empty() {
         return;
     }
-    let policy = world
-        .get_resource::<crate::permissions::ObservationPolicy>()
-        .cloned()
-        .unwrap_or_default();
+    let policy = crate::permissions::completed(world);
     for (entity, slot) in recipients {
+        match knowledge::queue_tick(world, entity, slot) {
+            Ok(true) => continue,
+            Err(reason) => {
+                knowledge::disconnect(world, entity, reason);
+                continue;
+            }
+            Ok(false) => {}
+        }
         let previous = world
             .get::<export::ObservationHistory>(entity)
             .cloned()
@@ -140,6 +161,16 @@ pub fn send_deltas(world: &mut World) {
         match projected {
             Ok((delta, history)) => {
                 let bytes = payload_bytes(&delta);
+                if bytes > turts_net_lightyear::KNOWLEDGE_FRAME_LIMIT_BYTES as u64 {
+                    match knowledge::queue_oversized(world, entity, slot) {
+                        Ok(true) => continue,
+                        Err(reason) => {
+                            knowledge::disconnect(world, entity, reason);
+                            continue;
+                        }
+                        Ok(false) => unreachable!("forced atomic baseline must be queued"),
+                    }
+                }
                 if let Some(mut sender) = world.get_mut::<MessageSender<WorldDelta>>(entity) {
                     sender.send::<StateChannel>(delta);
                     world.resource_mut::<Stats>().delta_payload_bytes_total += bytes;

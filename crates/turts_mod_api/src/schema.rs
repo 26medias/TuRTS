@@ -416,6 +416,9 @@ pub struct BeltLinePlacement {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct UnitDef {
+    /// API16: completed-unit sight; absence contributes no sight in fog mode.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vision: Option<crate::visibility::VisionDef>,
     pub id: String,
     pub name: String,
     pub footprint: Footprint,
@@ -811,6 +814,9 @@ pub struct SlotEconomyInit {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct MapDef {
+    /// API16: map knowledge policy; absence preserves AllVisible.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub visibility: Option<crate::visibility::VisibilityDef>,
     /// Optional client presentation. It never changes the authoritative map dimensions.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub environment: Option<EnvironmentDef>,

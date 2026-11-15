@@ -510,6 +510,7 @@ mod tests {
         let second_technology = cid("research_fixture:second");
         let turret = cid("research_fixture:turret");
         let station = |id: ContentId, name: &str| ResolvedUnit {
+            vision: None,
             repairer: None,
 
             consumes: Vec::new(),
@@ -566,6 +567,7 @@ mod tests {
                 (
                     turret.clone(),
                     ResolvedUnit {
+                        vision: None,
                         repairer: None,
 
                         consumes: Vec::new(),
@@ -676,6 +678,7 @@ mod tests {
             source_files: BTreeMap::new(),
         };
         let mut map = MapDef {
+            visibility: None,
             environment: None,
             ground: None,
             id: "test_map".into(),

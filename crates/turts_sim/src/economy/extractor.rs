@@ -89,6 +89,20 @@ pub(crate) fn run_extract(world: &mut World) {
         let Some(extractor) = definition.extractor.as_ref() else {
             continue;
         };
+        let owner = world.get::<crate::Owner>(entity).map(|owner| owner.0.0);
+        if crate::visibility::active_basis(world).is_some_and(|basis| {
+            owner.is_none_or(|owner| {
+                world
+                    .resource::<Extractors>()
+                    .0
+                    .get(&unit)
+                    .and_then(|state| state.node)
+                    .is_none_or(|node| !basis.node_permitted(owner, node.0))
+            })
+        }) {
+            // Keep carry and authored binding; do not inspect hidden depletion.
+            continue;
+        }
         let rate = extractor.per_second;
         let disabled = world.resource::<Disabled>().0.contains(&unit);
         let hz = world.resource::<SimClock>().tick_hz;
@@ -171,6 +185,7 @@ mod tests {
             accepts: vec![ore.clone()],
         };
         let drill = ResolvedUnit {
+            vision: None,
             repairer: None,
 
             consumes: Vec::new(),

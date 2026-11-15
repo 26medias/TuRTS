@@ -1,0 +1,139 @@
+# Shared visibility measurements
+
+Status: SDK16 native and final browser acceptance pass. The accepted launchers now run SDK16.
+Evidence root: `/home/julien/Projects/TuRTS/target/mc-evidence/`.
+
+## Original SV7 timing contract: failed diagnostics
+
+The workload uses 1,000 units and two human replicas on four selected CPUs: 0,2,4,6.
+Each diagnostic uses 100 warm-up intervals and 10 measured intervals of 20 ticks.
+These short runs are not the required 1,000-interval acceptance run.
+The original ceiling is p99 <=5 ms of summed server and client work per 20-tick interval.
+Every result below fails that ceiling. Preserve those results when evaluating any later contract amendment.
+
+| Build step | Median sum, ms | Diagnostic p99 sum, ms | Evidence |
+| --- | ---: | ---: | --- |
+| Exact phase baseline | 86.093 | 93.371 | `shared-visibility/sv7-diagnostic-exact` |
+| Stale-only memory, borrowed capture, sparse client updates | 57.676 | 60.176 | `shared-visibility/sv7-diagnostic-opt1` |
+| Typed capture, circle deltas, flat wire diff | 55.835 | 68.875 | `shared-visibility/sv7-diagnostic-opt2` |
+| Cached permissions, exact circle kernel, reused unit names | 46.640 | 48.963 | `shared-visibility/sv7-diagnostic-opt3` |
+
+The last diagnostic reports server p99 28.512 ms and client p99 20.929 ms per interval.
+It does not include the complete simulation in its server total.
+It cannot establish full server tick capacity or cloud hosting cost.
+Samples retain movement, combat, harvesting, hide/reveal, wire, and retained-memory counters.
+No unit, sight source, visibility transition, or model detail was removed.
+
+## Real browser observations
+
+The first nine-case campaign stopped after a near-camera draw-count assertion failed.
+The assertion counted offscreen fallback meshes as visible detail loss.
+The corrected driver checks each visible model against its actual GLB material draw groups.
+A fresh final-build campaign remains required.
+
+| Case | Frames per second | Frame p95 | Observation | Evidence |
+| --- | ---: | ---: | --- | --- |
+| Fog, 400 mixed detailed units, normal camera | 59.603 | 16.7 ms | 400 visible; High detail; 932 shared groups; no ordinary fallback groups | `shared-visibility-sv7-browser-first/fog400-normal/` |
+| Fog, same 400 units, near camera | 60.003 | Recorded in artifact | 296 visible; 104 offscreen fallback meshes; old driver assertion failed | `shared-visibility-sv7-browser-first/fog400-near/` |
+
+These are intermediate-build observations. They are not final SDK16 acceptance.
+The remaining camera and baseline cases are pending.
+
+## Transport
+
+`shared-visibility/pipeline/` records the frozen 50 ms and 100 ms activation-ACK cases.
+Each delivers all 1,301 bases in order, including 1,200 measured movement ticks.
+Maximum oldest transaction age is 60 ms and 95 ms respectively.
+Maximum successor backlog is 5,069 and 5,071 bytes. No routine restart occurs.
+A separate slow-viewer test proves restart/disconnect without stopping the healthy viewer.
+`shared-visibility-outbound-reuse-failure-tests.log` now passes all 11 outbound tests,
+including both RTT cases, cancellation, ring overflow, and fatal sequence exhaustion.
+
+## Remaining measurement work
+
+The independent audit found no product derivation for the original 5 ms summed-second allocation.
+The same independent reviewer approved the deadline amendment before fresh measurements.
+Keep the workload and original failed evidence unchanged.
+The full native campaign below passes. Final browser measurement remains open.
+Run all nine browser cases on the final build. Record final source identity and machine details.
+
+
+## Deadline contract v2 diagnostics
+
+The same reviewer approved the correction before these fresh runs.
+The spec required one turn and one focused recheck. The plan passed one turn.
+The correction preserves the original failed v1 artifacts and their ceiling.
+It measures full server service against the 50 ms authored tick period, with a 40 ms p99 headroom target.
+Each client also has per-tick and whole-application-batch service bounds.
+`shared-visibility/v2-machine.json` records the machine, release profile, compiler, affinity, and source for the grid diagnostic.
+The following runs still have only 10 measured intervals. Neither is acceptance.
+
+| Source | Full-server p99, ms | Maximum, ms | Maximum debt, ms | Client tick p99, ms | Result | Evidence |
+| --- | ---: | ---: | ---: | ---: | --- | --- |
+| `a7171e2a` | 72.699 | 74.324 | 24.519 | 4.122 / 4.012 | FAIL server deadlines | `shared-visibility/sv7-v2-diagnostic-first` |
+| `6f502803` | 43.659 | 46.658 | 0 | 2.721 / 2.738 | FAIL 40 ms server p99; clients pass | `shared-visibility/sv7-v2-diagnostic-grid` |
+
+The second run uses packed integer grid hashing, one physical neighbor sort, and cached immutable combat candidate metadata.
+Grid oracle queries retain exact membership and canonical ordering. Physical arbitration keeps its existing spatial order.
+Live health remains uncached so an earlier same-tick kill still changes later targeting.
+Both runs include actual registered transport receive/send costs and drain reliable credits, local packets, and activation ACKs.
+No CPU work remains outside the final authored step's deadline sample.
+The complete simulation suite passes 407 tests after these changes, with one ignored measurement.
+The next optimization removes sorting only from pure Boolean collision/range checks.
+It preserves the same candidate set and each all/any predicate. Source `f87c8b66` still fails: server p99 43.984 ms, maximum45.583 ms, zero debt. Client checks pass. Evidence: `shared-visibility/sv7-v2-diagnostic-predicates`.
+
+
+A fresh CPU profile of `f87c8b66` identifies physical neighbor sorting as at least 26.38 percent of sampled CPU.
+Candidate collection accounts for 16.44 percent. Coordinate hashing is no longer a leading cost.
+Profile evidence: `shared-visibility/perf-v2-predicates/` includes the copied driver, SHA256, raw samples, and flat symbol reports.
+The profiled run is diagnostic only. Its timing includes profiler overhead and cannot supply acceptance.
+The next fix avoids physical sorting for Boolean occupancy checks and caches exact float total-order keys for consumers that need spatial order.
+
+
+Source `d76cdcc1` passes the short v2 diagnostic after caching exact coordinate ordering and skipping pure occupancy sorts.
+Full-server p99 is 33.763 ms, maximum36.963 ms, with zero maximum and final debt.
+Client tick p99 is4.086/4.048 ms. Whole-batch p99 is0.736/0.670 ms.
+Evidence: `shared-visibility/sv7-v2-diagnostic-spatial-cache`.
+The complete simulation suite passes409 tests with one ignored measurement: `shared-visibility-sim-spatial-cache-tests.log`.
+These are10 measured intervals. The full1,000-interval three-mode acceptance remains required.
+
+## Final native acceptance
+
+Source `4502569234f385b913dd19081dee40f491d141f2` passes the complete frozen v2 campaign.
+Each mode ran 100 warm-up intervals and 1,000 measured intervals of 20 ticks.
+All three modes retained the fixed workload, resync schedule, and application/transport ACK drains.
+The command exited 0 after 1,398.84 seconds. No agent build, test browser, or profiler competed during timing.
+The CEO's applications remained untouched.
+
+| Mode | Server p99, ms | Server p99.9, ms | Maximum, ms | Maximum debt, ms | Client tick p99, ms | Result |
+| --- | ---: | ---: | ---: | ---: | --- | --- |
+| Fog | 33.226 | 36.585 | 53.408 | 3.408 | 3.299 / 3.267 | PASS |
+| Equivalent AllVisible | 33.028 | 36.179 | 48.003 | 0 | 2.524 / 2.486 | PASS |
+| Concentrated AllVisible | 33.544 | 36.564 | 49.427 | 0 | 3.163 / 3.113 | PASS |
+
+Final debt is zero in every mode. Both clients pass their per-tick and whole-batch limits.
+The largest client tick is 9.407 ms; the largest complete batch is 6.501 ms.
+Every measured interval moves all 500 required movers. The original v1 ceiling still fails.
+Its summed-work p99 values are 61.997, 51.698, and 58.825 ms respectively.
+Combined retained state peaks below 8.985 MB per peer. Absolute process high-water RSS reaches 116.6 MiB.
+The native result does not establish browser frame rate or later hosting capacity.
+
+Evidence under `shared-visibility/`: `final-sv7-native.log`, `sv7-v2-full-1000.json`, and `final-v2-machine.json`.
+The JSON retains every service sample, work counter, wire count, and deadline result.
+
+## Final detailed-model browser acceptance
+
+The sealed source `81c37e1f` passes all nine cases in Chrome 157.0.8103.38.
+The same 400 mixed detailed units run on High at normal, near and far authored zoom limits.
+Fog normal reaches 59.902 FPS; every other case reaches approximately 60.0 FPS.
+Frame p95 is 16.7-16.8 ms. Peak recorded WASM memory is 230,686,720 bytes.
+Visible model draw groups and offscreen fallback counts match the actual GLB material groups.
+No model detail, texture, shadow, source count, camera range or workload was reduced.
+Every test Chrome used a fresh profile and --alsa-output-device=null on an owned Xvfb display.
+No agent build or competing test browser ran during this matrix.
+
+Host inventory reports an NVIDIA GeForce RTX 3080 and driver 580.178.04.
+The browser reports a non-fallback WebGPU adapter but exposes no device description.
+The recorded timings describe this host; they do not establish other GPU performance.
+Evidence: `shared-visibility-sv7-browser-final/result.json` and each case's raw frame samples/screenshots.
+The final two-browser scouting result is `shared-visibility-final-sv6/browser/result.json`.

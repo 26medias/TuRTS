@@ -1,5 +1,5 @@
-//! Permission projection before wire serialization. Restricted providers are test/host policy,
-//! not a fog or remembered-sighting implementation.
+//! Permission projection before wire serialization. The shared simulation provider supplies sight.
+//! Atomic fog transitions and remembered records are grouped in export_visibility.
 
 use crate::permissions::{ObservationPermissions, unit_permitted};
 use std::borrow::Cow;
@@ -290,7 +290,8 @@ mod tests {
         assert!(history.baseline.is_none());
         assert_eq!(
             postcard::to_vec::<_, 16384>(&snapshot).unwrap(),
-            postcard::to_vec::<_, 16384>(&super::super::snapshot_projected(&view, slot)).unwrap()
+            postcard::to_vec::<_, 16384>(&super::super::snapshot_projected(&view, slot, None))
+                .unwrap()
         );
         let (changed, _) = delta(
             &batch,

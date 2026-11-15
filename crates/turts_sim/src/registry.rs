@@ -33,6 +33,7 @@ impl UnitTypes {
         let mut candidate = existing.clone();
         for unit in catalog.units.values() {
             let def = UnitDef {
+                vision: unit.vision,
                 id: unit.id.local.clone(),
                 name: unit.name.clone(),
                 footprint: unit.footprint.clone(),

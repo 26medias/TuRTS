@@ -273,6 +273,7 @@ fn visit_package_ron_serialization(dir: &Path) {
 
 fn m3_unit() -> UnitDef {
     UnitDef {
+        vision: None,
         id: "turret".into(),
         name: "Turret".into(),
         footprint: Footprint::Circle { radius: 1.0 },
@@ -342,6 +343,7 @@ fn m3_unit() -> UnitDef {
 
 fn m3_map() -> MapDef {
     MapDef {
+        visibility: None,
         environment: None,
         ground: None,
         id: "proving_ground".into(),

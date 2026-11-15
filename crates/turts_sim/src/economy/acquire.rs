@@ -15,6 +15,7 @@ struct Actor {
     position: Vec2,
     radius: f32,
     alive: bool,
+    sight: Option<[bool; turts_mod_api::SLOT_COUNT as usize]>,
     capability: Option<(AcquireDef, f32, WeaponRangeMode, SlotRelation)>,
 }
 
@@ -58,6 +59,7 @@ pub(crate) fn run_acquire(world: &mut World) {
             Some((kind.radius, capability))
         })
         .collect::<Vec<_>>();
+    let sight = crate::visibility::active_basis_shared(world);
     let actors = world
         .iter_entities()
         .filter_map(|entity| {
@@ -73,6 +75,9 @@ pub(crate) fn run_acquire(world: &mut World) {
                 position: entity.get::<Position>()?.0,
                 radius,
                 alive: healths.0.get(&id).is_some_and(|health| *health > 0),
+                sight: sight.as_ref().map(|basis| {
+                    std::array::from_fn(|viewer| basis.unit_permitted(viewer as u8, id))
+                }),
                 capability,
             })
         })
@@ -173,6 +178,12 @@ pub(crate) fn run_acquire(world: &mut World) {
             target.alive
                 && target.id != actor.id
                 && crate::rules_adapter::holds_own_team(relation, actor.owner, target.owner)
+                && target.sight.as_ref().is_none_or(|slots| {
+                    slots
+                        .get(usize::from(actor.owner))
+                        .copied()
+                        .unwrap_or(false)
+                })
                 && target.position.distance_squared(home) <= (acquire.leash + reach(target)).powi(2)
         };
         let in_range = |target: &Actor| {

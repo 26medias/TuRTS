@@ -1,0 +1,3 @@
+(id: "scout", name: "Survey scout", footprint: Circle(radius: 0.6), movement: Some((speed: 8.0)),
+ inventory: None, gatherer: None, drop_off: None, producer: None, vision: Some((radius: 10.0)),
+ health: Some((max: 100)), removal: Some((by_command: false, contents: Destroy)))

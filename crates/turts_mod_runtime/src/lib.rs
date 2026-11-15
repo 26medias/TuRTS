@@ -25,3 +25,5 @@ mod version_table;
 mod effects;
 
 pub mod bots;
+
+pub mod visibility;

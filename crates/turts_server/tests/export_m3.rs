@@ -539,3 +539,172 @@ fn armour_completion_order_is_private_and_preserved_in_snapshot_and_delta() {
     assert_eq!(enemy.research.len(), 1);
     assert_eq!(enemy.research[0].armour_order, ["forge:enemy_secret"]);
 }
+
+#[test]
+fn borrowed_permitted_capture_matches_the_previous_projection_for_every_reference_family() {
+    use permissions::{ObservationArea, ObservationPermissions};
+    use turts_sim::economy::{views::*, views_m3::*};
+    struct Policy(u32);
+    impl ObservationPermissions for Policy {
+        fn unit_visible(&self, _: u8, id: u32, _: u8) -> bool {
+            self.0 & (1 << (id % 3)) != 0
+        }
+        fn node_visible(&self, _: u8, id: u32) -> bool {
+            self.0 & (1 << (id % 3)) != 0
+        }
+        fn area_observed(&self, _: u8, _: ObservationArea) -> bool {
+            false
+        }
+    }
+    let mut view = mixed_owner_view();
+    // Synthetic reference fixtures exercise every censorship path. Real public
+    // package captures and ordinary work are checked by the SV7 preflight.
+    view.m3.raw_healths = view
+        .units
+        .iter()
+        .map(|unit| RawHealthAudit {
+            unit: unit.unit_id,
+            current: 80,
+        })
+        .collect();
+    view.m3.raw_inserters[0].source = Some(80);
+    view.m3.raw_inserters[0].destination = Some(90);
+    view.m3.raw_inserters[1].source = Some(1);
+    view.m3.raw_weapons.push(RawWeaponAudit {
+        unit: 1,
+        enabled: true,
+        cooldown: 2,
+        effective_damage: Ok(10),
+        status: RawWeaponStatusAudit::Cooling,
+        last_target: Some(90),
+        ordered_target_fired: Some(80),
+    });
+    view.economy.orders.push(OrderView {
+        unit: 1,
+        owner_slot: 0,
+        node: Some(turts_sim::NodeId(1)),
+        receiver: Some(80),
+        stage: turts_sim::GatherStage::MovingToNode,
+    });
+    view.unit_orders.push(UnitOrderView {
+        unit_id: 1,
+        owner_slot: 0,
+        activity: UnitOrderActivityView::Attacking,
+        current: Some(UnitOrderSummaryView {
+            order: "fixture:attack".into(),
+            target: UnitOrderTargetView::Unit(90),
+        }),
+        queued: vec![
+            UnitOrderSummaryView {
+                order: "fixture:attack".into(),
+                target: UnitOrderTargetView::Unit(80),
+            },
+            UnitOrderSummaryView {
+                order: "fixture:gather".into(),
+                target: UnitOrderTargetView::Node(turts_sim::NodeId(1)),
+            },
+        ],
+        last_failure: None,
+        rally: None,
+    });
+    view.economy
+        .repairs
+        .push(turts_sim::economy::repair::RepairRow {
+            repairer: 2,
+            target: 80,
+            owner_slot: 0,
+            state: turts_sim::economy::repair::RepairStatus::Working,
+        });
+    for slot in [SlotId(0), SlotId(1)] {
+        for mask in 0..8 {
+            let policy = Policy(mask);
+            let expected = export::snapshot_for_with_permissions(&view, slot, &policy).0;
+            let actual = export::PermittedBaseline::capture(&view, slot, &policy).state;
+            assert_eq!(actual, expected, "slot{} visibility mask{mask}", slot.0);
+            assert_eq!(
+                postcard::to_allocvec(&actual).unwrap(),
+                postcard::to_allocvec(&expected).unwrap()
+            );
+        }
+        assert_eq!(
+            export::PermittedBaseline::capture(&view, slot, &permissions::AllVisible).state,
+            export::snapshot_for(&view, slot)
+        );
+    }
+}
+
+#[test]
+fn recycled_live_names_preserve_snapshot_and_removed_endpoint_patch_bytes() {
+    let old_view = mixed_owner_view();
+    let slot = SlotId(0);
+    let mut next_view = old_view.clone();
+    next_view.tick = old_view.tick + 1;
+    next_view
+        .units
+        .iter_mut()
+        .find(|u| u.unit_id == 1)
+        .unwrap()
+        .pos
+        .x += 1.;
+    next_view.units.retain(|u| u.unit_id != 90);
+    let old = export::PermittedBaseline::capture(&old_view, slot, &permissions::AllVisible);
+    let expected = export::PermittedBaseline::capture(&next_view, slot, &permissions::AllVisible);
+    let mut recycled = old.clone();
+    let original_name = recycled
+        .state
+        .units
+        .iter()
+        .find(|u| u.unit_id.0 == 1)
+        .unwrap()
+        .content_id
+        .as_ptr();
+    let next = recycled.capture_reusing_metadata(&next_view, slot, &permissions::AllVisible);
+    assert_eq!(next.state, expected.state);
+    assert_eq!(
+        next.state
+            .units
+            .iter()
+            .find(|u| u.unit_id.0 == 1)
+            .unwrap()
+            .content_id
+            .as_ptr(),
+        original_name
+    );
+    assert!(
+        !recycled
+            .state
+            .units
+            .iter()
+            .find(|u| u.unit_id.0 == 90)
+            .unwrap()
+            .content_id
+            .is_empty(),
+        "removed endpoint keeps its truthful old name"
+    );
+    let context = turts_mod_api::KnowledgeBasis {
+        match_id: 1,
+        map: turts_mod_api::ContentId::parse("forge:fixture").unwrap(),
+        tick: next_view.tick,
+        phase: turts_mod_api::ObservationPhase::Completed,
+    };
+    let batch = CommittedTick {
+        tick: next_view.tick,
+        removed: vec![90],
+        effects: vec![
+            turts_sim::economy::events::EffectRow::Fired {
+                unit: 1,
+                target: 90,
+                weapon: 0,
+                reduced: false,
+            },
+            turts_sim::economy::events::EffectRow::Destroyed { unit: 90 },
+        ],
+        ..Default::default()
+    };
+    let before = old.all_visible_patch(&expected, &batch, slot, &context);
+    let after = recycled.all_visible_patch(&next, &batch, slot, &context);
+    assert_eq!(
+        postcard::to_allocvec(&after).unwrap(),
+        postcard::to_allocvec(&before).unwrap()
+    );
+}

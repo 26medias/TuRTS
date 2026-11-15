@@ -25,6 +25,7 @@ fn balance(app: &App) -> u64 {
 fn fixture(policy: PaymentPolicy, mutate: impl FnOnce(&mut ContentCatalog, &mut MapDef)) -> App {
     let mut app = turts_sim::headless_app(20);
     let tower = ResolvedUnit {
+        vision: None,
         consumes: Vec::new(),
         income: None,
         provides: Vec::new(),
@@ -137,6 +138,7 @@ fn fixture(policy: PaymentPolicy, mutate: impl FnOnce(&mut ContentCatalog, &mut 
         source_files: BTreeMap::new(),
     };
     let mut map = MapDef {
+        visibility: None,
         environment: None,
         ground: None,
         id: "field".into(),
