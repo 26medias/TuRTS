@@ -277,6 +277,9 @@ impl Replica {
         let Some(context) = self.context.as_ref() else {
             return false;
         };
+        if self.preflight_transaction(payload).is_err() {
+            return false;
+        }
         if stamp.basis.phase != turts_mod_api::ObservationPhase::Completed
             || self
                 .last_applied_tick
@@ -429,6 +432,74 @@ impl Replica {
         self.gap_seen = false;
         self.tail_lost = false;
         true
+    }
+
+    /// Refuse before allocating a candidate, knowledge copy, or validation set.
+    /// The estimate includes the decoded payload, candidate storage, and temporary expansions.
+    fn preflight_transaction(
+        &self,
+        payload: &turts_net_protocol::visibility::StateTransactionPayload,
+    ) -> Result<(), crate::staging_budget::Limit> {
+        use crate::staging_budget::{Budget, Limit};
+        use turts_net_protocol::visibility::{MAX_PENDING_STATE_BYTES, StateTransactionPayload};
+        let mut budget = Budget::new(MAX_PENDING_STATE_BYTES as usize);
+        // Fixed candidates, store steps, stamps, and small hash tables.
+        budget.bytes(64 * 1024)?;
+        budget.value(payload)?;
+        // Snapshot staging also clones the bounded health history before replacing its rows.
+        for history in self.health_trace.values() {
+            budget.bytes(
+                history
+                    .len()
+                    .checked_mul(std::mem::size_of::<HealthTraceEntry>() * 4 + 64)
+                    .ok_or(Limit)?,
+            )?;
+        }
+        if matches!(payload, StateTransactionPayload::Patch { .. }) {
+            let table =
+                |capacity: usize, row: usize| capacity.checked_mul(row * 4 + 64).ok_or(Limit);
+            budget.bytes(table(
+                self.units.capacity(),
+                std::mem::size_of::<(u32, UnitReplica)>(),
+            )?)?;
+            for unit in self.units.values() {
+                budget.bytes(
+                    unit.content_id
+                        .capacity()
+                        .checked_mul(4)
+                        .and_then(|n| n.checked_add(128))
+                        .ok_or(Limit)?,
+                )?;
+                budget.bytes(
+                    unit.samples
+                        .capacity()
+                        .checked_mul(std::mem::size_of::<(u32, Pos)>() * 4)
+                        .ok_or(Limit)?,
+                )?;
+            }
+            budget.bytes(table(
+                self.nodes.capacity(),
+                std::mem::size_of::<(NodeId, NodeState)>(),
+            )?)?;
+            budget.value(&self.nodes)?;
+            budget.bytes(table(
+                self.unit_orders.capacity(),
+                std::mem::size_of::<(u32, UnitOrderRecord)>(),
+            )?)?;
+            budget.value(&self.unit_orders)?;
+            budget.value(&self.economy)?;
+            budget.value(&self.belts)?;
+            budget.value(&self.inserters)?;
+            budget.value(&self.extractors)?;
+            budget.value(&self.weapons)?;
+            budget.value(&self.healths)?;
+            budget.value(&self.research)?;
+            if let Some(knowledge) = self.knowledge.as_deref() {
+                budget.value(knowledge)?;
+            }
+            self.store.charge_staging(&mut budget)?;
+        }
+        Ok(())
     }
 
     /// Take the start tick of the match from `Welcome.start.start_tick` (`ingest::on_welcome`).

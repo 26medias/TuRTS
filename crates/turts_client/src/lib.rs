@@ -40,6 +40,7 @@ pub mod replica_store;
 mod scenario;
 pub mod ui_shared;
 pub mod visuals;
+mod staging_budget;
 pub mod visibility;
 pub mod visibility_ingest;
 pub mod visibility_present;

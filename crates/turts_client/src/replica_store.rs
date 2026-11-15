@@ -118,6 +118,19 @@ pub(crate) struct StoreStep {
 }
 
 impl RecordStore {
+    pub(crate) fn charge_staging(
+        &self,
+        budget: &mut crate::staging_budget::Budget,
+    ) -> Result<(), crate::staging_budget::Limit> {
+        budget.value(&self.sites)?;
+        budget.value(&self.site_progress)?;
+        budget.value(&self.construction_queues)?;
+        budget.value(&self.supply)?;
+        budget.value(&self.match_state)?;
+        budget.value(&self.job_progress)?;
+        budget.value(&self.repairs)
+    }
+
     /// The tick of the last applied message. It equals the tick of the candidate.
     pub fn tick(&self) -> u32 {
         self.tick
