@@ -1,4 +1,5 @@
 //! Atomic permitted snapshots and ordinary visibility transitions. No raw truth enters a baseline.
+#[cfg(test)]
 use super::{export_observation, snapshot_for};
 #[path = "export_visibility_memory.rs"]
 mod memory;
@@ -18,9 +19,8 @@ impl PermittedBaseline {
         memory::baseline(self)
     }
     pub fn capture(view: &WorldView, slot: SlotId, policy: &dyn ObservationPermissions) -> Self {
-        let projected = export_observation::project_view(view, slot, policy);
         Self {
-            state: snapshot_for(&projected, slot),
+            state: super::snapshot_permitted(view, slot, policy),
             knowledge: policy.knowledge(slot.0),
         }
     }
@@ -302,15 +302,24 @@ impl PermittedBaseline {
     }
 }
 fn changed<T: Clone + PartialEq, K: Ord>(old: &[T], new: &[T], key: impl Fn(&T) -> K) -> Vec<T> {
-    let old = old
-        .iter()
-        .map(|row| (key(row), row))
-        .collect::<BTreeMap<_, _>>();
+    // One contiguous index replaces one tree allocation per old row. Stable
+    // sorting keeps the last old duplicate as the comparison row, as before.
+    let mut index = old.iter().map(|row| (key(row), row)).collect::<Vec<_>>();
+    index.sort_by(|a, b| a.0.cmp(&b.0));
     new.iter()
-        .filter(|row| old.get(&key(row)).copied() != Some(*row))
+        .filter(|row| {
+            let key = key(row);
+            let end = index.partition_point(|(old, _)| *old <= key);
+            end.checked_sub(1)
+                .and_then(|position| index.get(position))
+                .filter(|(old, _)| *old == key)
+                .map(|(_, old)| *old)
+                != Some(*row)
+        })
         .cloned()
         .collect()
 }
+
 fn knowledge_delta(
     old: &KnowledgeSnapshot,
     new: &KnowledgeSnapshot,
@@ -419,6 +428,20 @@ mod tests {
     use super::*;
     use std::sync::Arc;
     use turts_mod_api::{ContentId, KnowledgeBasis, ObservationPhase, VisibilityGrid, WorldPos};
+    #[test]
+    fn flat_change_index_keeps_new_order_and_the_last_old_duplicate() {
+        let old = vec![(2, 20), (1, 10), (2, 21), (4, 40)];
+        let new = vec![(4, 40), (3, 30), (2, 20), (1, 10), (2, 21), (3, 31)];
+        assert_eq!(
+            changed(&old, &new, |row| row.0),
+            vec![(3, 30), (2, 20), (3, 31)]
+        );
+        assert_eq!(
+            changed::<_, u32>(&[], &[(7, 1), (3, 4)], |row| row.0),
+            vec![(7, 1), (3, 4)]
+        );
+        assert!(changed(&old, &[], |row| row.0).is_empty());
+    }
     fn basis(tick: u32) -> KnowledgeBasis {
         KnowledgeBasis {
             match_id: 4,
