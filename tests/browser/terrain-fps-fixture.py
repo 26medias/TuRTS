@@ -37,6 +37,11 @@ for kind in ['soldier','swordsman','warrior']:
  f=package/'units'/(kind+'.ron');s=f.read_text();s=s.replace('(', '(terrain_class:Some("skirmish:benchmark_ground"),'+('terrain_tools:["skirmish:benchmark_cut"],' if kind=='soldier' else ''),1)
  if 'vision:' not in s:s=s.replace('(', '(vision:Some((radius:8.0)),',1)
  f.write_text(s)
+# Catalog statics keep their original fields and explicitly protect their support.
+for f in (package/'units').glob('*.ron'):
+ s=f.read_text()
+ if not re.search(r'\bmovement:\s*Some',s) and 'terrain_foundation:' not in s:
+  f.write_text(s.replace('(', '(terrain_foundation:Some(ForbidEdit),',1))
 terrain=f'terrain:Some((length_scale:1000,cell_width:200,elevation_step:125,columns:{columns},rows:{rows},chunk_width:16,initial_elevation:0,initial_heights:[(cells:(min:(x:30,y:120),max:(x:50,y:160)),elevation:-32)],floor:-40,ceiling:4,generation:Version1(bands:[(bottom:-40,top:0,choices:[(material:"skirmish:benchmark_soil",weight:1)])]))),'
 text=text.replace('(', '('+terrain,1);put('maps/field.ron',text)
 f=package/'input/bindings.ron';f.write_text(re.sub(r'(actions:\s*\[)',r'\1(name:"key_benchmark_work",default:[]),',f.read_text(),count=1))
