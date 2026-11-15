@@ -1126,6 +1126,7 @@ mod tests {
 
     #[test]
     fn operating_raw_fields_require_the_first_supported_engine() {
+        use super::support::raw_for;
         let mut tested = 0;
         for row in VERSION_TABLE
             .iter()
