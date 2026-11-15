@@ -46,8 +46,8 @@
   ],
   production: [
    (key: "ranged_target", role: "ranged", count: 8, recipe: "ranged", priority: 30),
-   (key: "melee_target", role: "melee", count: 4, recipe: "melee", priority: 25),
-   (key: "heavy_target", role: "heavy", count: 2, recipe: "heavy", priority: 20),
+   (key: "melee_target", role: "melee", count: 2, recipe: "melee", priority: 32),
+   (key: "heavy_target", role: "heavy", count: 1, recipe: "heavy", priority: 35),
   ],
   squads: [(key: "main_army", role: "army", min_units: 4, anchor_role: "home", attack_order: "attack", move_order: "move", defend_radius: 18.0, assemble_radius: 8.0, priority: 50)],
  ),
