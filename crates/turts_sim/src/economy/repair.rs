@@ -992,7 +992,7 @@ mod tests {
             Err(RejectReason::TargetInvalid)
         );
         app.world_mut().resource_mut::<Healths>().0.insert(3, 10);
-        let site = serde_json::from_value(serde_json::json!({ "constructor": 1, "owner_slot": 0, "recipe": "test:site", "job": 1, "done": 0, "total": 10, "charged": [] })).unwrap();
+        let site = serde_json::from_value(serde_json::json!({ "constructor": 1, "owner_slot": 0, "recipe": id("site"), "job": 1, "done": 0, "total": 10, "charged": [] })).unwrap();
         app.world_mut()
             .resource_mut::<ConstructionState>()
             .sites
