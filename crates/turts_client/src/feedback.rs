@@ -946,18 +946,27 @@ fn collect_alert_events(
                 current, previous, slot, rule, runtime,
             )),
         }
+        let slot_supply = matches!(
+            &rule.trigger,
+            AlertTrigger::SupplyShort(_) | AlertTrigger::SupplyRestored(_)
+        );
         if !matches!(
             &rule.trigger,
             AlertTrigger::OwnUnitDestroyed | AlertTrigger::OwnUnitDamaged
         ) {
             units.retain(|unit| {
-                current
-                    .units
-                    .get(unit)
-                    .is_some_and(|record| record.owner_slot == slot)
+                (slot_supply && *unit == 0)
+                    || current
+                        .units
+                        .get(unit)
+                        .is_some_and(|record| record.owner_slot == slot)
             });
         }
         units.retain(|id| {
+            // Slot supply has no unit type or offscreen position to filter.
+            if slot_supply && *id == 0 {
+                return rule.units.is_empty();
+            }
             let unit = current
                 .units
                 .get(id)
@@ -971,7 +980,12 @@ fn collect_alert_events(
             continue;
         }
         let last = runtime.cooldowns.get(&rule.id).copied();
-        if last.is_some_and(|last| now - last < rule.cooldown.max(1.0) as f64) {
+        let cooldown = if slot_supply {
+            rule.cooldown.max(0.0)
+        } else {
+            rule.cooldown.max(1.0)
+        };
+        if last.is_some_and(|last| now - last < f64::from(cooldown)) {
             continue;
         }
         runtime.cooldowns.insert(rule.id.clone(), now);
@@ -980,11 +994,15 @@ fn collect_alert_events(
             if unit != 0 && !seen.insert(unit) {
                 continue;
             }
-            let position = current
-                .units
-                .get(&unit)
-                .or_else(|| previous.and_then(|old| old.units.get(&unit)))
-                .and_then(|record| record.samples.back().map(|(_, pos)| *pos));
+            let position = if slot_supply && unit == 0 {
+                None
+            } else {
+                current
+                    .units
+                    .get(&unit)
+                    .or_else(|| previous.and_then(|old| old.units.get(&unit)))
+                    .and_then(|record| record.samples.back().map(|(_, pos)| *pos))
+            };
             if position.is_some_and(|position| {
                 events.iter().any(|event: &AlertEvent| {
                     event.rule_id == rule.id
@@ -1308,8 +1326,6 @@ mod stub_tests {
     fn state_triggers_raise_no_alert_until_ui_alert_builds_them() {
         for trigger in [
             AlertTrigger::ConstructionComplete,
-            AlertTrigger::SupplyShort("test:supply".into()),
-            AlertTrigger::SupplyRestored("test:supply".into()),
             AlertTrigger::InsufficientFunds("test:credits".into()),
             AlertTrigger::GathererIdle(5.0),
         ] {

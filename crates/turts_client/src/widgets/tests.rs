@@ -2044,3 +2044,177 @@ mod stub_contract {
         );
     }
 }
+
+#[test]
+fn operating_supply_hud_tracks_accepted_owner_totals_and_explicit_zero_baselines() {
+    use crate::replica::{DeltaOutcome, Replica, ReplicaContext, SnapshotOutcome};
+    use bevy::platform::time::Instant;
+    use turts_mod_api::{
+        ContentId, ResourceDef, ResourceKind, SupplyCounts, SupplyScope, SupplySide,
+    };
+    use turts_net_protocol::{
+        DeltaRecords, SlotId, Snapshot, SnapshotRecords, SupplyRecord, WorldDelta,
+    };
+
+    let mut content = crate::content::ClientContent::default();
+    for name in ["power", "population"] {
+        content.catalog.resources.insert(
+            ContentId::parse(&format!("test:{name}")).unwrap(),
+            ResourceDef {
+                id: name.into(),
+                name: name.into(),
+                unit_name: name.into(),
+                kind: ResourceKind::Supply {
+                    scope: SupplyScope::Slot,
+                    counts: SupplyCounts::Completed,
+                },
+            },
+        );
+    }
+    let mut replica = Replica::new(20);
+    replica.set_context(ReplicaContext::new(content.clone(), 0));
+    let row = |resource: &str, provided, consumed| SupplyRecord {
+        slot: SlotId(0),
+        resource: resource.into(),
+        provided,
+        consumed,
+    };
+    assert_eq!(
+        replica.apply_snapshot(
+            &Snapshot {
+                tick: 1,
+                records: SnapshotRecords {
+                    supply: vec![row("test:power", 10, 8), row("test:population", 0, 0)],
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            Instant::now()
+        ),
+        SnapshotOutcome::Applied { replayed: 0 }
+    );
+
+    let read = |replica: &Replica, resource: &str| {
+        let groups = BTreeMap::new();
+        let bindings = BTreeMap::new();
+        let input_map = turts_mod_api::InputMapDef {
+            actions: vec![],
+            engine_overrides: vec![],
+        };
+        let context = sources::SourceContext {
+            binding_labels: None,
+            replica,
+            content: &content,
+            selection: &[],
+            owner_slot: 0,
+            interface: None,
+            interface_package: Some("test"),
+            control_groups: &groups,
+            alerts: &[],
+            bindings: &bindings,
+            input_map: &input_map,
+            guide: &[],
+            guide_open: false,
+            sound_on: false,
+            last_notice: None,
+            core: sources::CoreFeed::empty(),
+        };
+        (
+            sources::read_value(
+                &Value::Supply(resource.into(), SupplySide::Provided),
+                context,
+            ),
+            sources::read_value(
+                &Value::Supply(resource.into(), SupplySide::Consumed),
+                context,
+            ),
+            predicate_matches(&Predicate::SupplyShort(resource.into()), &context),
+        )
+    };
+    assert_eq!(
+        read(&replica, "test:power"),
+        (serde_json::json!(10), serde_json::json!(8), false)
+    );
+    assert_eq!(
+        read(&replica, "test:population"),
+        (serde_json::json!(0), serde_json::json!(0), false),
+        "zero supply must render as zero, not missing"
+    );
+    assert_eq!(
+        read(&replica, "test:unknown"),
+        (serde_json::Value::Null, serde_json::Value::Null, false)
+    );
+
+    let mut foreign = row("test:power", 1000, 9999);
+    foreign.slot = SlotId(1);
+    assert_eq!(
+        replica.apply_snapshot(
+            &Snapshot {
+                tick: 2,
+                records: SnapshotRecords {
+                    supply: vec![foreign],
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            Instant::now()
+        ),
+        SnapshotOutcome::Invalid
+    );
+    assert_eq!(
+        read(&replica, "test:power"),
+        (serde_json::json!(10), serde_json::json!(8), false),
+        "foreign records cannot replace the owner's display"
+    );
+
+    assert_eq!(
+        replica.apply_snapshot(
+            &Snapshot {
+                tick: 3,
+                records: SnapshotRecords {
+                    supply: vec![row("test:power", 8, 8)],
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            Instant::now()
+        ),
+        SnapshotOutcome::Applied { replayed: 0 }
+    );
+    assert_eq!(
+        read(&replica, "test:power"),
+        (serde_json::json!(8), serde_json::json!(8), false),
+        "equality is sufficient supply"
+    );
+    assert_eq!(
+        read(&replica, "test:population"),
+        (serde_json::Value::Null, serde_json::Value::Null, false),
+        "resync replaces stale supply rows"
+    );
+
+    for (tick, provided, consumed, short) in [(4, 0, 8, true), (5, 0, 0, false)] {
+        assert_eq!(
+            replica.apply_delta(
+                &WorldDelta {
+                    tick,
+                    base_tick: tick - 1,
+                    records: DeltaRecords {
+                        supply: vec![row("test:power", provided, consumed)],
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                Instant::now()
+            ),
+            DeltaOutcome::Applied
+        );
+        assert_eq!(
+            read(&replica, "test:power"),
+            (
+                serde_json::json!(provided),
+                serde_json::json!(consumed),
+                short
+            )
+        );
+    }
+}

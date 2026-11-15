@@ -1,7 +1,5 @@
-//! Stub alert triggers of task `UI-ALERT` (plan 5.3; design 7.9, row H4). L0-CORE made this file;
-//! `UI-ALERT` fills it. Each function returns the units that raise the alert of `rule` in this
-//! evaluation, as the arms of `collect_alert_events` do. Until `UI-ALERT` builds a trigger, it
-//! raises no alert.
+//! Supply alerts report accepted transitions for the owner slot. Snapshots establish a baseline.
+//! Other pending state triggers remain empty until their capabilities are implemented.
 
 use super::*;
 use turts_mod_api::AlertDef;

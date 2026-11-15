@@ -1,4 +1,5 @@
-//! Construction progress reads committed replica records. Other pending HUD sources stay empty.
+//! Construction progress and owner supply read committed replica records.
+//! Other pending HUD sources stay empty.
 
 use super::{ItemData, SourceContext, SourceData, WidgetAction};
 use turts_mod_api::{ContentId, ContentRef, ItemField, SupplySide};
