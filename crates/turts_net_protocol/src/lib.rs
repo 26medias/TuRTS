@@ -7,6 +7,7 @@ pub mod economy;
 pub mod messages;
 pub mod records;
 pub mod visibility;
+pub mod visibility_transaction;
 pub use visibility::*;
 
 pub use advertisement::Advertisement;
