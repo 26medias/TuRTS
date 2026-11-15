@@ -17,6 +17,7 @@ turts_net_protocol = { path = "../turts_net_protocol" }
 turts_net_lightyear = { path = "../turts_net_lightyear", features = ["server"] }
 bevy = { workspace = true }
 lightyear = { workspace = true, features = ["server"] }
+lightyear_serde = "=0.31.0"
 serde = { workspace = true }
 serde_json = { workspace = true }
 ron = { workspace = true }
