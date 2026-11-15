@@ -350,6 +350,8 @@ fn refund_fails_on_wrong_ratio() {
         .push(turts_sim::economy::views::RawQueueAudit {
             producer: 4,
             jobs: vec![turts_sim::economy::views::RawJobAudit {
+                funding: None,
+
                 id: 5,
                 recipe: cid("forge:make_shells"),
                 stage: JobStage::Running,

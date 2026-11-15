@@ -42,6 +42,8 @@ fn id(local: &str) -> ContentId {
 
 fn unit(local: &str, radius: f32) -> ResolvedUnit {
     ResolvedUnit {
+        repairer: None,
+
         consumes: Vec::new(),
         income: None,
         provides: Vec::new(),

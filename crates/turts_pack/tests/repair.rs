@@ -570,7 +570,7 @@ fn public_creation_order_does_not_rank_repair_funding_winners() {
             (health(&mut app, target), balance(&mut app, "credits")),
             (11, 0)
         );
-        let rows = turts_sim::world_view(app.world_mut()).repairs;
+        let rows = turts_sim::world_view(app.world_mut()).economy.repairs;
         assert_eq!(
             rows.iter().find(|row| row.repairer == left).unwrap().state,
             RepairStatus::Working

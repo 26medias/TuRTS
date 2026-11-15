@@ -6373,6 +6373,8 @@ fn next_raw_job(
         raw_lines(true)
     };
     let raw = turts_sim::economy::views::RawJobAudit {
+        funding: None,
+
         id,
         recipe: recipe_id.clone(),
         stage: turts_sim::economy::production::JobStage::Queued,
@@ -8755,6 +8757,8 @@ mod tests {
         catalog.units.insert(
             unit_id.clone(),
             ResolvedUnit {
+                repairer: None,
+
                 consumes: Vec::new(),
                 income: None,
                 provides: Vec::new(),
@@ -9212,6 +9216,8 @@ mod tests {
             units: BTreeMap::from([(
                 worker.clone(),
                 ResolvedUnit {
+                    repairer: None,
+
                     consumes: Vec::new(),
                     income: None,
                     provides: Vec::new(),
@@ -9286,6 +9292,8 @@ mod tests {
         catalog.units.insert(
             depot.clone(),
             ResolvedUnit {
+                repairer: None,
+
                 consumes: Vec::new(),
                 income: None,
                 provides: Vec::new(),
@@ -9450,6 +9458,8 @@ mod tests {
             units: BTreeMap::from([(
                 worker.clone(),
                 ResolvedUnit {
+                    repairer: None,
+
                     consumes: Vec::new(),
                     income: None,
                     provides: Vec::new(),
@@ -9924,6 +9934,8 @@ mod tests {
             resource_kinds: vec![],
             nodes: vec![],
             units: vec![CatalogUnitAudit {
+                repairer: None,
+
                 provides: Vec::new(),
                 consumes: Vec::new(),
                 income: None,
@@ -9981,6 +9993,8 @@ mod tests {
             ticks: 20,
         }];
         let job = with_job.then_some(RawJobAudit {
+            funding: None,
+
             id: 1,
             recipe: recipe_id.clone(),
             stage: turts_sim::JobStage::Queued,
@@ -10354,6 +10368,8 @@ mod tests {
             units: BTreeMap::from([(
                 worker.clone(),
                 ResolvedUnit {
+                    repairer: None,
+
                     consumes: Vec::new(),
                     income: None,
                     provides: Vec::new(),
@@ -10579,6 +10595,8 @@ mod tests {
             units: BTreeMap::from([(
                 machine.clone(),
                 ResolvedUnit {
+                    repairer: None,
+
                     consumes: Vec::new(),
                     income: None,
                     provides: Vec::new(),
@@ -10861,6 +10879,8 @@ mod tests {
             units: BTreeMap::from([(
                 producer.clone(),
                 ResolvedUnit {
+                    repairer: None,
+
                     consumes: Vec::new(),
                     income: None,
                     provides: Vec::new(),
@@ -11094,6 +11114,8 @@ mod tests {
             units: BTreeMap::from([(
                 drill.clone(),
                 ResolvedUnit {
+                    repairer: None,
+
                     consumes: Vec::new(),
                     income: None,
                     provides: Vec::new(),
@@ -11256,6 +11278,8 @@ mod tests {
             units: BTreeMap::from([(
                 lab.clone(),
                 ResolvedUnit {
+                    repairer: None,
+
                     consumes: Vec::new(),
                     income: None,
                     provides: Vec::new(),
@@ -11747,6 +11771,8 @@ mod tests {
                 radius: 2.0,
             }],
             units: vec![CatalogUnitAudit {
+                repairer: None,
+
                 provides: Vec::new(),
                 consumes: Vec::new(),
                 income: None,
@@ -12534,6 +12560,8 @@ mod tests {
         catalog.units.insert(
             unit_content.clone(),
             ResolvedUnit {
+                repairer: None,
+
                 consumes: Vec::new(),
                 income: None,
                 provides: Vec::new(),
@@ -12634,6 +12662,8 @@ mod tests {
         for unit_id in [1, 2] {
             app.world_mut().entity_mut(entities[&unit_id]).insert((
                 turts_sim::UnitOrders {
+                    repair_stopped: false,
+
                     acquired: None,
                     rally: None,
                     current: Some(prior.clone()),
@@ -12982,6 +13012,8 @@ mod tests {
         catalog.units.insert(
             unit_id.clone(),
             ResolvedUnit {
+                repairer: None,
+
                 consumes: Vec::new(),
                 income: None,
                 provides: Vec::new(),
@@ -14117,6 +14149,8 @@ mod tests {
             (large.clone(), "Large", 0.8_f32),
         ] {
             let resolved = ResolvedUnit {
+                repairer: None,
+
                 consumes: Vec::new(),
                 income: None,
                 provides: Vec::new(),
@@ -16522,6 +16556,8 @@ mod tests {
             group: 77,
         };
         let mut orders = turts_sim::UnitOrders {
+            repair_stopped: false,
+
             acquired: None,
             rally: None,
             current: Some(move_order.clone()),
@@ -17501,6 +17537,8 @@ mod tests {
                 radius: 0.5,
             });
             let catalog_unit = turts_sim::economy::views::CatalogUnitAudit {
+                repairer: None,
+
                 provides: Vec::new(),
                 consumes: Vec::new(),
                 income: None,
@@ -18369,6 +18407,8 @@ mod tests {
         catalog.units.insert(
             unit_id.clone(),
             turts_mod_api::ResolvedUnit {
+                repairer: None,
+
                 consumes: Vec::new(),
                 income: None,
                 provides: Vec::new(),
@@ -18493,6 +18533,8 @@ mod tests {
                 radius: 2.0,
             }],
             units: vec![turts_sim::economy::views::CatalogUnitAudit {
+                repairer: None,
+
                 provides: Vec::new(),
                 consumes: Vec::new(),
                 income: None,
@@ -18620,6 +18662,8 @@ mod tests {
         produced.raw_queues[0]
             .jobs
             .push(turts_sim::economy::views::RawJobAudit {
+                funding: None,
+
                 id: job_id,
                 recipe: recipe.clone(),
                 stage: turts_sim::JobStage::Queued,
@@ -18733,6 +18777,8 @@ mod tests {
         costed_after.raw_queues[0]
             .jobs
             .push(turts_sim::economy::views::RawJobAudit {
+                funding: None,
+
                 id: costed_job_id,
                 recipe: recipe.clone(),
                 stage: turts_sim::JobStage::Queued,
@@ -19113,6 +19159,8 @@ mod tests {
         produced.raw_queues[0]
             .jobs
             .push(turts_sim::economy::views::RawJobAudit {
+                funding: None,
+
                 id: job_id,
                 recipe: recipe.clone(),
                 stage: turts_sim::JobStage::Queued,
@@ -19317,6 +19365,8 @@ mod tests {
         catalog.units.insert(
             unit_id.clone(),
             turts_mod_api::ResolvedUnit {
+                repairer: None,
+
                 consumes: Vec::new(),
                 income: None,
                 provides: Vec::new(),
