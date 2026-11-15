@@ -51,6 +51,8 @@ impl ProposalSink for ProposalBuffer {
             return Err(ProposalRejection::DuplicateActor);
         }
         if self.keys.contains(&proposal.task) {
+            // An invalid duplicate cannot choose a winner by whichever proposal arrived first.
+            self.proposals.retain(|old| old.task != proposal.task);
             return Err(ProposalRejection::DuplicateTask);
         }
         self.keys.insert(proposal.task.clone());
