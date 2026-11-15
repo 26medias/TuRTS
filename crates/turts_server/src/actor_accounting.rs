@@ -165,11 +165,7 @@ fn capture_request(
     if tracked.accounted.is_some_and(|old| watermark < old) {
         return Err("receipt accounting watermark moved backwards".into());
     }
-    let Some(result) = tracked
-        .result
-        .clone()
-        .filter(|result| result.effect_watermark <= watermark)
-    else {
+    let Some(result) = tracked.result.as_ref() else {
         if tracked.last_effect.is_some() {
             return Err("represented request lost its admission result".into());
         }
@@ -178,14 +174,35 @@ fn capture_request(
     if result.request != *key {
         return Err("receipt result names a different request".into());
     }
-    let effect = if !result.accepted {
-        if tracked.admitted_work.is_some() || result.work.is_some() {
-            return Err("refused request unexpectedly owns admitted work".into());
+    if result.effect_watermark > watermark {
+        if tracked.last_effect.is_some() {
+            return Err("represented request lost its admission result".into());
         }
-        ObservedRequestEffect::refusal(key.clone(), result.effect_watermark)
-    } else {
-        prepare_effect(view, committed, catalog, actor, key, tracked, &result)?
-    };
+        return Ok(None);
+    }
+    // The request map is already staged for atomic commit. Move its immutable
+    // result temporarily instead of cloning the actor/content strings per tick.
+    let result = tracked
+        .result
+        .take()
+        .ok_or("validated receipt result is missing")?;
+    let prepared = (|| {
+        if !result.accepted {
+            if tracked.admitted_work.is_some() || result.work.is_some() {
+                return Err("refused request unexpectedly owns admitted work".into());
+            }
+            Ok(ObservedRequestEffect::refusal(
+                key.clone(),
+                result.effect_watermark,
+            ))
+        } else {
+            prepare_effect(view, committed, catalog, actor, key, tracked, &result)
+        }
+    })();
+    // Restore before propagating any preparation error. No request loses its
+    // result, even inside the local staged copy that an outer failure discards.
+    tracked.result = Some(result);
+    let effect = prepared?;
     if tracked.accounted == Some(watermark) && tracked.last_effect.as_ref() != Some(&effect) {
         return Err("one accounting watermark describes different receipt effects".into());
     }
