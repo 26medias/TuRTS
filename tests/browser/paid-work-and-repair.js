@@ -3,7 +3,7 @@ const fs = require('node:fs'), net = require('node:net');
 const {spawn, spawnSync} = require('node:child_process');
 const {chromium} = require('playwright-core');
 const [prepared, out, mode] = process.argv.slice(2);
-if (!out || (mode && mode !== '--fixture-only')) throw Error('PREPARED OUTPUT [--fixture-only]');
+if (!out || (mode && !['--fixture-only','--independent'].includes(mode))) throw Error('PREPARED OUTPUT [--fixture-only|--independent]');
 fs.mkdirSync(out, {recursive:true});
 const fixture = out + '/paid';
 fs.cpSync(prepared + '/pack/skirmish', fixture, {recursive:true});
@@ -107,6 +107,7 @@ function project(scene,pos){const m=scene.clip_from_world,c=[0,1,2,3].map(r=>[..
   const stalledValue=site(first,wallId).value,stalledHealth=health(first,wallId),stalledBalance=balance(first),tick=world(first).tick;
   const unchanged=await wait(s=>world(s).tick>=tick+25,'stalled interval');
   if(site(unchanged,wallId).value!==stalledValue||health(unchanged,wallId)!==stalledHealth||balance(unchanged)!==stalledBalance)throw Error('unfunded site mutated');
+  if(mode!=='--independent'){
   await build('Build Paid wall',16,14);
   const second=await wait(s=>world(s).progress.sites.length===2,'second active site');
   const secondId=world(second).progress.sites.find(x=>x.unit!==wallId).unit;
@@ -116,6 +117,7 @@ function project(scene,pos){const m=scene.clip_from_world,c=[0,1,2,3].map(r=>[..
   await shot('held-stopped',await wait(s=>!world(s).progress.construction_queues.some(x=>x.constructor===1),'Stop clears held requests'));
   if(world(result['held-stopped']).progress.sites.length!==2)throw Error('Stop cancelled placed sites');
   await select(secondId);await click('Cancel site');await wait(s=>!units(s).some(x=>x.unit_id===secondId),'cancel second site');
+  }
   await build('Build Mint',24,34);
   const resumed=await wait(s=>site(s,wallId)?.value>stalledValue,'income resumes paid site');
   await shot('site-resumed',resumed);
@@ -143,7 +145,7 @@ function project(scene,pos){const m=scene.clip_from_world,c=[0,1,2,3].map(r=>[..
   await select(2);await click('Stop');
   await shot('repair-stopped',await wait(s=>!world(s).repairs.some(x=>x.repairer===2)&&!widget(s,'repair_state')&&!widget(s,'repair_target')&&!widget(s,'repair_resource'),'repair status cleared'));
   const final=await read();if(widget(final,'credits')?.text!==`Credits: ${balance(final)}`)throw Error('displayed credits mismatch');
-  result.status='PASS';console.log(JSON.stringify({status:result.status,wallId,damage,healed:health(result['repair-healed'],3)}));
+  result.status=mode==='--independent'?'PARTIAL_PASS':'PASS';if(mode==='--independent')result.missing_checks=['Held construction request and Stop'];console.log(JSON.stringify({status:result.status,wallId,damage,healed:health(result['repair-healed'],3)}));
  }catch(e){result.status='FAIL';result.error=String(e.stack||e);if(read)try{result.failure=await read();}catch{}if(page)try{await page.screenshot({path:out+'/failure.png'});}catch{}console.error(e);process.exitCode=1;}
  finally{if(context)await context.close();if(server&&server.exitCode===null){const end=new Promise(r=>server.once('exit',r));server.kill('SIGTERM');await end;}if(profile)fs.rmSync(profile,{recursive:true,force:true});result.profile_removed=!profile||!fs.existsSync(profile);save();}
 })();
