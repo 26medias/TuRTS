@@ -164,7 +164,7 @@ mod tests {
         content.images.insert(
             "library:large".into(),
             PresentationImage {
-                bytes: png,
+                bytes: png.into(),
                 nine_slice: None,
             },
         );

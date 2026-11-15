@@ -1,7 +1,6 @@
 //! Audio assets, context readiness, category gains and actual sink evidence.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
-use std::sync::Arc;
 
 #[cfg(not(target_family = "wasm"))]
 use crate::volume_settings::SettingsStore;
@@ -401,7 +400,7 @@ fn load_sound_assets(
             catalog.0.insert(
                 id.clone(),
                 assets.add(AudioSource {
-                    bytes: Arc::from(bytes.clone()),
+                    bytes: bytes.clone(),
                 }),
             );
         }
@@ -815,7 +814,7 @@ mod audio_policy_tests {
             .world_mut()
             .resource_mut::<Assets<AudioSource>>()
             .add(AudioSource {
-                bytes: Arc::from(Vec::<u8>::new()),
+                bytes: std::sync::Arc::from(Vec::<u8>::new()),
             });
         app.world_mut()
             .resource_mut::<SoundCatalog>()
@@ -876,7 +875,7 @@ mod audio_policy_tests {
             .world_mut()
             .resource_mut::<Assets<AudioSource>>()
             .add(AudioSource {
-                bytes: Arc::from(Vec::<u8>::new()),
+                bytes: std::sync::Arc::from(Vec::<u8>::new()),
             });
         app.world_mut()
             .resource_mut::<SoundCatalog>()
@@ -1170,7 +1169,7 @@ mod control_settings_persistence_contract {
             .world_mut()
             .resource_mut::<Assets<AudioSource>>()
             .add(AudioSource {
-                bytes: Arc::from(Vec::<u8>::new()),
+                bytes: std::sync::Arc::from(Vec::<u8>::new()),
             });
         app.world_mut()
             .resource_mut::<SoundCatalog>()

@@ -293,7 +293,8 @@ pub(crate) fn sync_models(
     for (id, bytes) in &presentation.models {
         if !state.handles.contains_key(id) {
             let path = format!("{}.glb", id.replace(':', "/"));
-            source.0.insert_asset(Path::new(&path), bytes.clone());
+            // Bevy's memory reader owns a Vec. Copy once when this asset first loads.
+            source.0.insert_asset(Path::new(&path), bytes.to_vec());
             let handle = sources
                 .server
                 .load_builder()

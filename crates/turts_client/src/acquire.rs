@@ -40,12 +40,13 @@ pub struct VerifiedRootMod {
     pub id: String,
     pub version: String,
 }
-/// Authored interface and its accepted package-local image/font payloads.
+/// Authored interface and immutable accepted package payloads.
+/// Metadata clones share raw bytes. Decoders own their derived buffers.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct PresentationContent {
     pub effects: BTreeMap<String, turts_mod_api::VisualEffectDef>,
     pub effect_visuals: BTreeMap<String, turts_mod_api::VisualEffectRefs>,
-    pub models: BTreeMap<String, Vec<u8>>,
+    pub models: BTreeMap<String, std::sync::Arc<[u8]>>,
     pub model_visuals: BTreeMap<String, turts_mod_api::ModelDef>,
     pub model_bounds: BTreeMap<String, ([f32; 3], [f32; 3])>,
     pub ground: Option<turts_mod_api::GroundDef>,
@@ -53,15 +54,15 @@ pub struct PresentationContent {
     pub interface: Option<InterfaceDef>,
     pub interface_package: Option<String>,
     pub images: BTreeMap<String, PresentationImage>,
-    pub fonts: BTreeMap<String, Vec<u8>>,
-    pub sounds: BTreeMap<String, Vec<u8>>,
+    pub fonts: BTreeMap<String, std::sync::Arc<[u8]>>,
+    pub sounds: BTreeMap<String, std::sync::Arc<[u8]>>,
     pub cursor_assets: BTreeMap<String, (String, (u16, u16))>,
     pub cursors: BTreeMap<String, (String, (u16, u16))>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct PresentationImage {
-    pub bytes: Vec<u8>,
+    pub bytes: std::sync::Arc<[u8]>,
     pub nine_slice: Option<(u16, u16, u16, u16)>,
 }
 
@@ -362,7 +363,7 @@ fn merge_asset_bytes(
                 turts_mod_runtime::models::visual_bounds(&info, model)
             });
         presentation.model_bounds.insert(key.clone(), bounds);
-        presentation.models.insert(key, bytes.to_vec());
+        presentation.models.insert(key, bytes.into());
     }
     for image in assets.images {
         let bytes = archive
@@ -371,7 +372,7 @@ fn merge_asset_bytes(
         presentation.images.insert(
             qualified_asset_id(&archive.id().0, &image.id),
             PresentationImage {
-                bytes: bytes.to_vec(),
+                bytes: bytes.into(),
                 nine_slice: image.nine_slice,
             },
         );
@@ -380,19 +381,17 @@ fn merge_asset_bytes(
         let bytes = archive
             .file(&font.path)
             .ok_or_else(|| format!("{}: missing font asset {}", archive.id().0, font.path))?;
-        presentation.fonts.insert(
-            qualified_asset_id(&archive.id().0, &font.id),
-            bytes.to_vec(),
-        );
+        presentation
+            .fonts
+            .insert(qualified_asset_id(&archive.id().0, &font.id), bytes.into());
     }
     for sound in assets.sounds {
         let bytes = archive
             .file(&sound.path)
             .ok_or_else(|| format!("{}: missing sound asset {}", archive.id().0, sound.path))?;
-        presentation.sounds.insert(
-            qualified_asset_id(&archive.id().0, &sound.id),
-            bytes.to_vec(),
-        );
+        presentation
+            .sounds
+            .insert(qualified_asset_id(&archive.id().0, &sound.id), bytes.into());
     }
     for cursor in assets.cursors {
         presentation.cursor_assets.insert(
@@ -416,6 +415,91 @@ mod presentation_tests {
     use std::fs;
     use std::path::{Path, PathBuf};
     use turts_mod_runtime::pack::pack_dir;
+
+    #[test]
+    fn accepted_payloads_survive_owner_drop_and_metadata_clones_share_bytes_only() {
+        use std::sync::Arc;
+        let workspace = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let signature = |p: &PresentationContent| {
+            p.models
+                .iter()
+                .map(|(id, b)| (format!("model:{id}"), b.as_ref()))
+                .chain(
+                    p.images
+                        .iter()
+                        .map(|(id, i)| (format!("image:{id}"), i.bytes.as_ref())),
+                )
+                .chain(
+                    p.fonts
+                        .iter()
+                        .map(|(id, b)| (format!("font:{id}"), b.as_ref())),
+                )
+                .chain(
+                    p.sounds
+                        .iter()
+                        .map(|(id, b)| (format!("sound:{id}"), b.as_ref())),
+                )
+                .map(|(id, bytes)| (id, turts_mod_runtime::hash::sha256_hex(bytes)))
+                .collect::<BTreeMap<_, _>>()
+        };
+        for path in [
+            workspace.join("mods/skirmish"),
+            workspace.join("crates/turts_pack/tests/fixtures/muster_hud1"),
+        ] {
+            let archive = PackageArchive::parse(&pack_dir(&path).unwrap()).unwrap();
+            let acquired = build_acquired(std::slice::from_ref(&archive), String::new()).unwrap();
+            let original = &acquired.presentation;
+            let mut copy = original.clone();
+            let before = signature(original);
+            assert!(!before.is_empty());
+            // Compare accepted bytes directly with their declared archive paths.
+            for (_, assets) in archive.assets().unwrap() {
+                for asset in assets.models {
+                    let id = format!("{}:{}", archive.id().0, asset.id);
+                    assert_eq!(
+                        copy.models[&id].as_ref(),
+                        archive.file(&asset.path).unwrap()
+                    );
+                    assert!(Arc::ptr_eq(&original.models[&id], &copy.models[&id]));
+                }
+                for asset in assets.images {
+                    let id = format!("{}:{}", archive.id().0, asset.id);
+                    assert_eq!(
+                        copy.images[&id].bytes.as_ref(),
+                        archive.file(&asset.path).unwrap()
+                    );
+                    assert!(Arc::ptr_eq(
+                        &original.images[&id].bytes,
+                        &copy.images[&id].bytes
+                    ));
+                }
+                for asset in assets.fonts {
+                    let id = format!("{}:{}", archive.id().0, asset.id);
+                    assert_eq!(copy.fonts[&id].as_ref(), archive.file(&asset.path).unwrap());
+                    assert!(Arc::ptr_eq(&original.fonts[&id], &copy.fonts[&id]));
+                }
+                for asset in assets.sounds {
+                    let id = format!("{}:{}", archive.id().0, asset.id);
+                    assert_eq!(
+                        copy.sounds[&id].as_ref(),
+                        archive.file(&asset.path).unwrap()
+                    );
+                    assert!(Arc::ptr_eq(&original.sounds[&id], &copy.sounds[&id]));
+                }
+            }
+            copy.cursors
+                .insert("test-independent".into(), ("test:image".into(), (1, 2)));
+            assert!(!original.cursors.contains_key("test-independent"));
+            if let Some((id, image)) = copy.images.iter_mut().next() {
+                let old = original.images[id].nine_slice;
+                image.nine_slice = Some((1, 2, 3, 4));
+                assert_eq!(original.images[id].nine_slice, old);
+            }
+            drop(acquired);
+            drop(archive);
+            assert_eq!(signature(&copy), before);
+        }
+    }
 
     fn copy_tree(source: &Path, destination: &Path) {
         fs::create_dir_all(destination).unwrap();

@@ -353,7 +353,7 @@ mod tests {
         presentation.images.insert(
             "muster:icon".into(),
             PresentationImage {
-                bytes: ONE_PIXEL_PNG.to_vec(),
+                bytes: ONE_PIXEL_PNG.to_vec().into(),
                 nine_slice: Some((1, 2, 3, 4)),
             },
         );
@@ -484,7 +484,7 @@ mod tests {
         source.images.insert(
             "muster:cursor_move".into(),
             PresentationImage {
-                bytes: ONE_PIXEL_PNG.to_vec(),
+                bytes: ONE_PIXEL_PNG.to_vec().into(),
                 nine_slice: None,
             },
         );
@@ -520,7 +520,7 @@ mod tests {
         source.images.insert(
             "muster:wide".into(),
             PresentationImage {
-                bytes: RGBA16_PNG.to_vec(),
+                bytes: RGBA16_PNG.to_vec().into(),
                 nine_slice: None,
             },
         );
@@ -558,7 +558,7 @@ mod tests {
         source.images.insert(
             "other:icon".into(),
             PresentationImage {
-                bytes: ONE_PIXEL_PNG.to_vec(),
+                bytes: ONE_PIXEL_PNG.to_vec().into(),
                 nine_slice: Some((5, 6, 7, 8)),
             },
         );
@@ -594,7 +594,7 @@ mod tests {
         invalid.images.insert(
             "muster:broken".into(),
             PresentationImage {
-                bytes: b"not an image".to_vec(),
+                bytes: b"not an image".to_vec().into(),
                 nine_slice: None,
             },
         );
@@ -614,7 +614,7 @@ mod tests {
         replacement.images.insert(
             "other:new_icon".into(),
             PresentationImage {
-                bytes: ONE_PIXEL_PNG.to_vec(),
+                bytes: ONE_PIXEL_PNG.to_vec().into(),
                 nine_slice: None,
             },
         );
@@ -633,7 +633,7 @@ mod tests {
         presentation.images.insert(
             "new:icon".into(),
             PresentationImage {
-                bytes: ONE_PIXEL_PNG.to_vec(),
+                bytes: ONE_PIXEL_PNG.to_vec().into(),
                 nine_slice: None,
             },
         );
@@ -673,7 +673,7 @@ mod tests {
         replacement.images.insert(
             "other:new_icon".into(),
             PresentationImage {
-                bytes: ONE_PIXEL_PNG.to_vec(),
+                bytes: ONE_PIXEL_PNG.to_vec().into(),
                 nine_slice: None,
             },
         );

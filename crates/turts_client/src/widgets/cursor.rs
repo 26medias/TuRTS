@@ -26,94 +26,22 @@ pub fn update_cursor(world: &mut World) {
         clear_cursor(world);
         return;
     }
-    let Some(acquired) = world.get_resource::<AcquiredPackages>() else {
-        return;
-    };
-    let presentation = acquired.0.presentation.clone();
-    let mut content = acquired.0.content.clone();
-    let Some(state) = world.get_resource::<ReplicaState>() else {
-        return;
-    };
-    if let Some(current) = state.content.as_ref() {
-        content = current.clone();
-    }
-    let Some(replica) = state.replica.clone() else {
-        return;
-    };
-    let Some(slot) = state.welcome.map(|welcome| welcome.slot) else {
-        return;
-    };
-    let Some(presented) = world.get_resource::<Presented>().cloned() else {
-        return;
-    };
-    let cursor_position = world
-        .query_filtered::<&Window, With<PrimaryWindow>>()
-        .iter(world)
-        .find_map(Window::cursor_position)
-        .map(|position| [position.x, position.y]);
-    let primary_cursor = world
-        .query_filtered::<(Entity, Option<&CursorOptions>), With<PrimaryWindow>>()
-        .iter(world)
-        .next();
-    let lock_requested = primary_cursor.is_some_and(|(_, options)| {
-        options.is_some_and(|options| options.grab_mode == bevy::window::CursorGrabMode::Locked)
+    world.init_resource::<CursorQueries>();
+    let choice = world.resource_scope(|world, mut queries: Mut<CursorQueries>| {
+        choose_cursor(world, &mut queries)
     });
-    let lock_active = world
-        .get_resource::<CursorFeed>()
-        .and_then(|feed| feed.lock_active)
-        == Some(true);
-    let engine_position = if lock_active {
-        world
-            .get_resource::<CoreRuntime>()
-            .and_then(CoreRuntime::engine_cursor_position)
-    } else {
-        cursor_position.map(|position| Vec2::new(position[0], position[1]))
+    let Some(CursorChoice {
+        context,
+        image_id,
+        hotspot,
+        cursor_position,
+        engine_position,
+        lock_requested,
+        lock_active,
+    }) = choice
+    else {
+        return;
     };
-    let selection = world
-        .get_resource::<crate::debug_feed::SelectionFeed>()
-        .map_or_else(Vec::new, |feed| feed.0.clone());
-    let pending_order = world
-        .get_resource::<CoreRuntime>()
-        .and_then(CoreRuntime::pending_order_id)
-        .and_then(|id| ContentId::parse(id).ok());
-
-    let hover = current_hover(world, &replica, &content, &presented, engine_position);
-    let (context, override_asset) = if let Some(order_id) = pending_order.as_ref() {
-        let order = content.catalog.orders.get(order_id);
-        let valid = order.is_some_and(|order| {
-            order_target_valid(order, hover, &selection, &replica, &content, slot)
-        });
-        if !valid {
-            ("forbidden".to_string(), None)
-        } else {
-            let order_cursor =
-                order.and_then(|order| order.cursor.as_deref().map(|cursor| (order_id, cursor)));
-            (
-                "target".to_string(),
-                order_cursor.and_then(|(order_id, cursor)| {
-                    presentation
-                        .cursor_assets
-                        .get(&format!("{}:{cursor}", order_id.package.0))
-                        .cloned()
-                }),
-            )
-        }
-    } else {
-        (
-            world
-                .get_resource::<CoreRuntime>()
-                .and_then(CoreRuntime::camera_pan_context)
-                .map(str::to_owned)
-                .unwrap_or_else(|| hover_context(hover, &selection, &replica, &content, slot)),
-            None,
-        )
-    };
-    let selected_cursor = override_asset
-        .or_else(|| super::assets::primitive_cursor(&presentation, &context))
-        .or_else(|| presentation.cursors.get(&context).cloned())
-        .or_else(|| super::assets::primitive_cursor(&presentation, "default"))
-        .or_else(|| presentation.cursors.get("default").cloned());
-    let (image_id, hotspot) = selected_cursor.unwrap_or((String::new(), (0, 0)));
     let mut cursor_state = world
         .get_resource::<CursorState>()
         .cloned()
@@ -150,7 +78,9 @@ pub fn update_cursor(world: &mut World) {
             }));
             let mut windows = world.query_filtered::<Entity, With<PrimaryWindow>>();
             if let Some(window) = windows.iter(world).next() {
-                world.entity_mut(window).insert(icon.clone());
+                if world.get::<CursorIcon>(window) != Some(&icon) {
+                    world.entity_mut(window).insert(icon.clone());
+                }
                 if world.get::<CursorIcon>(window) == Some(&icon) {
                     applied = Some(local_image.clone());
                 }
@@ -184,6 +114,120 @@ pub fn update_cursor(world: &mut World) {
         feed.relative_motion = relative_motion;
         feed.frame_index = frame_index;
     }
+}
+
+// Cache only ECS query metadata. Each frame still reads the current world and interpolation.
+#[derive(Resource)]
+struct CursorQueries {
+    windows: bevy::ecs::query::QueryState<&'static Window, With<PrimaryWindow>>,
+    primary:
+        bevy::ecs::query::QueryState<(Entity, Option<&'static CursorOptions>), With<PrimaryWindow>>,
+    cameras:
+        bevy::ecs::query::QueryState<(&'static Camera, &'static GlobalTransform), With<Camera3d>>,
+}
+impl FromWorld for CursorQueries {
+    fn from_world(world: &mut World) -> Self {
+        Self {
+            windows: world.query_filtered(),
+            primary: world.query_filtered(),
+            cameras: world.query_filtered(),
+        }
+    }
+}
+struct CursorChoice {
+    context: String,
+    image_id: String,
+    hotspot: (u16, u16),
+    cursor_position: Option<[f32; 2]>,
+    engine_position: Option<Vec2>,
+    lock_requested: bool,
+    lock_active: bool,
+}
+fn choose_cursor(world: &World, queries: &mut CursorQueries) -> Option<CursorChoice> {
+    let acquired = world.get_resource::<AcquiredPackages>()?;
+    let presentation = &acquired.0.presentation;
+    let state = world.get_resource::<ReplicaState>()?;
+    let content = state.content.as_ref().unwrap_or(&acquired.0.content);
+    let replica = state.replica.as_ref()?;
+    let slot = state.welcome.map(|welcome| welcome.slot)?;
+    let presented = world.get_resource::<Presented>()?;
+    let cursor_position = queries
+        .windows
+        .iter(world)
+        .find_map(Window::cursor_position)
+        .map(|position| [position.x, position.y]);
+    let lock_requested = queries
+        .primary
+        .iter(world)
+        .next()
+        .is_some_and(|(_, options)| {
+            options.is_some_and(|options| options.grab_mode == bevy::window::CursorGrabMode::Locked)
+        });
+    let lock_active = world
+        .get_resource::<CursorFeed>()
+        .and_then(|feed| feed.lock_active)
+        == Some(true);
+    let engine_position = if lock_active {
+        world
+            .get_resource::<CoreRuntime>()
+            .and_then(CoreRuntime::engine_cursor_position)
+    } else {
+        cursor_position.map(|position| Vec2::new(position[0], position[1]))
+    };
+    let selection = world
+        .get_resource::<crate::debug_feed::SelectionFeed>()
+        .map_or(&[][..], |feed| feed.0.as_slice());
+    let pending_order = world
+        .get_resource::<CoreRuntime>()
+        .and_then(CoreRuntime::pending_order_id)
+        .and_then(|id| ContentId::parse(id).ok());
+
+    let hover = current_hover(world, queries, replica, content, presented, engine_position);
+    let (context, override_asset) = if let Some(order_id) = pending_order.as_ref() {
+        let order = content.catalog.orders.get(order_id);
+        let valid = order.is_some_and(|order| {
+            order_target_valid(order, hover, selection, replica, content, slot)
+        });
+        if !valid {
+            ("forbidden".to_string(), None)
+        } else {
+            let order_cursor =
+                order.and_then(|order| order.cursor.as_deref().map(|cursor| (order_id, cursor)));
+            (
+                "target".to_string(),
+                order_cursor.and_then(|(order_id, cursor)| {
+                    presentation
+                        .cursor_assets
+                        .get(&format!("{}:{cursor}", order_id.package.0))
+                        .cloned()
+                }),
+            )
+        }
+    } else {
+        (
+            world
+                .get_resource::<CoreRuntime>()
+                .and_then(CoreRuntime::camera_pan_context)
+                .map(str::to_owned)
+                .unwrap_or_else(|| hover_context(hover, selection, replica, content, slot)),
+            None,
+        )
+    };
+    let selected_cursor = override_asset
+        .or_else(|| super::assets::primitive_cursor(presentation, &context))
+        .or_else(|| presentation.cursors.get(&context).cloned())
+        .or_else(|| super::assets::primitive_cursor(presentation, "default"))
+        .or_else(|| presentation.cursors.get("default").cloned());
+    let (image_id, hotspot) = selected_cursor.unwrap_or((String::new(), (0, 0)));
+    Some(CursorChoice {
+        context,
+        image_id,
+        hotspot,
+        cursor_position,
+        engine_position,
+        lock_requested,
+        lock_active,
+    })
 }
 
 #[derive(Component)]
@@ -269,22 +313,25 @@ enum Hover {
 }
 
 fn current_hover(
-    world: &mut World,
+    world: &World,
+    queries: &mut CursorQueries,
     replica: &Replica,
     content: &crate::content::ClientContent,
     presented: &Presented,
     cursor: Option<Vec2>,
 ) -> Hover {
     let cursor = cursor.or_else(|| {
-        let mut windows = world.query_filtered::<&Window, With<PrimaryWindow>>();
-        windows.iter(world).find_map(Window::cursor_position)
+        queries
+            .windows
+            .iter(world)
+            .find_map(Window::cursor_position)
     });
     let Some(cursor) = cursor else {
         return Hover::Ground;
     };
     let ray = {
-        let mut cameras = world.query_filtered::<(&Camera, &GlobalTransform), With<Camera3d>>();
-        cameras
+        queries
+            .cameras
             .iter(world)
             .find_map(|(camera, transform)| camera.viewport_to_world(transform, cursor).ok())
     };
@@ -690,7 +737,8 @@ mod tests {
             "muster:icon".into(),
             PresentationImage {
                 bytes: include_bytes!("../../../../mods/muster/assets/images/cursor_move.png")
-                    .to_vec(),
+                    .to_vec()
+                    .into(),
                 nine_slice: None,
             },
         );
@@ -819,6 +867,24 @@ mod tests {
             .set_cursor_position(None);
         update_cursor(&mut world);
         assert_eq!(world.resource::<CursorFeed>().position, None);
+
+        // A replacement window has a new archetype. Cached queries must see its current state.
+        world.despawn(window);
+        let mut replacement = Window::default();
+        replacement.set_cursor_position(Some(Vec2::new(144.5, 376.75)));
+        world.spawn((
+            PrimaryWindow,
+            replacement,
+            CursorOptions {
+                grab_mode: bevy::window::CursorGrabMode::Locked,
+                ..default()
+            },
+        ));
+        update_cursor(&mut world);
+        let feed = world.resource::<CursorFeed>();
+        assert_eq!(feed.position, Some([144.5, 376.75]));
+        assert_eq!(feed.engine_position, Some([144.5, 376.75]));
+        assert!(feed.lock_requested);
     }
 
     #[test]
