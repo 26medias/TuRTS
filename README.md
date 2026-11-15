@@ -17,7 +17,7 @@ The local tested launcher is:
 bash target/mc-evidence/play-skirmish.sh
 ```
 
-[Rendering measurements](docs/measurements/models.md) record about 59 FPS for 400 fighting units on the local RTX 3080. The 2,000-unit stress battle reaches about 31 FPS High and 38 FPS Low. Hit sparks now appear above the armour.
+[Rendering measurements](docs/measurements/models.md) record about 59 FPS for 400 fighting units on the local RTX 3080. The 2,000-unit stress battle reaches about 33 FPS High and 39 FPS Low. Hit sparks now appear above the armour.
 
 That launcher uses prepared local artifacts. To build from source, use `bash scripts/skirmish-play.sh --prepare /absolute/path/to/prepared`, then `bash scripts/skirmish-play.sh --prepared /absolute/path/to/prepared --silent`. Test browsers must use a fresh profile and `--alsa-output-device=null`.
 

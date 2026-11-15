@@ -489,3 +489,25 @@ The 2,000-unit scene remains a stress test. Mean FPS does not prove every frame 
 Evidence: `target/mc-evidence/ground-blending/final/{battle400-measure,battle2000-measure,pan}/result.json`.
 GPU host identity: `target/mc-evidence/ground-blending/hardware.json`.
 GPU allocation high-water and draw-call counts remain unavailable. WASM memory is not total GPU or browser memory.
+
+## Shared presentation payloads and borrowed cursor state — 2026-11-14
+
+Ordinary release `ec91bcf4`. Same RTX 3080, i9-14900K, Linux, Chrome WebGPU, 1280×720.
+Mixed fighting units, effects, ground blending, and shared skin palettes remain enabled.
+Every actor remains visible and takes damage.
+
+| Scene | Quality | Mean FPS | p50 ms | p95 ms | WASM high-water MiB |
+| --- | --- | --- | --- | --- | --- |
+| battle400 | High | 58.70 | 16.70 | 16.80 | 193.2 |
+| battle400 | Low | 59.40 | 16.70 | 16.80 | 172.1 |
+| battle2000 | High | 33.15 | 33.30 | 50.00 | 388.8 |
+| battle2000 | Low | 39.14 | 16.80 | 33.40 | 348.7 |
+| pan | High | 59.70 | 16.70 | 16.70 | 193.9 |
+| pan | Low | 59.40 | 16.70 | 16.80 | 172.8 |
+
+Evidence: `target/mc-evidence/cursor-borrows/final/{battle400,battle2000,pan}/result.json`.
+The previous ground release records 31.00 High and 38.24 Low FPS at 2,000 units.
+This single sample is not a statistical speed guarantee. High p95 remains 50 ms.
+Preview measurements show no improvement. No retained-memory reduction is claimed.
+All three final cold-player probes and the actual launcher pass.
+Review and limits: `docs/reports/2026-11-14-presentation-payload-sharing.md`.
