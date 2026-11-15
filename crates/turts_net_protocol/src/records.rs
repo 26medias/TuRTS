@@ -337,7 +337,7 @@ pub enum RepairState {
 /// field except `orders_cleared` are empty at the lane-0 exit; a feature lane fills its own.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct DeltaRecords {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub terrain: Option<crate::terrain::TerrainDelta>,
     #[serde(default)]
     pub repairs: Vec<RepairRecord>,
@@ -365,7 +365,7 @@ pub struct DeltaRecords {
 /// a delta, `match_state: None` means "no change".
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct SnapshotRecords {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub terrain: Option<crate::terrain::TerrainSnapshot>,
     #[serde(default)]
     pub repairs: Vec<RepairRecord>,
