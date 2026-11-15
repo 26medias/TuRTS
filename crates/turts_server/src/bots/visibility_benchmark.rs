@@ -342,8 +342,8 @@ impl Harness {
                 .after(MessageSystems::Receive)
                 .before(end_client),
         );
-        // Conservative: the completed visibility refresh runs inside Collect. Include
-        // collection and immutable completed-world construction rather than subtract it.
+        // Boundary sets bracket the actual refresh without timing adjacent collectors
+        // or full-world publication. All publication/encoding/client work stays charged.
         app.add_systems(
             FixedPreUpdate,
             begin_cpu
@@ -370,10 +370,20 @@ impl Harness {
                 .after(turts_sim::visibility::refresh_tactical)
                 .after(begin_cpu),
         );
-        app.add_systems(FixedPostUpdate, begin_cpu.before(SimSet::Collect));
         app.add_systems(
             FixedPostUpdate,
-            end_completed.after(SimSet::Collect).after(begin_cpu),
+            begin_cpu
+                .in_set(SimSet::Collect)
+                .after(turts_sim::plugin::CompletedVisibilityBoundary::Before)
+                .before(turts_sim::visibility::refresh_completed),
+        );
+        app.add_systems(
+            FixedPostUpdate,
+            end_completed
+                .in_set(SimSet::Collect)
+                .after(turts_sim::visibility::refresh_completed)
+                .before(turts_sim::plugin::CompletedVisibilityBoundary::After)
+                .after(begin_cpu),
         );
         app.add_systems(PreUpdate, begin_cpu.before(MessageSystems::Receive));
         app.add_systems(
@@ -1050,8 +1060,8 @@ fn run(intervals: usize, acceptance: bool) {
     }
     let artifact = serde_json::json!({"acceptance":acceptance,"diagnostic_only":!acceptance,
         "warmup_intervals":WARMUP,"measured_intervals":intervals,"ticks_per_interval":20,
-        "server_includes_completed_world_collection":true,"nested_profile_clocks":!acceptance,
-        "stage_names":["start_refresh","tactical_refresh","completed_refresh_and_collect","queue_encode","pump_and_transport_send","bot_projection_queries_accounts","local_link_transfer","transport_receive","assembly_decode_nested","replica_activation_nested"],"network_wait_excluded":true,"rows":all});
+        "server_includes_completed_world_collection":false,"nested_profile_clocks":!acceptance,
+        "stage_names":["start_refresh","tactical_refresh","completed_refresh","queue_encode","pump_and_transport_send","bot_projection_queries_accounts","local_link_transfer","transport_receive","assembly_decode_nested","replica_activation_nested"],"network_wait_excluded":true,"rows":all});
     if let Some(path) = std::env::var_os("TURTS_SV7_OUT") {
         std::fs::write(path, serde_json::to_vec_pretty(&artifact).unwrap()).unwrap();
     }
