@@ -1,6 +1,6 @@
 # Shared visibility and remembered sightings
 
-Status: Anvil spec and plan reviews approved. One reviewer completed one spec turn and one plan turn.
+Status: Anvil spec and plan reviews approved. The v2 budget amendment used the same reviewer: one spec turn, one focused recheck, and one plan turn.
 Baseline: SDK15 candidate `a96cbaeb`. Its BF8/BF9 acceptance is separate from this milestone.
 Public authoring API: `0.2.16`. Network protocol: `9`.
 Review budget: one Codex reviewer for the spec, then the same reviewer for the plan.
@@ -199,7 +199,7 @@ Keep one feature report with the row results and evidence paths. No new gate fra
 | SV4 | Real human wire capture and public bot queries agree per slot/tick. Hidden-present/absent paired worlds give equal payloads and query metadata. Check health, every foreign reference, effects, initial snapshot, deltas, reconnect, and resync. Include appear-and-die within one tick and the final sight source dying after its authorized shot; no event references an unknown handle. Large interrupted/reordered snapshot and patch tests prove atomic activation, caps, cancellation, stale chunk rejection, restart/disconnect, and viewer isolation. Private allied economy remains private. Sustain every 20 Hz movement tick under 50 ms and 100 ms activation-ACK round trips, including batched multi-transaction delivery in one client frame. Backlog and age stay bounded without routine restarts. |
 | SV5 | Ordinary explicit/queued attack, acquisition, firing, gather, and repair cannot follow hidden targets. Placement advice stays Unknown over any unobserved rule-dependent region. Pair hidden-present/absent objects outside the footprint but inside node-clearance/static-gap regions; compare rows and all metadata. Forged hidden IDs refuse generically. Repeated command-log replay reproduces permitted views and results. |
 | SV6 | Fresh silent browsers show different knowledge for two slots. Move a scout, observe an enemy, withdraw, then reveal its old empty location. Assert ground/minimap fog, marked stale sighting, no hidden model/health/picking, and correct clearing. Run scripted cold-play probes on the final build. |
-| SV7 | Use the frozen workload below. At 20 Hz, visibility+memory+permitted human/bot projection costs p99 <= 5 ms over 1,000 warmed 20-tick intervals on four selected CPUs. Each sample sums all 20 ticks. Include snapshot encoding, chunk scheduling, deferred work, client activation CPU, allocations, resync bytes, steady traffic, and retained memory. No threshold adjustment after the run. |
+| SV7 | Use the unchanged frozen workload below and performance contract v2. Sustain the complete 20 Hz server workload, atomic delivery, and native client activation within the declared per-tick deadlines. Measure 1,000 warmed 20-tick intervals on four selected CPUs. Include encoding, scheduling, deferred work, allocations, resync, traffic, and retained memory. Record the original summed-work metric without a pass claim against its failed v1 ceiling. |
 
 SV7 uses 1,000 units split equally across two slots on a 128x128 world, cell_size 2, and source radius 12.
 Each slot has 100 moving sight sources, 150 other moving combat units, 100 stationary combat units, 100 gatherers, and 50 producers.
@@ -207,9 +207,54 @@ Only the 100 sight sources per slot emit vision. Gatherers and producers work; p
 The 500 designated moving units follow fixed coordinate routes. No source movement is disabled to improve the score.
 Each slot must have at least 20 foreign hide transitions and 20 reveal transitions in every measured interval.
 Use 100 warm-up intervals. Request one full resync per slot every 100 measured intervals; charge all its deferred work.
-Report server and client CPU separately and their sum for the threshold. Exclude network wait, not encoding/decoding/activation work.
+Report server and client CPU separately and their sum as an optimization diagnostic. Exclude network wait, not encoding/decoding/activation work.
 SV7 also records the accepted 400-unit detailed-model browser scenario with fog enabled and both camera zoom extremes.
 The browser must sustain at least 30 fps after warm-up. Do not reduce model/texture quality to pass.
 Record the equivalent AllVisible baseline and the concentrated all-visible battle case.
 Demonstrate bounded memory across repeated scouting cycles and no full-resync storm on routine visibility transitions.
 These checks do not replace future M7 combined terrain/script workloads or M12 large-scale budgets.
+
+
+## SV7 performance contract v2: deadline-based acceptance
+
+This amendment changes only the unsupported numeric allocation in SV7.
+The v1 ceiling was p99 <=5 ms summed across 20 ticks of server work and two client activations.
+It reused SDK15's once-per-second bot-phase budget for a much larger workload.
+Master sections 13/13.2 leave numeric subsystem allocations open; they do not derive that ceiling.
+The original diagnostic files remain immutable v1 FAILs. They are not v2 acceptance evidence.
+An independent contract audit identified this error before the v2 acceptance run.
+The 1000-unit workload, routes, work counters, four selected CPUs, warm-up, and resync schedule do not change.
+No model, texture, actor, visibility transition, delivery tick, privacy rule, or memory/transport cap is reduced.
+
+Measure every complete server tick, including all simulation phases and completed-world collection.
+Also charge publication, encoding, transport scheduling, activation-ACK handling, and deferred server work to that tick.
+Charge ordinary bot projection, queries, resync, and deferred work to the chronological service step in which each operation executes.
+Count each operation exactly once in server service time. A requester-attributed resync subtotal may be reported separately; never add it again.
+Drain final transport, activation, and ACK work before closing service samples and debt. Trailing work cannot escape the measurement.
+Measure the simulation directly; do not estimate its cost from the sum of subsystem clocks.
+The in-process harness must conservatively charge shared receive/send transport work to the server if it cannot separate endpoints.
+Do not include harness assertions, workload verification, or intentional network wait in server service time.
+Use direct monotonic elapsed schedule timers, with no baseline subtraction. Retain the original subsystem clocks for comparison.
+Record exact timer boundaries and use nearest-rank quantiles: sorted index ceil(percentile * sample_count) -1.
+
+The authored 20 Hz period is 50 ms. Require full-server service time p99 <=40 ms, p99.9 <=50 ms, and maximum <=100 ms.
+The 40 ms tail reserves 20 percent of the tick period for host work outside this fixture.
+A single exceptional tick may consume at most two periods. It cannot cause persistent simulation debt.
+Compute debt after each tick as max(0, prior debt + service time -50 ms), without resetting it at interval boundaries.
+Require maximum debt <=50 ms and zero debt at the end of the measured run.
+Require exactly one complete simulation tick and the corresponding atomic activation per authored step.
+This is service-time evidence, not a claim of OS scheduling or Internet latency.
+
+For each native client, time complete transport decode, assembly, validation, and atomic activation work charged to each tick.
+Charge shared transport receive work to both clients when it cannot be separated. This deliberately overcounts shared work.
+Also time each complete client application/receive batch, including every transaction processed before the next application update.
+Require each client's per-tick service and whole-batch service p99 <=16.667 ms and maximum <=33.333 ms.
+Several individually small activations cannot bypass the limit by sharing one large receive batch.
+These are the 60 FPS normal-frame and 30 FPS minimum-frame periods; the browser checks still measure actual rendered frames separately.
+Every final browser case must still meet the existing >=30 FPS floor, with unchanged detailed art and camera extremes.
+The independent 50/100 ms RTT test still requires every tick in order with bounded age/backlog and no routine restart.
+
+Record all per-tick service and client batch samples, quantiles, simulated debt, per-interval subsystem sums, traffic, retained memory, and absolute process peak resident memory.
+Apply the same deadline checks to the fog, equivalent AllVisible, and concentrated-battle modes.
+Fix these criteria and approve this amendment before fresh acceptance timing. A failed v2 result requires an implementation fix.
+This bounded fixture does not establish four-player hosting capacity or complete M7/M12 acceptance.

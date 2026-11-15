@@ -204,10 +204,28 @@ fn authored_fixture(fog: bool, concentrated: bool) -> Fixture {
 #[derive(Resource, Default)]
 struct Cpu {
     start: Option<Instant>,
+    simulation_start: Option<Instant>,
+    simulation_ns: u64,
     server_ns: u64,
     client_ns: u64,
+    peer_client_ns: [u64; 2],
+    client_batches_ns: [Vec<u64>; 2],
     stages_ns: [u64; 10],
     profiling: bool,
+}
+fn begin_simulation(mut cpu: ResMut<Cpu>) {
+    assert!(cpu.simulation_start.replace(Instant::now()).is_none());
+}
+fn end_simulation(mut cpu: ResMut<Cpu>) {
+    cpu.simulation_ns += cpu.simulation_start.take().unwrap().elapsed().as_nanos() as u64;
+}
+impl Cpu {
+    fn full_server_service_ns(&self) -> u64 {
+        // Refresh stages0..2 are already inside the direct simulation timer.
+        // Queue, pump/send, bot queries, local link and shared receive execute
+        // outside that timer in this harness. Each is charged exactly once.
+        self.simulation_ns + self.stages_ns[3..=7].iter().sum::<u64>()
+    }
 }
 fn begin_cpu(mut cpu: ResMut<Cpu>) {
     cpu.start = Some(Instant::now());
@@ -336,6 +354,8 @@ impl Harness {
         crate::outbound::knowledge::install(&mut app);
         app.init_resource::<Cpu>();
         app.init_resource::<Received>();
+        app.add_systems(FixedPreUpdate, begin_simulation.before(SimSet::Advance));
+        app.add_systems(FixedPostUpdate, end_simulation.after(SimSet::Collect));
         app.add_systems(
             PreUpdate,
             capture_frames
@@ -599,12 +619,14 @@ impl Harness {
             }
         }
     }
-    fn consume(&mut self) {
+    fn consume(&mut self, shared_transport_ns: u64) {
         let started = Instant::now();
         let profiling = self.app.world().resource::<Cpu>().profiling;
         let mut assembly_ns = 0;
         let mut activation_ns = 0;
+        let mut peer_batches = [0; 2];
         for peer in &mut self.peers {
+            let peer_started = Instant::now();
             let cancels = self
                 .app
                 .world_mut()
@@ -694,9 +716,15 @@ impl Harness {
                     .unwrap()
                     .benchmark_retained(),
             );
+            peer_batches[usize::from(peer.slot)] =
+                peer_started.elapsed().as_nanos() as u64 + shared_transport_ns;
         }
         let mut cpu = self.app.world_mut().resource_mut::<Cpu>();
         cpu.client_ns += started.elapsed().as_nanos() as u64;
+        for (slot, batch) in peer_batches.into_iter().enumerate() {
+            cpu.peer_client_ns[slot] += batch;
+            cpu.client_batches_ns[slot].push(batch);
+        }
         cpu.stages_ns[8] += assembly_ns;
         cpu.stages_ns[9] += activation_ns;
     }
@@ -731,8 +759,12 @@ impl Harness {
             .insert_resource(bevy::time::TimeUpdateStrategy::ManualDuration(
                 Duration::from_millis(ms),
             ));
+        let before = self.app.world().resource::<Cpu>().stages_ns;
         self.app.update();
-        self.consume();
+        let after = self.app.world().resource::<Cpu>().stages_ns;
+        // The app contains both endpoints. Charge all shared receive and send
+        // work to each client rather than undercount its decoder or ACK sender.
+        self.consume(after[7] - before[7] + after[4] - before[4]);
         self.transfer();
     }
     fn flush_to(&mut self, tick: u32) {
@@ -762,6 +794,9 @@ struct Sample {
     client_ns: u64,
     sum_ns: u64,
     stages_ns: [u64; 10],
+    full_server_tick_ns: Vec<u64>,
+    client_tick_ns: [Vec<u64>; 2],
+    client_batches_ns: [Vec<u64>; 2],
     fired: u64,
     permitted_shots: [u64; 2],
     extracted: u64,
@@ -883,7 +918,12 @@ impl Harness {
         let mut fired = 0;
         let mut extracted = 0;
         let mut moved = BTreeSet::new();
-        for _ in 0..20 {
+        let mut full_server_tick_ns = Vec::with_capacity(20);
+        let mut client_tick_ns: [Vec<u64>; 2] = std::array::from_fn(|_| Vec::with_capacity(20));
+        for step in 0..20 {
+            let cpu = self.app.world().resource::<Cpu>();
+            let service_before = cpu.full_server_service_ns();
+            let clients_before = cpu.peer_client_ns;
             let next = completed_world(self.app.world()).tick + 1;
             self.orders(next);
             let before = completed_world(self.app.world())
@@ -933,62 +973,67 @@ impl Harness {
             if tick.is_multiple_of(20) {
                 self.bots();
             }
-        }
-        if resync && (index + 1).is_multiple_of(100) {
-            let start = Instant::now();
-            for peer in &self.peers {
+            if step == 19 && resync && (index + 1).is_multiple_of(100) {
+                let start = Instant::now();
+                for peer in &self.peers {
+                    assert!(
+                        crate::outbound::knowledge::queue_oversized(
+                            self.app.world_mut(),
+                            peer.server,
+                            turts_sim::SlotId(peer.slot)
+                        )
+                        .unwrap()
+                    );
+                }
+                charge_server(self.app.world_mut(), 3, start);
+                let tick = completed_world(self.app.world()).tick;
+                // Same-tick resync must actually activate the new transaction as well.
+                let old = self
+                    .peers
+                    .iter()
+                    .map(|p| p.assembler.active().unwrap().transaction_id)
+                    .collect::<Vec<_>>();
+                for _ in 0..2048 {
+                    self.update(0);
+                    if self.peers.iter().zip(&old).all(|(p, id)| {
+                        p.latest == tick
+                            && p.assembler.active().unwrap().transaction_id > *id
+                            && self
+                                .app
+                                .world()
+                                .get::<crate::outbound::knowledge::KnowledgeSender>(p.server)
+                                .unwrap()
+                                .active_stamp()
+                                == p.assembler.active()
+                    }) {
+                        break;
+                    }
+                }
                 assert!(
-                    crate::outbound::knowledge::queue_oversized(
-                        self.app.world_mut(),
-                        peer.server,
-                        turts_sim::SlotId(peer.slot)
-                    )
-                    .unwrap()
+                    self.peers.iter().zip(old).all(|(p, id)| p
+                        .assembler
+                        .active()
+                        .unwrap()
+                        .transaction_id
+                        > id),
+                    "full resync did not finish"
+                );
+                assert!(
+                    self.peers.iter().all(|p| self
+                        .app
+                        .world()
+                        .get::<crate::outbound::knowledge::KnowledgeSender>(p.server)
+                        .unwrap()
+                        .active_stamp()
+                        == p.assembler.active()),
+                    "resync activation ACK tail must be charged in this interval"
                 );
             }
-            charge_server(self.app.world_mut(), 3, start);
-            let tick = completed_world(self.app.world()).tick;
-            // Same-tick resync must actually activate the new transaction as well.
-            let old = self
-                .peers
-                .iter()
-                .map(|p| p.assembler.active().unwrap().transaction_id)
-                .collect::<Vec<_>>();
-            for _ in 0..2048 {
-                self.update(0);
-                if self.peers.iter().zip(&old).all(|(p, id)| {
-                    p.latest == tick
-                        && p.assembler.active().unwrap().transaction_id > *id
-                        && self
-                            .app
-                            .world()
-                            .get::<crate::outbound::knowledge::KnowledgeSender>(p.server)
-                            .unwrap()
-                            .active_stamp()
-                            == p.assembler.active()
-                }) {
-                    break;
-                }
+            let cpu = self.app.world().resource::<Cpu>();
+            full_server_tick_ns.push(cpu.full_server_service_ns() - service_before);
+            for slot in 0..2 {
+                client_tick_ns[slot].push(cpu.peer_client_ns[slot] - clients_before[slot]);
             }
-            assert!(
-                self.peers.iter().zip(old).all(|(p, id)| p
-                    .assembler
-                    .active()
-                    .unwrap()
-                    .transaction_id
-                    > id),
-                "full resync did not finish"
-            );
-            assert!(
-                self.peers.iter().all(|p| self
-                    .app
-                    .world()
-                    .get::<crate::outbound::knowledge::KnowledgeSender>(p.server)
-                    .unwrap()
-                    .active_stamp()
-                    == p.assembler.active()),
-                "resync activation ACK tail must be charged in this interval"
-            );
         }
         let cpu = self.app.world().resource::<Cpu>();
         let sample = Sample {
@@ -996,6 +1041,9 @@ impl Harness {
             client_ns: cpu.client_ns,
             sum_ns: cpu.server_ns + cpu.client_ns,
             stages_ns: cpu.stages_ns,
+            full_server_tick_ns,
+            client_tick_ns,
+            client_batches_ns: cpu.client_batches_ns.clone(),
             fired,
             permitted_shots: std::array::from_fn(|i| self.peers[i].permitted_shots),
             extracted,
@@ -1030,6 +1078,55 @@ fn quantiles(mut values: Vec<u64>) -> serde_json::Value {
     let at = |percent: usize| values[(values.len() * percent).div_ceil(100) - 1];
     serde_json::json!({"p50_ns":at(50),"p95_ns":at(95),"p99_ns":at(99),"max_ns":values.last().unwrap()})
 }
+fn rank(values: &[u64], permille: usize) -> u64 {
+    assert!(!values.is_empty() && (1..=1000).contains(&permille));
+    let mut ordered = values.to_vec();
+    ordered.sort_unstable();
+    ordered[(ordered.len() * permille).div_ceil(1000) - 1]
+}
+fn deadline_summary(
+    server: &[u64],
+    clients: [&[u64]; 2],
+    batches: [&[u64]; 2],
+) -> serde_json::Value {
+    let mut debt = 0u64;
+    let mut maximum_debt = 0;
+    for service in server {
+        debt = debt.saturating_add(*service).saturating_sub(50_000_000);
+        maximum_debt = maximum_debt.max(debt);
+    }
+    let server_pass = rank(server, 990) <= 40_000_000
+        && rank(server, 999) <= 50_000_000
+        && rank(server, 1000) <= 100_000_000
+        && maximum_debt <= 50_000_000
+        && debt == 0;
+    let client_rows: Vec<_> = (0..2)
+        .map(|slot| {
+            let pass = rank(clients[slot], 990) <= 16_667_000
+                && rank(clients[slot], 1000) <= 33_333_000
+                && rank(batches[slot], 990) <= 16_667_000
+                && rank(batches[slot], 1000) <= 33_333_000;
+            serde_json::json!({"slot":slot,"pass":pass,
+                "tick":quantiles(clients[slot].to_vec()),"batch":quantiles(batches[slot].to_vec()),
+                "tick_samples":clients[slot].len(),"batch_samples":batches[slot].len()})
+        })
+        .collect();
+    serde_json::json!({"pass":server_pass && client_rows.iter().all(|r|r["pass"]==true),
+        "server_pass":server_pass,"server_tick":quantiles(server.to_vec()),
+        "server_p99_9_ns":rank(server,999),"server_tick_samples":server.len(),
+        "maximum_debt_ns":maximum_debt,"final_debt_ns":debt,"clients":client_rows})
+}
+fn peak_resident_bytes() -> Option<u64> {
+    std::fs::read_to_string("/proc/self/status")
+        .ok()?
+        .lines()
+        .find_map(|line| line.strip_prefix("VmHWM:"))?
+        .split_whitespace()
+        .next()?
+        .parse::<u64>()
+        .ok()?
+        .checked_mul(1024)
+}
 fn run(intervals: usize, acceptance: bool) {
     // Record immutable authoring before any timed work. Root captures CPU affinity,
     // compiler, machine, and build flags beside this artifact.
@@ -1058,20 +1155,59 @@ fn run(intervals: usize, acceptance: bool) {
             }
         }
         let sum = quantiles(samples.iter().map(|s| s.sum_ns).collect());
-        let pass = sum["p99_ns"].as_u64().unwrap() <= 5_000_000;
+        let v1_pass = sum["p99_ns"].as_u64().unwrap() <= 5_000_000;
+        let server: Vec<_> = samples
+            .iter()
+            .flat_map(|s| s.full_server_tick_ns.iter().copied())
+            .collect();
+        let client: [Vec<_>; 2] = std::array::from_fn(|slot| {
+            samples
+                .iter()
+                .flat_map(|s| s.client_tick_ns[slot].iter().copied())
+                .collect()
+        });
+        let batches: [Vec<_>; 2] = std::array::from_fn(|slot| {
+            samples
+                .iter()
+                .flat_map(|s| s.client_batches_ns[slot].iter().copied())
+                .collect()
+        });
+        let deadline = deadline_summary(
+            &server,
+            [&client[0], &client[1]],
+            [&batches[0], &batches[1]],
+        );
+        let pass = deadline["pass"] == true;
+        assert_eq!(server.len(), intervals * 20);
         all.push(serde_json::json!({"fog":fog,"concentrated":concentrated,"authored":harness.authored,
             "server":quantiles(samples.iter().map(|s|s.server_ns).collect()),"client":quantiles(samples.iter().map(|s|s.client_ns).collect()),
-            "sum":sum,"threshold_pass":pass,"queue_subphases":crate::bot_profile::summary(),"samples":samples}));
+            "sum":sum,"v1_threshold_pass":v1_pass,"threshold_pass":pass,"deadline":deadline,
+            "absolute_process_peak_resident_bytes":peak_resident_bytes(),
+            "queue_subphases":crate::bot_profile::summary(),"samples":samples}));
     }
     let artifact = serde_json::json!({"acceptance":acceptance,"diagnostic_only":!acceptance,
         "warmup_intervals":WARMUP,"measured_intervals":intervals,"ticks_per_interval":20,
-        "server_includes_completed_world_collection":false,"nested_profile_clocks":!acceptance,
+        "performance_contract_version":2,"profile":if cfg!(debug_assertions){"debug"}else{"release"},
+        "full_server_includes_completed_world_collection":true,"subsystem_server_includes_completed_world_collection":false,
+        "timer_boundaries":{"simulation":"FixedPreUpdate before SimSet::Advance through FixedPostUpdate after SimSet::Collect",
+            "server_service":"direct simulation plus outside-fixed queue, pump/send, bot queries, local link and shared receive; each once",
+            "client_batch":"whole per-peer consume plus conservatively shared transport receive and send",
+            "deferred_work":"actual chronological step, drained before next simulation step, no extra deadline credits"},
+        "nested_profile_clocks":!acceptance,
         "stage_names":["start_refresh","tactical_refresh","completed_refresh","queue_encode","pump_and_transport_send","bot_projection_queries_accounts","local_link_transfer","transport_receive","assembly_decode_nested","replica_activation_nested"],"network_wait_excluded":true,"rows":all});
     if let Some(path) = std::env::var_os("TURTS_SV7_OUT") {
         std::fs::write(path, serde_json::to_vec_pretty(&artifact).unwrap()).unwrap();
     }
-    println!("SV7_RESULT {artifact}");
+    println!(
+        "SV7_RESULT {}",
+        serde_json::json!({"acceptance":acceptance,"performance_contract_version":2,
+        "rows":artifact["rows"].as_array().unwrap().iter().map(|r|serde_json::json!({"fog":r["fog"],"concentrated":r["concentrated"],"deadline":r["deadline"],"v1_threshold_pass":r["v1_threshold_pass"]})).collect::<Vec<_>>()})
+    );
     if acceptance {
+        assert!(
+            !cfg!(debug_assertions),
+            "SV7 performance acceptance requires a release build"
+        );
         assert_eq!(intervals, REQUIRED);
         assert!(
             artifact["rows"]
@@ -1079,9 +1215,39 @@ fn run(intervals: usize, acceptance: bool) {
                 .unwrap()
                 .iter()
                 .all(|r| r["threshold_pass"] == true),
-            "SV7 p99 exceeded frozen 5ms budget"
+            "SV7 failed frozen deadline-based v2 budget; original v1 result remains separate"
         );
     }
+}
+#[test]
+fn service_deadlines_keep_debt_across_intervals_and_bound_whole_batches() {
+    let clients = vec![1_000_000; 40];
+    let batches = vec![1_000_000; 80];
+    let mut server = vec![10_000_000; 40];
+    assert_eq!(rank(&[1, 2, 3, 4], 999), 4);
+    assert_eq!(rank(&[1, 2, 3, 4], 500), 2);
+    assert_eq!(
+        deadline_summary(&server, [&clients, &clients], [&batches, &batches])["pass"],
+        true
+    );
+    // Two exceptional services straddle the20-tick boundary. No reset or
+    // artificial drain tick can erase their accumulated100ms debt.
+    server[19] = 100_000_000;
+    server[20] = 100_000_000;
+    let failed = deadline_summary(&server, [&clients, &clients], [&batches, &batches]);
+    assert_eq!(failed["maximum_debt_ns"], 100_000_000);
+    assert_eq!(failed["final_debt_ns"], 0);
+    assert_eq!(failed["pass"], false);
+    server.fill(10_000_000);
+    let mut oversized_batch = batches.clone();
+    oversized_batch[0] = 40_000_000;
+    assert_eq!(
+        deadline_summary(&server, [&clients, &clients], [&oversized_batch, &batches])["pass"],
+        false
+    );
+    let pending = deadline_summary(&[100_000_000], [&[1], &[1]], [&[1], &[1]]);
+    assert_eq!(pending["final_debt_ns"], 50_000_000);
+    assert_eq!(pending["pass"], false);
 }
 #[test]
 #[ignore = "release, four selected CPUs, full frozen SV7 acceptance"]
