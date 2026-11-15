@@ -55,7 +55,10 @@ They are diagnostics, not performance acceptance.
 | --- | ---: | ---: | ---: | ---: |
 | Baseline | 25.081 ms | 10.116 ms | 4.978 ms | 3.602 ms |
 | Immutable commands, actual-inventory lookup, allocation-free role matching | 13.918 ms | 0.826 ms | 3.683 ms | 3.660 ms |
+| Shared results/effects, borrowed payment validation, sorted borrowed accounts | 11.377 ms | 0.824 ms | 2.120 ms | 3.107 ms |
 
 The second diagnostic is `bf8-diagnostic-opt2/bf8-diagnostic-40.json` under the evidence directory above.
 It predates shared immutable results/effects, borrowed payment validation, and sorted borrowed account rows.
+The third diagnostic is `bf8-diagnostic-opt3/bf8-diagnostic-40.json`.
+It predates grouped role counts, cached content resolution, and demand-time publication.
 Those later changes require a new measurement.

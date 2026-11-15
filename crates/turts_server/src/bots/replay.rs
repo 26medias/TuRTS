@@ -251,15 +251,77 @@ fn prepare_inner(world: &mut World, playback: &mut Playback) -> Result<(), Strin
 fn prepare_recorded_actor(world: &mut World, actor: &BotActor) -> Result<(), String> {
     actors::prepare_reconciliation(world, actor)?;
     let batch = actors::actor_reconciliation(world, actor)?;
-    // Recorded playback retires terminal receipts without regenerating decisions.
-    let retained = batch
-        .included
-        .iter()
-        .filter(|effect| !effect.terminal)
-        .map(|effect| effect.request.clone())
-        .chain(batch.unapplied.iter().cloned())
-        .collect::<Vec<_>>();
+    let catalog = &world.resource::<crate::orders::ServerCatalog>().0;
+    let book = world.resource::<actors::BotActors>();
+    let mut retained = batch.unapplied.clone();
+    for effect in &batch.included {
+        if effect.terminal || effect.refused {
+            continue;
+        }
+        let tracked = &book.entries[&actor.slot].requests[&effect.request];
+        let recipe = tracked
+            .admitted_work
+            .as_ref()
+            .map(|work| &work.recipe)
+            .or_else(|| match &tracked.command.order.target {
+                BotTarget::Content(content) | BotTarget::ContentAtPoint { content, .. } => {
+                    Some(content)
+                }
+                _ => None,
+            })
+            .ok_or("recorded pending work lacks its recipe")?;
+        let costs = catalog
+            .production
+            .get(recipe)
+            .map(|recipe| recipe.costs.as_slice())
+            .or_else(|| {
+                catalog
+                    .technologies
+                    .get(recipe)
+                    .map(|technology| technology.costs.as_slice())
+            })
+            .ok_or("recorded pending recipe is absent from the locked catalog")?;
+        // Match live coordinator retirement: paid and authoritative reserved
+        // amounts both release provisional debt, even while work is running.
+        if has_unrepresented_cost(costs, effect)? {
+            retained.push(effect.request.clone());
+        }
+    }
     actors::acknowledge(world, actor, batch.watermark, &retained)
+}
+
+fn has_unrepresented_cost(
+    costs: &[turts_mod_api::ResolvedCost],
+    effect: &turts_bot::ObservedRequestEffect,
+) -> Result<bool, String> {
+    for cost in costs {
+        let endpoint = match cost.source {
+            turts_mod_api::CostSource::SlotBalance => {
+                turts_bot::SourceEndpoint::SlotBalance(effect.request.actor.slot)
+            }
+            turts_mod_api::CostSource::ProducerInventory => turts_bot::SourceEndpoint::Inventory {
+                unit: effect.request.unit,
+                port: turts_bot::InventoryPort::Main,
+            },
+        };
+        let amount = |rows: &[turts_bot::AccountAmount]| {
+            rows.iter()
+                .find(|row| {
+                    row.account.endpoint == endpoint && row.account.resource == cost.resource
+                })
+                .map_or(0, |row| row.amount)
+        };
+        let represented = amount(&effect.paid)
+            .checked_add(amount(&effect.reserved))
+            .ok_or("recorded paid and reserved amounts overflow")?;
+        if represented > cost.amount {
+            return Err("recorded work exceeds its authored cost".into());
+        }
+        if represented < cost.amount {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 fn verify(world: &mut World) {
@@ -419,6 +481,60 @@ mod tests {
                     },
                 },
             });
+    }
+    #[test]
+    fn recorded_retirement_counts_paid_and_reserved_costs_before_work_finishes() {
+        use turts_bot::{
+            AccountAmount, InventoryPort, ObservedRequestEffect, RequestKey, SourceEndpoint,
+            SpendKey, Watermark,
+        };
+        let actor = BotActor {
+            slot: 1,
+            profile: ContentId::parse("stockyard:opponent").unwrap(),
+        };
+        let resource = ContentId::parse("stockyard:timber").unwrap();
+        let key = SpendKey {
+            endpoint: SourceEndpoint::Inventory {
+                unit: 7,
+                port: InventoryPort::Main,
+            },
+            resource: resource.clone(),
+        };
+        let costs = [turts_mod_api::ResolvedCost {
+            resource,
+            amount: 12,
+            source: turts_mod_api::CostSource::ProducerInventory,
+        }];
+        let mut effect = ObservedRequestEffect::held_placement(
+            RequestKey {
+                actor,
+                sequence: 1,
+                unit: 7,
+            },
+            Watermark {
+                completed_tick: 1,
+                revision: 1,
+            },
+        );
+        for (paid, reserved, unpaid) in [
+            (0, 0, true),
+            (6, 0, true),
+            (12, 0, false),
+            (0, 12, false),
+            (6, 6, false),
+        ] {
+            effect.paid = vec![AccountAmount {
+                account: key.clone(),
+                amount: paid,
+            }];
+            effect.reserved = vec![AccountAmount {
+                account: key.clone(),
+                amount: reserved,
+            }];
+            assert_eq!(has_unrepresented_cost(&costs, &effect).unwrap(), unpaid);
+        }
+        assert!(!effect.terminal);
+        assert!(!has_unrepresented_cost(&[], &effect).unwrap());
     }
     #[test]
     fn recorded_actor_retires_terminal_receipts_beyond_the_envelope_limit() {
