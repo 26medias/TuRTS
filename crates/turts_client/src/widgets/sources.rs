@@ -686,6 +686,32 @@ fn production_queue(context: SourceContext<'_>) -> SourceData {
             if let Some(record) = context.replica.job_progress(selected, job.id.0) {
                 hud::set_work_state(&mut item, record, context);
             }
+            let refunds = ContentId::parse(&job.recipe).ok().and_then(|id| {
+                context
+                    .content
+                    .catalog
+                    .production
+                    .get(&id)
+                    .map(|recipe| recipe.cancel_refunds)
+                    .or_else(|| {
+                        context
+                            .content
+                            .catalog
+                            .technologies
+                            .get(&id)
+                            .map(|technology| technology.cancel_refunds)
+                    })
+            });
+            let refund = refunds.map(|refund| match job.stage {
+                turts_net_protocol::JobStage::Queued => refund.queued,
+                turts_net_protocol::JobStage::Running => refund.running,
+                turts_net_protocol::JobStage::OutputBlocked => refund.output_blocked,
+            });
+            let charged = context
+                .replica
+                .job_progress(selected, job.id.0)
+                .map_or(job.charged.as_slice(), |record| record.charged.as_slice());
+            hud::set_payment_fields(&mut item, charged, refund, context);
             item.set(
                 ItemField::Progress,
                 if job.duration_ticks == 0 {
@@ -751,12 +777,17 @@ fn capability_matches(order: &turts_mod_api::OrderDef, unit: &turts_mod_api::Res
                 || unit.constructor.is_some()
                 || unit.weapon.is_some()
         }
-        Behaviour::Stop | Behaviour::Hold => unit.movement.is_some() || unit.weapon.is_some(),
-        // API 0.2.4: no unit is capable of a new behaviour until its lane builds it.
-        Behaviour::Construct
-        | Behaviour::CancelConstruction
-        | Behaviour::Repair
-        | Behaviour::Surrender => false,
+        Behaviour::Stop => {
+            unit.movement.is_some()
+                || unit.weapon.is_some()
+                || unit.constructor.is_some()
+                || unit.repairer.is_some()
+        }
+        Behaviour::Hold => unit.movement.is_some() || unit.weapon.is_some(),
+        Behaviour::Construct => unit.constructor.is_some(),
+        Behaviour::CancelConstruction => unit.placement.is_some(),
+        Behaviour::Repair => unit.repairer.is_some(),
+        Behaviour::Surrender => false,
     }
 }
 
@@ -1465,6 +1496,7 @@ mod tests {
             acquire: None,
             armour: None,
             constructor: None,
+            repairer: None,
             placement: None,
             build_area: None,
             id: ContentId::parse(id).unwrap(),

@@ -260,3 +260,63 @@ fn lone_unqueued_plain_move_keeps_group_zero() {
         "a single plain point Move retains the legacy server fast path"
     );
 }
+
+#[test]
+fn repair_smart_target_preserves_authored_priority_and_per_actor_eligibility() {
+    use turts_mod_api::{Behaviour, Capability};
+    for (eligible, fallback_first, expected) in [
+        (true, false, "forge:repair"),
+        (false, false, "forge:order_move"),
+        (true, true, "forge:order_move"),
+    ] {
+        let mut world = TestWorld::default();
+        world.units[0].capabilities.push(Capability::Repairer);
+        if eligible {
+            world.repairable.push((UnitId(1), UnitId(3)));
+        }
+        world
+            .orders
+            .push(order("forge:repair", Behaviour::Repair, TargetKind::Unit));
+        let repair = SmartOrder {
+            target: SmartTarget::OwnDamaged,
+            needs: Capability::Repairer,
+            order: "forge:repair".into(),
+        };
+        let fallback = SmartOrder {
+            target: SmartTarget::OwnUnit,
+            needs: Capability::Movement,
+            order: "forge:order_move".into(),
+        };
+        world.rules.smart = if fallback_first {
+            vec![fallback, repair]
+        } else {
+            vec![repair, fallback]
+        };
+        let mut core = Core::default();
+        select_two(&mut core, &world, UnitId(1), UnitId(2));
+        let point = core.project_world_to_screen(world.units[2].position, &VIEW);
+        let effects = click(&mut core, &world, Button::Right, point, vec![], 100);
+        let messages = sent(&effects);
+        let first = messages
+            .iter()
+            .find(|message| message.units.contains(&UnitId(1)))
+            .unwrap();
+        assert_eq!(
+            first.order, expected,
+            "eligibility {eligible}, fallback first {fallback_first}"
+        );
+        let second = messages
+            .iter()
+            .find(|message| message.units.contains(&UnitId(2)))
+            .unwrap();
+        assert_eq!(
+            second.order, "forge:order_move",
+            "another actor cannot borrow a repairer's eligibility"
+        );
+        assert!(
+            messages
+                .iter()
+                .all(|message| message.target == OrderTarget::Unit(UnitId(3)))
+        );
+    }
+}
