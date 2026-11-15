@@ -533,3 +533,99 @@ fn an_automatic_held_site_can_place_and_complete_before_its_first_publication() 
     assert_eq!(amount.on_hand, 76);
     assert!(app.world().resource::<BotActors>().error.is_none());
 }
+
+#[test]
+fn independent_review_one_accounting_row_exhaustion_keeps_the_other_actor_advancing() {
+    let mut app = fixture(600);
+    let other = BotActor {
+        slot: 1,
+        profile: id("policy"),
+    };
+    let actors = [actor(), other.clone()];
+    let initial =
+        prepare_actor_limits(app.world(), &actors, CoordinatorLimits::default(), 65536).unwrap();
+    let row_limit = initial
+        .initial
+        .values()
+        .map(|batch| batch.accounts.len())
+        .max()
+        .unwrap();
+    let prepared = prepare_actor_limits(
+        app.world(),
+        &actors,
+        CoordinatorLimits::default(),
+        row_limit,
+    )
+    .unwrap();
+    install_bot_actors(app.world_mut(), &[other.clone()]).unwrap();
+    configure_actor_limits(app.world_mut(), prepared);
+    stage_bot_command(
+        app.world_mut(),
+        command(1, vec![1], "order_stop", BotTarget::None),
+    )
+    .unwrap();
+    app.update();
+    // The first actor now needs an extra receipt row. The second actor still fits.
+    let healthy = actor_reconciliation(app.world(), &other)
+        .expect("one actor's accounting exhaustion must not erase the other actor's basis");
+    assert_eq!(healthy.watermark.completed_tick, 1);
+    let mut next = command(1, vec![4], "order_stop", BotTarget::None);
+    next.actor = other.clone();
+    // Give the healthy actor enough room for its own receipt after the isolation check.
+    app.world_mut().resource_mut::<BotActors>().row_limit = 65536;
+    stage_bot_command(app.world_mut(), next)
+        .expect("one exhausted actor must not disable the shared admission pipeline");
+    app.update();
+    assert_eq!(
+        actor_reconciliation(app.world(), &other)
+            .unwrap()
+            .watermark
+            .completed_tick,
+        2
+    );
+    assert!(
+        actor_results(app.world(), &other)
+            .iter()
+            .any(|result| result.accepted)
+    );
+}
+
+#[test]
+fn independent_review_accounting_backpressure_retains_cot_progress_and_terminal_receipts() {
+    let mut app = fixture(100);
+    stage_bot_command(
+        app.world_mut(),
+        command(1, vec![1], "order_produce", BotTarget::Content(id("hire"))),
+    )
+    .unwrap();
+    app.update(); // Admission succeeds before publication backpressure begins.
+    assert!(!queued(&app).included[0].terminal);
+    app.world_mut().resource_mut::<BotActors>().row_limit = 1;
+    app.update(); // First paid step cannot fit a public account/receipt batch.
+    app.update(); // The final paid step and terminal receipt occur while blocked.
+    assert!(
+        turts_sim::completed_world(app.world())
+            .queues
+            .iter()
+            .filter(|queue| queue.producer == 1)
+            .all(|queue| queue.jobs.is_empty())
+    );
+    app.world_mut().resource_mut::<BotActors>().row_limit = 65536;
+    app.update(); // Recovery must not require replaying commands or inventing payments.
+    let batch = actor_reconciliation(app.world(), &actor())
+        .expect("publication must recover after bounded backpressure");
+    assert_eq!(batch.watermark.completed_tick, 4);
+    let effect = &batch.included[0];
+    assert!(effect.terminal);
+    assert_eq!(
+        effect.work.as_ref().unwrap().state,
+        turts_bot::WorkState::Finished
+    );
+    assert_eq!(effect.paid.iter().map(|row| row.amount).sum::<u64>(), 12);
+    acknowledge(app.world_mut(), &actor(), batch.watermark, &[]).unwrap();
+    assert!(
+        app.world().resource::<BotActors>().entries[&0]
+            .requests
+            .is_empty()
+    );
+}

@@ -814,6 +814,52 @@ fn role_matches(role: &turts_mod_api::BotRole, unit: &turts_mod_api::ResolvedUni
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn independent_review_wildcard_orders_remain_valid_for_bot_proposals() {
+        use turts_mod_runtime::{archive::PackageArchive, pack::pack_dir};
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../mods/cedar");
+        let archive = PackageArchive::parse(&pack_dir(&path).unwrap()).unwrap();
+        let catalog = archive.content().unwrap();
+        let stop = ContentId::parse("cedar:order_stop").unwrap();
+        let mut order = catalog.orders[&stop].clone();
+        order.units.clear(); // The ordinary order API defines this as all capable units.
+        let mut current = basis();
+        Arc::make_mut(&mut current.catalog)
+            .orders
+            .insert(stop.clone(), order);
+        current.index();
+        let candidate = CandidateLease::new(current.clone(), 0);
+        let profile = turts_mod_api::BotDef {
+            id: "policy".into(),
+            name: "Policy".into(),
+            decision_ms: 1000,
+            start_when: turts_mod_api::BotStartWhen::MatchRunning,
+            knowledge: Default::default(),
+            controllers: vec![],
+        };
+        let proposal = Proposal {
+            source_basis: current.id,
+            task: TaskKey::new("custom", "stop", "one"),
+            actors: vec![1],
+            order: BotOrder {
+                content: stop,
+                target: BotTarget::None,
+                queue: BotQueueMode::Replace,
+                group: 0,
+            },
+            priority: 1,
+            goal_order: 0,
+        };
+        let verified = ObservationVerifier {
+            candidate: &candidate,
+            current: &current,
+            profile: &profile,
+        }
+        .verify(current.id, &proposal)
+        .expect("a global ordinary order must remain available through the public bot API");
+        assert_eq!(verified.members.len(), 1);
+        assert_eq!(verified.members[0].unit, 1);
+    }
     fn empty_catalog() -> ContentCatalog {
         ContentCatalog {
             bots: BTreeMap::new(),
