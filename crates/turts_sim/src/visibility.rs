@@ -56,6 +56,7 @@ impl VisibleNode {
 struct SlotBasis {
     observed: Arc<[u8]>,
     explored: Arc<[u8]>,
+    allowed_units: Arc<[u8]>,
     units: Arc<[RememberedUnit]>,
     nodes: Arc<[RememberedNode]>,
     truncated: bool,
@@ -67,7 +68,24 @@ pub struct VisibilityBasis {
     grid: VisibilityGrid,
     slots: Vec<SlotBasis>,
     units: Arc<[VisibleUnit]>,
+    // Row plus one; zero denotes an absent ID. Sparse identities use binary search.
+    unit_rows: Option<Arc<[u32]>>,
     nodes: Arc<[VisibleNode]>,
+}
+// At most 4 MiB per distinct retained identity set, shared across phase bases.
+const MAX_DENSE_UNIT_ROWS: usize = 1_000_000;
+fn dense_unit_rows(units: &[VisibleUnit]) -> Option<Arc<[u32]>> {
+    let entries = usize::try_from(units.last()?.unit).ok()?.checked_add(1)?;
+    if entries > MAX_DENSE_UNIT_ROWS || entries > units.len().saturating_mul(4) {
+        return None;
+    }
+    let mut rows = Vec::new();
+    rows.try_reserve_exact(entries).ok()?;
+    rows.resize(entries, 0);
+    for (index, unit) in units.iter().enumerate() {
+        rows[unit.unit as usize] = u32::try_from(index).ok()?.checked_add(1)?;
+    }
+    Some(rows.into())
 }
 fn point(p: WorldPos) -> Point {
     Point { x: p.x, y: p.y }
@@ -105,12 +123,15 @@ impl VisibilityBasis {
         })
     }
     pub fn permitted_unit(&self, viewer: u8, id: u32) -> Option<&VisibleUnit> {
-        self.slots.get(usize::from(viewer))?;
-        let row = &self.units[self
-            .units
-            .binary_search_by_key(&id, |unit| unit.unit)
-            .ok()?];
-        (row.owner == viewer || self.point_observed(viewer, row.position)).then_some(row)
+        let slot = self.slots.get(usize::from(viewer))?;
+        let index = if let Some(rows) = &self.unit_rows {
+            rows.get(id as usize)?.checked_sub(1)? as usize
+        } else {
+            self.units
+                .binary_search_by_key(&id, |unit| unit.unit)
+                .ok()?
+        };
+        bit(&slot.allowed_units, index as u32).then(|| &self.units[index])
     }
     pub fn unit_permitted(&self, viewer: u8, id: u32) -> bool {
         self.permitted_unit(viewer, id).is_some()
@@ -270,6 +291,7 @@ pub fn prepare(
         slots.push(SlotBasis {
             observed: Arc::clone(&observed),
             explored: Arc::clone(&explored),
+            allowed_units: Arc::from([]),
             units: Arc::from([]),
             nodes: Arc::from([]),
             truncated: false,
@@ -291,6 +313,7 @@ pub fn prepare(
             grid,
             slots: slots.clone(),
             units: Arc::from([]),
+            unit_rows: None,
             nodes: Arc::from([]),
         })
     };
@@ -502,6 +525,17 @@ impl VisibilityState {
             self.adjust_source(&source, true);
             self.sources.insert(id, source);
         }
+        let previous = self.phase(self.active);
+        let unit_rows = if units.len() == previous.units.len()
+            && units
+                .iter()
+                .zip(previous.units.iter())
+                .all(|(a, b)| a.unit == b.unit)
+        {
+            previous.unit_rows.clone()
+        } else {
+            dense_unit_rows(&units)
+        };
         let mut next = VisibilityBasis {
             stamp: KnowledgeBasis {
                 match_id: self.match_id,
@@ -512,13 +546,25 @@ impl VisibilityState {
             grid: self.grid,
             slots: Vec::new(),
             units: units.into(),
+            unit_rows,
             nodes: nodes.into(),
         };
         // Coverage is ready before any memory decision. A hidden/absent subject's
         // current location never participates in clearing its old observed cell.
         for viewer in 0..SLOT_COUNT {
             let coverage = &self.coverage[usize::from(viewer)];
+            let mut allowed_units = vec![0u8; next.units.len().div_ceil(8)];
+            for (index, unit) in next.units.iter().enumerate() {
+                if unit.owner == viewer
+                    || rule_grid(self.grid)
+                        .cell(point(unit.position))
+                        .is_some_and(|cell| bit(&coverage.observed, cell))
+                {
+                    allowed_units[index / 8] |= 1 << (index % 8);
+                }
+            }
             next.slots.push(SlotBasis {
+                allowed_units: allowed_units.into(),
                 observed: Arc::clone(&coverage.observed),
                 explored: Arc::clone(&coverage.explored),
                 units: Arc::from([]),
@@ -526,23 +572,31 @@ impl VisibilityState {
                 truncated: false,
             });
         }
-        let previous = self.phase(self.active);
         for viewer in 0..SLOT_COUNT {
             let memory = &mut self.memories[usize::from(viewer)];
             // Capture the last permitted phase only when observation ends. The
             // previous basis keeps same-tick movement/facing and its exact tick.
             // Merge the sorted rows to avoid a binary lookup per current subject.
-            let mut current_units = next.units.iter().peekable();
-            for unit in previous.units.iter() {
-                while current_units.peek().is_some_and(|row| row.unit < unit.unit) {
+            let mut current_units = next.units.iter().enumerate().peekable();
+            for (old_index, unit) in previous.units.iter().enumerate() {
+                while current_units
+                    .peek()
+                    .is_some_and(|(_, row)| row.unit < unit.unit)
+                {
                     current_units.next();
                 }
-                let currently_permitted = current_units.peek().is_some_and(|row| {
+                let currently_permitted = current_units.peek().is_some_and(|(index, row)| {
                     row.unit == unit.unit
-                        && (row.owner == viewer || next.point_observed(viewer, row.position))
+                        && bit(
+                            &next.slots[usize::from(viewer)].allowed_units,
+                            *index as u32,
+                        )
                 });
                 if !currently_permitted
-                    && (unit.owner == viewer || previous.point_observed(viewer, unit.position))
+                    && bit(
+                        &previous.slots[usize::from(viewer)].allowed_units,
+                        old_index as u32,
+                    )
                 {
                     memory
                         .units
@@ -677,6 +731,12 @@ pub fn active_basis(world: &World) -> Option<&VisibilityBasis> {
         ObservationPhase::Tactical => &state.tactical,
         ObservationPhase::Completed => &state.completed,
     })
+}
+/// Share the current immutable action basis once for a complete system pass.
+/// None means explicit AllVisible; restricted placeholders remain fail closed.
+pub fn active_basis_shared(world: &World) -> Option<Arc<VisibilityBasis>> {
+    let state = world.get_resource::<VisibilityState>()?;
+    Some(state.phase(state.active))
 }
 pub(crate) fn validate_target(
     world: &World,
