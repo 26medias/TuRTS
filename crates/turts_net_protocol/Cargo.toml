@@ -8,7 +8,7 @@ publish.workspace = true
 [dependencies]
 turts_mod_api = { path = "../turts_mod_api" }
 serde = { workspace = true }
+postcard = { workspace = true }
 
 [dev-dependencies]
-postcard = { workspace = true }
 serde_json = { workspace = true }
