@@ -3108,7 +3108,14 @@ mod admission_tests {
             },
         );
         produce_staged.envelope.order.units = vec![UnitId(4), UnitId(1), UnitId(2), UnitId(3)];
-        assert_eq!(production_precheck(app.world_mut(), &produce_staged), None);
+        assert_eq!(
+            production_precheck(
+                app.world_mut(),
+                produce_staged.slot,
+                &produce_staged.envelope
+            ),
+            None
+        );
         let command = crate::orders::to_sim(
             produce_staged.slot,
             &produce_staged.envelope,
@@ -3237,7 +3244,10 @@ mod admission_tests {
             },
         );
         later_success.envelope.order.units = vec![UnitId(4), UnitId(1)];
-        assert_eq!(production_precheck(app.world_mut(), &later_success), None);
+        assert_eq!(
+            production_precheck(app.world_mut(), later_success.slot, &later_success.envelope),
+            None
+        );
         let later_success_command = crate::orders::to_sim(
             later_success.slot,
             &later_success.envelope,
@@ -3414,7 +3424,7 @@ mod admission_tests {
             );
             staged.envelope.order.units = vec![UnitId(2), UnitId(3)];
             assert_eq!(
-                production_precheck(app.world_mut(), &staged),
+                production_precheck(app.world_mut(), staged.slot, &staged.envelope),
                 None,
                 "multi-subject Produce must reach per-unit checks even when no subject is eligible"
             );
