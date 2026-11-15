@@ -1,0 +1,1 @@
+(id:"crystal_layer",name:"Crystal",surface_color:"#6c9cc3",hardness:5,work_per_world_cube:(numerator:16,denominator:1),natural_outputs:[(resource:"terrain_stockyard:crystal",per_world_cube:(numerator:1,denominator:1))],fill_inputs:[(resource:"terrain_stockyard:loam",per_world_cube:(numerator:1,denominator:1))],placed_removal:NoYield)

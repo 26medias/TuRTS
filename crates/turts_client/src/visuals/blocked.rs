@@ -29,6 +29,7 @@ pub(super) fn draw_blocked_marks(
     assets: &VisualAssets,
     visuals: &VisualState,
     now: Instant,
+    terrain: Option<&crate::terrain::store::PermittedTerrain>,
 ) {
     for (&unit_id, start) in &visuals.blocked_since {
         if now.duration_since(*start).as_secs_f32() >= 2.0 {
@@ -45,7 +46,10 @@ pub(super) fn draw_blocked_marks(
                 generation: visuals.generation,
                 identity: 0,
             };
-            let point = world_to_scene(unit.pos) + Vec3::Y * 1.5;
+            let point = world_to_scene(unit.pos)
+                + Vec3::Y
+                    * (1.5
+                        + crate::terrain::render::live_height(terrain, unit.unit_id).unwrap_or(0.));
             desired.insert(
                 id,
                 (

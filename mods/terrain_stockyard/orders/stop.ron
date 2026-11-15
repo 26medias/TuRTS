@@ -1,0 +1,1 @@
+(id:"order_stop",name:"Stop",behaviour:Stop,target:None,fire:None,engage:None,icon:"icon_order_move",hotkey:"key_stop",cursor:None,card:None,units:["terrain_stockyard:porter","terrain_stockyard:carrier","terrain_stockyard:depot"],description:"Stop selected units")

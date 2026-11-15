@@ -394,7 +394,7 @@ impl WorldView for FrameWorld {
                     y: cell.y,
                 },
                 fog,
-                &mut turts_rules::terrain::geometry::Budget::new(1_048_576),
+                &mut self.pick_budget.borrow_mut(),
                 |index| {
                     knowledge
                         .observed
@@ -501,7 +501,7 @@ impl WorldView for FrameWorld {
             });
         }
         let terrain = self.terrain.as_ref()?;
-        use turts_rules::terrain::geometry::{Budget, Point3, Ray};
+        use turts_rules::terrain::geometry::{Point3, Ray};
         let hit = terrain
             .layout
             .grid
@@ -526,29 +526,10 @@ impl WorldView for FrameWorld {
             x: hit.cell.x,
             y: hit.cell.y,
         };
-        let current = if let Some(knowledge) = &self.knowledge {
-            let shape = knowledge.grid;
-            let fog = turts_rules::visibility::Grid::checked(
-                shape.size.x,
-                shape.size.y,
-                shape.cell_size,
-            )?;
-            terrain
-                .layout
-                .grid
-                .cell_observed(hit.cell, fog, &mut Budget::new(1_048_576), |index| {
-                    knowledge
-                        .observed
-                        .get(index as usize / 8)
-                        .is_some_and(|byte| byte & (1 << (index % 8)) != 0)
-                })
-                .ok()?
-        } else {
-            true
-        };
+        let current = self.terrain_current(cell);
         Some(turts_interaction::SurfaceHit {
             position: Vec2::new(hit.position.x as f32, hit.position.y as f32),
-            height: hit.top_height as f32,
+            height: hit.position.z as f32,
             elevation: Some(hit.elevation),
             cell: Some(cell),
             parameter: hit.parameter as f32,

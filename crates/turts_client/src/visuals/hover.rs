@@ -128,7 +128,14 @@ pub(super) fn draw_hover_ring(
                         underlay,
                         VisualMaterial::RingOverlay(neutral),
                         Transform {
-                            translation: world_to_scene(shown_unit.pos) + Vec3::Y * 0.028,
+                            translation: world_to_scene(shown_unit.pos)
+                                + Vec3::Y
+                                    * crate::terrain::render::live_height(
+                                        replica.terrain.as_ref(),
+                                        shown_unit.unit_id,
+                                    )
+                                    .unwrap_or(0.)
+                                + Vec3::Y * 0.028,
                             scale: Vec3::splat(radius * 0.96),
                             ..default()
                         },
@@ -147,7 +154,14 @@ pub(super) fn draw_hover_ring(
                     mesh,
                     VisualMaterial::RingOverlay(material),
                     Transform {
-                        translation: world_to_scene(shown_unit.pos) + Vec3::Y * 0.032,
+                        translation: world_to_scene(shown_unit.pos)
+                            + Vec3::Y
+                                * crate::terrain::render::live_height(
+                                    replica.terrain.as_ref(),
+                                    shown_unit.unit_id,
+                                )
+                                .unwrap_or(0.)
+                            + Vec3::Y * 0.032,
                         scale: Vec3::splat(radius * 0.96),
                         ..default()
                     },

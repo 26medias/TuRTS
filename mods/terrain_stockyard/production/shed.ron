@@ -1,0 +1,1 @@
+(id:"build_shed",name:"Survey shed",output_unit:"terrain_stockyard:shed",duration_ms:1000,costs:[(resource:"terrain_stockyard:loam",amount:2,source:SlotBalance)],payment:ChargeOnQueue,cancel_refunds:(queued:(numerator:1,denominator:1),running:(numerator:1,denominator:1),output_blocked:(numerator:1,denominator:1)))

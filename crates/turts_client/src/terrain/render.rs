@@ -189,3 +189,28 @@ pub(crate) fn infrastructure_height(
         .ok()
         .map(|support| support.anchor as f32)
 }
+
+/// Permitted top geometry, including remembered/public initial geometry. This is
+/// for markers only, never for grounding a live actor or granting cell knowledge.
+pub(crate) fn marker_height(
+    terrain: Option<&PermittedTerrain>,
+    position: turts_net_protocol::Pos,
+) -> Option<f32> {
+    let Some(terrain) = terrain else {
+        return Some(0.);
+    };
+    let cell = terrain
+        .layout
+        .grid
+        .point_to_cell(turts_rules::terrain::geometry::Point {
+            x: f64::from(position.x),
+            y: f64::from(position.y),
+        })
+        .ok()?;
+    terrain
+        .elevation(TerrainCell {
+            x: cell.x,
+            y: cell.y,
+        })
+        .map(|level| terrain.layout.elevation_height(level))
+}

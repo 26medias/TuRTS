@@ -444,6 +444,7 @@ fn draw_world_visuals(
         &mut marker_gizmos,
         &assets,
         &visuals,
+        replica.terrain.as_ref(),
     );
 
     draw_blocked_marks(
@@ -454,6 +455,7 @@ fn draw_world_visuals(
         &assets,
         &visuals,
         now,
+        replica.terrain.as_ref(),
     );
 
     // Selected own units show queued point targets in queue order.
@@ -523,6 +525,7 @@ fn collect_visible_rings(
 }
 
 struct HealthBarSync<'a> {
+    terrain: Option<&'a crate::terrain::store::PermittedTerrain>,
     healths: &'a [turts_net_protocol::HealthRecord],
     presented: &'a HashMap<u32, &'a crate::present::PresentedUnit>,
     catalog: &'a turts_mod_api::ContentCatalog,

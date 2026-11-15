@@ -406,6 +406,7 @@ mod tests {
         epoch: u64,
         designation: TerrainDesignation,
         can_unload: bool,
+        height: f32,
     }
     impl World {
         fn new() -> Self {
@@ -442,6 +443,7 @@ mod tests {
                     target_elevation: 0,
                 },
                 can_unload: true,
+                height: 0.,
             }
         }
     }
@@ -503,12 +505,18 @@ mod tests {
         fn can_unload(&self, _: &UnitView, target: &UnitView) -> bool {
             self.can_unload && target.id == UnitId(2)
         }
+        fn camera_ground_height(&self, _: Vec2) -> f32 {
+            self.height
+        }
+        fn unit_ground_height(&self, _: &UnitView) -> Option<f32> {
+            Some(self.height)
+        }
         fn surface_hit(
             &self,
             origin: glam::Vec3,
             direction: glam::Vec3,
         ) -> Option<crate::SurfaceHit> {
-            let t = -origin.y / direction.y;
+            let t = (self.height - origin.y) / direction.y;
             let p = origin + direction * t;
             if t < 0. || p.x < 0. || p.z < 0. || p.x >= 32. || p.z >= 32. {
                 return None;
@@ -519,7 +527,7 @@ mod tests {
             };
             Some(crate::SurfaceHit {
                 position: Vec2::new(p.x, p.z),
-                height: 0.,
+                height: self.height,
                 elevation: Some(0),
                 cell: Some(cell),
                 parameter: t,
@@ -723,5 +731,80 @@ mod tests {
         changed.designation.target_elevation = 1;
         unload_resume(&mut c, &changed, &w, &mut e);
         assert!(sent(&e).is_empty());
+    }
+    #[test]
+    fn queued_rectangle_stays_modal_and_context_change_rejects_pointer_up() {
+        let mut world = World::new();
+        let mut core = core();
+        enter(&mut core, &world);
+        core.terrain.reference = Some(0);
+        core.held_modifier_actions
+            .insert("test-shift".into(), vec!["queue_modifier".into()]);
+        let point = px(&core, 1.5, 1.5);
+        let effects = click(&mut core, &world, point);
+        assert_eq!(sent(&effects)[0].queue, QueueMode::Append);
+        assert!(core.terrain.input.is_some());
+        let mut effects = vec![];
+        intercept(
+            &mut core,
+            &InputEvent::PointerDown {
+                button: Button::Left,
+                px: point,
+                over_widget: false,
+            },
+            &world,
+            &VIEW,
+            &mut effects,
+        );
+        world.epoch += 1;
+        intercept(
+            &mut core,
+            &InputEvent::PointerUp {
+                button: Button::Left,
+                px: point,
+                over_widget: false,
+            },
+            &world,
+            &VIEW,
+            &mut effects,
+        );
+        assert!(sent(&effects).is_empty());
+        assert!(core.terrain.input.is_none());
+    }
+    #[test]
+    fn raised_surface_projection_and_zoom_anchor_agree_at_both_limits() {
+        let mut world = World::new();
+        world.height = 5.;
+        for delta in [-100_000., 100_000.] {
+            let mut core = Core::new(crate::CameraState {
+                look_at: Vec2::new(16., 16.),
+                height: 20.,
+                ..Core::default().camera
+            });
+            let pointer = Vec2::new(650., 350.);
+            let hit = projection::surface_hit(pointer, &VIEW, core.camera, &world).unwrap();
+            assert_eq!(hit.height, 5.);
+            core.step(
+                &[
+                    InputEvent::PointerMove {
+                        px: pointer,
+                        over_widget: false,
+                    },
+                    InputEvent::Wheel { delta },
+                ],
+                &world,
+                &VIEW,
+                0,
+            );
+            let after = projection::world_to_screen_on(
+                hit.position,
+                hit.height,
+                &VIEW,
+                core.camera,
+                &world,
+            )
+            .unwrap();
+            assert!(after.distance(pointer) < 0.1, "{delta}: {after:?}");
+        }
     }
 }

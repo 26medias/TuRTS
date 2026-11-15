@@ -207,8 +207,8 @@ pub(crate) fn panel(
                                             };
                                             actions.push((
                                                 format!(
-                                                    "Unload and resume: {} at ({:0.1}, {:0.1})",
-                                                    definition.name, pos.x, pos.y
+                                                    "Unload and resume ({}): {} at ({:.1}, {:.1})",
+                                                    unload.name, definition.name, pos.x, pos.y
                                                 ),
                                                 turts_interaction::terrain::UnloadResume {
                                                     identity: (
@@ -252,7 +252,7 @@ pub(crate) fn panel(
                 UiCaptureRoot,
                 Node {
                     position_type: PositionType::Absolute,
-                    left: Val::Px(12.),
+                    right: Val::Px(12.),
                     top: Val::Px(72.),
                     max_width: Val::Px(400.),
                     flex_direction: FlexDirection::Column,

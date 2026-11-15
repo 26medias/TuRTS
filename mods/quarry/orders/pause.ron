@@ -1,0 +1,1 @@
+(id:"order_pause",name:"Pause",behaviour:SetEnabled(false),target:None,fire:None,engage:None,icon:"icon_order_move",hotkey:"key_pause",cursor:None,card:None,units:["quarry:walker","quarry:crawler","quarry:depot"],description:"Pause selected units")

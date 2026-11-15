@@ -45,7 +45,11 @@ pub(super) fn draw_selection_rings(
             assets.foreign_ring.clone()
         };
         let Some(mesh) = mesh else { continue };
-        let position = world_to_scene(shown_unit.pos) + Vec3::Y * 0.025;
+        let position = world_to_scene(shown_unit.pos)
+            + Vec3::Y
+                * crate::terrain::render::live_height(replica.terrain.as_ref(), shown_unit.unit_id)
+                    .unwrap_or(0.)
+            + Vec3::Y * 0.025;
         let id = VisualId {
             kind: VisualKind::Selected,
             unit: *unit_id,
@@ -70,7 +74,14 @@ pub(super) fn draw_selection_rings(
                     underlay,
                     VisualMaterial::RingOverlay(neutral),
                     Transform {
-                        translation: world_to_scene(shown_unit.pos) + Vec3::Y * 0.021,
+                        translation: world_to_scene(shown_unit.pos)
+                            + Vec3::Y
+                                * crate::terrain::render::live_height(
+                                    replica.terrain.as_ref(),
+                                    shown_unit.unit_id,
+                                )
+                                .unwrap_or(0.)
+                            + Vec3::Y * 0.021,
                         scale: Vec3::splat(*radius),
                         ..default()
                     },
@@ -109,7 +120,14 @@ pub(super) fn draw_selection_rings(
                 generation: visuals.generation,
                 identity: 0,
             };
-            let range_position = world_to_scene(shown_unit.pos) + Vec3::Y * 0.018;
+            let range_position = world_to_scene(shown_unit.pos)
+                + Vec3::Y
+                    * crate::terrain::render::live_height(
+                        replica.terrain.as_ref(),
+                        shown_unit.unit_id,
+                    )
+                    .unwrap_or(0.)
+                + Vec3::Y * 0.018;
             if let Some(range_mesh) = assets.ring.clone() {
                 desired.insert(
                     range_id,

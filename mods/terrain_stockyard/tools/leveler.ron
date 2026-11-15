@@ -1,0 +1,1 @@
+(id:"leveler",name:"Leveler",operation:Fill(material:"terrain_stockyard:loam_layer"),work_per_second:8,reach:1.5,allowed_materials:["terrain_stockyard:loam_layer","terrain_stockyard:crystal_layer"],max_hardness:8,output_destination:SlotBalances)

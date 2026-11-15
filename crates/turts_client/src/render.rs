@@ -39,11 +39,20 @@ pub fn projected_ground_center(
     camera_transform: &GlobalTransform,
     pos: Pos,
 ) -> Option<Vec2> {
-    if !camera.is_active {
+    projected_ground_center_at_height(camera, camera_transform, pos, 0.)
+}
+
+pub fn projected_ground_center_at_height(
+    camera: &Camera,
+    camera_transform: &GlobalTransform,
+    pos: Pos,
+    height: f32,
+) -> Option<Vec2> {
+    if !camera.is_active || !height.is_finite() {
         return None;
     }
     let center = camera
-        .world_to_viewport(camera_transform, world_to_scene(pos))
+        .world_to_viewport(camera_transform, world_to_scene(pos) + Vec3::Y * height)
         .ok()?;
     let viewport = camera.logical_viewport_rect()?;
     (center.is_finite() && viewport.contains(center)).then_some(center)
