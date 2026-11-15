@@ -295,3 +295,25 @@ fn repair_ui_accessors_and_predicates_require_api14_and_load_at_the_floor() {
         }
     }
 }
+
+#[test]
+fn repair_is_independent_of_a_units_weapon_capability() {
+    let mut f = Fixture::new();
+    f.worker.weapon = Some(WeaponDef {
+        range: 2.,
+        range_mode: WeaponRangeMode::Centre,
+        cooldown_ms: 500,
+        damage: 1,
+        ammo: None,
+        targets: TargetFilter {
+            slots: SlotRelation::Other,
+        },
+        damage_type: None,
+        bonus: vec![],
+        when_short: vec![],
+    });
+    let catalog = f.archive().content().unwrap();
+    let unit = &catalog.units[&ContentId::parse("cedar:worker").unwrap()];
+    assert!(unit.repairer.is_some());
+    assert!(unit.weapon.is_some());
+}
