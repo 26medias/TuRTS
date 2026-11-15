@@ -235,50 +235,58 @@ fn account_rows(
         }
         set_account(&mut rows, key, (balance.on_hand, balance.reserved), budget)?;
     }
-    let owned = view
-        .units
-        .iter()
-        .filter(|unit| unit.owner_slot == actor.slot)
-        .map(|unit| (unit.unit_id, unit))
-        .collect::<BTreeMap<_, _>>();
-    let main_inventories = view
-        .inventories
-        .iter()
-        .filter(|row| row.owner_slot == actor.slot)
-        .map(|row| row.unit)
-        .collect::<BTreeSet<_>>();
-    // Only a present, accepted inventory creates known-zero item accounts. A
-    // removed constructor's original endpoint remains absent, never recreated.
-    for unit in owned.values() {
-        let id = ContentId::parse(&unit.content_id)?;
-        let definition = catalog
-            .units
-            .get(&id)
-            .ok_or("own unit definition is absent from the installed catalog")?;
-        if let Some(inventory) = &definition.inventory
-            && main_inventories.contains(&unit.unit_id)
-        {
-            for resource in &inventory.accepts {
-                insert_account(
-                    &mut rows,
-                    SpendKey {
-                        endpoint: SourceEndpoint::Inventory {
-                            unit: unit.unit_id,
-                            port: InventoryPort::Main,
-                        },
-                        resource: resource.clone(),
-                    },
-                    (0, 0),
-                    budget,
-                )?;
-            }
-        }
-    }
+    // Resolve only inventories that actually exist in this completed view. Most
+    // combat units have no inventory; indexing and parsing every owned unit made
+    // account publication scale with the whole army instead of its accounts.
+    let mut accepts_by_content = BTreeMap::<&str, &[ContentId]>::new();
     for inventory in view
         .inventories
         .iter()
-        .filter(|row| row.owner_slot == actor.slot && owned.contains_key(&row.unit))
+        .filter(|row| row.owner_slot == actor.slot)
     {
+        let Some(unit) =
+            completed_unit(view, inventory.unit).filter(|unit| unit.owner_slot == actor.slot)
+        else {
+            // A removed original payment source is absent, never a zero account.
+            continue;
+        };
+        let accepts = if let Some(accepts) = accepts_by_content.get(unit.content_id.as_str()) {
+            *accepts
+        } else {
+            // Borrow qualified identity parts. Do not allocate a ContentId for
+            // every entity, or copy immutable accepted-item lists.
+            let (package, local) = unit
+                .content_id
+                .split_once(':')
+                .ok_or("own inventory unit has an invalid content identifier")?;
+            let definition = catalog
+                .units
+                .iter()
+                .find_map(|(id, definition)| {
+                    (id.package.0 == package && id.local == local).then_some(definition)
+                })
+                .ok_or("own inventory unit definition is absent from the installed catalog")?;
+            let accepts = definition
+                .inventory
+                .as_ref()
+                .map_or(&[][..], |inventory| inventory.accepts.as_slice());
+            accepts_by_content.insert(unit.content_id.as_str(), accepts);
+            accepts
+        };
+        for resource in accepts {
+            insert_account(
+                &mut rows,
+                SpendKey {
+                    endpoint: SourceEndpoint::Inventory {
+                        unit: inventory.unit,
+                        port: InventoryPort::Main,
+                    },
+                    resource: resource.clone(),
+                },
+                (0, 0),
+                budget,
+            )?;
+        }
         for item in &inventory.items {
             let key = SpendKey {
                 endpoint: SourceEndpoint::Inventory {
@@ -293,12 +301,10 @@ fn account_rows(
             set_account(&mut rows, key, (item.on_hand, item.reserved), budget)?;
         }
     }
-    for inventory in view
-        .m3
-        .raw_output_inventories
-        .iter()
-        .filter(|row| owned.contains_key(&row.unit))
-    {
+    for inventory in &view.m3.raw_output_inventories {
+        if !completed_unit(view, inventory.unit).is_some_and(|unit| unit.owner_slot == actor.slot) {
+            continue;
+        }
         for resource in &inventory.accepted_items {
             insert_account(
                 &mut rows,
@@ -335,6 +341,15 @@ fn account_rows(
             reserved,
         })
         .collect())
+}
+fn completed_unit(view: &WorldView, id: u32) -> Option<&turts_sim::world::UnitState> {
+    // Authoritative completed rows are sorted. The fallback preserves the helper's
+    // behavior for valid synthetic views without that presentation ordering.
+    view.units
+        .binary_search_by_key(&id, |unit| unit.unit_id)
+        .ok()
+        .map(|index| &view.units[index])
+        .or_else(|| view.units.iter().find(|unit| unit.unit_id == id))
 }
 fn insert_account(
     rows: &mut BTreeMap<SpendKey, (u64, u64)>,
