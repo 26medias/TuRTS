@@ -57,6 +57,17 @@ pub(crate) fn build_batch(
     if view.tick != committed.tick || watermark.completed_tick != view.tick {
         return Err("accounting view, events and watermark are not one completed tick".into());
     }
+    if committed
+        .events
+        .iter()
+        .any(|event| event.tick != committed.tick)
+        || !committed
+            .events
+            .windows(2)
+            .all(|pair| pair[0].ordinal < pair[1].ordinal)
+    {
+        return Err("accounting events do not belong to one ordered completed tick".into());
+    }
     let mut budget = RowBudget(row_limit);
     let accounts = account_rows(view, catalog, actor, &mut budget)?;
     let mut staged = requests.clone();
@@ -96,6 +107,9 @@ pub(crate) fn build_batch(
         } else {
             prepare_effect(view, committed, catalog, actor, key, tracked, &result)?
         };
+        if tracked.accounted == Some(watermark) && tracked.last_effect.as_ref() != Some(&effect) {
+            return Err("one accounting watermark describes different receipt effects".into());
+        }
         validate_advance(tracked.last_effect.as_ref(), &effect)?;
         budget.take(effect.paid.len())?;
         budget.take(effect.reserved.len())?;
