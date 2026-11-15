@@ -355,6 +355,11 @@ pub(crate) fn capture_phase(world: &mut World, phase: ObservationPhase) {
     } = Some(snapshot);
 }
 pub(crate) fn initialize_phases(world: &mut World) {
+    // Reset on every install, including terrain-to-flat package replacement.
+    world.remove_resource::<super::ground_cache::GroundSupportCache>();
+    if world.contains_resource::<TerrainState>() {
+        world.insert_resource(super::ground_cache::GroundSupportCache::default());
+    }
     for phase in [
         ObservationPhase::Start,
         ObservationPhase::Tactical,

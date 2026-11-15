@@ -1,5 +1,6 @@
 //! Authoritative terrain. Selected geology is private; callers must request permitted facts.
 mod audit;
+mod ground_cache;
 pub(crate) mod history;
 pub(crate) mod pause;
 pub use pause::TerrainPauseAudit;
@@ -54,7 +55,14 @@ pub fn ground_elevation(world: &bevy_ecs::world::World, unit: u32) -> Option<i32
     let catalog = &world
         .get_resource::<crate::bootstrap::InstalledCatalog>()?
         .0;
-    support_elevation(terrain, catalog, types, kind, position).ok()
+    let (radius, max_step) = support_parameters(catalog, types, kind).ok()?;
+    let key = ground_cache::Key::new(kind, position, radius, max_step);
+    if let Some(elevation) = ground_cache::lookup(world, terrain, unit, key) {
+        return Some(elevation);
+    }
+    let support = exact_support(terrain, position, radius, max_step).ok()?;
+    ground_cache::remember(world, terrain, unit, key, &support);
+    Some(support.maximum)
 }
 pub(crate) fn support_elevation(
     terrain: &TerrainState,
@@ -63,6 +71,14 @@ pub(crate) fn support_elevation(
     kind: turts_mod_api::UnitTypeId,
     position: bevy_math::Vec2,
 ) -> Result<i32, TerrainError> {
+    let (radius, max_step) = support_parameters(catalog, types, kind)?;
+    exact_support(terrain, position, radius, max_step).map(|support| support.maximum)
+}
+fn support_parameters(
+    catalog: &turts_mod_api::ContentCatalog,
+    types: &crate::UnitTypes,
+    kind: turts_mod_api::UnitTypeId,
+) -> Result<(f32, u32), TerrainError> {
     let entry = types.get(kind).ok_or(TerrainError::InvalidGrid)?;
     let id = turts_mod_api::ContentId::parse(&entry.content_id)
         .map_err(|_| TerrainError::InvalidGrid)?;
@@ -76,6 +92,14 @@ pub(crate) fn support_elevation(
             .and_then(|id| catalog.terrain_movement_classes.get(id))
             .map_or(0, |class| class.max_step)
     };
+    Ok((entry.radius, max_step))
+}
+fn exact_support(
+    terrain: &TerrainState,
+    position: bevy_math::Vec2,
+    radius: f32,
+    max_step: u32,
+) -> Result<turts_rules::terrain::geometry::Support, TerrainError> {
     let visits = usize::try_from(u64::from(terrain.grid.columns) * u64::from(terrain.grid.rows))
         .ok()
         .and_then(|cells| cells.checked_mul(2))
@@ -90,11 +114,10 @@ pub(crate) fn support_elevation(
                 x: f64::from(position.x),
                 y: f64::from(position.y),
             },
-            f64::from(entry.radius),
+            f64::from(radius),
             max_step,
             &mut budget,
         )
-        .map(|support| support.maximum)
         .map_err(TerrainError::Geometry)
 }
 
