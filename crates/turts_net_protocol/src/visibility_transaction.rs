@@ -631,6 +631,27 @@ mod tests {
         assert_eq!(assembler.active(), Some(&stamp(1, None)));
     }
     #[test]
+    fn an_unframeable_identity_fails_closed_without_creating_staging() {
+        let mut large = stamp(1, None);
+        large.basis.map.local = "large_identity".repeat(100);
+        assert!(matches!(
+            encode_transaction(large.clone(), &payload(1, false), 768),
+            Err(StateTransactionError::FrameLimit)
+        ));
+        let mut assembler = StateTransactionAssembler::new(7, large.basis.map.clone(), 768);
+        let begin = StateTransactionBegin {
+            stamp: large,
+            kind: StateTransactionKind::Snapshot,
+            encoded_bytes: 1,
+            chunk_count: 1,
+        };
+        assert_eq!(
+            assembler.begin(begin, 0),
+            Err(StateTransactionError::FrameLimit)
+        );
+        assert_eq!(assembler.retained_bytes(), 0);
+    }
+    #[test]
     fn excessive_declared_sizes_and_counts_fail_before_staging_and_decoding_is_bounded() {
         let mut assembler = assembler();
         let encoded = encode_transaction(stamp(1, None), &payload(1, false), 768).unwrap();
