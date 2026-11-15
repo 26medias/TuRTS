@@ -106,6 +106,7 @@ pub fn validate_records(records: &[EconomyLogRecord]) -> Result<(), String> {
         return Err("economy log contains more than one Initial record".into());
     }
 
+    crate::paid::validate_state(initial)?;
     validate_operating_state(initial)?;
     let mut cursor = initial.clone();
     let mut tick_start = initial.clone();
@@ -216,6 +217,9 @@ pub fn validate_records(records: &[EconomyLogRecord]) -> Result<(), String> {
                     ));
                 }
                 last_operation = Some(operation.operation_id);
+                crate::paid::validate_state(&operation.before)?;
+                crate::paid::validate_state(&operation.after)?;
+                crate::paid::validate_operation(operation)?;
                 validate_operating_state(&operation.before)?;
                 validate_operating_state(&operation.after)?;
                 validate_income_operation(operation)?;

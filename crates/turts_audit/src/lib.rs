@@ -1,4 +1,5 @@
 mod format;
+mod paid;
 mod replay;
 
 pub use format::EconomyLogRecord;
