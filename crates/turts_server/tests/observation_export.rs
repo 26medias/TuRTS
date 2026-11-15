@@ -109,7 +109,10 @@ fn view(hidden: bool) -> WorldView {
     v
 }
 fn bytes<T: serde::Serialize>(value: &T) -> Vec<u8> {
-    postcard::to_stdvec(value).unwrap()
+    postcard::to_vec::<_, 16384>(value)
+        .unwrap()
+        .as_slice()
+        .to_vec()
 }
 
 #[test]
@@ -223,5 +226,40 @@ fn known_permitted_removal_is_an_event_but_visibility_loss_requires_a_snapshot()
     assert!(
         export::delta_for_with_permissions(&no_death, &after, SlotId(0), &Restricted, &history)
             .is_err()
+    );
+}
+
+#[test]
+fn censored_reference_changes_do_not_leak_through_duplicate_rows_or_clear_counts() {
+    let before = view(true);
+    let (_, history) = export::snapshot_for_with_permissions(&before, SlotId(0), &Restricted);
+    let mut after = before.clone();
+    after.tick = 11;
+    let batch = CommittedTick {
+        tick: 11,
+        weapons: after.m3.raw_weapons.clone(),
+        unit_orders: after.unit_orders.clone(),
+        repairs: after.economy.repairs.clone(),
+        repairs_cleared: vec![1],
+        economy: turts_sim::economy::views::EconomyChangesView {
+            orders: after.economy.orders.clone(),
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let (hidden, _) =
+        export::delta_for_with_permissions(&batch, &after, SlotId(0), &Restricted, &history)
+            .unwrap();
+    let empty = CommittedTick {
+        tick: 11,
+        ..Default::default()
+    };
+    let (absent, _) =
+        export::delta_for_with_permissions(&empty, &after, SlotId(0), &Restricted, &history)
+            .unwrap();
+    assert_eq!(
+        bytes(&hidden),
+        bytes(&absent),
+        "censored candidate changes cannot disclose their count or presence"
     );
 }

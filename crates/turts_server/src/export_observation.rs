@@ -13,6 +13,7 @@ pub struct ObservationHistory {
     units: BTreeMap<u32, u8>,
     nodes: BTreeSet<u32>,
     restricted: bool,
+    baseline: Option<Box<turts_net_protocol::Snapshot>>,
 }
 
 /// A membership change needs an absolute reliable baseline. Absence is not a death event.
@@ -29,6 +30,7 @@ impl ObservationHistory {
                 .collect(),
             nodes: view.nodes.iter().map(|n| n.id.0).collect(),
             restricted: true,
+            baseline: None,
         }
     }
 }
@@ -120,7 +122,12 @@ pub(super) fn snapshot(
     } else {
         ObservationHistory::capture(&projected)
     };
-    (super::snapshot_projected(&projected, slot), history)
+    let wire = super::snapshot_projected(&projected, slot);
+    let mut history = history;
+    if history.restricted {
+        history.baseline = Some(Box::new(wire.clone()));
+    }
+    (wire, history)
 }
 
 pub(super) fn delta(
@@ -143,7 +150,8 @@ pub(super) fn delta(
         return Err(ObservationChanged);
     }
     let projected = project_view(view, slot, policy);
-    let current = ObservationHistory::capture(&projected);
+    let mut current = ObservationHistory::capture(&projected);
+    let canonical = super::snapshot_projected(&projected, slot);
     if previous
         .units
         .keys()
@@ -222,5 +230,80 @@ pub(super) fn delta(
         .retain(|r| units.contains(&r.repairer) && units.contains(&r.target));
     changes.repairs_cleared.sort_unstable();
     changes.repairs_cleared.dedup();
-    Ok((super::delta_projected(&changes, &projected, slot), current))
+    let mut wire = super::delta_projected(&changes, &projected, slot);
+    let old = previous.baseline.as_deref().ok_or(ObservationChanged)?;
+    // Raw changes involving censored endpoints must not become duplicate wire rows:
+    // their frequency or serialized size would otherwise disclose hidden activity.
+    retain_changed(&mut wire.economy.orders, &old.economy.orders, |r| r.unit);
+    retain_changed(&mut wire.inserters, &old.inserters, |r| r.unit);
+    retain_changed(&mut wire.extractors, &old.extractors, |r| r.unit);
+    retain_changed(&mut wire.weapons, &old.weapons, |r| r.unit);
+    retain_changed(&mut wire.unit_orders, &old.unit_orders, |r| r.unit);
+    retain_changed(&mut wire.records.repairs, &old.records.repairs, |r| {
+        r.repairer
+    });
+    wire.records
+        .repairs_cleared
+        .retain(|id| old.records.repairs.iter().any(|r| r.repairer == *id));
+    for repair in &old.records.repairs {
+        if units.contains(&repair.repairer.0)
+            && !canonical
+                .records
+                .repairs
+                .iter()
+                .any(|r| r.repairer == repair.repairer)
+            && !wire.records.repairs_cleared.contains(&repair.repairer)
+        {
+            wire.records.repairs_cleared.push(repair.repairer);
+        }
+    }
+    wire.records.repairs_cleared.sort_by_key(|id| id.0);
+    current.baseline = Some(Box::new(canonical));
+    Ok((wire, current))
+}
+
+fn retain_changed<T: PartialEq, K: PartialEq>(
+    rows: &mut Vec<T>,
+    previous: &[T],
+    key: impl Fn(&T) -> K,
+) {
+    rows.retain(|row| previous.iter().find(|old| key(old) == key(row)) != Some(row));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn all_visible_borrows_the_original_view_and_preserves_legacy_wire_bytes() {
+        let view = WorldView::default();
+        let batch = CommittedTick {
+            tick: 1,
+            ..Default::default()
+        };
+        let slot = SlotId(0);
+        assert!(matches!(
+            project_view(&view, slot, &crate::permissions::AllVisible),
+            Cow::Borrowed(_)
+        ));
+        let (snapshot, history) = snapshot(&view, slot, &crate::permissions::AllVisible);
+        assert!(!history.restricted);
+        assert!(history.baseline.is_none());
+        assert_eq!(
+            postcard::to_vec::<_, 16384>(&snapshot).unwrap(),
+            postcard::to_vec::<_, 16384>(&super::super::snapshot_projected(&view, slot)).unwrap()
+        );
+        let (changed, _) = delta(
+            &batch,
+            &view,
+            slot,
+            &crate::permissions::AllVisible,
+            &history,
+        )
+        .unwrap();
+        assert_eq!(
+            postcard::to_vec::<_, 16384>(&changed).unwrap(),
+            postcard::to_vec::<_, 16384>(&super::super::delta_projected(&batch, &view, slot))
+                .unwrap()
+        );
+    }
 }
