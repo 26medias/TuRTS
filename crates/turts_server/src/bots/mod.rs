@@ -412,6 +412,8 @@ fn drive_inner(world: &mut World, host: &mut BotHost, execution: &mut BotExecuti
         }
         bot.decision_step = bot.decision_step.saturating_add(1);
         host.decisions = host.decisions.saturating_add(1);
+        #[cfg(test)]
+        let profile_reconcile = crate::bot_profile::start();
         for result in actors::actor_results(world, &bot.actor) {
             if let Err(error) = bot.coordinator.observe_result(result) {
                 diagnose(bot, format!("result reconciliation: {error:?}"))
@@ -448,6 +450,10 @@ fn drive_inner(world: &mut World, host: &mut BotHost, execution: &mut BotExecuti
             diagnose(bot, error);
             continue;
         }
+        #[cfg(test)]
+        crate::bot_profile::finish("host.reconcile", profile_reconcile);
+        #[cfg(test)]
+        let profile_project = crate::bot_profile::start();
         let view = turts_sim::completed_world(world);
         if projection::source_rows(view) > host.limits.projection_rows {
             diagnose(bot, "observation host row limit reached".into());
@@ -479,7 +485,15 @@ fn drive_inner(world: &mut World, host: &mut BotHost, execution: &mut BotExecuti
             // A candidate basis owns only permitted immutable facts. Account batches remain fresh.
             bot.lease = Some(CandidateLease::new(current.clone(), bot.decision_step));
         }
+        #[cfg(test)]
+        crate::bot_profile::finish("host.project", profile_project);
+        #[cfg(test)]
+        let profile_counts = crate::bot_profile::start();
         let counts = role_counts(&current, &bot.profile);
+        #[cfg(test)]
+        crate::bot_profile::finish("host.role_counts", profile_counts);
+        #[cfg(test)]
+        let profile_controllers = crate::bot_profile::start();
         let supply = view
             .operating
             .as_ref()
@@ -526,6 +540,10 @@ fn drive_inner(world: &mut World, host: &mut BotHost, execution: &mut BotExecuti
             );
             proposals.extend(buffer.into_proposals());
         }
+        #[cfg(test)]
+        crate::bot_profile::finish("host.controllers", profile_controllers);
+        #[cfg(test)]
+        let profile_select = crate::bot_profile::start();
         let selection = bot.coordinator.select(
             accounting_basis,
             proposals,
@@ -535,6 +553,10 @@ fn drive_inner(world: &mut World, host: &mut BotHost, execution: &mut BotExecuti
                 profile: &bot.profile,
             },
         );
+        #[cfg(test)]
+        crate::bot_profile::finish("host.select", profile_select);
+        #[cfg(test)]
+        let profile_stage = crate::bot_profile::start();
         for command in selection.commands {
             execution.generated.push(command.clone());
             if let Err(error) = actors::stage_bot_command(world, command) {
@@ -542,6 +564,8 @@ fn drive_inner(world: &mut World, host: &mut BotHost, execution: &mut BotExecuti
             }
         }
 
+        #[cfg(test)]
+        crate::bot_profile::finish("host.stage", profile_stage);
         if bot.last_failure_step != Some(bot.decision_step) {
             bot.last_diagnostic = None;
         }

@@ -35,6 +35,9 @@ impl Sample {
 #[derive(Resource)]
 struct Meter {
     pre: Option<Instant>,
+    command_apply: Option<Instant>,
+    admission: Option<Instant>,
+    profiling: bool,
     publication: Option<Instant>,
     results: Option<Instant>,
     whole: Option<Instant>,
@@ -59,6 +62,9 @@ impl Meter {
     fn new(warmup: usize, target: usize, baseline: bool) -> Self {
         Self {
             pre: None,
+            command_apply: None,
+            admission: None,
+            profiling: false,
             publication: None,
             results: None,
             whole: None,
@@ -90,8 +96,27 @@ fn nanos(start: Instant) -> u64 {
 fn start_tick(mut meter: ResMut<Meter>) {
     meter.whole = Some(Instant::now())
 }
-fn start_pre(mut meter: ResMut<Meter>) {
-    meter.pre = Some(Instant::now())
+// Exclusive: the local profiler must be enabled on the same thread as host/actor systems.
+fn start_pre(world: &mut World) {
+    let tick = world.resource::<Tick>().0;
+    let mut meter = world.resource_mut::<Meter>();
+    let new_group = (tick - 1).is_multiple_of(20);
+    let within = meter.warmup_locked
+        && (meter.groups > meter.warmup || (new_group && meter.groups == meter.warmup))
+        && !meter.complete()
+        && !(new_group && meter.groups > meter.warmup && meter.samples.len() + 1 >= meter.target);
+    crate::bot_profile::activate(meter.profiling && within);
+    meter.pre = Some(Instant::now());
+}
+fn start_admission(world: &mut World) {
+    let start = crate::bot_profile::start();
+    world.resource_mut::<Meter>().admission = start;
+}
+fn start_command_apply(world: &mut World) {
+    let admission = world.resource_mut::<Meter>().admission.take();
+    crate::bot_profile::finish("server.admission", admission);
+    let start = crate::bot_profile::start();
+    world.resource_mut::<Meter>().command_apply = start;
 }
 fn finish_pre(world: &mut World) {
     let decision = world
@@ -99,6 +124,7 @@ fn finish_pre(world: &mut World) {
         .map_or(0, |host| host.decisions);
     let tick = world.resource::<Tick>().0;
     let mut meter = world.resource_mut::<Meter>();
+    crate::bot_profile::finish("simulation.commands", meter.command_apply.take());
     let elapsed = nanos(meter.pre.take().unwrap());
     let new_group = if meter.baseline {
         (tick - 1).is_multiple_of(20)
@@ -193,7 +219,25 @@ fn install_meter(app: &mut App, baseline: bool) {
     );
     app.add_systems(
         FixedPreUpdate,
-        finish_pre.after(SimSet::Commands).after(start_pre),
+        start_admission
+            .after(super::drive)
+            .after(start_pre)
+            .before(session::admit_player_commands)
+            .before(actors::dispatch_staged),
+    );
+    app.add_systems(
+        FixedPreUpdate,
+        start_command_apply
+            .after(actors::dispatch_staged)
+            .after(session::admit_player_commands)
+            .after(start_admission)
+            .before(SimSet::Commands),
+    );
+    app.add_systems(
+        FixedPreUpdate,
+        finish_pre
+            .after(SimSet::Commands)
+            .after(start_command_apply),
     );
     app.add_systems(
         FixedPostUpdate,
@@ -736,12 +780,35 @@ fn diagnostic_bf8_40_steady_phases_after_identical_readiness() {
         !cfg!(debug_assertions),
         "diagnostic profiling requires --release"
     );
+    crate::bot_profile::reset();
     let (mut app, definition) = fixture(true);
-    app.world_mut().resource_mut::<Meter>().target = 40;
+    {
+        let mut meter = app.world_mut().resource_mut::<Meter>();
+        meter.target = 40;
+        meter.profiling = true;
+    }
     let (timings, _) = run(app);
+    crate::bot_profile::activate(false);
+    let subphases = crate::bot_profile::summary();
+    for stage in [
+        "host.reconcile",
+        "host.project",
+        "host.role_counts",
+        "host.controllers",
+        "host.select",
+        "host.stage",
+    ] {
+        assert_eq!(
+            subphases[stage]["count"], 80,
+            "exactly two bot decisions per measured phase: {stage}"
+        );
+    }
+    assert_eq!(subphases["simulation.commands"]["count"], 800);
+    assert_eq!(subphases["server.admission"]["count"], 800);
     let report = serde_json::json!({
         "purpose": "diagnostic profiling only; not BF8 acceptance",
         "steady_phase_samples": 40,
+        "subphases": subphases,
         "required_acceptance_samples": PHASES,
         "readiness": "identical frozen 1000-unit workload, all 100 COT jobs, active collection and combat",
         "timings": timings,
