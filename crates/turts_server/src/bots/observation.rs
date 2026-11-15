@@ -948,6 +948,75 @@ mod tests {
         );
     }
     #[test]
+    fn role_count_groups_keep_mixed_capabilities_and_duplicate_binding_membership() {
+        use turts_mod_api::{BotDef, BotKnowledge, BotRole, BotStartWhen, Capability};
+        let mut current = basis();
+        for (unit, capabilities) in current.units.iter_mut().zip([
+            vec![Capability::Weapon],
+            vec![Capability::Gatherer],
+            vec![Capability::Weapon, Capability::Gatherer],
+        ]) {
+            unit.capabilities = capabilities;
+        }
+        let mut repeated = current.units[0].clone();
+        repeated.unit = 4;
+        current.units.push(repeated);
+        let profile = BotDef {
+            id: "grouped".into(),
+            name: "Grouped".into(),
+            decision_ms: 1000,
+            start_when: BotStartWhen::MatchRunning,
+            knowledge: BotKnowledge {
+                roles: [
+                    ("any", vec![]),
+                    ("armed", vec![Capability::Weapon]),
+                    ("worker", vec![Capability::Gatherer]),
+                    ("both", vec![Capability::Weapon, Capability::Gatherer]),
+                ]
+                .into_iter()
+                .map(|(key, requires)| BotRole {
+                    key: key.into(),
+                    units: vec![
+                        "fixture:unit".into(),
+                        "fixture:unit".into(),
+                        "unknown:unit".into(),
+                        "fixture:unit-extra".into(),
+                        "bad".into(),
+                    ],
+                    requires,
+                })
+                .chain([BotRole {
+                    key: "empty".into(),
+                    units: vec![],
+                    requires: vec![],
+                }])
+                .collect(),
+                ..Default::default()
+            },
+            controllers: vec![],
+        };
+        let expected = [
+            ("any", 4),
+            ("armed", 3),
+            ("worker", 2),
+            ("both", 1),
+            ("empty", 0),
+        ]
+        .into_iter()
+        .map(|(role, completed)| RoleCount {
+            role: role.into(),
+            completed,
+            pending: 0,
+        })
+        .collect::<Vec<_>>();
+        assert_eq!(super::super::role_counts(&current, &profile), expected);
+        current.units.reverse();
+        for unit in &mut current.units {
+            unit.capabilities.reverse();
+        }
+        assert_eq!(super::super::role_counts(&current, &profile), expected);
+    }
+    #[test]
     fn independent_review_wildcard_orders_remain_valid_for_bot_proposals() {
         use turts_mod_runtime::{archive::PackageArchive, pack::pack_dir};
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../mods/cedar");
