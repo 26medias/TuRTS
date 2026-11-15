@@ -17,7 +17,7 @@ fn bot() -> ActorLogIdentity {
 fn header(slot: u8) -> EconomyLogRecord {
     EconomyLogRecord::Actor(ActorLogRecord::Installation(
         turts_audit::ActorInstallation {
-            locked_package_hash: "ab".repeat(32),
+            locked_package_hash: turts_mod_runtime::hash::sha256_hex(b"fixture package lock"),
             engine_api: turts_mod_api::ENGINE_API_VERSION.into(),
             protocol: turts_net_protocol::NET_PROTOCOL_VERSION,
             bots: vec![turts_audit::ActorBotInstallation {
@@ -393,5 +393,41 @@ fn reconnect_connections_are_distinct_trusted_input_epochs() {
         validate_records(&records)
             .unwrap_err()
             .contains("ordinary witness")
+    );
+}
+
+#[test]
+fn package_locks_use_the_existing_prefixed_format_and_profiles_use_bare_hex() {
+    let records = refusal_stream(false);
+    validate_records(&records).expect("actual lockfile hash encoding is accepted");
+    for invalid in [
+        "ab".repeat(32),
+        format!("SHA256:{}", "ab".repeat(32)),
+        format!("sha512:{}", "ab".repeat(32)),
+        format!("sha256:{}", "AB".repeat(32)),
+        format!("sha256:{}", "g0".repeat(32)),
+        format!("sha256:{}", "a".repeat(63)),
+        format!("sha256:{}", "a".repeat(65)),
+        format!(" sha256:{}", "ab".repeat(32)),
+        format!("sha256:{} ", "ab".repeat(32)),
+        format!("sha256:sha256:{}", "ab".repeat(32)),
+    ] {
+        let mut changed = records.clone();
+        if let EconomyLogRecord::Actor(ActorLogRecord::Installation(header)) = &mut changed[1] {
+            header.locked_package_hash = invalid.clone();
+        }
+        assert!(
+            validate_records(&changed).unwrap_err().contains("digests"),
+            "invalid package lock {invalid:?}"
+        );
+    }
+    let mut prefixed_profile = records;
+    if let EconomyLogRecord::Actor(ActorLogRecord::Installation(header)) = &mut prefixed_profile[1]
+    {
+        header.bots[0].profile_hash = format!("sha256:{}", header.bots[0].profile_hash);
+    }
+    assert!(
+        validate_records(&prefixed_profile).is_err(),
+        "profile digests remain bare hexadecimal"
     );
 }

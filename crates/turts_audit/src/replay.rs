@@ -930,7 +930,10 @@ fn validate_actor_records(
             };
             if header.engine_api != turts_mod_api::ENGINE_API_VERSION
                 || header.protocol != turts_net_protocol::NET_PROTOCOL_VERSION
-                || !hash_valid(&header.locked_package_hash)
+                || header
+                    .locked_package_hash
+                    .strip_prefix("sha256:")
+                    .is_none_or(|digest| !hash_valid(digest))
                 || header.bots.is_empty()
                 || header.limits.projection_rows == 0
                 || header.limits.lease_steps == 0
@@ -21064,7 +21067,7 @@ mod tests {
         records.insert(
             1,
             EconomyLogRecord::Actor(ActorLogRecord::Installation(crate::ActorInstallation {
-                locked_package_hash: "ab".repeat(32),
+                locked_package_hash: format!("sha256:{}", "ab".repeat(32)),
                 engine_api: turts_mod_api::ENGINE_API_VERSION.into(),
                 protocol: turts_net_protocol::NET_PROTOCOL_VERSION,
                 bots: vec![crate::ActorBotInstallation {
