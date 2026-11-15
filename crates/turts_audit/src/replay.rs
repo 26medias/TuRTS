@@ -1726,6 +1726,9 @@ fn expected_order_refusal(
     if unit.owner_slot != sender_slot {
         return Ok(Some(R::NotOwner));
     }
+    if before.economy.construction.sites.contains_key(&unit_id) {
+        return Ok(Some(R::NotApplicable));
+    }
     let content_id = before
         .unit_types
         .iter()
@@ -2618,6 +2621,9 @@ fn expected_construct_refusal(
     if let Some(reason) = construct_placement_refusal(before, unit, owner, output, point)? {
         return Ok(Some(reason));
     }
+    if before.construction_limit.is_none() {
+        return Ok(Some(R::NotApplicable));
+    }
     if !construct_has_room(before, unit, owner)? {
         return Ok(None);
     }
@@ -2931,7 +2937,13 @@ fn construct_capability_rate(
             }
         }
     }
-    Ok(result)
+    let (mut a, mut b) = result;
+    while b != 0 {
+        let remainder = a % b;
+        a = b;
+        b = remainder;
+    }
+    Ok((result.0 / a, result.1 / a))
 }
 
 fn validate_order_policy(command: &CommandAudit) -> Result<(), String> {
