@@ -88,6 +88,12 @@ pub(crate) struct Activation {
     expected_income: Option<(AccountKey, u64)>,
 }
 
+impl Activation {
+    pub(crate) fn is_empty(&self) -> bool {
+        self.contribution.is_empty()
+    }
+}
+
 /// Live admission totals are separate from the effect snapshot used during a tick.
 /// No resource is installed for a catalog without operating capabilities.
 #[derive(Resource, Debug, Clone, Default, PartialEq, Eq)]
@@ -112,6 +118,32 @@ pub(crate) fn has_operating_resources(catalog: &ContentCatalog) -> bool {
 }
 
 impl OperatingResources {
+    /// Transaction validation checks the grant before any authoritative mutation.
+    pub(crate) fn validate_activation(
+        &self,
+        unit: u32,
+        activation: &Activation,
+    ) -> Result<(), RejectReason> {
+        if activation.is_empty() {
+            return Ok(());
+        }
+        if self.active.contains_key(&unit)
+            || activation
+                .expected_supply
+                .iter()
+                .any(|(key, expected)| self.live_supply.get(key) != Some(expected))
+            || activation
+                .expected_income
+                .as_ref()
+                .is_some_and(|(key, expected)| {
+                    self.live_income.get(key).copied().unwrap_or(0) != *expected
+                })
+        {
+            return Err(RejectReason::IntegrityViolation);
+        }
+        Ok(())
+    }
+
     /// Build declared zero baselines. Unit activation remains a separate checked operation.
     pub(crate) fn from_catalog(catalog: &ContentCatalog, slot_count: u8) -> Self {
         if !has_operating_resources(catalog) {
@@ -429,6 +461,48 @@ pub(crate) fn supply_rows(world: &World) -> Vec<SupplyRow> {
                 })
                 .collect()
         })
+}
+
+/// Complete authoritative admission state, omitted entirely from legacy audit streams.
+pub(crate) fn audit_state(world: &World) -> Option<super::views::OperatingAudit> {
+    let state = world.get_resource::<OperatingResources>()?;
+    let rows = |totals: &BTreeMap<AccountKey, SupplyTotal>| {
+        totals
+            .iter()
+            .map(|((slot, resource), total)| super::views::SupplyView {
+                slot: *slot,
+                resource: resource.clone(),
+                provided: total.provided,
+                consumed: total.consumed,
+            })
+            .collect()
+    };
+    Some(super::views::OperatingAudit {
+        rate_q: rate_q(world),
+        effects: rows(&state.effects),
+        live_supply: rows(&state.live_supply),
+        live_income: state
+            .live_income
+            .iter()
+            .map(|((slot, resource), amount)| (*slot, resource.clone(), *amount))
+            .collect(),
+        active: state
+            .active
+            .iter()
+            .map(
+                |(unit, contribution)| super::views::OperatingContributionAudit {
+                    unit: *unit,
+                    slot: contribution.slot,
+                    supply: contribution
+                        .supply
+                        .iter()
+                        .map(|(id, total)| (id.clone(), total.provided, total.consumed))
+                        .collect(),
+                    income: contribution.income.clone(),
+                },
+            )
+            .collect(),
+    })
 }
 
 /// Work rates are attached to capabilities, rather than to a unit as a whole.

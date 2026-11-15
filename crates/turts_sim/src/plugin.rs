@@ -328,7 +328,27 @@ fn publish_completed_tick(world: &mut World) {
         &removed,
         &completed.units,
     );
+    let previous_supply = world
+        .resource::<CompletedWorld>()
+        .0
+        .operating
+        .as_ref()
+        .map(|view| view.supply.as_slice())
+        .unwrap_or_default();
+    let supply = completed.operating.as_ref().map_or_else(Vec::new, |view| {
+        view.supply
+            .iter()
+            .filter(|row| !previous_supply.contains(row))
+            .map(|row| crate::economy::events::SupplyRow {
+                slot: row.slot,
+                resource: row.resource.clone(),
+                provided: row.provided,
+                consumed: row.consumed,
+            })
+            .collect()
+    });
     let batch = CommittedTick {
+        supply,
         match_outcomes: (completed.match_outcomes
             != world.resource::<CompletedWorld>().0.match_outcomes)
             .then(|| completed.match_outcomes.clone())

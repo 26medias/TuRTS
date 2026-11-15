@@ -394,8 +394,113 @@ pub struct CatalogRecipeAudit {
     pub refunds: turts_mod_api::CancelRefunds,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SupplyView {
+    pub slot: u8,
+    pub resource: ContentId,
+    pub provided: u64,
+    pub consumed: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OperatingRateView {
+    pub unit: u32,
+    pub producer: (u64, u64),
+    pub constructor: (u64, u64),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OperatingView {
+    pub rate_q: u64,
+    pub supply: Vec<SupplyView>,
+    pub rates: Vec<OperatingRateView>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OperatingContributionAudit {
+    pub unit: u32,
+    pub slot: u8,
+    pub supply: Vec<(ContentId, u64, u64)>,
+    pub income: Option<(ContentId, u64)>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OperatingAudit {
+    pub rate_q: u64,
+    pub effects: Vec<SupplyView>,
+    pub live_supply: Vec<SupplyView>,
+    pub live_income: Vec<(u8, ContentId, u64)>,
+    pub active: Vec<OperatingContributionAudit>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct IncomeClockAudit {
+    pub unit: u32,
+    pub owner_slot: u8,
+    pub resource: ContentId,
+    pub amount: u64,
+    pub period_ticks: u64,
+    pub activation_tick: u32,
+    pub next_due: u64,
+    pub held: Option<crate::RejectReason>,
+}
+
+fn operating_view(world: &World) -> Option<OperatingView> {
+    use super::power::{self, WorkCapability};
+    world.get_resource::<power::OperatingResources>()?;
+    let mut rates = Vec::new();
+    if let (Some(types), Some(catalog)) = (
+        world.get_resource::<crate::UnitTypes>(),
+        world.get_resource::<crate::bootstrap::InstalledCatalog>(),
+    ) {
+        for entity in world.iter_entities() {
+            let (Some(unit), Some(kind)) = (entity.get::<UnitId>(), entity.get::<UnitType>())
+            else {
+                continue;
+            };
+            let Some(entry) = types.get(kind.0) else {
+                continue;
+            };
+            let Ok(id) = ContentId::parse(&entry.content_id) else {
+                continue;
+            };
+            let Some(definition) = catalog.0.units.get(&id) else {
+                continue;
+            };
+            if definition.producer.is_none() && definition.constructor.is_none() {
+                continue;
+            }
+            let producer = power::rate_for(world, unit.0, WorkCapability::Producer);
+            let constructor = power::rate_for(world, unit.0, WorkCapability::Constructor);
+            rates.push(OperatingRateView {
+                unit: unit.0,
+                producer: (producer.numerator(), producer.denominator()),
+                constructor: (constructor.numerator(), constructor.denominator()),
+            });
+        }
+    }
+    rates.sort_by_key(|row| row.unit);
+    Some(OperatingView {
+        rate_q: power::rate_q(world),
+        supply: power::supply_rows(world)
+            .into_iter()
+            .map(|row| SupplyView {
+                slot: row.slot,
+                resource: row.resource,
+                provided: row.provided,
+                consumed: row.consumed,
+            })
+            .collect(),
+        rates,
+    })
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AuditState {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub raw_operating: Option<OperatingAudit>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub raw_income_clocks: Vec<IncomeClockAudit>,
     pub tick_hz: Option<u16>,
     #[serde(with = "optional_world_pos_bits")]
     pub bounds: Option<WorldPos>,
@@ -488,6 +593,8 @@ pub struct EconomyChangesView {
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct WorldView {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub operating: Option<OperatingView>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub match_outcomes: Option<crate::outcome::MatchOutcomes>,
     #[serde(
@@ -667,6 +774,7 @@ pub fn world_view(world: &mut World) -> WorldView {
     unit_orders.sort_by_key(|record| record.unit_id);
     let m3 = super::views_m3::m3_world_view(world);
     let mut view = WorldView {
+        operating: operating_view(world),
         match_outcomes: world
             .get_resource::<crate::outcome::MatchOutcomes>()
             .cloned(),
@@ -1288,6 +1396,20 @@ pub fn audit_state(world: &mut World) -> AuditState {
     };
     let m3 = super::views_m3::m3_audit_state(world);
     AuditState {
+        raw_operating: super::power::audit_state(world),
+        raw_income_clocks: super::income::clock_audit(world)
+            .into_iter()
+            .map(|clock| IncomeClockAudit {
+                unit: clock.unit,
+                owner_slot: clock.owner_slot,
+                resource: clock.resource,
+                amount: clock.amount,
+                period_ticks: clock.period_ticks,
+                activation_tick: clock.activation_tick,
+                next_due: clock.next_due,
+                held: clock.held,
+            })
+            .collect(),
         tick_hz: world.get_resource::<crate::SimClock>().map(|c| c.tick_hz),
         next_event_ordinal: world
             .get_resource::<super::events::NextEventOrdinal>()

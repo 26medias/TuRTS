@@ -12,7 +12,9 @@ use crate::{
     economy::{
         EconomyOrders, GatherOrder, NodeRecord, SurfaceNodes,
         gather::{GatherStage, RateCarry},
+        income::{self, IncomeActivation},
         ledger::{Account, EconomyLedger, Inventory},
+        power::{self, OperatingResources, RateQ},
         production::ProductionQueues,
     },
     ids::IdAllocators,
@@ -27,6 +29,10 @@ pub struct InstalledCatalog(pub ContentCatalog);
 #[derive(bevy_ecs::prelude::Resource, Debug, Clone, PartialEq, Eq)]
 pub struct ProductionDurations(pub BTreeMap<ContentId, u64>);
 
+/// Income periods checked against the selected server tick rate, keyed by unit definition.
+#[derive(bevy_ecs::prelude::Resource, Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct IncomePeriods(pub(crate) BTreeMap<ContentId, u64>);
+
 #[derive(Debug)]
 pub struct StagedPackage {
     types: UnitTypes,
@@ -40,6 +46,10 @@ pub struct StagedPackage {
     catalog: InstalledCatalog,
     durations: ProductionDurations,
     m3: PreparedMapRows,
+    operating: Option<OperatingResources>,
+    rate_q: u64,
+    income_periods: IncomePeriods,
+    income_clocks: Vec<(u32, IncomeActivation)>,
 }
 
 /// Validate and own a complete package install without changing `world`.
@@ -61,6 +71,45 @@ pub fn stage_package(
         |field: &str, msg: String| ModError::new(&package, field, msg).with_file(&source_map.file);
     if tick_hz == 0 {
         return Err(error("tick_hz", "must be above zero".into()));
+    }
+    let rate_q = power::catalog_rate_q(&catalog)?;
+    let mut income_periods = IncomePeriods::default();
+    for unit in catalog.units.values() {
+        let Some(income) = &unit.income else { continue };
+        let file = catalog
+            .source_files
+            .get(&unit.id)
+            .map_or("content", String::as_str);
+        let fail = |field: &str, message: &str| {
+            ModError::new(&unit.id.package.0, field, message).with_file(file)
+        };
+        if income.amount == 0 || unit.health.is_none() {
+            return Err(fail(
+                "income",
+                "income needs a positive amount and a unit with health",
+            ));
+        }
+        let resource = ContentId::parse(&income.resource)
+            .map_err(|message| fail("income.resource", &message))?;
+        if !catalog
+            .resources
+            .get(&resource)
+            .is_some_and(|resource| resource.kind == ResourceKind::Balance)
+        {
+            return Err(fail(
+                "income.resource",
+                "income must reference a declared Balance resource",
+            ));
+        }
+        let period = boot_m3::try_ms_to_ticks(u64::from(income.period_ms), u32::from(tick_hz))
+            .filter(|period| *period > 0)
+            .ok_or_else(|| {
+                fail(
+                    "income.period_ms",
+                    "period must be positive and fit the server tick range",
+                )
+            })?;
+        income_periods.0.insert(unit.id.clone(), period);
     }
     for unit in catalog.units.values() {
         let file = catalog
@@ -417,8 +466,61 @@ pub fn stage_package(
                 format!("duration for `{id}` resolves to fewer than one tick"),
             ));
         }
+        if ticks.checked_mul(rate_q).is_none() {
+            return Err(ModError::new(&id.package.0, "duration_ms", "duration times the installed RateQ scale exceeds u64 progress; use a shorter duration")
+                .with_file(catalog.source_files.get(id).map_or("content", String::as_str)));
+        }
         durations.insert(id.clone(), ticks);
     }
+    let mut operating = OperatingResources::from_catalog(&catalog, slots.count());
+    let mut income_clocks = Vec::new();
+    let initial_health: BTreeMap<_, _> = m3
+        .capability_rows
+        .iter()
+        .filter_map(|(id, rows)| rows.health.map(|health| (*id, health)))
+        .collect();
+    if operating.initialized {
+        for (unit_id, kind, owner, _) in units.iter().copied().chain(
+            m3.extra_units
+                .iter()
+                .map(|(id, kind, owner, position)| (*id, kind.0, *owner, *position)),
+        ) {
+            let entry = types
+                .get(kind)
+                .ok_or_else(|| error("placements", "unit type is not registered".into()))?;
+            let content = ContentId::parse(&entry.content_id)
+                .map_err(|message| error("placements", message))?;
+            let definition = &catalog.units[&content];
+            let health = initial_health.get(&unit_id).copied();
+            if health == Some(0) {
+                continue;
+            }
+            let activation = operating
+                .prepare_activation(definition, owner)
+                .map_err(|reason| {
+                    error(
+                        "placements",
+                        format!(
+                            "operating resources of `{content}` cannot be admitted: {reason:?}"
+                        ),
+                    )
+                })?;
+            operating.apply_activation(unit_id, activation);
+            if let Some(income) = &definition.income {
+                let clock =
+                    income::prepare_activation(owner, income, income_periods.0[&content], 0)
+                        .map_err(|reason| {
+                            error(
+                                "placements",
+                                format!("income of `{content}` cannot activate: {reason:?}"),
+                            )
+                        })?;
+                income_clocks.push((unit_id, clock));
+            }
+        }
+    }
+    operating.begin_tick();
+    let operating = operating.initialized.then_some(operating);
     Ok(StagedPackage {
         types,
         bounds: MapBounds {
@@ -433,11 +535,22 @@ pub fn stage_package(
         catalog: InstalledCatalog(catalog),
         durations: ProductionDurations(durations),
         m3,
+        operating,
+        rate_q,
+        income_periods,
+        income_clocks,
     })
 }
 
 /// Commit a fully validated package. This operation has no fallible steps.
 pub fn install_package(world: &mut World, staged: StagedPackage) {
+    world.remove_resource::<OperatingResources>();
+    income::clear(world);
+    world.insert_resource(RateQ(staged.rate_q));
+    world.insert_resource(staged.income_periods);
+    if let Some(operating) = staged.operating {
+        world.insert_resource(operating);
+    }
     world.insert_resource(crate::economy::construction::ConstructionState::default());
     world.remove_resource::<crate::economy::construction::ConstructionLimit>();
     world.remove_resource::<crate::outcome::MatchRules>();
@@ -481,5 +594,8 @@ pub fn install_package(world: &mut World, staged: StagedPackage) {
     }
     for (id, rows) in staged.m3.capability_rows {
         boot_m3::apply_capability_rows(world, id, rows);
+    }
+    for (id, clock) in staged.income_clocks {
+        income::on_activate(world, id, Some(clock));
     }
 }
