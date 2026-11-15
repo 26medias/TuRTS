@@ -81,6 +81,12 @@ impl PermittedBaseline {
     pub fn retained_bytes(&self) -> usize {
         memory::baseline(self)
     }
+    pub(crate) fn terrain_delta_compatible(&self, next: &Self) -> bool {
+        super::export_terrain::delta_compatible(
+            &self.state.records.terrain,
+            &next.state.records.terrain,
+        )
+    }
     pub fn capture(view: &WorldView, slot: SlotId, policy: &dyn ObservationPermissions) -> Self {
         Self::capture_checked(view, slot, policy).expect("trusted permitted terrain capture")
     }
@@ -735,6 +741,7 @@ mod tests {
             basis: stamp,
             unit: turts_sim::visibility::VisibleUnit {
                 unit: id,
+                ground_elevation: None,
                 content: Arc::new(ContentId::parse("fixture:unit").unwrap()),
                 owner: if id == 1 { 0 } else { 1 },
                 position: WorldPos { x: 5.0, y: 5.0 },

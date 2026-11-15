@@ -350,10 +350,7 @@ pub fn queue_tick(world: &mut World, entity: Entity, slot: SlotId) -> Result<boo
         slot,
         policy.0.as_ref(),
     )?;
-    if !crate::export::export_terrain::delta_compatible(
-        &sender.tip.state.records.terrain,
-        &next.state.records.terrain,
-    ) {
+    if !sender.tip.terrain_delta_compatible(&next) {
         sender.tip = next;
         let cancel = sender.cancel(StateTransactionCancelReason::Superseded);
         emit_cancel(world, entity, cancel);

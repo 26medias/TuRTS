@@ -379,6 +379,7 @@ fn delta_projected(batch: &CommittedTick, view: &WorldView, slot: SlotId) -> wir
             .map(unit_order_state)
             .collect(),
         records: wire::DeltaRecords {
+            terrain: None,
             repairs,
             repairs_cleared,
             sites_completed: export_sites::sites_completed(batch),
@@ -805,6 +806,15 @@ fn unit_order_state(record: &turts_sim::economy::views::UnitOrderView) -> wire::
     let summary = |summary: &Summary| wire::OrderSummary {
         order: summary.order.clone(),
         target: match &summary.target {
+            Target::TerrainWork {
+                tool,
+                cells,
+                target_elevation,
+            } => wire::OrderTarget::TerrainWork(turts_mod_api::TerrainDesignation {
+                tool: tool.to_string(),
+                cells: *cells,
+                target_elevation: *target_elevation,
+            }),
             Target::None => wire::OrderTarget::None,
             Target::Point(point) => wire::OrderTarget::Point(messages::Pos {
                 x: point.x,
