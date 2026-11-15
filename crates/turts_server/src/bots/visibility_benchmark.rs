@@ -64,7 +64,7 @@ fn authored_fixture(fog: bool, concentrated: bool) -> Fixture {
         }
         unit.footprint = turts_mod_api::Footprint::Circle { radius: 0.3 };
         if let Some(movement) = &mut unit.movement {
-            movement.speed = 128.;
+            movement.speed = 100.;
         }
         if let Some(weapon) = &mut unit.weapon {
             weapon.range = 10.;
@@ -190,9 +190,9 @@ fn authored_fixture(fog: bool, concentrated: bool) -> Fixture {
     }
     let authored = serde_json::json!({"source_archive_sha256":turts_mod_runtime::hash::sha256_hex(&bytes),
         "map":map,"fog":fog,"concentrated":concentrated,"health":HEALTH,"radius":0.3,
-        "speed":128,"source_radius":12,"weapon_range":10,"weapon_cooldown_ms":100,
-        "inventory_capacity":1_000_000_000u64,"gather_range":16,"cot_duration_ms":LONG_WORK_MS,
-        "cot_balance_cost":50_000,"route_x":[32,96],"route_switch_ticks":10,
+        "speed":100,"source_radius":12,"weapon_range":10,"weapon_cooldown_ms":100,
+        "inventory_capacity":1_000_000_000u64,"gather_range":16,"cleared_supply_and_income":true,"cot_duration_ms":LONG_WORK_MS,
+        "cot_balance_cost":50_000,"route_x":[32,80],"route_switch_ticks":10,
         "mix_per_slot":{"sight_movers":100,"armed_movers":150,"static_combatants":100,"gatherers":100,"producers":50}});
     Fixture {
         catalog,
@@ -258,6 +258,8 @@ struct Peer {
     hides: usize,
     reveals: usize,
     max_retained: usize,
+    max_server_retained: usize,
+    permitted_shots: u64,
     wire_bytes: u64,
 }
 struct Harness {
@@ -442,6 +444,8 @@ impl Harness {
                     hides: 0,
                     reveals: 0,
                     max_retained: 0,
+                    max_server_retained: 0,
+                    permitted_shots: 0,
                     wire_bytes: 0,
                 }
             })
@@ -514,7 +518,7 @@ impl Harness {
                     movers,
                     turts_net_protocol::OrderTarget::Point(turts_net_protocol::Pos {
                         x: if ((tick - 1) / 10).is_multiple_of(2) {
-                            96.
+                            80.
                         } else {
                             32.
                         },
@@ -595,6 +599,14 @@ impl Harness {
                     StateTransactionFrame::Chunk(chunk) => peer.assembler.chunk(&chunk).unwrap(),
                     StateTransactionFrame::End(end) => {
                         let staged = peer.assembler.end(&end).unwrap().unwrap();
+                        if let StateTransactionPayload::Patch { state, .. } = &staged.payload {
+                            peer.permitted_shots += state
+                                .records
+                                .effects
+                                .iter()
+                                .filter(|e| matches!(e, turts_net_protocol::Effect::Fired { .. }))
+                                .count() as u64;
+                        }
                         if let StateTransactionPayload::Patch {
                             knowledge: Some(knowledge),
                             ..
@@ -622,8 +634,16 @@ impl Harness {
                             .send::<ReliableChannel>(ack);
                     }
                 }
+                peer.max_retained = peer.max_retained.max(peer.assembler.retained_bytes());
             }
             peer.max_retained = peer.max_retained.max(peer.assembler.retained_bytes());
+            peer.max_server_retained = peer.max_server_retained.max(
+                self.app
+                    .world()
+                    .get::<crate::outbound::knowledge::KnowledgeSender>(peer.server)
+                    .unwrap()
+                    .benchmark_retained(),
+            );
         }
         self.app.world_mut().resource_mut::<Cpu>().client_ns += started.elapsed().as_nanos() as u64;
     }
@@ -681,6 +701,7 @@ struct Sample {
     client_ns: u64,
     sum_ns: u64,
     fired: u64,
+    permitted_shots: [u64; 2],
     extracted: u64,
     moved: usize,
     hides: [usize; 2],
@@ -778,6 +799,7 @@ impl Harness {
         let _ = std::mem::take(&mut *self.app.world_mut().resource_mut::<Cpu>());
         for peer in &mut self.peers {
             peer.hides = 0;
+            peer.permitted_shots = 0;
             peer.reveals = 0;
             peer.wire_bytes = 0;
         }
@@ -881,22 +903,21 @@ impl Harness {
             client_ns: cpu.client_ns,
             sum_ns: cpu.server_ns + cpu.client_ns,
             fired,
+            permitted_shots: std::array::from_fn(|i| self.peers[i].permitted_shots),
             extracted,
             moved: moved.len(),
             hides: std::array::from_fn(|i| self.peers[i].hides),
             reveals: std::array::from_fn(|i| self.peers[i].reveals),
             retained_bytes: std::array::from_fn(|i| {
-                self.app
-                    .world()
-                    .get::<crate::outbound::knowledge::KnowledgeSender>(self.peers[i].server)
-                    .unwrap()
-                    .benchmark_retained()
-                    + self.peers[i].max_retained
+                self.peers[i].max_server_retained + self.peers[i].max_retained
             }),
             wire_bytes: std::array::from_fn(|i| self.peers[i].wire_bytes),
         };
         assert_eq!(sample.moved, 500, "all designated units must actually move");
-        assert!(sample.fired > 0, "permitted combat must fire each interval");
+        assert!(
+            sample.fired > 0 && sample.permitted_shots.iter().all(|s| *s > 0),
+            "permitted combat must fire for each viewer each interval"
+        );
         assert!(sample.extracted > 0, "gatherers must harvest each interval");
         if self.fog {
             assert!(
@@ -918,7 +939,12 @@ fn run(intervals: usize, acceptance: bool) {
     // Record immutable authoring before any timed work. Root captures CPU affinity,
     // compiler, machine, and build flags beside this artifact.
     let mut all = vec![];
-    for (fog, concentrated) in [(true, false), (false, false), (false, true)] {
+    let modes = if acceptance {
+        vec![(true, false), (false, false), (false, true)]
+    } else {
+        vec![(true, false)]
+    };
+    for (fog, concentrated) in modes {
         let mut harness = Harness::new(fog, concentrated);
         println!("SV7_AUTHORED {}", harness.authored);
         for index in 0..WARMUP {
