@@ -116,6 +116,14 @@ pub enum TerrainPlacedRemoval {
     NoYield,
 }
 
+/// Origin of the currently exposed surface. This says nothing about buried layers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub enum TerrainProvenance {
+    Natural,
+    Placed,
+}
+
 /// Public traversal limits. Both the step limit and exact rise/run grade apply.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
