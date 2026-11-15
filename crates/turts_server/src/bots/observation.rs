@@ -42,6 +42,15 @@ impl ObservationBasis {
             .sort_by(|a, b| physical(a.position, &a.content, b.position, &b.content));
         self.nodes
             .sort_by(|a, b| physical(a.position, &a.content, b.position, &b.content));
+        if let Some(knowledge) = &mut self.knowledge {
+            let knowledge = Arc::make_mut(knowledge);
+            knowledge
+                .remembered_units
+                .sort_by(|a, b| physical(a.position, &a.content, b.position, &b.content));
+            knowledge
+                .remembered_nodes
+                .sort_by(|a, b| physical(a.position, &a.content, b.position, &b.content));
+        }
         self.accounts.sort_by(|a, b| a.account.cmp(&b.account));
         self.works.sort_by(|a, b| a.identity.cmp(&b.identity));
         self.unit_index = self
@@ -212,24 +221,32 @@ impl ObservationBasis {
             .values()
             .map(|node| node.radius)
             .fold(0.0_f32, f32::max);
-        let unit_reach = f64::from(output_radius)
-            + f64::from(max_unit_radius)
-            + f64::from(config.gap.max(max_static_gap).max(0.0));
-        let node_reach = f64::from(output_radius)
-            + f64::from(max_node_radius)
-            + f64::from(config.node_clearance.max(0.0));
-        let reach = unit_reach.max(node_reach);
-        let axis = |coordinate: f32, extent: f32| {
-            (
-                (f64::from(coordinate) - reach).max(0.0) as f32,
-                (f64::from(coordinate) + reach).min(f64::from(extent)) as f32,
-            )
+        let Some(region) = turts_rules::visibility_advice::required_region(
+            rules::Point { x: p.x, y: p.y },
+            output_radius,
+            config.gap,
+            config.node_clearance,
+            turts_rules::visibility_advice::PublicPlacementMaxima {
+                unit_radius: max_unit_radius,
+                static_gap: max_static_gap,
+                node_radius: max_node_radius,
+            },
+            rules::Point {
+                x: self.area.max.x,
+                y: self.area.max.y,
+            },
+        ) else {
+            return Advice::NotObserved;
         };
-        let (left, right) = axis(p.x, self.area.max.x);
-        let (bottom, top) = axis(p.y, self.area.max.y);
         if !self.area_observed(
-            WorldPos { x: left, y: bottom },
-            WorldPos { x: right, y: top },
+            WorldPos {
+                x: region.min.x,
+                y: region.min.y,
+            },
+            WorldPos {
+                x: region.max.x,
+                y: region.max.y,
+            },
         ) {
             return Advice::NotObserved;
         }
@@ -405,11 +422,8 @@ impl BotQueries for PermittedQueries<'_> {
         let mut examined = 0usize;
         let mut end = offset;
         let mut tied = false;
-        let mut coverage = if basis.area.complete {
-            Coverage::Complete
-        } else {
-            Coverage::NotObserved
-        };
+        // This enumerates permitted rows completely. It never asserts hidden-world absence.
+        let mut coverage = Coverage::Complete;
         let (data, total, returned) = match &query {
             Query::Units(filter) => {
                 validate_radius(filter.center, filter.radius)?;
@@ -513,6 +527,66 @@ impl BotQueries for PermittedQueries<'_> {
                 (
                     QueryData::Works(basis.works[offset..end].to_vec()),
                     basis.works.len(),
+                    n,
+                )
+            }
+            Query::RememberedUnits => {
+                let rows = basis
+                    .knowledge
+                    .as_ref()
+                    .map_or(&[][..], |knowledge| knowledge.remembered_units.as_slice());
+                let n = max_rows
+                    .min(max_scan)
+                    .min(rows.len().saturating_sub(offset));
+                examined = n;
+                end = offset + n;
+                if end < rows.len() && end > 0 {
+                    tied = physical(
+                        rows[end - 1].position,
+                        &rows[end - 1].content,
+                        rows[end].position,
+                        &rows[end].content,
+                    ) == Ordering::Equal;
+                }
+                (
+                    QueryData::RememberedUnits(RememberedRows {
+                        rows: rows[offset.min(rows.len())..end].to_vec(),
+                        retention_truncated: basis
+                            .knowledge
+                            .as_ref()
+                            .is_some_and(|knowledge| knowledge.retention_truncated),
+                    }),
+                    rows.len(),
+                    n,
+                )
+            }
+            Query::RememberedNodes => {
+                let rows = basis
+                    .knowledge
+                    .as_ref()
+                    .map_or(&[][..], |knowledge| knowledge.remembered_nodes.as_slice());
+                let n = max_rows
+                    .min(max_scan)
+                    .min(rows.len().saturating_sub(offset));
+                examined = n;
+                end = offset + n;
+                if end < rows.len() && end > 0 {
+                    tied = physical(
+                        rows[end - 1].position,
+                        &rows[end - 1].content,
+                        rows[end].position,
+                        &rows[end].content,
+                    ) == Ordering::Equal;
+                }
+                (
+                    QueryData::RememberedNodes(RememberedRows {
+                        rows: rows[offset.min(rows.len())..end].to_vec(),
+                        retention_truncated: basis
+                            .knowledge
+                            .as_ref()
+                            .is_some_and(|knowledge| knowledge.retention_truncated),
+                    }),
+                    rows.len(),
                     n,
                 )
             }
