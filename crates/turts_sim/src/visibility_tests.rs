@@ -1105,3 +1105,196 @@ fn dense_permission_index_rejects_unbounded_sparse_storage() {
     let units = [visible(0, 0, p(1.0, 1.0)), visible(7, 1, p(2.0, 2.0))];
     assert_eq!(dense_unit_rows(&units).unwrap().len(), units.len() * 4);
 }
+
+fn repair_scene(automatic: bool, target: WorldPos) -> bevy_app::App {
+    let mut app = scene_with(false, |catalog, map| {
+        map.placements[1].pos = target;
+        catalog.units.get_mut(&id("worker")).unwrap().repairer = Some(turts_mod_api::RepairerDef {
+            rate_per_second: 20,
+            reach: 40.0,
+            cost: vec![],
+            targets: TargetFilter {
+                slots: turts_mod_api::SlotRelation::Any,
+            },
+            classes: vec![],
+            auto_range: automatic.then_some(40.0),
+        });
+    });
+    app.world_mut()
+        .resource_mut::<crate::economy::combat::Healths>()
+        .0
+        .insert(2, 10);
+    app
+}
+fn repair_command(target: u32, queue: crate::QueueMode, seq: u32) -> Command {
+    Command {
+        slot: SlotId(0),
+        seq,
+        kind: CommandKind::Order(Box::new(crate::orders::OrderCommand {
+            order: id("repair"),
+            behaviour: turts_mod_api::Behaviour::Repair,
+            target_kind: turts_mod_api::TargetKind::Unit,
+            policy: None,
+            units: vec![1],
+            target: crate::orders::OrderTargetSim::Unit(target),
+            queue,
+            group: 0,
+            allowed_units: vec![],
+            queue_depth: 16,
+        })),
+    }
+}
+
+#[test]
+fn explicit_and_queued_repair_refuse_hidden_and_absent_targets_identically() {
+    let mut app = repair_scene(false, p(24.0, 8.0));
+    for (index, queue) in [crate::QueueMode::Replace, crate::QueueMode::Append]
+        .into_iter()
+        .enumerate()
+    {
+        for target in [2, 999] {
+            let result = apply_command(
+                app.world_mut(),
+                &repair_command(target, queue, target + index as u32 * 1000),
+            );
+            assert_eq!(result.outcome, Err(crate::RejectReason::TargetInvalid));
+        }
+    }
+    run(&mut app, 40);
+    assert_eq!(
+        app.world().resource::<crate::economy::combat::Healths>().0[&2],
+        10
+    );
+    let actor = crate::unit_entity(app.world(), 1).unwrap();
+    assert_eq!(
+        app.world().get::<crate::Position>(actor).unwrap().0,
+        Vec2::new(8.0, 8.0)
+    );
+    assert!(
+        app.world()
+            .get::<crate::UnitOrders>(actor)
+            .unwrap()
+            .current
+            .is_none()
+    );
+}
+
+#[test]
+fn queued_repair_rechecks_sight_after_real_movement_before_healing() {
+    for absent in [false, true] {
+        let mut app = repair_scene(false, p(10.0, 10.0));
+        move_to(&mut app, 0, 1, 22.0, 1);
+        apply_command(
+            app.world_mut(),
+            &repair_command(2, crate::QueueMode::Append, 2),
+        )
+        .outcome
+        .unwrap();
+        let actor = crate::unit_entity(app.world(), 1).unwrap();
+        assert_eq!(
+            app.world()
+                .get::<crate::UnitOrders>(actor)
+                .unwrap()
+                .queue
+                .len(),
+            1
+        );
+        if absent {
+            let target = crate::unit_entity(app.world(), 2).unwrap();
+            app.world_mut().despawn(target);
+            app.world_mut()
+                .resource_mut::<crate::economy::combat::Healths>()
+                .0
+                .remove(&2);
+        }
+        run(&mut app, 200);
+        let orders = app.world().get::<crate::UnitOrders>(actor).unwrap();
+        assert!(orders.current.is_none() && orders.queue.is_empty());
+        assert_eq!(
+            orders.last_failure.as_ref().map(|failure| failure.reason),
+            Some(crate::RejectReason::TargetInvalid)
+        );
+        if !absent {
+            assert_eq!(
+                app.world().resource::<crate::economy::combat::Healths>().0[&2],
+                10
+            );
+        }
+        assert!(
+            app.world()
+                .get::<crate::Position>(actor)
+                .unwrap()
+                .0
+                .distance(Vec2::new(22.0, 8.0))
+                < 0.01
+        );
+    }
+}
+
+#[test]
+fn autonomous_repair_heals_visible_targets_and_stops_after_target_leaves_sight() {
+    let mut hidden = repair_scene(true, p(24.0, 8.0));
+    let mut absent = repair_scene(true, p(24.0, 8.0));
+    let target = crate::unit_entity(absent.world(), 2).unwrap();
+    absent.world_mut().despawn(target);
+    absent
+        .world_mut()
+        .resource_mut::<crate::economy::combat::Healths>()
+        .0
+        .remove(&2);
+    run(&mut absent, 40);
+    run(&mut hidden, 40);
+    assert_eq!(
+        hidden
+            .world()
+            .resource::<crate::economy::combat::Healths>()
+            .0[&2],
+        10
+    );
+    assert!(crate::economy::repair::status_rows(hidden.world()).is_empty());
+    assert_eq!(
+        crate::economy::repair::status_rows(hidden.world()),
+        crate::economy::repair::status_rows(absent.world())
+    );
+    assert_eq!(
+        basis(hidden.world(), ObservationPhase::Completed)
+            .unwrap()
+            .knowledge(0),
+        basis(absent.world(), ObservationPhase::Completed)
+            .unwrap()
+            .knowledge(0)
+    );
+    let mut visible = repair_scene(true, p(10.0, 8.0));
+    run(&mut visible, 2);
+    assert!(
+        visible
+            .world()
+            .resource::<crate::economy::combat::Healths>()
+            .0[&2]
+            > 10
+    );
+    move_to(&mut visible, 1, 2, 40.0, 1);
+    run(&mut visible, 220);
+    assert!(
+        !basis(visible.world(), ObservationPhase::Completed)
+            .unwrap()
+            .unit_permitted(0, 2)
+    );
+    let health = visible
+        .world()
+        .resource::<crate::economy::combat::Healths>()
+        .0[&2];
+    assert!(
+        health < 100,
+        "the target must leave sight before repair completes"
+    );
+    run(&mut visible, 40);
+    assert_eq!(
+        visible
+            .world()
+            .resource::<crate::economy::combat::Healths>()
+            .0[&2],
+        health
+    );
+    assert!(crate::economy::repair::status_rows(visible.world()).is_empty());
+}

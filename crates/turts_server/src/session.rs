@@ -1034,6 +1034,23 @@ mod tests {
     }
     #[test]
     fn real_human_hello_wire_installs_slot_specific_atomic_sight_before_acknowledgement() {
+        human_sight_by_slot(false, false);
+    }
+    #[test]
+    fn reversed_peer_creation_and_hello_order_preserve_slot_knowledge() {
+        let expected = human_sight_by_slot(false, false);
+        for (creation, hello) in [(true, false), (false, true), (true, true)] {
+            assert_eq!(
+                human_sight_by_slot(creation, hello),
+                expected,
+                "peer creation {creation}, Hello order {hello}"
+            );
+        }
+    }
+    fn human_sight_by_slot(
+        reverse_creation: bool,
+        reverse_hello: bool,
+    ) -> BTreeMap<u8, turts_mod_api::KnowledgeSnapshot> {
         use lightyear::link::recv_payload_from_bytes;
         use turts_mod_api::{
             KnowledgeBasis, ObservationPhase, SourceDef, VisibilityDef, VisibilityGrid, VisionDef,
@@ -1096,10 +1113,12 @@ mod tests {
         app.insert_resource(sight);
         turts_sim::visibility::initialize_context(app.world_mut(), 0, &[0, 1]).unwrap();
         turts_sim::initialize_completed_world(app.world_mut());
-        let pairs = [
-            spawn_hello_peers(&mut app, 101),
-            spawn_hello_peers(&mut app, 202),
-        ];
+        let peer_ids = if reverse_creation {
+            [202, 101]
+        } else {
+            [101, 202]
+        };
+        let pairs = peer_ids.map(|id| spawn_hello_peers(&mut app, id));
         for (client, server) in pairs {
             app.world_mut().entity_mut(client).insert((
                 MessageReceiver::<Welcome>::default(),
@@ -1127,8 +1146,10 @@ mod tests {
             app.world_mut().entity_mut(server).insert(server_transport);
             app.world_mut().entity_mut(client).insert(client_transport);
         }
-        for (index, (client, server)) in pairs.iter().copied().enumerate() {
-            deliver_hello(&mut app, client, server, good(101 + index as u64 * 101));
+        let hello_order = if reverse_hello { [1, 0] } else { [0, 1] };
+        for index in hello_order {
+            let (client, server) = pairs[index];
+            deliver_hello(&mut app, client, server, good(peer_ids[index]));
         }
         let mut assemblers = pairs
             .iter()
@@ -1249,6 +1270,7 @@ mod tests {
                 "server baseline advances only after real wire acknowledgement"
             );
         }
+        installed
     }
 
     #[derive(Resource, Default)]
