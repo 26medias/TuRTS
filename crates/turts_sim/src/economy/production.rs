@@ -877,6 +877,7 @@ pub fn queue_progress_rows(
                 let q = operating.map_or(1, |state| state.rate_q);
                 let held = raw.is_some_and(|row| row.held) || hold.is_some();
                 super::events::RateRecordRow {
+                    production: None,
                     unit: queue.producer,
                     owner_slot: queue.owner_slot,
                     job: Some(job.id),
