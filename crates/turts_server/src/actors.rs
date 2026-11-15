@@ -696,14 +696,6 @@ pub(crate) fn publish_completed(world: &mut World) {
                 completed_tick: tick,
                 revision: u64::from(tick),
             };
-            crate::actor_accounting::capture_receipts(
-                view,
-                committed,
-                catalog,
-                &entry.actor,
-                &mut entry.requests,
-                watermark,
-            )?;
             match crate::actor_accounting::build_batch(
                 view,
                 committed,
@@ -723,6 +715,16 @@ pub(crate) fn publish_completed(world: &mut World) {
                     }
                 }
                 Err(error) if error == crate::actor_accounting::ROW_LIMIT_EXCEEDED => {
+                    // A successful batch already captures receipts atomically. Only
+                    // a blocked publication needs this separate retained capture.
+                    crate::actor_accounting::capture_receipts(
+                        view,
+                        committed,
+                        catalog,
+                        &entry.actor,
+                        &mut entry.requests,
+                        watermark,
+                    )?;
                     if entry.publication_error.as_ref() != Some(&error) {
                         eprintln!(
                             "turts_server: bot slot {} accounting publication held: {error}",
