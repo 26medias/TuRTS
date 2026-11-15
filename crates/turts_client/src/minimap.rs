@@ -526,6 +526,69 @@ fn marker_node(left: f32, top: f32, width: f32, height: f32) -> Node {
     }
 }
 
+/// Rasterize accepted knowledge into bounded minimap rows, then merge equal adjacent cells.
+fn sync_fog(
+    world: &mut World,
+    root: Entity,
+    entities: &mut Vec<Entity>,
+    knowledge: Option<&turts_mod_api::KnowledgeSnapshot>,
+    size: Vec2,
+) {
+    let mut desired = Vec::new();
+    if let Some(knowledge) = knowledge {
+        use crate::visibility::{FogCell, position_state};
+        let width = (size.x.ceil() as u32).clamp(1, 512);
+        let height = (size.y.ceil() as u32).clamp(1, 512);
+        let pixel = Vec2::new(size.x / width as f32, size.y / height as f32);
+        for y in 0..height {
+            let state = |x: u32| {
+                position_state(
+                    knowledge,
+                    turts_mod_api::WorldPos {
+                        x: (x as f32 + 0.5) / width as f32 * knowledge.grid.size.x,
+                        y: (1. - (y as f32 + 0.5) / height as f32) * knowledge.grid.size.y,
+                    },
+                )
+                .unwrap_or(FogCell::Unexplored)
+            };
+            let mut x = 0;
+            while x < width {
+                let first = x;
+                let fog = state(x);
+                x += 1;
+                while x < width && state(x) == fog {
+                    x += 1;
+                }
+                let colour = match fog {
+                    FogCell::Observed => continue,
+                    FogCell::Remembered => Color::srgba(0.01, 0.015, 0.025, 0.65),
+                    FogCell::Unexplored => Color::srgb(0.008, 0.01, 0.015),
+                };
+                desired.push((
+                    marker_node(
+                        first as f32 * pixel.x,
+                        y as f32 * pixel.y,
+                        (x - first) as f32 * pixel.x,
+                        pixel.y,
+                    ),
+                    colour,
+                ));
+            }
+        }
+    }
+    while entities.len() > desired.len() {
+        if let Some(entity) = entities.pop() {
+            let _ = world.despawn(entity);
+        }
+    }
+    for (index, (node, colour)) in desired.into_iter().enumerate() {
+        if entities.len() <= index {
+            entities.push(spawn_marker(world, root));
+        }
+        update_marker(world, entities[index], node, colour, 1);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -688,68 +751,5 @@ mod tests {
             world.get::<BackgroundColor>(*vertical).unwrap().0,
             Color::srgb_u8(255, 204, 0)
         );
-    }
-}
-
-/// Rasterize accepted knowledge into bounded minimap rows, then merge equal adjacent cells.
-fn sync_fog(
-    world: &mut World,
-    root: Entity,
-    entities: &mut Vec<Entity>,
-    knowledge: Option<&turts_mod_api::KnowledgeSnapshot>,
-    size: Vec2,
-) {
-    let mut desired = Vec::new();
-    if let Some(knowledge) = knowledge {
-        use crate::visibility::{FogCell, position_state};
-        let width = (size.x.ceil() as u32).clamp(1, 512);
-        let height = (size.y.ceil() as u32).clamp(1, 512);
-        let pixel = Vec2::new(size.x / width as f32, size.y / height as f32);
-        for y in 0..height {
-            let state = |x: u32| {
-                position_state(
-                    knowledge,
-                    turts_mod_api::WorldPos {
-                        x: (x as f32 + 0.5) / width as f32 * knowledge.grid.size.x,
-                        y: (1. - (y as f32 + 0.5) / height as f32) * knowledge.grid.size.y,
-                    },
-                )
-                .unwrap_or(FogCell::Unexplored)
-            };
-            let mut x = 0;
-            while x < width {
-                let first = x;
-                let fog = state(x);
-                x += 1;
-                while x < width && state(x) == fog {
-                    x += 1;
-                }
-                let colour = match fog {
-                    FogCell::Observed => continue,
-                    FogCell::Remembered => Color::srgba(0.01, 0.015, 0.025, 0.65),
-                    FogCell::Unexplored => Color::srgb(0.008, 0.01, 0.015),
-                };
-                desired.push((
-                    marker_node(
-                        first as f32 * pixel.x,
-                        y as f32 * pixel.y,
-                        (x - first) as f32 * pixel.x,
-                        pixel.y,
-                    ),
-                    colour,
-                ));
-            }
-        }
-    }
-    while entities.len() > desired.len() {
-        if let Some(entity) = entities.pop() {
-            let _ = world.despawn(entity);
-        }
-    }
-    for (index, (node, colour)) in desired.into_iter().enumerate() {
-        if entities.len() <= index {
-            entities.push(spawn_marker(world, root));
-        }
-        update_marker(world, entities[index], node, colour, 1);
     }
 }
