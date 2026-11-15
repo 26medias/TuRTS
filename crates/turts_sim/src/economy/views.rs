@@ -1525,7 +1525,11 @@ pub fn audit_state(world: &mut World) -> AuditState {
                                         || unit.machine.is_some()
                                         || unit.research.is_some()
                                         || unit.producer.is_some()
-                                        || unit.weapon.is_some(),
+                                        || unit.weapon.is_some()
+                                        || unit.constructor.is_some()
+                                        || unit.repairer.is_some()
+                                        || !unit.terrain_tools.is_empty()
+                                        || unit.terrain_cargo.is_some(),
                                 },
                             )
                             .collect(),
