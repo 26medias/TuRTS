@@ -58,10 +58,18 @@ def target_directory(root: Path) -> Path:
         raise ValueError("CARGO_TARGET_DIR must name the assigned lane cache")
     path = Path(value)
     target = (path if path.is_absolute() else root / path).resolve()
-    if target.parent != root / "target" or not (
+    local_cache = target.parent == root / "target" and (
         target.name.startswith("mc-") or target.name == "m3-t16"
-    ):
-        raise ValueError("native HD1 target must be this worktree's assigned MC or legacy CI cache")
+    )
+    active_source = target / ".codex-active-worktree"
+    managed_shared_cache = (
+        target.name.startswith("mc-")
+        and (target / ".codex-worktree-build.lock").is_file()
+        and active_source.is_file()
+        and Path(active_source.read_text().strip()).resolve() == root.resolve()
+    )
+    if not (local_cache or managed_shared_cache):
+        raise ValueError("native HD1 target must be a local CI cache or this source's wrapper-managed shared cache")
     return target
 
 
