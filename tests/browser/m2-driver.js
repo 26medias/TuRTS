@@ -12,12 +12,13 @@ const { findPaletteTargetNear } = require("./sel1-driver.js");
 
 // mods/<package>/maps/*.ron; scripts/m2-browser.sh moves base, haul and cedar 18 map units in x
 // (tests/m2/browser_fixture.py). Each HUD camera: pitch 0.7, yaw 0, field of view 60, height 40,
-// start MapCentre (mods/<package>/interface/hud.ron).
+// start MapCentre (mods/<package>/interface/hud.ron). visualHeights are the
+// producer/worker/node/foreign shape-centre heights in mods/<package>/visuals/.
 const PACKAGES = {
-    base: { offset: 18, size: [64, 64], producer: [8, 8], worker: [12, 8], node: [24, 8], foreign: [52, 8] },
-    haul: { offset: 18, size: [48, 48], producer: [8, 8], worker: [12, 8], node: [20, 8], foreign: [36, 8] },
-    cedar: { offset: 18, size: [64, 64], producer: [8, 8], worker: [12, 8], node: [24, 8], foreign: [52, 8] },
-    acme: { offset: 0, size: [48, 48], producer: [4, 4], worker: null, node: null, foreign: null },
+    base: { visualHeights: { producer: 1, worker: 0.6, node: 1, foreign: 0.6 }, offset: 18, size: [64, 64], producer: [8, 8], worker: [12, 8], node: [24, 8], foreign: [52, 8] },
+    haul: { visualHeights: { producer: 1, worker: 0.8, node: 1, foreign: 0.8 }, offset: 18, size: [48, 48], producer: [8, 8], worker: [12, 8], node: [20, 8], foreign: [36, 8] },
+    cedar: { visualHeights: { producer: 1, worker: 0.8, node: 0.35, foreign: 0.8 }, offset: 18, size: [64, 64], producer: [8, 8], worker: [12, 8], node: [24, 8], foreign: [52, 8] },
+    acme: { visualHeights: { producer: 0.7 }, offset: 0, size: [48, 48], producer: [4, 4], worker: null, node: null, foreign: null },
 };
 const VIEWPORT = { width: 1280, height: 720 };
 // The plain HUD lists of mods/<package>/interface/hud.ron (ruling C384): m2_build_rows at
@@ -34,8 +35,8 @@ function layout(params) {
     if (!map) throw new Error(`M2 driver has no map literals for package ${name}`);
     const at = (point) => point && [point[0] + map.offset, point[1]];
     const camera = { height: 40, pitch: 0.7, yaw: 0, fov: Math.PI / 3, lookAt: [(map.size[0] + map.offset) / 2, map.size[1] / 2] };
-    const seed = (point) => {
-        const pixel = projectWorldPoint(at(point), camera, VIEWPORT);
+    const seed = (point, height = 0) => {
+        const pixel = projectWorldPoint(at(point), camera, VIEWPORT, height);
         if (!pixel) throw new Error(`M2 map point ${JSON.stringify(point)} of ${name} is not in view`);
         return { x: Math.round(pixel[0]), y: Math.round(pixel[1]) };
     };
@@ -49,8 +50,10 @@ async function shot(io, label) {
     return decodePng(bytes);
 }
 
-async function unitAt(io, where, slot, point, label) {
-    const seed = where.seed(point);
+async function unitAt(io, where, slot, point, label, height) {
+    // A ground-centre pixel can belong to a nearer elevated mesh. Aim at the
+    // authored shape's centre, then still require its rendered slot-colour pixel.
+    const seed = where.seed(point, height);
     for (let attempt = 0; attempt < 20; attempt += 1) {
         const image = decodePng(Buffer.from(await io.screenshot()));
         const found = findPaletteTargetNear(image, slot, seed, 14);
@@ -72,7 +75,7 @@ async function stop(io, label, reason) {
 
 // A node has no slot colour. The projected node point must not be the plain ground colour.
 async function nodeAt(io, where, label) {
-    const seed = where.seed(where.map.node);
+    const seed = where.seed(where.map.node, where.map.visualHeights.node);
     const image = decodePng(Buffer.from(await io.screenshot()));
     const pixel = pixelAt(image, seed.x, seed.y);
     if (!pixel || Math.max(pixel[0], pixel[1], pixel[2]) < 24) {
@@ -112,7 +115,7 @@ async function clickButton(io, target, label) {
 }
 
 async function selectAndHover(io, where, point, label) {
-    const target = await unitAt(io, where, 0, point, label);
+    const target = await unitAt(io, where, 0, point, label, where.map.visualHeights.producer);
     if (!target) return null;
     await io.click(target.x, target.y, "left");
     await io.wait(250);
@@ -124,7 +127,7 @@ async function selectAndHover(io, where, point, label) {
 }
 
 async function gather(io, where, label, seconds) {
-    const worker = await unitAt(io, where, 0, where.map.worker, `${label}-worker`);
+    const worker = await unitAt(io, where, 0, where.map.worker, `${label}-worker`, where.map.visualHeights.worker);
     if (!worker) return false;
     await io.click(worker.x, worker.y, "left");
     await io.wait(250);
@@ -161,7 +164,7 @@ async function drive(io, params) {
             await shot(io, "m2-joined");
             await dismissOverlay(io);
             const worker = WORKER_CASES.has(caseId);
-            const target = await unitAt(io, where, 0, worker ? where.map.worker : where.map.producer, worker ? "m2-worker" : "m2-producer");
+            const target = await unitAt(io, where, 0, worker ? where.map.worker : where.map.producer, worker ? "m2-worker" : "m2-producer", where.map.visualHeights[worker ? "worker" : "producer"]);
             if (!target) return;
             await io.click(target.x, target.y, "left");
             await io.wait(250);
@@ -196,7 +199,7 @@ async function drive(io, params) {
         await shot(io, "m2-owner1-joined");
         await dismissOverlay(io);
         if (where.map.foreign) {
-            const target = await unitAt(io, where, 1, where.map.foreign, "m2-owner1-unit");
+            const target = await unitAt(io, where, 1, where.map.foreign, "m2-owner1-unit", where.map.visualHeights.foreign);
             if (!target) return;
             await io.click(target.x, target.y, "left");
             await io.wait(250);
