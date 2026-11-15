@@ -385,6 +385,7 @@ impl VisibilityState {
                 truncated: false,
             });
         }
+        let previous = self.phase(self.active);
         for viewer in 0..SLOT_COUNT {
             let memory = &mut self.memories[usize::from(viewer)];
             for unit in next
@@ -409,48 +410,87 @@ impl VisibilityState {
             memory.nodes.retain(|id, (old, _)| {
                 next.node_permitted(viewer, *id) || !next.point_observed(viewer, old.position)
             });
-            let mut stale_units = memory
+            // Keep current observation storage separate from bounded stale memory.
+            // Select the oldest timestamp group in one sort, never by subject ID.
+            let mut stale = memory
                 .units
-                .values()
-                .filter(|(unit, _)| !next.unit_permitted(viewer, unit.unit))
-                .map(|(unit, tick)| unit.remembered(*tick))
-                .collect::<Vec<_>>();
-            let mut stale_nodes = memory
-                .nodes
-                .values()
-                .filter(|(node, _)| !next.node_permitted(viewer, node.node))
-                .map(|(node, tick)| node.remembered(*tick))
+                .iter()
+                .filter(|(id, _)| !next.unit_permitted(viewer, **id))
+                .map(|(id, (_, tick))| (*tick, true, *id))
+                .chain(
+                    memory
+                        .nodes
+                        .iter()
+                        .filter(|(id, _)| !next.node_permitted(viewer, **id))
+                        .map(|(id, (_, tick))| (*tick, false, *id)),
+                )
                 .collect::<Vec<_>>();
             let limit = self.definition.effective_memory_limit() as usize;
-            while stale_units.len() + stale_nodes.len() > limit {
-                let oldest = stale_units
-                    .iter()
-                    .map(|row| row.last_seen_tick)
-                    .chain(stale_nodes.iter().map(|row| row.last_seen_tick))
-                    .min();
-                let Some(oldest) = oldest else {
-                    break;
-                };
+            if stale.len() > limit {
+                stale.sort_unstable_by_key(|row| row.0);
+                let cutoff = stale[stale.len() - limit - 1].0;
                 memory.truncated = true;
-                stale_units.retain(|row| {
-                    if row.last_seen_tick == oldest {
-                        memory.units.remove(&row.unit);
-                        false
+                for (_, unit, id) in stale.iter().copied().take_while(|row| row.0 <= cutoff) {
+                    if unit {
+                        memory.units.remove(&id);
                     } else {
-                        true
+                        memory.nodes.remove(&id);
                     }
-                });
-                stale_nodes.retain(|row| {
-                    if row.last_seen_tick == oldest {
-                        memory.nodes.remove(&row.node);
-                        false
-                    } else {
-                        true
-                    }
-                });
+                }
             }
-            next.slots[usize::from(viewer)].units = stale_units.into();
-            next.slots[usize::from(viewer)].nodes = stale_nodes.into();
+            let previous = &previous.slots[usize::from(viewer)];
+            let units = || {
+                memory
+                    .units
+                    .values()
+                    .filter(|(unit, _)| !next.unit_permitted(viewer, unit.unit))
+            };
+            let same_units = units().count() == previous.units.len()
+                && units()
+                    .zip(previous.units.iter())
+                    .all(|((unit, tick), old)| {
+                        unit.unit == old.unit
+                            && unit.content.as_ref() == &old.content
+                            && unit.owner == old.owner
+                            && unit.position == old.position
+                            && unit.facing == old.facing
+                            && unit.site == old.site
+                            && *tick == old.last_seen_tick
+                    });
+            let stale_units = if same_units {
+                Arc::clone(&previous.units)
+            } else {
+                units()
+                    .map(|(unit, tick)| unit.remembered(*tick))
+                    .collect::<Vec<_>>()
+                    .into()
+            };
+            let nodes = || {
+                memory
+                    .nodes
+                    .values()
+                    .filter(|(node, _)| !next.node_permitted(viewer, node.node))
+            };
+            let same_nodes = nodes().count() == previous.nodes.len()
+                && nodes()
+                    .zip(previous.nodes.iter())
+                    .all(|((node, tick), old)| {
+                        node.node == old.node
+                            && node.content.as_ref() == &old.content
+                            && node.position == old.position
+                            && node.remaining == old.remaining
+                            && *tick == old.last_seen_tick
+                    });
+            let stale_nodes = if same_nodes {
+                Arc::clone(&previous.nodes)
+            } else {
+                nodes()
+                    .map(|(node, tick)| node.remembered(*tick))
+                    .collect::<Vec<_>>()
+                    .into()
+            };
+            next.slots[usize::from(viewer)].units = stale_units;
+            next.slots[usize::from(viewer)].nodes = stale_nodes;
             next.slots[usize::from(viewer)].truncated = memory.truncated;
         }
         self.active = phase;
