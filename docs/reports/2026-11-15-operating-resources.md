@@ -1,80 +1,87 @@
-# Operating resources — acceptance draft
+# Operating resources
 
-Status: preview checks and independent review pass. Final release acceptance remains pending.
-This report maps executed evidence. Final release checks remain in progress.
-Integration reference: `codex/operating-resources` at `4ed93660`.
+Status: PASS. The milestone adds API 0.2.13. Protocol 7 stays unchanged.
+The prepared runtime uses clean source `4ed93660356ba2970aeef22f25f89f91b90136da`.
+Later commits retain tests, repair old test tools, and add this report.
+
+Mods can define slot supply, capability-specific shortage effects, and periodic income.
+The smallest active rate wins. Weapons use Disable independently of manual Disable.
+Supply effects freeze before commands. Live admission tracks creation and removal within the tick.
+Producer outputs and site completions share physical source priority. Exact ties hold symmetrically.
+Income starts at actual activation. A full account retries the whole due batch without backfill.
+Default Skirmish content and balance stay unchanged.
 
 Evidence root (E): `/home/julien/Projects/TuRTS/target/mc-evidence/operating-resources/`.
-Paths below are relative to E. Earlier component evidence applies to its recorded commit.
-Final integration checks must confirm the assembled release.
+All paths below are relative to E.
 
-## Change
+## Executed acceptance
 
-API 0.2.13 supports completed-unit slot supply, periodic balance income, and capability-specific shortage rules.
-Producer and constructor progress use the smallest active Rate constraint. Rates do not multiply.
-The merged catalog determines exact integer RateQ, with the existing 65,536 scale limit.
-Weapons use Disable. Manual Disable remains separate.
-
-Supply effects freeze before commands. Live admission totals track changes within the tick.
-Producer outputs and site completions share admission in physical source-coordinate order.
-Exact source ties refuse both candidates. Runtime IDs do not rank visible admission outcomes.
-Income clocks start at actual activation. Successful payment starts the next period.
-A full account holds the whole due batch. It does not accumulate missed periods.
-
-## Acceptance evidence
-
-| Row | Executed evidence and remaining checks |
+| Row | Result and evidence |
 | --- | --- |
-| OR1 | Component PASS. `runtime/result.json` and `runtime/final.log`: 321 tests, including seven operating tests with 31 scenarios. A small two-slot, two-supply package passes public archive validation. Negative cases cover references, kinds, duplicates, rates, reserved effects/scopes/counts, income health/amount/period, API floor, and merged-catalog scale. `boot/final.log` covers source-aware zero-period refusal and maximum authored period. |
-| OR2 | Component and preview PASS. `backend-sim-tests.log`: boot exclusions, declared zeros, manual Disable, spawn, removal, zero health, revival, combat destruction, and immutable tick boundary. `engine/first.log`: mixed producer/site admission and retained-site rules. `audit/removal-stream.jsonl` and `audit/final.log`: real queued removal releases income and supply; effects update next tick. Final release confirmation is pending. |
-| OR3 | Component and preview PASS. `engine/first.log`: exact minimum rates, global Q, fractional recovery, site health, unchanged payment/FIFO, and overflow recovery. `browser-full-checked/result.json`: full work 41/41 ticks; shortage work 30/61 ticks; constructor progress is recorded. Final release browser confirmation is pending. |
-| OR4 | Component and preview PASS for executed checks. `supply/power-callers.log`, `backend-sim-tests.log`, and `browser-full-checked/result.json` cover weapon shortage, restoration, and preserved manual Disable. Owner separation also has export/replica coverage. Final release confirmation is pending. |
-| OR5 | Native PASS for the corrected event/account boundary. `income/result.json`, `income/lifecycle/result.json`, `backend-sim-tests.log`, and `audit/stream.jsonl` cover two tick rates, 1,050 ms at 20 Hz, explicit activation, removal/revival, site/dead exclusions, and successful periodic credits. `browser-full-checked/result.json` records balance changes. Gathered has no implemented accumulator: the HUD source is a Null stub and stage-1 match results have empty stats. The distinct IncomeCredited event is tested; The actual stream test checks balance 0 to 12 and no Converted, Extracted, or Stored events. An actual Gathered before/after assertion remains a future statistics requirement. Later-completion clock timing needs final integrated evidence. |
-| OR6 | Component PASS. `income/lifecycle/result.json` covers atomic wrong/stale/reversed grant refusal. `income/result.json` covers two due sources sharing a full account, an unaffected account, retry without backlog, and event-ordinal overflow. `engine/first.log` covers supply/income admission bounds, swapped factory/site IDs with unchanged physical winner, preserved final progress/resources/IDs, and recovery. |
-| OR7 | PARTIAL. `income/result.json` compares repeated clock/account/event states. `audit/final.log` compares repeated real periodic-income streams. Existing no-operating frozen streams still need an operating-integration run; commands are below. This report does not claim equality for unexecuted historical streams. |
-| OR8 | Component PASS. `client/export-checks.log` and `client/export-replica-checks.log` cover real server projections through postcard into replicas: owner privacy, foreign-record refusal, explicit zeros, delta-to-zero, resync, and fresh legacy-match reset. `client/summary.md` records counts and scope. |
-| OR9 | Preview PASS: `browser-full-checked/result.json`, `browser-full-checked.log`, and screenshots in that directory. Real mouse orders remove a provider, build a replacement, restore work, preserve manual weapon Disable, then permit firing. The fixture also checks peer privacy, income, and explicit zero totals. Final release run is pending. Earlier failed/partial attempts remain evidence of fixes; they are not passes. |
-| OR10 | PENDING. `clippy-final.log` records a successful strict workspace Clippy run. `backend-sim-tests.log` records 364 passed and one ignored. `audit/final.log` records 72 passed. Final full gates, compatibility equality, release cold probes, actual launcher,  and final README update remain pending. `review/review.md` and `review/result.json` record independent approval with no material findings. The review also ran frozen compatibility and two independent Q=6 completion probes. |
+| OR1 | PASS. `runtime/result.json`, `runtime/final.log`, `boot/final.log`: public fixture loading, wrong kinds/references, duplicates, invalid rates/periods, reserved scopes/effects, API floors, and merged-catalog Q. The maximum authored period fits; generic conversion overflow is tested separately. |
+| OR2 | PASS. `backend-sim-tests.log`, `engine/first.log`, `income/lifecycle/result.json`, `audit/removal-stream.jsonl`: completion/spawn/removal/death/revival, sites, manual Disable, declared zeros, atomic hooks, and immutable tick boundaries. `final/operating/result.json` confirms real browser creation and removal. |
+| OR3 | PASS. `engine/first.log`, `review/q-probes.log`: exact fractions, minimum constraints, health, retained constructor rules, FIFO, and recovery. `final/operating/result.json`: full work 41/41 ticks; producer shortage 31/62; site shortage exactly one-third speed. |
+| OR4 | PASS. `supply/power-callers.log`, `backend-sim-tests.log`, `final/operating/result.json`: acquisition/fire inhibition, recovery, owner separation, and preserved manual Disable. |
+| OR5 | PASS for the corrected event/account boundary. `income/result.json`, `income/lifecycle/result.json`, `audit/stream.jsonl`, `workspace-final.log`, `income-completion-final.log`: two tick rates, 1,050 ms, actual spawn/site-completion clocks, two full payment periods, removal/revival, no site/dead income, and no gather/delivery events from income. `final/operating/result.json` checks periodic visible credits. |
+| OR6 | PASS. `income/result.json`, `income/lifecycle/result.json`, `engine/first.log`: whole-account retry, independent accounts, checked supply/income bounds, reversed creation IDs with the same physical winner, unchanged final progress/resources on refusal, and recovery. |
+| OR7 | PASS. `audit/final.log`, `income/result.json`, `workspace-final.log`: repeated per-tick state/events and unchanged frozen base/haul/acme/Cedar streams, Forge fixed point, and renamed-package traces. No baseline was rewritten. |
+| OR8 | PASS. `client/export-checks.log`, `client/export-replica-checks.log`: owner projection through postcard into replicas, foreign-record refusal, explicit zeros, resync, and new-match reset. |
+| OR9 | PASS. `final/operating/result.json` and screenshots: real mouse Remove/Build, shortage, completion, recovery, manual Disable/Enable, income, owner privacy, one alert per transition, and zero totals. |
+| OR10 | PASS. `review/review.md`, `review/result.json`, native logs listed below, and `final/summary.md`: independent code-running review, required integration checks, three final scripted player probes, normal win, performance floor, and actual launcher. |
 
-## Audit boundary
+## Integration checks
 
-The new validator derives active contributions and live totals from immutable catalog definitions and active units.
-It checks clock payloads and periods. It independently reconstructs successful income account batches and queued contributor removal.
-Negative cases reject catalog-inconsistent clocks/contributions and coherent event tampering.
+The workspace run covered 196 suites. Four old test-instrument failures were repaired and rerun.
+The resulting coverage has 2,472 passing cases, including the added completion-clock regression; 40 workspace cases were ignored.
+`workspace-final-summary.json`, `formula-final.log`, `server-final.log`, and `income-completion-final.log` record this scope.
+The independent reviewer also ran 476 simulation cases, eight engine scenarios, runtime/audit checks, frozen compatibility, and two independent Q=6 completion probes.
+No material review finding remained.
 
-This is bounded replay coverage. No new independent model covers no-event full-account retries, scaled producer/site completion, or shortage-induced changes to public capability-rate rows.
-The real simulation tests cover several of these behaviors. They do not make the auditor a complete independent simulation.
-See `audit/result.json`, `audit/stream.jsonl`, and `audit/removal-stream.jsonl`.
+Strict Clippy, format, WASM workspace checking, dependency boundaries, probe neutrality, and nine existing harness checks pass.
+See `clippy-retained-tests.log`, `clippy-oracle-final.log`, `format-final-candidate.log`, `wasm-final.log`, `boundary-final.log`, `probe-neutral-final.log`, and `harness-final/results.json`.
+The new regression has its own focused final check.
 
-## Compatibility and final checks
+Required release process acceptance passed across the original run and scoped continuations.
+Passed rows were retained. Only failed rows and remaining rows were run afterward.
+See `acceptance-final/`, `acceptance-oracle-rally-derived.log`, `acceptance-oracle-rally-f32.log`, `acceptance-after-e9.log`, and `acceptance-last-body.log`.
+The final HD1 reference is `acceptance-final/hd1-native-reference-body-checked/reference/`.
 
-Run native Cargo through `~/.codex/bin/turts-cargo` when sharing a target.
-The existing compatibility command is:
+Old test tools were repaired to accept producer rally rows, compare coordinates at exact wire f32 precision, and use the real Supply system.
+The name-only formula check now records two state adapters.
+HD1 now accepts the wrapper-managed shared cache and clicks an exposed body instead of an occluded ground point.
+These repairs preserve exact result checks, source checks, and artifact checks.
 
-```sh
-~/.codex/bin/turts-cargo test -p turts_pack --test m3_m2_stream --test forge_fixed_point --test forge_renamed_clone --test economy_variants --locked
-```
+## Final build
 
-Keep `UPDATE_M3_BASELINE` unset. The M2 test compares 400 ticks of base, haul, acme, and Cedar against `tests/m3/m2_operation_stream.json`.
-Forge targets check fixed-point behavior and renamed-catalog trace equality.
-These checks are also included in workspace tests.
+`final/combat-loop/result.json` passes Warrior training, tower construction, movement, melee, and tower fire.
+`final/win/result.json` reaches normal Victory in 154.749 seconds with 640 harvested credits.
+The player castle stays at 1,000 HP. The computer fields a Warrior and a completed tower.
 
-Current `.github/workflows/ci.yml` requires format, strict native workspace Clippy, workspace WASM check excluding the server, and native workspace tests.
-It also requires probe neutrality, dependency boundaries, Python harness/browser tests, re-freeze classifier tests, and `scripts/acceptance.sh`.
-Run the required set once for the final integration candidate. Do not create additional lane gates.
-The reviewed plan additionally requires the final release build, three scripted cold probes from `docs/qa/cold-play.md`, and the actual launcher check.
-Do not replace the accepted launcher or invite a player before those probes pass.
+All three scripted player probes pass at the required viewports.
+`final/cold-check.log` correctly reports PARTIAL-PASS because manual and blind-player checks were not repeated.
+The 400-unit release measures 59.403 FPS High and 59.004 FPS Low on the local RTX 3080.
+All actors stay visible and take damage. Shared skinning and environment checks pass.
+No detail was reduced. See `final/measure-400/result.json` and `docs/measurements/models.md`.
+
+The three local launchers now use `target/mc-evidence/skirmish-operating-prepared` with the frozen operating-play checkout.
+The actual single-player launcher passes model/map loading, compressed transfer, and Sound off.
+See `final/launcher/result.json`. All test profiles were removed. Runner receipts report unchanged source and no survivors.
+The two-player and public-tunnel launchers received the same path update; they were not rerun in this milestone.
 
 ## Corrections and limits
 
-The authored period uses u32 milliseconds and u16 Hz. Their product fits u64 ticks.
-OR1 therefore accepts the authored maximum and tests generic converter overflow separately. No arbitrary deadline cap was added.
-Network supply, Queued counts, and BlockStart remain reserved and rejected.
-Default Skirmish content stays unchanged; operating behavior is exercised in a separate mod fixture.
-No final-release performance claim is made here. This draft does not authorize a main push.
+OR5 preserves the rule that income must not count toward Gathered.
+The Gathered accumulator and its HUD are not implemented. The revised check proves the actual credit/event boundary.
+A future statistics implementation must add the actual counter regression.
+The same Anvil reviewer approved this narrow correction and its plan in `anvil-stat-clarification.md`.
 
-OR5 was corrected through a narrow two-turn Anvil review: `anvil-stat-clarification.md`.
-It preserves the future Gathered exclusion without treating a Null HUD source as a working counter.
+Automatic arithmetic refusal has a typed authoritative diagnostic. This feature does not add an unsolicited owner wire notice.
+The authored u32-ms/u16-Hz maximum fits u64 ticks. No arbitrary period cap was added.
+Network supply, Queued counts, and BlockStart remain reserved.
 
-The old formula check counted two state adapters by name. Its exact baseline now records those adapters.
-No numeric gameplay formula or product behavior changed for this repair.
+The auditor independently models successful income batches, contributions, clocks, and queued removal.
+New independent replay models for no-event full-account retries, scaled completions, and shortage-rate changes remain open.
+Simulation tests cover these paths; they do not make the auditor a complete independent simulation.
+The 2,000-unit and panning workloads, GPU process RSS, other hardware, human multiplayer, and full manual readiness were not repeated.
+The previous three-type 2,000-unit High result remains below 30 FPS.
+No main push was made.
