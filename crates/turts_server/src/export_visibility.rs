@@ -585,6 +585,66 @@ mod tests {
         assert!(state.removed.is_empty());
     }
     #[test]
+    fn all_visible_cosmetics_keep_truthful_old_and_birth_stamps_and_omit_unknown_handles() {
+        use turts_sim::economy::events::EffectRow;
+        let mut old = snapshot(1, true);
+        old.knowledge = None;
+        let mut next = snapshot(2, false);
+        next.knowledge = None;
+        let batch = CommittedTick {
+            tick: 2,
+            removed: vec![2, 3, 99],
+            spawned: vec![turts_sim::world::UnitState {
+                unit_id: 3,
+                content_id: "fixture:unit".into(),
+                owner_slot: 1,
+                facing: None,
+                pos: bevy::math::Vec2::new(7.0, 7.0),
+            }],
+            effects: vec![
+                EffectRow::Fired {
+                    unit: 2,
+                    target: 1,
+                    weapon: 0,
+                    reduced: false,
+                },
+                EffectRow::Destroyed { unit: 2 },
+                EffectRow::Destroyed { unit: 3 },
+                EffectRow::Destroyed { unit: 99 },
+            ],
+            ..Default::default()
+        };
+        let StateTransactionPayload::Patch {
+            state,
+            knowledge,
+            event_units,
+        } = old.all_visible_patch(&next, &batch, SlotId(0), &basis(2))
+        else {
+            panic!()
+        };
+        assert!(knowledge.is_none());
+        assert_eq!(state.removed, vec![wire::UnitId(2)]);
+        assert_eq!(
+            state.records.effects.len(),
+            3,
+            "unknown legacy cosmetic handle is omitted"
+        );
+        let old_observation = event_units
+            .iter()
+            .find(|row| row.unit.unit_id.0 == 2)
+            .unwrap();
+        assert_eq!(old_observation.basis.tick, 1);
+        assert_eq!(old_observation.basis.phase, ObservationPhase::Completed);
+        assert_eq!(old_observation.unit.pos, unit(2).pos);
+        let born = event_units
+            .iter()
+            .find(|row| row.unit.unit_id.0 == 3)
+            .unwrap();
+        assert_eq!(born.basis.tick, 2);
+        assert_eq!(born.unit.pos, wire::Pos { x: 7.0, y: 7.0 });
+        assert!(!event_units.iter().any(|row| row.unit.unit_id.0 == 99));
+    }
+    #[test]
     fn hidden_present_moved_and_destroyed_truth_produces_equal_permitted_patches() {
         use turts_sim::economy::events::EffectRow;
         let old = snapshot(1, false);

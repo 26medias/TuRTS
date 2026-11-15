@@ -484,6 +484,45 @@ mod tests {
         sender
     }
     #[test]
+    fn large_all_visible_snapshot_uses_real_map_context_and_keeps_an_atomic_patch_chain() {
+        let mut app = turts_sim::headless_app(20);
+        app.insert_resource(crate::stats::MatchId(17));
+        let map = ContentId::parse("fixture:map").unwrap();
+        app.insert_resource(turts_sim::bootstrap::InstalledMapIdentity(map.clone()));
+        let entity = app.world_mut().spawn_empty().id();
+        assert!(!queue_full(app.world_mut(), entity, SlotId(0)).unwrap());
+        let mut view = turts_sim::WorldView::default();
+        view.units = (1..=200)
+            .map(|unit_id| turts_sim::world::UnitState {
+                unit_id,
+                content_id: "fixture:unit".into(),
+                owner_slot: 0,
+                facing: None,
+                pos: bevy::math::Vec2::new(2.0, 2.0),
+            })
+            .collect();
+        app.insert_resource(turts_sim::CompletedWorld(view));
+        assert!(queue_full(app.world_mut(), entity, SlotId(0)).unwrap());
+        let sender = app.world().get::<KnowledgeSender>(entity).unwrap();
+        assert!(sender.tip.knowledge.is_none());
+        let begin = sender.pending.as_ref().unwrap().encoded.begin();
+        assert_eq!(begin.stamp.basis.map, map);
+        assert_eq!(begin.stamp.basis.match_id, 17);
+        assert!(begin.chunk_count > 1);
+        app.world_mut()
+            .resource_mut::<turts_sim::CompletedWorld>()
+            .0
+            .tick = 1;
+        assert!(queue_tick(app.world_mut(), entity, SlotId(0)).unwrap());
+        let sender = app.world().get::<KnowledgeSender>(entity).unwrap();
+        assert_eq!(sender.patches.len(), 1);
+        assert_eq!(
+            sender.patches[0].begin().stamp.parent_transaction_id,
+            Some(1)
+        );
+        assert_eq!(sender.patches[0].begin().stamp.basis.tick, 1);
+    }
+    #[test]
     fn logical_cancel_releases_unsent_buffers_but_carries_inflight_credit_until_ack() {
         let now = Instant::now();
         let mut sender = sender(now);
