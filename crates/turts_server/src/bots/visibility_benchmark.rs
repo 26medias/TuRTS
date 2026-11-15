@@ -348,6 +348,7 @@ impl Harness {
             FixedPreUpdate,
             begin_cpu
                 .in_set(SimSet::Advance)
+                .after(turts_sim::plugin::VisibilityBoundary::StartBefore)
                 .before(turts_sim::visibility::refresh_start),
         );
         app.add_systems(
@@ -368,13 +369,14 @@ impl Harness {
             end_tactical
                 .in_set(SimSet::Acquire)
                 .after(turts_sim::visibility::refresh_tactical)
+                .before(turts_sim::plugin::VisibilityBoundary::TacticalAfter)
                 .after(begin_cpu),
         );
         app.add_systems(
             FixedPostUpdate,
             begin_cpu
                 .in_set(SimSet::Collect)
-                .after(turts_sim::plugin::CompletedVisibilityBoundary::Before)
+                .after(turts_sim::plugin::VisibilityBoundary::CompletedBefore)
                 .before(turts_sim::visibility::refresh_completed),
         );
         app.add_systems(
@@ -382,7 +384,7 @@ impl Harness {
             end_completed
                 .in_set(SimSet::Collect)
                 .after(turts_sim::visibility::refresh_completed)
-                .before(turts_sim::plugin::CompletedVisibilityBoundary::After)
+                .before(turts_sim::plugin::VisibilityBoundary::CompletedAfter)
                 .after(begin_cpu),
         );
         app.add_systems(PreUpdate, begin_cpu.before(MessageSystems::Receive));
