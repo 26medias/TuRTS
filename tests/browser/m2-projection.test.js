@@ -136,6 +136,7 @@ test("actual browser projection exposes all public rows without private DTO fiel
 test("MC projection permits unit_orders and max_health and still refuses a new private field", () => {
     const world = JSON.parse(JSON.stringify(actualPublicDebug.replicated_world));
     world.unit_orders = [];
+    world.progress={sites:[],jobs:[],construction_queues:[]};world.repairs=[];
     for (const unit of world.units) unit.max_health = null;
     const debug = { ...actualPublicDebug, replicated_world: world };
     assertPublicProjectionSchema({ debug });
@@ -154,6 +155,7 @@ test("MC projection refuses the order state of a unit that the client slot does 
     const foreign = world.units.find((unit) => unit.owner_slot !== 0);
     assert(own && foreign, "the saved fixture holds units of two slots");
     world.unit_orders = [{ unit: own.unit_id }];
+    world.progress={sites:[],jobs:[],construction_queues:[]};world.repairs=[];
     assertPublicProjectionSchema({ debug: { ...actualPublicDebug, slot: 0, replicated_world: world } });
     world.unit_orders = [{ unit: foreign.unit_id }];
     assert.throws(() => assertPublicProjectionSchema({ debug: { ...actualPublicDebug, slot: 0, replicated_world: world } }),
