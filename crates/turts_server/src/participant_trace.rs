@@ -357,3 +357,134 @@ pub(crate) fn fail(world: &mut World, error: String) {
     // This is an invariant failure. Continuing would publish an incomplete trusted stream.
     panic!("participant trace: {error}");
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use turts_audit::ActorPhase;
+    use turts_net_protocol::{OrderEnvelope, OrderTarget, QueueMode};
+
+    fn world() -> World {
+        let mut world = World::new();
+        world.insert_resource(Tick(1));
+        world.insert_resource(Trace {
+            installed: true,
+            tick: Some(1),
+            ..Default::default()
+        });
+        world
+    }
+    fn identity(connection: u64) -> ActorLogIdentity {
+        ActorLogIdentity::Human {
+            player_id: 44,
+            slot: 0,
+            connection,
+        }
+    }
+    fn command() -> PlayerCommand {
+        PlayerCommand {
+            seq: 7,
+            order: OrderEnvelope {
+                order: "fixture:move".into(),
+                units: vec![turts_net_protocol::UnitId(1)],
+                target: OrderTarget::None,
+                queue: QueueMode::Replace,
+                group: 0,
+            },
+        }
+    }
+    #[test]
+    fn duplicate_refusal_does_not_replace_the_original_accepted_association() {
+        let mut world = world();
+        let input = command();
+        let actor = identity(1);
+        let first = submission(&mut world, &actor, None, &input).unwrap();
+        accept(&mut world, 0, input.seq, first, actor.clone()).unwrap();
+        let duplicate = submission(&mut world, &actor, None, &input).unwrap();
+        let mut refused = crate::orders::refusal(&input, CommandRejectReason::BadSequence);
+        refused.tick = 1;
+        rejection(
+            &mut world,
+            &actor,
+            duplicate,
+            &input,
+            &refused,
+            CommandRejectReason::BadSequence,
+        )
+        .unwrap();
+        let mut accepted = refused.clone();
+        accepted.refused.clear();
+        accepted.envelope = None;
+        result(&mut world, 0, input.seq, &accepted).unwrap();
+        let associations = actor_trace(&world)
+            .iter()
+            .filter_map(|record| {
+                if let ActorLogRecord::Result {
+                    ordinal, result, ..
+                } = record
+                {
+                    Some((*ordinal, result.clone()))
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(associations, vec![(2, refused), (1, accepted)]);
+        assert!(world.resource::<Trace>().accepted.is_empty());
+    }
+    #[test]
+    fn lifecycle_cannot_drop_unresolved_evidence_and_keeps_only_current_tick() {
+        let mut world = world();
+        let actor = identity(1);
+        let input = command();
+        let ordinal = submission(&mut world, &actor, None, &input).unwrap();
+        accept(&mut world, 0, input.seq, ordinal, actor).unwrap();
+        world.resource_mut::<Tick>().0 = 2;
+        let next = ActorLogRecord::Lifecycle {
+            tick: 2,
+            humans_present: true,
+            phase: ActorPhase::Running,
+        };
+        assert!(record(&mut world, next.clone()).is_err());
+        world.resource_mut::<Trace>().accepted.clear();
+        record(&mut world, next.clone()).unwrap();
+        assert_eq!(actor_trace(&world), &[next]);
+        assert!(
+            record(
+                &mut world,
+                ActorLogRecord::Lifecycle {
+                    tick: 2,
+                    humans_present: true,
+                    phase: ActorPhase::Running
+                }
+            )
+            .is_err()
+        );
+    }
+    #[test]
+    fn recorded_input_requires_explicit_mode_and_a_permanent_human_claim() {
+        let mut world = world();
+        let mut slots = Slots::new(2);
+        slots.claim_at(SlotId(0), 44).unwrap();
+        world.insert_resource(slots);
+        assert!(stage_recorded_human(&mut world, identity(1), command()).is_err());
+        world.resource_mut::<Tick>().0 = 0;
+        enable_replay(&mut world).unwrap();
+        assert!(enable_replay(&mut world).is_err());
+        assert!(stage_recorded_human(&mut world, identity(0), command()).is_err());
+        assert!(
+            stage_recorded_human(
+                &mut world,
+                ActorLogIdentity::Human {
+                    player_id: 45,
+                    slot: 0,
+                    connection: 1
+                },
+                command()
+            )
+            .is_err()
+        );
+        stage_recorded_human(&mut world, identity(1), command()).unwrap();
+        assert_eq!(world.resource::<TrustedReplay>().staged.len(), 1);
+    }
+}
