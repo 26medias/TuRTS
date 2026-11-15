@@ -16,8 +16,8 @@ where
 }
 
 #[test]
-fn the_protocol_version_is_9() {
-    assert_eq!(NET_PROTOCOL_VERSION, 9);
+fn the_protocol_version_is_10() {
+    assert_eq!(NET_PROTOCOL_VERSION, 10);
 }
 
 #[test]

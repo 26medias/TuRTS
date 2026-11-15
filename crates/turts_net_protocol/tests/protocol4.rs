@@ -13,8 +13,8 @@ where
 }
 
 #[test]
-fn protocol_version_is_9_and_version_4_is_old() {
-    assert_eq!(NET_PROTOCOL_VERSION, 9);
+fn protocol_version_is_10_and_version_4_is_old() {
+    assert_eq!(NET_PROTOCOL_VERSION, 10);
     let old_hello = Hello {
         player_id: 17,
         protocol_version: 4,
