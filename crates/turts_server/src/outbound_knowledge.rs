@@ -61,6 +61,10 @@ impl KnowledgeSender {
     pub(crate) fn active_stamp(&self) -> Option<&StateTransactionStamp> {
         self.active.as_ref()
     }
+    #[cfg(test)]
+    pub(crate) fn benchmark_retained(&self) -> usize {
+        self.retained()
+    }
     fn retained(&self) -> usize {
         let map_heap = |basis: &turts_mod_api::KnowledgeBasis| {
             basis
@@ -522,7 +526,7 @@ fn pump_one(
     Ok(())
 }
 
-fn pump(world: &mut World) {
+pub(crate) fn pump(world: &mut World) {
     let recipients = world
         .iter_entities()
         .filter(|entity| entity.contains::<Session>() && entity.contains::<KnowledgeSender>())
