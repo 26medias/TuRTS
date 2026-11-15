@@ -2218,3 +2218,208 @@ fn operating_supply_hud_tracks_accepted_owner_totals_and_explicit_zero_baselines
         );
     }
 }
+
+#[path = "../../tests/support/repair_catalog.rs"]
+mod repair_catalog;
+
+#[test]
+fn repair_hud_uses_owner_actions_and_clears_stale_names() {
+    use crate::replica::{Replica, ReplicaContext, SnapshotOutcome};
+    use turts_mod_api::{Capability, Predicate, PrimaryField, RepairStateKind};
+    use turts_net_protocol::{
+        DeltaRecords, HealthRecord, Pos, RepairRecord, RepairState, SlotId, Snapshot,
+        SnapshotRecords, UnitId, UnitSnapshot, WorldDelta,
+    };
+    let content = crate::content::ClientContent {
+        catalog: repair_catalog::catalog(),
+        ..Default::default()
+    };
+    let groups = BTreeMap::new();
+    let bindings = BTreeMap::new();
+    let input_map = turts_mod_api::InputMapDef {
+        actions: vec![],
+        engine_overrides: vec![],
+    };
+    let mut replica = Replica::new(20);
+    replica.set_context(ReplicaContext::new(content.clone(), 0));
+    let mut snapshot = Snapshot {
+        tick: 10,
+        units: [(1, "engineer", 0), (2, "barracks", 0), (3, "engineer", 1)]
+            .into_iter()
+            .map(|(id, name, slot)| UnitSnapshot {
+                unit_id: UnitId(id),
+                content_id: format!("skirmish:{name}"),
+                owner_slot: SlotId(slot),
+                pos: Pos {
+                    x: id as f32 * 4.0,
+                    y: 4.0,
+                },
+                facing: None,
+                site: false,
+            })
+            .collect(),
+        healths: [(1, 60), (2, 200), (3, 60)]
+            .into_iter()
+            .map(|(id, current)| HealthRecord {
+                unit: UnitId(id),
+                current,
+            })
+            .collect(),
+        ..Default::default()
+    };
+    for (state, kind, key, resource) in [
+        (
+            RepairState::Approaching,
+            RepairStateKind::Approaching,
+            "approaching",
+            serde_json::Value::Null,
+        ),
+        (
+            RepairState::Working,
+            RepairStateKind::Working,
+            "working",
+            serde_json::Value::Null,
+        ),
+        (
+            RepairState::WaitingForFunds("skirmish:credits".into()),
+            RepairStateKind::WaitingForFunds,
+            "waiting_for_funds",
+            serde_json::json!(
+                content.catalog.resources
+                    [&turts_mod_api::ContentId::parse("skirmish:credits").unwrap()]
+                    .name
+            ),
+        ),
+    ] {
+        snapshot.records = SnapshotRecords {
+            repairs: vec![RepairRecord {
+                repairer: UnitId(1),
+                target: UnitId(2),
+                state,
+            }],
+            ..Default::default()
+        };
+        assert_eq!(
+            replica.apply_snapshot(&snapshot, bevy::platform::time::Instant::now()),
+            SnapshotOutcome::Applied { replayed: 0 }
+        );
+        for selection in [&[1_u32][..], &[3_u32][..], &[][..]] {
+            let context = sources::SourceContext {
+                binding_labels: None,
+                replica: &replica,
+                content: &content,
+                selection,
+                owner_slot: 0,
+                interface: None,
+                interface_package: Some("skirmish"),
+                control_groups: &groups,
+                alerts: &[],
+                bindings: &bindings,
+                input_map: &input_map,
+                guide: &[],
+                guide_open: false,
+                sound_on: false,
+                last_notice: None,
+                core: sources::CoreFeed::empty(),
+            };
+            let own = selection == [1];
+            assert_eq!(
+                sources::read_primary(PrimaryField::RepairState, context),
+                if own {
+                    serde_json::json!(key)
+                } else {
+                    serde_json::Value::Null
+                }
+            );
+            assert_eq!(
+                sources::read_primary(PrimaryField::RepairTargetName, context),
+                if own {
+                    serde_json::json!(
+                        content.catalog.units
+                            [&turts_mod_api::ContentId::parse("skirmish:barracks").unwrap()]
+                            .name
+                    )
+                } else {
+                    serde_json::Value::Null
+                }
+            );
+            assert_eq!(
+                sources::read_primary(PrimaryField::RepairResourceName, context),
+                if own {
+                    resource.clone()
+                } else {
+                    serde_json::Value::Null
+                }
+            );
+            for test_kind in [
+                RepairStateKind::Approaching,
+                RepairStateKind::Working,
+                RepairStateKind::WaitingForFunds,
+            ] {
+                assert_eq!(
+                    values::predicate_matches(&Predicate::RepairStateIs(test_kind), &context),
+                    own && test_kind == kind
+                );
+            }
+            assert_eq!(
+                values::predicate_matches(
+                    &Predicate::PrimaryHasValue(PrimaryField::RepairState),
+                    &context
+                ),
+                own
+            );
+            if own {
+                assert!(values::predicate_matches(
+                    &Predicate::PrimaryHas(Capability::Repairer),
+                    &context
+                ));
+                assert!(values::predicate_matches(
+                    &Predicate::PrimaryHas(Capability::Constructor),
+                    &context
+                ));
+            }
+        }
+    }
+    let clear = WorldDelta {
+        tick: 11,
+        base_tick: 10,
+        records: DeltaRecords {
+            repairs_cleared: vec![UnitId(1)],
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    assert_eq!(
+        replica.apply_delta(&clear, bevy::platform::time::Instant::now()),
+        crate::replica::DeltaOutcome::Applied
+    );
+    let context = sources::SourceContext {
+        binding_labels: None,
+        replica: &replica,
+        content: &content,
+        selection: &[1],
+        owner_slot: 0,
+        interface: None,
+        interface_package: Some("skirmish"),
+        control_groups: &groups,
+        alerts: &[],
+        bindings: &bindings,
+        input_map: &input_map,
+        guide: &[],
+        guide_open: false,
+        sound_on: false,
+        last_notice: None,
+        core: sources::CoreFeed::empty(),
+    };
+    for field in [
+        PrimaryField::RepairState,
+        PrimaryField::RepairTargetName,
+        PrimaryField::RepairResourceName,
+    ] {
+        assert!(sources::read_primary(field, context).is_null());
+        assert!(!values::predicate_matches(
+            &Predicate::PrimaryHasValue(field),
+            &context
+        ));
+    }
+}
