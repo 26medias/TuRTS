@@ -71,11 +71,15 @@ pub(crate) fn observed(
         .terrain_cell_observed(owner, &state.grid, cell, &mut budget)
         .unwrap_or(false)
 }
-fn body_blocks(state: &TerrainState, cell: Cell, point: bevy_math::Vec2, radius: f32) -> bool {
-    let mut budget = Budget::new(4096);
-    state
-        .grid
-        .disk_support(
+/// Exact body coverage captured after movement. Work edits do not move bodies.
+/// Refresh this value whenever queue promotion can create or remove a body.
+pub(crate) struct Occupancy {
+    cells: std::collections::BTreeSet<Cell>,
+    blocked_all: bool,
+}
+impl Occupancy {
+    fn add_body(&mut self, state: &TerrainState, point: bevy_math::Vec2, radius: f32) {
+        let support = state.grid.disk_support(
             &|_| Some(state.grid.floor),
             Point {
                 x: f64::from(point.x),
@@ -83,40 +87,53 @@ fn body_blocks(state: &TerrainState, cell: Cell, point: bevy_math::Vec2, radius:
             },
             f64::from(radius),
             0,
-            &mut budget,
-        )
-        .map_or(true, |support| support.cells.contains(&cell))
-}
-fn occupied(world: &World, state: &TerrainState, cell: Cell) -> bool {
-    let Some(types) = world.get_resource::<UnitTypes>() else {
-        return true;
-    };
-    for entity in world.iter_entities() {
-        let (Some(position), Some(kind)) = (entity.get::<Position>(), entity.get::<UnitType>())
-        else {
-            continue;
-        };
-        let Some(definition) = types.get(kind.0) else {
-            return true;
-        };
-        if body_blocks(state, cell, position.0, definition.radius) {
-            return true;
+            &mut Budget::new(4096),
+        );
+        match support {
+            Ok(support) => self.cells.extend(support.cells),
+            Err(_) => self.blocked_all = true,
         }
     }
-    if let (Some(nodes), Some(catalog)) = (
-        world.get_resource::<crate::SurfaceNodes>(),
-        world.get_resource::<InstalledCatalog>(),
-    ) {
-        for node in &nodes.0 {
-            let Some(definition) = catalog.0.nodes.get(&node.content_id) else {
-                return true;
+    pub(crate) fn capture(world: &World) -> Self {
+        let mut result = Self {
+            cells: Default::default(),
+            blocked_all: false,
+        };
+        let (Some(state), Some(types)) = (
+            world.get_resource::<TerrainState>(),
+            world.get_resource::<UnitTypes>(),
+        ) else {
+            result.blocked_all = true;
+            return result;
+        };
+        for entity in world.iter_entities() {
+            let (Some(position), Some(kind)) = (entity.get::<Position>(), entity.get::<UnitType>())
+            else {
+                continue;
             };
-            if body_blocks(state, cell, node.position.0, definition.radius) {
-                return true;
+            let Some(definition) = types.get(kind.0) else {
+                result.blocked_all = true;
+                return result;
+            };
+            result.add_body(state, position.0, definition.radius);
+        }
+        if let (Some(nodes), Some(catalog)) = (
+            world.get_resource::<crate::SurfaceNodes>(),
+            world.get_resource::<InstalledCatalog>(),
+        ) {
+            for node in &nodes.0 {
+                let Some(definition) = catalog.0.nodes.get(&node.content_id) else {
+                    result.blocked_all = true;
+                    return result;
+                };
+                result.add_body(state, node.position.0, definition.radius);
             }
         }
+        result
     }
-    false
+    pub(crate) fn blocks(&self, cell: Cell) -> bool {
+        self.blocked_all || self.cells.contains(&cell)
+    }
 }
 /// Check observation before looking at hidden material, hardness, work or blockers.
 pub(crate) fn prepare_step(
@@ -124,8 +141,9 @@ pub(crate) fn prepare_step(
     actor: u32,
     cell: Cell,
     tool_id: &ContentId,
+    occupancy: &Occupancy,
 ) -> Result<StepPlan, StepWait> {
-    prepare_steps(world, actor, cell, tool_id, 1)
+    prepare_steps(world, actor, cell, tool_id, 1, occupancy)
 }
 pub(crate) fn prepare_steps(
     world: &World,
@@ -133,6 +151,7 @@ pub(crate) fn prepare_steps(
     cell: Cell,
     tool_id: &ContentId,
     steps: u32,
+    occupancy: &Occupancy,
 ) -> Result<StepPlan, StepWait> {
     let state = world
         .get_resource::<TerrainState>()
@@ -186,7 +205,7 @@ pub(crate) fn prepare_steps(
     if dx * dx + dy * dy > reach * reach {
         return Err(StepWait::OutOfReach);
     }
-    if occupied(world, state, cell) {
+    if occupancy.blocks(cell) {
         return Err(StepWait::Blocked);
     }
     let original = &state.columns[index];

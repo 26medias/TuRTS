@@ -399,10 +399,12 @@ pub(crate) fn run(world: &mut World) {
         runtime.claims.retain(|_, unit| retained.contains(unit));
     }
     let mut candidates = Vec::new();
+    let mut occupancy = step::Occupancy::capture(world);
     for (unit, order) in orders {
         let Some(cell) = selected_cell(world, unit, &order) else {
             order_changed(world, unit);
             crate::orders::finish_terrain_order(world, unit);
+            occupancy = step::Occupancy::capture(world);
             continue;
         };
         let mut state = world
@@ -442,7 +444,7 @@ pub(crate) fn run(world: &mut World) {
         let OrderTargetSim::TerrainWork { tool, .. } = &order.target else {
             continue;
         };
-        match step::prepare_step(world, unit, cell, tool) {
+        match step::prepare_step(world, unit, cell, tool, &occupancy) {
             Ok(plan) => {
                 if state.source_revision != Some(plan.column.expected_revision) {
                     if !state.banked {
@@ -543,10 +545,10 @@ pub(crate) fn run(world: &mut World) {
             .claims
             .entry(candidate.cell)
             .or_insert(candidate.unit);
-        work_one_actor(world, candidate.unit, candidate.cell);
+        work_one_actor(world, candidate.unit, candidate.cell, &occupancy);
     }
 }
-fn work_one_actor(world: &mut World, unit: u32, cell: Cell) {
+fn work_one_actor(world: &mut World, unit: u32, cell: Cell, occupancy: &step::Occupancy) {
     let Some(order) = current(world, unit) else {
         return;
     };
@@ -590,7 +592,7 @@ fn work_one_actor(world: &mut World, unit: u32, cell: Cell) {
     // the service budget ends, exact unpaid integer work and fractional carry remain banked;
     // no hidden complexity changes command admission or erases accrued work.
     for _ in 0..32 {
-        let plan = match step::prepare_step(world, unit, cell, tool) {
+        let plan = match step::prepare_step(world, unit, cell, tool, occupancy) {
             Ok(plan) => plan,
             Err(reason) => {
                 state.wait = wait(reason);
@@ -622,7 +624,7 @@ fn work_one_actor(world: &mut World, unit: u32, cell: Cell) {
         let plan = if count == 1 {
             plan
         } else {
-            match step::prepare_steps(world, unit, cell, tool, count) {
+            match step::prepare_steps(world, unit, cell, tool, count, occupancy) {
                 Ok(plan) => plan,
                 Err(reason) => {
                     state.wait = wait(reason);
