@@ -649,8 +649,7 @@ fn production_precheck(
             None => return Some(CommandRejectReason::UnknownUnit),
         }
     }
-    if staged
-        .envelope
+    if command
         .order
         .units
         .iter()

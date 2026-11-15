@@ -181,7 +181,8 @@ pub(crate) fn rejection(
         {
             return Err("participant refusal has no valid economy audit capture".into());
         }
-        let raw = postcard::to_allocvec(envelope).map_err(|error| error.to_string())?;
+        let raw =
+            super::postcard_wire_bytes(envelope).ok_or("could not encode participant envelope")?;
         let state = turts_sim::audit_state(world);
         let (connection, player_id, slot) = match actor {
             ActorLogIdentity::Human {
