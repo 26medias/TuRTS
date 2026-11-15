@@ -365,7 +365,7 @@ fn draw_world_visuals(
         };
         marker_gizmos.circle(
             Isometry3d::new(
-                Vec3::new(ghost.point.x, 0.08, ghost.point.y),
+                Vec3::new(ghost.point.x, ghost.height + 0.08, ghost.point.y),
                 Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2),
             ),
             ghost.radius,

@@ -76,13 +76,19 @@ pub fn build(
                 y as f32 * width,
                 (y + 1) as f32 * width,
             );
-            let color = terrain
+            let mut color = terrain
                 .surfaces
                 .get(&cell)
                 .and_then(|row| row.material)
                 .and_then(|material| materials.get(material.0 as usize))
                 .copied()
                 .unwrap_or(initial_color);
+            if terrain.surfaces.get(&cell).is_some_and(|row| !row.current) {
+                let gray = (color[0] + color[1] + color[2]) / 3.;
+                for channel in &mut color[..3] {
+                    *channel = *channel * 0.35 + gray * 0.65;
+                }
+            }
             data.quad(
                 [
                     [x0, high, z0],

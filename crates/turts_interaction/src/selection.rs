@@ -84,11 +84,20 @@ impl Core {
                 .filter(|u| {
                     u.owner_slot == world.own_slot()
                         && u.content_id == content
-                        && projection::world_to_screen(u.position, view, self.camera).is_some_and(
-                            |p| {
+                        && world
+                            .unit_ground_height(u)
+                            .and_then(|height| {
+                                projection::world_to_screen_on(
+                                    u.position,
+                                    height,
+                                    view,
+                                    self.camera,
+                                    world,
+                                )
+                            })
+                            .is_some_and(|p| {
                                 p.x >= 0.0 && p.y >= 0.0 && p.x <= view.size.x && p.y <= view.size.y
-                            },
-                        )
+                            })
                 })
                 .map(|u| u.id)
                 .collect();
@@ -121,7 +130,13 @@ impl Core {
             .iter()
             .filter(|u| u.owner_slot == world.own_slot())
             .filter_map(|u| {
-                let px = projection::world_to_screen(u.position, view, self.camera)?;
+                let px = projection::world_to_screen_on(
+                    u.position,
+                    world.unit_ground_height(u)?,
+                    view,
+                    self.camera,
+                    world,
+                )?;
                 (px.x >= lo.x && px.x <= hi.x && px.y >= lo.y && px.y <= hi.y).then_some(u)
             })
             .collect();

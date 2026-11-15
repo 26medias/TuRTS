@@ -113,6 +113,17 @@ impl<Units: UnitTable> Authority for View<'_, Units> {
             .current_cell
             .is_none_or(|cell| !self.covered(cell, true))
             || row.wait == Some(TerrainWorkWait::Unknown);
-        !unknown || (row.required_work.is_none() && row.completed_work == 0)
+        !unknown
+            || (row.required_work.is_none()
+                && row.completed_work == 0
+                && matches!(
+                    row.wait,
+                    None | Some(
+                        TerrainWorkWait::Unknown
+                            | TerrainWorkWait::Approaching
+                            | TerrainWorkWait::Paused
+                            | TerrainWorkWait::Unloading
+                    )
+                ))
     }
 }

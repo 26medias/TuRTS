@@ -10,16 +10,15 @@ impl Core {
         world: &dyn WorldView,
         effects: &mut Vec<Effect>,
     ) {
-        let Some(point) = projection::screen_to_world(px, view, self.camera) else {
+        let unit = nearest_unit(px, view, self.camera, world);
+        let node = nearest_node(px, view, self.camera, world);
+        let Some(point) = projection::screen_to_world_on(px, view, self.camera, world)
+            .or_else(|| unit.map(|unit| unit.position))
+            .or_else(|| node.map(|node| node.position))
+        else {
             return;
         };
-        self.smart_command_with_targets(
-            point,
-            nearest_unit(px, view, self.camera, world),
-            nearest_node(px, view, self.camera, world),
-            world,
-            effects,
-        );
+        self.smart_command_with_targets(point, unit, node, world, effects);
     }
 
     /// Applies the same authored smart-order rules used by pointer commands to a world-space point.
@@ -228,21 +227,37 @@ pub(super) fn nearest_unit<'a>(
     camera: CameraState,
     world: &'a dyn WorldView,
 ) -> Option<&'a UnitView> {
-    if let Some((origin, direction)) = projection::screen_ray(px, view, camera) {
+    if let Some((origin, direction)) = projection::screen_ray_on(px, view, camera, world) {
+        let terrain_limit = if world.terrain_enabled() {
+            world.surface_occlusion(origin, direction).ok()?
+        } else {
+            None
+        };
         let hit = world
             .units()
             .iter()
             .filter_map(|unit| {
                 let (shape, yaw) = world.unit_pick_shape(unit)?;
-                crate::picking::shape_hit(origin, direction, unit.position, shape, yaw)
-                    .map(|distance| (unit, distance))
+                crate::picking::shape_hit(
+                    origin - glam::Vec3::Y * world.unit_ground_height(unit)?,
+                    direction,
+                    unit.position,
+                    shape,
+                    yaw,
+                )
+                .filter(|distance| terrain_limit.is_none_or(|limit| *distance <= limit))
+                .map(|distance| (unit, distance))
             })
-            .min_by(|a, b| a.1.total_cmp(&b.1));
+            .min_by(|a, b| {
+                a.1.total_cmp(&b.1)
+                    .then_with(|| a.0.position.x.total_cmp(&b.0.position.x))
+                    .then_with(|| a.0.position.y.total_cmp(&b.0.position.y))
+            });
         if let Some((unit, _)) = hit {
             return Some(unit);
         }
     }
-    let point = projection::screen_to_world(px, view, camera)?;
+    let point = projection::screen_to_world_on(px, view, camera, world)?;
     nearest_unit_at(point, world)
 }
 
@@ -263,21 +278,37 @@ pub(super) fn nearest_node<'a>(
     camera: CameraState,
     world: &'a dyn WorldView,
 ) -> Option<&'a NodeView> {
-    if let Some((origin, direction)) = projection::screen_ray(px, view, camera) {
+    if let Some((origin, direction)) = projection::screen_ray_on(px, view, camera, world) {
+        let terrain_limit = if world.terrain_enabled() {
+            world.surface_occlusion(origin, direction).ok()?
+        } else {
+            None
+        };
         let hit = world
             .nodes()
             .iter()
             .filter_map(|node| {
                 let shape = world.node_pick_shape(node)?;
-                crate::picking::shape_hit(origin, direction, node.position, shape, 0.0)
-                    .map(|distance| (node, distance))
+                crate::picking::shape_hit(
+                    origin - glam::Vec3::Y * world.node_ground_height(node)?,
+                    direction,
+                    node.position,
+                    shape,
+                    0.0,
+                )
+                .filter(|distance| terrain_limit.is_none_or(|limit| *distance <= limit))
+                .map(|distance| (node, distance))
             })
-            .min_by(|a, b| a.1.total_cmp(&b.1));
+            .min_by(|a, b| {
+                a.1.total_cmp(&b.1)
+                    .then_with(|| a.0.position.x.total_cmp(&b.0.position.x))
+                    .then_with(|| a.0.position.y.total_cmp(&b.0.position.y))
+            });
         if let Some((node, _)) = hit {
             return Some(node);
         }
     }
-    let point = projection::screen_to_world(px, view, camera)?;
+    let point = projection::screen_to_world_on(px, view, camera, world)?;
     nearest_node_at(point, world)
 }
 

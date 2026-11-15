@@ -74,8 +74,8 @@ impl CameraController {
                     self.pointer = Some((*px, !over_widget));
                     if let Some(previous_px) = self.drag_last_px
                         && let (Some(previous_ground), Some(ground)) = (
-                            projection::screen_to_world(previous_px, view, *camera),
-                            projection::screen_to_world(*px, view, *camera),
+                            projection::screen_to_world_on(previous_px, view, *camera, world),
+                            projection::screen_to_world_on(*px, view, *camera, world),
                         )
                     {
                         camera.look_at +=
@@ -116,7 +116,7 @@ impl CameraController {
                                     && px.y <= view.size.y
                             })
                             .and_then(|(px, _)| {
-                                projection::screen_to_world(px, view, *camera)
+                                projection::screen_to_world_on(px, view, *camera, world)
                                     .map(|ground| (px, ground))
                             });
                         if zoom_by_steps(
@@ -124,9 +124,21 @@ impl CameraController {
                             world,
                             if direction { delta.abs() } else { -delta.abs() },
                         ) && let Some((px, before)) = anchor
-                            && let Some(after) = projection::screen_to_world(px, view, *camera)
                         {
-                            camera.look_at += before - after;
+                            // Crossing a plateau changes the permitted camera datum.
+                            // Reproject under that datum without moving the pointer anchor.
+                            for _ in 0..if world.terrain_enabled() { 4 } else { 1 } {
+                                let Some(after) =
+                                    projection::screen_to_world_on(px, view, *camera, world)
+                                else {
+                                    break;
+                                };
+                                let correction = before - after;
+                                camera.look_at += correction;
+                                if correction.length_squared() < 1e-10 {
+                                    break;
+                                }
+                            }
                         }
                     }
                 }

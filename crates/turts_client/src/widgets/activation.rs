@@ -86,6 +86,36 @@ pub(super) fn activate_widget(
         primitives::WidgetAction::Order { id } => queue
             .0
             .push(turts_interaction::InputEvent::UiAction { name: id.clone() }),
+        primitives::WidgetAction::TerrainWork { order, tool } => queue.0.push(
+            turts_interaction::InputEvent::TerrainWork(turts_interaction::terrain::Input {
+                order: order.clone(),
+                tool: tool.clone(),
+            }),
+        ),
+        primitives::WidgetAction::UnloadResume {
+            match_id,
+            map,
+            unit,
+            depot,
+            unload_order,
+            work_order,
+            designation,
+        } => {
+            if let (Ok(match_id), Ok(map)) =
+                (match_id.parse(), turts_mod_api::ContentId::parse(map))
+            {
+                queue.0.push(turts_interaction::InputEvent::UnloadResume(
+                    turts_interaction::terrain::UnloadResume {
+                        identity: (match_id, map),
+                        unit: turts_net_protocol::UnitId(*unit),
+                        depot: turts_net_protocol::UnitId(*depot),
+                        unload_order: unload_order.clone(),
+                        work_order: work_order.clone(),
+                        designation: designation.clone(),
+                    },
+                ));
+            }
+        }
         primitives::WidgetAction::CenterCamera { x, y } => {
             if x.is_finite() && y.is_finite() {
                 queue.0.push(turts_interaction::InputEvent::UiCameraCenter {

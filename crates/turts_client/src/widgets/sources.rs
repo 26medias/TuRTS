@@ -139,6 +139,7 @@ pub fn read_source(source: &Source, context: SourceContext<'_>) -> SourceData {
         },
         Source::SelectionUnits => selection_units(context),
         Source::CommandCard => command_card(context),
+        Source::TerrainTools { order } => terrain_tools(context, order),
         Source::BuildMenu => build_menu(context),
         Source::ProductionQueue => production_queue(context),
         Source::ControlGroups => control_groups(context),
@@ -747,6 +748,65 @@ fn production_queue(context: SourceContext<'_>) -> SourceData {
     }
 }
 
+fn terrain_tools(context: SourceContext<'_>, order: &str) -> SourceData {
+    let mut result = SourceData::default();
+    let Some(id) = context.selection.first() else {
+        return result;
+    };
+    let Some(unit) = context
+        .replica
+        .units
+        .get(id)
+        .filter(|unit| unit.owner_slot == context.owner_slot)
+    else {
+        return result;
+    };
+    let Some(definition) = ContentId::parse(&unit.content_id)
+        .ok()
+        .and_then(|id| context.content.catalog.units.get(&id))
+    else {
+        return result;
+    };
+    let Some(binding) = ContentId::parse(order)
+        .ok()
+        .and_then(|id| context.content.catalog.orders.get(&id))
+        .filter(|order| {
+            order.behaviour == Behaviour::TerrainWork
+                && order.target == turts_mod_api::TargetKind::TerrainDesignation
+                && (order.units.is_empty() || order.units.contains(&unit.content_id))
+        })
+    else {
+        return result;
+    };
+    let enabled = context.content.terrain.is_some() && context.replica.terrain.is_some();
+    for id in &definition.terrain_tools {
+        let Some(tool) = context.content.catalog.terrain_tools.get(id) else {
+            continue;
+        };
+        let mut row = ItemData::default();
+        row.set(ItemField::Name, &tool.name);
+        row.set(ItemField::Enabled, enabled);
+        row.set(ItemField::Body, &binding.description);
+        row.set(
+            ItemField::Reason,
+            if enabled {
+                "Choose an observed reference height, then drag the work rectangle"
+            } else {
+                "Waiting for editable terrain"
+            },
+        );
+        row.set(
+            ItemField::Action,
+            WidgetAction::TerrainWork {
+                order: order.into(),
+                tool: id.to_string(),
+            },
+        );
+        result.items.push(row);
+    }
+    result
+}
+
 fn capability_matches(order: &turts_mod_api::OrderDef, unit: &turts_mod_api::ResolvedUnit) -> bool {
     use turts_mod_api::TargetKind;
     match order.behaviour {
@@ -781,14 +841,23 @@ fn capability_matches(order: &turts_mod_api::OrderDef, unit: &turts_mod_api::Res
                 || unit.constructor.is_some()
                 || unit.repairer.is_some()
                 || unit.weapon.is_some()
+                || !unit.terrain_tools.is_empty()
+                || unit.terrain_cargo.is_some()
         }
         Behaviour::Stop => {
             unit.movement.is_some()
                 || unit.weapon.is_some()
                 || unit.constructor.is_some()
                 || unit.repairer.is_some()
+                || !unit.terrain_tools.is_empty()
+                || unit.terrain_cargo.is_some()
         }
-        Behaviour::Hold => unit.movement.is_some() || unit.weapon.is_some(),
+        Behaviour::Hold => {
+            unit.movement.is_some()
+                || unit.weapon.is_some()
+                || !unit.terrain_tools.is_empty()
+                || unit.terrain_cargo.is_some()
+        }
         Behaviour::Construct => unit.constructor.is_some(),
         Behaviour::CancelConstruction => unit.placement.is_some(),
         Behaviour::Repair => unit.repairer.is_some(),

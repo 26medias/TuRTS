@@ -257,6 +257,16 @@ impl ClientContent {
             .map(|(archive, _)| archive.id())
             .unwrap_or_else(|| turts_mod_api::PackageId("client".into()));
         turts_mod_runtime::terrain::validate_terrain_catalog(&origin, &catalog)?;
+        for archive in archives {
+            for (file, interface) in archive.interfaces()? {
+                turts_mod_runtime::terrain::validate_terrain_tool_sources(
+                    &archive.id(),
+                    &file,
+                    &interface,
+                    &catalog,
+                )?;
+            }
+        }
         let terrain = if let Some((archive, maps)) = selected {
             let (file, map) = &maps[0];
             turts_mod_runtime::terrain::validate_terrain_map(&archive.id(), file, map, &catalog)?;

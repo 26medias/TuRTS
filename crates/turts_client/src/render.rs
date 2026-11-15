@@ -723,7 +723,16 @@ impl Plugin for UnitRenderPlugin {
                     .before(bevy::transform::TransformSystems::Propagate),
             ),
         );
-        app.init_resource::<crate::terrain::render::ChunkRender>();
+        app.init_resource::<crate::terrain::render::ChunkRender>()
+            .init_resource::<crate::terrain::present::WorkPanel>();
+        app.add_systems(
+            Update,
+            (
+                crate::terrain::present::panel,
+                crate::terrain::present::preview,
+            )
+                .after(crate::core_adapter::CoreAdapterSet),
+        );
         app.add_systems(
             Update,
             (

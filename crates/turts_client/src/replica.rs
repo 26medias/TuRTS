@@ -2180,6 +2180,14 @@ fn stage_unit_orders(
                 .chain(&record.queued)
                 .any(|summary| match &summary.target {
                     turts_net_protocol::OrderTarget::Point(point) => !finite_pos(*point),
+                    turts_net_protocol::OrderTarget::TerrainWork(work) => {
+                        !crate::terrain::valid_designation(
+                            &context.content,
+                            unit.content_id,
+                            &summary.order,
+                            work,
+                        )
+                    }
                     // A placement is a content at a point: the point must be finite too.
                     turts_net_protocol::OrderTarget::ContentAtPoint { point, .. } => {
                         !finite_pos(*point)

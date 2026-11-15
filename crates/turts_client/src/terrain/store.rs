@@ -470,6 +470,7 @@ impl PermittedTerrain {
                 .material
                 .is_some_and(|id| id.0 as usize >= self.materials.len())
             || (row.material.is_none() != (row.elevation == self.layout.grid.floor))
+            || row.material.is_some() != row.provenance.is_some()
             || !authority.surface(row.cell, row.observed_tick, row.current)
         {
             return Err(Invalid::Surface);
@@ -608,6 +609,7 @@ mod tests {
             cell: TerrainCell { x, y },
             elevation,
             material: Some(TerrainMaterialId(0)),
+            provenance: Some(turts_mod_api::TerrainProvenance::Natural),
             observed_tick: tick,
             current: true,
         }
