@@ -6,7 +6,7 @@ use crate::{
 use bevy::prelude::*;
 use lightyear::prelude::*;
 use std::{
-    collections::VecDeque,
+    collections::{BTreeSet, VecDeque},
     time::{Duration, Instant},
 };
 use turts_net_lightyear::{
@@ -30,16 +30,16 @@ const TRANSPORT_RESERVE: usize = 4 * 1024 * 1024;
 const COPY_RESERVE_PER_FRAME: usize = 8192;
 struct Pending {
     encoded: EncodedStateTransaction,
-    deferred: Option<StateTransactionFrame>,
-    started: Instant,
+    created: Instant,
+    started: Option<Instant>,
     end_sent: bool,
 }
 impl Pending {
     fn new(encoded: EncodedStateTransaction, now: Instant) -> Self {
         Self {
             encoded,
-            deferred: None,
-            started: now,
+            created: now,
+            started: None,
             end_sent: false,
         }
     }
@@ -50,10 +50,10 @@ pub struct KnowledgeSender {
     context: turts_mod_api::KnowledgeBasis,
     active: Option<StateTransactionStamp>,
     pending: Option<Pending>,
-    patches: VecDeque<EncodedStateTransaction>,
+    patches: VecDeque<Pending>,
     patch_bytes: usize,
     next_id: u64,
-    outstanding: usize,
+    outstanding: BTreeSet<u16>,
     restarts: VecDeque<Instant>,
 }
 impl KnowledgeSender {
@@ -87,7 +87,7 @@ impl KnowledgeSender {
             .saturating_add(
                 self.patches
                     .capacity()
-                    .saturating_mul(std::mem::size_of::<EncodedStateTransaction>()),
+                    .saturating_mul(std::mem::size_of::<Pending>()),
             )
             .saturating_add(
                 self.pending
@@ -95,7 +95,11 @@ impl KnowledgeSender {
                     .map_or(0, |p| p.encoded.retained_bytes() + 2 * FRAME_LIMIT),
             )
             .saturating_add(self.patch_bytes)
-            .saturating_add(self.outstanding.saturating_mul(COPY_RESERVE_PER_FRAME))
+            .saturating_add(
+                self.outstanding
+                    .len()
+                    .saturating_mul(COPY_RESERVE_PER_FRAME),
+            )
             .saturating_add(BRIDGE_RESERVE + TRANSPORT_RESERVE)
     }
     fn stamp(&mut self, parent: Option<u64>) -> Result<StateTransactionStamp, String> {
@@ -116,12 +120,56 @@ impl KnowledgeSender {
         })
     }
     fn cancel(&mut self, reason: StateTransactionCancelReason) -> Option<StateTransactionCancel> {
+        // One watermark retires the entire sent/unsent post-base prefix on the other channel.
+        let stamp = self
+            .patches
+            .back()
+            .map(|patch| patch.encoded.begin().stamp.clone())
+            .or_else(|| {
+                self.pending
+                    .as_ref()
+                    .map(|pending| pending.encoded.begin().stamp.clone())
+            });
         self.patches.clear();
         self.patch_bytes = 0;
-        self.pending.take().map(|pending| StateTransactionCancel {
-            stamp: pending.encoded.begin().stamp.clone(),
-            reason,
-        })
+        self.pending = None;
+        stamp.map(|stamp| StateTransactionCancel { stamp, reason })
+    }
+    fn acknowledge(&mut self, stamp: &StateTransactionStamp) -> bool {
+        let Some(base) = &self.pending else {
+            return false;
+        };
+        if !base.end_sent {
+            return false;
+        }
+        let prefix = if base.encoded.begin().stamp == *stamp {
+            Some(0)
+        } else {
+            self.patches
+                .iter()
+                .position(|patch| patch.end_sent && patch.encoded.begin().stamp == *stamp)
+                .filter(|index| {
+                    self.patches
+                        .iter()
+                        .take(index + 1)
+                        .all(|patch| patch.end_sent)
+                })
+                .map(|index| index + 1)
+        };
+        let Some(prefix) = prefix else {
+            return false;
+        };
+        self.pending = None;
+        for _ in 0..prefix {
+            let patch = self.patches.pop_front().unwrap();
+            self.patch_bytes -= patch.encoded.retained_bytes();
+        }
+        self.active = Some(stamp.clone());
+        if let Some(patch) = self.patches.pop_front() {
+            self.patch_bytes -= patch.encoded.retained_bytes();
+            self.pending = Some(patch);
+        }
+        true
     }
     fn full(&mut self, now: Instant) -> Result<(), String> {
         let stamp = self.stamp(None)?;
@@ -160,7 +208,7 @@ impl KnowledgeSender {
     }
 }
 pub fn install(app: &mut App) {
-    // Once per application frame: transport ACK completion events clear each PreUpdate.
+    // Once per application frame. One ordered enum preserves cross-kind transaction order.
     app.add_systems(PostUpdate, pump.before(MessageSystems::Send));
 }
 pub fn disconnect(world: &mut World, entity: Entity, reason: String) {
@@ -242,7 +290,7 @@ fn queue_snapshot(
             patches: VecDeque::new(),
             patch_bytes: 0,
             next_id: 0,
-            outstanding: 0,
+            outstanding: BTreeSet::new(),
             restarts: VecDeque::new(),
         }
     };
@@ -284,7 +332,7 @@ pub fn queue_tick(world: &mut World, entity: Entity, slot: SlotId) -> Result<boo
     let parent = sender
         .patches
         .back()
-        .map(|p| p.begin().stamp.transaction_id)
+        .map(|p| p.encoded.begin().stamp.transaction_id)
         .or_else(|| {
             sender
                 .pending
@@ -322,70 +370,91 @@ pub fn queue_tick(world: &mut World, entity: Entity, slot: SlotId) -> Result<boo
                 sender.restart(Instant::now())?;
             } else {
                 sender.patch_bytes += encoded.retained_bytes();
-                sender.patches.push_back(encoded);
+                sender
+                    .patches
+                    .push_back(Pending::new(encoded, Instant::now()));
             }
         }
     }
     world.entity_mut(entity).insert(sender);
     Ok(true)
 }
+struct MessageWriter<'a>(&'a mut lightyear_serde::writer::Writer);
+impl postcard::ser_flavors::Flavor for MessageWriter<'_> {
+    type Output = ();
+    fn try_push(&mut self, value: u8) -> postcard::Result<()> {
+        self.0.extend_from_slice(&[value]);
+        Ok(())
+    }
+    fn try_extend(&mut self, bytes: &[u8]) -> postcard::Result<()> {
+        self.0.extend_from_slice(bytes);
+        Ok(())
+    }
+    fn finalize(self) -> postcard::Result<()> {
+        Ok(())
+    }
+}
+fn send_registered<M: serde::Serialize + 'static>(
+    world: &mut World,
+    entity: Entity,
+    message: &M,
+) -> Result<u16, String> {
+    use lightyear_serde::ToBytes;
+    let net_id = *world
+        .resource::<MessageRegistry>()
+        .kind_map
+        .net_id(&std::any::TypeId::of::<M>().into())
+        .ok_or("State message is not registered")?;
+    let size =
+        postcard::experimental::serialized_size(message).map_err(|error| error.to_string())?;
+    if size > FRAME_LIMIT {
+        return Err("State message exceeds the transport frame allowance".into());
+    }
+    let mut writer = lightyear_serde::writer::Writer::with_capacity(size + net_id.bytes_len());
+    net_id
+        .to_bytes(&mut writer)
+        .map_err(|error| error.to_string())?;
+    // These registered protocol records contain no Bevy entities or mapped serialization context.
+    postcard::serialize_with_flavor(message, MessageWriter(&mut writer))
+        .map_err(|error| error.to_string())?;
+    world
+        .get_mut::<Transport>(entity)
+        .ok_or("Missing state transport")?
+        .send_mut::<KnowledgeChannel>(writer.take_written())
+        .map_err(|error| error.to_string())?
+        .map(|id| id.0)
+        .ok_or("State channel did not allocate a reliable message identity".into())
+}
 fn send_frame(
     world: &mut World,
     entity: Entity,
-    frame: StateTransactionFrame,
-) -> Result<(), String> {
-    match frame {
-        StateTransactionFrame::Begin(frame) => world
-            .get_mut::<MessageSender<turts_net_protocol::StateTransactionBegin>>(entity)
-            .ok_or("Missing state Begin sender")?
-            .send::<KnowledgeChannel>(frame),
-        StateTransactionFrame::Chunk(frame) => world
-            .get_mut::<MessageSender<turts_net_protocol::StateTransactionChunk>>(entity)
-            .ok_or("Missing state Chunk sender")?
-            .send::<KnowledgeChannel>(frame),
-        StateTransactionFrame::End(frame) => world
-            .get_mut::<MessageSender<turts_net_protocol::StateTransactionEnd>>(entity)
-            .ok_or("Missing state End sender")?
-            .send::<KnowledgeChannel>(frame),
-    }
-    Ok(())
+    frame: &StateTransactionFrame,
+) -> Result<u16, String> {
+    send_registered(world, entity, frame)
 }
+
 fn pump_one(
     world: &mut World,
     entity: Entity,
     sender: &mut KnowledgeSender,
     now: Instant,
 ) -> Result<(), String> {
-    let acknowledgements = world
-        .get::<Transport>(entity)
-        .and_then(|transport| {
-            transport.channel_send(lightyear::transport::channel::ChannelKind::of::<
-                KnowledgeChannel,
-            >())
-        })
-        .map_or(0, |channel| channel.message_acks().len());
-    sender.outstanding = sender
-        .outstanding
-        .checked_sub(acknowledgements)
-        .ok_or("State transport returned unaccounted acknowledgement")?;
+    if let Some(channel) = world.get::<Transport>(entity).and_then(|transport| {
+        transport.channel_send(lightyear::transport::channel::ChannelKind::of::<
+            KnowledgeChannel,
+        >())
+    }) {
+        for id in channel.message_acks() {
+            sender.outstanding.remove(&id.0);
+        }
+    }
     let acks = world
         .get_mut::<MessageReceiver<StateTransactionAck>>(entity)
         .map_or_else(Vec::new, |mut receiver| {
             receiver.receive().take(WINDOW * 4).collect::<Vec<_>>()
         });
     for ack in acks {
-        if sender
-            .pending
-            .as_ref()
-            .is_some_and(|pending| pending.end_sent && pending.encoded.begin().stamp == ack.stamp)
-        {
-            sender.active = Some(ack.stamp);
-            sender.pending = None;
-            if let Some(encoded) = sender.patches.pop_front() {
-                sender.patch_bytes -= encoded.retained_bytes();
-                sender.pending = Some(Pending::new(encoded, now));
-            }
-        }
+        sender.acknowledge(&ack.stamp);
     }
     let cancels = world
         .get_mut::<MessageReceiver<StateTransactionCancel>>(entity)
@@ -397,9 +466,14 @@ fn pump_one(
             .pending
             .as_ref()
             .is_some_and(|pending| pending.encoded.begin().stamp == cancel.stamp)
+            || sender
+                .patches
+                .iter()
+                .any(|patch| patch.started.is_some() && patch.encoded.begin().stamp == cancel.stamp)
     });
+    // Enqueueing or sending a newer patch never resets the oldest unacknowledged basis deadline.
     let timed_out = sender.pending.as_ref().is_some_and(|pending| {
-        now.saturating_duration_since(pending.started)
+        now.saturating_duration_since(pending.started.unwrap_or(pending.created))
             >= Duration::from_millis(STATE_TRANSACTION_TIMEOUT_MS)
     });
     if cancelled || timed_out {
@@ -414,42 +488,40 @@ fn pump_one(
     if sender.retained() > MAX_PENDING_STATE_BYTES as usize {
         return Err("State transfer exceeds the 64 MiB retained budget".into());
     }
-    let mut first_kind = None;
     for _ in 0..FRAMES_PER_PUMP {
-        if sender.outstanding >= WINDOW
+        if sender.outstanding.len() >= WINDOW
             || sender.retained().saturating_add(COPY_RESERVE_PER_FRAME)
                 > MAX_PENDING_STATE_BYTES as usize
         {
             break;
         }
-        let Some(pending) = &mut sender.pending else {
+        let target = if sender
+            .pending
+            .as_ref()
+            .is_some_and(|pending| !pending.end_sent)
+        {
+            sender.pending.as_mut()
+        } else {
+            sender.patches.iter_mut().find(|patch| !patch.end_sent)
+        };
+        let Some(target) = target else {
             break;
         };
-        let Some(frame) = pending
-            .deferred
-            .take()
-            .or_else(|| pending.encoded.next_frame())
-        else {
+        let Some(frame) = target.encoded.next_frame() else {
             break;
         };
-        let kind = match frame {
-            StateTransactionFrame::Begin(_) => 0,
-            StateTransactionFrame::Chunk(_) => 1,
-            StateTransactionFrame::End(_) => 2,
-        };
-        if first_kind.is_some_and(|first| first != kind) {
-            pending.deferred = Some(frame);
-            break;
+        target.started.get_or_insert(now);
+        let id = send_frame(world, entity, &frame)?;
+        if matches!(frame, StateTransactionFrame::End(_)) {
+            target.end_sent = true;
         }
-        first_kind = Some(kind);
-        if kind == 2 {
-            pending.end_sent = true;
+        if !sender.outstanding.insert(id) {
+            return Err("State transport reused an outstanding message identity".into());
         }
-        send_frame(world, entity, frame)?;
-        sender.outstanding += 1;
     }
     Ok(())
 }
+
 fn pump(world: &mut World) {
     let recipients = world
         .iter_entities()
@@ -509,7 +581,7 @@ mod tests {
             patches: VecDeque::new(),
             patch_bytes: 0,
             next_id: 0,
-            outstanding: 0,
+            outstanding: BTreeSet::new(),
             restarts: VecDeque::new(),
         };
         sender.full(now).unwrap();
@@ -549,16 +621,20 @@ mod tests {
         let sender = app.world().get::<KnowledgeSender>(entity).unwrap();
         assert_eq!(sender.patches.len(), 1);
         assert_eq!(
-            sender.patches[0].begin().stamp.parent_transaction_id,
+            sender.patches[0]
+                .encoded
+                .begin()
+                .stamp
+                .parent_transaction_id,
             Some(1)
         );
-        assert_eq!(sender.patches[0].begin().stamp.basis.tick, 1);
+        assert_eq!(sender.patches[0].encoded.begin().stamp.basis.tick, 1);
     }
     #[test]
     fn logical_cancel_releases_unsent_buffers_but_carries_inflight_credit_until_ack() {
         let now = Instant::now();
         let mut sender = sender(now);
-        sender.outstanding = WINDOW;
+        sender.outstanding = (0..WINDOW as u16).collect();
         let stamp = sender
             .pending
             .as_ref()
@@ -573,9 +649,9 @@ mod tests {
         assert_eq!(cancel.stamp, stamp);
         assert!(sender.pending.is_none());
         assert_eq!(sender.patch_bytes, 0);
-        assert_eq!(sender.outstanding, WINDOW);
+        assert_eq!(sender.outstanding.len(), WINDOW);
         sender.restart(now).unwrap();
-        assert_eq!(sender.outstanding, WINDOW);
+        assert_eq!(sender.outstanding.len(), WINDOW);
         assert!(
             sender
                 .pending
@@ -610,7 +686,7 @@ mod tests {
         assert_eq!(slow.restarts.len(), 1);
     }
     #[test]
-    fn bounded_typed_send_window_does_not_block_a_second_connection() {
+    fn bounded_registered_send_window_does_not_block_a_second_connection() {
         use lightyear::prelude::server::{ClientOf, ServerPlugins};
         let mut app = App::new();
         app.add_plugins(ServerPlugins {
@@ -662,11 +738,11 @@ mod tests {
         for _ in 0..20 {
             pump_one(app.world_mut(), slow_entity, &mut slow, now).unwrap();
         }
-        assert_eq!(slow.outstanding, WINDOW);
+        assert_eq!(slow.outstanding.len(), WINDOW);
         assert!(slow.retained() < MAX_PENDING_STATE_BYTES as usize);
         let mut healthy = sender(now);
         pump_one(app.world_mut(), healthy_entity, &mut healthy, now).unwrap();
-        assert_eq!(healthy.outstanding, 1);
+        assert!(healthy.outstanding.len() >= 1);
         assert!(
             healthy
                 .pending

@@ -1020,18 +1020,16 @@ mod tests {
     fn capture_visibility_frames(
         mut receivers: Query<(
             Entity,
-            &mut MessageReceiver<turts_net_protocol::StateTransactionBegin>,
-            &mut MessageReceiver<turts_net_protocol::StateTransactionChunk>,
-            &mut MessageReceiver<turts_net_protocol::StateTransactionEnd>,
+            &mut MessageReceiver<turts_net_protocol::visibility_transaction::StateTransactionFrame>,
         )>,
         mut captured: ResMut<VisibilityFrames>,
     ) {
-        use turts_net_protocol::visibility_transaction::StateTransactionFrame as Frame;
-        for (entity, mut begins, mut chunks, mut ends) in &mut receivers {
-            let frames = captured.0.entry(entity).or_default();
-            frames.extend(begins.receive().map(Frame::Begin));
-            frames.extend(chunks.receive().map(Frame::Chunk));
-            frames.extend(ends.receive().map(Frame::End));
+        for (entity, mut receiver) in &mut receivers {
+            captured
+                .0
+                .entry(entity)
+                .or_default()
+                .extend(receiver.receive());
         }
     }
     #[test]
@@ -1105,9 +1103,7 @@ mod tests {
         for (client, server) in pairs {
             app.world_mut().entity_mut(client).insert((
                 MessageReceiver::<Welcome>::default(),
-                MessageReceiver::<StateTransactionBegin>::default(),
-                MessageReceiver::<StateTransactionChunk>::default(),
-                MessageReceiver::<StateTransactionEnd>::default(),
+                MessageReceiver::<Frame>::default(),
                 MessageSender::<StateTransactionAck>::default(),
                 MessageSender::<StateTransactionCancel>::default(),
             ));
