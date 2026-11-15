@@ -1142,6 +1142,18 @@ fn prepare_output(
             && point.y - radius >= 0.0
             && point.x + radius <= bounds.size.x
             && point.y + radius <= bounds.size.y
+            && world
+                .get_resource::<crate::terrain::TerrainState>()
+                .is_none_or(|terrain| {
+                    crate::terrain::support_elevation(
+                        terrain,
+                        &catalog,
+                        world.resource::<UnitTypes>(),
+                        output_type,
+                        point,
+                    )
+                    .is_ok()
+                })
             && grid
                 .within_unsorted(&points, point, radius + max_radius)
                 .into_iter()

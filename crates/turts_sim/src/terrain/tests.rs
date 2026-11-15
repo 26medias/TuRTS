@@ -1247,3 +1247,237 @@ fn active_and_suspended_work_cancel_on_ownership_loss_and_explicit_stop_or_repla
         }
     }
 }
+
+#[test]
+fn real_allocator_inversion_keeps_collision_safe_terrain_routes_and_bounded_retry() {
+    fn scene(reverse: bool) -> (Fixture, [u32; 2]) {
+        let fixture = Fixture::configured(20, 100, 20, |catalog, map| {
+            wall(catalog, map, true);
+            let mut follower = map.placements[0].clone();
+            follower.pos = WorldPos { x: 0.5, y: 4.5 };
+            map.placements.push(follower);
+            if reverse {
+                map.placements.reverse();
+            }
+        });
+        let actors = [fixture.unit_at(1.5, 4.5), fixture.unit_at(0.5, 4.5)];
+        (fixture, actors)
+    }
+    let (mut forward, left) = scene(false);
+    let (mut reverse, right) = scene(true);
+    assert_ne!(
+        left, right,
+        "the ordinary allocator must assign different IDs"
+    );
+    for (fixture, actors) in [(&mut forward, left), (&mut reverse, right)] {
+        fixture.command_units(
+            actors.into(),
+            Behaviour::Move,
+            OrderTargetSim::Point(crate::Vec2::new(5.5, 4.5)),
+            QueueMode::Replace,
+        );
+    }
+    let positions = |fixture: &Fixture, actors: [u32; 2]| {
+        actors.map(|unit| {
+            fixture
+                .app
+                .world()
+                .get::<crate::Position>(crate::unit_entity(fixture.app.world(), unit).unwrap())
+                .unwrap()
+                .0
+        })
+    };
+    for _ in 0..40 {
+        let before = privileged_navigation_diagnostics(forward.app.world());
+        forward.tick();
+        reverse.tick();
+        let after = privileged_navigation_diagnostics(forward.app.world());
+        assert!(after.solver_retries - before.solver_retries <= 8);
+        let physical = positions(&forward, left);
+        assert_eq!(
+            physical,
+            positions(&reverse, right),
+            "allocation order must not change physical routing or collision results"
+        );
+        assert!(
+            physical[0].distance(physical[1]) >= 0.5 - 1e-5,
+            "terrain certification must never roll a leader back into its follower"
+        );
+    }
+    assert!(
+        positions(&forward, left).iter().any(|point| point.x > 4.5),
+        "a real worker must cross the permitted gap"
+    );
+}
+
+#[test]
+fn zero_health_cancels_active_and_paused_work_inside_the_health_transaction() {
+    for suspended in [false, true] {
+        let mut fixture = Fixture::new(401, 5, 1000);
+        fixture.work("dig", rect(3, 1, 1), 990, QueueMode::Replace);
+        fixture.tick();
+        if suspended {
+            fixture.command(
+                Behaviour::UnloadCargo,
+                OrderTargetSim::Unit(fixture.depot),
+                QueueMode::Append,
+            );
+            fixture.tick();
+        }
+        let height = fixture.height(3, 1);
+        let unit = fixture.worker;
+        crate::economy::transaction::transact(fixture.app.world_mut(), |tx| {
+            tx.stage_health(unit, 0);
+            Ok(())
+        })
+        .unwrap();
+        assert!(!pause::has_record(fixture.app.world(), unit));
+        assert!(
+            !fixture
+                .app
+                .world()
+                .resource::<work::TerrainWorkRuntime>()
+                .units
+                .contains_key(&unit)
+        );
+        let orders = fixture
+            .app
+            .world()
+            .get::<crate::orders::UnitOrders>(
+                crate::unit_entity(fixture.app.world(), unit).unwrap(),
+            )
+            .unwrap();
+        assert!(orders.current.is_none() && orders.queue.is_empty());
+        for _ in 0..3 {
+            fixture.tick();
+        }
+        assert_eq!(fixture.height(3, 1), height);
+    }
+}
+
+fn output_cliff(catalog: &mut ContentCatalog, map: &mut MapDef) {
+    let terrain = map.terrain.as_mut().unwrap();
+    terrain.initial_heights = vec![TerrainHeightRect {
+        cells: TerrainRect {
+            min: TerrainCell { x: 3, y: 0 },
+            max: TerrainCell { x: 4, y: 8 },
+        },
+        elevation: 40,
+    }];
+    let TerrainGenerationDef::Version1 { bands } = &mut terrain.generation;
+    bands[0].top = 40;
+    let recipe = catalog.production.get_mut(&id("build_harvester")).unwrap();
+    recipe.duration_ms = 50;
+    recipe.costs.clear();
+    catalog
+        .units
+        .get_mut(&id("command_center"))
+        .unwrap()
+        .producer
+        .as_mut()
+        .unwrap()
+        .spawn_offsets = vec![WorldPos { x: 1.5, y: 0.0 }, WorldPos { x: 0.0, y: 1.0 }];
+}
+
+#[test]
+fn production_skips_a_cliff_straddling_exit_and_commits_the_next_supported_exit() {
+    let mut fixture = Fixture::configured(20, 100, 20, output_cliff);
+    crate::economy::production::queue_production(
+        fixture.app.world_mut(),
+        SlotId(0),
+        fixture.depot,
+        id("build_harvester"),
+    )
+    .unwrap();
+    for _ in 0..4 {
+        fixture.tick();
+    }
+    let outputs = fixture
+        .app
+        .world()
+        .iter_entities()
+        .filter_map(|entity| {
+            let unit = entity.get::<crate::UnitId>()?.0;
+            (unit != fixture.worker && unit != fixture.depot)
+                .then(|| entity.get::<crate::Position>().unwrap().0)
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        outputs,
+        vec![crate::Vec2::new(1.5, 5.5)],
+        "the first collision-free candidate straddles a cliff; choose the next genuinely supported exit"
+    );
+}
+
+#[test]
+fn construction_rejects_cliff_straddling_foundation_before_charge_and_allocator_change() {
+    let mut fixture = Fixture::configured(20, 100, 20, |catalog, map| {
+        output_cliff(catalog, map);
+        let mut building = catalog.units[&id("command_center")].clone();
+        building.id = id("terrain_building");
+        building.producer = None;
+        building.inventory = None;
+        building.drop_off = None;
+        building.placement = Some(SitePlacementDef {
+            gap: 0.0,
+            node_clearance: 0.0,
+            in_build_area: false,
+            site_health: Ratio {
+                numerator: 1,
+                denominator: 2,
+            },
+        });
+        building.health = Some(HealthDef { max: 100 });
+        catalog.units.insert(building.id.clone(), building);
+        let mut recipe = catalog.production[&id("build_harvester")].clone();
+        recipe.id = id("build_terrain_building");
+        recipe.output_unit = id("terrain_building");
+        recipe.duration_ms = 1000;
+        recipe.costs = vec![ResolvedCost {
+            resource: id("credits"),
+            amount: 1,
+            source: CostSource::SlotBalance,
+        }];
+        catalog.production.insert(recipe.id.clone(), recipe);
+        catalog.units.get_mut(&id("harvester")).unwrap().constructor = Some(ResolvedConstructor {
+            buildings: vec![id("build_terrain_building")],
+            concurrent_sites: 1,
+            queue_capacity: 2,
+            progress: ConstructProgress::Autonomous,
+            when_short: vec![],
+        });
+    });
+    let before = crate::audit_state(fixture.app.world_mut());
+    assert_eq!(
+        crate::economy::construction::construct(
+            fixture.app.world_mut(),
+            SlotId(0),
+            fixture.worker,
+            id("build_terrain_building"),
+            crate::Vec2::new(3.0, 3.0)
+        ),
+        Err(crate::RejectReason::SiteBlocked)
+    );
+    assert_eq!(
+        before,
+        crate::audit_state(fixture.app.world_mut()),
+        "refused support must not charge, allocate, reserve or create a site"
+    );
+    crate::economy::construction::construct(
+        fixture.app.world_mut(),
+        SlotId(0),
+        fixture.worker,
+        id("build_terrain_building"),
+        crate::Vec2::new(5.5, 3.0),
+    )
+    .unwrap();
+    assert_eq!(
+        fixture
+            .app
+            .world()
+            .resource::<crate::economy::construction::ConstructionState>()
+            .sites
+            .len(),
+        1
+    );
+}

@@ -325,18 +325,20 @@ pub(crate) fn run(world: &mut World) {
                 || (super::pause::has_record(world, *unit)
                     && !super::pause::is_suspended(world, *unit)
                     && !super::pause::has_pending_resume(world, *unit)))
-            .then_some(*unit)
+            .then_some((*unit, state.owner))
         })
         .collect::<Vec<_>>();
-    for unit in invalid {
-        order_changed(world, unit);
+    for (unit, previous_owner) in invalid {
         if let Some(entity) = unit_entity(world, unit) {
             crate::economy::transaction::capture_unit_order_operation(world, unit, |world| {
+                crate::orders::clear_replaced_movement(world, previous_owner, entity, unit);
                 crate::orders::writer::edit_unit_orders(world, entity, |orders| {
                     orders.current = None;
                     orders.queue.clear();
                 });
             });
+        } else {
+            order_changed(world, unit);
         }
     }
     let orders = world

@@ -1202,7 +1202,39 @@ impl Transaction<'_> {
                 .units
                 .insert(unit, state);
         }
+        // Zero health cancels terrain work at this same captured transaction boundary.
+        // A later revival cannot recover an old designation or suspended utility queue.
+        let terrain_deactivated = if world.contains_resource::<crate::terrain::TerrainState>() {
+            writes
+                .healths
+                .iter()
+                .filter_map(|(&unit, health)| {
+                    if !matches!(health, None | Some(0)) {
+                        return None;
+                    }
+                    let entity = crate::unit_entity(world, unit)?;
+                    let orders = world.get::<crate::orders::UnitOrders>(entity)?;
+                    (orders.current.as_ref().is_some_and(|order| {
+                        matches!(
+                            order.behaviour,
+                            turts_mod_api::Behaviour::TerrainWork
+                                | turts_mod_api::Behaviour::UnloadCargo
+                        )
+                    }) || crate::terrain::pause::has_record(world, unit))
+                    .then_some((unit, entity, world.get::<crate::Owner>(entity)?.0))
+                })
+                .collect::<Vec<_>>()
+        } else {
+            Vec::new()
+        };
         transaction_m3::apply_overlays(world, &mut writes);
+        for (unit, entity, owner) in terrain_deactivated {
+            crate::orders::clear_replaced_movement(world, owner, entity, unit);
+            crate::orders::writer::edit_unit_orders(world, entity, |orders| {
+                orders.current = None;
+                orders.queue.clear();
+            });
+        }
         if !writes.repairs.is_empty() {
             world.init_resource::<super::repair::RepairRuntime>();
             world
