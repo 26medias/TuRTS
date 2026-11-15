@@ -1,8 +1,5 @@
 //! Immutable completed-basis accounting for trusted participant receipts.
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    sync::Arc,
-};
+use std::{collections::BTreeMap, sync::Arc};
 
 use turts_bot::{
     AccountAmount, AccountObservation, ActorResult, BotActor, EmittedCommand, InventoryPort,
@@ -225,32 +222,27 @@ fn account_rows(
     actor: &BotActor,
     budget: &mut RowBudget,
 ) -> Result<Vec<AccountObservation>, String> {
-    let mut rows = BTreeMap::<SpendKey, (u64, u64)>::new();
+    // Keep resource identities borrowed until final rows are known. A tree for
+    // accounts plus another tree for duplicates cloned every resource twice and
+    // allocated nodes for each completed publication.
+    let mut rows = Vec::new();
     // Installed Balance resources are valid zero accounts even when absent from
     // a sparse ledger view. No foreign slot is inspected or exposed.
     for (id, resource) in &catalog.resources {
         if resource.kind == ResourceKind::Balance {
-            insert_account(
-                &mut rows,
-                SpendKey {
-                    endpoint: SourceEndpoint::SlotBalance(actor.slot),
-                    resource: id.clone(),
-                },
-                (0, 0),
-                budget,
-            )?;
+            rows.push(PendingAccount {
+                endpoint: SourceEndpoint::SlotBalance(actor.slot),
+                resource: id,
+                amount: None,
+            });
         }
     }
-    let mut seen = BTreeSet::new();
     for balance in view.balances.iter().filter(|row| row.slot == actor.slot) {
-        let key = SpendKey {
+        rows.push(PendingAccount {
             endpoint: SourceEndpoint::SlotBalance(actor.slot),
-            resource: balance.resource.clone(),
-        };
-        if !seen.insert(key.clone()) {
-            return Err("duplicate own balance account".into());
-        }
-        set_account(&mut rows, key, (balance.on_hand, balance.reserved), budget)?;
+            resource: &balance.resource,
+            amount: Some((balance.on_hand, balance.reserved)),
+        });
     }
     // Resolve only inventories that actually exist in this completed view. Most
     // combat units have no inventory; indexing and parsing every owned unit made
@@ -291,31 +283,24 @@ fn account_rows(
             accepts
         };
         for resource in accepts {
-            insert_account(
-                &mut rows,
-                SpendKey {
-                    endpoint: SourceEndpoint::Inventory {
-                        unit: inventory.unit,
-                        port: InventoryPort::Main,
-                    },
-                    resource: resource.clone(),
-                },
-                (0, 0),
-                budget,
-            )?;
-        }
-        for item in &inventory.items {
-            let key = SpendKey {
+            rows.push(PendingAccount {
                 endpoint: SourceEndpoint::Inventory {
                     unit: inventory.unit,
                     port: InventoryPort::Main,
                 },
-                resource: item.resource.clone(),
-            };
-            if !seen.insert(key.clone()) {
-                return Err("duplicate own inventory account".into());
-            }
-            set_account(&mut rows, key, (item.on_hand, item.reserved), budget)?;
+                resource,
+                amount: None,
+            });
+        }
+        for item in &inventory.items {
+            rows.push(PendingAccount {
+                endpoint: SourceEndpoint::Inventory {
+                    unit: inventory.unit,
+                    port: InventoryPort::Main,
+                },
+                resource: &item.resource,
+                amount: Some((item.on_hand, item.reserved)),
+            });
         }
     }
     for inventory in &view.m3.raw_output_inventories {
@@ -323,42 +308,88 @@ fn account_rows(
             continue;
         }
         for resource in &inventory.accepted_items {
-            insert_account(
-                &mut rows,
-                SpendKey {
-                    endpoint: SourceEndpoint::Inventory {
-                        unit: inventory.unit,
-                        port: InventoryPort::Output,
-                    },
-                    resource: resource.clone(),
-                },
-                (0, 0),
-                budget,
-            )?;
-        }
-        for (resource, amount) in &inventory.items {
-            let key = SpendKey {
+            rows.push(PendingAccount {
                 endpoint: SourceEndpoint::Inventory {
                     unit: inventory.unit,
                     port: InventoryPort::Output,
                 },
-                resource: resource.clone(),
-            };
-            if !seen.insert(key.clone()) {
-                return Err("duplicate own output account".into());
-            }
-            set_account(&mut rows, key, (amount.on_hand, amount.reserved), budget)?;
+                resource,
+                amount: None,
+            });
+        }
+        for (resource, amount) in &inventory.items {
+            rows.push(PendingAccount {
+                endpoint: SourceEndpoint::Inventory {
+                    unit: inventory.unit,
+                    port: InventoryPort::Output,
+                },
+                resource,
+                amount: Some((amount.on_hand, amount.reserved)),
+            });
         }
     }
-    Ok(rows
-        .into_iter()
-        .map(|(account, (on_hand, reserved))| AccountObservation {
-            account,
+    finish_accounts(rows, budget)
+}
+
+struct PendingAccount<'a> {
+    endpoint: SourceEndpoint,
+    resource: &'a ContentId,
+    // None denotes a known-zero baseline, not an observed duplicate.
+    amount: Option<(u64, u64)>,
+}
+fn finish_accounts(
+    mut pending: Vec<PendingAccount<'_>>,
+    budget: &mut RowBudget,
+) -> Result<Vec<AccountObservation>, String> {
+    pending.sort_unstable_by(|a, b| {
+        a.endpoint
+            .cmp(&b.endpoint)
+            .then_with(|| a.resource.cmp(b.resource))
+    });
+    let mut rows = Vec::with_capacity(pending.len().min(budget.0));
+    let mut pending = pending.into_iter().peekable();
+    while let Some(first) = pending.next() {
+        let mut amount = first.amount;
+        while pending
+            .peek()
+            .is_some_and(|next| next.endpoint == first.endpoint && next.resource == first.resource)
+        {
+            let next = pending.next().expect("matching account row exists");
+            if let Some(actual) = next.amount
+                && amount.replace(actual).is_some()
+            {
+                return Err(match first.endpoint {
+                    SourceEndpoint::SlotBalance(_) => "duplicate own balance account",
+                    SourceEndpoint::Inventory {
+                        port: InventoryPort::Main,
+                        ..
+                    } => "duplicate own inventory account",
+                    SourceEndpoint::Inventory {
+                        port: InventoryPort::Output,
+                        ..
+                    } => "duplicate own output account",
+                }
+                .into());
+            }
+        }
+        let (on_hand, reserved) = amount.unwrap_or((0, 0));
+        if reserved > on_hand {
+            return Err("reserved account amount exceeds its balance".into());
+        }
+        // Charge only the unique final account, including known zero accounts.
+        budget.take(1)?;
+        rows.push(AccountObservation {
+            account: SpendKey {
+                endpoint: first.endpoint,
+                resource: first.resource.clone(),
+            },
             on_hand,
             reserved,
-        })
-        .collect())
+        });
+    }
+    Ok(rows)
 }
+
 fn completed_unit(view: &WorldView, id: u32) -> Option<&turts_sim::world::UnitState> {
     // Authoritative completed rows are sorted. The fallback preserves the helper's
     // behavior for valid synthetic views without that presentation ordering.
@@ -367,33 +398,6 @@ fn completed_unit(view: &WorldView, id: u32) -> Option<&turts_sim::world::UnitSt
         .ok()
         .map(|index| &view.units[index])
         .or_else(|| view.units.iter().find(|unit| unit.unit_id == id))
-}
-fn insert_account(
-    rows: &mut BTreeMap<SpendKey, (u64, u64)>,
-    key: SpendKey,
-    amount: (u64, u64),
-    budget: &mut RowBudget,
-) -> Result<(), String> {
-    if let std::collections::btree_map::Entry::Vacant(e) = rows.entry(key) {
-        budget.take(1)?;
-        e.insert(amount);
-    }
-    Ok(())
-}
-fn set_account(
-    rows: &mut BTreeMap<SpendKey, (u64, u64)>,
-    key: SpendKey,
-    amount: (u64, u64),
-    budget: &mut RowBudget,
-) -> Result<(), String> {
-    if amount.1 > amount.0 {
-        return Err("reserved account amount exceeds its balance".into());
-    }
-    if !rows.contains_key(&key) {
-        budget.take(1)?;
-    }
-    rows.insert(key, amount);
-    Ok(())
 }
 fn endpoint(endpoint: &ReservationEndpointView) -> SourceEndpoint {
     match endpoint {
