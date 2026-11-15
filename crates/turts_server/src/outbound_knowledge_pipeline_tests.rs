@@ -472,7 +472,7 @@ impl Harness {
         })).collect::<Vec<_>>();
         let report = serde_json::json!({"label": label, "activation_ack_rtt_ms": self.rtt_ms, "application_step_ms": STEP_MS,
             "sender_hz": 20, "snapshot_units": 1000, "position_updates_per_tick": 500, "warmup_ticks": WARMUP_TICKS,
-            "measured_ticks": MEASURED_TICKS, "one_delivery_burst_ms": TICK_MS, "peers": rows});
+            "measured_ticks": MEASURED_TICKS, "one_delivery_burst_ms": self.burst_at_ms.map_or(0, |_| TICK_MS), "peers": rows});
         if let Some(directory) = std::env::var_os("TURTS_VISIBILITY_PIPELINE_EVIDENCE") {
             let directory = std::path::PathBuf::from(directory);
             std::fs::create_dir_all(&directory).unwrap();
