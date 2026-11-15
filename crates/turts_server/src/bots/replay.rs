@@ -373,7 +373,7 @@ mod tests {
         let mut app = fixture();
         let path = capture(&mut app, "cot-pause-original.jsonl");
         let mut pause = None;
-        let mut human = app
+        let human = app
             .world_mut()
             .query_filtered::<Entity, With<session::Session>>()
             .single(app.world())
@@ -410,14 +410,11 @@ mod tests {
                         paused_pending,
                         "pause must retain in-flight COT commitments even when authoritative work advances"
                     );
-                    human = app
-                        .world_mut()
-                        .spawn(session::Session {
-                            last_seq: None,
-                            slot: SlotId(0),
-                            player_id: 7,
-                        })
-                        .id();
+                    app.world_mut().spawn(session::Session {
+                        last_seq: None,
+                        slot: SlotId(0),
+                        player_id: 7,
+                    });
                 }
             }
         }
