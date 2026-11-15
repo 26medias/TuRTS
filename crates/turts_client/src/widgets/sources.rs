@@ -241,6 +241,9 @@ fn primary_value(field: PrimaryField, context: SourceContext<'_>) -> serde_json:
         .find(|record| record.unit == UnitId(*id))
         .map(|record| record.current);
     match field {
+        PrimaryField::RepairState
+        | PrimaryField::RepairTargetName
+        | PrimaryField::RepairResourceName => unit_hud::primary_repair(field, context),
         PrimaryField::WeaponDetails => unit_hud::primary_weapon_details(context),
         PrimaryField::Name => {
             serde_json::json!(definition.map_or(unit.content_id.as_str(), |def| def.name.as_str()))

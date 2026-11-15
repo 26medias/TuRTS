@@ -18,6 +18,8 @@ mod export_effects;
 mod export_jobs;
 #[path = "export_match.rs"]
 mod export_match;
+#[path = "export_repair.rs"]
+mod export_repair;
 #[path = "export_sites.rs"]
 mod export_sites;
 #[path = "export_supply.rs"]
@@ -127,6 +129,7 @@ pub fn snapshot_for(view: &WorldView, slot: SlotId) -> wire::Snapshot {
             .collect(),
         // Reliable baselines project the same completed immutable view as change records.
         records: wire::SnapshotRecords {
+            repairs: export_repair::snapshot(&view.economy.repairs, slot),
             supply: export_supply::snapshot(view.operating.as_ref(), slot),
             sites: turts_sim::economy::construction::progress_rows(view)
                 .iter()
@@ -173,6 +176,13 @@ pub fn snapshot_for(view: &WorldView, slot: SlotId) -> wire::Snapshot {
 
 /// Build the owner-specific absolute replacements for one committed simulation tick.
 pub fn delta_for(batch: &CommittedTick, view: &WorldView, slot: SlotId) -> wire::WorldDelta {
+    let (repairs, repairs_cleared) = export_repair::changes(
+        &batch.repairs,
+        &batch.repairs_cleared,
+        &batch.removed,
+        &view.units,
+        slot,
+    );
     wire::WorldDelta {
         tick: batch.tick,
         base_tick: batch.tick.saturating_sub(1),
@@ -268,6 +278,8 @@ pub fn delta_for(batch: &CommittedTick, view: &WorldView, slot: SlotId) -> wire:
             .map(unit_order_state)
             .collect(),
         records: wire::DeltaRecords {
+            repairs,
+            repairs_cleared,
             sites_completed: export_sites::sites_completed(batch),
             sites: export_sites::site_progress(batch, slot),
             jobs: export_jobs::queue_job_records(
