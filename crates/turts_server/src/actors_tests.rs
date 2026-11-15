@@ -589,3 +589,43 @@ fn independent_review_one_accounting_row_exhaustion_keeps_the_other_actor_advanc
             .any(|result| result.accepted)
     );
 }
+
+#[test]
+fn independent_review_accounting_backpressure_retains_cot_progress_and_terminal_receipts() {
+    let mut app = fixture(100);
+    stage_bot_command(
+        app.world_mut(),
+        command(1, vec![1], "order_produce", BotTarget::Content(id("hire"))),
+    )
+    .unwrap();
+    app.update(); // Admission succeeds before publication backpressure begins.
+    assert!(!queued(&app).included[0].terminal);
+    app.world_mut().resource_mut::<BotActors>().row_limit = 1;
+    app.update(); // First paid step cannot fit a public account/receipt batch.
+    app.update(); // The final paid step and terminal receipt occur while blocked.
+    assert!(
+        turts_sim::completed_world(app.world())
+            .queues
+            .iter()
+            .filter(|queue| queue.producer == 1)
+            .all(|queue| queue.jobs.is_empty())
+    );
+    app.world_mut().resource_mut::<BotActors>().row_limit = 65536;
+    app.update(); // Recovery must not require replaying commands or inventing payments.
+    let batch = actor_reconciliation(app.world(), &actor())
+        .expect("publication must recover after bounded backpressure");
+    assert_eq!(batch.watermark.completed_tick, 4);
+    let effect = &batch.included[0];
+    assert!(effect.terminal);
+    assert_eq!(
+        effect.work.as_ref().unwrap().state,
+        turts_bot::WorkState::Finished
+    );
+    assert_eq!(effect.paid.iter().map(|row| row.amount).sum::<u64>(), 12);
+    acknowledge(app.world_mut(), &actor(), batch.watermark, &[]).unwrap();
+    assert!(
+        app.world().resource::<BotActors>().entries[&0]
+            .requests
+            .is_empty()
+    );
+}
