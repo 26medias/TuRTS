@@ -569,7 +569,7 @@ fn independent_review_one_accounting_row_exhaustion_keeps_the_other_actor_advanc
     let healthy = actor_reconciliation(app.world(), &other)
         .expect("one actor's accounting exhaustion must not erase the other actor's basis");
     assert_eq!(healthy.watermark.completed_tick, 1);
-    let mut next = command(1, vec![4], "order_stop", BotTarget::None);
+    let mut next = command(1, vec![5], "order_stop", BotTarget::None);
     next.actor = other.clone();
     // Give the healthy actor enough room for its own receipt after the isolation check.
     app.world_mut().resource_mut::<BotActors>().row_limit = 65536;
