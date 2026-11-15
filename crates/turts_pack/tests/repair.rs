@@ -523,3 +523,61 @@ fn two_repairers_cannot_overheal_or_overcharge_a_shared_target() {
     assert_eq!(health(&mut app, target), 100);
     assert_eq!(balance(&mut app, "credits"), 910);
 }
+
+#[test]
+fn public_creation_order_does_not_rank_repair_funding_winners() {
+    use turts_sim::economy::repair::RepairStatus;
+    for invert in [false, true] {
+        let mut fixture = Fixture::new(20);
+        fixture.repairer().rate_per_second = 20;
+        fixture.repairer().cost[0].amount = 1;
+        fixture.repairer().cost[0].per_health = 1;
+        fixture.map.placements[0].pos.x = 8.25;
+        fixture.map.slot_economy[0].balances[0].amount = 1;
+        let mut second = fixture.catalog.units[&cid("repairer")].clone();
+        second.id = cid("second");
+        second.name = "second".into();
+        fixture.catalog.units.insert(second.id.clone(), second);
+        fixture.map.placements.push(placed("second", 0, 10.0, 6.25));
+        if invert {
+            fixture.map.placements.swap(0, 3);
+        }
+        let mut app = fixture.app();
+        let left = id(&app, "repairer");
+        let right = id(&app, "second");
+        assert_eq!(
+            left < right,
+            !invert,
+            "map placement order supplies the identity inversion"
+        );
+        let target = damage_once(&mut app);
+        accept(issue(
+            &mut app,
+            left,
+            "repair",
+            OrderTargetSim::Unit(target),
+            QueueMode::Replace,
+        ));
+        accept(issue(
+            &mut app,
+            right,
+            "repair",
+            OrderTargetSim::Unit(target),
+            QueueMode::Replace,
+        ));
+        app.update();
+        assert_eq!(
+            (health(&mut app, target), balance(&mut app, "credits")),
+            (11, 0)
+        );
+        let rows = turts_sim::world_view(app.world_mut()).repairs;
+        assert_eq!(
+            rows.iter().find(|row| row.repairer == left).unwrap().state,
+            RepairStatus::Working
+        );
+        assert_eq!(
+            rows.iter().find(|row| row.repairer == right).unwrap().state,
+            RepairStatus::WaitingForFunds(cid("credits"))
+        );
+    }
+}
