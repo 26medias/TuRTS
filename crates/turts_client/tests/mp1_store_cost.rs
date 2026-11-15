@@ -13,8 +13,10 @@
 //! (`candidate_at` and `stage_delta`); the "before" figures in the measurement note come from this
 //! test with a temporary counter at those two places (`probe` below).
 
+#[allow(dead_code)] // This fixture uses only part of the shared server projection.
 #[path = "../../turts_server/src/export.rs"]
 mod export;
+#[allow(dead_code)] // This fixture uses only part of the shared server projection.
 #[path = "../../turts_server/src/permissions.rs"]
 mod permissions;
 

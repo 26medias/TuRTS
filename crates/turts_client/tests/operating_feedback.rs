@@ -1,7 +1,9 @@
 mod support;
 
+#[allow(dead_code)] // This fixture uses only part of the shared server projection.
 #[path = "../../turts_server/src/permissions.rs"]
 mod permissions;
+#[allow(dead_code)] // This fixture uses only part of the shared server projection.
 #[path = "../../turts_server/src/export.rs"]
 mod server_export;
 

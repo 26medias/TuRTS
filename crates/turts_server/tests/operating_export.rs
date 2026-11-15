@@ -1,6 +1,8 @@
 //! Real boot, publication, and owner projection of operating-resource supply.
+#[allow(dead_code)] // This fixture uses only part of the shared server projection.
 #[path = "../src/export.rs"]
 mod export;
+#[allow(dead_code)] // This fixture uses only part of the shared server projection.
 #[path = "../src/permissions.rs"]
 mod permissions;
 

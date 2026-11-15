@@ -2,8 +2,10 @@
 
 use std::path::Path;
 
+#[allow(dead_code)] // This fixture uses only part of the shared server projection.
 #[path = "../src/export.rs"]
 mod export;
+#[allow(dead_code)] // This fixture uses only part of the shared server projection.
 #[path = "../src/permissions.rs"]
 mod permissions;
 

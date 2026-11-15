@@ -9,8 +9,10 @@
 //! one at the arrival tick, record bytes and not operations: slice rule, plan section 1), the
 //! weapon part of case C, the `Fired` size, and the removal rule.
 
+#[allow(dead_code)] // This fixture uses only part of the shared server projection.
 #[path = "../src/export.rs"]
 mod export;
+#[allow(dead_code)] // This fixture uses only part of the shared server projection.
 #[path = "../src/permissions.rs"]
 mod permissions;
 

@@ -4,7 +4,10 @@ use std::collections::{BTreeMap, VecDeque};
 use bevy::prelude::*;
 use turts_audit::{ActorLogIdentity, ActorLogRecord, ActorTask};
 use turts_net_protocol::{CommandRejectReason, OrderResult, PlayerCommand};
-use turts_sim::{CommandQueue, CommandResults, SlotId, Slots, Tick};
+use turts_sim::{CommandQueue, CommandResults, SlotId, Tick};
+
+#[cfg(test)]
+use turts_sim::Slots;
 
 use super::{Advertised, PendingOrderCommands, RateLimitBuckets};
 use crate::economylog::EconomyLogSink;

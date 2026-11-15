@@ -29,8 +29,10 @@
 //! the client crate, with dev-dependencies on `turts_sim` and `turts_pack`; the boundary rules read
 //! the normal and build edges only.
 
+#[allow(dead_code)] // This fixture uses only part of the shared server projection.
 #[path = "../../turts_server/src/export.rs"]
 mod export;
+#[allow(dead_code)] // This fixture uses only part of the shared server projection.
 #[path = "../../turts_server/src/permissions.rs"]
 mod permissions;
 

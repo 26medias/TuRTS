@@ -1,3 +1,4 @@
+#[allow(dead_code)] // This fixture uses only part of the shared server projection.
 #[path = "../src/export.rs"]
 mod export;
 #[allow(dead_code)] // The fixture uses only the human projection policy.
