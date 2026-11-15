@@ -329,6 +329,16 @@ pub struct CatalogNodeAudit {
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CatalogUnitAudit {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub provides: Vec<turts_mod_api::SupplyAmount>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub consumes: Vec<turts_mod_api::SupplyAmount>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub income: Option<turts_mod_api::IncomeDef>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub producer_when_short: Vec<turts_mod_api::WhenShort>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub weapon_when_short: Vec<turts_mod_api::WhenShort>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub armour: Option<turts_mod_api::ArmourDef>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1184,6 +1194,17 @@ pub fn audit_state(world: &mut World) -> AuditState {
                     .units
                     .iter()
                     .map(|(id, d)| CatalogUnitAudit {
+                        provides: d.provides.clone(),
+                        consumes: d.consumes.clone(),
+                        income: d.income.clone(),
+                        producer_when_short: d
+                            .producer
+                            .as_ref()
+                            .map_or_else(Vec::new, |producer| producer.when_short.clone()),
+                        weapon_when_short: d
+                            .weapon
+                            .as_ref()
+                            .map_or_else(Vec::new, |weapon| weapon.when_short.clone()),
                         armour: d.armour.clone(),
                         acquire: d.acquire,
                         weapon_damage_type: d
