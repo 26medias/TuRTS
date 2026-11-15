@@ -310,15 +310,13 @@ pub(crate) fn validate_operation(operation: &OperationAudit) -> Result<(), Strin
             job,
             charged,
         } = &event.kind
-        {
-            if before
+            && before
                 .get(&(*producer, *job))
                 .or_else(|| after.get(&(*producer, *job)))
                 .is_some()
-                && !charged.is_empty()
-            {
-                return Err("paid-work start charges an upfront amount".into());
-            }
+            && !charged.is_empty()
+        {
+            return Err("paid-work start charges an upfront amount".into());
         }
         if let EconomyEventKind::ProgressCharged { unit, job, charged } = &event.kind {
             let source = before
@@ -617,14 +615,12 @@ fn validate_repair_state(state: &AuditState) -> Result<(), String> {
             }
             if let turts_sim::economy::repair::RepairStatus::WaitingForFunds(resource) =
                 &action.state
-            {
-                if !definition
+                && !definition
                     .cost
                     .iter()
                     .any(|cost| cost.resource == resource.to_string())
-                {
-                    return Err("repair funding resource is not an authored balance cost".into());
-                }
+            {
+                return Err("repair funding resource is not an authored balance cost".into());
             }
         }
     }
@@ -1133,7 +1129,7 @@ fn progress_step(state: &AuditState, job: &Job) -> Result<u64, String> {
             }
         }
     }
-    if rate.1 == 0 || q % rate.1 != 0 {
+    if rate.1 == 0 || !q.is_multiple_of(rate.1) {
         return Err("paid work has invalid exact rate scale".into());
     }
     (q / rate.1)
