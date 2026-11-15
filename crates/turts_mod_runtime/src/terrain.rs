@@ -867,3 +867,74 @@ pub fn validate_designation(
     let tool = checked_content_ref(origin, file, "tool", &designation.tool)?;
     require(origin, file, "tool", &tool, &catalog.terrain_tools, None)
 }
+
+/// A terrain tool list binds an exact declared order; it never selects the first
+/// matching order or invents an identifier from the tool's name.
+pub(crate) fn validate_tool_source_order(
+    origin: &PackageId,
+    file: &str,
+    field: &str,
+    order: &OrderDef,
+) -> Result<(), ModError> {
+    if order.behaviour != Behaviour::TerrainWork || order.target != TargetKind::TerrainDesignation {
+        return Err(error(
+            origin,
+            file,
+            field,
+            "TerrainTools requires a TerrainWork order with TerrainDesignation target",
+        ));
+    }
+    Ok(())
+}
+/// Complete-catalog validation of tool-list bindings, including declared library
+/// references that package-local interface validation necessarily defers.
+pub fn validate_terrain_tool_sources(
+    origin: &PackageId,
+    file: &str,
+    interface: &InterfaceDef,
+    catalog: &ContentCatalog,
+) -> Result<(), ModError> {
+    fn widget(
+        origin: &PackageId,
+        file: &str,
+        path: &str,
+        row: &Widget,
+        catalog: &ContentCatalog,
+    ) -> Result<(), ModError> {
+        match &row.widget {
+            Primitive::List { source, item, .. } | Primitive::Grid { source, item, .. } => {
+                if let Source::TerrainTools { order } = source {
+                    let field = format!("{path}.widget.source.order");
+                    let id = checked_content_ref(origin, file, &field, order)?;
+                    let definition = catalog.orders.get(&id).ok_or_else(|| {
+                        error(
+                            origin,
+                            file,
+                            &field,
+                            format!("unknown terrain work order `{id}`"),
+                        )
+                    })?;
+                    validate_tool_source_order(origin, file, &field, definition)?;
+                }
+                widget(origin, file, &format!("{path}.item"), item, catalog)?;
+            }
+            Primitive::Box { children, .. } => {
+                for (index, row) in children.iter().enumerate() {
+                    widget(
+                        origin,
+                        file,
+                        &format!("{path}.children[{index}]"),
+                        row,
+                        catalog,
+                    )?;
+                }
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+    for (index, row) in interface.root.iter().enumerate() {
+        widget(origin, file, &format!("root[{index}]"), row, catalog)?;
+    }
+    Ok(())
+}

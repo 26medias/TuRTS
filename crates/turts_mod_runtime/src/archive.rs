@@ -225,6 +225,9 @@ impl PackageArchive {
                 .insert(turts_mod_api::ContentId::new(&self.id(), &bot.id), file);
         }
         crate::terrain::validate_terrain_catalog(&self.id(), &catalog)?;
+        for (file, interface) in self.interfaces()? {
+            crate::terrain::validate_terrain_tool_sources(&self.id(), &file, &interface, &catalog)?;
+        }
         for (file, map) in self.maps()? {
             crate::terrain::validate_terrain_map(&self.id(), &file, &map, &catalog)?;
         }

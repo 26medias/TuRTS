@@ -213,6 +213,11 @@ const fn variant_0_2_14(name: &'static str) -> VersionTableRow {
 /// detection kind that its design row names, and nowhere else. The order is the order of the
 /// first refusal when one package has several problems.
 pub(crate) const VERSION_TABLE: &[VersionTableRow] = &[
+    VersionTableRow {
+        name: "Source::TerrainTools",
+        detect: Detect::Variant("Source::TerrainTools"),
+        since_api: "0.2.17",
+    },
     raw("terrain", "0.2.17", RawGroup::Maps, &["terrain"]),
     raw(
         "terrain_class",

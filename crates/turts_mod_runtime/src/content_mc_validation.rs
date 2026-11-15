@@ -78,6 +78,19 @@ pub(crate) fn validate_mc(archive: &PackageArchive) -> Result<ParsedMcContent, M
         assets,
         ..ParsedMcContent::default()
     };
+    // The variant name is lost by ron::Value. Check this new source's floor
+    // from parsed documents before checking its order binding or other assets.
+    let terrain_source_rows = crate::version_table::VERSION_TABLE
+        .iter()
+        .copied()
+        .filter(|row| row.name == "Source::TerrainTools")
+        .collect::<Vec<_>>();
+    crate::version_table::check_version_table(
+        &archive.manifest,
+        Some(&parsed),
+        &crate::raw_presence::RawDocuments::default(),
+        &terrain_source_rows,
+    )?;
     let package = PackageId(archive.manifest.id.clone());
     let dependency_ids: BTreeSet<&str> = archive
         .manifest
@@ -1072,6 +1085,7 @@ fn validate_widget(
                 source,
                 balance_ids,
                 dependencies,
+                orders,
             )?;
             validate_widget(context, &format!("{path}.item"), item, &mut BTreeSet::new())?;
         }
@@ -1183,6 +1197,7 @@ fn validate_source(
     source: &Source,
     balance_ids: &BTreeSet<ContentId>,
     dependencies: &BTreeSet<&str>,
+    orders: &BTreeMap<ContentId, (&str, &OrderDef)>,
 ) -> Result<(), ModError> {
     if let Source::Balance(id) = source {
         let reference = checked_reference(package, file, field, id, dependencies)?;
@@ -1193,6 +1208,24 @@ fn validate_source(
                 field,
                 format!("unknown Balance resource `{reference}`"),
             ));
+        }
+    }
+    if let Source::TerrainTools { order } = source {
+        let field = format!("{field}.order");
+        let reference = checked_reference(package, file, &field, order, dependencies)?;
+        if reference.package == *package {
+            let definition = orders
+                .get(&reference)
+                .map(|(_, order)| *order)
+                .ok_or_else(|| {
+                    error(
+                        package,
+                        file,
+                        &field,
+                        format!("unknown terrain work order `{reference}`"),
+                    )
+                })?;
+            crate::terrain::validate_tool_source_order(package, file, &field, definition)?;
         }
     }
     Ok(())

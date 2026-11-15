@@ -439,6 +439,7 @@ impl InterfaceWalk<'_> {
 
     fn source(&mut self, source: &Source, path: &str) {
         let name = match source {
+            Source::TerrainTools { .. } => Some("Source::TerrainTools"),
             Source::ConstructionQueue => Some("Source::ConstructionQueue"),
             Source::Sites => Some("Source::Sites"),
             Source::Notices => Some("Source::Notices"),
