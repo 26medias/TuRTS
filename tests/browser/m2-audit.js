@@ -187,12 +187,20 @@ function canonicalOwnerWorld(value) {
             job.reserved.sort(costOrder);
         }
     }
+    if (copy.progress) {
+        copy.progress.jobs.sort((a,b)=>a.producer-b.producer||a.job-b.job);
+        copy.progress.sites.sort(by("unit"));
+        copy.progress.construction_queues.sort(by("constructor"));
+        for(const row of copy.progress.construction_queues) for(const order of row.orders) {order.point.x=Math.fround(order.point.x);order.point.y=Math.fround(order.point.y);}
+    }
+    if(copy.repairs)copy.repairs.sort(by("repairer"));
     return copy;
 }
+function projectAuditOwnerWork(actual, records, slot) {return require("./m2-work.js").projectWork(actual,records,slot,{worldView,contentId,wireCostLines});}
 
-function assertOwnerWorldMatchesAudit(actual, state, slot) {
+function assertOwnerWorldMatchesAudit(actual, state, slot, work = null) {
     const tick = worldView(state).tick;
-    const expected = projectAuditOwnerWorld(state, slot);
+    const expected = { ...projectAuditOwnerWorld(state, slot), ...(work ?? {}) };
     assert.deepStrictEqual(canonicalOwnerWorld(actual), canonicalOwnerWorld(expected),
         `owner replica mismatch at authoritative completed audit tick ${tick}`);
     return tick;
@@ -287,6 +295,7 @@ function worldChangeMatchesAudit(kind, previousState, currentState, slot) {
 
 module.exports = {
     assertOwnerWorldMatchesAudit,
+    projectAuditOwnerWork,
     auditStateAt,
     projectAuditOwnerWorld,
     readCompleteAuditLog,

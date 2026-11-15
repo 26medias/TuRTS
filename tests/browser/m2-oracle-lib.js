@@ -11,6 +11,7 @@ const {
     assertOwnerWorldMatchesAudit,
     auditStateAt,
     projectAuditOwnerWorld,
+    projectAuditOwnerWork,
     validateAuditRecords,
     worldChangeMatchesAudit,
 } = require("./m2-audit.js");
@@ -70,16 +71,17 @@ function hasSingleDebugSelection(snapshot, unitId) {
 
 // MC adds `unit_orders` to the replicated world and `max_health` to each unit (design 9.1 and
 // 9.2). The M2 key list stays exact otherwise, so a new private field still turns this red.
-const PUBLIC_WORLD_KEYS = ["belts", "economy", "extractors", "health_trace", "healths", "inserters", "nodes", "research", "tick", "unit_orders", "units", "weapons"];
+const PUBLIC_WORLD_KEYS = ["belts", "economy", "extractors", "health_trace", "healths", "inserters", "nodes", "progress", "repairs", "research", "tick", "unit_orders", "units", "weapons"];
 const PUBLIC_UNIT_KEYS = ["content_id", "facing", "max_health", "owner_slot", "pos", "unit_id"];
 
-function assertPublicProjectionSchema(snapshot) {
+function assertPublicProjectionSchema(snapshot, { requireCurrent = false } = {}) {
     const view = snapshot.debug?.replicated_world;
     assert(view && Number.isInteger(view.tick), "the coherent public replicated-world view is missing");
     const worldKeys = Object.keys(view).sort();
     // The saved Task 16 fixture predates MC and has neither MC field.
     const legacyWorld = !worldKeys.includes("unit_orders");
-    assert.deepEqual(worldKeys, legacyWorld ? PUBLIC_WORLD_KEYS.filter((key) => key !== "unit_orders") : PUBLIC_WORLD_KEYS,
+    if(requireCurrent) assert(!legacyWorld,"current browser projection must expose owner order/work records");
+    assert.deepEqual(worldKeys, legacyWorld ? PUBLIC_WORLD_KEYS.filter((key) => !["unit_orders","progress","repairs"].includes(key)) : PUBLIC_WORLD_KEYS,
         "browser replicated-world debug must contain the permitted M2/M3 client state only");
     assert.deepEqual(Object.keys(view.economy).sort(), ["balances", "inventories", "orders", "queues"],
         "browser economy debug must expose the complete permitted owner projection");
@@ -102,6 +104,7 @@ function assertPublicProjectionSchema(snapshot) {
         assert(unit && unit.owner_slot === snapshot.debug.slot,
             `browser replica holds the order state of unit ${order.unit}, which slot ${snapshot.debug.slot} does not own`);
     }
+    if(!legacyWorld)require("./m2-work.js").assertWorkSchema(view,snapshot.debug.slot);
     return view;
 }
 
@@ -162,7 +165,7 @@ function lossTransitionAt(kind, drop, records, slot = 0) {
 }
 
 function compareBrowserSnapshotToAudit(snapshot, records, slot, label) {
-    assertPublicProjectionSchema(snapshot);
+    assertPublicProjectionSchema(snapshot,{requireCurrent:true});
     const tick = snapshot.debug.replicated_world.tick;
     assert(lastAuditTick(records) >= tick,
         `trusted economy audit did not complete tick ${tick}; last complete tick=${lastAuditTick(records)}`);
@@ -170,12 +173,13 @@ function compareBrowserSnapshotToAudit(snapshot, records, slot, label) {
     // The audit projection has no MC order field; compare the M2 owner world only.
     const { unit_orders: _orders, ...world } = snapshot.debug.replicated_world;
     const units = world.units.map(({ max_health: _maxHealth, ...unit }) => unit);
-    assertOwnerWorldMatchesAudit({ ...world, units }, authoritative, slot);
+    const work=projectAuditOwnerWork(world,records,slot);
+    assertOwnerWorldMatchesAudit({ ...world, units }, authoritative, slot,work);
     return {
         label,
         slot,
         tick,
-        expected_owner_world: projectAuditOwnerWorld(authoritative, slot),
+        expected_owner_world: {...projectAuditOwnerWorld(authoritative, slot),...work},
         actual_browser_world: JSON.parse(JSON.stringify(snapshot.debug.replicated_world)),
         passed: true,
     };

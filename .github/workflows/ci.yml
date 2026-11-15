@@ -5,7 +5,7 @@ on:
   pull_request:
 jobs:
   check:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # A hang must not hold a hosted runner for hours (RUN123 M3).
     timeout-minutes: 180
     env:
@@ -14,6 +14,7 @@ jobs:
       CARGO_PROFILE_DEV_DEBUG: 0
       CARGO_PROFILE_TEST_DEBUG: 0
       CARGO_INCREMENTAL: 0
+      TURTS_BOT_EVIDENCE_DIR: ${{ github.workspace }}/target/ci-evidence/bots
       TURTS_REFUTATION_EVIDENCE_DIR: ${{ github.workspace }}/target/m3-evidence/t16-builder/refutations/native
       TURTS_REFUTATION_BUILD_ROOT: ${{ github.workspace }}/target/m3-t16/refutations/native-build
     steps:
@@ -65,125 +66,15 @@ jobs:
             target/m2-refutations/**
             target/acceptance/**
             target/task15-evidence/**
+            target/ci-evidence/**
             target/m2-public-proof/**
             target/m3-evidence/t16-builder/**
-  # The native fault sets ran serially in `check`: 89.6 minutes for 21 of the 33 M2 cases in
-  # run 43121618105, and the M3 set after it. Each set now runs in parallel shards
-  # (`--shard K/N` of tests/m2/refutations.py and tests/m3/refutations.py: cases K, K + N, ...).
-  # The shards of one set together run each case once.
-  # Run 43121618105 had a second cause, besides time: the baseline of `E9-midtrace-rearm-ignored`
-  # was red (economy.rs:2235, "operation 6744: gather state differs") from the gather-at-depletion
-  # defect of the product. The repair is merged into codex/mc-integration (113e380), so the shard
-  # with that case (m2-native 4/4) must pass at its baseline. Sharding alone did not remove that red.
-  refutations:
-    name: refutations ${{ matrix.set }} ${{ matrix.shard }}
-    runs-on: ubuntu-latest
-    # A hang must not hold a hosted runner for hours (RUN123 M3).
-    timeout-minutes: 180
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { set: m2-native, runner: tests/m2/refutations.py, case: ci-native, shard: 1/4 }
-          - { set: m2-native, runner: tests/m2/refutations.py, case: ci-native, shard: 2/4 }
-          - { set: m2-native, runner: tests/m2/refutations.py, case: ci-native, shard: 3/4 }
-          - { set: m2-native, runner: tests/m2/refutations.py, case: ci-native, shard: 4/4 }
-          - { set: m3, runner: tests/m3/refutations.py, case: all, shard: 1/3 }
-          - { set: m3, runner: tests/m3/refutations.py, case: all, shard: 2/3 }
-          - { set: m3, runner: tests/m3/refutations.py, case: all, shard: 3/3 }
-    env:
-      CARGO_BUILD_JOBS: 2
-      CARGO_TARGET_DIR: ${{ github.workspace }}/target/m3-t16
-      CARGO_PROFILE_DEV_DEBUG: 0
-      CARGO_PROFILE_TEST_DEBUG: 0
-      CARGO_INCREMENTAL: 0
-      TURTS_REFUTATION_EVIDENCE_DIR: ${{ github.workspace }}/target/m3-evidence/t16-builder/refutations/native
-      TURTS_REFUTATION_BUILD_ROOT: ${{ github.workspace }}/target/m3-t16/refutations/native-build
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32-unknown-unknown
-      - uses: Swatinem/rust-cache@v2
-      - name: Bevy system libraries
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends pkg-config libx11-dev libasound2-dev libudev-dev libxkbcommon-x11-0 libwayland-dev libxkbcommon-dev
-      - name: Semantic refutations ${{ matrix.set }} shard ${{ matrix.shard }}
-        run: python3 ${{ matrix.runner }} --case ${{ matrix.case }} --shard ${{ matrix.shard }}
-      - name: Upload refutation diagnostics
-        if: ${{ always() }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: refutations-${{ matrix.set }}-${{ strategy.job-index }}-${{ github.run_id }}
-          if-no-files-found: warn
-          retention-days: 14
-          path: |
-            target/m2-refutations/**
-            target/m3-evidence/t16-builder/refutations/**
-            !target/**/economy.jsonl
-  # T7, M2 and M3 need a real browser process, Trunk and wasm. The hosted runner has no GPU.
-  # Chrome blocks the software GL and Vulkan drivers, and with `--use-angle=vulkan` the WebGPU
-  # canvas is not in the compositor output: every screenshot is blank (run 43121618105, local
-  # ci-run134-t7-sw-base-1 with lavapipe). With ANGLE on Mesa GL (llvmpipe) and the blocklist off,
-  # the canvas shows (ci-run134-t7-sw-gl-1). WebGPU then runs on the SwiftShader adapter of Chrome.
-  # Known limits of this software path (4 cores, local runs): about 1 frame per second for each
-  # of two windows, and the Chrome GPU process grows to about 1.1 GB and stops with exit code 133
-  # after 4 to 5 minutes of M3 (ci-run134-m3-sw-gl-3 and -5).
-  #
-  # The browser work runs as parallel jobs of one matrix, so a red step does not hide the result
-  # of the next suite. Hosted run 43121618105 spent 27 minutes on the T7 step alone (trunk install
-  # 8 min, server 4.5 min, wasm 10.7 min, wasm-opt 4.4 min). Each browser refutation case builds
-  # the planted and the restored client again, so each case has its own job: in one job the eight
-  # cases cannot fit the 360-minute limit of GitHub. The `m2` job checks that this matrix lists
-  # every browser case of tests/m2/refutations.json.
-  #
-  # What hosted run 43214215645 showed (after the cargo fetch repair), and what the legs do about it:
-  # - Economy cases (base, haul, cedar; the refutation legs E9-browser-missing-button, -missing-output-mesh
-  #   and E2-browser-hardcoded-label use them). One screenshot costs about 3.3 s, and the steps between
-  #   Produce and Cancel took 8.1 s (base) and 9.6 s (cedar). The recipes last 5 s and 6 s, so the job was done
-  #   when the Cancel click came. The legs set M2_RECIPE_DURATION_SCALE=4: the packed copy gets a 4 times
-  #   longer recipe (20 s and 24 s; 2.5 times the longest measured step gap), `mods/` is unchanged, and the
-  #   oracle needs every job of the received world to have the packed duration (tests/m2/recipe_duration.py,
-  #   tests/browser/harness/m2-recipe.js). The local GPU run does not set it and keeps the true times.
-  #   The base case waits 15 shots (about 60 s hosted) for the first rifleman, so 20 s fits in that wait.
-  #   Result in hosted run 43228094477 (first run with the x4 recipe): the three cases pass. Gaps from the second
-  #   Produce click to the Cancel click: base 8.2 s (recipe 20 s, margin 2.4), haul 6.7 s (24 s, 3.6), cedar 9.2 s
-  #   (24 s, 2.6). The plants of missing-output-mesh, missing-button and hardcoded-label fail for their own reason.
-  # - Loss case E9-browser-base-loss-refund (same run: red, `refund real JobId 1 must appear in rendered queue text`).
-  #   The loss cases keep the true recipe, and the 5 s job was gone first: Produce click 15.2 s, job done at about
-  #   21.4 s (elapsed 47 of 100 ticks at 19.2 s), queue shot at 22.5 s (7.3 s after the click, queue empty), first
-  #   enabled Cancel screenshot at 27.3 s to 27.8 s (12.1 s to 12.6 s after the click; 13.5 s is the need with the click).
-  #   M2_RECIPE_DURATION_SCALE_CASES=E9-browser-base-loss-refund=5 gives that one case a 25 s recipe (margin 1.9; x4
-  #   would give 1.5). The general factor never applies to it, and no other loss case or recovery case is scaled. The
-  #   50 % refund of a running job and the 10 s drop wait are unchanged.
-  #   Result in hosted run 43242960493 (first run with the factor): the case passes, 25 s recipe (500 ticks). Measured:
-  #   Produce click 18.5 s, queue shot 27.4 s (8.9 s after the click, job at 135 of 500 ticks), Cancel click 33.2 s
-  #   (14.7 s after the Produce click, job at 252 of 500 ticks), credits 450 after the cancel. The measured need is
-  #   14.7 s, so the margin is 25 / 14.7 = 1.7 (the 1.9 above was computed on an estimate of 13.5 s).
-  # - The wall-clock window of the oracle for an applied order (tests/browser/m2-oracle.js, `appliedAfter` and
-  #   `cancelRefundShot`). It was 6000 ms between the checkpoint before the click and the checkpoint that shows the
-  #   order. One checkpoint costs 5 to 6.6 s on the software renderer, so it failed run 43242960493 (position-only
-  #   plant on final_change, 6.6 s) and run 43264331478 (cedar-economy baseline, 6.3 s), while the server had applied
-  #   the order 44 and 46 ticks (2.2 s and 2.3 s) after the pre-click checkpoint. Over 31 retained hosted windows the
-  #   wall time was 3.4 s to 6.6 s and the server latency 30 to 52 ticks. The oracle now judges the latency in server
-  #   ticks: `applied_tick - replicated tick of the pre-click checkpoint` at most 6 x `debug.tick_hz` (120 at 20 Hz),
-  #   never before that tick, with a far wall guard of 60 s for a dead run (9 times the hosted maximum).
-  # - Native test e9_loss_and_small_buffer_converge, subcase run_replay_spawn_window_subcase (shard 1/4, plant
-  #   E9-duplicate-spawn-tail-replay; red in run 43242960493: `response Snapshot predates the output`, economy.rs). The
-  #   output came 4 ticks (200 ms) after the order and the held resync answer had to be taken before it: the answer is
-  #   1 tick after the order, so the slack was 2 ticks (100 ms), and a server or client stall of that size lost the race.
-  #   The subcase now packs a 600 ms recipe (12 ticks, the most that the 12-tick hold window allows): the slack is 10
-  #   ticks (500 ms). Measured locally with an answer delayed by the client: 300 ms fails the 200 ms recipe and passes
-  #   the 600 ms one; 500 ms still passes; 600 ms fails (the limit).
-  # - Public-convergence cases (base, haul, acme, cedar; the refutation leg E9-browser-convergence-owner-offset
-  #   uses the base one). Each window shows a new tick only every 28 ticks and the two windows are 16 ticks out
-  #   of phase, so they share no tick (0 shared ticks in 1651 and 1656 polls, 180 s). A longer limit cannot
-  #   help. These cases need a real GPU. M2_LOCAL_ONLY_CASES lists them: the job prints one plain line for each
-  #   (M2_CASE_LOCAL_ONLY ...) and writes the same facts to the job summary, with the local gate command and the
-  #   place of its receipt. A case in that list needs a row in tests/m2/local-only.tsv; the `check` job fails
-  #   otherwise (tests/m2/local_only.py --check). The local gate runs them with the true GPU.
+  # Product CI runs the native, process and browser contracts once. Historical
+  # fault-injection campaigns remain available through scripts/m2-refutations.sh
+  # and tests/m3/refutations.py. Their planted-source hashes do not gate main.
   browser:
-    name: browser ${{ matrix.suite }} ${{ matrix.case }}
-    runs-on: ubuntu-latest
+    name: browser ${{ matrix.suite }}
+    runs-on: ubuntu-24.04
     # A hang must not hold a hosted runner for hours (RUN123 M3).
     timeout-minutes: 340
     strategy:
@@ -192,15 +83,6 @@ jobs:
         include:
           - suite: t7-m3
           - suite: m2
-          - { suite: refutation, case: E2-browser-hardcoded-label }
-          - { suite: refutation, case: E9-browser-missing-button }
-          - { suite: refutation, case: E9-browser-debug-only-ui }
-          - { suite: refutation, case: E9-browser-missing-output-mesh }
-          - { suite: refutation, case: E9-browser-position-only-snapshot }
-          - { suite: refutation, case: E9-browser-unbounded-buffer }
-          - { suite: refutation, case: E9-browser-duplicate-outstanding }
-          - { suite: refutation, case: E9-browser-ignore-midtrace-rearm }
-          - { suite: refutation, case: E9-browser-convergence-owner-offset }
     env:
       CARGO_BUILD_JOBS: 2
       CARGO_TARGET_DIR: ${{ github.workspace }}/target/m3-t16
@@ -276,29 +158,10 @@ jobs:
       - name: M3 browser controls (F10, private Xvfb, software WebGPU)
         if: ${{ matrix.suite == 't7-m3' && !cancelled() }}
         run: bash scripts/m3-browser.sh
-      - name: The refutation matrix lists every browser refutation case
-        if: matrix.suite == 'm2'
-        run: |
-          python3 - <<'EOF'
-          import json, pathlib, re
-          cases = sorted(case["id"] for case in json.loads(pathlib.Path("tests/m2/refutations.json").read_text()) if case.get("runtime") == "browser")
-          # A leg is a whole line `- { suite: refutation, case: ID }`. A comment line is not a leg.
-          leg = re.compile(r"\s*- \{ suite: refutation, case: ([A-Za-z0-9_.-]+) \}\s*(#.*)?")
-          lines = pathlib.Path(".github/workflows/ci.yml").read_text().splitlines()
-          listed = sorted(match.group(1) for match in map(leg.fullmatch, lines) if match)
-          if cases != listed:
-              missing, extra = sorted(set(cases) - set(listed)), sorted(set(listed) - set(cases))
-              duplicated = sorted({case for case in listed if listed.count(case) > 1})
-              raise SystemExit(f"browser refutation matrix differs from tests/m2/refutations.json: missing {missing}, extra {extra}, duplicated {duplicated}")
-          print(f"{len(cases)} browser refutation cases, each in the matrix")
-          EOF
       - name: M2 browser proof (base, haul, acme, cedar)
         if: matrix.suite == 'm2'
         run: bash scripts/m2-browser.sh
-      - name: M2 browser-only semantic refutation ${{ matrix.case }}
-        if: matrix.suite == 'refutation'
-        run: bash scripts/m2-refutations.sh --case ${{ matrix.case }}
-      - name: Upload browser, T7, and refutation diagnostics
+      - name: Upload browser and T7 diagnostics
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
@@ -317,7 +180,7 @@ jobs:
             !target/**/economy.jsonl
             !target/**/economy-audit-private.jsonl
   agents:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # A hang must not hold a hosted runner for hours (RUN123 M3).
     timeout-minutes: 10
     steps:

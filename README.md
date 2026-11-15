@@ -60,7 +60,7 @@ The public Skirmish win and Stockyard browser checks pass. All three cold-play p
 The isolated checker reports PARTIAL-PASS with manual/reference checks open. The full fresh-agent and manual readiness procedure was not repeated.
 The two-human and Internet modes retain their tested launch flags. Their full matches were not repeated for SDK15.
 Tested milestones are merged and pushed to main under the CEO's standing approval.
-CI keeps product and test-tool checks. The old spec registry, browser role-header inventory, and planted-fault anchor checks no longer block delivery.
+CI keeps native, WebAssembly, process, browser, and test-tool checks. Historical fault campaigns remain manual. The SDK15 browser oracle now checks owner work and repair data against audit history. The [CI repair report](docs/reports/2026-11-15-ci-product-checks.md) records local validation and limits. The corrected hosted workflow has not run yet. Prior hosted browser runner losses remain unexplained.
 See [working rules](AGENTS.md) for parallel delivery, review, and milestone integration.
 
 The older Forge industrial demonstration remains available below. It proves extraction, conveyors, inserters, recipes, research, and ammunition combat through the public mod API. Its two-slot and restart restrictions describe that demonstration.

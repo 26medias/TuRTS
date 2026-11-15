@@ -535,6 +535,24 @@ fn ordinary_enemy_weapon_losses_restore_worker_and_supply_without_overlapping_pa
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../mods/stockyard");
     let archive = PackageArchive::parse(&pack_dir(&root).unwrap()).unwrap();
     let mut catalog = archive.content().unwrap();
+    // Keep optional expansion active without pre-queuing the worker recovery.
+    // A pending opening worker already satisfies the recovery minimum, so the
+    // controller must not submit a duplicate recovery task for that same role.
+    let expansion = catalog
+        .bots
+        .get_mut(&ContentId::parse("stockyard:opponent").unwrap())
+        .unwrap()
+        .knowledge
+        .opening
+        .iter_mut()
+        .find(|goal| goal.key == "expand_workers")
+        .unwrap();
+    expansion.key = "expand_ranged_fixture".into();
+    expansion.action = turts_mod_api::BotGoalAction::EnsureUnits {
+        role: "ranged".into(),
+        count: 6,
+        recipe: "ranged".into(),
+    };
     let mut raider = catalog.units[&ContentId::parse("stockyard:soldier").unwrap()].clone();
     raider.id = ContentId::parse("stockyard:raider").unwrap();
     raider.health.as_mut().unwrap().max = 1_000_000;
@@ -782,8 +800,12 @@ fn ordinary_enemy_weapon_losses_restore_worker_and_supply_without_overlapping_pa
                 && unit.content_id == "stockyard:tower"
                 && !victims.contains(&unit.unit_id)));
             assert!(
-                owned_workers < 6,
-                "optional opening worker expansion is still unfinished when recovery succeeds"
+                view.units
+                    .iter()
+                    .filter(|unit| unit.owner_slot == 1 && unit.content_id == "stockyard:soldier")
+                    .count()
+                    < 6,
+                "optional opening ranged expansion is still unfinished when recovery succeeds"
             );
             restored = true;
             break;
