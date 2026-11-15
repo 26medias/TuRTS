@@ -107,6 +107,23 @@ fn prepare(
     app
 }
 
+// Defensive integrity cases only. The loader correctly rejects these coincident authored maps.
+// Keep ordinary placement-ID inversion scenes valid and free of runtime injection.
+fn synthetic_positions(app: &mut bevy_app::App, positions: &[turts_sim::Vec2]) {
+    let ids = turts_sim::audit_state(app.world_mut())
+        .raw_units
+        .iter()
+        .map(|unit| unit.unit_id)
+        .collect::<Vec<_>>();
+    assert_eq!(ids.len(), positions.len());
+    for (unit, position) in ids.into_iter().zip(positions) {
+        let entity = turts_sim::unit_entity(app.world(), unit).unwrap();
+        app.world_mut()
+            .get_mut::<turts_sim::Position>(entity)
+            .unwrap()
+            .0 = *position;
+    }
+}
 fn issue(app: &mut bevy_app::App, units: Vec<u32>, construction: bool) -> turts_sim::CommandResult {
     let before = turts_sim::audit_state(app.world_mut());
     let definition = before
@@ -279,8 +296,9 @@ fn exact_source_ties_refuse_every_eligible_producer_without_spending() {
     let mut app = prepare(
         PaymentPolicy::ChargeOnQueue,
         false,
-        vec![placement("depot", 0, 8.0), placement("depot", 0, 8.0)],
+        vec![placement("depot", 0, 8.0), placement("depot", 0, 40.0)],
     );
+    synthetic_positions(&mut app, &[turts_sim::Vec2::new(8.0, 8.0); 2]);
     let before = turts_sim::audit_state(app.world_mut());
     let subjects = before
         .raw_units
@@ -309,10 +327,11 @@ fn foreign_and_incapable_coincident_members_do_not_suppress_a_valid_producer() {
         false,
         vec![
             placement("depot", 1, 8.0),
-            placement("worker", 0, 8.0),
-            placement("depot", 0, 8.0),
+            placement("worker", 0, 24.0),
+            placement("depot", 0, 40.0),
         ],
     );
+    synthetic_positions(&mut app, &[turts_sim::Vec2::new(8.0, 8.0); 3]);
     let before = turts_sim::audit_state(app.world_mut());
     let own = before
         .raw_units
@@ -390,14 +409,22 @@ fn grouped_construction_placement_and_payment_follow_physical_builder_priority()
 
 #[test]
 fn cot_signed_zero_source_ties_stay_adjacent_and_never_take_shared_funds() {
-    let negative = placement("depot", 0, -0.0);
-    let mut middle = placement("depot", 0, 0.0);
-    middle.pos.y = 4.0;
-    let positive = placement("depot", 0, 0.0);
     let mut app = prepare(
         PaymentPolicy::ChargeOverTime,
         false,
-        vec![negative, middle, positive],
+        vec![
+            placement("depot", 0, 8.0),
+            placement("depot", 0, 24.0),
+            placement("depot", 0, 40.0),
+        ],
+    );
+    synthetic_positions(
+        &mut app,
+        &[
+            turts_sim::Vec2::new(-0.0, 8.0),
+            turts_sim::Vec2::new(0.0, 4.0),
+            turts_sim::Vec2::new(0.0, 8.0),
+        ],
     );
     let before = turts_sim::audit_state(app.world_mut());
     assert!(
