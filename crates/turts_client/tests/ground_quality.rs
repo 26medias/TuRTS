@@ -139,3 +139,64 @@ fn absent_overlay_uses_the_original_standard_material() {
         0
     );
 }
+
+#[test]
+fn authored_fog_without_overlay_uses_masked_ground_from_the_selected_root_map() {
+    use turts_client::acquire::{VerifiedRootMod, build_acquired_with_root};
+    use turts_client::ground::GroundMaterial;
+    let load = |name: &str| {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../mods")
+            .join(name);
+        turts_mod_runtime::archive::PackageArchive::parse(
+            &turts_mod_runtime::pack::pack_dir(&path).unwrap(),
+        )
+        .unwrap()
+    };
+    let fog = load("visibility_probe");
+    let flat = load("skirmish");
+    let root = |archive: &turts_mod_runtime::archive::PackageArchive| VerifiedRootMod {
+        id: archive.manifest.id.clone(),
+        version: archive.manifest.version.to_string(),
+    };
+    let flat_root = root(&flat);
+    let fog_root = root(&fog);
+    let archives = [fog, flat];
+    let selected_flat =
+        build_acquired_with_root(&archives, String::new(), Some(flat_root)).unwrap();
+    assert!(
+        !selected_flat.presentation.requires_fog,
+        "an unrelated fog package must not change an AllVisible root map"
+    );
+    let acquired = build_acquired_with_root(&archives, String::new(), Some(fog_root)).unwrap();
+    assert!(acquired.presentation.requires_fog);
+    assert!(
+        acquired.presentation.ground.is_none(),
+        "the actual fog fixture must exercise the untextured, no-overlay path"
+    );
+    let mut app = App::new();
+    app.insert_resource(Phase::Joined { slot: 0 })
+        .insert_resource(AcquiredPackages(acquired))
+        .init_resource::<Assets<Mesh>>()
+        .init_resource::<Assets<Image>>()
+        .init_resource::<Assets<StandardMaterial>>()
+        .init_resource::<Assets<GroundMaterial>>()
+        .init_resource::<GraphicsSettings>()
+        .init_resource::<ModelState>()
+        .add_systems(Update, setup_scene);
+    app.update();
+    assert_eq!(
+        app.world_mut()
+            .query::<&MeshMaterial3d<GroundMaterial>>()
+            .iter(app.world())
+            .count(),
+        1
+    );
+    assert_eq!(
+        app.world_mut()
+            .query::<&MeshMaterial3d<StandardMaterial>>()
+            .iter(app.world())
+            .count(),
+        0
+    );
+}

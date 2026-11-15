@@ -4,8 +4,8 @@
 //! visibility filter is in one place: [`unit_exists`] and the owner filters below (design 6.8).
 //! AllVisible preserves the old projection. Authored fog sanitizes the view before this writer.
 //!
-//! Removal rule (design 6.8): a record in a delta never names a unit that the same delta
-//! removes. `unit_orders` records and `orders_cleared` skip a removed unit; the weapon record
+//! Removal rule (design 6.8): a final health update can name a unit removed in the same delta.
+//! Other records omit removed units. `unit_orders` and `orders_cleared` skip them; the weapon record
 //! drops a `last_target` that does not exist and is resent when its target leaves
 //! ([`weapon_records`]); the site, job and queue writers skip a removed owner.
 

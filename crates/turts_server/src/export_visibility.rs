@@ -219,7 +219,8 @@ impl PermittedBaseline {
             .copied()
             .filter(|id| old_units.contains_key(id))
             .filter(|id| {
-                witnessed.contains(id)
+                (self.knowledge.is_none() && next.knowledge.is_none())
+                    || witnessed.contains(id)
                     || old_units
                         .get(id)
                         .is_some_and(|unit| unit.owner_slot.0 == slot.0)
@@ -323,6 +324,19 @@ impl PermittedBaseline {
                 },
             },
         };
+        // Completed snapshots omit dead units. Keep their final committed health update in
+        // this same removal patch so the client can retain the killing hit. The removal set
+        // already proves ownership, an event-phase witness, or explicit AllVisible policy.
+        if !removed.0.is_empty() && !batch.healths.is_empty() {
+            state.healths.extend(
+                batch
+                    .healths
+                    .iter()
+                    .filter(|row| removed.contains(&row.unit))
+                    .map(super::health_state),
+            );
+            state.healths.sort_by_key(|row| row.unit.0);
+        }
         // Authorize events with their phase witness, never with the later hidden world position.
         let facts_by_unit = FlatFacts::new(event_facts);
         state.records.effects.retain(|effect| match effect {
@@ -720,6 +734,64 @@ mod tests {
         assert!(state.records.effects.is_empty());
         assert!(state.removed.is_empty());
     }
+    #[test]
+    fn killing_health_is_preserved_only_for_authorized_live_removals() {
+        use turts_sim::economy::views_m3::RawHealthAudit;
+        let batch = CommittedTick {
+            tick: 2,
+            removed: vec![2, 3],
+            healths: vec![
+                RawHealthAudit {
+                    unit: 2,
+                    current: 0,
+                },
+                RawHealthAudit {
+                    unit: 3,
+                    current: 0,
+                },
+            ],
+            ..Default::default()
+        };
+        for restricted in [false, true] {
+            let mut old = snapshot(1, true);
+            let mut next = snapshot(2, false);
+            if !restricted {
+                old.knowledge = None;
+                next.knowledge = None;
+            }
+            let payload = if restricted {
+                old.patch(&next, &batch, SlotId(0), &[fact(2, 2), fact(3, 2)])
+            } else {
+                old.all_visible_patch(&next, &batch, SlotId(0), &basis(2))
+            };
+            let StateTransactionPayload::Patch { state, .. } = payload else {
+                panic!()
+            };
+            assert_eq!(state.removed, vec![wire::UnitId(2)]);
+            assert_eq!(
+                state.healths,
+                vec![wire::HealthRecord {
+                    unit: wire::UnitId(2),
+                    current: 0
+                }],
+                "the known target retains its final health; a never-live transient does not create a health row",
+            );
+        }
+        let StateTransactionPayload::Patch { state, .. } =
+            snapshot(1, true).patch(&snapshot(2, false), &batch, SlotId(0), &[])
+        else {
+            panic!()
+        };
+        assert!(
+            state.removed.is_empty(),
+            "unwitnessed foreign death is not public"
+        );
+        assert!(
+            state.healths.is_empty(),
+            "hidden death must not leak through health"
+        );
+    }
+
     #[test]
     fn all_visible_cosmetics_keep_truthful_old_and_birth_stamps_and_omit_unknown_handles() {
         use turts_sim::economy::events::EffectRow;

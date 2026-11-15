@@ -61,12 +61,18 @@ def target_directory(root: Path) -> Path:
     local_cache = target.parent == root / "target" and (
         target.name.startswith("mc-") or target.name == "m3-t16"
     )
-    active_source = target / ".codex-active-worktree"
+    active_sources = [
+        target / ".codex-active-worktree.native-default",
+        target / ".codex-active-worktree.host",
+    ]
     managed_shared_cache = (
         target.name.startswith("mc-")
         and (target / ".codex-worktree-build.lock").is_file()
-        and active_source.is_file()
-        and Path(active_source.read_text().strip()).resolve() == root.resolve()
+        and all(
+            source.is_file()
+            and Path(source.read_text().strip()).resolve() == root.resolve()
+            for source in active_sources
+        )
     )
     if not (local_cache or managed_shared_cache):
         raise ValueError("native HD1 target must be a local CI cache or this source's wrapper-managed shared cache")

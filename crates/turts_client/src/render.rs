@@ -347,6 +347,7 @@ pub fn setup_scene(
     settings: Res<crate::models::GraphicsSettings>,
     mut model_state: ResMut<crate::models::ModelState>,
     mut layered_materials: ResMut<Assets<crate::ground::GroundMaterial>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
     mut done: Local<bool>,
 ) {
     if *done || !matches!(*phase, Phase::Joined { .. }) {
@@ -461,7 +462,7 @@ pub fn setup_scene(
                 },
             })),
         ));
-    } else {
+    } else if acquired.0.presentation.requires_fog {
         entity.insert(MeshMaterial3d(layered_materials.add(
             crate::ground::GroundMaterial {
                 base: ground_material,
@@ -473,6 +474,8 @@ pub fn setup_scene(
                 },
             },
         )));
+    } else {
+        entity.insert(MeshMaterial3d(materials.add(ground_material)));
     }
 }
 
@@ -574,6 +577,9 @@ pub fn sync_units(
                 && at > combat.now
             {
                 let remove_model = animations.get(entity).is_err();
+                if let Some(pose) = combat.authorized_death_pose(unit_id) {
+                    commands.entity(entity).insert(pose);
+                }
                 commands
                     .entity(entity)
                     .remove::<PresentedUnit>()
@@ -590,6 +596,12 @@ pub fn sync_units(
             {
                 animation.dead = true;
                 animation.current = None;
+                if let Some(pose) = combat
+                    .as_deref()
+                    .and_then(|fx| fx.authorized_death_pose(unit_id))
+                {
+                    commands.entity(entity).insert(pose);
+                }
                 let ground_y = shown.get(entity).map_or(0., |(_, _, t)| t.translation.y);
                 let body_serial = if let Some(serial) = serial.as_deref_mut() {
                     serial.0 += 1;

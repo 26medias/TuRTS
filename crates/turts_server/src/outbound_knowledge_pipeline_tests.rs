@@ -1,4 +1,6 @@
 //! Frozen SV4 transport workload. All packet and message acknowledgements use Lightyear.
+#![cfg(test)]
+
 use super::*;
 use lightyear::link::recv_payload_from_bytes;
 use lightyear::prelude::server::{ClientOf, ServerPlugins};

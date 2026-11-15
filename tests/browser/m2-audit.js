@@ -112,6 +112,8 @@ function projectAuditOwnerWorld(state, slot) {
     }));
     return {
         tick: world.tick,
+        // These M2 packages use AllVisible. Fog data must fail exact comparison.
+        knowledge: null,
         units: sortBy(units, (item) => String(item.unit_id).padStart(12, "0")),
         nodes: sortBy(nodes, (item) => String(item.id).padStart(12, "0")),
         economy: {

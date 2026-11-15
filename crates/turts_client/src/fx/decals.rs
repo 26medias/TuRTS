@@ -84,6 +84,7 @@ mod tests {
             .resource_mut::<emitters::Emitters>()
             .decals
             .push_back(emitters::Decal {
+                authorized_event: false,
                 id: 1,
                 starts: 0.5,
                 until: 1.5,

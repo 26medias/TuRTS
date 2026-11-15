@@ -278,7 +278,7 @@ fn t2c_unknown_names_print_the_allowed_names_and_the_file_once() {
     assert_eq!(
         text,
         "acme/units/scout.ron: unknown field `movenment` at line 1 column 62; did you mean `movement`? \
-         (allowed: id, name, footprint, movement, inventory, gatherer, drop_off, producer, output_inventory, extractor, conveyor, inserter, machine, research, health, weapon, removal, armour, acquire, provides, consumes, income, spawn_order, constructor, placement, build_area, repairer)"
+         (allowed: vision, id, name, footprint, movement, inventory, gatherer, drop_off, producer, output_inventory, extractor, conveyor, inserter, machine, research, health, weapon, removal, armour, acquire, provides, consumes, income, spawn_order, constructor, placement, build_area, repairer)"
     );
     assert_eq!(text.matches("units/scout.ron").count(), 1, "{text}");
 

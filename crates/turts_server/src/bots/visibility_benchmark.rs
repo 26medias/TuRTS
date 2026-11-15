@@ -1,5 +1,7 @@
 //! SV7: frozen real simulation workload, with atomic human and public bot consumers.
 //! The short driver is diagnostic. Only the fixed 1,000-interval driver is acceptance.
+#![cfg(test)]
+
 use super::*;
 use lightyear::transport::plugin::TransportSystems;
 use lightyear::{

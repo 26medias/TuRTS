@@ -179,6 +179,7 @@ fn parse_ron_rewrites_errors_without_type_names() {
     assert_eq!(
         error.allowed,
         Some(vec![
+            "vision".to_string(),
             "id".to_string(),
             "name".to_string(),
             "footprint".to_string(),

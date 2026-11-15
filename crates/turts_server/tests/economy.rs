@@ -2398,6 +2398,8 @@ fn owner_report_projection_from_audit(
         "unit_orders": snapshot.unit_orders,
         "progress":progress,
         "repairs":repairs,
+        // These M2 fixtures use AllVisible and have no fog knowledge.
+        "knowledge": serde_json::Value::Null,
     })
 }
 
@@ -2412,6 +2414,7 @@ fn owner_report_keeps_sdk14_progress_and_repair_families_for_legacy_packages() {
             serde_json::json!({"construction_queues":[],"jobs":[],"sites":[]})
         );
         assert_eq!(expected["repairs"], serde_json::json!([]));
+        assert_eq!(expected.get("knowledge"), Some(&serde_json::Value::Null));
     }
 }
 
