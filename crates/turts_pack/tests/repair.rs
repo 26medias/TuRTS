@@ -581,3 +581,142 @@ fn public_creation_order_does_not_rank_repair_funding_winners() {
         );
     }
 }
+
+#[test]
+fn an_accepted_legacy_move_replaces_automatic_repair_motion() {
+    let mut fixture = Fixture::new(20);
+    fixture.repairer().auto_range = Some(12.0);
+    fixture.repairer().rate_per_second = 20;
+    fixture.repairer().cost.clear();
+    let mut app = fixture.app();
+    let source = id(&app, "repairer");
+    let target = damage_once(&mut app);
+    app.update();
+    let before = position(&mut app, source);
+    let result = turts_sim::apply_command(
+        app.world_mut(),
+        &Command {
+            slot: SlotId(0),
+            seq: 10,
+            kind: CommandKind::MoveTo {
+                unit_ids: vec![source],
+                target: Vec2::new(6.0, 12.0),
+            },
+        },
+    );
+    assert!(result.outcome.is_ok());
+    app.update();
+    let after = position(&mut app, source);
+    assert!(
+        after.x < before.x && after.y > before.y,
+        "legacy player movement wins over the old repair approach"
+    );
+    assert_eq!(health(&mut app, target), 10);
+    for _ in 0..140 {
+        app.update();
+    }
+    assert!(
+        health(&mut app, target) > 10,
+        "automation resumes after explicit movement finishes"
+    );
+}
+
+#[test]
+fn a_queued_repair_waits_for_the_current_move_then_approaches_its_target() {
+    let mut fixture = Fixture::new(20);
+    fixture.repairer().rate_per_second = 20;
+    fixture.repairer().cost.clear();
+    let mut app = fixture.app();
+    let source = id(&app, "repairer");
+    let target = damage_once(&mut app);
+    let waypoint = Vec2::new(6.0, 10.0);
+    accept(issue(
+        &mut app,
+        source,
+        "move",
+        OrderTargetSim::Point(waypoint),
+        QueueMode::Replace,
+    ));
+    accept(issue(
+        &mut app,
+        source,
+        "repair",
+        OrderTargetSim::Unit(target),
+        QueueMode::Append,
+    ));
+    let mut reached = false;
+    for _ in 0..160 {
+        app.update();
+        reached |= position(&mut app, source).distance(waypoint) <= 0.0001;
+        if health(&mut app, target) > 10 {
+            assert!(reached, "repair does not bypass queued movement");
+        }
+    }
+    assert!(reached);
+    assert_eq!(health(&mut app, target), 100);
+}
+
+#[test]
+fn an_appended_hold_suppresses_automation_after_explicit_repair_finishes() {
+    let mut fixture = Fixture::new(20);
+    fixture.repairer().rate_per_second = 2000;
+    fixture.repairer().cost.clear();
+    fixture.repairer().auto_range = Some(12.0);
+    fixture.map.placements[0].pos.x = 8.25;
+    let mut app = fixture.app();
+    let source = id(&app, "repairer");
+    let target = damage_once(&mut app);
+    accept(issue(
+        &mut app,
+        source,
+        "repair",
+        OrderTargetSim::Unit(target),
+        QueueMode::Replace,
+    ));
+    accept(issue(
+        &mut app,
+        source,
+        "hold",
+        OrderTargetSim::None,
+        QueueMode::Append,
+    ));
+    app.update();
+    app.update();
+    assert_eq!(health(&mut app, target), 100);
+    let enemy = id(&app, "enemy");
+    assert!(
+        turts_sim::apply_command(
+            app.world_mut(),
+            &Command {
+                slot: SlotId(1),
+                seq: 11,
+                kind: CommandKind::SetEnabled {
+                    unit_id: enemy,
+                    enabled: true
+                }
+            }
+        )
+        .outcome
+        .is_ok()
+    );
+    let mut hit = false;
+    for _ in 0..120 {
+        app.update();
+        if health(&mut app, target) == 10 {
+            hit = true;
+            break;
+        }
+    }
+    assert!(
+        hit,
+        "ordinary weapon damages the unit while the repairer holds"
+    );
+    for _ in 0..3 {
+        app.update();
+    }
+    assert_eq!(
+        health(&mut app, target),
+        10,
+        "Hold prevents automatic repair"
+    );
+}

@@ -232,6 +232,7 @@ pub(crate) fn run_combat(world: &mut World) {
         let target = if suppressed_by_fire_policy
             || suppressed_by_engage
             || !power::weapon_enabled(world, weapon)
+            || super::repair::active_action(world, weapon)
         {
             None
         } else {
@@ -263,7 +264,8 @@ pub(crate) fn run_combat(world: &mut World) {
                     .is_some_and(|state| state.cooldown <= 1)
             })
             .map(|target| resolve_hit(world, target, &parameters));
-        let fire_enabled = power::weapon_enabled(world, weapon);
+        let fire_enabled =
+            power::weapon_enabled(world, weapon) && !super::repair::active_action(world, weapon);
         let _ = transaction::transact(world, |tx| {
             tx.mark_m3();
             let mut state = tx.weapon_state(weapon)?;

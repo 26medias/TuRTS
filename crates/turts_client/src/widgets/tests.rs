@@ -2381,10 +2381,11 @@ fn repair_hud_uses_owner_actions_and_clears_stale_names() {
                 ));
             }
         }
+        snapshot.tick += 1;
     }
     let clear = WorldDelta {
-        tick: 11,
-        base_tick: 10,
+        tick: snapshot.tick,
+        base_tick: snapshot.tick - 1,
         records: DeltaRecords {
             repairs_cleared: vec![UnitId(1)],
             ..Default::default()

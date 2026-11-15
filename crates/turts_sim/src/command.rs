@@ -210,6 +210,14 @@ pub fn apply_command(world: &mut World, command: &Command) -> CommandResult {
         return crate::economy::transaction::capture_command(world, command, |world| {
             let (outcome, units) =
                 apply_move_to_per_unit(world, command.slot, command.seq, unit_ids, *target);
+            for &source in &units.accepted {
+                crate::orders::note_accepted_player_order(
+                    world,
+                    source,
+                    turts_mod_api::Behaviour::Move,
+                    crate::QueueMode::Replace,
+                );
+            }
             CommandResult {
                 slot: command.slot,
                 seq: command.seq,
@@ -253,11 +261,11 @@ pub fn apply_command(world: &mut World, command: &Command) -> CommandResult {
         });
     }
     crate::economy::transaction::capture_command(world, command, |world| {
-        apply_command_inner(world, command)
+        apply_command_inner(world, command, true)
     })
 }
 
-fn apply_command_inner(world: &mut World, command: &Command) -> CommandResult {
+fn apply_command_inner(world: &mut World, command: &Command, player: bool) -> CommandResult {
     let outcome = match &command.kind {
         CommandKind::MoveTo { unit_ids, target } => {
             apply_legacy_command_move_to(world, command.slot, unit_ids, *target)
@@ -313,6 +321,38 @@ fn apply_command_inner(world: &mut World, command: &Command) -> CommandResult {
         }
         CommandKind::Order(_) => Err(RejectReason::NotApplicable),
     };
+    if outcome.is_ok() {
+        use turts_mod_api::Behaviour;
+        let (sources, behaviour) = match &command.kind {
+            CommandKind::MoveTo { unit_ids, .. } => (unit_ids.clone(), Some(Behaviour::Move)),
+            CommandKind::Gather { unit_id, .. } => (vec![*unit_id], Some(Behaviour::Gather)),
+            CommandKind::Produce { producer_id, .. } => {
+                (vec![*producer_id], Some(Behaviour::Produce))
+            }
+            CommandKind::CancelProduction { producer_id, .. } => {
+                (vec![*producer_id], Some(Behaviour::CancelProduction))
+            }
+            CommandKind::Remove { unit_id } => (vec![*unit_id], Some(Behaviour::Remove)),
+            CommandKind::SetEnabled { unit_id, enabled } => {
+                (vec![*unit_id], Some(Behaviour::SetEnabled(*enabled)))
+            }
+            CommandKind::Order(_) => (Vec::new(), None),
+        };
+        for source in sources {
+            if player {
+                if let Some(behaviour) = behaviour {
+                    crate::orders::note_accepted_player_order(
+                        world,
+                        source,
+                        behaviour,
+                        crate::QueueMode::Replace,
+                    );
+                }
+            } else if matches!(behaviour, Some(Behaviour::Move | Behaviour::Gather)) {
+                crate::economy::repair::order_changed(world, source);
+            }
+        }
+    }
     CommandResult {
         slot: command.slot,
         seq: command.seq,
@@ -439,7 +479,7 @@ pub(crate) fn apply_legacy_unit(
     slot: SlotId,
     kind: CommandKind,
 ) -> Result<Applied, RejectReason> {
-    apply_command_inner(world, &Command { slot, seq: 0, kind }).outcome
+    apply_command_inner(world, &Command { slot, seq: 0, kind }, false).outcome
 }
 
 /// Freeze the admitted batch, then apply commands in its original order.

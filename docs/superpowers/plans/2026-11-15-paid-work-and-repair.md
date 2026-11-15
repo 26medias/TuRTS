@@ -12,12 +12,14 @@ Keep this plan as the work list. Do not create lane gates or another tracker.
 
 | Owner | Responsibility and file boundary | Acceptance |
 | --- | --- | --- |
-| Root | Public API/protocol contracts, runtime resolution/validation, shared transaction/accounting hooks, removal/refunds, common order types/dispatch, acquisition/combat integration, audit validation, final integration | PW1, PW6, shared IO1, IO3 |
+| Root | Public API/protocol contracts, runtime resolution/validation, shared transaction/accounting hooks, removal/refunds, acquisition/combat integration, audit validation, final integration | PW1, PW6, shared IO1, IO3 |
 | Paid work child | `economy/production.rs`, `construction.rs`, new focused paid-work module if needed, and `turts_pack/tests/paid_work.rs` | PW2–PW5 |
-| Repair child | `economy/repair.rs`, repair order-behavior helper, its focused tests, and `turts_pack/tests/repair.rs` | RP1–RP4 |
+| Repair child | `economy/repair.rs`, authoritative order apply/run/writer/mod and queued-Repair start, legacy `command.rs` cleanup, focused tests, and `turts_pack/tests/repair.rs` | RP1–RP4 |
 | Client/acceptance child | Server repair export adapter, client replica/store, public HUD accessors/predicates, targeted protocol/replica tests, and browser fixture/driver | IO1 client/export, IO2 |
 
-Root owns shared `orders/{mod,apply,writer}.rs`, `plugin.rs`, transaction files, API/runtime modules, and audit consumers.
+Root owns `plugin.rs`, boot/views, transaction files, API/runtime modules, combat/acquisition integration, and audit consumers.
+The repair owner also owns `orders/{mod,apply,run,writer}.rs`, the narrow queued-Repair start branch, and `command.rs`.
+This ownership change removes the integration bottleneck without changing the approved behavior.
 Children publish required hooks to root instead of editing those files independently.
 Root remains an implementer. Implement shared transactions and destruction while the children build their assigned capabilities.
 

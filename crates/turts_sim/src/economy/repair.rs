@@ -285,7 +285,7 @@ fn in_reach(world: &World, source: u32, target: u32, reach: f32) -> bool {
     })
 }
 
-fn clear_motion(world: &mut World, source: u32) {
+pub(crate) fn clear_motion(world: &mut World, source: u32) {
     let Some(entity) = unit_entity(world, source) else {
         return;
     };
@@ -617,6 +617,15 @@ pub(crate) fn run_repair(world: &mut World) {
             continue;
         }
         let orders = world.get::<UnitOrders>(entity);
+        if world
+            .get_resource::<crate::orders::PendingMovementOrders>()
+            .is_some_and(|pending| pending.pending_member_counts.contains_key(&source))
+        {
+            if active_action(world, source) {
+                order_changed(world, source);
+            }
+            continue;
+        }
         if orders
             .and_then(|orders| orders.current.as_ref())
             .is_some_and(|order| order.behaviour == Behaviour::Repair)

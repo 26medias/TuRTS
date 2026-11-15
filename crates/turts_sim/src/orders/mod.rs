@@ -9,7 +9,9 @@ mod run;
 mod tests;
 pub mod writer;
 
-pub(crate) use apply::{apply_order, clear_replaced_movement, unit_order_capable};
+pub(crate) use apply::{
+    apply_order, clear_replaced_movement, note_accepted_player_order, unit_order_capable,
+};
 pub use pending::{MovementDispatchState, PendingMovementOrders};
 pub(crate) use pending::{
     prepare_legacy_move_to_waiters, queue_legacy_move_to_envelope, reset_legacy_move_to_unit,

@@ -146,7 +146,9 @@ pub(crate) fn run_acquire(world: &mut World) {
             }
             continue;
         }
-        if !super::power::weapon_enabled(world, actor.id) {
+        if !super::power::weapon_enabled(world, actor.id)
+            || super::repair::active_action(world, actor.id)
+        {
             if acquired.is_some() {
                 write(world, actor, None, None, true);
             }

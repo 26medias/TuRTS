@@ -1309,7 +1309,7 @@ fn try_output(
     Ok(OutputAttempt::Spawned(id))
 }
 
-fn event_cost_line(line: &ReservationLine) -> CostLine {
+pub(crate) fn event_cost_line(line: &ReservationLine) -> CostLine {
     CostLine {
         source: match line.endpoint {
             Endpoint::Slot(slot) => EventSource::Slot(slot),
