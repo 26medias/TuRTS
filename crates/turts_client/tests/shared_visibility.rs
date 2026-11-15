@@ -225,3 +225,67 @@ fn public_two_human_scouting_fixture_loads_through_the_normal_engine() {
         std::collections::BTreeSet::from([0, 1])
     );
 }
+
+#[test]
+fn observed_killing_hit_remains_available_for_alerts_in_atomic_views() {
+    for restricted in [false, true] {
+        let (mut replica, stamp, mut payload) = setup();
+        let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../mods/visibility_probe");
+        let archive = PackageArchive::parse(&pack_dir(&path).unwrap()).unwrap();
+        replica.set_context(ReplicaContext::new(
+            ClientContent::from_archives(&[archive]).unwrap(),
+            0,
+        ));
+        let unit = if let StateTransactionPayload::Snapshot {
+            state, knowledge, ..
+        } = &mut payload
+        {
+            state.units[0].content_id = "visibility_probe:scout".into();
+            state.units[0].owner_slot = SlotId(0);
+            state.healths.push(HealthRecord {
+                unit: UnitId(1),
+                current: 100,
+            });
+            if !restricted {
+                *knowledge = None;
+            }
+            state.units[0].clone()
+        } else {
+            unreachable!()
+        };
+        assert!(replica.activate_transaction(&stamp, &payload, Instant::now()));
+        let (stamp, mut patch) = hidden_patch(&stamp);
+        if let StateTransactionPayload::Patch {
+            state,
+            knowledge,
+            event_units,
+        } = &mut patch
+        {
+            state.removed = vec![UnitId(1)];
+            state.healths = vec![HealthRecord {
+                unit: UnitId(1),
+                current: 0,
+            }];
+            state
+                .records
+                .effects
+                .push(Effect::Destroyed { unit: UnitId(1) });
+            if restricted {
+                let delta = knowledge.as_mut().unwrap();
+                delta.coverage.clear();
+                delta.hidden_units.clear();
+                delta.remembered_units.clear();
+            } else {
+                *knowledge = None;
+            }
+            event_units.push(EventUnitObservation {
+                basis: stamp.basis.clone(),
+                unit,
+            });
+        }
+        assert!(replica.activate_transaction(&stamp, &patch, Instant::now()));
+        assert_eq!(replica.health_trace[&1].last().unwrap().current, 0);
+        assert!(!replica.units.contains_key(&1));
+    }
+}
