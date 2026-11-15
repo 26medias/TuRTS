@@ -144,7 +144,7 @@ pub(crate) fn project(
                 node: n.id.0,
                 content: n.content_id.clone(),
                 item: def.item.clone(),
-                position: n.pos.clone(),
+                position: n.pos,
                 radius: def.radius,
                 remaining: n.remaining,
             })
@@ -370,7 +370,6 @@ pub(crate) fn project(
         min: WorldPos { x: 0.0, y: 0.0 },
         max: map_size,
     };
-    let complete = permissions.area_observed(slot, area.clone());
     let mut basis = ObservationBasis {
         id,
         tick: view.tick,
@@ -387,7 +386,7 @@ pub(crate) fn project(
         area: ObservedArea {
             min: area.min,
             max: area.max,
-            complete,
+            complete: permissions.area_observed(slot, area),
         },
         catalog,
     };
@@ -422,14 +421,14 @@ fn costs(slot: u8, actor: u32, rows: &[CostView]) -> Vec<AccountAmount> {
 fn target(value: &UnitOrderTargetView) -> BotTarget {
     match value {
         UnitOrderTargetView::None => BotTarget::None,
-        UnitOrderTargetView::Point(p) => BotTarget::Point(p.clone()),
+        UnitOrderTargetView::Point(p) => BotTarget::Point(*p),
         UnitOrderTargetView::Unit(id) => BotTarget::Unit(*id),
         UnitOrderTargetView::Node(id) => BotTarget::Node(id.0),
         UnitOrderTargetView::Job(id) => BotTarget::Job(id.0),
         UnitOrderTargetView::Content(content) => BotTarget::Content(content.clone()),
         UnitOrderTargetView::ContentAtPoint { content, point } => BotTarget::ContentAtPoint {
             content: content.clone(),
-            point: point.clone(),
+            point: *point,
         },
     }
 }
@@ -480,16 +479,7 @@ mod tests {
         let recipe = catalog.production.keys().next().unwrap().clone();
         let map = WorldPos { x: 200.0, y: 200.0 };
         let mut present = CandidateLease::new(
-            project(
-                &view,
-                0,
-                9,
-                catalog.clone(),
-                vec![0, 1],
-                map.clone(),
-                &Restricted,
-            )
-            .basis,
+            project(&view, 0, 9, catalog.clone(), vec![0, 1], map, &Restricted).basis,
             0,
         );
         let mut absent = CandidateLease::new(
