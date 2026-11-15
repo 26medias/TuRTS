@@ -261,6 +261,84 @@ fn fixture(bots: bool) -> (App, serde_json::Value) {
             },
         ];
     }
+    // Each factory has its own authored target. Long COT work must not serialize
+    // every factory behind one coordinator task key.
+    let factory_template = catalog.units[&content("barracks")].clone();
+    let output_template = catalog.units[&content("soldier")].clone();
+    let recipe_template = catalog.production[&content("train_soldier")].clone();
+    let mut production = Vec::new();
+    let mut roles = Vec::new();
+    let mut recipes = Vec::new();
+    let mut orders = Vec::new();
+    let mut factory_ids = Vec::new();
+    let mut output_ids = Vec::new();
+    for n in 0..50 {
+        let factory = content(&format!("bench_factory_{n}"));
+        let output = content(&format!("bench_output_{n}"));
+        let recipe = content(&format!("bench_recipe_{n}"));
+        let mut definition = factory_template.clone();
+        definition.id = factory.clone();
+        definition
+            .producer
+            .as_mut()
+            .unwrap()
+            .recipes
+            .push(recipe.clone());
+        catalog.units.insert(factory.clone(), definition);
+        let mut definition = output_template.clone();
+        definition.id = output.clone();
+        catalog.units.insert(output.clone(), definition);
+        let mut definition = recipe_template.clone();
+        definition.id = recipe.clone();
+        definition.output_unit = output.clone();
+        catalog.production.insert(recipe.clone(), definition);
+        catalog
+            .orders
+            .get_mut(&content("order_produce"))
+            .unwrap()
+            .units
+            .push(factory.to_string());
+        let source_role = format!("bench_factory_role_{n}");
+        let output_role = format!("bench_output_role_{n}");
+        let order_key = format!("bench_order_{n}");
+        let recipe_key = format!("bench_binding_{n}");
+        roles.extend([
+            turts_mod_api::BotRole {
+                key: source_role.clone(),
+                units: vec![factory.to_string()],
+                requires: vec![turts_mod_api::Capability::Producer],
+            },
+            turts_mod_api::BotRole {
+                key: output_role.clone(),
+                units: vec![output.to_string()],
+                requires: vec![
+                    turts_mod_api::Capability::Movement,
+                    turts_mod_api::Capability::Weapon,
+                ],
+            },
+        ]);
+        orders.push(turts_mod_api::BotOrderBinding {
+            key: order_key.clone(),
+            order: "stockyard:order_produce".into(),
+            actor_role: source_role.clone(),
+        });
+        recipes.push(turts_mod_api::BotRecipeBinding {
+            key: recipe_key.clone(),
+            recipe: recipe.to_string(),
+            actor_role: source_role,
+            order: order_key,
+            kind: turts_mod_api::BotRecipeKind::Produce,
+        });
+        production.push(turts_mod_api::BotProductionTarget {
+            key: format!("bench_target_{n}"),
+            role: output_role,
+            count: 1,
+            recipe: recipe_key,
+            priority: 30,
+        });
+        factory_ids.push(factory.to_string());
+        output_ids.push(output.to_string());
+    }
     let profile = catalog.bots.get_mut(&content("opponent")).unwrap();
     profile.start_when = BotStartWhen::MatchRunning;
     profile
@@ -270,13 +348,18 @@ fn fixture(bots: bool) -> (App, serde_json::Value) {
         .find(|role| role.key == "home")
         .unwrap()
         .units = vec!["stockyard:tower".into()];
-    profile
-        .knowledge
-        .production
-        .iter_mut()
-        .find(|target| target.role == "ranged")
-        .unwrap()
-        .count = 150;
+    for role in &mut profile.knowledge.roles {
+        if role.key == "trainers" || role.key == "worker_trainers" {
+            role.units.extend(factory_ids.iter().cloned());
+        }
+        if role.key == "army" {
+            role.units.extend(output_ids.iter().cloned());
+        }
+    }
+    profile.knowledge.roles.extend(roles);
+    profile.knowledge.orders.extend(orders);
+    profile.knowledge.recipes.extend(recipes);
+    profile.knowledge.production = production;
     for squad in &mut profile.knowledge.squads {
         squad.target_roles = vec!["home".into()];
     }
@@ -322,7 +405,7 @@ fn fixture(bots: bool) -> (App, serde_json::Value) {
         }
         for n in 0..50 {
             map.placements.push(placement(
-                "barracks",
+                &format!("bench_factory_{n}"),
                 slot,
                 32. + (n % 10) as f32 * 8.,
                 110. + (n / 10) as f32 * 8.,
@@ -355,7 +438,7 @@ fn fixture(bots: bool) -> (App, serde_json::Value) {
             }],
         });
     }
-    let authored = serde_json::json!({"fixture_version":1,"source_archive_sha256":turts_mod_runtime::hash::sha256_hex(&bytes),"profile_hash":profile_hash,"map":map,"health_max":HEALTH,"receiver_capacity":INVENTORY,"initial_inventory":STOCK,"production_duration_ms":DURATION_MS,"production_cost_per_endpoint":COST,"provider_amount":32});
+    let authored = serde_json::json!({"fixture_version":1,"source_archive_sha256":turts_mod_runtime::hash::sha256_hex(&bytes),"profile_hash":profile_hash,"map":map,"health_max":HEALTH,"receiver_capacity":INVENTORY,"initial_inventory":STOCK,"production_duration_ms":DURATION_MS,"production_cost_per_endpoint":COST,"provider_amount":32,"independent_production_goals":50,"normalized_producer_content_types":factory_ids,"normalized_pending_output_content_types":output_ids});
     let fixture_hash = turts_mod_runtime::hash::sha256_hex(&serde_json::to_vec(&authored).unwrap());
     let mut app = turts_sim::headless_app(20);
     let staged = stage_package(
@@ -413,12 +496,21 @@ fn percentiles(values: impl Iterator<Item = u64>) -> serde_json::Value {
 }
 fn run(mut app: App) -> (serde_json::Value, u64) {
     let deadline = Instant::now() + Duration::from_secs(1800);
+    let mut last_reported = 0;
     while !app.world().resource::<Meter>().complete() {
         assert!(
             Instant::now() < deadline,
             "benchmark did not complete within 30 minutes"
         );
         app.update();
+        let groups = app.world().resource::<Meter>().groups;
+        if groups >= last_reported + 100 {
+            last_reported = groups;
+            eprintln!(
+                "BF8_PROGRESS {}",
+                serde_json::json!({"baseline":app.world().resource::<Meter>().baseline,"intervals":groups,"samples":app.world().resource::<Meter>().samples.len(),"tick":app.world().resource::<Tick>().0})
+            );
+        }
         assert!(
             app.world()
                 .get_resource::<BotExecution>()
@@ -512,5 +604,82 @@ fn bf8_two_bots_1000_units_complete_phase_budget() {
     assert!(
         p99 <= 5_000_000,
         "BF8 complete active phase p99 {p99}ns exceeds 5ms"
+    );
+}
+
+fn active_cot(app: &App) -> usize {
+    turts_sim::completed_world(app.world())
+        .operating
+        .as_ref()
+        .unwrap()
+        .jobs
+        .iter()
+        .filter(|job| job.funding.is_some() && job.done > 0 && job.done < job.total)
+        .count()
+}
+#[test]
+#[ignore = "short release workload preflight before the BF8 pinned performance run"]
+fn bf8_workload_preflight_admits_all_factories_and_keeps_collection_and_combat_active() {
+    assert!(
+        !cfg!(debug_assertions),
+        "run the workload preflight with --release"
+    );
+    let (mut app, definition) = fixture(true);
+    let deadline = Instant::now() + Duration::from_secs(300);
+    let mut ready = None;
+    let mut last_reported = 0;
+    for _ in 0..(181 * 20) {
+        assert!(
+            Instant::now() < deadline,
+            "BF8 workload preflight exceeded five minutes"
+        );
+        app.update();
+        let meter = app.world().resource::<Meter>();
+        let jobs = active_cot(&app);
+        if meter.groups >= last_reported + 10 {
+            last_reported = meter.groups;
+            eprintln!(
+                "BF8_PREFLIGHT_WARMUP {}",
+                serde_json::json!({"intervals":meter.groups,"active_cot_jobs":jobs,"gathered":meter.extracted,"shots":meter.shots})
+            );
+        }
+        if ready.is_none() && jobs == 100 && meter.extracted > 0 && meter.shots > 0 {
+            ready = Some((meter.groups, meter.extracted, meter.shots));
+        }
+        if let Some((interval, items, shots)) = ready {
+            if meter.groups >= interval + 4 {
+                assert_eq!(jobs, 100);
+                assert_eq!((meter.min_units, meter.max_units), (1000, 1000));
+                assert!(
+                    meter.extracted > items && meter.shots > shots,
+                    "subsequent three active intervals must still collect and fight"
+                );
+                let report = serde_json::json!({"acceptance":"BF8 workload preflight","warmup_intervals":interval,"checked_active_intervals":3,"end_interval":meter.groups,"active_cot_jobs":jobs,"additional_items":meter.extracted-items,"additional_shots":meter.shots-shots,"workload":definition});
+                println!("BF8_PREFLIGHT {}", serde_json::to_string(&report).unwrap());
+                if let Some(directory) = std::env::var_os("TURTS_BOT_EVIDENCE_DIR") {
+                    std::fs::create_dir_all(&directory).unwrap();
+                    std::fs::write(
+                        std::path::PathBuf::from(directory).join("bf8-preflight.json"),
+                        serde_json::to_vec_pretty(&report).unwrap(),
+                    )
+                    .unwrap();
+                }
+                return;
+            }
+        }
+    }
+    let meter = app.world().resource::<Meter>();
+    panic!(
+        "BF8 workload did not stabilize within180intervals: jobs{}, items{}, shots{}, decisions{}, diagnostics{:?}",
+        active_cot(&app),
+        meter.extracted,
+        meter.shots,
+        meter.groups,
+        app.world()
+            .resource::<BotHost>()
+            .bots
+            .iter()
+            .map(|bot| &bot.last_diagnostic)
+            .collect::<Vec<_>>()
     );
 }
