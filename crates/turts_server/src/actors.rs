@@ -13,10 +13,7 @@ use turts_sim::{SlotId, Slots};
 
 const DEFAULT_PENDING_MEMBERS: usize = 64;
 
-pub(crate) struct TrackedRequest {
-    pub command: EmittedCommand,
-    pub result: Option<ActorResult>,
-}
+pub(crate) use crate::actor_accounting::TrackedRequest;
 
 pub(crate) struct BotActorState {
     pub actor: BotActor,
@@ -152,10 +149,7 @@ pub(crate) fn stage_bot_command(
                 sequence: command.sequence,
                 unit: *unit,
             },
-            TrackedRequest {
-                command: command.clone(),
-                result: None,
-            },
+            TrackedRequest::new(command.clone()),
         );
     }
     book.staged.push_back(command);

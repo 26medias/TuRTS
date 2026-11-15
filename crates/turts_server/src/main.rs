@@ -1,3 +1,4 @@
+mod actor_accounting;
 //! Headless authoritative server: loads the game package, serves HTTP, and runs the fixed-tick
 //! simulation with lightyear sessions.
 
