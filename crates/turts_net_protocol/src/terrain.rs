@@ -32,6 +32,7 @@ pub struct TerrainGroundAnchor {
     pub unit: UnitId,
     pub elevation: i32,
     pub observed_tick: u32,
+    pub current: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -49,6 +50,8 @@ pub enum TerrainWorkWait {
     Blocked,
     Paused,
     Unloading,
+    Disabled,
+    Invalid,
 }
 
 /// Own-worker status. Unknown cells cannot publish material-dependent progress.
