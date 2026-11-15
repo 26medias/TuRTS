@@ -50,6 +50,8 @@ pub struct PresentationContent {
     pub model_visuals: BTreeMap<String, turts_mod_api::ModelDef>,
     pub model_bounds: BTreeMap<String, ([f32; 3], [f32; 3])>,
     pub ground: Option<turts_mod_api::GroundDef>,
+    /// Selected map needs the ground shader's authoritative visibility mask.
+    pub requires_fog: bool,
     pub environment: Option<turts_mod_api::EnvironmentDef>,
     pub interface: Option<InterfaceDef>,
     pub interface_package: Option<String>,
@@ -306,6 +308,7 @@ fn presentation_from_archives(
                 .into_iter()
                 .next()
         {
+            presentation.requires_fog = map.visibility.is_some();
             presentation.ground = map.ground;
             presentation.environment = map.environment;
             selected_map = true;

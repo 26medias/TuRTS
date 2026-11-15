@@ -347,6 +347,7 @@ pub fn setup_scene(
     settings: Res<crate::models::GraphicsSettings>,
     mut model_state: ResMut<crate::models::ModelState>,
     mut layered_materials: ResMut<Assets<crate::ground::GroundMaterial>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
     mut done: Local<bool>,
 ) {
     if *done || !matches!(*phase, Phase::Joined { .. }) {
@@ -461,7 +462,7 @@ pub fn setup_scene(
                 },
             })),
         ));
-    } else {
+    } else if acquired.0.presentation.requires_fog {
         entity.insert(MeshMaterial3d(layered_materials.add(
             crate::ground::GroundMaterial {
                 base: ground_material,
@@ -473,6 +474,8 @@ pub fn setup_scene(
                 },
             },
         )));
+    } else {
+        entity.insert(MeshMaterial3d(materials.add(ground_material)));
     }
 }
 
