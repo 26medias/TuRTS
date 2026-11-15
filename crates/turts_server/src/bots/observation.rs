@@ -1274,6 +1274,82 @@ mod tests {
         }
     }
     #[test]
+    fn remembered_queries_are_separate_bounded_and_pinned_to_the_candidate_basis() {
+        use turts_mod_api::{
+            KnowledgeBasis, KnowledgeSnapshot, ObservationPhase, RememberedUnit, VisibilityGrid,
+        };
+        let mut current = basis();
+        let mut knowledge = Arc::new(KnowledgeSnapshot {
+            basis: KnowledgeBasis {
+                match_id: 1,
+                map: ContentId::parse("fixture:map").unwrap(),
+                tick: current.tick,
+                phase: ObservationPhase::Completed,
+            },
+            viewer: 0,
+            grid: VisibilityGrid {
+                size: WorldPos { x: 20.0, y: 20.0 },
+                cell_size: 1.0,
+                columns: 20,
+                rows: 20,
+            },
+            observed: vec![0; 50],
+            explored: vec![255; 50],
+            remembered_units: [(8, 8.0), (7, 7.0)]
+                .into_iter()
+                .map(|(unit, x)| RememberedUnit {
+                    unit,
+                    content: ContentId::parse("fixture:enemy").unwrap(),
+                    owner: 1,
+                    position: WorldPos { x, y: 4.0 },
+                    facing: None,
+                    site: false,
+                    last_seen_tick: 2,
+                })
+                .collect(),
+            remembered_nodes: vec![],
+            retention_truncated: true,
+        });
+        current.knowledge = Some(knowledge.clone());
+        current.area.complete = false;
+        let mut lease = CandidateLease::new(current, 0);
+        Arc::make_mut(&mut knowledge).remembered_units[0].position.x = 19.0;
+        let mut q = lease.queries(
+            "memory",
+            BotQuota {
+                queries: 4,
+                candidates: 4,
+                rows: 4,
+                proposals: 0,
+            },
+        );
+        let first = q.query(Query::RememberedUnits, None, 1).unwrap();
+        assert_eq!(first.coverage, Coverage::Complete);
+        assert_eq!(first.usage.candidates, 1);
+        assert_eq!(first.completed_tick, 5);
+        let QueryData::RememberedUnits(first_rows) = first.data else {
+            panic!()
+        };
+        assert!(first_rows.retention_truncated);
+        assert_eq!(first_rows.rows[0].unit, 7);
+        assert_eq!(first_rows.rows[0].last_seen_tick, 2);
+        let PageState::More(cursor) = first.state else {
+            panic!()
+        };
+        let second = q.query(Query::RememberedUnits, Some(cursor), 1).unwrap();
+        let QueryData::RememberedUnits(second_rows) = second.data else {
+            panic!()
+        };
+        assert_eq!(
+            second_rows.rows[0].position.x, 8.0,
+            "a newer memory cannot change a pinned lease"
+        );
+        assert_eq!(second.state, PageState::Complete);
+        let lookup = q.query(Query::LookupUnit(7), None, 1).unwrap();
+        assert_eq!(lookup.data, QueryData::Lookup(Advice::NotObserved));
+        assert_eq!(lookup.coverage, Coverage::NotObserved);
+    }
+    #[test]
     fn a_supply_goal_accepts_one_indivisible_provider_crossing_the_target() {
         assert_eq!(provider_cap(1, 5), Ok(5));
         assert_eq!(provider_cap(7, 3), Ok(9));
