@@ -188,9 +188,7 @@ fn snapshot_projected(
         records: wire::SnapshotRecords {
             repairs: export_repair::snapshot(&view.economy.repairs, slot),
             supply: export_supply::snapshot(view.operating.as_ref(), slot),
-            sites: turts_sim::economy::construction::progress_rows(view)
-                .iter()
-                .filter(|row| row.owner_slot == slot.0)
+            sites: turts_sim::economy::construction::progress_rows_for_slot(view, slot)
                 .map(|row| wire::SiteProgress {
                     production: row
                         .production
@@ -198,12 +196,10 @@ fn snapshot_projected(
                         .expect("site progress carries its validated recipe")
                         .to_string(),
                     unit: wire::UnitId(row.unit),
-                    progress: export_jobs::rate_record(row),
+                    progress: export_jobs::rate_record(&row),
                 })
                 .collect(),
-            construction_queues: turts_sim::economy::construction::queue_rows(view)
-                .iter()
-                .filter(|row| row.owner_slot == slot.0)
+            construction_queues: turts_sim::economy::construction::queue_rows_for_slot(view, slot)
                 .map(|row| wire::ConstructionQueue {
                     constructor: wire::UnitId(row.constructor),
                     orders: row
