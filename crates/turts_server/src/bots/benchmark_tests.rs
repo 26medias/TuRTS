@@ -1,3 +1,4 @@
+#![cfg(test)]
 //! BF8: real simulation, public controllers, and the complete bounded host/admission path.
 use super::*;
 use std::time::{Duration, Instant};

@@ -1,3 +1,4 @@
+#![cfg(test)]
 //! Ordinary fixed-tick commands, results and immutable accounting use the real package path.
 use super::*;
 use turts_bot::{BotOrder, TaskKey};

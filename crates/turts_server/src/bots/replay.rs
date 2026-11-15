@@ -1,3 +1,4 @@
+#![cfg(test)]
 //! Headless acceptance playback of the trusted typed log. No CSV or private mutation commands.
 use super::{BotExecution, BotExecutionMode, BotHost, LifecycleInput};
 use crate::{actors, economylog::EconomyLogSink, session};

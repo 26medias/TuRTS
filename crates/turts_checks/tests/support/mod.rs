@@ -580,7 +580,17 @@ pub fn production_sources(roots: &[PathBuf]) -> Result<Vec<PathBuf>, ScanError> 
         check_test_module_gate(file)?
     }
     fslist.sort();
-    Ok(fslist)
+    let mut production = Vec::new();
+    for file in fslist {
+        let source =
+            fs::read_to_string(&file).map_err(|error| ScanError::Io(file.clone(), error))?;
+        let parsed = syn::parse_file(&source)
+            .map_err(|error| ScanError::Rust(file.clone(), error.to_string()))?;
+        if production_attrs(&parsed.attrs) {
+            production.push(file);
+        }
+    }
+    Ok(production)
 }
 /// Test modules in their own file. The parent file declares each one with `#[cfg(test)] mod`,
 /// so the scan skips the file as it skips an inline `#[cfg(test)]` module.

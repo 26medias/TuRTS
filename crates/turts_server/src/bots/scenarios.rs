@@ -1,3 +1,4 @@
+#![cfg(test)]
 //! Native scenarios use the same package profiles and factory registry as server startup.
 use super::*;
 use turts_mod_runtime::{archive::PackageArchive, pack::pack_dir};

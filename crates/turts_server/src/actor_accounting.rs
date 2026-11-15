@@ -764,8 +764,7 @@ fn validate_paid_work(work: &WorkObservation, declared: &Amounts) -> Result<(), 
         }
         if work.payment == Some(PaymentPolicy::ChargeOverTime)
             && (reserved != 0
-                || u128::from(paid)
-                    != u128::from(*full) * u128::from(work.done) / u128::from(work.total))
+                || paid != turts_rules::charge::charged_at(*full, work.done, work.total))
         {
             return Err("paid-over-time work differs from its exact progress charge".into());
         }

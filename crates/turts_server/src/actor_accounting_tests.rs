@@ -1,3 +1,4 @@
+#![cfg(test)]
 //! Synthetic immutable completed views isolate accounting, not gameplay execution.
 use super::*;
 use turts_bot::{BotOrder, BotQueueMode, BotTarget, TaskKey};

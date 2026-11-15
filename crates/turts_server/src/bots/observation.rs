@@ -62,17 +62,13 @@ impl ObservationBasis {
             .and_then(|index| self.units.get(*index))
             .filter(|u| u.owner_slot == self.slot && u.own.is_some())
     }
-    fn team(&self, slot: u8) -> u8 {
-        self.teams.get(usize::from(slot)).copied().unwrap_or(slot)
-    }
     fn relation(&self, owner: u8, relation: SlotRelation) -> bool {
-        match relation {
-            SlotRelation::Same => owner == self.slot,
-            SlotRelation::Ally => self.team(owner) == self.team(self.slot),
-            SlotRelation::Other => owner != self.slot,
-            SlotRelation::Enemy => self.team(owner) != self.team(self.slot),
-            SlotRelation::Any => true,
-        }
+        turts_sim::rules_adapter::holds(
+            relation,
+            self.slot,
+            owner,
+            turts_sim::rules_adapter::Teams::new(&self.teams),
+        )
     }
     fn quote(&self, actor: UnitId, production: &ContentId) -> Option<CostQuote> {
         let unit = self.own_unit(actor)?;
