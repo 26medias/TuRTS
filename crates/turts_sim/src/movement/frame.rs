@@ -1160,6 +1160,9 @@ pub(super) fn separation_reach(radius: f32, max_radius: f32, old_reach: f32) -> 
     if LEGACY_SEPARATION_QUERY.with(std::cell::Cell::get) {
         return old_reach;
     }
+    if old_reach.is_nan() {
+        return old_reach;
+    }
     old_reach.min((radius + max_radius + 0.05).next_up())
 }
 #[cfg(test)]
