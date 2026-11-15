@@ -2652,6 +2652,8 @@ mod tests {
         interface.units.insert(
             "cedar:depot".into(),
             UnitPresentation {
+                role: None,
+
                 icon: Some("icon_order_move".into()),
                 portrait: None,
                 responses: BTreeMap::from([("selected".into(), vec!["sound_select".into()])]),
@@ -2660,6 +2662,9 @@ mod tests {
         interface.root.push(widget(
             "fixture_input_button",
             Primitive::Button {
+                font: Default::default(),
+                size: Default::default(),
+
                 icon: Some(ButtonIcon::Asset("icon_order_move".into())),
                 label: Some(TextValue::Literal("Select".into())),
                 action: ButtonAction::Input("select".into()),

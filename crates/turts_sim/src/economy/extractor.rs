@@ -171,6 +171,10 @@ mod tests {
             accepts: vec![ore.clone()],
         };
         let drill = ResolvedUnit {
+            consumes: Vec::new(),
+            income: None,
+            provides: Vec::new(),
+
             constructor: None,
             placement: None,
             build_area: None,

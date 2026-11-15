@@ -579,6 +579,10 @@ mod tests {
 
     fn unit(id: &str, health: Option<u64>) -> ResolvedUnit {
         ResolvedUnit {
+            consumes: Vec::new(),
+            income: None,
+            provides: Vec::new(),
+
             constructor: None,
             placement: None,
             build_area: None,
@@ -612,6 +616,8 @@ mod tests {
             accepts: vec![cid(AMMO)],
         });
         result.weapon = Some(ResolvedWeapon {
+            when_short: Vec::new(),
+
             range: 8.0,
             range_mode: turts_mod_api::WeaponRangeMode::Centre,
             cooldown_ms,

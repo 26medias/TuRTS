@@ -843,6 +843,10 @@ mod m3_disabled_legacy_producer_tests {
             .unwrap();
         let resolved_unit =
             |id: turts_mod_api::ContentId, name: &str, radius, producer, movement| ResolvedUnit {
+                consumes: Vec::new(),
+                income: None,
+                provides: Vec::new(),
+
                 constructor: None,
                 placement: None,
                 build_area: None,
@@ -882,6 +886,8 @@ mod m3_disabled_legacy_producer_tests {
                 "Producer",
                 0.5,
                 Some(ResolvedProducer {
+                    when_short: Vec::new(),
+
                     recipes: vec![recipe_id.clone()],
                     queue_capacity: 2,
                     spawn_offsets: offsets,

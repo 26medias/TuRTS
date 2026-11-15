@@ -163,6 +163,10 @@ fn gatherer_app() -> (bevy_app::App, bevy_ecs::entity::Entity) {
     catalog.units.insert(
         id.clone(),
         turts_mod_api::ResolvedUnit {
+            consumes: Vec::new(),
+            income: None,
+            provides: Vec::new(),
+
             constructor: None,
             placement: None,
             build_area: None,
@@ -179,6 +183,8 @@ fn gatherer_app() -> (bevy_app::App, bevy_ecs::entity::Entity) {
             }),
             drop_off: None,
             producer: Some(turts_mod_api::ResolvedProducer {
+                when_short: Vec::new(),
+
                 recipes: vec![],
                 queue_capacity: 1,
                 spawn_offsets: vec![],
@@ -3071,6 +3077,8 @@ fn set_enabled_keeps_all_legacy_toggleable_capability_families() {
     variants.push(unit);
     let mut unit = base.clone();
     unit.producer = Some(turts_mod_api::ResolvedProducer {
+        when_short: Vec::new(),
+
         recipes: vec![],
         queue_capacity: 1,
         spawn_offsets: vec![],
@@ -3078,6 +3086,8 @@ fn set_enabled_keeps_all_legacy_toggleable_capability_families() {
     variants.push(unit);
     let mut unit = base.clone();
     unit.weapon = Some(turts_mod_api::ResolvedWeapon {
+        when_short: Vec::new(),
+
         range: 1.0,
         range_mode: turts_mod_api::WeaponRangeMode::Centre,
         cooldown_ms: 1,

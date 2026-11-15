@@ -904,6 +904,10 @@ mod tests {
         let drone_id = ContentId::parse("forge:drone").unwrap();
         let shell = ContentId::parse("forge:shell").unwrap();
         let drone = ResolvedUnit {
+            consumes: Vec::new(),
+            income: None,
+            provides: Vec::new(),
+
             constructor: None,
             placement: None,
             build_area: None,
@@ -1091,6 +1095,10 @@ mod tests {
         catalog.units.insert(
             producer_id.clone(),
             ResolvedUnit {
+                consumes: Vec::new(),
+                income: None,
+                provides: Vec::new(),
+
                 constructor: None,
                 placement: None,
                 build_area: None,
@@ -1102,6 +1110,8 @@ mod tests {
                 gatherer: None,
                 drop_off: None,
                 producer: Some(ResolvedProducer {
+                    when_short: Vec::new(),
+
                     recipes: vec![recipe_id.clone()],
                     queue_capacity: 1,
                     spawn_offsets: vec![WorldPos { x: 2.0, y: 0.0 }],
@@ -1120,6 +1130,10 @@ mod tests {
         catalog.units.insert(
             output_id.clone(),
             ResolvedUnit {
+                consumes: Vec::new(),
+                income: None,
+                provides: Vec::new(),
+
                 constructor: None,
                 placement: None,
                 build_area: None,

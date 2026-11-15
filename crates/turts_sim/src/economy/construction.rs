@@ -571,6 +571,10 @@ mod tests {
     fn fixture(policy: PaymentPolicy) -> App {
         let mut app = crate::headless_app(20);
         let tower = ResolvedUnit {
+            consumes: Vec::new(),
+            income: None,
+            provides: Vec::new(),
+
             id: cid("tower"),
             name: "Tower".into(),
             footprint: Footprint::Circle { radius: 1.0 },
@@ -579,6 +583,8 @@ mod tests {
             gatherer: None,
             drop_off: None,
             producer: Some(ResolvedProducer {
+                when_short: Vec::new(),
+
                 recipes: vec![cid("train")],
                 queue_capacity: 2,
                 spawn_offsets: vec![WorldPos { x: 3.0, y: 0.0 }],

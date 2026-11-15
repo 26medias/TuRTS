@@ -457,6 +457,10 @@ mod tests {
         let second_technology = cid("research_fixture:second");
         let turret = cid("research_fixture:turret");
         let station = |id: ContentId, name: &str| ResolvedUnit {
+            consumes: Vec::new(),
+            income: None,
+            provides: Vec::new(),
+
             constructor: None,
             placement: None,
             build_area: None,
@@ -503,6 +507,10 @@ mod tests {
                 (
                     turret.clone(),
                     ResolvedUnit {
+                        consumes: Vec::new(),
+                        income: None,
+                        provides: Vec::new(),
+
                         constructor: None,
                         placement: None,
                         build_area: None,
