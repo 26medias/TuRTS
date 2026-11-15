@@ -45,6 +45,7 @@ pub struct ResolvedProducer {
     pub recipes: Vec<ContentId>,
     pub queue_capacity: u16,
     pub spawn_offsets: Vec<WorldPos>,
+    pub when_short: Vec<WhenShort>,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct ResolvedConstructor {
@@ -82,6 +83,7 @@ pub struct ResolvedWeapon {
     pub damage: u64,
     pub ammo: Option<ResolvedAmmo>,
     pub targets: TargetFilter,
+    pub when_short: Vec<WhenShort>,
 }
 #[derive(Debug, Clone, PartialEq)]
 pub struct ResolvedUnit {
@@ -105,6 +107,11 @@ pub struct ResolvedUnit {
     pub health: Option<HealthDef>,
     pub weapon: Option<ResolvedWeapon>,
     pub removal: Option<RemovalDef>,
+    /// Validated supply rows with qualified resource references.
+    pub provides: Vec<SupplyAmount>,
+    pub consumes: Vec<SupplyAmount>,
+    /// Validated balance reference. The server converts its period at boot.
+    pub income: Option<IncomeDef>,
 }
 #[derive(Debug, Clone, PartialEq)]
 pub struct ResolvedNode {

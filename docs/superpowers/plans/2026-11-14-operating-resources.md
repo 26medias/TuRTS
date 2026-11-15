@@ -72,7 +72,8 @@ Hooks use prevalidated payloads and cannot fail during commit. Zero-health react
 Round period_ms up with checked tick conversion at boot. Reject unrepresentable periods there.
 At the Income schedule position, group all due credits by slot/resource before changing balances.
 Preflight each account's whole batch through the existing balance/ledger rules.
-Credit the account atomically. Emit the existing income credit event, distinct from Converted delivery events.
+Credit the account atomically. Add an internal IncomeCredited ledger event, distinct from Converted delivery events.
+Use the existing owner-only Credited effect for presentation. No wire variant is needed.
 Retain unpaid due payments when the account is full. Do not add missed periods behind them.
 On success, schedule the next full period from that success tick.
 Remove clocks for missing, unfinished, or nonpositive-health units. Restart on later valid activation.
