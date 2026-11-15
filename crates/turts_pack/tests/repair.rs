@@ -334,7 +334,7 @@ fn manual_repair_approaches_without_overlap_then_pays_exactly_at_two_tick_rates(
             turts_sim::completed_world(app.world())
                 .unit_orders
                 .iter()
-                .find(|row| row.unit == source)
+                .find(|row| row.unit_id == source)
                 .is_none_or(|row| row.current.is_none())
         );
     }
@@ -418,7 +418,7 @@ fn unaffordable_multi_cost_repair_is_atomic_and_income_resumes_it() {
     payer.repairer = None;
     payer.movement = None;
     payer.income = Some(IncomeDef {
-        balance: cid("gold").to_string(),
+        resource: cid("gold").to_string(),
         amount: 2,
         period_ms: 200,
     });
