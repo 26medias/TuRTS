@@ -132,14 +132,37 @@ pub(crate) fn project(
                 } else {
                     activity
                 },
-                current_order: order.and_then(|o| o.current.as_ref()).and_then(|o| {
-                    Some(BotOrder {
-                        content: ContentId::parse(&o.order).ok()?,
-                        target: target(&o.target),
-                        queue: BotQueueMode::Replace,
-                        group: 0,
+                current_order: order
+                    .and_then(|o| o.current.as_ref())
+                    .filter(|order| {
+                        permissions.all_public_geometry(slot)
+                            || match order.target {
+                                UnitOrderTargetView::Unit(target) => view
+                                    .units
+                                    .binary_search_by_key(&target, |unit| unit.unit_id)
+                                    .ok()
+                                    .is_some_and(|index| {
+                                        unit_permitted(
+                                            permissions,
+                                            slot,
+                                            target,
+                                            view.units[index].owner_slot,
+                                        )
+                                    }),
+                                UnitOrderTargetView::Node(target) => {
+                                    permissions.node_visible(slot, target.0)
+                                }
+                                _ => true,
+                            }
                     })
-                }),
+                    .and_then(|o| {
+                        Some(BotOrder {
+                            content: ContentId::parse(&o.order).ok()?,
+                            target: target(&o.target),
+                            queue: BotQueueMode::Replace,
+                            group: 0,
+                        })
+                    }),
                 queued_orders: order
                     .map_or(0, |o| u32::try_from(o.queued.len()).unwrap_or(u32::MAX)),
             })
