@@ -857,6 +857,7 @@ mod tests {
     fn fixture(policy: PaymentPolicy) -> App {
         let mut app = crate::headless_app(20);
         let tower = ResolvedUnit {
+            repairer: None,
             consumes: Vec::new(),
             income: None,
             provides: Vec::new(),
