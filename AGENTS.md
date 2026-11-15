@@ -42,7 +42,9 @@ The orchestrator also implements and integrates work. Do not spend the whole tur
 Reuse existing agent context. Avoid duplicate investigations and duplicate reviews.
 Schedule builds to avoid Cargo locks, excess RAM use, and disk exhaustion.
 When sharing a native Cargo target across worktrees, use `~/.codex/bin/turts-cargo`.
-It refreshes local source timestamps on a worktree change to prevent stale artifact reuse.
+It invalidates target-specific local Cargo fingerprints on a worktree change.
+It preserves source timestamps and unrelated browser-cache fingerprints.
+Cross-target builds also refresh changed local host build-script and proc-macro fingerprints.
 Serialize GPU measurements and browser workloads that would invalidate each other's results.
 
 ## Specs use Anvil

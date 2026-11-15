@@ -37,7 +37,7 @@
   ],
   opening: [
    (key: "build_trainer", priority: 40, action: EnsureUnits(role: "trainers", count: 1, recipe: "trainer")),
-   (key: "expand_workers", priority: 30, action: EnsureUnits(role: "workers", count: 6, recipe: "worker")),
+   (key: "expand_workers", priority: 60, action: EnsureUnits(role: "workers", count: 6, recipe: "worker")),
    (key: "build_defenses", priority: 20, action: EnsureUnits(role: "defenses", count: 2, recipe: "tower")),
   ],
   recovery: [

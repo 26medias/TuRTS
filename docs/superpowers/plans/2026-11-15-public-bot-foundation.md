@@ -1,20 +1,21 @@
 # Public bot foundation implementation plan
 
-Status: approved by the same Anvil reviewer. Both final clarifications are incorporated.
+Status: implementation and final browser product probes complete. Root owns final integration.
+The same Anvil reviewer approved the spec and plan. See the feature report for executed acceptance and limits.
 Contract: `../specs/2026-11-15-public-bot-foundation.md`.
 Budget: the existing reviewer, one plan turn. No new panel or task-review loops.
 
 ## Current integration
 
-The assembled native and Node campaigns passed after their scoped repairs.
-The independent foundation review ran code. Its two findings are fixed and covered by focused passing regressions.
-The required 1,000-phase performance run failed: complete-phase p99 was 25.079 ms against 5 ms.
-The 40-phase diagnostic found repeated role-ID formatting and account reconstruction as the largest costs.
-Root owns integration, measured performance checks, browser acceptance, and delivery.
-The execution owner owns immutable command sharing and fresh account/receipt optimizations.
-The host owner owns allocation-free role matching and focused counting regressions.
-Next: measure those changes on the unchanged workload. Fix remaining measured costs. Then run the full performance acceptance and final browser probes.
-Main remains at the accepted SDK14 milestone until all public-bot acceptance checks pass.
+The optimized native library/server campaign passed 607 tests. Node and scoped contract checks passed.
+The independent foundation review and focused optimization/physical-priority reviews ran code. Their material findings are fixed.
+BF8 passed at `3396efb0`: 1,000 complete phases at 4.906851 ms p99, against 5 ms. The earlier run reached 25.078596 ms.
+Subsequent financial-priority, saving-policy, and profile changes received focused checks but were not remeasured.
+The final clean browser candidate is `54a893bc`, prepared in `target/mc-evidence/skirmish-public-bots-prepared`.
+Skirmish won at 188.322 seconds with its castle at 1000 health. Stockyard passed at 42.696 seconds.
+All three cold-play product probes pass. The isolated checker is PARTIAL-PASS with manual/reference readiness open.
+The report is `docs/reports/2026-11-15-public-bot-foundation.md`. It distinguishes measured revisions and later fixes.
+Root owns the frozen worktree, launcher switch, remaining integration checks, and tested main merge. Do not push main.
 
 ## Delivery and ownership
 

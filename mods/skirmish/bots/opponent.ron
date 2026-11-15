@@ -3,7 +3,7 @@
  controllers: [
   (key: "opening", factory: "engine:opening", config: Null, quota: (queries: 4, candidates: 512, rows: 128, proposals: 4)),
   (key: "economy", factory: "engine:economy", config: Null, quota: (queries: 12, candidates: 1536, rows: 384, proposals: 12)),
-  (key: "production", factory: "engine:production", config: Null, quota: (queries: 8, candidates: 1024, rows: 256, proposals: 8)),
+  (key: "production", factory: "engine:production", config: Null, quota: (queries: 8, candidates: 1024, rows: 256, proposals: 1)),
   (key: "squads", factory: "engine:squads", config: Null, quota: (queries: 8, candidates: 1024, rows: 256, proposals: 8)),
  ],
  knowledge: (
@@ -38,16 +38,18 @@
   opening: [
    (key: "build_trainer", priority: 40, action: EnsureUnits(role: "trainers", count: 1, recipe: "trainer")),
    (key: "expand_workers", priority: 30, action: EnsureUnits(role: "workers", count: 6, recipe: "worker")),
-   (key: "build_defenses", priority: 20, action: EnsureUnits(role: "defenses", count: 2, recipe: "tower")),
+   (key: "build_defenses", priority: 20, action: EnsureUnits(role: "defenses", count: 1, recipe: "tower")),
   ],
   recovery: [
    (key: "recover_worker", priority: 100, action: EnsureUnits(role: "workers", count: 1, recipe: "worker")),
    (key: "harvest", priority: 90, action: Gather(role: "workers", resource: "skirmish:wood", order: "gather")),
   ],
+  // One offered goal per decision makes this ordered plan save for its first missing unit.
   production: [
+   (key: "defense_target", role: "defenses", count: 1, recipe: "tower", priority: 80),
+   (key: "heavy_target", role: "heavy", count: 1, recipe: "heavy", priority: 35),
+   (key: "melee_target", role: "melee", count: 2, recipe: "melee", priority: 32),
    (key: "ranged_target", role: "ranged", count: 8, recipe: "ranged", priority: 30),
-   (key: "melee_target", role: "melee", count: 4, recipe: "melee", priority: 25),
-   (key: "heavy_target", role: "heavy", count: 2, recipe: "heavy", priority: 20),
   ],
   squads: [(key: "main_army", role: "army", min_units: 4, anchor_role: "home", attack_order: "attack", move_order: "move", defend_radius: 18.0, assemble_radius: 8.0, priority: 50)],
  ),
