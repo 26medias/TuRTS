@@ -2,6 +2,7 @@
 """Make ground-only browser comparisons and preserve the existing battle workloads."""
 import argparse
 import io
+import re
 from pathlib import Path
 import shutil
 import tarfile
@@ -22,7 +23,10 @@ def write(path, files):
 
 
 def ground_span(text):
-    start = text.index('ground:')
+    match = re.search(r'\bground\s*:', text)
+    if match is None:
+        raise ValueError('missing ground field')
+    start = match.start()
     opening = text.index('(', start)
     depth = 0
     quoted = False
