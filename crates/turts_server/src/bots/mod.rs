@@ -610,3 +610,6 @@ mod scenarios;
 
 #[cfg(test)]
 mod replay;
+
+#[cfg(test)]
+mod benchmark_tests;
