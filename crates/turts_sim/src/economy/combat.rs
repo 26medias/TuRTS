@@ -76,11 +76,17 @@ struct WeaponParameters {
     targets: SlotRelation,
 }
 
+#[derive(Clone, Copy)]
+struct ObservedOwner {
+    slot: u8,
+    sight: Option<[bool; turts_mod_api::SLOT_COUNT as usize]>,
+}
+
 struct CombatIndex<'a> {
     grid: &'a crate::grid::UniformGrid,
     points: &'a [crate::grid::GridPoint],
     positions: &'a BTreeMap<u32, bevy_math::Vec2>,
-    owners: &'a BTreeMap<u32, u8>,
+    owners: &'a BTreeMap<u32, ObservedOwner>,
     radii: &'a BTreeMap<u32, f32>,
     max_radius: f32,
 }
@@ -100,6 +106,7 @@ pub(crate) fn run_combat(world: &mut World) {
     let mut positions = BTreeMap::new();
     let mut radii = BTreeMap::new();
     let mut max_radius = 0.0_f32;
+    let sight = crate::visibility::active_basis_shared(world);
     for entity in world.iter_entities() {
         let (Some(id), Some(position), Some(owner)) = (
             entity.get::<UnitId>(),
@@ -119,7 +126,15 @@ pub(crate) fn run_combat(world: &mut World) {
             id: id.0,
             position: position.0,
         });
-        owners.insert(id.0, owner.0.0);
+        owners.insert(
+            id.0,
+            ObservedOwner {
+                slot: owner.0.0,
+                sight: sight.as_ref().map(|basis| {
+                    std::array::from_fn(|viewer| basis.unit_permitted(viewer as u8, id.0))
+                }),
+            },
+        );
         positions.insert(id.0, position.0);
     }
     points.sort_unstable_by_key(|point| point.id);
@@ -152,7 +167,6 @@ pub(crate) fn run_combat(world: &mut World) {
             .total_cmp(&right.x)
             .then_with(|| left.y.total_cmp(&right.y))
     });
-    let sight = crate::visibility::active_basis_shared(world);
     for weapon in weapon_ids {
         if world.resource::<Disabled>().0.contains(&weapon) {
             continue;
@@ -237,14 +251,7 @@ pub(crate) fn run_combat(world: &mut World) {
         {
             None
         } else {
-            choose_target(
-                world,
-                origin,
-                &parameters,
-                &combat_index,
-                focus,
-                sight.as_deref(),
-            )
+            choose_target(world, origin, &parameters, &combat_index, focus)
         };
         if target.is_some()
             && stops_for_engage
@@ -472,17 +479,22 @@ fn choose_target(
     parameters: &WeaponParameters,
     candidates: &CombatIndex<'_>,
     focus: Option<u32>,
-    sight: Option<&crate::visibility::VisibilityBasis>,
 ) -> Option<u32> {
     let healths = &world.resource::<Healths>().0;
     let matches = |id: u32| {
-        let owner = *candidates.owners.get(&id)?;
+        let target = candidates.owners.get(&id)?;
+        let owner = target.slot;
         // One rule for every relation (`turts_rules::relation`); the team of a slot is the slot
         // itself until the match config gives teams.
         let relation_matches =
             crate::rules_adapter::holds_own_team(parameters.targets, parameters.owner, owner);
         if !relation_matches
-            || sight.is_some_and(|basis| !basis.unit_permitted(parameters.owner, id))
+            || target.sight.as_ref().is_some_and(|slots| {
+                !slots
+                    .get(usize::from(parameters.owner))
+                    .copied()
+                    .unwrap_or(false)
+            })
         {
             return None;
         }
