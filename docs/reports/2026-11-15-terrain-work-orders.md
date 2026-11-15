@@ -45,7 +45,11 @@ A diagnostic profile records two actual simulation ticks at336.637ms and343.707m
 Exact rational geometry dominates the145 CPU samples. This is a cold diagnostic, not a warmed capacity result.
 Evidence: `terrain-work-orders/tw7-first-ticks-profile-metadata.json`, `tw7-first-ticks.perf.data`, `tw7-first-ticks-perf-report.txt`, and `tw7-service-trace/updates.jsonl` in that directory.
 
-The implementation now reuses exact body coverage within a work phase. It refreshes coverage after queue promotion. Verification and the timing comparison are pending.
+The implementation now reuses exact body coverage within a work phase. It refreshes coverage after queue promotion.
+All32 focused terrain tests pass, including the differential occupancy oracle.
+The same two ticks on the same four CPUs take29.780ms and28.692ms after the change. Both initial client payloads still activate.
+Evidence: `terrain-work-orders/terrain-occupancy-reuse-tests.log` and `terrain-work-orders/tw7-occupancy-reuse-comparison.json`.
+This comparison does not replace the complete warmed acceptance run.
 No geometry approximation, workload reduction, timeout increase or memory-budget increase was made.
 
 Four real terrain audit checks pass: ordinary dig/fill/depletion and failed fill; exact unloading; forged resource/depletion/revision rejection; and same-seed command replay with allocator inversion.
