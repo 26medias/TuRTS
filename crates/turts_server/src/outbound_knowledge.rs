@@ -638,16 +638,18 @@ mod tests {
         app.insert_resource(turts_sim::InstalledMapIdentity(
             ContentId::parse("fixture:map").unwrap(),
         ));
-        let mut view = turts_sim::WorldView::default();
-        view.units = (1..=2)
-            .map(|unit_id| turts_sim::world::UnitState {
-                unit_id,
-                content_id: "fixture:unit".into(),
-                owner_slot: 0,
-                facing: None,
-                pos: bevy::math::Vec2::new(unit_id as f32, 2.),
-            })
-            .collect();
+        let view = turts_sim::WorldView {
+            units: (1..=2)
+                .map(|unit_id| turts_sim::world::UnitState {
+                    unit_id,
+                    content_id: "fixture:unit".into(),
+                    owner_slot: 0,
+                    facing: None,
+                    pos: bevy::math::Vec2::new(unit_id as f32, 2.),
+                })
+                .collect(),
+            ..Default::default()
+        };
         app.insert_resource(turts_sim::CompletedWorld(view));
         let entity = app.world_mut().spawn_empty().id();
         assert!(queue_oversized(app.world_mut(), entity, SlotId(0)).unwrap());
@@ -896,16 +898,18 @@ mod tests {
         app.insert_resource(turts_sim::bootstrap::InstalledMapIdentity(map.clone()));
         let entity = app.world_mut().spawn_empty().id();
         assert!(!queue_full(app.world_mut(), entity, SlotId(0)).unwrap());
-        let mut view = turts_sim::WorldView::default();
-        view.units = (1..=200)
-            .map(|unit_id| turts_sim::world::UnitState {
-                unit_id,
-                content_id: "fixture:unit".into(),
-                owner_slot: 0,
-                facing: None,
-                pos: bevy::math::Vec2::new(2.0, 2.0),
-            })
-            .collect();
+        let view = turts_sim::WorldView {
+            units: (1..=200)
+                .map(|unit_id| turts_sim::world::UnitState {
+                    unit_id,
+                    content_id: "fixture:unit".into(),
+                    owner_slot: 0,
+                    facing: None,
+                    pos: bevy::math::Vec2::new(2.0, 2.0),
+                })
+                .collect(),
+            ..Default::default()
+        };
         app.insert_resource(turts_sim::CompletedWorld(view));
         assert!(queue_full(app.world_mut(), entity, SlotId(0)).unwrap());
         let sender = app.world().get::<KnowledgeSender>(entity).unwrap();
@@ -1043,7 +1047,7 @@ mod tests {
         assert!(slow.retained() < MAX_PENDING_STATE_BYTES as usize);
         let mut healthy = sender(now);
         pump_one(app.world_mut(), healthy_entity, &mut healthy, now).unwrap();
-        assert!(healthy.outstanding.len() >= 1);
+        assert!(!healthy.outstanding.is_empty());
         assert!(
             healthy
                 .pending

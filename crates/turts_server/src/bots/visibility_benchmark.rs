@@ -1144,6 +1144,10 @@ fn peak_resident_bytes() -> Option<u64> {
         .checked_mul(1024)
 }
 fn run(intervals: usize, acceptance: bool) {
+    #[cfg(debug_assertions)]
+    if acceptance {
+        panic!("SV7 performance acceptance requires a release build");
+    }
     // Record immutable authoring before any timed work. Root captures CPU affinity,
     // compiler, machine, and build flags beside this artifact.
     let mut all = vec![];
@@ -1220,10 +1224,6 @@ fn run(intervals: usize, acceptance: bool) {
         "rows":artifact["rows"].as_array().unwrap().iter().map(|r|serde_json::json!({"fog":r["fog"],"concentrated":r["concentrated"],"deadline":r["deadline"],"v1_threshold_pass":r["v1_threshold_pass"]})).collect::<Vec<_>>()})
     );
     if acceptance {
-        assert!(
-            !cfg!(debug_assertions),
-            "SV7 performance acceptance requires a release build"
-        );
         assert_eq!(intervals, REQUIRED);
         assert!(
             artifact["rows"]

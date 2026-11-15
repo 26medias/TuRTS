@@ -656,7 +656,7 @@ fn frozen_20hz_pipeline_preserves_every_tick_at_50_and_100_ms_activation_ack_rtt
         let mut harness = Harness::new(rtt_ms, 1);
         harness.burst_at_ms = Some(u64::from(WARMUP_TICKS + 20) * TICK_MS);
         while harness.now_ms <= u64::from(FINAL_TICK) * TICK_MS {
-            if harness.now_ms > 0 && harness.now_ms % TICK_MS == 0 {
+            if harness.now_ms > 0 && harness.now_ms.is_multiple_of(TICK_MS) {
                 harness.enqueue_tick((harness.now_ms / TICK_MS) as u32);
             }
             harness.step(None);
@@ -711,7 +711,7 @@ fn frozen_20hz_pipeline_preserves_every_tick_at_50_and_100_ms_activation_ack_rtt
 fn a_nonreturning_viewer_restarts_and_disconnects_without_stalling_the_healthy_viewer() {
     let mut harness = Harness::new(100, 2);
     while harness.now_ms <= 16_000 {
-        if harness.now_ms > 0 && harness.now_ms % TICK_MS == 0 {
+        if harness.now_ms > 0 && harness.now_ms.is_multiple_of(TICK_MS) {
             harness.enqueue_tick((harness.now_ms / TICK_MS) as u32);
         }
         harness.step(Some(0));
