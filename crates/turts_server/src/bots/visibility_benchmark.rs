@@ -648,6 +648,7 @@ impl Harness {
         self.app.world_mut().resource_mut::<Cpu>().client_ns += started.elapsed().as_nanos() as u64;
     }
     fn transfer(&mut self) {
+        let started = Instant::now();
         for peer in &mut self.peers {
             for (from, to) in [(peer.server, peer.client), (peer.client, peer.server)] {
                 let packets = {
@@ -669,6 +670,7 @@ impl Harness {
                 }
             }
         }
+        self.app.world_mut().resource_mut::<Cpu>().server_ns += started.elapsed().as_nanos() as u64;
     }
     fn update(&mut self, ms: u64) {
         self.frame_ms += ms;
@@ -683,11 +685,17 @@ impl Harness {
     fn flush_to(&mut self, tick: u32) {
         for _ in 0..2048 {
             self.update(0);
-            if self
-                .peers
-                .iter()
-                .all(|p| p.latest == tick && p.assembler.active().is_some())
-            {
+            if self.peers.iter().all(|p| {
+                p.latest == tick
+                    && p.assembler.active().is_some()
+                    && self
+                        .app
+                        .world()
+                        .get::<crate::outbound::knowledge::KnowledgeSender>(p.server)
+                        .unwrap()
+                        .active_stamp()
+                        == p.assembler.active()
+            }) {
                 return;
             }
         }
@@ -730,7 +738,7 @@ impl Harness {
                 .accounts
                 .iter()
                 .map(|row| row.account.clone())
-                .collect();
+                .collect::<Vec<_>>();
             let mut coordinator = turts_bot::BotCoordinator::new(
                 turts_bot::BotActor {
                     slot,
@@ -753,7 +761,7 @@ impl Harness {
             let mut lease = observation::CandidateLease::new(basis, u64::from(view.tick));
             let mut queries = lease.queries("sv7-public", operator_quota());
             queries.pin_basis(u64::from(view.tick)).unwrap();
-            for query in [
+            let mut requested = vec![
                 Query::Units(UnitQuery::own(vec![])),
                 Query::RememberedUnits(UnitQuery {
                     relation: turts_mod_api::SlotRelation::Enemy,
@@ -777,12 +785,17 @@ impl Harness {
                     center: None,
                     radius: None,
                 }),
-                Query::Accounts(keys),
                 Query::Works,
-            ] {
+            ];
+            // Public account queries accept at most64 keys. The complete private
+            // reconciliation above remains one atomic batch, never key-chunked.
+            requested.extend(keys.chunks(64).map(|keys| Query::Accounts(keys.to_vec())));
+            for query in requested {
                 let mut cursor = None;
                 loop {
-                    let page = queries.query(query.clone(), cursor, 64).unwrap();
+                    let page = queries
+                        .query(query.clone(), cursor, 64)
+                        .unwrap_or_else(|error| panic!("public SV7 query {query:?}: {error:?}"));
                     match page.state {
                         PageState::More(next) => cursor = Some(next),
                         PageState::Complete => break,
@@ -882,7 +895,15 @@ impl Harness {
             for _ in 0..2048 {
                 self.update(0);
                 if self.peers.iter().zip(&old).all(|(p, id)| {
-                    p.latest == tick && p.assembler.active().unwrap().transaction_id > *id
+                    p.latest == tick
+                        && p.assembler.active().unwrap().transaction_id > *id
+                        && self
+                            .app
+                            .world()
+                            .get::<crate::outbound::knowledge::KnowledgeSender>(p.server)
+                            .unwrap()
+                            .active_stamp()
+                            == p.assembler.active()
                 }) {
                     break;
                 }
@@ -895,6 +916,16 @@ impl Harness {
                     .transaction_id
                     > id),
                 "full resync did not finish"
+            );
+            assert!(
+                self.peers.iter().all(|p| self
+                    .app
+                    .world()
+                    .get::<crate::outbound::knowledge::KnowledgeSender>(p.server)
+                    .unwrap()
+                    .active_stamp()
+                    == p.assembler.active()),
+                "resync activation ACK tail must be charged in this interval"
             );
         }
         let cpu = self.app.world().resource::<Cpu>();
