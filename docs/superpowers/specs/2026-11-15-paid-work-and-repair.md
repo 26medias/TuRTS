@@ -133,7 +133,8 @@ An exact source tie is held without an ID fallback.
 Publish exact scaled job/site counters, actual charged amounts, per-tick funding state, and stable hold timestamps to their owner.
 Do not expose another slot's balances, costs paid, repair charge remainders, or funding state.
 Arithmetic or exact-source-tie holds keep an in-range action in Working status.
-WaitingForFunds names only a real unaffordable Balance resource.
+RepairStatus::WaitingForFunds names only a real unaffordable Balance resource.
+Job and site funding states also permit present inventory Stock resources; missing endpoints use typed diagnostic holds.
 Typed authoritative diagnostics explain arithmetic/source holds; no owner-visible wire reason is promised.
 Add `RepairRecord { repairer: UnitId, target: UnitId, state: RepairState }` in the existing transport-free record module.
 Freeze `RepairState::{Approaching, Working, WaitingForFunds(ContentRef)}`; the payload is the missing Balance resource.
