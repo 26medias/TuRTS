@@ -78,6 +78,11 @@ const BASELINE: &[(&str, Counts)] = &[
     // fingerprint 4 found it when it was added (L0-SIM) and the record keeps it.
     ("crates/turts_sim/src/economy/gather.rs", [0, 0, 4, 1, 0]),
     ("crates/turts_sim/src/economy/machine.rs", [1, 0, 0, 0, 0]),
+    // Operating-resource adapters share two rule names, but accept world/unit state:
+    // rate_factor forwards to capability-specific rate_for; weapon_enabled aggregates
+    // authored Disable entries against the immutable supply snapshot. Neither copies
+    // a charge, progress, damage, or health formula. Keep the exact adapter count.
+    ("crates/turts_sim/src/economy/power.rs", [0, 0, 0, 0, 2]),
     (
         "crates/turts_sim/src/economy/production.rs",
         [1, 0, 0, 0, 0],
