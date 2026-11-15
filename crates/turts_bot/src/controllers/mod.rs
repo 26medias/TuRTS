@@ -56,6 +56,7 @@ struct Scan {
     cursor: Option<QueryCursor>,
     units: Vec<UnitObservation>,
     nodes: Vec<NodeObservation>,
+    complete: Option<QueryData>,
 }
 struct StockController {
     key: String,
@@ -77,11 +78,15 @@ impl StockController {
                     cursor: None,
                     units: Vec::new(),
                     nodes: Vec::new(),
+                    complete: None,
                 });
                 self.scans.len() - 1
             });
         loop {
             let scan = &mut self.scans[index];
+            if let Some(data) = &scan.complete {
+                return Some(data.clone());
+            }
             let page = match queries.query(query.clone(), scan.cursor.clone(), 64) {
                 Ok(page) => page,
                 Err(QueryError::Budget) => return None,
@@ -98,18 +103,19 @@ impl StockController {
                 QueryData::Units(mut rows) => scan.units.append(&mut rows),
                 QueryData::Nodes(mut rows) => scan.nodes.append(&mut rows),
                 data => {
-                    self.scans.remove(index);
+                    scan.complete = Some(data.clone());
                     return Some(data);
                 }
             }
             match page.state {
                 PageState::Complete => {
-                    let scan = self.scans.remove(index);
-                    return Some(if matches!(query, Query::Nodes(_)) {
-                        QueryData::Nodes(scan.nodes)
+                    let data = if matches!(query, Query::Nodes(_)) {
+                        QueryData::Nodes(std::mem::take(&mut scan.nodes))
                     } else {
-                        QueryData::Units(scan.units)
-                    });
+                        QueryData::Units(std::mem::take(&mut scan.units))
+                    };
+                    scan.complete = Some(data.clone());
+                    return Some(data);
                 }
                 PageState::More(cursor) | PageState::UnresolvedTie(cursor) => {
                     scan.cursor = Some(cursor)
@@ -518,8 +524,9 @@ impl BotController for StockController {
             }
             Policy::Squads => self.squads(frame, queries, out),
         }
-        if self.scans.is_empty() {
+        if self.scans.iter().all(|s| s.complete.is_some()) {
             let _ = queries.release_basis(basis);
+            self.scans.clear();
             self.basis = None;
         }
     }
