@@ -56,10 +56,21 @@ pub(crate) fn build_batch(
 ) -> Result<ReconcileBatch, String> {
     validate_completed_input(view, committed, watermark)?;
     let mut budget = RowBudget(row_limit);
-    let accounts = account_rows(view, catalog, actor, &mut budget)?;
+    #[cfg(test)]
+    let account_started = crate::bot_profile::start();
+    let account_result = account_rows(view, catalog, actor, &mut budget);
+    #[cfg(test)]
+    crate::bot_profile::finish("publication.accounts", account_started);
+    let accounts = account_result?;
+    #[cfg(test)]
+    let clone_started = crate::bot_profile::start();
     let mut staged = requests.clone();
+    #[cfg(test)]
+    crate::bot_profile::finish("publication.clone_requests", clone_started);
     let mut included = Vec::new();
     let mut unapplied = Vec::new();
+    #[cfg(test)]
+    let capture_started = crate::bot_profile::start();
     for (key, tracked) in &mut staged {
         budget.take(1)?;
         let Some(effect) =
@@ -77,7 +88,13 @@ pub(crate) fn build_batch(
         }
         included.push(effect);
     }
+    #[cfg(test)]
+    crate::bot_profile::finish("publication.capture", capture_started);
+    #[cfg(test)]
+    let commit_started = crate::bot_profile::start();
     *requests = staged;
+    #[cfg(test)]
+    crate::bot_profile::finish("publication.commit_drop", commit_started);
     Ok(ReconcileBatch {
         watermark,
         accounts,
