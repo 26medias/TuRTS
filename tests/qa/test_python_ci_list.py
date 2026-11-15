@@ -20,6 +20,7 @@ WORKFLOW = Path(".github/workflows/ci.yml")
 # File -> why CI does not run it. A reason has at least 30 characters. An entry for a file that CI runs,
 # or for a file that does not exist, is an error (the entry would hide the next change).
 NOT_IN_CI = {
+    "scripts/qa/driver_rule.py": "retired browser role-header bookkeeping; scripted player probes and executable browser tests remain in CI",
     "tests/m2/test_variants.py": "needs a cargo run of the m2_variants example in its own target dir; a cold build on the hosted runner is not measured",
 }
 
