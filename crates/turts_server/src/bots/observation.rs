@@ -586,7 +586,8 @@ impl ProposalVerifier for ObservationVerifier<'_> {
                 .current
                 .own_unit(*id)
                 .ok_or(ProposalRejection::NotObserved)?;
-            if !definition.units.contains(&unit.content.to_string()) {
+            if !definition.units.is_empty() && !definition.units.contains(&unit.content.to_string())
+            {
                 return Err(ProposalRejection::InvalidOrder);
             }
             let production = match (&proposal.order.target, definition.behaviour) {
