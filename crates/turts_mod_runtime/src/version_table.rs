@@ -1043,6 +1043,7 @@ mod tests {
                 "0.2.1" => ("^0.2", "0.2.0"),
                 "0.2.3" => ("^0.2.2", "0.2.2"),
                 "0.2.4" => ("^0.2.3", "0.2.3"),
+                "0.2.15" => ("^0.2.14", "0.2.14"),
                 other => panic!("row {}: the test has no requirement for {other}", row.name),
             };
             let text = manifest_text_with_export(requirement, field)
@@ -1057,8 +1058,8 @@ mod tests {
             );
         }
         // 6 rows of 0.2.1 and 0.2.3, and `exports.combat`, `exports.match`,
-        // `exports.visual_effects` of 0.2.4.
-        assert_eq!(raw_rows, 9);
+        // `exports.visual_effects` of 0.2.4, plus `exports.bots` of 0.2.15.
+        assert_eq!(raw_rows, 10);
     }
 
     /// A row on a `Written` field of an enum variant fires when the key is written, also with
