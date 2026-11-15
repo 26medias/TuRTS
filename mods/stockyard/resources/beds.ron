@@ -1,1 +1,1 @@
-(id: "beds", name: "Garrison space", unit_name: "beds", kind: Supply)
+(id: "beds", name: "Garrison space", unit_name: "beds", kind: Supply(scope: Slot, counts: Completed))
