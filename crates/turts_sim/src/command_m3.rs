@@ -70,14 +70,7 @@ pub(crate) fn set_enabled(
 ) -> Result<(), RejectReason> {
     let (entity, owner) = target(world, slot, unit_id)?;
     let unit = definition(world, entity)?;
-    let toggleable = unit.extractor.is_some()
-        || unit.inserter.is_some()
-        || unit.machine.is_some()
-        || unit.research.is_some()
-        || unit.producer.is_some()
-        || unit.constructor.is_some()
-        || unit.repairer.is_some()
-        || unit.weapon.is_some();
+    let toggleable = crate::orders::unit_toggleable(unit);
     if !toggleable {
         return Err(RejectReason::NotToggleable);
     }

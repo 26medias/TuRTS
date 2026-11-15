@@ -11,6 +11,7 @@ pub mod writer;
 
 pub(crate) use apply::{
     apply_order, clear_replaced_movement, note_accepted_player_order, unit_order_capable,
+    unit_toggleable,
 };
 pub use pending::{MovementDispatchState, PendingMovementOrders};
 pub(crate) use pending::{

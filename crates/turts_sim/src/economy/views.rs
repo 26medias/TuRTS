@@ -1520,16 +1520,7 @@ pub fn audit_state(world: &mut World) -> AuditState {
                                         .removal
                                         .as_ref()
                                         .is_some_and(|policy| policy.by_command),
-                                    toggleable: unit.extractor.is_some()
-                                        || unit.inserter.is_some()
-                                        || unit.machine.is_some()
-                                        || unit.research.is_some()
-                                        || unit.producer.is_some()
-                                        || unit.weapon.is_some()
-                                        || unit.constructor.is_some()
-                                        || unit.repairer.is_some()
-                                        || !unit.terrain_tools.is_empty()
-                                        || unit.terrain_cargo.is_some(),
+                                    toggleable: crate::orders::unit_toggleable(unit),
                                 },
                             )
                             .collect(),

@@ -41,7 +41,7 @@ pub(crate) fn unit_order_capable(world: &World, kind: turts_mod_api::UnitTypeId)
             })
 }
 
-pub(super) fn unit_toggleable(unit: &turts_mod_api::ResolvedUnit) -> bool {
+pub(crate) fn unit_toggleable(unit: &turts_mod_api::ResolvedUnit) -> bool {
     unit.extractor.is_some()
         || unit.inserter.is_some()
         || unit.machine.is_some()
@@ -1189,6 +1189,15 @@ fn apply_unit_order(
             Ok(job_id)
         }
         Behaviour::SetEnabled(enabled) => {
+            let preserve_terrain_progress = world
+                .get::<UnitOrders>(entity)
+                .and_then(|orders| orders.current.as_ref())
+                .is_some_and(|order| {
+                    matches!(
+                        order.behaviour,
+                        Behaviour::TerrainWork | Behaviour::UnloadCargo
+                    )
+                });
             let job_id = crate::command::apply_legacy_unit(
                 world,
                 slot,
@@ -1196,7 +1205,11 @@ fn apply_unit_order(
             )
             .map(|applied| applied.job_id)?;
             if command.queue == QueueMode::Replace {
-                clear_replaced_movement(world, slot, entity, unit_id);
+                if preserve_terrain_progress {
+                    clear_motion_only(world, slot, entity, unit_id);
+                } else {
+                    clear_replaced_movement(world, slot, entity, unit_id);
+                }
             }
             Ok(job_id)
         }
@@ -1312,8 +1325,17 @@ pub(super) fn clear_motion(
     entity: bevy_ecs::entity::Entity,
     unit_id: u32,
 ) {
-    crate::terrain::navigation::order_changed(world, unit_id);
     crate::terrain::cargo::order_changed(world, unit_id);
+    clear_motion_only(world, slot, entity, unit_id);
+}
+
+fn clear_motion_only(
+    world: &mut World,
+    slot: SlotId,
+    entity: bevy_ecs::entity::Entity,
+    unit_id: u32,
+) {
+    crate::terrain::navigation::order_changed(world, unit_id);
     edit_unit_orders(world, entity, |orders| orders.acquired = None);
     world
         .resource_mut::<PendingMovementOrders>()
