@@ -101,6 +101,60 @@ pub(crate) fn flush_funding(
     }
     Ok(())
 }
+
+pub(crate) fn payment_lines(
+    costs: &[turts_mod_api::ResolvedCost],
+    owner: u8,
+    inventory: u32,
+) -> Vec<ReservationLine> {
+    costs
+        .iter()
+        .map(|cost| ReservationLine {
+            endpoint: match cost.source {
+                CostSource::SlotBalance => Endpoint::Slot(owner),
+                CostSource::ProducerInventory => Endpoint::Inventory(inventory),
+            },
+            resource: cost.resource.clone(),
+            amount: cost.amount,
+        })
+        .collect()
+}
+
+pub(crate) enum PaymentAttempt {
+    Funded(super::payment::ProgressCharge),
+    Waiting(ContentId),
+}
+
+/// Check every authored source, including zero-difference entries, before staging any debit.
+pub(crate) fn charge_progress(
+    tx: &mut transaction::Transaction<'_>,
+    costs: &[ReservationLine],
+    previous: u64,
+    next: u64,
+    total: u64,
+) -> Result<PaymentAttempt, RejectReason> {
+    let proposal = super::payment::progress_charges(costs, previous, next, total)?;
+    for cost in costs {
+        tx.validate_endpoint_legacy(cost.endpoint, &cost.resource)?;
+        let due = proposal
+            .debits
+            .iter()
+            .find(|row| row.endpoint == cost.endpoint && row.resource == cost.resource)
+            .map_or(0, |row| row.amount);
+        let account = tx.account(cost.endpoint, &cost.resource);
+        let available = account
+            .on_hand
+            .checked_sub(account.reserved)
+            .ok_or(RejectReason::ArithmeticOverflow)?;
+        if available < due {
+            return Ok(PaymentAttempt::Waiting(cost.resource.clone()));
+        }
+    }
+    if !proposal.debits.is_empty() {
+        transaction::charge_costs(tx, &proposal.debits)?;
+    }
+    Ok(PaymentAttempt::Funded(proposal))
+}
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ProductionJob {
     pub(crate) funding: Option<FundingState>,
@@ -234,11 +288,10 @@ pub fn queue_production(
                 let reservation = transaction::reserve_costs(tx, job_id, &lines)?;
                 (Vec::new(), Some(reservation))
             }
-            // API 0.2.4 (row P1): the packer refuses `ChargeOverTime` until `L-PAY` builds it
-            // (`UNBUILT_FEATURES`), so a packed package never reaches this arm.
-            PaymentPolicy::ChargeOverTime => return Err(RejectReason::NotApplicable),
+            PaymentPolicy::ChargeOverTime => (Vec::new(), None),
         };
         queue.push(ProductionJob {
+            funding: (policy == PaymentPolicy::ChargeOverTime).then(FundingState::default),
             id: job_id,
             recipe: recipe_id_for_job.clone(),
             stage: JobStage::Queued,
@@ -293,7 +346,7 @@ pub fn cancel_production(
             .iter()
             .position(|entry| entry.id == job)
             .ok_or(RejectReason::UnknownJob)?;
-        let current = queue[index].clone();
+        let mut current = queue[index].clone();
         let catalog = &tx.catalog()?.0;
         let recipe = catalog
             .production
@@ -327,6 +380,7 @@ pub fn cancel_production(
                 u64::from(ratio.denominator),
             )?;
         }
+        flush_funding(tx, slot.0, producer, job.0, &mut current.funding)?;
         queue.remove(index);
         tx.stage_queues(queues);
         let refunded = refund
@@ -440,6 +494,16 @@ fn advance_producer(world: &mut World, producer: u32) {
     else {
         return;
     };
+    if world
+        .resource::<ProductionQueues>()
+        .0
+        .get(&producer)
+        .and_then(|queue| queue.first())
+        .is_some_and(|job| job.funding.is_some())
+    {
+        advance_paid_producer(world, producer, owner_slot);
+        return;
+    }
     if world.contains_resource::<power::OperatingResources>() {
         let ready = world
             .resource::<ProductionQueues>()
@@ -536,6 +600,148 @@ fn advance_producer(world: &mut World, producer: u32) {
         .cloned();
     if let Some(job) = head.filter(|job| job.stage == JobStage::OutputBlocked) {
         let _ = transaction::capture_operation(world, |world| try_output(world, producer, job.id));
+    }
+}
+
+/// Advance a paid job in one transaction, including its final output when an exit exists.
+fn advance_paid_producer(world: &mut World, producer: u32, owner_slot: u8) {
+    let Some(head) = world
+        .resource::<ProductionQueues>()
+        .0
+        .get(&producer)
+        .and_then(|queue| queue.first())
+        .cloned()
+    else {
+        return;
+    };
+    if head.stage == JobStage::OutputBlocked {
+        let result =
+            transaction::capture_operation(world, |world| try_output(world, producer, head.id));
+        match result {
+            Err(reason) => super::operating::hold(world, producer, reason),
+            Ok(_) => super::operating::clear_hold(world, producer),
+        }
+        return;
+    }
+    if head.stage == JobStage::Queued {
+        let _ = transaction::transact(world, |tx| {
+            let mut queues = tx.queues();
+            let job = queues
+                .0
+                .get_mut(&producer)
+                .and_then(|queue| queue.first_mut())
+                .ok_or(RejectReason::UnknownJob)?;
+            job.stage = JobStage::Running;
+            tx.stage_queues(queues);
+            tx.stage_event(
+                owner_slot,
+                EconomyEventKind::ProductionStarted {
+                    producer,
+                    job: head.id.0,
+                    charged: Vec::new(),
+                },
+            )?;
+            Ok(())
+        });
+        return;
+    }
+    let step = job_step(&head, false, power::rate_factor(world, producer));
+    if step == 0 {
+        return;
+    }
+    let Some(next) = head
+        .total
+        .checked_sub(head.elapsed_ticks)
+        .and_then(|left| head.elapsed_ticks.checked_add(step.min(left)))
+    else {
+        super::operating::hold(world, producer, RejectReason::ArithmeticOverflow);
+        return;
+    };
+    let Some(recipe) = world
+        .get_resource::<InstalledCatalog>()
+        .and_then(|catalog| catalog.0.production.get(&head.recipe))
+        .cloned()
+    else {
+        return;
+    };
+    let costs = payment_lines(&recipe.costs, owner_slot, producer);
+    let output = if next == head.total {
+        // Admission must succeed even when geometry will delay the already-paid output.
+        if let Err(reason) = prepare_output_activation(world, producer, &head.recipe) {
+            super::operating::hold(world, producer, reason);
+            return;
+        }
+        match prepare_output(world, producer, head.id) {
+            Ok(output) => output,
+            Err(reason) => {
+                super::operating::hold(world, producer, reason);
+                return;
+            }
+        }
+    } else {
+        None
+    };
+    let tick = world.resource::<crate::world::Tick>().0;
+    let hz = world.resource::<crate::SimClock>().tick_hz;
+    let follow = output
+        .as_ref()
+        .map(|row| (row.owner, row.rally, row.mobile));
+    let result = transaction::transact(world, |tx| {
+        let mut queues = tx.queues();
+        let job = queues
+            .0
+            .get_mut(&producer)
+            .and_then(|queue| queue.first_mut())
+            .ok_or(RejectReason::UnknownJob)?;
+        match charge_progress(tx, &costs, job.elapsed_ticks, next, job.total)? {
+            PaymentAttempt::Waiting(resource) => {
+                let entering = job
+                    .funding
+                    .as_mut()
+                    .ok_or(RejectReason::IntegrityViolation)?
+                    .wait(resource, tick);
+                if entering {
+                    flush_funding(tx, owner_slot, producer, job.id.0, &mut job.funding)?;
+                }
+                job.held = true;
+                job.held_since_tick = job
+                    .funding
+                    .as_ref()
+                    .and_then(|state| state.held_since_tick)
+                    .unwrap_or(tick);
+                tx.stage_queues(queues);
+                return Ok(None);
+            }
+            PaymentAttempt::Funded(payment) => {
+                let funding = job
+                    .funding
+                    .as_mut()
+                    .ok_or(RejectReason::IntegrityViolation)?;
+                funding.add_charges(&payment.debits)?;
+                funding.advance(hz);
+                job.held = funding.held_since_tick.is_some();
+                job.held_since_tick = funding.held_since_tick.unwrap_or(0);
+                job.charged = payment.charged;
+                job.elapsed_ticks = next;
+                if next == job.total {
+                    job.stage = JobStage::OutputBlocked;
+                    flush_funding(tx, owner_slot, producer, job.id.0, &mut job.funding)?;
+                }
+            }
+        }
+        tx.stage_queues(queues);
+        output
+            .map(|output| stage_output(tx, producer, head.id, output))
+            .transpose()
+    });
+    match result {
+        Ok(spawned) => {
+            super::operating::clear_hold(world, producer);
+            if let (Some(id), Some((owner, rally, mobile))) = (spawned, follow) {
+                let _ = follow_output(world, id, owner, rally, mobile);
+            }
+        }
+        Err(reason) => super::operating::hold(world, producer, reason),
     }
 }
 
@@ -799,11 +1005,11 @@ fn prepare_output_activation(
     super::operating::prepare_activation(world, output, owner)
 }
 
-fn try_output(
-    world: &mut World,
+fn prepare_output(
+    world: &World,
     producer: u32,
     job_id: JobId,
-) -> Result<OutputAttempt, RejectReason> {
+) -> Result<Option<PreparedOutput>, RejectReason> {
     let (owner, pos, producer_type) = unit_entity(world, producer)
         .and_then(|entity| {
             Some((
@@ -837,7 +1043,7 @@ fn try_output(
         .ok_or(RejectReason::UnknownJob)?;
     let job = queue
         .first()
-        .filter(|j| j.id == job_id && j.stage == JobStage::OutputBlocked)
+        .filter(|j| j.id == job_id)
         .ok_or(RejectReason::UnknownJob)?;
     let recipe = catalog
         .production
@@ -939,7 +1145,7 @@ fn try_output(
         ring += 1;
     }
     let Some(point) = candidate else {
-        return Ok(OutputAttempt::Blocked);
+        return Ok(None);
     };
     let inventory = output
         .inventory
@@ -959,65 +1165,118 @@ fn try_output(
     } else {
         None
     };
-    let spawned = transaction::transact(world, |tx| {
-        let mut queues = tx.queues();
-        let queue = queues
-            .0
-            .get_mut(&producer)
-            .ok_or(RejectReason::UnknownJob)?;
-        if queue
-            .first()
-            .is_none_or(|j| j.id != job_id || j.stage != JobStage::OutputBlocked)
-        {
-            return Err(RejectReason::UnknownJob);
-        }
-        let id = tx.allocate_unit_id()?;
-        queue.remove(0);
-        tx.stage_queues(queues);
-        tx.stage_spawn(transaction::SpawnWrite {
-            id,
-            unit_type: output_type,
-            owner_slot: owner.0,
-            position: point,
-            state: crate::world::UnitState {
-                unit_id: id,
-                content_id: recipe.output_unit.to_string(),
-                owner_slot: owner.0,
-                facing: None,
-                pos: point,
-            },
-            inventory,
-            gatherer: output.gatherer.is_some(),
-            producer: output.producer.is_some(),
-            capability_rows,
-        });
-        if let Some((grant, clock)) = activation {
-            tx.stage_operating_activation(id, grant, clock)?;
-        }
-        tx.stage_event(
-            owner.0,
-            EconomyEventKind::ProductionCompleted {
-                producer,
-                job: job_id.0,
-                output_unit_id: id,
-            },
-        )?;
-        Ok(OutputAttempt::Spawned(id))
-    })?;
-    if let OutputAttempt::Spawned(id) = spawned
-        && output.movement.is_some()
+    Ok(Some(PreparedOutput {
+        owner,
+        rally,
+        mobile: output.movement.is_some(),
+        output_type,
+        content: recipe.output_unit.clone(),
+        point,
+        inventory,
+        gatherer: output.gatherer.is_some(),
+        producer: output.producer.is_some(),
+        capability_rows,
+        activation,
+    }))
+}
+
+struct PreparedOutput {
+    owner: SlotId,
+    rally: bevy_math::Vec2,
+    mobile: bool,
+    output_type: turts_mod_api::UnitTypeId,
+    content: ContentId,
+    point: bevy_math::Vec2,
+    inventory: Option<super::ledger::Inventory>,
+    gatherer: bool,
+    producer: bool,
+    capability_rows: crate::boot_m3::PreparedCapabilityRows,
+    activation: Option<(power::Activation, Option<super::income::IncomeActivation>)>,
+}
+
+fn stage_output(
+    tx: &mut transaction::Transaction<'_>,
+    producer: u32,
+    job_id: JobId,
+    output: PreparedOutput,
+) -> Result<u32, RejectReason> {
+    let mut queues = tx.queues();
+    let queue = queues
+        .0
+        .get_mut(&producer)
+        .ok_or(RejectReason::UnknownJob)?;
+    if queue
+        .first()
+        .is_none_or(|job| job.id != job_id || job.stage != JobStage::OutputBlocked)
     {
-        // The same engine move command as player movement, including arrival reservations.
+        return Err(RejectReason::UnknownJob);
+    }
+    let id = tx.allocate_unit_id()?;
+    queue.remove(0);
+    tx.stage_queues(queues);
+    tx.stage_spawn(transaction::SpawnWrite {
+        id,
+        unit_type: output.output_type,
+        owner_slot: output.owner.0,
+        position: output.point,
+        state: crate::world::UnitState {
+            unit_id: id,
+            content_id: output.content.to_string(),
+            owner_slot: output.owner.0,
+            facing: None,
+            pos: output.point,
+        },
+        inventory: output.inventory,
+        gatherer: output.gatherer,
+        producer: output.producer,
+        capability_rows: output.capability_rows,
+    });
+    if let Some((activation, clock)) = output.activation {
+        tx.stage_operating_activation(id, activation, clock)?;
+    }
+    tx.stage_event(
+        output.owner.0,
+        EconomyEventKind::ProductionCompleted {
+            producer,
+            job: job_id.0,
+            output_unit_id: id,
+        },
+    )?;
+    Ok(id)
+}
+
+fn follow_output(
+    world: &mut World,
+    unit: u32,
+    owner: SlotId,
+    rally: bevy_math::Vec2,
+    mobile: bool,
+) -> Result<(), RejectReason> {
+    if mobile {
         crate::command::apply_legacy_unit(
             world,
             owner,
             crate::CommandKind::MoveTo {
-                unit_ids: vec![id],
+                unit_ids: vec![unit],
                 target: rally,
             },
         )?;
     }
-    Ok(spawned)
+    Ok(())
+}
+
+fn try_output(
+    world: &mut World,
+    producer: u32,
+    job_id: JobId,
+) -> Result<OutputAttempt, RejectReason> {
+    let Some(output) = prepare_output(world, producer, job_id)? else {
+        return Ok(OutputAttempt::Blocked);
+    };
+    let (owner, rally, mobile) = (output.owner, output.rally, output.mobile);
+    let id = transaction::transact(world, |tx| stage_output(tx, producer, job_id, output))?;
+    follow_output(world, id, owner, rally, mobile)?;
+    Ok(OutputAttempt::Spawned(id))
 }
 
 fn event_cost_line(line: &ReservationLine) -> CostLine {
