@@ -273,6 +273,7 @@ fn actual_package_terrain_steps_conserve_resources_depletion_and_failed_fill() {
 #[test]
 fn coherent_terrain_account_yield_depletion_and_revision_tampering_is_rejected() {
     let (records, unit) = captured(false);
+    validate_records(&records).expect("counterexamples must start from a certified real stream");
     for kind in 0..3 {
         let mut tampered = records.clone();
         for record in &mut tampered {
@@ -384,6 +385,7 @@ fn same_seed_command_tape_and_real_allocator_inversion_preserve_physical_edits()
         serde_json::to_value(&again).unwrap(),
         "same private seed and ordinary tape reproduce every capture"
     );
+    validate_records(&first).unwrap();
     validate_records(&inverted).unwrap();
     let physical = |records: &[EconomyLogRecord]| {
         records.iter().filter_map(|record|if let EconomyLogRecord::Tick{state,..}=record{
@@ -460,4 +462,61 @@ fn actual_append_unload_preserves_partial_work_and_carry_in_recorded_stream() {
         .find(|row| row.cell == rect().min)
         .unwrap();
     assert_eq!((column.surface, column.natural_top), (-2, -2));
+}
+
+#[test]
+fn coherent_omitted_and_double_fractional_work_credit_are_rejected() {
+    let mut fixture = Fixture::new(false);
+    let mut records = vec![EconomyLogRecord::Initial(turts_sim::audit_state(
+        fixture.app.world_mut(),
+    ))];
+    fixture.work("spade", -1);
+    fixture.tick(&mut records, 10);
+    validate_records(&records).unwrap();
+    for doubled in [false, true] {
+        let mut tampered = records.clone();
+        for record in &mut tampered {
+            states(record, &mut |state| {
+                for work in &mut state.raw_terrain.as_mut().unwrap().work {
+                    if doubled {
+                        let total = (work.done * 20 + work.carry) * 2;
+                        work.done = total / 20;
+                        work.carry = total % 20;
+                    } else {
+                        work.done = 0;
+                        work.carry = 0;
+                    }
+                }
+            });
+        }
+        let error =
+            validate_records(&tampered).expect_err("a coherent work-rate forgery must be rejected");
+        assert!(error.contains("terrain"), "wrong refusal: {error}");
+    }
+}
+
+#[test]
+fn identical_explicit_replace_discards_uncommitted_fraction_without_repeating_yield() {
+    let mut fixture = Fixture::new(false);
+    let mut records = vec![EconomyLogRecord::Initial(turts_sim::audit_state(
+        fixture.app.world_mut(),
+    ))];
+    fixture.work("spade", -2);
+    fixture.tick(&mut records, 41);
+    fixture.work("spade", -2);
+    fixture.tick(&mut records, 30);
+    validate_records(&records).unwrap();
+    let final_state = final_state(&records);
+    let column = final_state
+        .raw_terrain
+        .as_ref()
+        .unwrap()
+        .columns_state
+        .iter()
+        .find(|row| row.cell == rect().min)
+        .unwrap();
+    assert_eq!(
+        (column.surface, column.natural_top, column.revision),
+        (-2, -2, 2)
+    );
 }

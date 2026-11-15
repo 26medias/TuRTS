@@ -1,4 +1,8 @@
 //! Independent terrain conservation. This module never calls simulation terrain/payment code.
+//! The Initial snapshot is the trusted starting geology; private seed provenance is a
+//! separate host/replay input. Sight authorization is tested by the knowledge provider.
+//! Existing movement validation retains exact equality and does not certify an unmatched
+//! terrain detour as flat movement.
 use crate::EconomyLogRecord;
 use std::collections::{BTreeMap, BTreeSet};
 use turts_mod_api::{
@@ -101,7 +105,9 @@ fn validate_state(state: &AuditState) -> Result<(), String> {
     };
     let catalog = state.catalog.as_ref().ok_or("terrain catalog missing")?;
 
-    if terrain.length_scale == 0
+    if terrain.columns == 0
+        || terrain.rows == 0
+        || terrain.length_scale == 0
         || terrain.cell_width == 0
         || terrain.elevation_step == 0
         || terrain.floor > terrain.ceiling
@@ -151,6 +157,28 @@ fn validate_state(state: &AuditState) -> Result<(), String> {
         }
         if top != column.surface || top > terrain.ceiling {
             return Err("terrain surface differs from retained material runs".into());
+        }
+    }
+    for inventory in &state.economy.inventories {
+        let definition = definition(state, inventory.unit)?;
+        let Some((capacity, accepts)) = &definition.inventory else {
+            return Err("terrain-map inventory has no authored capability".into());
+        };
+        if inventory.capacity != *capacity
+            || inventory
+                .items
+                .iter()
+                .any(|item| !accepts.contains(&item.resource) || item.reserved > item.on_hand)
+            || inventory
+                .items
+                .iter()
+                .map(|item| u128::from(item.on_hand))
+                .sum::<u128>()
+                > u128::from(*capacity)
+        {
+            return Err(
+                "terrain-map inventory differs from finite authored capacity/acceptance".into(),
+            );
         }
     }
     let mut cargo_units = BTreeSet::new();
@@ -273,6 +301,7 @@ fn same_columns(before: &TerrainAudit, after: &TerrainAudit) -> bool {
 #[derive(Default)]
 struct Credits {
     paid: BTreeMap<u32, u32>,
+    resumed: BTreeMap<u32, u32>,
 }
 impl Credits {
     fn earned(&mut self, state: &AuditState, row: &TerrainWorkAudit) -> Result<(u64, u64), String> {
@@ -304,6 +333,24 @@ impl Credits {
             (earned % hz) as u64,
         ))
     }
+    fn finish_tick(&self, state: &AuditState) -> Result<(), String> {
+        if let Some(raw) = &state.raw_terrain {
+            for row in &raw.work {
+                if matches!(
+                    row.wait,
+                    turts_sim::terrain::TerrainWorkWait::Working
+                        | turts_sim::terrain::TerrainWorkWait::Budget
+                ) && work_order(state, row.unit) == Some(&row.order)
+                    && !raw.paused.iter().any(|pause| pause.unit == row.unit)
+                    && self.paid.get(&row.unit) != Some(&state.economy.tick)
+                    && self.resumed.get(&row.unit) != Some(&state.economy.tick)
+                {
+                    return Err("ready terrain work omitted its exact tick credit".into());
+                }
+            }
+        }
+        Ok(())
+    }
     fn passive(
         &mut self,
         before: &AuditState,
@@ -329,6 +376,13 @@ impl Credits {
         for (unit, _) in &old.cargo_carries {
             if !new.cargo_carries.iter().any(|(actor, _)| actor == unit)
                 && !reset_cargo.contains(unit)
+                && after.raw_units.iter().any(|actor| actor.unit_id == *unit)
+                && !after
+                    .raw_healths
+                    .iter()
+                    .any(|health| health.unit == *unit && health.current == 0)
+                && work_order(after, *unit)
+                    .is_some_and(|order| order.behaviour == Behaviour::UnloadCargo)
             {
                 return Err(
                     "cargo fractional carry disappeared without cancellation/completion".into(),
@@ -336,6 +390,19 @@ impl Credits {
             }
         }
         for next in &new.work {
+            if reset_cargo.contains(&next.unit) {
+                if next.done != 0
+                    || next.carry != 0
+                    || next.banked
+                    || next.cell.is_some()
+                    || next.source_revision.is_some()
+                    || next.required.is_some()
+                    || next.wait != turts_sim::terrain::TerrainWorkWait::Unknown
+                {
+                    return Err("replaced terrain order retained fabricated old progress".into());
+                }
+                continue;
+            }
             let Some(prior) = old.work.iter().find(|row| {
                 row.unit == next.unit && row.owner == next.owner && row.order == next.order
             }) else {
@@ -370,6 +437,13 @@ impl Credits {
                             })))
             {
                 continue;
+            }
+            if !matches!(
+                next.wait,
+                turts_sim::terrain::TerrainWorkWait::Working
+                    | turts_sim::terrain::TerrainWorkWait::Budget
+            ) {
+                return Err("waiting terrain order accrued work".into());
             }
             let (increment, carry) = self.earned(after, prior)?;
             if next.done
@@ -784,7 +858,30 @@ pub(crate) fn validate_records(records: &[EconomyLogRecord]) -> Result<(), Strin
             EconomyLogRecord::Operation(operation) => {
                 validate_state(&operation.before)?;
                 credits.passive(previous, &operation.before, &BTreeSet::new())?;
-                if !step(operation, &mut credits)? && !cargo(operation)? {
+                let stepped = step(operation, &mut credits)?;
+                let unloaded = !stepped && cargo(operation)?;
+                if unloaded
+                    && let Some(unit) = operation.unit_id
+                    && work_order(&operation.after, unit)
+                        .is_some_and(|order| order.behaviour == Behaviour::TerrainWork)
+                    && work_order(&operation.before, unit)
+                        .is_some_and(|order| order.behaviour == Behaviour::UnloadCargo)
+                {
+                    credits.resumed.insert(unit, operation.after.economy.tick);
+                }
+                if !stepped && !unloaded {
+                    if operation.before.raw_terrain.is_some()
+                        && operation.events.is_empty()
+                        && operation.before.raw_queues == operation.after.raw_queues
+                        && operation.before.economy.construction
+                            == operation.after.economy.construction
+                        && operation.before.raw_repairs == operation.after.raw_repairs
+                        && (operation.before.economy.balances != operation.after.economy.balances
+                            || operation.before.economy.inventories
+                                != operation.after.economy.inventories)
+                    {
+                        return Err("failed/passive terrain operation changed accounts without committed work or funded progress".into());
+                    }
                     let resets = records
                         .iter()
                         .filter_map(|record| {
@@ -796,8 +893,18 @@ pub(crate) fn validate_records(records: &[EconomyLogRecord]) -> Result<(), Strin
                                     if let turts_sim::CommandKind::Order(order) =
                                         &command.input.kind
                                     {
-                                        if order.queue == turts_sim::QueueMode::Replace
-                                            || order.behaviour == Behaviour::Stop
+                                        if order.behaviour == Behaviour::Stop
+                                            || (order.queue == turts_sim::QueueMode::Replace
+                                                && matches!(
+                                                    order.behaviour,
+                                                    Behaviour::Move
+                                                        | Behaviour::Hold
+                                                        | Behaviour::Attack
+                                                        | Behaviour::Gather
+                                                        | Behaviour::Repair
+                                                        | Behaviour::TerrainWork
+                                                        | Behaviour::UnloadCargo
+                                                ))
                                         {
                                             return Some(command.result.units.accepted.clone());
                                         }
@@ -818,6 +925,7 @@ pub(crate) fn validate_records(records: &[EconomyLogRecord]) -> Result<(), Strin
             EconomyLogRecord::Tick { state, .. } => {
                 validate_state(state)?;
                 credits.passive(previous, state, &BTreeSet::new())?;
+                credits.finish_tick(state)?;
                 previous = state;
             }
             _ => {}
