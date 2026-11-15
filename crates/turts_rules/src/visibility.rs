@@ -96,15 +96,21 @@ impl Grid {
         let (left, right) = range(origin.x, self.columns);
         let (bottom, top) = range(origin.y, self.rows);
         let radius_squared = f64::from(radius) * f64::from(radius);
+        // Keep the exact clipped f32 centres used by centre(). The loop already
+        // knows row/column, so avoid dividing a cell index back into both axes.
+        let axis = |index: u32, extent: f32| {
+            let lo = f64::from(index) * f64::from(self.cell_size);
+            let hi = (f64::from(index + 1) * f64::from(self.cell_size)).min(f64::from(extent));
+            ((lo + hi) * 0.5) as f32
+        };
         for row in bottom..=top {
+            let dy = f64::from(axis(row, self.height)) - f64::from(origin.y);
+            let dy_squared = dy * dy;
+            let offset = row * self.columns;
             for column in left..=right {
-                let cell = row * self.columns + column;
-                let Some(centre) = self.centre(cell) else {
-                    return false;
-                };
-                let dx = f64::from(centre.x) - f64::from(origin.x);
-                let dy = f64::from(centre.y) - f64::from(origin.y);
-                if cell == own || dx * dx + dy * dy <= radius_squared {
+                let cell = offset + column;
+                let dx = f64::from(axis(column, self.width)) - f64::from(origin.x);
+                if cell == own || dx * dx + dy_squared <= radius_squared {
                     visit(cell);
                 }
             }
@@ -172,5 +178,45 @@ mod tests {
             |cell| cell == 0
         ));
         assert!(Grid::checked(f32::MAX, f32::MAX, f32::from_bits(1)).is_none());
+    }
+}
+
+#[cfg(test)]
+mod circle_oracle_tests {
+    use super::*;
+
+    #[test]
+    fn circle_matches_all_public_cell_centres_at_edges_and_partial_cells() {
+        for (width, height, size) in [
+            (5.3, 7.7, 2.0),
+            (3.25, 1.75, 0.5),
+            (64.0, 64.0, 2.0),
+            (1.0, 1.0, 2.0),
+        ] {
+            let grid = Grid::checked(width, height, size).unwrap();
+            for x in [0.0, width / 3.0, width / 2.0, width] {
+                for y in [0.0, height / 3.0, height / 2.0, height] {
+                    let origin = Point { x, y };
+                    let own = grid.cell(origin).unwrap();
+                    for radius in [f32::from_bits(1), 0.25, 0.5, 1.0, 2.0, 8.0, f32::MAX] {
+                        let expected: Vec<_> = (0..grid.columns * grid.rows)
+                            .filter(|cell| {
+                                let centre = grid.centre(*cell).unwrap();
+                                let dx = f64::from(centre.x) - f64::from(x);
+                                let dy = f64::from(centre.y) - f64::from(y);
+                                *cell == own
+                                    || dx * dx + dy * dy <= f64::from(radius) * f64::from(radius)
+                            })
+                            .collect();
+                        let mut actual = Vec::new();
+                        assert!(grid.circle(origin, radius, |cell| actual.push(cell)));
+                        assert_eq!(
+                            actual, expected,
+                            "grid {width}x{height}/{size}, origin {x},{y}, radius {radius}"
+                        );
+                    }
+                }
+            }
+        }
     }
 }

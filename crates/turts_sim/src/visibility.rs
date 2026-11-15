@@ -744,15 +744,14 @@ fn capture_units(world: &mut World) -> (Vec<VisibleUnit>, Vec<(u32, u8, WorldPos
             facing: facing.map(|facing| facing.0),
             site,
         });
-        let alive = !has_health
-            || healths
-                .and_then(|healths| healths.0.get(&id.0))
-                .is_some_and(|health| *health > 0);
-        if !site
-            && alive
-            && let Some(vision) = vision
-        {
-            sources.push((id.0, owner.0.0, position, vision.radius));
+        if !site && let Some(vision) = vision {
+            let alive = !has_health
+                || healths
+                    .and_then(|healths| healths.0.get(&id.0))
+                    .is_some_and(|health| *health > 0);
+            if alive {
+                sources.push((id.0, owner.0.0, position, vision.radius));
+            }
         }
     }
     units.sort_unstable_by_key(|unit| unit.unit);
