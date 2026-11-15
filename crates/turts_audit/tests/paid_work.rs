@@ -1071,3 +1071,86 @@ fn multi_cost_repair_wait_and_income_recovery_reject_wrong_missing_resource() {
             .contains("without an eligible heal tick")
     );
 }
+
+#[test]
+fn real_lethal_damage_refunds_only_balance_headroom_without_removal_permission() {
+    let mut fixture = Fixture::new();
+    fixture.ticks("train", 200);
+    fixture.unit("factory").removal = None;
+    fixture.map.slot_economy[0].balances[0].amount = u64::MAX;
+    let recipe = fixture.catalog.production.get_mut(&cid("train")).unwrap();
+    recipe.payment = PaymentPolicy::ChargeOnQueue;
+    recipe.costs[0].amount = 10;
+    recipe.cancel_refunds.destroyed = RefundRatio::ONE;
+    fixture.unit("supply").income = Some(IncomeDef {
+        resource: cid("credits").to_string(),
+        amount: 8,
+        period_ms: 50,
+    });
+    let mut enemy = bare(&fixture.catalog.units[&cid("supply")], "executioner", true);
+    enemy.movement = Some(MovementDef { speed: 40. });
+    enemy.weapon = Some(ResolvedWeapon {
+        range: 4.,
+        range_mode: WeaponRangeMode::Centre,
+        cooldown_ms: 10000,
+        damage: 100,
+        ammo: None,
+        targets: TargetFilter {
+            slots: SlotRelation::Other,
+        },
+        damage_type: None,
+        bonus: vec![],
+        when_short: vec![],
+    });
+    fixture.catalog.units.insert(enemy.id.clone(), enemy);
+    let mut enemy = placement("executioner", 24., 8.);
+    enemy.owner_slot = 1;
+    fixture.map.placements.push(enemy);
+    let mut app = fixture.app();
+    production::queue_production(app.world_mut(), SlotId(0), 1, cid("train")).unwrap();
+    let mut records = start(&mut app);
+    app.world_mut()
+        .resource_mut::<turts_sim::CommandQueue>()
+        .0
+        .push_back(Command {
+            slot: SlotId(1),
+            seq: 1,
+            kind: CommandKind::MoveTo {
+                unit_ids: vec![4],
+                target: Vec2::new(8., 8.),
+            },
+        });
+    ticks(&mut app, &mut records, 20);
+    assert_records("lethal-balance-headroom", &records);
+    let refund = records
+        .iter()
+        .find_map(|record| {
+            if let EconomyLogRecord::Operation(operation) = record {
+                operation.events.iter().find_map(|event| {
+                    if let EconomyEventKind::DestructionRefunded {
+                        unit: 1,
+                        desired,
+                        credited,
+                        discarded,
+                    } = &event.kind
+                    {
+                        Some((desired, credited, discarded))
+                    } else {
+                        None
+                    }
+                })
+            } else {
+                None
+            }
+        })
+        .expect("real weapon death emits mandatory refund accounting");
+    assert_eq!(refund.0.iter().map(|row| row.amount).sum::<u64>(), 10);
+    assert_eq!(refund.1.iter().map(|row| row.amount).sum::<u64>(), 2);
+    assert_eq!(refund.2.iter().map(|row| row.amount).sum::<u64>(), 8);
+    assert!(
+        !turts_sim::audit_state(app.world_mut())
+            .raw_units
+            .iter()
+            .any(|unit| unit.unit_id == 1)
+    );
+}
