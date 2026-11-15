@@ -1,7 +1,6 @@
 #[path = "../src/export.rs"]
 mod export;
-#[path = "../src/permissions.rs"]
-mod permissions;
+#[allow(dead_code)] // The fixture uses only the human projection policy.
 #[path = "../src/permissions.rs"]
 mod permissions;
 
