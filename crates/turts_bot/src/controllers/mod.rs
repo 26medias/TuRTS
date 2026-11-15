@@ -160,6 +160,8 @@ impl StockController {
             group: 0,
         })
     }
+    // Keep the authored goal/rank/priority and output ports explicit at this boundary.
+    #[allow(clippy::too_many_arguments)]
     fn propose(
         &self,
         frame: &BotFrame<'_>,
@@ -179,6 +181,8 @@ impl StockController {
             goal_order: rank as u32,
         });
     }
+    // The query and proposal ports have distinct budgets and must remain explicit.
+    #[allow(clippy::too_many_arguments)]
     fn build(
         &mut self,
         frame: &BotFrame<'_>,

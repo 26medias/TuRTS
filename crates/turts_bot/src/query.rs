@@ -119,6 +119,9 @@ pub struct CostQuote {
     pub costs: Vec<AccountAmount>,
     pub affordable: bool,
 }
+// Keep the single lookup row inline. Boxing would allocate for each lookup and
+// change the public query API solely to reduce this bounded enum's stack size.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum QueryData {
     Units(Vec<UnitObservation>),

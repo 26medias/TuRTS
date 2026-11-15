@@ -35,6 +35,12 @@ pub struct ReconcileReport {
     pub retired: Vec<RequestKey>,
     pub represented: Vec<RequestKey>,
 }
+/// Complete account and commitment state prepared for one atomic reconciliation.
+type PreparedReconciliation = (
+    BTreeMap<SpendKey, AccountObservation>,
+    BTreeMap<RequestKey, PendingCommitment>,
+    ReconcileReport,
+);
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RejectedProposal {
     pub task: TaskKey,
@@ -157,14 +163,7 @@ impl BotCoordinator {
         &self,
         basis: BasisId,
         batch: &ReconcileBatch,
-    ) -> Result<
-        (
-            BTreeMap<SpendKey, AccountObservation>,
-            BTreeMap<RequestKey, PendingCommitment>,
-            ReconcileReport,
-        ),
-        ReconcileError,
-    > {
+    ) -> Result<PreparedReconciliation, ReconcileError> {
         if !batch.complete {
             return Err(ReconcileError::Incomplete);
         }
@@ -686,7 +685,7 @@ fn validate_verified(
         .members
         .iter()
         .min_by(|a, b| position_cmp(&a.anchor, &b.anchor))
-        .map(|member| member.anchor.clone())
+        .map(|member| member.anchor)
         .ok_or(ProposalRejection::InvalidAnchor)?;
     Ok(ValidatedProposal {
         members: verified.members,
