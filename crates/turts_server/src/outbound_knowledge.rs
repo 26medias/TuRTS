@@ -278,8 +278,10 @@ fn queue_snapshot(
         },
     };
     let now = Instant::now();
+    let mut superseded_incomplete = false;
     let mut sender = if let Some(mut existing) = world.entity_mut(entity).take::<KnowledgeSender>()
     {
+        superseded_incomplete = existing.pending.is_some();
         let cancel = existing.cancel(StateTransactionCancelReason::Superseded);
         emit_cancel(world, entity, cancel);
         existing.tip = tip;
@@ -298,7 +300,11 @@ fn queue_snapshot(
             restarts: VecDeque::new(),
         }
     };
-    sender.full(now)?;
+    if superseded_incomplete {
+        sender.restart(now)?;
+    } else {
+        sender.full(now)?;
+    }
     world.entity_mut(entity).insert(sender);
     Ok(true)
 }
@@ -590,6 +596,39 @@ mod tests {
         };
         sender.full(now).unwrap();
         sender
+    }
+    #[test]
+    fn explicit_full_resync_counts_incomplete_replacements_but_not_completed_views() {
+        let mut app = turts_sim::headless_app(20);
+        app.insert_resource(crate::stats::MatchId(1));
+        app.insert_resource(turts_sim::InstalledMapIdentity(
+            ContentId::parse("fixture:map").unwrap(),
+        ));
+        let slow = app.world_mut().spawn_empty().id();
+        let healthy = app.world_mut().spawn_empty().id();
+        assert!(queue_oversized(app.world_mut(), slow, SlotId(0)).unwrap());
+        for attempt in 1..=2 {
+            assert!(queue_oversized(app.world_mut(), slow, SlotId(0)).unwrap());
+            assert_eq!(
+                app.world()
+                    .get::<KnowledgeSender>(slow)
+                    .unwrap()
+                    .restarts
+                    .len(),
+                attempt
+            );
+        }
+        let failure = queue_oversized(app.world_mut(), slow, SlotId(0)).unwrap_err();
+        assert!(failure.contains("three times in 30 seconds"));
+        for _ in 0..4 {
+            assert!(queue_oversized(app.world_mut(), healthy, SlotId(0)).unwrap());
+            let mut sender = app.world_mut().get_mut::<KnowledgeSender>(healthy).unwrap();
+            let pending = sender.pending.as_mut().unwrap();
+            pending.end_sent = true;
+            let stamp = pending.encoded.begin().stamp.clone();
+            assert!(sender.acknowledge(&stamp));
+            assert!(sender.restarts.is_empty());
+        }
     }
     #[test]
     fn large_all_visible_snapshot_uses_real_map_context_and_keeps_an_atomic_patch_chain() {
