@@ -4,6 +4,7 @@
 //! a mutable world or an unrestricted host callback.
 pub mod budget;
 pub mod controller;
+pub mod controllers;
 pub mod proposals;
 pub mod query;
 pub mod registry;

@@ -8784,6 +8784,7 @@ dependencies = [
  "tokio",
  "tower-http",
  "turts_audit",
+ "turts_bot",
  "turts_mod_api",
  "turts_mod_runtime",
  "turts_net_lightyear",
