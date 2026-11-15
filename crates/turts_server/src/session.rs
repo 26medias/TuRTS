@@ -1665,9 +1665,21 @@ mod tests {
     /// Older clients receive a clear refusal before they can claim a slot.
     #[test]
     fn older_protocols_are_refused_before_a_slot_is_claimed() {
-        assert_eq!(turts_net_protocol::NET_PROTOCOL_VERSION, 8);
+        assert_eq!(turts_net_protocol::NET_PROTOCOL_VERSION, 9);
         let mut slots = Slots::new(2);
-        for version in [4, 5, 6, 7] {
+        for version in [4, 5, 6, 7, 8] {
+            assert_eq!(
+                judge_hello(&hello(7, version, HASH), &advertised(), &mut slots, false),
+                Err("protocol version mismatch")
+            );
+            assert_eq!(slots.slot_of(7), None, "a refused Hello takes no slot");
+        }
+    }
+
+    #[test]
+    fn unknown_protocols_are_refused_before_a_slot_is_claimed() {
+        let mut slots = Slots::new(2);
+        for version in [0, 10, u32::MAX] {
             assert_eq!(
                 judge_hello(&hello(7, version, HASH), &advertised(), &mut slots, false),
                 Err("protocol version mismatch")
