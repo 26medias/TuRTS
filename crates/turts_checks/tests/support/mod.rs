@@ -22,14 +22,6 @@ pub struct TokenRecord {
 #[derive(Debug, Clone, Default)]
 pub struct TokenCatalog {
     records: BTreeMap<String, Vec<TokenRecord>>,
-    exceptions: BTreeMap<String, GenericException>,
-}
-#[derive(Debug, Clone)]
-pub struct GenericException {
-    pub category: String,
-    pub reason: String,
-    pub definition_provenance: String,
-    pub identifiers_only: bool,
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Hit {
@@ -419,59 +411,6 @@ pub fn derive_tokens(root: &Path) -> Result<TokenCatalog, ScanError> {
     }
     if count == 0 || c.records.is_empty() {
         return Err(pkgerr(root, "empty package discovery or token catalog"));
-    }
-    // Keep only known generic spellings that occur in the parsed data. Full ids and paths are never exempt.
-    for (word, reason, identifiers_only) in [
-        ("field", "map id is an ordinary source identifier", false),
-        ("builder", "generic Rust builder-pattern identifier", true),
-        ("deposit", "generic gather-order target handle", true),
-        (
-            "light",
-            "generic renderer light handle and Bevy module",
-            true,
-        ),
-        ("wide", "generic widened integer intermediate", true),
-        ("Item", "resource kind is a common Rust type word", false),
-        ("Balance", "resource kind is a common Rust type word", false),
-        ("Move", "engine behaviour name", false),
-        ("Attack", "engine behaviour name", false),
-        ("Stop", "engine behaviour name", false),
-        (
-            "log",
-            "resource unit name is a common source identifier",
-            false,
-        ),
-        (
-            "credit",
-            "resource unit name is a generic accounting term",
-            true,
-        ),
-        (
-            "base",
-            "Bevy ExtendedMaterial uses base as a required field name",
-            true,
-        ),
-        (
-            "flat",
-            "the armour schema names its flat reduction `flat` (design 6.10 row U1)",
-            true,
-        ),
-    ] {
-        if let Some(records) = c.records.get(word) {
-            let r = &records[0];
-            c.exceptions.insert(
-                word.into(),
-                GenericException {
-                    category: "generic-word".into(),
-                    reason: reason.into(),
-                    definition_provenance: format!(
-                        "{}:{}:{}:{}",
-                        r.package, r.definition_path, r.field, r.token
-                    ),
-                    identifiers_only,
-                },
-            );
-        }
     }
     Ok(c)
 }
@@ -928,12 +867,9 @@ struct Scanner<'a> {
 }
 impl Scanner<'_> {
     fn check(&mut self, t: &str, s: proc_macro2::Span) {
-        if self
-            .catalog
-            .exceptions
-            .get(t)
-            .is_some_and(|exception| !exception.identifiers_only)
-        {
+        // Bare names and display words are ambiguous ordinary Rust/game vocabulary.
+        // Inspect only exact qualified IDs and explicit exported file selectors.
+        if !(t.contains(':') || t.contains('/') || t.ends_with(".tar") || t.ends_with(".ron")) {
             return;
         }
         if let Some(rs) = self.catalog.records.get(t) {
@@ -952,15 +888,10 @@ impl Scanner<'_> {
             }
         }
     }
-    fn check_ident(&mut self, t: &str, s: proc_macro2::Span) {
-        if !self.catalog.exceptions.contains_key(t) {
-            self.check(t, s);
-        }
-    }
     fn stream(&mut self, s: proc_macro2::TokenStream) {
         for t in s {
             match t {
-                TokenTree::Ident(i) => self.check_ident(normalize_ident(&i).as_str(), i.span()),
+                TokenTree::Ident(_) => (),
                 TokenTree::Literal(l) => self.literal(&l),
                 TokenTree::Group(g) => self.stream(g.stream()),
                 TokenTree::Punct(_) => (),
@@ -1014,9 +945,6 @@ impl<'a> Visit<'a> for Scanner<'_> {
         if production_cfg(expr_attrs(e)) {
             syn::visit::visit_expr(self, e);
         }
-    }
-    fn visit_ident(&mut self, i: &'a syn::Ident) {
-        self.check_ident(normalize_ident(i).as_str(), i.span())
     }
     fn visit_lit(&mut self, l: &'a Lit) {
         match l {

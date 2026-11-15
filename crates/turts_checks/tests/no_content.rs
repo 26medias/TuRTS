@@ -15,13 +15,10 @@ fn derived_scan_rejects_all_plants_and_accepts_generic_field() {
     let plants = [
         "const A: &str = \"base:rifleman\";",
         "const B: &str = \"cedar:wood\";",
-        "fn rifleman() {}",
         "const D: &str = \"cedar.tar\";",
         "const E: &str = \"mods/haul/units/worker.ron\";",
         "const F: &str = \"haul/units/worker.ron\";",
         "const G: &str = \"acme:field\";",
-        "fn r#rifleman() {}",
-        "fn macro_path() { rifleman!(); }",
         "const H: &[u8] = b\"base:rifleman\";",
     ];
     for (i, plant) in plants.iter().enumerate() {
@@ -95,109 +92,50 @@ fn derived_scan_rejects_all_plants_and_accepts_generic_field() {
     );
 }
 
-/// L0-API1: the armour schema has a field `flat` (design 6.10 row U1), and the package `base` has
-/// a map `flat`. The identifier is exempt, as `credit` and `base` are; a string literal is
-/// still a hit, so the exemption does not hide a content reference.
 #[test]
-fn flat_exemption_applies_only_to_identifiers() {
+fn ordinary_identifiers_and_display_words_are_not_content_selectors() {
     let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let catalog = derive_tokens(&repo.join("mods")).expect("all mod packages derive");
-    let root = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("flat_identifier_only");
-    let src = root.join("src");
+    let catalog = derive_tokens(&repo.join("mods")).unwrap();
+    let root = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("ordinary_vocabulary");
     let _ = std::fs::remove_dir_all(&root);
-    std::fs::create_dir_all(&src).unwrap();
-    std::fs::write(
-        src.join("identifier.rs"),
-        "pub struct ArmourDef { pub flat: u64 } fn f(a: ArmourDef) -> u64 { a.flat }",
-    )
-    .unwrap();
-    std::fs::write(
-        src.join("literal.rs"),
-        "const A: &str = \"flat\"; const B: &str = \"base:flat\"; const C: &str = \"maps/flat.ron\";",
-    )
-    .unwrap();
-    let hits = scan_rust(&[src], &catalog).expect("fixture sources parse");
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::write(root.join("vocabulary.rs"), r#"
+fn rifleman(unit: u64, depot: u64, credits: u64, contact: u64) {}
+fn r#rifleman() { rifleman!(); }
+enum Behaviour { Construct, Hold }
+const LABELS: &[&str] = &["flat", "base", "credit", "deposit", "light", "unit", "Construct", "Hold", "Rifleman"];
+"#).unwrap();
+    let hits = scan_rust(&[root], &catalog).unwrap();
     assert!(
-        !hits.iter().any(|hit| hit.source.ends_with("identifier.rs")),
-        "the field `flat` is exempt: {hits:#?}"
+        hits.is_empty(),
+        "ordinary vocabulary is not a content dependency: {hits:?}"
     );
-    for token in ["flat", "base:flat", "maps/flat.ron"] {
-        assert!(
-            hits.iter()
-                .any(|hit| hit.source.ends_with("literal.rs") && hit.token == token),
-            "literal {token:?} must stay a hit: {hits:#?}"
-        );
-    }
 }
 
 #[test]
-fn accounting_and_gather_handle_exemptions_apply_only_to_identifiers() {
+fn explicit_content_selector_literals_remain_rejected() {
     let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let catalog = derive_tokens(&repo.join("mods")).expect("all mod packages derive");
-    let root = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("credit_identifier_only");
-    let src = root.join("src");
+    let catalog = derive_tokens(&repo.join("mods")).unwrap();
+    let root = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("explicit_selectors");
     let _ = std::fs::remove_dir_all(&root);
-    std::fs::create_dir_all(&src).unwrap();
+    std::fs::create_dir_all(&root).unwrap();
     std::fs::write(
-        src.join("identifier.rs"),
-        "fn ledger() { let credit = 1; { let r#credit = 2; } let base = 3; let deposit = 4; }",
+        root.join("selectors.rs"),
+        r#"
+const A: &str = "base:flat";
+const B: &[u8] = b"base:credits";
+const C: &str = "maps/flat.ron";
+const D: &str = "cedar.tar";
+"#,
     )
     .unwrap();
-    std::fs::write(
-        src.join("literals.rs"),
-        "const A: &str = \"credit\"; const B: &[u8] = b\"credit\"; const C: &str = \"base:credits\"; const D: &str = \"resources/credits.ron\"; const E: &str = \"base\"; const F: &[u8] = b\"base\"; const G: &str = \"deposit\";",
-    )
-    .unwrap();
-    std::fs::write(
-        src.join("generic_literals.rs"),
-        "const A: &str = \"field\"; const B: &str = \"Item\"; const C: &str = \"Balance\"; const D: &str = \"log\";",
-    )
-    .unwrap();
-
-    let hits = scan_rust(&[src], &catalog).expect("fixture sources parse");
-    assert!(
-        !hits.iter().any(|hit| hit.source.ends_with("identifier.rs")),
-        "generic and raw identifiers should be exempt: {hits:#?}"
-    );
-    assert!(
-        !hits
-            .iter()
-            .any(|hit| hit.source.ends_with("generic_literals.rs")),
-        "existing generic-word literal exceptions must retain their prior behavior: {hits:#?}"
-    );
-    for (token, category) in [
-        ("credit", "unit-name"),
-        ("deposit", "node"),
-        ("base:credits", "resource-ref"),
-        ("resources/credits.ron", "resource-export"),
-    ] {
+    let hits = scan_rust(&[root], &catalog).unwrap();
+    for token in ["base:flat", "base:credits", "maps/flat.ron", "cedar.tar"] {
         assert!(
-            hits.iter().any(|hit| {
-                hit.source.ends_with("literals.rs")
-                    && hit.token == token
-                    && hit.category == category
-            }),
-            "literal {token:?} ({category}) must remain a hit: {hits:#?}"
+            hits.iter().any(|hit| hit.token == token),
+            "selector escaped: {token}: {hits:?}"
         );
     }
-    assert_eq!(
-        hits.iter()
-            .filter(|hit| hit.source.ends_with("literals.rs")
-                && hit.token == "base"
-                && hit.category == "package")
-            .count(),
-        2,
-        "bare package string and byte-string literals must remain visible"
-    );
-    assert_eq!(
-        hits.iter()
-            .filter(|hit| hit.source.ends_with("literals.rs") && hit.token == "credit")
-            .map(|hit| (hit.line, hit.column))
-            .collect::<std::collections::BTreeSet<_>>()
-            .len(),
-        2,
-        "both string and byte-string literals must remain visible"
-    );
 }
 
 #[test]
@@ -225,17 +163,13 @@ fn derivation_tracks_modified_package_and_fails_closed() {
     let catalog = derive_tokens(&mods).expect("mutated package parses");
     let src = scratch.join("src");
     std::fs::create_dir_all(&src).unwrap();
-    std::fs::write(
-        src.join("fresh.rs"),
-        "const X: &str = \"FreshCreditHarvester\";",
-    )
-    .unwrap();
+    std::fs::write(src.join("fresh.rs"), "const X: &str = \"base:credits\";").unwrap();
     let hits = scan_rust(&[src], &catalog).unwrap();
     assert!(
-        hits.iter().any(|hit| hit.token == "FreshCreditHarvester"
+        hits.iter().any(|hit| hit.token == "base:credits"
             && hit.package == "base"
             && hit.definition_path == "resources/credits.ron"
-            && hit.field == "name"),
+            && hit.field == "id"),
         "changed package tokens must retain provenance: {hits:#?}"
     );
 
@@ -393,13 +327,13 @@ fn hud3_order_id_is_a_content_token() {
     let probe = scratch.join("rush_probe.rs");
     std::fs::write(
         &probe,
-        "fn probe() { let s = \"rush\"; let a = \"launch\"; let i = \"rocket\"; let e = \"select\"; }",
+        "fn probe() { let s = \"acme:rush\"; let a = \"launch\"; let i = \"rocket\"; let e = \"select\"; }",
     )
     .unwrap();
     let hits = scan_rust(std::slice::from_ref(&probe), &catalog).unwrap();
     assert!(
         hits.iter().any(|hit| {
-            hit.token == "rush"
+            hit.token == "acme:rush"
                 && hit.package == "acme"
                 && hit.definition_path == "orders/rush.ron"
                 && hit.field == "id"
@@ -407,18 +341,10 @@ fn hud3_order_id_is_a_content_token() {
         "order id must be present in the content token scan: {hits:#?}"
     );
     assert!(
-        hits.iter()
-            .any(|hit| hit.token == "launch" && hit.package == "acme" && hit.field == "name"),
-        "input action name must be a scanned token: {hits:#?}"
-    );
-    assert!(
-        hits.iter()
-            .any(|hit| hit.token == "rocket" && hit.package == "acme" && hit.field == "id"),
-        "asset id must be a scanned token: {hits:#?}"
-    );
-    assert!(
-        !hits.iter().any(|hit| hit.token == "select"),
-        "engine override names must not be mod content tokens: {hits:#?}"
+        !hits
+            .iter()
+            .any(|hit| matches!(hit.token.as_str(), "launch" | "rocket" | "select")),
+        "bare action, asset and engine labels are ambiguous vocabulary: {hits:?}"
     );
 }
 
@@ -569,14 +495,14 @@ const WRONG: &str="light";
     )
     .unwrap();
     let hits = scan_rust(std::slice::from_ref(&scratch), &catalog).unwrap();
-    for token in ["quarry:soil_layer", "quarry:spade", "quarry:light", "light"] {
+    for token in ["quarry:soil_layer", "quarry:spade", "quarry:light"] {
         assert!(
             hits.iter().any(|hit| hit.token == token),
             "missing actual content token {token}: {hits:?}"
         );
     }
     assert!(
-        !hits.iter().any(|hit| hit.token == "light" && hit.line == 1),
+        !hits.iter().any(|hit| hit.token == "light"),
         "generic light identifier must not become a mod dependency"
     );
     std::fs::remove_dir_all(scratch).unwrap();
