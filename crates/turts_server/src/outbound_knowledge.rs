@@ -56,6 +56,10 @@ pub struct KnowledgeSender {
     restarts: VecDeque<Instant>,
 }
 impl KnowledgeSender {
+    #[cfg(test)]
+    pub(crate) fn active_stamp(&self) -> Option<&StateTransactionStamp> {
+        self.active.as_ref()
+    }
     fn retained(&self) -> usize {
         self.tip
             .retained_bytes()
