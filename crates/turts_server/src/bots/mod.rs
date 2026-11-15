@@ -367,6 +367,7 @@ fn drive_inner(world: &mut World, host: &mut BotHost, execution: &mut BotExecuti
             &ObservationVerifier {
                 candidate: lease,
                 current: &current,
+                profile: &bot.profile,
             },
         );
         for command in selection.commands {
@@ -412,7 +413,13 @@ fn role_counts(basis: &observation::ObservationBasis, profile: &BotDef) -> Vec<R
                     .works
                     .iter()
                     .filter(|w| !w.state.terminal() && w.content.as_ref().is_some_and(accepts))
-                    .count() as u32,
+                    .count() as u32
+                    + basis
+                        .pending_content
+                        .iter()
+                        .filter(|(content, _)| accepts(content))
+                        .map(|(_, count)| *count as u32)
+                        .sum::<u32>(),
             }
         })
         .collect()

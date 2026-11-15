@@ -26,6 +26,30 @@ pub(crate) fn project(
     map_size: WorldPos,
     permissions: &dyn ObservationPermissions,
 ) -> Projection {
+    let orders_by_unit = view
+        .unit_orders
+        .iter()
+        .map(|order| (order.unit_id, order))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    let health_by_unit = view
+        .m3
+        .raw_healths
+        .iter()
+        .map(|health| (health.unit, health.current))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    let working = view
+        .economy
+        .queues
+        .iter()
+        .filter(|queue| !queue.jobs.is_empty())
+        .map(|queue| queue.producer)
+        .collect::<std::collections::BTreeSet<_>>();
+    let own_ids = view
+        .units
+        .iter()
+        .filter(|u| u.owner_slot == slot)
+        .map(|u| u.unit_id)
+        .collect::<std::collections::BTreeSet<_>>();
     let mut units = Vec::new();
     for unit in &view.units {
         if !unit_permitted(permissions, slot, unit.unit_id, unit.owner_slot) {
@@ -38,7 +62,7 @@ pub(crate) fn project(
             continue;
         };
         let own = if unit.owner_slot == slot {
-            let order = view.unit_orders.iter().find(|o| o.unit_id == unit.unit_id);
+            let order = orders_by_unit.get(&unit.unit_id).copied();
             let activity = order.map_or(OwnActivity::Idle, |o| match o.activity {
                 UnitOrderActivityView::Idle => OwnActivity::Idle,
                 UnitOrderActivityView::Pending => OwnActivity::Pending,
@@ -48,11 +72,7 @@ pub(crate) fn project(
                 UnitOrderActivityView::Gathering => OwnActivity::Gathering,
                 UnitOrderActivityView::Blocked => OwnActivity::Blocked,
             });
-            let has_work = view
-                .economy
-                .queues
-                .iter()
-                .any(|q| q.producer == unit.unit_id && !q.jobs.is_empty())
+            let has_work = working.contains(&unit.unit_id)
                 || view
                     .construction
                     .held
@@ -95,11 +115,9 @@ pub(crate) fn project(
         .filter_map(|(yes, c)| yes.then_some(c))
         .collect();
         let health = def.health.as_ref().and_then(|h| {
-            view.m3
-                .raw_healths
-                .iter()
-                .find(|h| h.unit == unit.unit_id)
-                .map(|raw| (raw.current, h.max))
+            health_by_unit
+                .get(&unit.unit_id)
+                .map(|current| (*current, h.max))
         });
         units.push(UnitObservation {
             unit: unit.unit_id,
@@ -132,11 +150,7 @@ pub(crate) fn project(
             })
         })
         .collect();
-    let owned = |id| {
-        view.units
-            .iter()
-            .any(|u| u.unit_id == id && u.owner_slot == slot)
-    };
+    let owned = |id| own_ids.contains(&id);
     let mut accounts = view
         .economy
         .balances
@@ -192,17 +206,20 @@ pub(crate) fn project(
                 }),
         );
     }
+    let exact_jobs = view
+        .operating
+        .as_ref()
+        .into_iter()
+        .flat_map(|op| op.jobs.iter())
+        .map(|job| ((job.unit, job.job), job))
+        .collect::<std::collections::BTreeMap<_, _>>();
     let mut works = Vec::new();
     for queue in view.economy.queues.iter().filter(|q| q.owner_slot == slot) {
         for job in &queue.jobs {
             let Some(recipe) = catalog.production.get(&job.recipe) else {
                 continue;
             };
-            let exact = view.operating.as_ref().and_then(|op| {
-                op.jobs
-                    .iter()
-                    .find(|j| j.unit == queue.producer && j.job == job.id)
-            });
+            let exact = exact_jobs.get(&(queue.producer, job.id)).copied();
             let funding = exact.and_then(|e| e.funding.as_ref());
             let mut state = match job.stage {
                 JobStage::Queued => WorkState::Queued,
@@ -288,6 +305,33 @@ pub(crate) fn project(
             state,
         });
     }
+    let mut pending_content = std::collections::BTreeMap::new();
+    for (_, orders) in view
+        .construction
+        .held
+        .iter()
+        .filter(|(actor, _)| owned(**actor))
+    {
+        for order in orders {
+            if let Some(recipe) = catalog.production.get(&order.recipe) {
+                *pending_content
+                    .entry(recipe.output_unit.clone())
+                    .or_insert(0u64) += 1;
+            }
+        }
+    }
+    let supply = view
+        .operating
+        .as_ref()
+        .into_iter()
+        .flat_map(|op| op.supply.iter())
+        .filter(|s| s.slot == slot)
+        .map(|s| SupplyObservation {
+            resource: s.resource.clone(),
+            provided: s.provided,
+            consumed: s.consumed,
+        })
+        .collect();
     let area = ObservationArea {
         min: WorldPos { x: 0.0, y: 0.0 },
         max: map_size,
@@ -303,6 +347,8 @@ pub(crate) fn project(
         account_index: Default::default(),
         unit_index: Default::default(),
         works,
+        pending_content,
+        supply,
         area: ObservedArea {
             min: area.min,
             max: area.max,

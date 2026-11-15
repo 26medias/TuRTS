@@ -29,6 +29,8 @@ pub(crate) struct ObservationBasis {
     pub account_index: BTreeMap<SpendKey, usize>,
     pub unit_index: BTreeMap<UnitId, usize>,
     pub works: Vec<WorkObservation>,
+    pub pending_content: BTreeMap<ContentId, u64>,
+    pub supply: Vec<SupplyObservation>,
     pub area: ObservedArea,
     pub catalog: Arc<ContentCatalog>,
 }
@@ -542,6 +544,7 @@ fn validate_radius(center: Option<WorldPos>, radius: Option<f32>) -> Result<(), 
 pub(crate) struct ObservationVerifier<'a> {
     pub candidate: &'a CandidateLease,
     pub current: &'a ObservationBasis,
+    pub profile: &'a turts_mod_api::BotDef,
 }
 impl ProposalVerifier for ObservationVerifier<'_> {
     fn verify(
@@ -631,8 +634,152 @@ impl ProposalVerifier for ObservationVerifier<'_> {
                 payment,
             });
         }
-        Ok(VerifiedProposal { members })
+        let mut fulfillment = Vec::new();
+        let production = match (&proposal.order.target, definition.behaviour) {
+            (BotTarget::Content(content), Behaviour::Produce)
+            | (BotTarget::ContentAtPoint { content, .. }, Behaviour::Construct) => Some(content),
+            _ => None,
+        };
+        if let Some(recipe) = production.and_then(|id| self.current.catalog.production.get(id)) {
+            let output = self
+                .current
+                .catalog
+                .units
+                .get(&recipe.output_unit)
+                .ok_or(ProposalRejection::InvalidOrder)?;
+            let goal = self
+                .profile
+                .knowledge
+                .opening
+                .iter()
+                .chain(&self.profile.knowledge.recovery)
+                .find(|goal| goal.key == proposal.task.goal)
+                .map(|goal| &goal.action);
+            for role in &self.profile.knowledge.roles {
+                if !role_matches(role, output) {
+                    continue;
+                }
+                let completed = self
+                    .current
+                    .units
+                    .iter()
+                    .filter(|unit| {
+                        unit.owner_slot == self.current.slot
+                            && !unit.site
+                            && role.units.iter().any(|c| c == &unit.content.to_string())
+                    })
+                    .count() as u64;
+                let pending = self
+                    .current
+                    .works
+                    .iter()
+                    .filter(|work| {
+                        !work.state.terminal()
+                            && work
+                                .content
+                                .as_ref()
+                                .is_some_and(|c| role.units.iter().any(|r| r == &c.to_string()))
+                    })
+                    .count() as u64;
+                let held = self
+                    .current
+                    .pending_content
+                    .iter()
+                    .filter(|(content, _)| role.units.iter().any(|r| r == &content.to_string()))
+                    .try_fold(0u64, |total, (_, count)| total.checked_add(*count))
+                    .ok_or(ProposalRejection::ArithmeticOverflow)?;
+                let observed = completed
+                    .checked_add(pending)
+                    .and_then(|n| n.checked_add(held))
+                    .ok_or(ProposalRejection::ArithmeticOverflow)?;
+                let cap = match goal {
+                    Some(turts_mod_api::BotGoalAction::EnsureUnits {
+                        role: requested,
+                        count,
+                        ..
+                    }) if requested == &role.key => Some(u64::from(*count)),
+                    _ => None,
+                }
+                .or_else(|| {
+                    self.profile
+                        .knowledge
+                        .production
+                        .iter()
+                        .find(|target| target.key == proposal.task.goal && target.role == role.key)
+                        .map(|t| u64::from(t.count))
+                });
+                fulfillment.push(FulfillmentClaim {
+                    key: FulfillmentKey::Role(role.key.clone()),
+                    observed,
+                    cap,
+                    contribution: 1,
+                });
+            }
+            for row in &output.provides {
+                let resource = ContentId::parse(&row.resource)
+                    .map_err(|_| ProposalRejection::InvalidFulfillment)?;
+                let live = self
+                    .current
+                    .supply
+                    .iter()
+                    .find(|s| s.resource == resource)
+                    .map_or(0, |s| s.provided.saturating_sub(s.consumed));
+                let pending = self
+                    .current
+                    .works
+                    .iter()
+                    .filter(|work| !work.state.terminal())
+                    .filter_map(|work| work.content.as_ref())
+                    .chain(
+                        self.current
+                            .pending_content
+                            .iter()
+                            .flat_map(|(content, count)| {
+                                std::iter::repeat_n(content, *count as usize)
+                            }),
+                    )
+                    .filter_map(|content| self.current.catalog.units.get(content))
+                    .flat_map(|unit| unit.provides.iter())
+                    .filter(|s| s.resource == row.resource)
+                    .try_fold(0u64, |sum, row| sum.checked_add(row.amount))
+                    .ok_or(ProposalRejection::ArithmeticOverflow)?;
+                let observed = live
+                    .checked_add(pending)
+                    .ok_or(ProposalRejection::ArithmeticOverflow)?;
+                let cap = match goal {
+                    Some(turts_mod_api::BotGoalAction::EnsureSupply {
+                        resource: requested,
+                        amount,
+                        ..
+                    }) if requested == &row.resource => Some(*amount),
+                    _ => None,
+                };
+                fulfillment.push(FulfillmentClaim {
+                    key: FulfillmentKey::Supply(resource),
+                    observed,
+                    cap,
+                    contribution: row.amount,
+                });
+            }
+        }
+        Ok(VerifiedProposal {
+            members,
+            fulfillment,
+        })
     }
+}
+
+fn role_matches(role: &turts_mod_api::BotRole, unit: &turts_mod_api::ResolvedUnit) -> bool {
+    role.units.iter().any(|id| id == &unit.id.to_string())
+        && role.requires.iter().all(|cap| match cap {
+            turts_mod_api::Capability::Movement => unit.movement.is_some(),
+            turts_mod_api::Capability::Weapon => unit.weapon.is_some(),
+            turts_mod_api::Capability::Gatherer => unit.gatherer.is_some(),
+            turts_mod_api::Capability::Producer => unit.producer.is_some(),
+            turts_mod_api::Capability::Research => unit.research.is_some(),
+            turts_mod_api::Capability::Constructor => unit.constructor.is_some(),
+            turts_mod_api::Capability::Repairer => unit.repairer.is_some(),
+        })
 }
 
 #[cfg(test)]
@@ -687,6 +834,8 @@ mod tests {
             account_index: BTreeMap::new(),
             unit_index: BTreeMap::new(),
             works: vec![],
+            pending_content: BTreeMap::new(),
+            supply: vec![],
             area: ObservedArea {
                 min: WorldPos { x: 0.0, y: 0.0 },
                 max: WorldPos { x: 20.0, y: 20.0 },
