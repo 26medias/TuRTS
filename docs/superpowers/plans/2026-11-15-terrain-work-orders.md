@@ -64,6 +64,7 @@ A failed step leaves terrain, natural cursor, placed provenance, resources and r
 Use one TerrainWork phase after movement, tactical sight refresh and Acquire, before Repair and Combat.
 Completed knowledge/world publication remains after those phases.
 Work permission uses that immutable tactical basis. A committed surface exposure belongs to the completed basis.
+Capture the permitted exposure witness at the successful work commit. Retain that observation in completed memory if the last sight source dies later in the tick. Failed transactions publish no observation.
 No second movement pass uses stale navigation after that phase. Next-tick movement and placement use the new terrain revisions.
 Recheck all occupancy/support and capabilities at each step; unfinished construction and newly accepted sites block edits immediately.
 Resolve newly competing work claims from physical readiness. Preserve an established claimant. Exact conflicting starts remain contested.
