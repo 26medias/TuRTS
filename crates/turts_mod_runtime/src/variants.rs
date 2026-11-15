@@ -441,6 +441,9 @@ impl InterfaceWalk<'_> {
 
     fn primary_field(&mut self, field: PrimaryField, path: &str) {
         let name = match field {
+            PrimaryField::RepairState => Some("PrimaryField::RepairState"),
+            PrimaryField::RepairTargetName => Some("PrimaryField::RepairTargetName"),
+            PrimaryField::RepairResourceName => Some("PrimaryField::RepairResourceName"),
             PrimaryField::WeaponDetails => Some("PrimaryField::WeaponDetails"),
             PrimaryField::Activity => Some("PrimaryField::Activity"),
             PrimaryField::Cargo => Some("PrimaryField::Cargo"),
@@ -471,6 +474,8 @@ impl InterfaceWalk<'_> {
 
     fn predicate(&mut self, predicate: &Predicate, path: &str) {
         let name = match predicate {
+            Predicate::RepairStateIs(_) => Some("Predicate::RepairStateIs"),
+            Predicate::PrimaryHas(Capability::Repairer) => Some("Predicate::PrimaryHas(Repairer)"),
             Predicate::ItemHas(_) => Some("Predicate::ItemHas"),
             Predicate::PrimaryHasValue(_) => Some("Predicate::PrimaryHasValue"),
             Predicate::SupplyShort(_) => Some("Predicate::SupplyShort"),

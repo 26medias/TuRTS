@@ -961,8 +961,16 @@ impl Pack {
             return Err(self.fail(file, "repairer.rate_per_second", "must be positive"));
         }
         self.above_zero(file, "repairer.reach", repairer.reach)?;
+        let mut seen = BTreeSet::new();
         for (index, cost) in repairer.cost.iter().enumerate() {
             let path = format!("repairer.cost[{index}]");
+            if !seen.insert(&cost.resource) {
+                return Err(self.fail(
+                    file,
+                    &format!("{path}.resource"),
+                    "duplicate repair resource",
+                ));
+            }
             self.resource_of_kind(
                 file,
                 &format!("{path}.resource"),
