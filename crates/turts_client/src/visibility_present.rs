@@ -31,6 +31,11 @@ fn sync_remembered(
         .replica
         .as_ref()
         .and_then(|replica| replica.knowledge.as_ref());
+    let tick_hz = state
+        .replica
+        .as_ref()
+        .map_or(1, |replica| replica.tick_hz)
+        .max(1);
     let camera = cameras.iter().find(|(camera, _)| camera.is_active);
     let mut desired = HashMap::new();
     if let (Some(knowledge), Some((camera, transform))) = (knowledge, camera) {
@@ -47,7 +52,10 @@ fn sync_remembered(
             add(
                 (false, row.unit),
                 row.position,
-                format!("◇ Last seen {}", row.last_seen_tick),
+                format!(
+                    "◇ {}",
+                    last_seen_age(knowledge.basis.tick, row.last_seen_tick, tick_hz)
+                ),
             );
         }
         for row in &knowledge.remembered_nodes {
@@ -55,8 +63,9 @@ fn sync_remembered(
                 (true, row.node),
                 row.position,
                 format!(
-                    "◇ Remembered: {} remaining · seen {}",
-                    row.remaining, row.last_seen_tick
+                    "◇ Remembered: {} remaining · {}",
+                    row.remaining,
+                    last_seen_age(knowledge.basis.tick, row.last_seen_tick, tick_hz)
                 ),
             );
         }
@@ -100,6 +109,15 @@ fn sync_remembered(
             ))
             .id();
         markers.insert(key, entity);
+    }
+}
+
+fn last_seen_age(current_tick: u32, last_seen_tick: u32, tick_hz: u16) -> String {
+    let seconds = current_tick.saturating_sub(last_seen_tick) / u32::from(tick_hz.max(1));
+    if seconds == 0 {
+        "Last seen just now".into()
+    } else {
+        format!("Last seen {seconds} s ago")
     }
 }
 
