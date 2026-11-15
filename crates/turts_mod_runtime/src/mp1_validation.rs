@@ -772,8 +772,16 @@ impl Pack {
 
     /// U6: the `when_short` list of one capability.
     fn when_short(&self, file: &str, owner: &str, list: &[WhenShort]) -> Result<(), ModError> {
+        let mut seen = BTreeSet::new();
         for (index, entry) in list.iter().enumerate() {
             let path = format!("{owner}.when_short[{index}]");
+            if !seen.insert(&entry.resource) {
+                return Err(self.fail(
+                    file,
+                    &format!("{path}.resource"),
+                    format!("second entry for `{}`", entry.resource),
+                ));
+            }
             self.resource_of_kind(
                 file,
                 &format!("{path}.resource"),

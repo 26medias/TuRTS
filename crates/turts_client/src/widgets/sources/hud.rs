@@ -67,18 +67,18 @@ pub(in crate::widgets) fn source_selection_types(_context: SourceContext<'_>) ->
 }
 
 pub(in crate::widgets) fn value_supply(
-    _resource: &ContentRef,
-    _side: SupplySide,
-    _context: SourceContext<'_>,
+    resource: &ContentRef,
+    side: SupplySide,
+    context: SourceContext<'_>,
 ) -> serde_json::Value {
-    serde_json::Value::Null
+    serde_json::json!(context.replica.supply(resource, side))
 }
 
 pub(in crate::widgets) fn predicate_supply_short(
-    _resource: &ContentRef,
-    _context: &SourceContext<'_>,
+    resource: &ContentRef,
+    context: &SourceContext<'_>,
 ) -> bool {
-    false
+    context.replica.supply_short(resource)
 }
 
 pub(in crate::widgets) fn predicate_item_has(

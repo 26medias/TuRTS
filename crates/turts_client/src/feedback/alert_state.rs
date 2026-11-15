@@ -17,23 +17,54 @@ pub(super) fn construction_complete(
 }
 
 pub(super) fn supply_short(
-    _current: &Replica,
-    _previous: Option<&Replica>,
+    current: &Replica,
+    previous: Option<&Replica>,
     _slot: u8,
-    _rule: &AlertDef,
+    rule: &AlertDef,
     _runtime: &mut FeedbackRuntime,
 ) -> Vec<u32> {
-    Vec::new()
+    let AlertTrigger::SupplyShort(resource) = &rule.trigger else {
+        return Vec::new();
+    };
+    supply_transition(current, previous, resource, true)
 }
 
 pub(super) fn supply_restored(
-    _current: &Replica,
-    _previous: Option<&Replica>,
+    current: &Replica,
+    previous: Option<&Replica>,
     _slot: u8,
-    _rule: &AlertDef,
+    rule: &AlertDef,
     _runtime: &mut FeedbackRuntime,
 ) -> Vec<u32> {
-    Vec::new()
+    let AlertTrigger::SupplyRestored(resource) = &rule.trigger else {
+        return Vec::new();
+    };
+    supply_transition(current, previous, resource, false)
+}
+
+fn supply_transition(
+    current: &Replica,
+    previous: Option<&Replica>,
+    resource: &str,
+    short: bool,
+) -> Vec<u32> {
+    let Some(previous) = previous else {
+        return Vec::new();
+    };
+    // Snapshots establish a baseline. A supply alert represents a later accepted transition.
+    if current
+        .supply(resource, turts_mod_api::SupplySide::Provided)
+        .is_none()
+        || previous
+            .supply(resource, turts_mod_api::SupplySide::Provided)
+            .is_none()
+        || current.supply_short(resource) != short
+        || previous.supply_short(resource) == short
+    {
+        return Vec::new();
+    }
+    // Zero identifies an alert for the whole slot, without an arbitrary unit or map position.
+    vec![0]
 }
 
 pub(super) fn insufficient_funds(
