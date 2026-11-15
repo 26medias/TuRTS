@@ -1716,6 +1716,92 @@ fn reconcile_plain_move_identities(
     });
 }
 
+// Independent execution priority from captured source facts. Result DTOs remain ID-sorted.
+fn financial_order_anchor(
+    order: &turts_sim::OrderCommand,
+    unit_id: u32,
+    state: &AuditState,
+    slot: u8,
+) -> Option<turts_mod_api::WorldPos> {
+    use turts_mod_api::{Behaviour, TargetKind};
+    let target_valid = matches!(
+        (&order.behaviour, &order.target_kind, &order.target),
+        (
+            Behaviour::Produce,
+            TargetKind::Content,
+            turts_sim::OrderTargetSim::Content(_)
+        )
+    ) || matches!((&order.behaviour, &order.target_kind, &order.target),
+            (Behaviour::Construct, TargetKind::ContentAtPoint, turts_sim::OrderTargetSim::ContentAtPoint {point, ..}) if point.is_finite());
+    if !target_valid {
+        return None;
+    }
+    let unit = state
+        .raw_units
+        .iter()
+        .find(|unit| unit.unit_id == unit_id)?;
+    if unit.owner_slot != slot
+        || state.economy.construction.sites.contains_key(&unit_id)
+        || !unit.pos.x.is_finite()
+        || !unit.pos.y.is_finite()
+    {
+        return None;
+    }
+    let content = &state
+        .unit_types
+        .iter()
+        .find(|kind| kind.type_id == unit.unit_type)?
+        .content_id;
+    let catalog = state.catalog.as_ref()?;
+    let definition = catalog
+        .order_definitions
+        .iter()
+        .find(|entry| entry.id == order.order)?;
+    if !definition.units.is_empty() && !definition.units.contains(content) {
+        return None;
+    }
+    let capable = match order.behaviour {
+        Behaviour::Produce => definition
+            .unit_capabilities
+            .iter()
+            .any(|entry| entry.unit == *content && (entry.producer || entry.research)),
+        Behaviour::Construct => crate::paid::has_constructor(state, unit_id),
+        _ => false,
+    };
+    capable.then_some(unit.pos)
+}
+fn order_subject_schedule(
+    order: &turts_sim::OrderCommand,
+    state: &AuditState,
+    slot: u8,
+) -> Vec<u32> {
+    let mut requested = order.units.clone();
+    requested.sort_unstable();
+    if matches!(
+        order.behaviour,
+        turts_mod_api::Behaviour::Produce | turts_mod_api::Behaviour::Construct
+    ) {
+        let anchors = requested
+            .iter()
+            .filter_map(|unit| {
+                financial_order_anchor(order, *unit, state, slot).map(|anchor| (*unit, anchor))
+            })
+            .collect::<BTreeMap<_, _>>();
+        let coordinate = |value: f32| if value == 0.0 { 0.0 } else { value };
+        requested.sort_by(
+            |left, right| match (anchors.get(left), anchors.get(right)) {
+                (Some(left), Some(right)) => coordinate(left.x)
+                    .total_cmp(&coordinate(right.x))
+                    .then_with(|| coordinate(left.y).total_cmp(&coordinate(right.y))),
+                (None, None) => left.cmp(right),
+                (None, Some(_)) => std::cmp::Ordering::Less,
+                (Some(_), None) => std::cmp::Ordering::Greater,
+            },
+        );
+    }
+    requested
+}
+
 fn expected_order_refusal(
     order: &turts_sim::OrderCommand,
     unit_id: u32,
@@ -1823,6 +1909,26 @@ fn expected_order_refusal(
     };
     if !target_matches {
         return Ok(Some(R::TargetInvalid));
+    }
+    if matches!(
+        order.behaviour,
+        turts_mod_api::Behaviour::Produce | turts_mod_api::Behaviour::Construct
+    ) {
+        if let Some(anchor) = financial_order_anchor(order, unit_id, before, sender_slot) {
+            if order
+                .units
+                .iter()
+                .filter(|candidate| {
+                    financial_order_anchor(order, **candidate, before, sender_slot) == Some(anchor)
+                })
+                .count()
+                > 1
+            {
+                return Ok(Some(R::Blocked));
+            }
+        } else if !unit.pos.x.is_finite() || !unit.pos.y.is_finite() {
+            return Ok(Some(R::IntegrityViolation));
+        }
     }
     match (&order.behaviour, &order.target) {
         (
@@ -3154,9 +3260,8 @@ fn validate_order_operation(
         }
         return validate_repair_player_hook(operation, order, unit_id);
     }
-    let mut requested = order.units.clone();
-    requested.sort_unstable();
-    while span.next_subject_index < requested.len() && requested[span.next_subject_index] < unit_id
+    let requested = order_subject_schedule(order, &span.command.before, span.command.input.slot.0);
+    while span.next_subject_index < requested.len() && requested[span.next_subject_index] != unit_id
     {
         let prior_subject = requested[span.next_subject_index];
         if span
@@ -3193,9 +3298,12 @@ fn validate_order_operation(
         }
         span.next_subject_index += 1;
     }
-    if span.last_unit_id.is_some_and(|last| last >= unit_id) {
+    if span.last_unit_id.is_some_and(|last| {
+        requested.iter().position(|unit| *unit == last)
+            >= requested.iter().position(|unit| *unit == unit_id)
+    }) {
         return Err(format!(
-            "order operation subjects are not in unit-id order at {unit_id}"
+            "order operation subjects violate independent execution priority at {unit_id}"
         ));
     }
     let accepted_count = span
@@ -8015,8 +8123,8 @@ fn validate_order_span_end(
     if requested.len() != order.units.len() || requested != subjects {
         return Err("order per-unit results do not cover the unique envelope subjects".into());
     }
-    let mut sorted_requested = order.units.clone();
-    sorted_requested.sort_unstable();
+    let sorted_requested =
+        order_subject_schedule(order, &span.command.before, span.command.input.slot.0);
     let mut next_subject_index = span.next_subject_index;
     while next_subject_index < sorted_requested.len() {
         let unit_id = sorted_requested[next_subject_index];

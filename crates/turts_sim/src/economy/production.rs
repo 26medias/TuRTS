@@ -414,7 +414,7 @@ pub fn cancel_production(
     })
 }
 
-/// Advance the head of each producer queue once, in ascending producer-id order.
+/// Advance each queue head once. Operating work competes in physical source order.
 pub(crate) fn run_production(world: &mut World) {
     let operating = world.contains_resource::<power::OperatingResources>();
     let site_ids = if operating {
@@ -456,7 +456,12 @@ pub(crate) fn run_production(world: &mut World) {
                     .map(|position| (position.0, id, site))
             })
             .collect::<Vec<_>>();
-        work.sort_by(|a, b| a.0.x.total_cmp(&b.0.x).then(a.0.y.total_cmp(&b.0.y)));
+        let coordinate = |value: f32| if value == 0.0 { 0.0 } else { value };
+        work.sort_by(|a, b| {
+            coordinate(a.0.x)
+                .total_cmp(&coordinate(b.0.x))
+                .then_with(|| coordinate(a.0.y).total_cmp(&coordinate(b.0.y)))
+        });
         for (index, (position, id, site)) in work.iter().copied().enumerate() {
             // Exact source ties have equal priority. Refuse both instead of selecting an id.
             if index > 0 && work[index - 1].0 == position

@@ -1,7 +1,8 @@
 # Public bot phase measurement
 
-Status: the first complete run failed. Optimization is in progress.
-This record makes no performance acceptance claim for the current candidate.
+Status: the optimized required run passed at source `3396efb0`.
+It collected 1,000 active phases at 4.907 ms p99 against the 5 ms limit.
+The earlier failed run and diagnostic evidence remain below.
 
 The BF8 budget is 5 ms at p99 for a complete active bot phase.
 Each sample includes observation and decisions, shared admission, ordinary command application, and all deferred receipt publication and participant-result work across 20 simulation ticks.
@@ -46,6 +47,28 @@ A separate 40-sample diagnostic uses the same readiness and workload. It adds te
 It does not replace the required 1,000-sample acceptance run.
 Other machines, maximum unit counts, and browser rendering performance are not established by this native measurement.
 
+## Optimized required run
+
+The same four CPUs, authored workload, limits, readiness, and 1,000 steady phases were used.
+No threshold, rendering detail, unit count, or game rule was reduced.
+The host builds full accounts and live receipt snapshots only before a decision.
+Every completed tick still captures exact debit, admission, placement, and terminal facts.
+Immutable command/result/effect sharing and borrowed comparisons remove repeated allocations.
+
+| Measured part | p50 | p95 | p99 | Maximum |
+| --- | ---: | ---: | ---: | ---: |
+| Complete bot phase | 4.292 ms | 4.780 ms | 4.907 ms | 5.297 ms |
+| Host, shared admission, and command application | 2.778 ms | 3.247 ms | 3.361 ms | 3.874 ms |
+| Deferred receipt publication | 1.469 ms | 1.542 ms | 1.599 ms | 1.641 ms |
+| Participant results | 0.033 ms | 0.035 ms | 0.037 ms | 0.053 ms |
+| Full simulation across 20 ticks | 949.768 ms | 977.883 ms | 989.932 ms | 1005.437 ms |
+
+Exactly 1,000 units remained. The measured phases harvested 135,526 items and fired 221,357 shots.
+All 100 COT jobs remained active. The process exited 0 after 975.118 seconds.
+Evidence: `bf8-optimized-final/bf8-measurement.json`, `bf8-optimized-final.log`, and `bf8-optimized-final-exit.json`.
+The focused independent review is `review/lazy-publication-review.md`.
+This native performance pass does not establish browser or final milestone acceptance.
+
 ## Optimization diagnostics
 
 These short runs use the same readiness check and 40 steady phases.
@@ -56,9 +79,12 @@ They are diagnostics, not performance acceptance.
 | Baseline | 25.081 ms | 10.116 ms | 4.978 ms | 3.602 ms |
 | Immutable commands, actual-inventory lookup, allocation-free role matching | 13.918 ms | 0.826 ms | 3.683 ms | 3.660 ms |
 | Shared results/effects, borrowed payment validation, sorted borrowed accounts | 11.377 ms | 0.824 ms | 2.120 ms | 3.107 ms |
+| Demand publication, exact per-tick capture, grouped roles | 4.788 ms | 0.304 ms | 0.100 ms | 0.160 ms |
 
 The second diagnostic is `bf8-diagnostic-opt2/bf8-diagnostic-40.json` under the evidence directory above.
 It predates shared immutable results/effects, borrowed payment validation, and sorted borrowed account rows.
 The third diagnostic is `bf8-diagnostic-opt3/bf8-diagnostic-40.json`.
 It predates grouped role counts, cached content resolution, and demand-time publication.
 Those later changes require a new measurement.
+The fourth diagnostic is `bf8-diagnostic-opt4/bf8-diagnostic-40.json`; its separate intermediate capture averaged 0.996 ms per phase.
+The complete required run above followed this diagnostic.

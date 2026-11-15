@@ -2978,15 +2978,32 @@ mod admission_tests {
     #[test]
     fn representable_mixed_produce_envelope_reaches_per_unit_validation() {
         let (mut app, connection) = app();
+        let initial = app
+            .world()
+            .iter_entities()
+            .find(|entity| entity.get::<SimUnitId>().is_some_and(|unit| unit.0 == 1))
+            .unwrap()
+            .id();
+        app.world_mut()
+            .entity_mut(initial)
+            .insert(turts_sim::Position(Vec2::new(4.0, 4.0)));
         let producer_type = app
             .world()
             .iter_entities()
             .find_map(|entity| entity.get::<UnitType>().copied())
             .unwrap();
-        app.world_mut()
-            .spawn((SimUnitId(2), Owner(turts_sim::SlotId(1)), producer_type));
-        app.world_mut()
-            .spawn((SimUnitId(4), Owner(turts_sim::SlotId(0)), producer_type));
+        app.world_mut().spawn((
+            SimUnitId(2),
+            Owner(turts_sim::SlotId(1)),
+            producer_type,
+            turts_sim::Position(Vec2::new(8.0, 4.0)),
+        ));
+        app.world_mut().spawn((
+            SimUnitId(4),
+            Owner(turts_sim::SlotId(0)),
+            producer_type,
+            turts_sim::Position(Vec2::new(12.0, 4.0)),
+        ));
         let static_type = app
             .world_mut()
             .resource_mut::<UnitTypes>()
