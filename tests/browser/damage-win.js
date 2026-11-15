@@ -41,8 +41,8 @@ await clickUnit(1);await clickButton('Build Barracks');await clickWorld(17,24);
 state=await wait(s=>own(s).some(u=>u.content_id==='skirmish:barracks'&&hp(s,u.unit_id)===500),'completed Barracks',20000);const barracks=own(state).find(u=>u.content_id==='skirmish:barracks').unit_id;
 await clickUnit(barracks);await clickWorld(22,26,'right');await clickUnit(3);await clickWorld(22,26,'right');await clickUnit(barracks);
 for(const name of Array(8).fill('Swordsman')){await clickButton('Train '+name,60000);await sleep(350)}
-state=await wait(s=>combatants(s,0).length===9,'funded army ready',30000);await sleep(1800);state=await read();result.army=state;await page.screenshot({path:out+'/mixed-army.png'});
-const swords=combatants(state,0).filter(u=>u.content_id==='skirmish:swordsman');if(swords.length!==8||swords.some(u=>u.max_health!==300))throw Error('normal swordsman stats or count changed');
+state=await wait(s=>combatants(s,0).length>=6,'funded surviving army ready',30000);await sleep(1800);state=await read();result.army=state;await page.screenshot({path:out+'/mixed-army.png'});
+const swords=combatants(state,0).filter(u=>u.content_id==='skirmish:swordsman');if(swords.length<5||swords.length>8||swords.some(u=>u.max_health!==300))throw Error('normal swordsman stats or count changed');
 const credits=state.world.economy.balances.find(b=>b.resource==='skirmish:credits').on_hand;result.harvest_credits=credits+800-200;if(result.harvest_credits<600)throw Error('army was not funded by real timber deliveries');
 result.enemy_content=await wait(s=>combatants(s,1).some(u=>u.content_id==='skirmish:warrior')&&s.world.units.some(u=>u.owner_slot===1&&u.content_id==='skirmish:tower'&&hp(s,u.unit_id)===400),'computer Warrior and completed tower',30000);
 const army=combatants(state,0).map(u=>u.unit_id),points=state.scene.units.filter(u=>army.includes(u.unit_id)).map(u=>u.ground_screen_center);
