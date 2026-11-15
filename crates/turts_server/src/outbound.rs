@@ -52,7 +52,12 @@ pub fn send_final_snapshots(world: &mut World) {
         .collect::<Vec<_>>();
     for (entity, slot) in recipients {
         let policy = crate::permissions::completed(world);
-        match knowledge::queue_tick(world, entity, slot) {
+        let atomic = if world.get::<knowledge::KnowledgeSender>(entity).is_some() {
+            knowledge::queue_tick(world, entity, slot)
+        } else {
+            knowledge::queue_full(world, entity, slot)
+        };
+        match atomic {
             Ok(true) => {
                 world.entity_mut(entity).insert(FinalSnapshotSent);
                 continue;
@@ -156,6 +161,16 @@ pub fn send_deltas(world: &mut World) {
         match projected {
             Ok((delta, history)) => {
                 let bytes = payload_bytes(&delta);
+                if bytes > turts_net_lightyear::KNOWLEDGE_FRAME_LIMIT_BYTES as u64 {
+                    match knowledge::queue_oversized(world, entity, slot) {
+                        Ok(true) => continue,
+                        Err(reason) => {
+                            knowledge::disconnect(world, entity, reason);
+                            continue;
+                        }
+                        Ok(false) => unreachable!("forced atomic baseline must be queued"),
+                    }
+                }
                 if let Some(mut sender) = world.get_mut::<MessageSender<WorldDelta>>(entity) {
                     sender.send::<StateChannel>(delta);
                     world.resource_mut::<Stats>().delta_payload_bytes_total += bytes;

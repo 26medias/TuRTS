@@ -2,7 +2,7 @@
 //!
 //! Private economy records are filtered by owner before any wire values are built. The
 //! visibility filter is in one place: [`unit_exists`] and the owner filters below (design 6.8).
-//! In MP1 every existing unit is visible to every viewer.
+//! AllVisible preserves the old projection. Authored fog sanitizes the view before this writer.
 //!
 //! Removal rule (design 6.8): a record in a delta never names a unit that the same delta
 //! removes. `unit_orders` records and `orders_cleared` skip a removed unit; the weapon record
@@ -66,7 +66,8 @@ use turts_sim::{
     world::UnitState,
 };
 
-/// Build the owner-specific reliable snapshot from one completed world view.
+/// Build a snapshot from an already-permitted completed view. Live transport applies the shared
+/// permission provider first. Direct full-world use is only valid for AllVisible.
 pub fn snapshot_for(view: &WorldView, slot: SlotId) -> wire::Snapshot {
     snapshot_projected(view, slot)
 }

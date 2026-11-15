@@ -1014,6 +1014,248 @@ mod tests {
     }
 
     #[derive(Resource, Default)]
+    struct VisibilityFrames(
+        BTreeMap<Entity, Vec<turts_net_protocol::visibility_transaction::StateTransactionFrame>>,
+    );
+    fn capture_visibility_frames(
+        mut receivers: Query<(
+            Entity,
+            &mut MessageReceiver<turts_net_protocol::StateTransactionBegin>,
+            &mut MessageReceiver<turts_net_protocol::StateTransactionChunk>,
+            &mut MessageReceiver<turts_net_protocol::StateTransactionEnd>,
+        )>,
+        mut captured: ResMut<VisibilityFrames>,
+    ) {
+        use turts_net_protocol::visibility_transaction::StateTransactionFrame as Frame;
+        for (entity, mut begins, mut chunks, mut ends) in &mut receivers {
+            let frames = captured.0.entry(entity).or_default();
+            frames.extend(begins.receive().map(Frame::Begin));
+            frames.extend(chunks.receive().map(Frame::Chunk));
+            frames.extend(ends.receive().map(Frame::End));
+        }
+    }
+    #[test]
+    fn real_human_hello_wire_installs_slot_specific_atomic_sight_before_acknowledgement() {
+        use lightyear::link::recv_payload_from_bytes;
+        use turts_mod_api::{
+            KnowledgeBasis, ObservationPhase, SourceDef, VisibilityDef, VisibilityGrid, VisionDef,
+            VisionSharing, WorldPos,
+        };
+        use turts_net_lightyear::KnowledgeChannel;
+        use turts_net_protocol::{
+            StateTransactionAck, StateTransactionBegin, StateTransactionCancel,
+            StateTransactionChunk, StateTransactionEnd, StateTransactionPayload,
+            visibility_transaction::{StateTransactionAssembler, StateTransactionFrame as Frame},
+        };
+        let mut app = hello_test_app();
+        crate::outbound::install(&mut app);
+        app.init_resource::<VisibilityFrames>().add_systems(
+            PreUpdate,
+            capture_visibility_frames
+                .after(MessageSystems::Receive)
+                .before(receive_hello),
+        );
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../mods/cedar");
+        let archive = turts_mod_runtime::archive::PackageArchive::parse(
+            &turts_mod_runtime::pack::pack_dir(&root).unwrap(),
+        )
+        .unwrap();
+        let mut catalog = archive.content().unwrap();
+        let worker = ContentId::parse("cedar:worker").unwrap();
+        catalog.units.get_mut(&worker).unwrap().vision = Some(VisionDef { radius: 8.0 });
+        let mut map = archive.maps().unwrap().remove(0).1;
+        let definition = VisibilityDef {
+            cell_size: 2.0,
+            sharing: VisionSharing::OwnSlot,
+            memory_limit: None,
+        };
+        map.visibility = Some(definition.clone());
+        let staged = turts_sim::stage_package(
+            app.world(),
+            catalog,
+            SourceDef {
+                file: "human-sight/map".into(),
+                value: map,
+            },
+            20,
+        )
+        .unwrap();
+        turts_sim::install_package(app.world_mut(), staged);
+        let map_id = ContentId::parse("cedar:clearing").unwrap();
+        let sight = turts_sim::visibility::prepare(
+            0,
+            map_id.clone(),
+            &definition,
+            VisibilityGrid {
+                size: WorldPos { x: 64.0, y: 64.0 },
+                cell_size: 2.0,
+                columns: 32,
+                rows: 32,
+            },
+            &[0, 1],
+        )
+        .unwrap();
+        app.insert_resource(sight);
+        turts_sim::visibility::initialize_context(app.world_mut(), 0, &[0, 1]).unwrap();
+        turts_sim::initialize_completed_world(app.world_mut());
+        let pairs = [
+            spawn_hello_peers(&mut app, 101),
+            spawn_hello_peers(&mut app, 202),
+        ];
+        for (client, server) in pairs {
+            app.world_mut().entity_mut(client).insert((
+                MessageReceiver::<Welcome>::default(),
+                MessageReceiver::<StateTransactionBegin>::default(),
+                MessageReceiver::<StateTransactionChunk>::default(),
+                MessageReceiver::<StateTransactionEnd>::default(),
+                MessageSender::<StateTransactionAck>::default(),
+                MessageSender::<StateTransactionCancel>::default(),
+            ));
+            app.world_mut().entity_mut(server).insert((
+                MessageSender::<StateTransactionBegin>::default(),
+                MessageSender::<StateTransactionChunk>::default(),
+                MessageSender::<StateTransactionEnd>::default(),
+                MessageSender::<StateTransactionCancel>::default(),
+                MessageReceiver::<StateTransactionAck>::default(),
+                MessageReceiver::<StateTransactionCancel>::default(),
+            ));
+            let registry = app.world().resource::<ChannelRegistry>();
+            let mut server_transport = Transport::default();
+            server_transport.add_channel_send_from_registry::<ReliableChannel>(registry);
+            server_transport.add_channel_receive_from_registry::<ReliableChannel>(registry);
+            server_transport.add_channel_send_from_registry::<KnowledgeChannel>(registry);
+            let mut client_transport = Transport::default();
+            client_transport.add_channel_send_from_registry::<ReliableChannel>(registry);
+            client_transport.add_channel_receive_from_registry::<ReliableChannel>(registry);
+            client_transport.add_channel_receive_from_registry::<KnowledgeChannel>(registry);
+            app.world_mut().entity_mut(server).insert(server_transport);
+            app.world_mut().entity_mut(client).insert(client_transport);
+        }
+        for (index, (client, server)) in pairs.iter().copied().enumerate() {
+            deliver_hello(&mut app, client, server, good(101 + index as u64 * 101));
+        }
+        let mut assemblers = pairs
+            .iter()
+            .map(|(client, _)| {
+                (
+                    *client,
+                    StateTransactionAssembler::new(
+                        0,
+                        map_id.clone(),
+                        turts_net_lightyear::KNOWLEDGE_FRAME_LIMIT_BYTES,
+                    ),
+                )
+            })
+            .collect::<BTreeMap<_, _>>();
+        let mut installed = BTreeMap::new();
+        for step in 0..30 {
+            for (client, server) in pairs {
+                for (from, to) in [(server, client), (client, server)] {
+                    let packets = app
+                        .world_mut()
+                        .get_mut::<Link>(from)
+                        .unwrap()
+                        .send
+                        .drain()
+                        .collect::<Vec<_>>();
+                    for packet in packets {
+                        app.world_mut()
+                            .get_mut::<Link>(to)
+                            .unwrap()
+                            .recv
+                            .push_raw(recv_payload_from_bytes(packet));
+                    }
+                }
+            }
+            app.update();
+            let frames = std::mem::take(&mut app.world_mut().resource_mut::<VisibilityFrames>().0);
+            for (client, frames) in frames {
+                let assembler = assemblers.get_mut(&client).unwrap();
+                for frame in frames {
+                    assert!(
+                        frame.encoded_bytes().unwrap()
+                            <= turts_net_lightyear::KNOWLEDGE_FRAME_LIMIT_BYTES
+                    );
+                    match frame {
+                        Frame::Begin(begin) => assembler.begin(begin, step * 50).unwrap(),
+                        Frame::Chunk(chunk) => assembler.chunk(&chunk).unwrap(),
+                        Frame::End(end) => {
+                            if let Some(staged) = assembler.end(&end).unwrap() {
+                                assert!(
+                                    assembler.active().is_none(),
+                                    "no partial sight can activate"
+                                );
+                                let StateTransactionPayload::Snapshot {
+                                    state,
+                                    knowledge: Some(knowledge),
+                                    ..
+                                } = staged.payload
+                                else {
+                                    panic!("restricted initial state includes knowledge")
+                                };
+                                assert_eq!(
+                                    knowledge.basis,
+                                    KnowledgeBasis {
+                                        match_id: 0,
+                                        map: map_id.clone(),
+                                        tick: state.tick,
+                                        phase: ObservationPhase::Completed
+                                    }
+                                );
+                                assert!(
+                                    state
+                                        .units
+                                        .iter()
+                                        .all(|unit| unit.owner_slot.0 == knowledge.viewer)
+                                );
+                                let expected = turts_sim::completed_world(app.world())
+                                    .units
+                                    .iter()
+                                    .filter(|unit| {
+                                        turts_sim::visibility::basis(
+                                            app.world(),
+                                            ObservationPhase::Completed,
+                                        )
+                                        .unwrap()
+                                        .unit_permitted(knowledge.viewer, unit.unit_id)
+                                    })
+                                    .map(|unit| unit.unit_id)
+                                    .collect::<Vec<_>>();
+                                assert_eq!(
+                                    state
+                                        .units
+                                        .iter()
+                                        .map(|unit| unit.unit_id.0)
+                                        .collect::<Vec<_>>(),
+                                    expected
+                                );
+                                installed.insert(knowledge.viewer, knowledge);
+                                let ack = assembler.activate(&staged.stamp).unwrap();
+                                app.world_mut()
+                                    .get_mut::<MessageSender<StateTransactionAck>>(client)
+                                    .unwrap()
+                                    .send::<ReliableChannel>(ack);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        assert_eq!(installed.len(), 2);
+        assert_ne!(installed[&0].observed, installed[&1].observed);
+        for (_, server) in pairs {
+            assert!(
+                app.world()
+                    .get::<crate::outbound::knowledge::KnowledgeSender>(server)
+                    .unwrap()
+                    .active_stamp()
+                    .is_some(),
+                "server baseline advances only after real wire acknowledgement"
+            );
+        }
+    }
+
+    #[derive(Resource, Default)]
     struct LobbyRepliesCaptured {
         states: Vec<LobbyState>,
         orders: Vec<OrderResult>,

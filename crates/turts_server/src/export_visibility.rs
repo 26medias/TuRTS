@@ -31,6 +31,101 @@ impl PermittedBaseline {
             event_units: vec![],
         }
     }
+    /// The legacy AllVisible path can retain an earlier truthful public observation for cosmetics.
+    /// It never labels that old position as a current phase observation.
+    pub fn all_visible_patch(
+        &self,
+        next: &Self,
+        batch: &CommittedTick,
+        slot: SlotId,
+        context: &turts_mod_api::KnowledgeBasis,
+    ) -> StateTransactionPayload {
+        let StateTransactionPayload::Patch {
+            mut state,
+            knowledge,
+            ..
+        } = self.patch(next, batch, slot, &[])
+        else {
+            unreachable!()
+        };
+        let current = next
+            .state
+            .units
+            .iter()
+            .map(|unit| unit.unit_id.0)
+            .collect::<BTreeSet<_>>();
+        let old = self
+            .state
+            .units
+            .iter()
+            .map(|unit| (unit.unit_id.0, unit))
+            .collect::<BTreeMap<_, _>>();
+        state.removed = batch
+            .removed
+            .iter()
+            .filter(|id| old.contains_key(id))
+            .copied()
+            .map(wire::UnitId)
+            .collect();
+        let effects = super::export_effects::effects(batch, slot);
+        let mut references = BTreeSet::new();
+        for effect in &effects {
+            match effect {
+                wire::Effect::Fired { unit, target, .. } => {
+                    references.insert(unit.0);
+                    references.insert(target.0);
+                }
+                wire::Effect::Destroyed { unit } | wire::Effect::Credited { unit, .. } => {
+                    references.insert(unit.0);
+                }
+            }
+        }
+        let mut observations = BTreeMap::new();
+        for unit in &self.state.units {
+            if references.contains(&unit.unit_id.0) && !current.contains(&unit.unit_id.0) {
+                let mut basis = context.clone();
+                basis.tick = self.state.tick;
+                basis.phase = turts_mod_api::ObservationPhase::Completed;
+                observations.insert(
+                    unit.unit_id.0,
+                    wire::EventUnitObservation {
+                        basis,
+                        unit: unit.clone(),
+                    },
+                );
+            }
+        }
+        for unit in &batch.spawned {
+            if references.contains(&unit.unit_id) && !current.contains(&unit.unit_id) {
+                let mut basis = context.clone();
+                basis.tick = batch.tick;
+                basis.phase = turts_mod_api::ObservationPhase::Completed;
+                observations.insert(
+                    unit.unit_id,
+                    wire::EventUnitObservation {
+                        basis,
+                        unit: super::unit_snapshot(unit),
+                    },
+                );
+            }
+        }
+        let known =
+            |unit: wire::UnitId| current.contains(&unit.0) || observations.contains_key(&unit.0);
+        state.records.effects = effects
+            .into_iter()
+            .filter(|effect| match effect {
+                wire::Effect::Fired { unit, target, .. } => known(*unit) && known(*target),
+                wire::Effect::Destroyed { unit } | wire::Effect::Credited { unit, .. } => {
+                    known(*unit)
+                }
+            })
+            .collect();
+        StateTransactionPayload::Patch {
+            state,
+            knowledge,
+            event_units: observations.into_values().collect(),
+        }
+    }
     /// Diffs only two already-permitted states. Routine hide/reveal needs no full resync.
     pub fn patch(
         &self,
@@ -488,6 +583,66 @@ mod tests {
         };
         assert!(state.records.effects.is_empty());
         assert!(state.removed.is_empty());
+    }
+    #[test]
+    fn all_visible_cosmetics_keep_truthful_old_and_birth_stamps_and_omit_unknown_handles() {
+        use turts_sim::economy::events::EffectRow;
+        let mut old = snapshot(1, true);
+        old.knowledge = None;
+        let mut next = snapshot(2, false);
+        next.knowledge = None;
+        let batch = CommittedTick {
+            tick: 2,
+            removed: vec![2, 3, 99],
+            spawned: vec![turts_sim::world::UnitState {
+                unit_id: 3,
+                content_id: "fixture:unit".into(),
+                owner_slot: 1,
+                facing: None,
+                pos: bevy::math::Vec2::new(7.0, 7.0),
+            }],
+            effects: vec![
+                EffectRow::Fired {
+                    unit: 2,
+                    target: 1,
+                    weapon: 0,
+                    reduced: false,
+                },
+                EffectRow::Destroyed { unit: 2 },
+                EffectRow::Destroyed { unit: 3 },
+                EffectRow::Destroyed { unit: 99 },
+            ],
+            ..Default::default()
+        };
+        let StateTransactionPayload::Patch {
+            state,
+            knowledge,
+            event_units,
+        } = old.all_visible_patch(&next, &batch, SlotId(0), &basis(2))
+        else {
+            panic!()
+        };
+        assert!(knowledge.is_none());
+        assert_eq!(state.removed, vec![wire::UnitId(2)]);
+        assert_eq!(
+            state.records.effects.len(),
+            3,
+            "unknown legacy cosmetic handle is omitted"
+        );
+        let old_observation = event_units
+            .iter()
+            .find(|row| row.unit.unit_id.0 == 2)
+            .unwrap();
+        assert_eq!(old_observation.basis.tick, 1);
+        assert_eq!(old_observation.basis.phase, ObservationPhase::Completed);
+        assert_eq!(old_observation.unit.pos, unit(2).pos);
+        let born = event_units
+            .iter()
+            .find(|row| row.unit.unit_id.0 == 3)
+            .unwrap();
+        assert_eq!(born.basis.tick, 2);
+        assert_eq!(born.unit.pos, wire::Pos { x: 7.0, y: 7.0 });
+        assert!(!event_units.iter().any(|row| row.unit.unit_id.0 == 99));
     }
     #[test]
     fn hidden_present_moved_and_destroyed_truth_produces_equal_permitted_patches() {

@@ -47,6 +47,7 @@ impl Pending {
 #[derive(Component)]
 pub struct KnowledgeSender {
     tip: PermittedBaseline,
+    context: turts_mod_api::KnowledgeBasis,
     active: Option<StateTransactionStamp>,
     pending: Option<Pending>,
     patches: VecDeque<EncodedStateTransaction>,
@@ -56,6 +57,10 @@ pub struct KnowledgeSender {
     restarts: VecDeque<Instant>,
 }
 impl KnowledgeSender {
+    #[cfg(test)]
+    pub(crate) fn active_stamp(&self) -> Option<&StateTransactionStamp> {
+        self.active.as_ref()
+    }
     fn retained(&self) -> usize {
         self.tip
             .retained_bytes()
@@ -69,13 +74,12 @@ impl KnowledgeSender {
             .saturating_add(BRIDGE_RESERVE + TRANSPORT_RESERVE)
     }
     fn stamp(&mut self, parent: Option<u64>) -> Result<StateTransactionStamp, String> {
-        let basis = self
+        let mut basis = self
             .tip
             .knowledge
             .as_ref()
-            .ok_or("restricted publication has no knowledge basis")?
-            .basis
-            .clone();
+            .map_or_else(|| self.context.clone(), |knowledge| knowledge.basis.clone());
+        basis.tick = self.tip.state.tick;
         self.next_id = self
             .next_id
             .checked_add(1)
@@ -105,7 +109,7 @@ impl KnowledgeSender {
             .saturating_add(size)
             > MAX_PENDING_STATE_BYTES as usize
         {
-            return Err("A permitted state exceeds the64MiB connection budget".into());
+            return Err("The permitted game state exceeds the 64 MiB connection budget".into());
         }
         let encoded = encode_snapshot(
             stamp,
@@ -125,7 +129,7 @@ impl KnowledgeSender {
         }
         self.restarts.push_back(now);
         if self.restarts.len() >= MAX_STATE_RESTARTS as usize {
-            return Err("State transfer restarted three times in30seconds".into());
+            return Err("State transfer restarted three times in 30 seconds".into());
         }
         self.full(now)
     }
@@ -152,27 +156,62 @@ fn emit_cancel(world: &mut World, entity: Entity, cancel: Option<StateTransactio
         }
     }
 }
-/// Returns false only for the unchanged AllVisible publication path.
+/// Small AllVisible baselines retain their legacy fast path.
 pub fn queue_full(world: &mut World, entity: Entity, slot: SlotId) -> Result<bool, String> {
+    queue_snapshot(world, entity, slot, false)
+}
+/// A large legacy patch needs its first atomic baseline before any following patch can name it.
+pub fn queue_oversized(world: &mut World, entity: Entity, slot: SlotId) -> Result<bool, String> {
+    queue_snapshot(world, entity, slot, true)
+}
+fn queue_snapshot(
+    world: &mut World,
+    entity: Entity,
+    slot: SlotId,
+    force: bool,
+) -> Result<bool, String> {
     let policy = crate::permissions::completed(world);
-    if policy.0.knowledge_basis().is_none() {
-        return Ok(false);
-    }
     if !turts_sim::visibility::context_ready(world) {
         return Err("Sight context is not ready for publication".into());
     }
     let tip =
         PermittedBaseline::capture(turts_sim::completed_world(world), slot, policy.0.as_ref());
+    if tip.knowledge.is_none()
+        && !force
+        && world.get::<KnowledgeSender>(entity).is_none()
+        && postcard::experimental::serialized_size(&tip.state).map_err(|error| error.to_string())?
+            <= FRAME_LIMIT
+    {
+        return Ok(false);
+    }
+    let context = match &tip.knowledge {
+        Some(knowledge) => knowledge.basis.clone(),
+        None => turts_mod_api::KnowledgeBasis {
+            match_id: world
+                .get_resource::<crate::stats::MatchId>()
+                .ok_or("Missing match identity for atomic state")?
+                .0,
+            map: world
+                .get_resource::<turts_sim::bootstrap::InstalledMapIdentity>()
+                .ok_or("Missing installed map identity for atomic state")?
+                .0
+                .clone(),
+            tick: tip.state.tick,
+            phase: turts_mod_api::ObservationPhase::Completed,
+        },
+    };
     let now = Instant::now();
     let mut sender = if let Some(mut existing) = world.entity_mut(entity).take::<KnowledgeSender>()
     {
         let cancel = existing.cancel(StateTransactionCancelReason::Superseded);
         emit_cancel(world, entity, cancel);
         existing.tip = tip;
+        existing.context = context;
         existing
     } else {
         KnowledgeSender {
             tip,
+            context,
             active: None,
             pending: None,
             patches: VecDeque::new(),
@@ -188,6 +227,13 @@ pub fn queue_full(world: &mut World, entity: Entity, slot: SlotId) -> Result<boo
 }
 pub fn queue_tick(world: &mut World, entity: Entity, slot: SlotId) -> Result<bool, String> {
     let Some(mut sender) = world.entity_mut(entity).take::<KnowledgeSender>() else {
+        if crate::permissions::completed(world)
+            .0
+            .knowledge_basis()
+            .is_none()
+        {
+            return Ok(false);
+        }
         return queue_full(world, entity, slot);
     };
     let policy = crate::permissions::completed(world);
@@ -198,9 +244,18 @@ pub fn queue_tick(world: &mut World, entity: Entity, slot: SlotId) -> Result<boo
         return Ok(true);
     }
     let facts = turts_sim::visibility::event_units(world, slot.0);
-    let payload = sender
-        .tip
-        .patch(&next, turts_sim::committed_tick(world), slot, &facts);
+    let payload = if sender.tip.knowledge.is_none() && next.knowledge.is_none() {
+        sender.tip.all_visible_patch(
+            &next,
+            turts_sim::committed_tick(world),
+            slot,
+            &sender.context,
+        )
+    } else {
+        sender
+            .tip
+            .patch(&next, turts_sim::committed_tick(world), slot, &facts)
+    };
     let parent = sender
         .patches
         .back()
@@ -325,7 +380,7 @@ fn pump_one(
         sender.restart(now)?;
     }
     if sender.retained() > MAX_PENDING_STATE_BYTES as usize {
-        return Err("State transfer exceeds64MiB retained budget".into());
+        return Err("State transfer exceeds the 64 MiB retained budget".into());
     }
     let mut first_kind = None;
     for _ in 0..FRAMES_PER_PUMP {
@@ -413,8 +468,10 @@ mod tests {
                 retention_truncated: false,
             }),
         };
+        let context = tip.knowledge.as_ref().unwrap().basis.clone();
         let mut sender = KnowledgeSender {
             tip,
+            context,
             active: None,
             pending: None,
             patches: VecDeque::new(),
@@ -425,6 +482,45 @@ mod tests {
         };
         sender.full(now).unwrap();
         sender
+    }
+    #[test]
+    fn large_all_visible_snapshot_uses_real_map_context_and_keeps_an_atomic_patch_chain() {
+        let mut app = turts_sim::headless_app(20);
+        app.insert_resource(crate::stats::MatchId(17));
+        let map = ContentId::parse("fixture:map").unwrap();
+        app.insert_resource(turts_sim::bootstrap::InstalledMapIdentity(map.clone()));
+        let entity = app.world_mut().spawn_empty().id();
+        assert!(!queue_full(app.world_mut(), entity, SlotId(0)).unwrap());
+        let mut view = turts_sim::WorldView::default();
+        view.units = (1..=200)
+            .map(|unit_id| turts_sim::world::UnitState {
+                unit_id,
+                content_id: "fixture:unit".into(),
+                owner_slot: 0,
+                facing: None,
+                pos: bevy::math::Vec2::new(2.0, 2.0),
+            })
+            .collect();
+        app.insert_resource(turts_sim::CompletedWorld(view));
+        assert!(queue_full(app.world_mut(), entity, SlotId(0)).unwrap());
+        let sender = app.world().get::<KnowledgeSender>(entity).unwrap();
+        assert!(sender.tip.knowledge.is_none());
+        let begin = sender.pending.as_ref().unwrap().encoded.begin();
+        assert_eq!(begin.stamp.basis.map, map);
+        assert_eq!(begin.stamp.basis.match_id, 17);
+        assert!(begin.chunk_count > 1);
+        app.world_mut()
+            .resource_mut::<turts_sim::CompletedWorld>()
+            .0
+            .tick = 1;
+        assert!(queue_tick(app.world_mut(), entity, SlotId(0)).unwrap());
+        let sender = app.world().get::<KnowledgeSender>(entity).unwrap();
+        assert_eq!(sender.patches.len(), 1);
+        assert_eq!(
+            sender.patches[0].begin().stamp.parent_transaction_id,
+            Some(1)
+        );
+        assert_eq!(sender.patches[0].begin().stamp.basis.tick, 1);
     }
     #[test]
     fn logical_cancel_releases_unsent_buffers_but_carries_inflight_credit_until_ack() {
@@ -482,6 +578,75 @@ mod tests {
         assert_eq!(slow.restarts.len(), 1);
     }
     #[test]
+    fn bounded_typed_send_window_does_not_block_a_second_connection() {
+        use lightyear::prelude::server::{ClientOf, ServerPlugins};
+        let mut app = App::new();
+        app.add_plugins(ServerPlugins {
+            tick_duration: Duration::from_millis(50),
+        });
+        app.add_plugins(turts_net_lightyear::ProtocolPlugin);
+        app.finish();
+        app.cleanup();
+        let spawn = |app: &mut App| {
+            let registry = app.world().resource::<ChannelRegistry>();
+            let mut transport = Transport::default();
+            transport.add_channel_send_from_registry::<KnowledgeChannel>(registry);
+            app.world_mut()
+                .spawn((
+                    ClientOf,
+                    Link::default(),
+                    transport,
+                    RemoteId(PeerId::Local(42)),
+                    Linked,
+                    Connected,
+                    Session {
+                        slot: SlotId(0),
+                        player_id: 42,
+                        last_seq: None,
+                    },
+                    MessageSender::<turts_net_protocol::StateTransactionBegin>::default(),
+                    MessageSender::<turts_net_protocol::StateTransactionChunk>::default(),
+                    MessageSender::<turts_net_protocol::StateTransactionEnd>::default(),
+                ))
+                .id()
+        };
+        let slow_entity = spawn(&mut app);
+        let healthy_entity = spawn(&mut app);
+        let now = Instant::now();
+        let mut slow = sender(now);
+        slow.cancel(StateTransactionCancelReason::Superseded);
+        slow.tip.state.units = (1..=2000)
+            .map(|id| turts_net_protocol::UnitSnapshot {
+                unit_id: turts_net_protocol::UnitId(id),
+                content_id: "fixture:ordinary_unit_with_a_public_content_name".into(),
+                owner_slot: turts_net_protocol::SlotId(0),
+                facing: None,
+                pos: turts_net_protocol::Pos { x: 1.0, y: 1.0 },
+                site: false,
+            })
+            .collect();
+        slow.full(now).unwrap();
+        assert!(slow.pending.as_ref().unwrap().encoded.begin().chunk_count > WINDOW as u32);
+        for _ in 0..20 {
+            pump_one(app.world_mut(), slow_entity, &mut slow, now).unwrap();
+        }
+        assert_eq!(slow.outstanding, WINDOW);
+        assert!(slow.retained() < MAX_PENDING_STATE_BYTES as usize);
+        let mut healthy = sender(now);
+        pump_one(app.world_mut(), healthy_entity, &mut healthy, now).unwrap();
+        assert_eq!(healthy.outstanding, 1);
+        assert!(
+            healthy
+                .pending
+                .as_ref()
+                .unwrap()
+                .encoded
+                .begin()
+                .encoded_bytes
+                < slow.pending.as_ref().unwrap().encoded.begin().encoded_bytes
+        );
+    }
+    #[test]
     fn capacity_accounting_rejects_large_typed_storage_before_snapshot_encoding() {
         let now = Instant::now();
         let mut sender = sender(now);
@@ -500,7 +665,7 @@ mod tests {
                 site: false,
             });
         assert!(sender.tip.retained_bytes() >= MAX_PENDING_STATE_BYTES as usize);
-        assert!(sender.full(now).unwrap_err().contains("64MiB"));
+        assert!(sender.full(now).unwrap_err().contains("64 MiB"));
         assert!(sender.pending.is_none());
     }
 }
