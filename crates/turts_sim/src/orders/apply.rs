@@ -45,6 +45,7 @@ pub(super) fn unit_toggleable(unit: &turts_mod_api::ResolvedUnit) -> bool {
         || unit.machine.is_some()
         || unit.research.is_some()
         || unit.producer.is_some()
+        || unit.constructor.is_some()
         || unit.weapon.is_some()
         || unit.repairer.is_some()
 }
