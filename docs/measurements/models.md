@@ -548,3 +548,20 @@ The 30 FPS High floor passes without a quality change.
 The 2,000-unit and panning workloads were not repeated. GPU process RSS and other hardware were not measured.
 Evidence: `target/mc-evidence/operating-resources/final/summary.md` and `final/measure-400/result.json`.
 The actual global launcher and all three scripted player probes pass.
+
+## Paid-work and repair release, 2026-11-15
+
+Runtime source: `d1bcc482`. API 0.2.14; protocol 8.
+Same local RTX 3080/i9-14900K, Chrome WebGPU, 1280×720, and three-type battle.
+All 400 actors remain visible and take damage. Shared skins and environment checks pass.
+No compiler or competing test browser ran during sampling.
+
+| Scene | Quality | FPS | p50 ms | p95 ms | WASM high-water MiB |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 400 units | High | 59.203 | 16.70 | 16.70 | 210.69 |
+| 400 units | Low | 59.303 | 16.70 | 16.80 | 186.69 |
+
+The 30 FPS High floor passes without reducing detail.
+The 2,000-unit and panning workloads were not repeated. GPU process RSS and other hardware remain unmeasured.
+Evidence: `target/mc-evidence/paid-work-and-repair/final/measure-400/result.json` and `final/summary.md`.
+All three final scripted player probes pass. Full fresh-agent and manual readiness were not repeated.

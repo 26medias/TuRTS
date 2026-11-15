@@ -1881,68 +1881,231 @@ fn owner_unit_orders_from_audit(
         .collect()
 }
 
-/// LIMIT (follow-up of L0-WIRE, item 3): this oracle cannot go red on a wrong rate in the process
-/// scenarios, because no raw Snapshot of those scenarios holds a running job (the first Snapshot is
-/// taken at the join, before the scripted `Produce`; a plant "wire rate + 1" stayed green). I chose to
-/// state the limit and not to re-time a process scenario: a scenario change costs a full
-/// `acceptance.sh` run (about 25 minutes) for each try, and the guard that does see a wrong rate
-/// already exists and is cheap: `crates/turts_client/tests/job_progress_clients.rs` compares the
-/// derived value of three real `Replica` clients with the sim at every tick (plants `JOBRATE1/(a)`
-/// to `(f)`). This oracle still checks the shape of the Snapshot records (`total`, `at_tick`, the
-/// state, the job list) when a job is present.
-///
-/// The rate of each job at the tick of `state`, MEASURED from the audit of the sim: the change of
-/// `elapsed_ticks` from this tick to the next one. It does not read the stage or the disabled set,
-/// so it cannot copy the export rule. A job that is gone at the next tick completed (it advanced by
-/// 1 into its duration) or was cancelled (0); the audit arithmetic tells which. `None` for `next`
-/// (the last tick of a log) gives no rate: the caller masks the rates then.
-fn measured_job_rates(
+// Rate records are checked at their original wire anchor. Work counters,
+// funding and declared capability rates come from the validated audit; no
+// production exporter or replica implementation is used by this oracle.
+fn audit_work_step(
     state: &turts_sim::AuditState,
-    next: Option<&turts_sim::AuditState>,
-) -> Option<std::collections::BTreeMap<(u32, u64), u64>> {
-    let next = next?;
-    let mut rates = std::collections::BTreeMap::new();
-    for queue in &state.economy.economy.queues {
-        for job in &queue.jobs {
-            let later = next
-                .economy
-                .economy
-                .queues
-                .iter()
-                .filter(|q| q.producer == queue.producer)
-                .flat_map(|q| q.jobs.iter())
-                .find(|candidate| candidate.id == job.id);
-            let rate = match later {
-                Some(later) => later.elapsed_ticks.saturating_sub(job.elapsed_ticks),
-                None => u64::from(job.elapsed_ticks + 1 >= job.duration_ticks),
-            };
-            rates.insert((queue.producer, job.id), rate);
+    owner: u8,
+    rules: &[turts_mod_api::WhenShort],
+) -> u64 {
+    let q = state
+        .economy
+        .operating
+        .as_ref()
+        .map_or(1, |view| view.rate_q);
+    let mut ratio = (1_u64, 1_u64);
+    for rule in rules {
+        let short = state.raw_operating.as_ref().is_some_and(|view| {
+            view.effects.iter().any(|row| {
+                row.slot == owner
+                    && row.resource.to_string() == rule.resource
+                    && row.consumed > row.provided
+            })
+        });
+        if short && let turts_mod_api::ShortEffect::Rate(rate) = rule.effect {
+            let rate = (u64::from(rate.numerator), u64::from(rate.denominator));
+            if u128::from(rate.0) * u128::from(ratio.1) < u128::from(ratio.0) * u128::from(rate.1) {
+                ratio = rate;
+            }
         }
     }
-    Some(rates)
+    assert_ne!(ratio.1, 0);
+    assert_eq!(q % ratio.1, 0);
+    (q / ratio.1)
+        .checked_mul(ratio.0)
+        .expect("exact audited rate fits")
 }
-
-/// The next audit tick, when the live log already holds it.
-fn next_audit_state(path: &std::path::Path, tick: u32) -> Option<turts_sim::AuditState> {
-    use turts_audit::EconomyLogRecord;
-    read_live_complete_tick_prefix(path)
-        .ok()?
-        .into_iter()
-        .find_map(|record| match record {
-            EconomyLogRecord::Tick {
-                tick: found, state, ..
-            } if found == tick + 1 => Some(state),
-            _ => None,
+fn audited_job_progress(
+    state: &turts_sim::AuditState,
+    slot: u8,
+    producer: u32,
+    job_id: u64,
+) -> Result<turts_net_protocol::JobProgress, String> {
+    use turts_net_protocol as wire;
+    use turts_sim::economy::production::JobStage;
+    let actor = state
+        .raw_units
+        .iter()
+        .find(|row| row.unit_id == producer && row.owner_slot == slot)
+        .ok_or("progress source is absent or foreign")?;
+    let job = state
+        .economy
+        .queues
+        .iter()
+        .find(|row| row.producer == producer)
+        .and_then(|queue| queue.jobs.iter().find(|job| job.id == job_id))
+        .ok_or("progress job is absent")?;
+    let raw = state
+        .raw_queues
+        .iter()
+        .find(|queue| queue.producer == producer)
+        .and_then(|queue| queue.jobs.iter().find(|job| job.id == job_id))
+        .ok_or("raw progress job is absent")?;
+    let exact = state.economy.operating.as_ref().and_then(|view| {
+        view.jobs
+            .iter()
+            .find(|row| row.unit == producer && row.job == job_id)
+    });
+    let funding = raw.funding.as_ref();
+    let hold = state
+        .raw_operating_holds
+        .iter()
+        .find(|hold| hold.unit == producer && job.stage != JobStage::Queued);
+    let kind = state
+        .unit_types
+        .iter()
+        .find(|kind| kind.type_id == actor.unit_type)
+        .ok_or("progress type missing")?;
+    let definition = state
+        .catalog
+        .as_ref()
+        .and_then(|catalog| {
+            catalog
+                .units
+                .iter()
+                .find(|row| row.id.to_string() == kind.content_id)
         })
+        .ok_or("progress definition missing")?;
+    let q = state
+        .economy
+        .operating
+        .as_ref()
+        .map_or(1, |view| view.rate_q);
+    let blocked = job.stage != JobStage::Running
+        || state.disabled.contains(&producer)
+        || hold.is_some()
+        || funding.is_some_and(|funding| funding.waiting_for_funds.is_some());
+    let per_tick = if blocked {
+        0
+    } else {
+        audit_work_step(state, slot, &definition.producer_when_short)
+    };
+    let phase =
+        if let Some(resource) = funding.and_then(|funding| funding.waiting_for_funds.as_ref()) {
+            wire::RecordState::WaitingForFunds(resource.to_string())
+        } else if hold.is_some() {
+            wire::RecordState::Held
+        } else {
+            match job.stage {
+                JobStage::OutputBlocked => wire::RecordState::OutputBlocked,
+                JobStage::Running if per_tick > 0 && per_tick < q => wire::RecordState::Slowed,
+                _ => wire::RecordState::Running,
+            }
+        };
+    Ok(wire::JobProgress {
+        producer: wire::UnitId(producer),
+        job: wire::JobId(job_id),
+        progress: wire::RateRecord {
+            done: exact.map_or(job.elapsed_ticks, |row| row.done),
+            total: exact.map_or(job.duration_ticks, |row| row.total),
+            per_tick,
+            at_tick: state.economy.tick,
+            state: phase,
+            charged: if funding.is_some() {
+                job.charged
+                    .iter()
+                    .map(|row| turts_mod_api::Cost {
+                        resource: row.resource.to_string(),
+                        amount: row.amount,
+                        source: row.source,
+                    })
+                    .collect()
+            } else {
+                vec![]
+            },
+            held: hold.is_some()
+                || funding.is_some_and(|funding| funding.held_since_tick.is_some()),
+            held_since_tick: hold.map_or_else(
+                || {
+                    funding
+                        .and_then(|funding| funding.held_since_tick)
+                        .unwrap_or(0)
+                },
+                |hold| hold.since_tick,
+            ),
+        },
+    })
 }
-
-/// Set the job rates of both Snapshots to 0 when the rate could not be measured.
-fn mask_unmeasured_rates(snapshot: &mut turts_net_protocol::Snapshot) {
-    for job in &mut snapshot.records.jobs {
-        job.progress.per_tick = 0;
-    }
+fn audited_site_progress(
+    state: &turts_sim::AuditState,
+    slot: u8,
+    unit: u32,
+) -> Result<turts_net_protocol::SiteProgress, String> {
+    use turts_net_protocol as wire;
+    let site = state
+        .economy
+        .construction
+        .sites
+        .get(&unit)
+        .filter(|site| site.owner_slot == slot)
+        .ok_or("site progress source is absent or foreign")?;
+    let hold = state
+        .raw_operating_holds
+        .iter()
+        .find(|hold| hold.unit == unit);
+    let base_step = audit_work_step(state, slot, &site.constructor_when_short);
+    let q = state
+        .economy
+        .operating
+        .as_ref()
+        .map_or(1, |view| view.rate_q);
+    let waiting = site
+        .funding
+        .as_ref()
+        .and_then(|funding| funding.waiting_for_funds.as_ref());
+    let frozen = state.disabled.contains(&unit)
+        || state.disabled.contains(&site.constructor)
+        || hold.is_some()
+        || waiting.is_some();
+    Ok(wire::SiteProgress {
+        production: site.recipe.to_string(),
+        unit: wire::UnitId(unit),
+        progress: wire::RateRecord {
+            done: site.done,
+            total: site.total,
+            per_tick: if frozen { 0 } else { base_step },
+            at_tick: state.economy.tick,
+            state: if let Some(resource) = waiting {
+                wire::RecordState::WaitingForFunds(resource.to_string())
+            } else if hold.is_some() {
+                wire::RecordState::Held
+            } else if base_step < q {
+                wire::RecordState::Slowed
+            } else {
+                wire::RecordState::Running
+            },
+            charged: site
+                .charged_rows()
+                .iter()
+                .map(|row| turts_mod_api::Cost {
+                    resource: row.resource.to_string(),
+                    amount: row.amount,
+                    source: match row.endpoint {
+                        turts_sim::ReservationEndpointView::Slot(_) => {
+                            turts_mod_api::CostSource::SlotBalance
+                        }
+                        _ => turts_mod_api::CostSource::ProducerInventory,
+                    },
+                })
+                .collect(),
+            held: hold.is_some()
+                || site
+                    .funding
+                    .as_ref()
+                    .is_some_and(|funding| funding.held_since_tick.is_some()),
+            held_since_tick: hold.map_or_else(
+                || {
+                    site.funding
+                        .as_ref()
+                        .and_then(|funding| funding.held_since_tick)
+                        .unwrap_or(0)
+                },
+                |hold| hold.since_tick,
+            ),
+        },
+    })
 }
-
 fn owner_snapshot_from_audit(
     state: &turts_sim::AuditState,
     next: Option<&turts_sim::AuditState>,
@@ -1954,8 +2117,8 @@ fn owner_snapshot_from_audit(
     use turts_sim::economy::production::JobStage as SimJobStage;
 
     let world = &state.economy;
-    let rates = measured_job_rates(state, next);
-    let mut snapshot = wire::Snapshot {
+    let _ = next;
+    wire::Snapshot {
         tick: world.tick,
         units: world
             .units
@@ -2105,39 +2268,31 @@ fn owner_snapshot_from_audit(
                 .economy
                 .queues
                 .iter()
-                .filter(|queue| queue.owner_slot == slot)
+                .filter(|queue| {
+                    state
+                        .raw_units
+                        .iter()
+                        .any(|unit| unit.unit_id == queue.producer && unit.owner_slot == slot)
+                })
                 .flat_map(|queue| {
-                    let rates = &rates;
-                    queue.jobs.iter().map(move |job| wire::JobProgress {
-                        producer: wire::UnitId(queue.producer),
-                        job: wire::JobId(job.id),
-                        progress: wire::RateRecord {
-                            done: job.elapsed_ticks,
-                            total: job.duration_ticks,
-                            per_tick: rates
-                                .as_ref()
-                                .and_then(|rates| rates.get(&(queue.producer, job.id)))
-                                .copied()
-                                .unwrap_or(0),
-                            at_tick: world.tick,
-                            state: match job.stage {
-                                SimJobStage::OutputBlocked => wire::RecordState::OutputBlocked,
-                                _ => wire::RecordState::Running,
-                            },
-                            charged: Vec::new(),
-                            held: false,
-                            held_since_tick: 0,
-                        },
+                    queue.jobs.iter().map(move |job| {
+                        audited_job_progress(state, slot, queue.producer, job.id)
+                            .expect("audited owner job")
                     })
+                })
+                .collect(),
+            sites: world
+                .construction
+                .sites
+                .iter()
+                .filter(|(_, site)| site.owner_slot == slot)
+                .map(|(unit, _)| {
+                    audited_site_progress(state, slot, *unit).expect("audited owner site")
                 })
                 .collect(),
             ..Default::default()
         },
-    };
-    if rates.is_none() {
-        mask_unmeasured_rates(&mut snapshot);
     }
-    snapshot
 }
 
 fn owner_report_projection_from_audit(
@@ -2339,16 +2494,526 @@ fn canonicalize_wire_snapshot(value: &mut serde_json::Value) {
     }
 }
 
+fn audit_record_value(record: &turts_net_protocol::RateRecord, tick: u32) -> Result<u64, String> {
+    let elapsed = tick
+        .checked_sub(record.at_tick)
+        .ok_or("progress anchor is in the future")?;
+    let advancing = matches!(
+        record.state,
+        turts_net_protocol::RecordState::Running | turts_net_protocol::RecordState::Slowed
+    );
+    let gain = if advancing {
+        u128::from(record.per_tick) * u128::from(elapsed)
+    } else {
+        0
+    };
+    Ok((u128::from(record.done) + gain).min(u128::from(record.total)) as u64)
+}
+fn check_wire_rate(
+    observed: &turts_net_protocol::RateRecord,
+    anchor: &turts_net_protocol::RateRecord,
+    current: &turts_net_protocol::RateRecord,
+    tick: u32,
+) -> Result<(), String> {
+    if observed != anchor {
+        return Err(format!(
+            "captured progress differs from audited anchor {}: expected {anchor:?}, actual {observed:?}",
+            observed.at_tick
+        ));
+    }
+    if audit_record_value(observed, tick)? != current.done {
+        return Err("captured progress prediction differs from exact audited counter".into());
+    }
+    let mut current_fields = observed.clone();
+    current_fields.done = current.done;
+    current_fields.at_tick = current.at_tick;
+    if current_fields != *current {
+        return Err(
+            "captured progress rate, charged amount or funding state is stale at the audited tick"
+                .into(),
+        );
+    }
+    Ok(())
+}
+fn audited_wire_progress(
+    audits: &std::collections::BTreeMap<u32, &turts_sim::AuditState>,
+    raw: &[serde_json::Value],
+    report: &serde_json::Value,
+    slot: u8,
+    tip: u32,
+) -> Result<serde_json::Value, String> {
+    use std::collections::{BTreeMap, BTreeSet};
+    use turts_net_protocol as wire;
+    let at = |tick| {
+        audits
+            .get(&tick)
+            .copied()
+            .ok_or_else(|| format!("wire progress tick {tick} has no validated audit state"))
+    };
+    let mut snapshots = Vec::<wire::Snapshot>::new();
+    let mut deltas = BTreeMap::<u32, wire::WorldDelta>::new();
+    // Validate all received rows, including rows in dropped batches or a
+    // superseded resync response. Only validated anchors enter the replay.
+    for record in raw {
+        let dto = &record["dto"];
+        let (tick, jobs, sites, queues) = match record["kind"].as_str() {
+            Some("snapshot") => {
+                let snapshot: wire::Snapshot =
+                    serde_json::from_value(dto.clone()).map_err(|error| error.to_string())?;
+                let rows = (
+                    snapshot.tick,
+                    snapshot.records.jobs.clone(),
+                    snapshot.records.sites.clone(),
+                    snapshot.records.construction_queues.clone(),
+                );
+                snapshots.push(snapshot);
+                rows
+            }
+            Some("world_delta") => {
+                let delta: wire::WorldDelta =
+                    serde_json::from_value(dto.clone()).map_err(|error| error.to_string())?;
+                let rows = (
+                    delta.tick,
+                    delta.records.jobs.clone(),
+                    delta.records.sites.clone(),
+                    delta.records.construction_queues.clone(),
+                );
+                if let Some(previous) = deltas.insert(delta.tick, delta.clone())
+                    && previous != delta
+                {
+                    return Err("duplicate wire tick has different absolute progress data".into());
+                }
+                rows
+            }
+            _ => return Err("unexpected captured wire record kind".into()),
+        };
+        let current = at(tick)?;
+        let mut keys = BTreeSet::new();
+        for job in &jobs {
+            if !keys.insert((job.producer.0, job.job.0)) {
+                return Err("captured job progress key is duplicated".into());
+            }
+            let anchor =
+                audited_job_progress(at(job.progress.at_tick)?, slot, job.producer.0, job.job.0)?;
+            let current = audited_job_progress(current, slot, job.producer.0, job.job.0)?;
+            check_wire_rate(&job.progress, &anchor.progress, &current.progress, tick)?;
+        }
+        let mut keys = BTreeSet::new();
+        for site in &sites {
+            if !keys.insert(site.unit.0) {
+                return Err("captured site progress key is duplicated".into());
+            }
+            let anchor = audited_site_progress(at(site.progress.at_tick)?, slot, site.unit.0)?;
+            let current = audited_site_progress(current, slot, site.unit.0)?;
+            if site.production != anchor.production || site.production != current.production {
+                return Err("captured site progress changed its authored recipe".into());
+            }
+            check_wire_rate(&site.progress, &anchor.progress, &current.progress, tick)?;
+        }
+        let mut keys = BTreeSet::new();
+        for queue in &queues {
+            if !keys.insert(queue.constructor.0)
+                || !current
+                    .raw_units
+                    .iter()
+                    .any(|unit| unit.unit_id == queue.constructor.0 && unit.owner_slot == slot)
+            {
+                return Err("captured construction queue is duplicated, missing or foreign".into());
+            }
+            let orders = current
+                .economy
+                .construction
+                .held
+                .get(&queue.constructor.0)
+                .map_or(&[][..], Vec::as_slice);
+            let expected = orders
+                .iter()
+                .map(|order| wire::HeldOrder {
+                    content: order.recipe.to_string(),
+                    point: wire::Pos {
+                        x: order.point.x,
+                        y: order.point.y,
+                    },
+                })
+                .collect::<Vec<_>>();
+            if queue.orders != expected {
+                return Err(
+                    "captured construction queue differs from its audited held orders".into(),
+                );
+            }
+        }
+    }
+    let baseline = snapshots
+        .iter()
+        .filter(|snapshot| snapshot.tick <= tip)
+        .max_by_key(|snapshot| snapshot.tick)
+        .ok_or("wire progress history has no snapshot baseline")?;
+    let mut jobs = baseline
+        .records
+        .jobs
+        .iter()
+        .map(|job| ((job.producer.0, job.job.0), job.clone()))
+        .collect::<BTreeMap<_, _>>();
+    let mut sites = baseline
+        .records
+        .sites
+        .iter()
+        .map(|site| (site.unit.0, site.clone()))
+        .collect::<BTreeMap<_, _>>();
+    let mut queues = baseline
+        .records
+        .construction_queues
+        .iter()
+        .filter(|queue| !queue.orders.is_empty())
+        .map(|queue| (queue.constructor.0, queue.clone()))
+        .collect::<BTreeMap<_, _>>();
+    let dropped = report["deltas_dropped"]
+        .as_array()
+        .ok_or("client report lacks exact dropped-delta ticks")?
+        .iter()
+        .map(|tick| {
+            tick.as_u64()
+                .and_then(|tick| u32::try_from(tick).ok())
+                .ok_or("invalid dropped tick")
+        })
+        .collect::<Result<BTreeSet<_>, _>>()?;
+    for tick in baseline.tick.saturating_add(1)..=tip {
+        let delta = deltas
+            .get(&tick)
+            .filter(|delta| {
+                delta.base_tick.checked_add(1) == Some(delta.tick) && !dropped.contains(&tick)
+            })
+            .ok_or_else(|| {
+                format!("received progress history has no delivered successor at tick {tick}")
+            })?;
+        for removed in &delta.removed {
+            jobs.retain(|(unit, _), _| *unit != removed.0);
+            sites.remove(&removed.0);
+            queues.remove(&removed.0);
+        }
+        for queue in &delta.economy.queues {
+            jobs.retain(|(unit, job), _| {
+                *unit != queue.producer.0
+                    || queue.jobs.iter().any(|candidate| candidate.id.0 == *job)
+            });
+        }
+        for completed in &delta.records.sites_completed {
+            sites.remove(&completed.0);
+        }
+        for job in &delta.records.jobs {
+            jobs.insert((job.producer.0, job.job.0), job.clone());
+        }
+        for site in &delta.records.sites {
+            sites.insert(site.unit.0, site.clone());
+        }
+        for queue in &delta.records.construction_queues {
+            if queue.orders.is_empty() {
+                queues.remove(&queue.constructor.0);
+            } else {
+                queues.insert(queue.constructor.0, queue.clone());
+            }
+        }
+    }
+    let current = at(tip)?;
+    let expected_keys = current
+        .economy
+        .queues
+        .iter()
+        .filter(|queue| {
+            current
+                .raw_units
+                .iter()
+                .any(|unit| unit.unit_id == queue.producer && unit.owner_slot == slot)
+        })
+        .flat_map(|queue| queue.jobs.iter().map(|job| (queue.producer, job.id)))
+        .collect::<BTreeSet<_>>();
+    if jobs.keys().copied().collect::<BTreeSet<_>>() != expected_keys {
+        return Err("retained wire jobs differ from exact audited live owner jobs".into());
+    }
+    let expected_sites = current
+        .economy
+        .construction
+        .sites
+        .iter()
+        .filter(|(_, site)| site.owner_slot == slot)
+        .map(|(id, _)| *id)
+        .collect::<BTreeSet<_>>();
+    if sites.keys().copied().collect::<BTreeSet<_>>() != expected_sites {
+        return Err("retained wire sites differ from audited live owner sites".into());
+    }
+    let jobs = jobs
+        .values()
+        .map(|job| {
+            let anchor =
+                audited_job_progress(at(job.progress.at_tick)?, slot, job.producer.0, job.job.0)?;
+            let now = audited_job_progress(current, slot, job.producer.0, job.job.0)?;
+            check_wire_rate(&job.progress, &anchor.progress, &now.progress, tip)?;
+            Ok(serde_json::json!({
+                "producer": job.producer.0,
+                "job": job.job.0,
+                "rate": anchor.progress,
+                "value": now.progress.done,
+            }))
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    let sites = sites
+        .values()
+        .map(|site| {
+            let anchor = audited_site_progress(at(site.progress.at_tick)?, slot, site.unit.0)?;
+            let now = audited_site_progress(current, slot, site.unit.0)?;
+            check_wire_rate(&site.progress, &anchor.progress, &now.progress, tip)?;
+            Ok(serde_json::json!({
+                "unit": site.unit.0,
+                "production": site.production,
+                "rate": anchor.progress,
+                "value": now.progress.done,
+            }))
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    let expected_queues = current
+        .economy
+        .construction
+        .held
+        .iter()
+        .filter(|(unit, orders)| {
+            !orders.is_empty()
+                && current
+                    .raw_units
+                    .iter()
+                    .any(|row| row.unit_id == **unit && row.owner_slot == slot)
+        })
+        .map(|(unit, orders)| {
+            (
+                *unit,
+                wire::ConstructionQueue {
+                    constructor: wire::UnitId(*unit),
+                    orders: orders
+                        .iter()
+                        .map(|order| wire::HeldOrder {
+                            content: order.recipe.to_string(),
+                            point: wire::Pos {
+                                x: order.point.x,
+                                y: order.point.y,
+                            },
+                        })
+                        .collect(),
+                },
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    if queues != expected_queues {
+        return Err("retained construction queues differ from audited held orders".into());
+    }
+    let construction_queues = queues
+        .values()
+        .map(|queue| serde_json::json!({"constructor":queue.constructor.0,"orders":queue.orders}))
+        .collect::<Vec<_>>();
+    Ok(serde_json::json!({"sites":sites,"jobs":jobs,"construction_queues":construction_queues}))
+}
+
+#[test]
+fn sdk14_progress_history_keeps_real_anchors_and_rejects_poisoned_rates() {
+    use std::collections::BTreeMap;
+    use turts_net_protocol as wire;
+    use turts_sim::{AuditTrail, Command, CommandKind, SlotId, audit_state};
+    let mut app = economy_fixture_app_at(20);
+    let job = turts_sim::economy::production::queue_production(
+        app.world_mut(),
+        SlotId(0),
+        1,
+        turts_mod_api::ContentId::parse("probe:hire").unwrap(),
+    )
+    .unwrap();
+    app.update();
+    app.world_mut().resource_mut::<AuditTrail>().enable();
+    let mut audit = vec![turts_audit::EconomyLogRecord::Initial(audit_state(
+        app.world_mut(),
+    ))];
+    for tick in 2..=6 {
+        if tick == 3 || tick == 5 {
+            app.world_mut()
+                .resource_mut::<turts_sim::CommandQueue>()
+                .0
+                .push_back(Command {
+                    slot: SlotId(0),
+                    seq: tick,
+                    kind: CommandKind::SetEnabled {
+                        unit_id: 1,
+                        enabled: tick == 5,
+                    },
+                });
+        }
+        app.update();
+        let mut trail = app.world_mut().resource_mut::<AuditTrail>();
+        audit.extend(
+            trail
+                .drain_commands()
+                .into_iter()
+                .map(turts_audit::EconomyLogRecord::CommandBoundary),
+        );
+        audit.extend(
+            trail
+                .drain_operations()
+                .into_iter()
+                .map(turts_audit::EconomyLogRecord::Operation),
+        );
+        audit.extend(
+            trail
+                .drain_ticks()
+                .into_iter()
+                .map(turts_audit::EconomyLogRecord::from_tick),
+        );
+    }
+    turts_audit::validate_records(&audit).unwrap();
+    let states = audit
+        .iter()
+        .filter_map(|record| match record {
+            turts_audit::EconomyLogRecord::Initial(state) => Some((state.economy.tick, state)),
+            turts_audit::EconomyLogRecord::Tick { tick, state, .. } => Some((*tick, state)),
+            _ => None,
+        })
+        .collect::<BTreeMap<_, _>>();
+    let rate = |tick, done, per_tick| wire::JobProgress {
+        producer: wire::UnitId(1),
+        job: wire::JobId(job.0),
+        progress: wire::RateRecord {
+            done,
+            total: 120,
+            per_tick,
+            at_tick: tick,
+            state: wire::RecordState::Running,
+            charged: vec![],
+            held: false,
+            held_since_tick: 0,
+        },
+    };
+    let mut snapshot = owner_snapshot_from_audit(states[&1], None, 0);
+    assert_eq!(
+        snapshot.economy.queues[0].jobs[0].charged[0].amount, 50,
+        "the actual upfront payment remains in economy state"
+    );
+    snapshot.records.jobs = vec![rate(1, 0, 1)];
+    let mut raw = vec![serde_json::json!({"kind":"snapshot","dto":snapshot})];
+    for tick in 2..=6 {
+        if tick == 5 {
+            let mut snapshot = owner_snapshot_from_audit(states[&5], None, 0);
+            snapshot.records.jobs = vec![rate(5, 2, 1)];
+            raw.push(serde_json::json!({"kind":"snapshot","dto":snapshot}));
+            continue;
+        }
+        let delta = wire::WorldDelta {
+            tick,
+            base_tick: tick - 1,
+            spawned: vec![],
+            removed: vec![],
+            positions: vec![],
+            nodes: vec![],
+            economy: Default::default(),
+            belts: vec![],
+            inserters: vec![],
+            extractors: vec![],
+            weapons: vec![],
+            healths: vec![],
+            research: vec![],
+            unit_orders: vec![],
+            records: wire::DeltaRecords {
+                jobs: if tick == 3 {
+                    vec![rate(3, 1, 0)]
+                } else {
+                    vec![]
+                },
+                ..Default::default()
+            },
+        };
+        raw.push(serde_json::json!({"kind":"world_delta","dto":delta}));
+    }
+    let report = serde_json::json!({"deltas_dropped":[]});
+    let stopped = audited_wire_progress(&states, &raw[..4], &report, 0, 4).unwrap();
+    assert_eq!(stopped["jobs"][0]["rate"]["at_tick"], 3);
+    assert_eq!(stopped["jobs"][0]["rate"]["done"], 1);
+    assert_eq!(stopped["jobs"][0]["rate"]["per_tick"], 0);
+    assert_eq!(stopped["jobs"][0]["value"], 1);
+    let resumed = audited_wire_progress(&states, &raw, &report, 0, 6).unwrap();
+    assert_eq!(
+        resumed["jobs"][0]["rate"]["at_tick"], 5,
+        "resync keeps its actual anchor, not report tick6"
+    );
+    assert_eq!(resumed["jobs"][0]["rate"]["done"], 2);
+    assert_eq!(resumed["jobs"][0]["rate"]["per_tick"], 1);
+    assert_eq!(resumed["jobs"][0]["value"], 3);
+    assert_eq!(
+        resumed["jobs"][0]["rate"]["charged"],
+        serde_json::json!([]),
+        "upfront payment must not be invented as a COT charge record"
+    );
+    for field in ["per_tick", "done", "at_tick"] {
+        let mut bad = raw.clone();
+        bad[2]["dto"]["records"]["jobs"][0]["progress"][field] = serde_json::json!(99);
+        assert!(
+            audited_wire_progress(&states, &bad, &report, 0, 6).is_err(),
+            "poisoned historical {field} must fail even though snapshot5 supersedes it"
+        );
+    }
+    let mut bad = raw.clone();
+    bad[2]["dto"]["records"]["jobs"][0]["progress"]["charged"] =
+        serde_json::to_value(&snapshot.economy.queues[0].jobs[0].charged).unwrap();
+    assert!(
+        audited_wire_progress(&states, &bad, &report, 0, 6).is_err(),
+        "coherent but invented paid-record metadata must fail"
+    );
+    let mut missing = raw[..4].to_vec();
+    missing[2]["dto"]["records"]["jobs"] = serde_json::json!([]);
+    assert!(
+        audited_wire_progress(&states, &missing, &report, 0, 4).is_err(),
+        "missing changed-rate replacement cannot hide behind an older anchor"
+    );
+    let mut held = rate(5, 2, 1).progress;
+    held.held = true;
+    held.held_since_tick = 3;
+    assert_eq!(
+        audit_record_value(&held, 6).unwrap(),
+        3,
+        "display recovery hold does not freeze Running work"
+    );
+}
+
+/// Replay a retained process capture without starting the server or client.
+#[test]
+#[ignore = "requires TURTS_E9_AUDIT, TURTS_E9_REPORT, and TURTS_E9_WIRE capture paths"]
+fn e9_retained_progress_capture_matches_audit() {
+    let path = |name| std::path::PathBuf::from(std::env::var(name).expect(name));
+    let audit = path("TURTS_E9_AUDIT");
+    let report = path("TURTS_E9_REPORT");
+    let wire = path("TURTS_E9_WIRE");
+    let report = serde_json::from_slice(&std::fs::read(report).expect("retained client report"))
+        .expect("retained client report JSON");
+    assert_report_matches_own_audit_tick(&audit, &report, &wire);
+}
+
 fn assert_report_matches_own_audit_tick(
     log_path: &std::path::Path,
     report: &serde_json::Value,
+    raw_path: &std::path::Path,
 ) -> u32 {
     let slot = report["slot"].as_u64().expect("client Welcome slot") as u8;
     let tick = report["replicated_world"]["tick"]
         .as_u64()
         .expect("client final replicated tick") as u32;
-    let state = audit_state_at(log_path, tick);
-    let mut expected = owner_report_projection_from_audit(&state, slot);
+    let records = read_complete_economy_log(log_path).expect("validated complete audit prefix");
+    let audits = records
+        .iter()
+        .filter_map(|record| match record {
+            turts_audit::EconomyLogRecord::Initial(state) => Some((state.economy.tick, state)),
+            turts_audit::EconomyLogRecord::Tick { tick, state, .. } => Some((*tick, state)),
+            _ => None,
+        })
+        .collect::<std::collections::BTreeMap<_, _>>();
+    let state = audits.get(&tick).expect("reported tip has audited state");
+    let raw = parse_complete_raw_dto_prefix(&std::fs::read(raw_path).expect("raw wire history"))
+        .expect("complete raw wire history");
+    let mut expected = owner_report_projection_from_audit(state, slot);
+    expected["progress"] = audited_wire_progress(&audits, &raw, report, slot, tick)
+        .expect("validated received progress history");
     let mut actual = report["replicated_world"].clone();
     canonicalize_wire_snapshot(&mut expected);
     canonicalize_wire_snapshot(&mut actual);
@@ -2470,18 +3135,9 @@ fn assert_first_raw_snapshot_matches_owner(
                 } if *found == tick => Some(state),
                 _ => None,
             }) {
-                let mut actual: turts_net_protocol::Snapshot = serde_json::from_value(dto.clone())
+                let actual: turts_net_protocol::Snapshot = serde_json::from_value(dto.clone())
                     .expect("received Snapshot JSON decodes to its original typed DTO");
-                let next = next_audit_state(log_path, tick);
-                if next.is_none() && started.elapsed() < Duration::from_secs(5) {
-                    // The rate of a job is measured from the next audit tick: wait for it.
-                    std::thread::sleep(Duration::from_millis(25));
-                    continue;
-                }
-                if next.is_none() {
-                    mask_unmeasured_rates(&mut actual);
-                }
-                let expected = owner_snapshot_from_audit(state, next.as_ref(), slot);
+                let expected = owner_snapshot_from_audit(state, None, slot);
                 assert_eq!(
                     actual, expected,
                     "raw Snapshot DTO equals independent owner projection at tick {tick}"
@@ -2510,12 +3166,25 @@ fn assert_raw_wire_owner_records(
         .collect();
     assert!(records.iter().any(|record| record["kind"] == "snapshot"));
     assert!(records.iter().any(|record| record["kind"] == "world_delta"));
+    let audit = read_complete_economy_log(log_path)
+        .expect("one validated audit prefix for raw wire records");
+    let states = audit
+        .iter()
+        .filter_map(|record| match record {
+            turts_audit::EconomyLogRecord::Initial(state) => Some((state.economy.tick, state)),
+            turts_audit::EconomyLogRecord::Tick { tick, state, .. } => Some((*tick, state)),
+            _ => None,
+        })
+        .collect::<std::collections::BTreeMap<_, _>>();
     for record in &records {
         let kind = record["kind"].as_str().unwrap();
         let dto = &record["dto"];
         let tick = dto["tick"].as_u64().expect("raw DTO tick") as u32;
-        let state = audit_state_at(log_path, tick);
-        let expected = owner_snapshot_from_audit(&state, None, slot);
+        let state = states
+            .get(&tick)
+            .copied()
+            .expect("wire tick exists in validated audit prefix");
+        let expected = owner_snapshot_from_audit(state, None, slot);
         let expected = serde_json::to_value(expected).unwrap();
         let economy = &dto["economy"];
         for balance in economy["balances"].as_array().expect("balance DTO list") {
@@ -2544,13 +3213,9 @@ fn assert_raw_wire_owner_records(
             }
         }
         if kind == "snapshot" {
-            let mut actual: turts_net_protocol::Snapshot = serde_json::from_value(dto.clone())
+            let actual: turts_net_protocol::Snapshot = serde_json::from_value(dto.clone())
                 .expect("received Snapshot JSON decodes to its original typed DTO");
-            let next = next_audit_state(log_path, tick);
-            if next.is_none() {
-                mask_unmeasured_rates(&mut actual);
-            }
-            let expected_raw = owner_snapshot_from_audit(&state, next.as_ref(), slot);
+            let expected_raw = owner_snapshot_from_audit(state, None, slot);
             assert_eq!(
                 actual, expected_raw,
                 "raw Snapshot DTO equals independent owner projection at tick {tick}"
@@ -4288,8 +4953,8 @@ fn e9_two_owners_late_join_and_output_lifecycle() {
         &expected,
     );
     let log = economy_log_path(&server);
-    let tick0 = assert_report_matches_own_audit_tick(log, &report0);
-    let tick1 = assert_report_matches_own_audit_tick(log, &report1);
+    let tick0 = assert_report_matches_own_audit_tick(log, &report0, &raw0);
+    let tick1 = assert_report_matches_own_audit_tick(log, &report1, &raw1);
     let last_tick = audit_last_tick(log);
     assert!(tick0 >= owner0_output_tick && tick1 >= owner0_output_tick);
     assert!(tick0 <= last_tick && tick1 <= last_tick);
@@ -4421,7 +5086,7 @@ fn run_replay_spawn_window_subcase() {
         applied_tick + duration_ticks,
         "the output comes exactly the packed recipe time after the order"
     );
-    let report_tick = assert_report_matches_own_audit_tick(log, &report);
+    let report_tick = assert_report_matches_own_audit_tick(log, &report, &raw_path);
     assert!(report_tick >= output_tick);
     let oracle = replay_public_log_with_model(
         log,
@@ -4562,7 +5227,7 @@ fn run_world_change_subcase(
     );
     assert_eq!(dropped[0]["kind"], kind);
     let log = economy_log_path(&server);
-    let tick = assert_report_matches_own_audit_tick(log, &report);
+    let tick = assert_report_matches_own_audit_tick(log, &report, &raw_wire);
     assert!(tick <= audit_last_tick(log));
     assert_raw_wire_owner_records(log, &raw_wire, 0, None);
     assert_delayed_first_snapshot_then_successor(&raw_wire, 12);
@@ -4641,7 +5306,7 @@ fn e9_loss_and_small_buffer_converge() {
     ];
     let log = economy_log_path(&server);
     let oracle = replay_public_log(log, "haul", &[(0, 30_001)], &expected);
-    let tick = assert_report_matches_own_audit_tick(log, &report);
+    let tick = assert_report_matches_own_audit_tick(log, &report, &raw_wire);
     assert!(tick <= audit_last_tick(log));
     assert_raw_wire_owner_records(log, &raw_wire, 0, None);
     assert_delayed_first_snapshot_then_successor(&raw_wire, 12);
