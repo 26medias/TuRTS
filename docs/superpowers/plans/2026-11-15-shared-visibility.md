@@ -99,7 +99,7 @@ Merge and push only the fully accepted milestone under standing authorization.
 
 ## Integration status
 
-SDK15 is accepted on local main at `bc634312`. Main was not pushed.
+SDK15 is accepted on main. The current tested CI repair is pushed at `80a724d2`. SDK16 remains on its integration branch.
 API16, protocol9, authoritative phase permissions, hidden-target actions, memory, client activation, and fog presentation are integrated.
 Focused native results: authoring 4 PASS; rules 5 PASS; protocol assembly 7 PASS; simulation 16 PASS; client fixture/activation 7 PASS; verified-map guards 2 PASS.
 Independent checks: export 4 PASS; real human wire 1 PASS; outbound 5 PASS; exact vendored socket/permit tests 4 PASS.

@@ -19,12 +19,12 @@ The subdirectory `shared-visibility/` holds independent review logs.
 | Row | Evidence run | Current result |
 | --- | --- | --- |
 | SV1 | `shared-visibility-authored-tests.log`: 4 authoring tests. `shared-visibility-new-match-tests.log`: populated second install refuses without changing knowledge; fresh match has no old memory. Client fixture tests load two structurally different packages, including renamed Stockyard. | These focused checks PASS. API-floor and full compatibility campaign remain. |
-| SV2 | `shared-visibility-core-tests-fixed.log`: 15 simulation tests and 5 shared-rule tests. Actual movement, construction completion, overlapping sources, teams, healthless/disabled sources, source death, and exact boundary rules pass. | Focused checks PASS. The complete simulation suite now passes 402 tests with 1 ignored measurement. Exact circle-oracle checks pass 6 tests. Full row coverage remains under review. |
+| SV2 | `shared-visibility-core-tests-fixed.log`: 15 simulation tests and 5 shared-rule tests. Actual movement, construction completion, overlapping sources, teams, healthless/disabled sources, source death, and exact boundary rules pass. | Focused checks PASS. The complete simulation suite now passes 409 tests with 1 ignored measurement. Exact circle-oracle checks pass 6 tests. Full row coverage remains under review. |
 | SV3 | Same simulation log: hidden movement/death equality, stale sightings, observed empty locations, whole-oldest-tick retention, sticky truncation, and bounded large-circle cache. | Focused checks PASS. Long-cycle memory measurement remains. |
 | SV4 | `shared-visibility/review-export.log`, `review-human-wire.log`, `review-outbound-green.log`, and `review.md`. Initial protocol assembly tests: `shared-visibility-core-tests-fixed.log` (7 PASS). Client atomic tests: `shared-visibility-client-fixtures-tests.log` (7 PASS). Verified-map guards: `shared-visibility-client-identity-tests.log` (2 PASS). Allocation preflight: `shared-visibility-client-budget-tests-fixed.log` (3 PASS). | Focused checks PASS. Ordered 50/100 ms RTT, cancellation, overflow, and sender-failure checks also pass. The complete client library passes 405 tests with 1 ignored measurement; 8 visibility integrations pass. Final independent review remains. |
 | SV5 | Simulation hidden attack, queued target loss, extraction, and hidden/absent node tests pass. The independent simulation run includes repeated command replay across all phase knowledge bases: `shared-visibility/review-sim-visibility.log`. | These checks PASS. Full public placement/query metadata coverage remains. |
 | SV6 | `shared-visibility-sv6-first/browser/result.json`: two silent browsers pass scouting, stale memory, hidden movement, old-location clearing, ground/minimap fog, and no hidden model/health/picking. | Intermediate browser PASS. Final-build rerun and cold-play probes remain. |
-| SV7 | `docs/measurements/shared-visibility.md` records four timing diagnostics and two intermediate browser observations. | Original 5 ms budget FAIL. No acceptance pass claimed. Deadline-based correction is under independent review. Final timing and nine-case browser campaign remain. |
+| SV7 | `docs/measurements/shared-visibility.md` records four timing diagnostics and two intermediate browser observations. | Original 5 ms budget FAIL. Earlier v2 diagnostics FAIL. The latest short v2 diagnostic passes after spatial lookup/order fixes. No full acceptance pass claimed. Final timing and nine-case browser campaign remain. |
 
 ## Independent review
 
@@ -72,3 +72,15 @@ New focused checks pass:
 - `shared-visibility-cancel-watermark-tests.log`: early successor cancellation preserves the active view and rejects the old chain.
 
 The sustained 50/100 ms delayed-ACK workload passes. All 11 outbound checks now pass, including cancellation, overflow recovery, and fatal sender cleanup: `shared-visibility-outbound-reuse-failure-tests.log`. The final independent implementation check remains open.
+
+
+## Repair queue regression fixed
+
+A new real-tick test found that appending repair could cancel an admitted player move.
+The implicit repair-approach cleanup now requires an active repair action.
+Legacy and modern singleton moves retain their motion when repair is appended.
+Queued repair rechecks visibility at activation and refuses hidden/absent targets generically.
+The regression requires no healing on every intervening tick, a real refusal, and final destination arrival.
+The complete simulation suite passes 407 tests: `shared-visibility-sim-predicate-tests.log`.
+Additional raw API package gating, paginated/private query metadata, and reversed real-wire peer-order checks pass.
+Evidence: `shared-visibility-api16-authored-tests.log`, `shared-visibility-query-metadata-tests.log`, and `shared-visibility-viewer-order-tests.log`.
