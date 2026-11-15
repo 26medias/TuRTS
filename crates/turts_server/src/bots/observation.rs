@@ -718,45 +718,23 @@ impl ProposalVerifier for ObservationVerifier<'_> {
             for row in &output.provides {
                 let resource = ContentId::parse(&row.resource)
                     .map_err(|_| ProposalRejection::InvalidFulfillment)?;
-                let live = self
-                    .current
-                    .supply
-                    .iter()
-                    .find(|s| s.resource == resource)
-                    .map_or(0, |s| s.provided.saturating_sub(s.consumed));
-                let pending = self
-                    .current
-                    .works
-                    .iter()
-                    .filter(|work| !work.state.terminal())
-                    .filter_map(|work| work.content.as_ref())
-                    .chain(
-                        self.current
-                            .pending_content
-                            .iter()
-                            .flat_map(|(content, count)| {
-                                std::iter::repeat_n(content, *count as usize)
-                            }),
-                    )
-                    .filter_map(|content| self.current.catalog.units.get(content))
-                    .flat_map(|unit| unit.provides.iter())
-                    .filter(|s| s.resource == row.resource)
-                    .try_fold(0u64, |sum, row| sum.checked_add(row.amount))
-                    .ok_or(ProposalRejection::ArithmeticOverflow)?;
-                let observed = live
-                    .checked_add(pending)
-                    .ok_or(ProposalRejection::ArithmeticOverflow)?;
+                let (provided, consumed) = supply_totals(self.current, &resource)?;
                 let cap = match goal {
                     Some(turts_mod_api::BotGoalAction::EnsureSupply {
                         resource: requested,
                         amount,
                         ..
-                    }) if requested == &row.resource => Some(*amount),
+                    }) if requested == &row.resource => {
+                        let threshold = amount
+                            .checked_add(consumed)
+                            .ok_or(ProposalRejection::ArithmeticOverflow)?;
+                        Some(provider_cap(threshold, row.amount)?)
+                    }
                     _ => None,
                 };
                 fulfillment.push(FulfillmentClaim {
                     key: FulfillmentKey::Supply(resource),
-                    observed,
+                    observed: provided,
                     cap,
                     contribution: row.amount,
                 });
@@ -767,6 +745,56 @@ impl ProposalVerifier for ObservationVerifier<'_> {
             fulfillment,
         })
     }
+}
+
+fn provider_cap(threshold: u64, contribution: u64) -> Result<u64, ProposalRejection> {
+    threshold
+        .checked_add(
+            contribution
+                .checked_sub(1)
+                .ok_or(ProposalRejection::InvalidFulfillment)?,
+        )
+        .ok_or(ProposalRejection::ArithmeticOverflow)
+}
+fn supply_totals(
+    basis: &ObservationBasis,
+    resource: &ContentId,
+) -> Result<(u64, u64), ProposalRejection> {
+    let live = basis.supply.iter().find(|row| row.resource == *resource);
+    let mut provided = live.map_or(0, |row| row.provided);
+    let mut consumed = live.map_or(0, |row| row.consumed);
+    let pending = basis
+        .works
+        .iter()
+        .filter(|work| !work.state.terminal())
+        .filter_map(|work| work.content.as_ref().map(|content| (content, 1)))
+        .chain(
+            basis
+                .pending_content
+                .iter()
+                .map(|(content, count)| (content, *count)),
+        );
+    for (content, count) in pending {
+        let Some(definition) = basis.catalog.units.get(content) else {
+            continue;
+        };
+        for (rows, total) in [
+            (&definition.provides, &mut provided),
+            (&definition.consumes, &mut consumed),
+        ] {
+            for row in rows
+                .iter()
+                .filter(|row| row.resource == resource.to_string())
+            {
+                *total = row
+                    .amount
+                    .checked_mul(count)
+                    .and_then(|amount| total.checked_add(amount))
+                    .ok_or(ProposalRejection::ArithmeticOverflow)?;
+            }
+        }
+    }
+    Ok((provided, consumed))
 }
 
 fn role_matches(role: &turts_mod_api::BotRole, unit: &turts_mod_api::ResolvedUnit) -> bool {
@@ -843,6 +871,19 @@ mod tests {
             },
             catalog: Arc::new(empty_catalog()),
         }
+    }
+    #[test]
+    fn a_supply_goal_accepts_one_indivisible_provider_crossing_the_target() {
+        assert_eq!(provider_cap(1, 5), Ok(5));
+        assert_eq!(provider_cap(7, 3), Ok(9));
+        assert_eq!(
+            provider_cap(u64::MAX, 2),
+            Err(ProposalRejection::ArithmeticOverflow)
+        );
+        assert_eq!(
+            provider_cap(1, 0),
+            Err(ProposalRejection::InvalidFulfillment)
+        );
     }
     #[test]
     fn a_candidate_pin_and_cursor_survive_other_query_kinds_and_new_steps() {
