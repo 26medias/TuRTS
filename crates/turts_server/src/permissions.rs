@@ -54,3 +54,13 @@ pub fn unit_permitted(
 ) -> bool {
     owner == viewer || policy.unit_visible(viewer, unit, owner)
 }
+
+/// The single trusted observation policy shared by human exports and bot observations.
+#[derive(bevy::prelude::Resource, Clone)]
+pub struct ObservationPolicy(pub std::sync::Arc<dyn ObservationPermissions + Send + Sync>);
+
+impl Default for ObservationPolicy {
+    fn default() -> Self {
+        Self(std::sync::Arc::new(AllVisible))
+    }
+}

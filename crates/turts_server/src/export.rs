@@ -10,6 +10,28 @@
 //! ([`weapon_records`]); the site, job and queue writers skip a removed owner.
 
 use turts_mod_api::Cost;
+#[path = "export_observation.rs"]
+mod export_observation;
+pub use export_observation::{ObservationChanged, ObservationHistory};
+
+pub fn snapshot_for_with_permissions(
+    view: &WorldView,
+    slot: SlotId,
+    policy: &dyn crate::permissions::ObservationPermissions,
+) -> (wire::Snapshot, ObservationHistory) {
+    export_observation::snapshot(view, slot, policy)
+}
+
+pub fn delta_for_with_permissions(
+    batch: &CommittedTick,
+    view: &WorldView,
+    slot: SlotId,
+    policy: &dyn crate::permissions::ObservationPermissions,
+    previous: &ObservationHistory,
+) -> Result<(wire::WorldDelta, ObservationHistory), ObservationChanged> {
+    export_observation::delta(batch, view, slot, policy, previous)
+}
+
 use turts_net_protocol::messages as wire;
 use turts_net_protocol::messages;
 #[path = "export_effects.rs"]
@@ -43,6 +65,10 @@ use turts_sim::{
 
 /// Build the owner-specific reliable snapshot from one completed world view.
 pub fn snapshot_for(view: &WorldView, slot: SlotId) -> wire::Snapshot {
+    snapshot_for_with_permissions(view, slot, &crate::permissions::AllVisible).0
+}
+
+fn snapshot_projected(view: &WorldView, slot: SlotId) -> wire::Snapshot {
     wire::Snapshot {
         tick: view.tick,
         units: view
@@ -181,6 +207,10 @@ pub fn snapshot_for(view: &WorldView, slot: SlotId) -> wire::Snapshot {
 
 /// Build the owner-specific absolute replacements for one committed simulation tick.
 pub fn delta_for(batch: &CommittedTick, view: &WorldView, slot: SlotId) -> wire::WorldDelta {
+    delta_projected(batch, view, slot)
+}
+
+fn delta_projected(batch: &CommittedTick, view: &WorldView, slot: SlotId) -> wire::WorldDelta {
     let (repairs, repairs_cleared) = export_repair::changes(
         &batch.repairs,
         &batch.repairs_cleared,

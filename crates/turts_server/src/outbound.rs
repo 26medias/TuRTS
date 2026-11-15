@@ -13,7 +13,12 @@ use turts_sim::{CommandResults, Tick as SimTick, committed_tick, completed_world
 pub fn install(app: &mut App) {
     app.add_systems(
         FixedLast,
-        (send_command_results, send_deltas, send_final_snapshots).chain(),
+        (
+            send_command_results.after(crate::session::ParticipantTraceComplete),
+            send_deltas,
+            send_final_snapshots,
+        )
+            .chain(),
     );
 }
 
@@ -43,7 +48,13 @@ pub fn send_final_snapshots(world: &mut World) {
         })
         .collect::<Vec<_>>();
     for (entity, slot) in recipients {
-        let snapshot = export::snapshot_for(completed_world(world), slot);
+        let policy = world
+            .get_resource::<crate::permissions::ObservationPolicy>()
+            .cloned()
+            .unwrap_or_default();
+        let (snapshot, history) =
+            export::snapshot_for_with_permissions(completed_world(world), slot, policy.0.as_ref());
+        world.entity_mut(entity).insert(history);
         world
             .get_mut::<MessageSender<Snapshot>>(entity)
             .unwrap()
@@ -110,23 +121,43 @@ pub fn send_deltas(world: &mut World) {
     if recipients.is_empty() {
         return;
     }
-    let payloads: Vec<_> = {
-        let batch = committed_tick(world);
-        let view = completed_world(world);
-        debug_assert_eq!(batch.tick, view.tick);
-        recipients
-            .into_iter()
-            .map(|(entity, slot)| {
-                let delta = export::delta_for(batch, view, slot);
+    let policy = world
+        .get_resource::<crate::permissions::ObservationPolicy>()
+        .cloned()
+        .unwrap_or_default();
+    for (entity, slot) in recipients {
+        let previous = world
+            .get::<export::ObservationHistory>(entity)
+            .cloned()
+            .unwrap_or_default();
+        let projected = export::delta_for_with_permissions(
+            committed_tick(world),
+            completed_world(world),
+            slot,
+            policy.0.as_ref(),
+            &previous,
+        );
+        match projected {
+            Ok((delta, history)) => {
                 let bytes = payload_bytes(&delta);
-                (entity, delta, bytes)
-            })
-            .collect()
-    };
-    for (entity, delta, bytes) in payloads {
-        if let Some(mut sender) = world.get_mut::<MessageSender<WorldDelta>>(entity) {
-            sender.send::<StateChannel>(delta);
-            world.resource_mut::<Stats>().delta_payload_bytes_total += bytes;
+                if let Some(mut sender) = world.get_mut::<MessageSender<WorldDelta>>(entity) {
+                    sender.send::<StateChannel>(delta);
+                    world.resource_mut::<Stats>().delta_payload_bytes_total += bytes;
+                    world.entity_mut(entity).insert(history);
+                }
+            }
+            Err(_) => {
+                let (snapshot, history) = export::snapshot_for_with_permissions(
+                    completed_world(world),
+                    slot,
+                    policy.0.as_ref(),
+                );
+                if let Some(mut sender) = world.get_mut::<MessageSender<Snapshot>>(entity) {
+                    sender.send::<ReliableChannel>(snapshot);
+                    world.entity_mut(entity).insert(history);
+                    world.resource_mut::<ReliableTraffic>().record(entity);
+                }
+            }
         }
     }
 }
