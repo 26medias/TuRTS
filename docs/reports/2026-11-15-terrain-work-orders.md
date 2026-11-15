@@ -34,3 +34,19 @@ Evidence: `terrain-work-orders/protocol-terrain-grid-boundary-lib.log`.
 
 The final browser build, High-detail frame rate, scripted cold-play probes and independent implementation review have not run.
 No spec acceptance criterion has been relaxed. The frozen timing workload and thresholds remain unchanged.
+
+## Integration findings
+
+The frozen workload first rejected static units without explicit ForbidEdit foundations. The fixture now declares that existing rule.
+The next run exposed a real harvesting panic. A non-spawn transaction queried a catalog that gathering had temporarily borrowed. Spawn preflight now reads that catalog only for actual spawns. The scoped-catalog regression passes: `terrain-work-orders/terrain-scoped-catalog-regression.log`.
+
+The larger workload later hit state-transfer restarts. Initial snapshot decoding and native activation both pass. The initial transfer drains normally.
+A diagnostic profile records two actual simulation ticks at336.637ms and343.707ms on CPUs0,2,4 and6.
+Exact rational geometry dominates the145 CPU samples. This is a cold diagnostic, not a warmed capacity result.
+Evidence: `terrain-work-orders/tw7-first-ticks-profile-metadata.json`, `tw7-first-ticks.perf.data`, `tw7-first-ticks-perf-report.txt`, and `tw7-service-trace/updates.jsonl` in that directory.
+
+The implementation now reuses exact body coverage within a work phase. It refreshes coverage after queue promotion. Verification and the timing comparison are pending.
+No geometry approximation, workload reduction, timeout increase or memory-budget increase was made.
+
+Four real terrain audit checks pass: ordinary dig/fill/depletion and failed fill; exact unloading; forged resource/depletion/revision rejection; and same-seed command replay with allocator inversion.
+Evidence: `terrain-work-orders/audit-stream-sixth.log`. The complete audit suite and independent feature review remain pending.
