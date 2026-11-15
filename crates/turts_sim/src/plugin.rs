@@ -355,7 +355,41 @@ fn publish_completed_tick(world: &mut World) {
             })
             .collect()
     });
+    let previous_repairs: std::collections::BTreeMap<_, _> = world
+        .resource::<CompletedWorld>()
+        .0
+        .economy
+        .repairs
+        .iter()
+        .map(|row| (row.repairer, row))
+        .collect();
+    let current_repairs: std::collections::BTreeMap<_, _> = completed
+        .economy
+        .repairs
+        .iter()
+        .map(|row| (row.repairer, row))
+        .collect();
+    let repairs = completed
+        .economy
+        .repairs
+        .iter()
+        .filter(|row| {
+            previous_repairs
+                .get(&row.repairer)
+                .is_none_or(|old| *old != *row)
+        })
+        .cloned()
+        .collect();
+    let repairs_cleared = previous_repairs
+        .values()
+        .filter(|row| {
+            !current_repairs.contains_key(&row.repairer) && !removed.contains(&row.repairer)
+        })
+        .map(|row| (row.repairer, row.owner_slot))
+        .collect();
     let batch = CommittedTick {
+        repairs,
+        repairs_cleared,
         job_progress: crate::economy::production::progress_changes(
             &world.resource::<CompletedWorld>().0,
             &completed,

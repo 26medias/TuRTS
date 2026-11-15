@@ -201,10 +201,23 @@ fn armour_modifier(_: &Manifest, content: &ParsedMcContent) -> bool {
     })
 }
 
+const fn variant_0_2_14(name: &'static str) -> VersionTableRow {
+    VersionTableRow {
+        name,
+        detect: Detect::Variant(name),
+        since_api: "0.2.14",
+    }
+}
+
 /// Add one row for each new feature of a released API. A later API adds its rows here with the
 /// detection kind that its design row names, and nowhere else. The order is the order of the
 /// first refusal when one package has several problems.
 pub(crate) const VERSION_TABLE: &[VersionTableRow] = &[
+    variant_0_2_14("PrimaryField::RepairState"),
+    variant_0_2_14("PrimaryField::RepairTargetName"),
+    variant_0_2_14("PrimaryField::RepairResourceName"),
+    variant_0_2_14("Predicate::RepairStateIs"),
+    variant_0_2_14("Predicate::PrimaryHas(Repairer)"),
     VersionTableRow {
         name: "PrimaryField::WeaponDetails",
         detect: Detect::Parsed(weapon_details),
@@ -609,15 +622,17 @@ pub(crate) const VERSION_TABLE: &[VersionTableRow] = &[
     ),
     raw_0_2_4("placement", RawGroup::Units, &["placement"]),
     raw_0_2_4("build_area", RawGroup::Units, &["build_area"]),
-    raw_0_2_4("repairer", RawGroup::Units, &["repairer"]),
+    raw("repairer", "0.2.14", RawGroup::Units, &["repairer"]),
     // K5, O8, O10: the fields of a production and a technology.
-    raw_0_2_4(
+    raw(
         "cancel_refunds.destroyed",
+        "0.2.14",
         RawGroup::Production,
         &["cancel_refunds", "destroyed"],
     ),
-    raw_0_2_4(
+    raw(
         "technology cancel_refunds.destroyed",
+        "0.2.14",
         RawGroup::Technologies,
         &["cancel_refunds", "destroyed"],
     ),
@@ -736,19 +751,19 @@ pub(crate) const VERSION_TABLE: &[VersionTableRow] = &[
         &["effects", "sound"],
     ),
     // O6: the new smart targets and capabilities (the rules come first).
-    variant_0_2_4("smart target OwnDamaged"),
+    variant_0_2_14("smart target OwnDamaged"),
     variant_0_2_4("needs: Constructor"),
-    variant_0_2_4("needs: Repairer"),
+    variant_0_2_14("needs: Repairer"),
     // O5, O1 to O4, O9: the new target and behaviours.
     variant_0_2_4("target: ContentAtPoint"),
     variant_0_2_4("behaviour Construct"),
-    variant_0_2_4("behaviour CancelConstruction"),
+    variant_0_2_14("behaviour CancelConstruction"),
     variant_0_2_4("behaviour SetRally"),
-    variant_0_2_4("behaviour Repair"),
+    variant_0_2_14("behaviour Repair"),
     variant_0_2_4("behaviour Surrender"),
     // S1, P1, L1.
     variant_0_2_13("kind: Supply"),
-    variant_0_2_4("payment: ChargeOverTime"),
+    variant_0_2_14("payment: ChargeOverTime"),
     variant_0_2_4("SlotRelation::Ally"),
     variant_0_2_4("SlotRelation::Enemy"),
     // COMBO rows K1, K4.
@@ -757,7 +772,7 @@ pub(crate) const VERSION_TABLE: &[VersionTableRow] = &[
     // K7 and K8: the two M3 rules that `L0-API2` lifted (`content_m3_validation.rs`). The rows
     // refuse the combination for an older edition, with the advice to use 0.2.4; the lines in
     // `unbuilt.rs` hold it back for the edition 0.2.4 until `L-DES` builds it.
-    variant_0_2_4("health without removal"),
+    variant_0_2_14("health without removal"),
     variant_0_2_4("removal with a queue"),
     // H4: the new alert triggers.
     variant_0_2_4("AlertTrigger::ConstructionComplete"),

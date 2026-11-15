@@ -31,7 +31,7 @@ pub enum RecordState {
 /// `duration_ticks` comes from the `JobState` (`Replica::job_elapsed_ticks`). Example: Q = 2, a job of
 /// 100 ticks at rate 1/2: `total` 200, `per_tick` 1 (a tick adds `rate_step(Q, rate)` units), and 50
 /// ticks later `done` is 50 units, which is 25 ticks of base time. The record is
-/// sent only when the rate, the job state or `held` changes, never each tick. The client
+/// sent when rate, state, paid amounts, or `held` change. The client
 /// evaluates it at the tick of its last applied delta.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RateRecord {
@@ -41,7 +41,7 @@ pub struct RateRecord {
     pub at_tick: u32,
     pub state: RecordState,
     pub charged: Vec<Cost>,
-    /// The record is held (design 6.4, erratum E21): its value does not advance.
+    /// Funding recovery display flag. Actual state and per_tick control prediction.
     pub held: bool,
     /// The tick at which `held` became true. 0 when `held` is false.
     pub held_since_tick: u32,
@@ -53,6 +53,8 @@ pub struct RateRecord {
 /// unit is in `DeltaRecords::sites_completed` or in `WorldDelta::removed`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SiteProgress {
+    /// Exact construction recipe. Different recipes may produce the same unit.
+    pub production: ContentRef,
     /// The site unit. A site that leaves the world in the message that carries its record has no
     /// record in that message (`removed` is the only mention).
     pub unit: UnitId,

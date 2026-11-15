@@ -63,17 +63,12 @@ const fn use_line(feature: &'static str, owner: &'static str) -> UnbuiltLine {
 pub(crate) const UNBUILT_FEATURES: &[UnbuiltLine] = &[
     // L-PWR: `kind: Supply` (S1), `provides`, `consumes` (U5), `*.when_short` (U6).
     // L-PAY: `payment: ChargeOverTime` (P1).
-    line("payment: ChargeOverTime", "L-PAY"),
     // L-INC: `income` (U7).
     // L-CON1: `constructor` (K1), `placement` (K2), `build_area` (K3), production with a static
     // output (K4), `ContentAtPoint` (O5), `Construct` (O1), `needs: Constructor` (O6). The target
     // comes first, as in the version table.
-    line("needs: Constructor", "L-CON1"),
     // L-DES: `health without removal` (K7), `removal with a queue` (K8),
     // `cancel_refunds.destroyed` (K5).
-    line("health without removal", "L-DES"),
-    line("cancel_refunds.destroyed", "L-DES"),
-    line("technology cancel_refunds.destroyed", "L-DES"),
     // L-STO: `start_order` (M3), `spawn_order` (U8) with `ground_rally: Ignore`.
     line("start_order", "L-STO"),
     line("spawn_order", "L-STO"),
@@ -83,16 +78,11 @@ pub(crate) const UNBUILT_FEATURES: &[UnbuiltLine] = &[
     use_line("DisconnectedFor", "L-MATCH-SIM2"),
     line("behaviour Surrender", "L-MATCH-SIM2"),
     // L-CON3: `CancelConstruction` (O2).
-    line("behaviour CancelConstruction", "L-CON3"),
     // L-RLY: `SetRally` (O3), `rally` (O7), `ground_rally: ApplyFirst` (U8), smart `Ground` with
     // `needs: Producer` (O6).
     line("rally", "L-RLY"),
     use_line("ground_rally: ApplyFirst", "L-RLY"),
     // L-REP: `repairer` (R1), `Repair` (O4), `OwnDamaged`, `needs: Repairer` (O6).
-    line("repairer", "L-REP"),
-    line("behaviour Repair", "L-REP"),
-    line("smart target OwnDamaged", "L-REP"),
-    line("needs: Repairer", "L-REP"),
     // UI-HINT: `hints`, `hint_fallback` (H14), `start_selection` (H18), `Value::Hint`,
     // `Predicate::HintShown`.
     line("hints", "UI-HINT"),

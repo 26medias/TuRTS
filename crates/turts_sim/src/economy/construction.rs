@@ -38,6 +38,8 @@ pub struct HeldConstruction {
 /// A site owns its job independently of the constructor that placed it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Site {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub funding: Option<super::production::FundingState>,
     pub constructor: u32,
     pub owner_slot: u8,
     pub recipe: ContentId,
@@ -347,7 +349,7 @@ fn place(
                 let reservation = transaction::reserve_costs(tx, job, &lines)?;
                 transaction::consume_reservation(tx, &reservation)?;
             }
-            PaymentPolicy::ChargeOverTime => return Err(RejectReason::NotApplicable),
+            PaymentPolicy::ChargeOverTime => {}
         }
         let id = tx.allocate_unit_id()?;
         let mut state = tx.construction();
@@ -367,7 +369,13 @@ fn place(
                 job,
                 done: 0,
                 total,
-                charged: lines,
+                charged: if recipe.payment == PaymentPolicy::ChargeOverTime {
+                    Vec::new()
+                } else {
+                    lines
+                },
+                funding: (recipe.payment == PaymentPolicy::ChargeOverTime)
+                    .then(super::production::FundingState::default),
                 constructor_when_short,
             },
         );
@@ -394,6 +402,97 @@ fn place(
 }
 
 /// Place held requests before commands. A blocked or unpaid head keeps its place in the queue.
+/// Cancel one explicitly addressed unfinished site. A refused refund leaves it unchanged.
+pub fn cancel_site(world: &mut World, slot: SlotId, id: u32) -> Result<(), RejectReason> {
+    let entity = unit_entity(world, id).ok_or(RejectReason::UnknownUnit)?;
+    if world.get::<Owner>(entity) != Some(&Owner(slot)) {
+        return Err(RejectReason::NotOwner);
+    }
+    let site = world
+        .resource::<ConstructionState>()
+        .sites
+        .get(&id)
+        .cloned()
+        .ok_or(RejectReason::NotApplicable)?;
+    let ratio = world
+        .resource::<InstalledCatalog>()
+        .0
+        .production
+        .get(&site.recipe)
+        .ok_or(RejectReason::UnknownRecipe)?
+        .cancel_refunds
+        .running;
+    transaction::transact(world, |tx| {
+        if !site.charged.is_empty() {
+            transaction::refund_charged(
+                tx,
+                &site.charged,
+                u64::from(ratio.numerator),
+                u64::from(ratio.denominator),
+            )?;
+        }
+        let mut funding = site.funding.clone();
+        super::production::flush_funding(tx, slot.0, id, site.job.0, &mut funding)?;
+        let mut construction = tx.construction();
+        construction
+            .sites
+            .get_mut(&id)
+            .ok_or(RejectReason::IntegrityViolation)?
+            .funding = funding;
+        tx.stage_construction(construction);
+        let refunded = site
+            .charged
+            .iter()
+            .map(|line| {
+                let amount = u64::try_from(
+                    u128::from(line.amount) * u128::from(ratio.numerator)
+                        / u128::from(ratio.denominator),
+                )
+                .map_err(|_| RejectReason::ArithmeticOverflow)?;
+                Ok(super::events::CostLine {
+                    source: match line.endpoint {
+                        Endpoint::Slot(slot) => super::events::EventSource::Slot(slot),
+                        Endpoint::Inventory(unit) => super::events::EventSource::Inventory(unit),
+                        Endpoint::Output(unit) => super::events::EventSource::Output(unit),
+                    },
+                    resource: line.resource.clone(),
+                    amount,
+                })
+            })
+            .collect::<Result<Vec<_>, RejectReason>>()?;
+        tx.stage_event(
+            slot.0,
+            super::events::EconomyEventKind::ProductionCancelled {
+                producer: id,
+                job: site.job.0,
+                released: Vec::new(),
+                refunded,
+            },
+        )?;
+        transaction::remove_unit(tx, id, super::events::RemoveCause::CancelledConstruction)
+    })
+}
+
+/// Stop clears unplaced requests only. Existing sites and a hybrid producer queue survive.
+pub fn clear_held(world: &mut World, slot: SlotId, constructor: u32) -> Result<(), RejectReason> {
+    let entity = unit_entity(world, constructor).ok_or(RejectReason::UnknownUnit)?;
+    if world.get::<Owner>(entity) != Some(&Owner(slot)) {
+        return Err(RejectReason::NotOwner);
+    }
+    if definition(world, constructor)
+        .and_then(|unit| unit.constructor.as_ref())
+        .is_none()
+    {
+        return Err(RejectReason::MissingCapability);
+    }
+    transaction::transact(world, |tx| {
+        let mut state = tx.construction();
+        state.held.remove(&constructor);
+        tx.stage_construction(state);
+        Ok(())
+    })
+}
+
 pub(crate) fn run_construction(world: &mut World) {
     let constructors = world
         .resource::<ConstructionState>()
@@ -480,6 +579,11 @@ pub(crate) fn advance_site(world: &mut World, id: u32) {
     let Some(point) = world.get::<Position>(entity).map(|position| position.0) else {
         return;
     };
+    if super::production::freeze_facts_in_world(world, id).frozen()
+        || super::production::freeze_facts_in_world(world, site.constructor).frozen()
+    {
+        return;
+    }
     let rate = super::power::rate_for_rules(world, site.owner_slot, &site.constructor_when_short);
     let Some(step) = super::production::job_step_per_tick(
         super::production::JobStage::Running,
@@ -496,6 +600,22 @@ pub(crate) fn advance_site(world: &mut World, id: u32) {
     else {
         return;
     };
+    if done == site.done {
+        return;
+    }
+    let costs = if site.funding.is_some() {
+        let Some(recipe) = world
+            .get_resource::<InstalledCatalog>()
+            .and_then(|catalog| catalog.0.production.get(&site.recipe))
+        else {
+            return;
+        };
+        super::production::payment_lines(&recipe.costs, site.owner_slot, site.constructor)
+    } else {
+        Vec::new()
+    };
+    let tick = world.resource::<crate::world::Tick>().0;
+    let hz = world.resource::<crate::SimClock>().tick_hz;
     let completed = done == site.total;
     let activation = if completed && world.contains_resource::<super::power::OperatingResources>() {
         match super::operating::prepare_activation(world, &output, site.owner_slot) {
@@ -508,7 +628,6 @@ pub(crate) fn advance_site(world: &mut World, id: u32) {
     } else {
         None
     };
-    super::operating::clear_hold(world, id);
     let rows = if completed {
         let Ok(binding) = crate::boot_m3::resolve_spawn_capability_binding(
             world,
@@ -525,8 +644,52 @@ pub(crate) fn advance_site(world: &mut World, id: u32) {
     } else {
         None
     };
-    let _ = transaction::transact(world, |tx| {
+    let result = transaction::transact(world, |tx| {
         let mut state = tx.construction();
+        let current = state
+            .sites
+            .get_mut(&id)
+            .ok_or(RejectReason::IntegrityViolation)?;
+        if current.funding.is_some() {
+            match super::production::charge_progress(tx, &costs, site.done, done, site.total)? {
+                super::production::PaymentAttempt::Waiting(resource) => {
+                    let entering = current
+                        .funding
+                        .as_mut()
+                        .ok_or(RejectReason::IntegrityViolation)?
+                        .wait(resource, tick);
+                    if entering {
+                        super::production::flush_funding(
+                            tx,
+                            site.owner_slot,
+                            id,
+                            site.job.0,
+                            &mut current.funding,
+                        )?;
+                    }
+                    tx.stage_construction(state);
+                    return Ok(());
+                }
+                super::production::PaymentAttempt::Funded(payment) => {
+                    let funding = current
+                        .funding
+                        .as_mut()
+                        .ok_or(RejectReason::IntegrityViolation)?;
+                    funding.add_charges(&payment.debits)?;
+                    funding.advance(hz);
+                    current.charged = payment.charged;
+                    if completed {
+                        super::production::flush_funding(
+                            tx,
+                            site.owner_slot,
+                            id,
+                            site.job.0,
+                            &mut current.funding,
+                        )?;
+                    }
+                }
+            }
+        }
         if let (Some(health), Some(placement)) = (output.health, output.placement) {
             let ratio = turts_rules::Ratio::new(
                 u64::from(placement.site_health.numerator),
@@ -562,6 +725,10 @@ pub(crate) fn advance_site(world: &mut World, id: u32) {
         tx.stage_construction(state);
         Ok(())
     });
+    match result {
+        Err(reason) => super::operating::hold(world, id, reason),
+        Ok(()) => super::operating::clear_hold(world, id),
+    }
 }
 
 fn site_hold(
@@ -575,7 +742,14 @@ fn site_hold(
         .find(|hold| hold.unit == unit)
 }
 fn site_step(view: &super::views::WorldView, unit: u32, site: &Site) -> u64 {
-    if site_hold(view, unit).is_some() {
+    if site_hold(view, unit).is_some()
+        || site
+            .funding
+            .as_ref()
+            .is_some_and(|state| state.waiting_for_funds.is_some())
+        || super::production::freeze_facts_in_view(view, unit).frozen()
+        || super::production::freeze_facts_in_view(view, site.constructor).frozen()
+    {
         return 0;
     }
     let q = view
@@ -593,6 +767,7 @@ pub fn progress_rows(view: &super::views::WorldView) -> Vec<super::events::RateR
         .sites
         .iter()
         .map(|(id, site)| super::events::RateRecordRow {
+            production: Some(site.recipe.clone()),
             unit: *id,
             owner_slot: site.owner_slot,
             job: None,
@@ -600,7 +775,13 @@ pub fn progress_rows(view: &super::views::WorldView) -> Vec<super::events::RateR
             total: site.total,
             per_tick: site_step(view, *id, site),
             at_tick: view.tick,
-            state: if site_hold(view, *id).is_some() {
+            state: if let Some(resource) = site
+                .funding
+                .as_ref()
+                .and_then(|state| state.waiting_for_funds.clone())
+            {
+                super::events::RecordStateRow::WaitingForFunds(resource)
+            } else if site_hold(view, *id).is_some() {
                 super::events::RecordStateRow::Held
             } else if super::power::rate_for_rules_in_view(
                 view,
@@ -624,8 +805,20 @@ pub fn progress_rows(view: &super::views::WorldView) -> Vec<super::events::RateR
                     amount: line.amount,
                 })
                 .collect(),
-            held: site_hold(view, *id).is_some(),
-            held_since_tick: site_hold(view, *id).map_or(0, |hold| hold.since_tick),
+            held: site_hold(view, *id).is_some()
+                || site
+                    .funding
+                    .as_ref()
+                    .is_some_and(|state| state.held_since_tick.is_some()),
+            held_since_tick: site_hold(view, *id).map_or_else(
+                || {
+                    site.funding
+                        .as_ref()
+                        .and_then(|state| state.held_since_tick)
+                        .unwrap_or(0)
+                },
+                |hold| hold.since_tick,
+            ),
         })
         .collect()
 }
@@ -665,6 +858,7 @@ mod tests {
     fn fixture(policy: PaymentPolicy) -> App {
         let mut app = crate::headless_app(20);
         let tower = ResolvedUnit {
+            repairer: None,
             consumes: Vec::new(),
             income: None,
             provides: Vec::new(),

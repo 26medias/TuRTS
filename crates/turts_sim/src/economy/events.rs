@@ -25,6 +25,12 @@ pub struct EconomyEvent {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum EconomyEventKind {
+    /// Paid-work buffer flush. Intermediate debits remain in authoritative job/site state.
+    ProgressCharged {
+        unit: u32,
+        job: u64,
+        charged: Vec<CostLine>,
+    },
     Extracted {
         node: u32,
         cargo: u32,
@@ -105,8 +111,12 @@ pub enum EconomyEventKind {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum RemoveCause {
+    /// The site running refund already committed in this removal transaction.
+    CancelledConstruction,
     Removed,
-    Killed { by: u32 },
+    Killed {
+        by: u32,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -156,6 +166,8 @@ pub enum RecordStateRow {
 /// producer when `job` is `Some`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RateRecordRow {
+    /// The exact construction recipe for site records; absent for ordinary jobs.
+    pub production: Option<ContentId>,
     pub unit: u32,
     pub owner_slot: u8,
     pub job: Option<u64>,
@@ -208,6 +220,8 @@ pub enum EffectRow {
 
 #[derive(Resource, Debug, Clone, Default, PartialEq)]
 pub struct CommittedTick {
+    pub repairs: Vec<super::repair::RepairRow>,
+    pub repairs_cleared: Vec<(u32, u8)>,
     pub match_outcomes: Option<crate::outcome::MatchOutcomes>,
     pub tick: u32,
     pub spawned: Vec<UnitState>,

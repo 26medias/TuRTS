@@ -54,6 +54,27 @@ pub fn repair_charge_difference(
     )
 }
 
+/// Charge applied healing while retaining a fractional cost remainder.
+/// Returns None if the prior remainder is invalid or the charge cannot fit in u64.
+pub fn repair_charge_with_remainder(
+    applied: u64,
+    amount: u64,
+    per_health: NonZeroU64,
+    previous_remainder: u64,
+) -> Option<(u64, u64)> {
+    let denominator = u128::from(per_health.get());
+    if u128::from(previous_remainder) >= denominator {
+        return None;
+    }
+    let numerator = u128::from(applied)
+        .checked_mul(u128::from(amount))?
+        .checked_add(u128::from(previous_remainder))?;
+    Some((
+        u64::try_from(numerator / denominator).ok()?,
+        u64::try_from(numerator % denominator).ok()?,
+    ))
+}
+
 /// The health target of a site at `done` of `total` (design 6.10 row K2): with `site_health`
 /// = n/d the target is `floor(max x (n x total + (d - n) x done) / (d x total))`. It is
 /// `floor(max x n / d)` at progress 0 and `max` at completion.
