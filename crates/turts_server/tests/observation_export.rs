@@ -109,7 +109,10 @@ fn view(hidden: bool) -> WorldView {
     v
 }
 fn bytes<T: serde::Serialize>(value: &T) -> Vec<u8> {
-    postcard::to_stdvec(value).unwrap()
+    postcard::to_vec::<_, 16384>(value)
+        .unwrap()
+        .as_slice()
+        .to_vec()
 }
 
 #[test]

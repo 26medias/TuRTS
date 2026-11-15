@@ -289,8 +289,8 @@ mod tests {
         assert!(!history.restricted);
         assert!(history.baseline.is_none());
         assert_eq!(
-            postcard::to_stdvec(&snapshot).unwrap(),
-            postcard::to_stdvec(&super::super::snapshot_projected(&view, slot)).unwrap()
+            postcard::to_vec::<_, 16384>(&snapshot).unwrap(),
+            postcard::to_vec::<_, 16384>(&super::super::snapshot_projected(&view, slot)).unwrap()
         );
         let (changed, _) = delta(
             &batch,
@@ -301,8 +301,9 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            postcard::to_stdvec(&changed).unwrap(),
-            postcard::to_stdvec(&super::super::delta_projected(&batch, &view, slot)).unwrap()
+            postcard::to_vec::<_, 16384>(&changed).unwrap(),
+            postcard::to_vec::<_, 16384>(&super::super::delta_projected(&batch, &view, slot))
+                .unwrap()
         );
     }
 }
