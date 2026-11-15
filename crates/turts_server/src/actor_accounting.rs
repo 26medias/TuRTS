@@ -21,6 +21,7 @@ pub(crate) struct TrackedRequest {
     pub result: Option<Arc<ActorResult>>,
     pub admitted_work: Option<AdmittedWork>,
     accounted: Option<Watermark>,
+    captured_tick: Option<u32>,
     flushed: Amounts,
     started: Amounts,
     last_effect: Option<Arc<ObservedRequestEffect>>,
@@ -32,6 +33,7 @@ impl TrackedRequest {
             result: None,
             admitted_work: None,
             accounted: None,
+            captured_tick: None,
             flushed: BTreeMap::new(),
             started: BTreeMap::new(),
             last_effect: None,
@@ -122,6 +124,65 @@ pub(crate) fn capture_receipts(
     *requests = staged;
     Ok(())
 }
+/// Keep one-tick monetary and terminal witnesses without rebuilding every live
+/// work snapshot. Full demand publication still validates the latest live state.
+pub(crate) fn capture_intermediate_receipts(
+    view: &WorldView,
+    committed: &CommittedTick,
+    catalog: &ContentCatalog,
+    actor: &BotActor,
+    requests: &mut BTreeMap<RequestKey, TrackedRequest>,
+    watermark: Watermark,
+) -> Result<(), String> {
+    validate_completed_input(view, committed, watermark)?;
+    #[cfg(test)]
+    let started = crate::bot_profile::start();
+    let result = (|| {
+        let mut staged = requests.clone();
+        for (key, tracked) in &mut staged {
+            validate_request_identity(actor, key, tracked, watermark)?;
+            // A terminal effect has already validated its exact final witness.
+            // No later tick may change it, and no event needs to be replayed.
+            if tracked
+                .last_effect
+                .as_ref()
+                .is_some_and(|effect| effect.terminal)
+            {
+                continue;
+            }
+            let ongoing =
+                tracked.admitted_work.as_ref().filter(|_| {
+                    tracked.result.as_ref().is_some_and(|result| {
+                        result.accepted && result.effect_watermark <= watermark
+                    }) && tracked
+                        .last_effect
+                        .as_ref()
+                        .is_some_and(|effect| effect.work.is_some())
+                });
+            if let Some(work) = ongoing {
+                let unit = work.unit;
+                let job = work.job.0;
+                if !committed
+                    .terminal_work
+                    .iter()
+                    .any(|row| row.unit == unit && row.job == job)
+                {
+                    fold_work_events(committed, actor, tracked, unit, job)?;
+                    continue;
+                }
+            }
+            // First result, held placement, and actual terminal transitions keep
+            // the eager path's exact metadata, funding, and progress validation.
+            capture_request(view, committed, catalog, actor, key, tracked, watermark)?;
+        }
+        *requests = staged;
+        Ok(())
+    })();
+    #[cfg(test)]
+    crate::bot_profile::finish("publication.capture_intermediate", started);
+    result
+}
+
 fn validate_completed_input(
     view: &WorldView,
     committed: &CommittedTick,
@@ -143,15 +204,12 @@ fn validate_completed_input(
     }
     Ok(())
 }
-fn capture_request(
-    view: &WorldView,
-    committed: &CommittedTick,
-    catalog: &ContentCatalog,
+fn validate_request_identity(
     actor: &BotActor,
     key: &RequestKey,
-    tracked: &mut TrackedRequest,
+    tracked: &TrackedRequest,
     watermark: Watermark,
-) -> Result<Option<ObservedRequestEffect>, String> {
+) -> Result<(), String> {
     if key.actor != *actor
         || tracked.command.actor != *actor
         || key.sequence != tracked.command.sequence
@@ -162,6 +220,32 @@ fn capture_request(
     if tracked.accounted.is_some_and(|old| watermark < old) {
         return Err("receipt accounting watermark moved backwards".into());
     }
+    if tracked
+        .captured_tick
+        .is_some_and(|tick| watermark.completed_tick < tick)
+    {
+        return Err("receipt event capture tick moved backwards".into());
+    }
+    if tracked
+        .result
+        .as_ref()
+        .is_some_and(|result| result.request != *key)
+    {
+        return Err("receipt result names a different request".into());
+    }
+    Ok(())
+}
+
+fn capture_request(
+    view: &WorldView,
+    committed: &CommittedTick,
+    catalog: &ContentCatalog,
+    actor: &BotActor,
+    key: &RequestKey,
+    tracked: &mut TrackedRequest,
+    watermark: Watermark,
+) -> Result<Option<ObservedRequestEffect>, String> {
+    validate_request_identity(actor, key, tracked, watermark)?;
     let Some(result) = tracked.result.as_ref() else {
         if tracked.last_effect.is_some() {
             return Err("represented request lost its admission result".into());
@@ -510,6 +594,53 @@ fn validate_advance(
     Ok(())
 }
 
+fn fold_work_events(
+    committed: &CommittedTick,
+    actor: &BotActor,
+    tracked: &mut TrackedRequest,
+    work_unit: u32,
+    work_job: u64,
+) -> Result<(), String> {
+    if tracked.captured_tick == Some(committed.tick) {
+        return Ok(());
+    }
+    if tracked
+        .captured_tick
+        .is_some_and(|old| committed.tick < old)
+    {
+        return Err("receipt event capture tick moved backwards".into());
+    }
+    {
+        for event in committed
+            .events
+            .iter()
+            .filter(|event| event.owner_slot == actor.slot)
+        {
+            match &event.kind {
+                EconomyEventKind::ProgressCharged { unit, job, charged }
+                    if *unit == work_unit && *job == work_job =>
+                {
+                    add_amounts(&mut tracked.flushed, &event_amounts(charged)?)?;
+                }
+                EconomyEventKind::ProductionStarted {
+                    producer,
+                    job,
+                    charged,
+                } if *producer == work_unit && *job == work_job => {
+                    let amounts = event_amounts(charged)?;
+                    if !tracked.started.is_empty() && tracked.started != amounts {
+                        return Err("production start changed its exact debit rows".into());
+                    }
+                    tracked.started = amounts;
+                }
+                _ => {}
+            }
+        }
+    }
+    tracked.captured_tick = Some(committed.tick);
+    Ok(())
+}
+
 fn prepare_effect(
     view: &WorldView,
     committed: &CommittedTick,
@@ -607,36 +738,7 @@ fn prepare_effect(
     } else {
         return Err("admitted work content is absent from the locked catalog".into());
     };
-    if tracked
-        .accounted
-        .is_none_or(|old| old.completed_tick < committed.tick)
-    {
-        for event in committed
-            .events
-            .iter()
-            .filter(|event| event.owner_slot == actor.slot)
-        {
-            match &event.kind {
-                EconomyEventKind::ProgressCharged { unit, job, charged }
-                    if *unit == identity.unit && *job == identity.id =>
-                {
-                    add_amounts(&mut tracked.flushed, &event_amounts(charged)?)?;
-                }
-                EconomyEventKind::ProductionStarted {
-                    producer,
-                    job,
-                    charged,
-                } if *producer == identity.unit && *job == identity.id => {
-                    let amounts = event_amounts(charged)?;
-                    if !tracked.started.is_empty() && tracked.started != amounts {
-                        return Err("production start changed its exact debit rows".into());
-                    }
-                    tracked.started = amounts;
-                }
-                _ => {}
-            }
-        }
-    }
+    fold_work_events(committed, actor, tracked, identity.unit, identity.id)?;
     let site = placed.map(|(_, site)| site).or_else(|| {
         view.construction
             .sites
