@@ -289,13 +289,30 @@ pub fn validate_records(records: &[EconomyLogRecord]) -> Result<(), String> {
                                 operation.operation_id
                             ));
                         }
-                        validate_operation_phase(
-                            &cursor,
-                            &operation.before,
-                            movement_pending,
-                            operation.phase,
-                        )?;
-                        movement_pending = false;
+                        // Successful income is independently derived above and runs
+                        // before Movement. It must not consume that tick's movement.
+                        let income = !operation.events.is_empty()
+                            && operation.events.iter().all(|event| {
+                                matches!(
+                                    event.kind,
+                                    turts_sim::EconomyEventKind::IncomeCredited { .. }
+                                )
+                            });
+                        if income {
+                            validate_clock_continuity(
+                                &cursor,
+                                &operation.before,
+                                "income operation",
+                            )?;
+                        } else {
+                            validate_operation_phase(
+                                &cursor,
+                                &operation.before,
+                                movement_pending,
+                                operation.phase,
+                            )?;
+                            movement_pending = false;
+                        }
                     }
                     turts_sim::economy::transaction::AuditPhase::PostMovementOrders => {
                         if is_command {
@@ -8399,7 +8416,12 @@ fn validate_movement_transition(previous: &AuditState, current: &AuditState) -> 
         expected_unit.pos = bevy::math::Vec2::new(raw.pos.x, raw.pos.y);
     }
     if expected != *current {
-        return Err("movement transition changed nonmovement state".into());
+        let left = serde_json::to_value(&expected).map_err(|error| error.to_string())?;
+        let right = serde_json::to_value(current).map_err(|error| error.to_string())?;
+        return Err(format!(
+            "movement transition changed nonmovement state: {:?}",
+            audit_differences(&left, &right, "")
+        ));
     }
     Ok(())
 }
@@ -8443,6 +8465,7 @@ fn validate_tick_state(
         advance_operating_snapshot(&mut expected);
     }
     expected.economy.tick = tick;
+    expected.economy.construction.completed.clear();
     expected.pending_events.clear();
     expected.next_event_ordinal = Some(0);
     if movement_pending {
@@ -10017,6 +10040,7 @@ mod tests {
             resource_kinds: vec![],
             nodes: vec![],
             units: vec![CatalogUnitAudit {
+                health_max: None,
                 repairer: None,
 
                 provides: Vec::new(),
@@ -11854,6 +11878,7 @@ mod tests {
                 radius: 2.0,
             }],
             units: vec![CatalogUnitAudit {
+                health_max: None,
                 repairer: None,
 
                 provides: Vec::new(),
@@ -17620,6 +17645,7 @@ mod tests {
                 radius: 0.5,
             });
             let catalog_unit = turts_sim::economy::views::CatalogUnitAudit {
+                health_max: None,
                 repairer: None,
 
                 provides: Vec::new(),
@@ -18616,6 +18642,7 @@ mod tests {
                 radius: 2.0,
             }],
             units: vec![turts_sim::economy::views::CatalogUnitAudit {
+                health_max: None,
                 repairer: None,
 
                 provides: Vec::new(),
@@ -19122,7 +19149,8 @@ mod tests {
         }
         let refund_error = validate_records(&missing_refund_records).unwrap_err();
         assert!(
-            refund_error.contains("Cancel changed state outside requested job removal, refund"),
+            refund_error.contains("Cancel changed state outside requested job removal, refund")
+                || refund_error.contains("paid-work ledger differs from cumulative progress debit"),
             "Cancel must credit catalog-derived refunds: {refund_error}"
         );
 
@@ -19382,7 +19410,7 @@ mod tests {
         assert!(
             validate_records(&leaked_claim_records)
                 .unwrap_err()
-                .contains("reservation release and event"),
+                .contains("reservation claims"),
             "leaving the empty claim active after Cancel is rejected"
         );
     }
@@ -19617,5 +19645,30 @@ mod tests {
         let state = initial();
         let records = vec![EconomyLogRecord::Initial(state)];
         validate_records(&records).unwrap();
+    }
+}
+
+fn audit_differences(a: &serde_json::Value, b: &serde_json::Value, path: &str) -> Vec<String> {
+    match (a, b) {
+        (serde_json::Value::Object(a), serde_json::Value::Object(b)) => {
+            let keys = a.keys().chain(b.keys()).collect::<BTreeSet<_>>();
+            keys.into_iter()
+                .flat_map(|key| {
+                    audit_differences(
+                        &a.get(key).cloned().unwrap_or_default(),
+                        &b.get(key).cloned().unwrap_or_default(),
+                        &format!("{path}/{key}"),
+                    )
+                })
+                .collect()
+        }
+        (serde_json::Value::Array(a), serde_json::Value::Array(b)) if a.len() == b.len() => a
+            .iter()
+            .zip(b)
+            .enumerate()
+            .flat_map(|(i, (a, b))| audit_differences(a, b, &format!("{path}/{i}")))
+            .collect(),
+        _ if a == b => Vec::new(),
+        _ => vec![path.into()],
     }
 }

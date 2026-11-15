@@ -794,6 +794,20 @@ fn refund_rows(
                 .find(|tech| tech.id == job.recipe)
             {
                 (technology.refunds, technology.payment)
+            } else if let Some(recipe) = catalog
+                .item_recipes
+                .iter()
+                .find(|recipe| recipe.id == job.recipe)
+            {
+                (
+                    turts_mod_api::CancelRefunds {
+                        queued: turts_mod_api::RefundRatio::ZERO,
+                        running: recipe.refunds.running,
+                        output_blocked: recipe.refunds.output_blocked,
+                        destroyed: turts_mod_api::RefundRatio::ZERO,
+                    },
+                    PaymentPolicy::ChargeOnQueue,
+                )
             } else {
                 return Err("refund job definition missing".into());
             };

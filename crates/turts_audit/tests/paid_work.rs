@@ -6,10 +6,7 @@ use turts_mod_api::*;
 use turts_mod_runtime::{archive::PackageArchive, pack::pack_dir};
 use turts_sim::{
     Command, CommandKind, SlotId, Vec2,
-    economy::{
-        construction, production,
-        views::{AuditState, WorldView},
-    },
+    economy::{construction, production},
 };
 
 fn cid(local: &str) -> ContentId {
