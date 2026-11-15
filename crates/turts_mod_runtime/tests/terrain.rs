@@ -94,7 +94,7 @@ fn all_visible_terrain_identity_fits_the_required_atomic_frame() {
     assert!(validate_terrain_map(&a.id(), &file, &map, &catalog).is_ok());
     map.id.push('x');
     let error = validate_terrain_map(&a.id(), &file, &map, &catalog).unwrap_err();
-    assert_eq!(error.field, "id");
+    assert_eq!(error.field_path, "id");
     map.terrain = None;
     assert_eq!(
         validate_terrain_map(&a.id(), &file, &map, &catalog).unwrap(),
