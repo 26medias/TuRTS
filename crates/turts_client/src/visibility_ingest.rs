@@ -18,6 +18,12 @@ pub struct StateTransactions {
     connection: Option<Entity>,
     match_id: Option<u64>,
     expected_map: Option<turts_mod_api::ContentId>,
+    early: std::collections::VecDeque<(Entity, StateTransactionFrame, usize)>,
+    early_heap: usize,
+    early_entity: Option<Entity>,
+    early_retirement: Option<StateTransactionStamp>,
+    restart_after_welcome: bool,
+    waiting_snapshot: bool,
     /// True once this connection uses atomic transport. Legacy deltas cannot bypass it.
     pub restricted: bool,
     pub activated: u64,
@@ -42,22 +48,140 @@ impl StateTransactions {
         true
     }
 
+    fn clear_early(&mut self) {
+        self.early = std::collections::VecDeque::new();
+        self.early_heap = 0;
+        self.early_entity = None;
+    }
+    fn early_bytes(&self) -> usize {
+        self.early_heap
+            .saturating_add(self.early.capacity().saturating_mul(std::mem::size_of::<(
+                Entity,
+                StateTransactionFrame,
+                usize,
+            )>()))
+    }
+    fn retire_early(&mut self, entity: Entity, stamp: StateTransactionStamp) {
+        for (_, frame, _) in &self.early {
+            let candidate = frame_stamp(frame);
+            if self
+                .early_retirement
+                .as_ref()
+                .is_none_or(|old| old.transaction_id < candidate.transaction_id)
+            {
+                self.early_retirement = Some(candidate.clone());
+            }
+        }
+        if self
+            .early_retirement
+            .as_ref()
+            .is_none_or(|old| old.transaction_id < stamp.transaction_id)
+        {
+            self.early_retirement = Some(stamp);
+        }
+        self.clear_early();
+        self.early_entity = Some(entity);
+        self.restart_after_welcome = true;
+        self.waiting_snapshot = true;
+    }
+    fn defer(&mut self, entity: Entity, frame: StateTransactionFrame) {
+        if self.early_entity.is_some_and(|old| old != entity) {
+            self.clear_early();
+            self.early_retirement = None;
+            self.restart_after_welcome = false;
+            self.waiting_snapshot = false;
+        }
+        self.early_entity = Some(entity);
+        let stamp = frame_stamp(&frame);
+        if self.restart_after_welcome {
+            self.retire_early(entity, stamp.clone());
+            return;
+        }
+        let heap = frame_heap(&frame);
+        let capacity = if self.early.len() == self.early.capacity() {
+            self.early.capacity().saturating_mul(2).max(4)
+        } else {
+            self.early.capacity()
+        };
+        let required = self
+            .early_heap
+            .saturating_add(heap)
+            .saturating_add(capacity.saturating_mul(std::mem::size_of::<(
+                Entity,
+                StateTransactionFrame,
+                usize,
+            )>()))
+            .saturating_add(4096);
+        if frame
+            .encoded_bytes()
+            .map_or(true, |size| size > KNOWLEDGE_FRAME_LIMIT_BYTES)
+            || required > MAX_POST_BASE_PATCH_BYTES as usize
+        {
+            self.retire_early(entity, stamp.clone());
+            return;
+        }
+        if self.early.len() == self.early.capacity()
+            && self
+                .early
+                .try_reserve_exact(capacity - self.early.len())
+                .is_err()
+        {
+            self.retire_early(entity, stamp.clone());
+            return;
+        }
+        self.early_heap += heap;
+        self.early.push_back((entity, frame, heap));
+    }
+    fn pop_early(&mut self) -> Option<(Entity, StateTransactionFrame)> {
+        let (entity, frame, heap) = self.early.pop_front()?;
+        self.early_heap -= heap;
+        if self.early.is_empty() {
+            self.clear_early();
+        }
+        Some((entity, frame))
+    }
+
     fn frame(
         &mut self,
         entity: Entity,
         frame: StateTransactionFrame,
         now_ms: u64,
     ) -> Result<Option<StagedStateTransaction>, StateTransactionStamp> {
-        let stamp = match &frame {
-            StateTransactionFrame::Begin(value) => &value.stamp,
-            StateTransactionFrame::Chunk(value) => &value.stamp,
-            StateTransactionFrame::End(value) => &value.stamp,
-        }
-        .clone();
+        let stamp = frame_stamp(&frame).clone();
         if !self.ensure_context(entity, &stamp) {
             return Err(stamp);
         }
         self.restricted = true;
+        let reserved = self.early_bytes();
+        if self.waiting_snapshot {
+            let fresh = matches!(&frame, StateTransactionFrame::Begin(begin) if begin.kind == StateTransactionKind::Snapshot)
+                && self
+                    .assembler
+                    .as_ref()
+                    .is_some_and(|assembler| !assembler.is_obsolete(&stamp));
+            if !fresh {
+                if let Some(assembler) = self.assembler.as_mut() {
+                    assembler.cancel(&stamp);
+                }
+                return Ok(None);
+            }
+            self.waiting_snapshot = false;
+        }
+        if let StateTransactionFrame::Begin(begin) = &frame {
+            let required = self
+                .assembler
+                .as_ref()
+                .and_then(|assembler| assembler.required_staging_bytes(begin).ok());
+            if required.is_some_and(|bytes| {
+                bytes.saturating_add(reserved) > MAX_PENDING_STATE_BYTES as usize
+            }) {
+                self.retire_early(entity, stamp.clone());
+                if let Some(assembler) = self.assembler.as_mut() {
+                    assembler.cancel(&stamp);
+                }
+                return Ok(None);
+            }
+        }
         let Some(assembler) = self.assembler.as_mut() else {
             return Err(stamp);
         };
@@ -67,7 +191,7 @@ impl StateTransactions {
         let result = match frame {
             StateTransactionFrame::Begin(value) => assembler.begin(value, now_ms).map(|_| None),
             StateTransactionFrame::Chunk(value) => assembler.chunk(&value).map(|_| None),
-            StateTransactionFrame::End(value) => assembler.end(&value),
+            StateTransactionFrame::End(value) => assembler.end_with_budget(&value, reserved),
         };
         result.map_err(|_| {
             assembler.cancel(&stamp);
@@ -76,10 +200,31 @@ impl StateTransactions {
     }
 
     pub fn retained_bytes(&self) -> usize {
-        self.assembler
-            .as_ref()
-            .map_or(0, StateTransactionAssembler::retained_bytes)
+        self.early_bytes().saturating_add(
+            self.assembler
+                .as_ref()
+                .map_or(0, StateTransactionAssembler::retained_bytes),
+        )
     }
+}
+
+fn frame_stamp(frame: &StateTransactionFrame) -> &StateTransactionStamp {
+    match frame {
+        StateTransactionFrame::Begin(value) => &value.stamp,
+        StateTransactionFrame::Chunk(value) => &value.stamp,
+        StateTransactionFrame::End(value) => &value.stamp,
+    }
+}
+fn frame_heap(frame: &StateTransactionFrame) -> usize {
+    let map = &frame_stamp(frame).basis.map;
+    let payload = match frame {
+        StateTransactionFrame::Chunk(value) => value.bytes.capacity(),
+        _ => 0,
+    };
+    payload
+        .saturating_add(map.package.0.capacity())
+        .saturating_add(map.local.capacity())
+        .saturating_add(64)
 }
 
 /// The server installs the first authored map from its locked root game package.
@@ -110,6 +255,10 @@ pub struct ActivationBookkeeping<'w> {
 pub fn receive_transactions(
     mut frames: Query<(Entity, &mut MessageReceiver<StateTransactionFrame>)>,
     mut cancels: Query<(Entity, &mut MessageReceiver<StateTransactionCancel>)>,
+    mut baseline_requests: Query<(
+        Entity,
+        &mut MessageSender<turts_net_protocol::ResyncRequest>,
+    )>,
     mut acknowledgements: Query<(Entity, &mut MessageSender<StateTransactionAck>)>,
     mut cancellation_senders: Query<(Entity, &mut MessageSender<StateTransactionCancel>)>,
     mut transactions: ResMut<StateTransactions>,
@@ -128,8 +277,13 @@ pub fn receive_transactions(
     };
     let welcome = state.welcome;
     if transactions.match_id != welcome.map(|w| w.match_id) {
-        *transactions = StateTransactions::default();
-        transactions.match_id = welcome.map(|w| w.match_id);
+        if transactions.match_id.is_none() && welcome.is_some() {
+            // Preserve bounded frames that arrived before the reliable Welcome.
+            transactions.match_id = welcome.map(|w| w.match_id);
+        } else {
+            *transactions = StateTransactions::default();
+            transactions.match_id = welcome.map(|w| w.match_id);
+        }
     }
     if transactions.expected_map.is_none()
         && let (Some(acquisition), Some(acquired)) = (acquisition, acquired)
@@ -150,73 +304,126 @@ pub fn receive_transactions(
             }
         }
     }
-    for (entity, mut receiver) in &mut frames {
-        for frame in receiver.receive() {
-            if !current(entity) {
-                continue;
-            }
-            match transactions.frame(entity, frame, now_ms) {
-                Ok(Some(staged)) => {
-                    crate::ingest::append_raw_world_dto(
-                        book.options.0.raw_world_log.as_deref(),
-                        "state_transaction",
-                        &staged.payload,
-                    );
-                    let epoch = book.witnesses.epoch_for(entity.to_bits());
-                    book.witnesses.record_message(epoch, true);
-                    let valid = state.replica.as_mut().is_some_and(|replica| {
-                        replica.activate_transaction(&staged.stamp, &staged.payload, Instant::now())
-                    });
-                    if valid {
-                        match &staged.payload {
-                            StateTransactionPayload::Snapshot { .. } => {
-                                book.hooks.outstanding_request = false;
-                                book.counters.snapshots_applied =
-                                    book.counters.snapshots_applied.saturating_add(1);
-                            }
-                            StateTransactionPayload::Patch { .. } => {
-                                book.counters.deltas_received =
-                                    book.counters.deltas_received.saturating_add(1)
-                            }
-                        }
-                        // Remove old interpolation and selection in this same schedule step.
-                        if let Some(replica) = state.replica.as_ref() {
-                            presented
-                                .units
-                                .retain(|unit| replica.units.contains_key(&unit.unit_id));
-                            if let Some(selection) = selection.as_mut()
-                                && selection
-                                    .0
-                                    .is_some_and(|id| !replica.units.contains_key(&id))
-                            {
-                                selection.0 = None;
-                            }
-                        }
-                        if let Some(Ok(ack)) = transactions
-                            .assembler
-                            .as_mut()
-                            .map(|a| a.activate(&staged.stamp))
-                        {
-                            for (target, mut sender) in &mut acknowledgements {
-                                if target == entity {
-                                    sender.send::<ReliableChannel>(ack.clone());
-                                    let epoch = book.witnesses.epoch_for(target.to_bits());
-                                    book.witnesses.record_message(epoch, true);
+    let ready = welcome.is_some() && transactions.expected_map.is_some();
+    if transactions
+        .early_entity
+        .is_some_and(|entity| !current(entity))
+    {
+        transactions.clear_early();
+        transactions.early_retirement = None;
+        transactions.restart_after_welcome = false;
+        transactions.waiting_snapshot = false;
+    }
+    if ready
+        && let Some(stamp) = transactions.early_retirement.take()
+        && let Some(entity) = transactions.early_entity
+        && transactions.ensure_context(entity, &stamp)
+        && let Some(assembler) = transactions.assembler.as_mut()
+    {
+        assembler.cancel(&stamp);
+    }
+    {
+        let mut consume =
+            |transactions: &mut StateTransactions, entity: Entity, frame: StateTransactionFrame| {
+                match transactions.frame(entity, frame, now_ms) {
+                    Ok(Some(staged)) => {
+                        crate::ingest::append_raw_world_dto(
+                            book.options.0.raw_world_log.as_deref(),
+                            "state_transaction",
+                            &staged.payload,
+                        );
+                        let epoch = book.witnesses.epoch_for(entity.to_bits());
+                        book.witnesses.record_message(epoch, true);
+                        let valid = state.replica.as_mut().is_some_and(|replica| {
+                            replica.activate_transaction_reserved(
+                                &staged.stamp,
+                                &staged.payload,
+                                Instant::now(),
+                                transactions.early_bytes(),
+                            )
+                        });
+                        if valid {
+                            match &staged.payload {
+                                StateTransactionPayload::Snapshot { .. } => {
+                                    book.hooks.outstanding_request = false;
+                                    book.counters.snapshots_applied =
+                                        book.counters.snapshots_applied.saturating_add(1);
+                                }
+                                StateTransactionPayload::Patch { .. } => {
+                                    book.counters.deltas_received =
+                                        book.counters.deltas_received.saturating_add(1)
                                 }
                             }
-                            transactions.activated += 1;
+                            // Remove old interpolation and selection in this same schedule step.
+                            if let Some(replica) = state.replica.as_ref() {
+                                presented
+                                    .units
+                                    .retain(|unit| replica.units.contains_key(&unit.unit_id));
+                                if let Some(selection) = selection.as_mut()
+                                    && selection
+                                        .0
+                                        .is_some_and(|id| !replica.units.contains_key(&id))
+                                {
+                                    selection.0 = None;
+                                }
+                            }
+                            if let Some(Ok(ack)) = transactions
+                                .assembler
+                                .as_mut()
+                                .map(|a| a.activate(&staged.stamp))
+                            {
+                                for (target, mut sender) in &mut acknowledgements {
+                                    if target == entity {
+                                        sender.send::<ReliableChannel>(ack.clone());
+                                        let epoch = book.witnesses.epoch_for(target.to_bits());
+                                        book.witnesses.record_message(epoch, true);
+                                    }
+                                }
+                                transactions.activated += 1;
+                            }
+                        } else {
+                            if let Some(assembler) = transactions.assembler.as_mut() {
+                                assembler.cancel(&staged.stamp);
+                            }
+                            refused.push((entity, staged.stamp));
                         }
-                    } else {
-                        if let Some(assembler) = transactions.assembler.as_mut() {
-                            assembler.cancel(&staged.stamp);
-                        }
-                        refused.push((entity, staged.stamp));
                     }
+                    Ok(None) => {}
+                    Err(stamp) => refused.push((entity, stamp)),
                 }
-                Ok(None) => {}
-                Err(stamp) => refused.push((entity, stamp)),
+            };
+        if ready {
+            while let Some((entity, frame)) = transactions.pop_early() {
+                if current(entity) {
+                    consume(&mut transactions, entity, frame);
+                }
             }
         }
+        for (entity, mut receiver) in &mut frames {
+            for frame in receiver.receive() {
+                if !current(entity) {
+                    continue;
+                }
+                if ready {
+                    consume(&mut transactions, entity, frame);
+                } else {
+                    transactions.defer(entity, frame);
+                }
+            }
+        }
+    }
+    if ready && transactions.restart_after_welcome {
+        for (entity, mut sender) in &mut baseline_requests {
+            if current(entity) {
+                sender.send::<ReliableChannel>(turts_net_protocol::ResyncRequest);
+                book.hooks.outstanding_request = true;
+                book.counters.resync_requests_sent =
+                    book.counters.resync_requests_sent.saturating_add(1);
+                book.counters.resync_by_validation =
+                    book.counters.resync_by_validation.saturating_add(1);
+            }
+        }
+        transactions.restart_after_welcome = false;
     }
     if let Some(stamp) = transactions
         .assembler
@@ -397,6 +604,124 @@ mod tests {
         }
         assert_eq!(activated, vec![1, 2]);
         assert_eq!(replica.last_applied_tick, Some(2));
+        assert_eq!(transactions.retained_bytes(), 0);
+    }
+
+    #[test]
+    fn state_before_or_after_welcome_activates_the_same_complete_view() {
+        use turts_net_protocol::visibility_transaction::encode_transaction;
+        let mut outcomes = Vec::new();
+        for welcome_first in [true, false] {
+            let archive = PackageArchive::parse(
+                &pack_dir(
+                    &std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                        .join("../../mods/visibility_probe"),
+                )
+                .unwrap(),
+            )
+            .unwrap();
+            let map = expected_map(std::slice::from_ref(&archive), "visibility_probe").unwrap();
+            let stamp = StateTransactionStamp {
+                basis: KnowledgeBasis {
+                    match_id: 7,
+                    map: map.clone(),
+                    tick: 1,
+                    phase: ObservationPhase::Completed,
+                },
+                transaction_id: 1,
+                parent_transaction_id: None,
+            };
+            let payload = StateTransactionPayload::Snapshot {
+                state: Box::new(turts_net_protocol::Snapshot {
+                    tick: 1,
+                    ..Default::default()
+                }),
+                knowledge: None,
+                event_units: vec![],
+            };
+            let mut encoded =
+                encode_transaction(stamp, &payload, KNOWLEDGE_FRAME_LIMIT_BYTES).unwrap();
+            let entity = Entity::from_bits(17);
+            let mut transactions = StateTransactions {
+                expected_map: Some(map),
+                ..Default::default()
+            };
+            let mut replica: Option<crate::replica::Replica> = None;
+            if !welcome_first {
+                while let Some(frame) = encoded.next_frame() {
+                    transactions.defer(entity, frame);
+                }
+                assert!(replica.is_none());
+                assert!(transactions.assembler.is_none());
+                assert!(transactions.retained_bytes() > 0);
+                assert!(transactions.retained_bytes() <= MAX_POST_BASE_PATCH_BYTES as usize);
+            }
+            // Only the actual Welcome supplies match/slot and creates a replica context.
+            transactions.match_id = Some(7);
+            let mut joined = crate::replica::Replica::new(20);
+            joined.set_context(crate::replica::ReplicaContext::new(
+                crate::content::ClientContent::from_archives(&[archive]).unwrap(),
+                0,
+            ));
+            replica = Some(joined);
+            let mut acked = Vec::new();
+            loop {
+                let next = if welcome_first {
+                    encoded.next_frame().map(|frame| (entity, frame))
+                } else {
+                    transactions.pop_early()
+                };
+                let Some((entity, frame)) = next else {
+                    break;
+                };
+                if let Some(staged) = transactions.frame(entity, frame, 0).unwrap() {
+                    assert!(replica.as_mut().unwrap().activate_transaction_reserved(
+                        &staged.stamp,
+                        &staged.payload,
+                        Instant::now(),
+                        transactions.early_bytes()
+                    ));
+                    acked.push(
+                        transactions
+                            .assembler
+                            .as_mut()
+                            .unwrap()
+                            .activate(&staged.stamp)
+                            .unwrap()
+                            .stamp
+                            .transaction_id,
+                    );
+                }
+            }
+            outcomes.push((replica.unwrap().last_applied_tick, acked));
+            assert_eq!(transactions.retained_bytes(), 0);
+        }
+        assert_eq!(outcomes[0], (Some(1), vec![1]));
+        assert_eq!(outcomes[0], outcomes[1]);
+    }
+
+    #[test]
+    fn early_frame_capacity_overflow_waits_for_one_real_context_resync() {
+        let stamp = StateTransactionStamp {
+            basis: KnowledgeBasis {
+                match_id: 7,
+                map: ContentId::parse("visibility_probe:field").unwrap(),
+                tick: 1,
+                phase: ObservationPhase::Completed,
+            },
+            transaction_id: 1,
+            parent_transaction_id: None,
+        };
+        let frame = StateTransactionFrame::Chunk(StateTransactionChunk {
+            stamp,
+            index: 0,
+            bytes: Vec::with_capacity(MAX_POST_BASE_PATCH_BYTES as usize + 1),
+        });
+        let mut transactions = StateTransactions::default();
+        transactions.defer(Entity::from_bits(17), frame);
+        assert!(transactions.restart_after_welcome);
+        assert!(transactions.waiting_snapshot);
+        assert!(transactions.assembler.is_none());
         assert_eq!(transactions.retained_bytes(), 0);
     }
 }

@@ -273,11 +273,21 @@ impl Replica {
         payload: &turts_net_protocol::visibility::StateTransactionPayload,
         now: Instant,
     ) -> bool {
+        self.activate_transaction_reserved(stamp, payload, now, 0)
+    }
+
+    pub(crate) fn activate_transaction_reserved(
+        &mut self,
+        stamp: &turts_net_protocol::visibility::StateTransactionStamp,
+        payload: &turts_net_protocol::visibility::StateTransactionPayload,
+        now: Instant,
+        reserved_bytes: usize,
+    ) -> bool {
         use turts_net_protocol::visibility::StateTransactionPayload;
         let Some(context) = self.context.as_ref() else {
             return false;
         };
-        if self.preflight_transaction(payload).is_err() {
+        if self.preflight_transaction(payload, reserved_bytes).is_err() {
             return false;
         }
         if stamp.basis.phase != turts_mod_api::ObservationPhase::Completed
@@ -462,10 +472,15 @@ impl Replica {
     fn preflight_transaction(
         &self,
         payload: &turts_net_protocol::visibility::StateTransactionPayload,
+        reserved_bytes: usize,
     ) -> Result<(), crate::staging_budget::Limit> {
         use crate::staging_budget::{Budget, Limit};
         use turts_net_protocol::visibility::{MAX_PENDING_STATE_BYTES, StateTransactionPayload};
-        let mut budget = Budget::new(MAX_PENDING_STATE_BYTES as usize);
+        let mut budget = Budget::new(
+            (MAX_PENDING_STATE_BYTES as usize)
+                .checked_sub(reserved_bytes)
+                .ok_or(Limit)?,
+        );
         // Fixed candidates, store steps, stamps, and small hash tables.
         budget.bytes(64 * 1024)?;
         budget.value(payload)?;
