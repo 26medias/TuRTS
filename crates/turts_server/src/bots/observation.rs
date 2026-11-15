@@ -10,7 +10,7 @@ use turts_mod_api::{
 };
 
 /// Coverage is independent of which private objects exist outside it.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct ObservedArea {
     pub min: WorldPos,
     pub max: WorldPos,
@@ -38,9 +38,9 @@ impl ObservationBasis {
     /// Only permitted rows enter these indexes. Their order cannot disclose rejected objects.
     pub fn index(&mut self) {
         self.units
-            .sort_by(|a, b| physical(a.position, &a.content, b.position, &b.content));
+            .sort_by(|a, b| physical(&a.position, &a.content, &b.position, &b.content));
         self.nodes
-            .sort_by(|a, b| physical(a.position, &a.content, b.position, &b.content));
+            .sort_by(|a, b| physical(&a.position, &a.content, &b.position, &b.content));
         self.accounts.sort_by(|a, b| a.account.cmp(&b.account));
         self.works.sort_by(|a, b| a.identity.cmp(&b.identity));
         self.unit_index = self
@@ -148,7 +148,7 @@ impl ObservationBasis {
         {
             return Advice::Known(PlacementAdvice::Blocked);
         }
-        let p = query.point;
+        let p = &query.point;
         if !p.x.is_finite() || !p.y.is_finite() {
             return Advice::Known(PlacementAdvice::Blocked);
         }
@@ -156,7 +156,7 @@ impl ObservationBasis {
             return Advice::Known(PlacementAdvice::Blocked);
         };
         use turts_rules::placement as rules;
-        let circle = |position: WorldPos, radius| rules::Circle {
+        let circle = |position: &WorldPos, radius| rules::Circle {
             centre: rules::Point {
                 x: position.x,
                 y: position.y,
@@ -172,7 +172,7 @@ impl ObservationBasis {
             .filter(|unit| unit.owner_slot == self.slot && !unit.site)
             .filter_map(|unit| {
                 Some(rules::BuildSource {
-                    footprint: circle(unit.position, unit.radius),
+                    footprint: circle(&unit.position, unit.radius),
                     build_area: self.catalog.units.get(&unit.content)?.build_area?,
                 })
             })
@@ -184,7 +184,7 @@ impl ObservationBasis {
                 let definition = self.catalog.units.get(&unit.content);
                 rules::Obstacle {
                     id: unit.unit,
-                    footprint: circle(unit.position, unit.radius),
+                    footprint: circle(&unit.position, unit.radius),
                     kind: if !unit.site && definition.is_some_and(|d| d.movement.is_some()) {
                         rules::ObstacleKind::Mobile
                     } else {
@@ -199,7 +199,7 @@ impl ObservationBasis {
             .nodes
             .iter()
             .filter(|node| node.remaining > 0)
-            .map(|node| circle(node.position, node.radius))
+            .map(|node| circle(&node.position, node.radius))
             .collect::<Vec<_>>();
         let verdict = rules::check(
             &rules::Site {
@@ -225,15 +225,15 @@ impl ObservationBasis {
         })
     }
 }
-fn physical(a: WorldPos, ac: &ContentId, b: WorldPos, bc: &ContentId) -> Ordering {
+fn physical(a: &WorldPos, ac: &ContentId, b: &WorldPos, bc: &ContentId) -> Ordering {
     a.x.total_cmp(&b.x)
         .then(a.y.total_cmp(&b.y))
         .then(ac.cmp(bc))
 }
-fn distance_squared(a: WorldPos, b: WorldPos) -> f64 {
+fn distance_squared(a: &WorldPos, b: &WorldPos) -> f64 {
     (f64::from(a.x) - f64::from(b.x)).powi(2) + (f64::from(a.y) - f64::from(b.y)).powi(2)
 }
-fn within(p: WorldPos, center: Option<WorldPos>, radius: Option<f32>) -> bool {
+fn within(p: &WorldPos, center: Option<&WorldPos>, radius: Option<f32>) -> bool {
     match (center, radius) {
         (Some(c), Some(r)) => distance_squared(p, c) <= f64::from(r).powi(2),
         _ => true,
@@ -345,7 +345,7 @@ impl BotQueries for PermittedQueries<'_> {
         };
         let (data, total, returned) = match &query {
             Query::Units(filter) => {
-                validate_radius(filter.center, filter.radius)?;
+                validate_radius(filter.center.as_ref(), filter.radius)?;
                 let mut rows = Vec::new();
                 for u in basis.units.iter().skip(offset) {
                     if examined >= max_scan || rows.len() >= max_rows {
@@ -355,7 +355,7 @@ impl BotQueries for PermittedQueries<'_> {
                     end += 1;
                     if basis.relation(u.owner_slot, filter.relation)
                         && (filter.content.is_empty() || filter.content.contains(&u.content))
-                        && within(u.position, filter.center, filter.radius)
+                        && within(&u.position, filter.center.as_ref(), filter.radius)
                     {
                         rows.push(u.clone())
                     }
@@ -363,14 +363,14 @@ impl BotQueries for PermittedQueries<'_> {
                 if end < basis.units.len() && end > 0 {
                     let a = &basis.units[end - 1];
                     let b = &basis.units[end];
-                    tied =
-                        physical(a.position, &a.content, b.position, &b.content) == Ordering::Equal;
+                    tied = physical(&a.position, &a.content, &b.position, &b.content)
+                        == Ordering::Equal;
                 }
                 let n = rows.len();
                 (QueryData::Units(rows), basis.units.len(), n)
             }
             Query::Nodes(filter) => {
-                validate_radius(filter.center, filter.radius)?;
+                validate_radius(filter.center.as_ref(), filter.radius)?;
                 let mut rows = Vec::new();
                 for n in basis.nodes.iter().skip(offset) {
                     if examined >= max_scan || rows.len() >= max_rows {
@@ -379,7 +379,7 @@ impl BotQueries for PermittedQueries<'_> {
                     examined += 1;
                     end += 1;
                     if (filter.resources.is_empty() || filter.resources.contains(&n.item))
-                        && within(n.position, filter.center, filter.radius)
+                        && within(&n.position, filter.center.as_ref(), filter.radius)
                     {
                         rows.push(n.clone())
                     }
@@ -387,8 +387,8 @@ impl BotQueries for PermittedQueries<'_> {
                 if end < basis.nodes.len() && end > 0 {
                     let a = &basis.nodes[end - 1];
                     let b = &basis.nodes[end];
-                    tied =
-                        physical(a.position, &a.content, b.position, &b.content) == Ordering::Equal;
+                    tied = physical(&a.position, &a.content, &b.position, &b.content)
+                        == Ordering::Equal;
                 }
                 let n = rows.len();
                 (QueryData::Nodes(rows), basis.nodes.len(), n)
@@ -531,7 +531,7 @@ impl BotQueries for PermittedQueries<'_> {
         })
     }
 }
-fn validate_radius(center: Option<WorldPos>, radius: Option<f32>) -> Result<(), QueryError> {
+fn validate_radius(center: Option<&WorldPos>, radius: Option<f32>) -> Result<(), QueryError> {
     if center.is_some_and(|p| !p.x.is_finite() || !p.y.is_finite())
         || radius.is_some_and(|r| !r.is_finite() || r < 0.0)
         || radius.is_some() != center.is_some()
@@ -629,7 +629,7 @@ impl ProposalVerifier for ObservationVerifier<'_> {
             }
             members.push(VerifiedMember {
                 unit: *id,
-                anchor: unit.position,
+                anchor: unit.position.clone(),
                 costs,
                 payment,
             });
@@ -905,7 +905,7 @@ mod tests {
     #[test]
     fn filtered_candidates_count_and_exact_tie_pages_remain_unresolved() {
         let mut facts = basis();
-        facts.units[1].position = facts.units[0].position;
+        facts.units[1].position = facts.units[0].position.clone();
         let mut lease = CandidateLease::new(facts, 0);
         let mut queries = lease.queries("selection", operator_test_quota());
         let first = queries
