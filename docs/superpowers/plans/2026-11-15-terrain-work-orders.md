@@ -2,8 +2,9 @@
 
 Status: Anvil spec and plan approved by the same reviewer. Each needed one turn and one focused recheck.
 The rechecks closed material accounting, geological coverage, permitted previews, and shared terrain geometry.
-Do not implement until the SDK16 dependency below is accepted.
-Dependency: accept, merge, and push SDK16 before implementation. Merge that accepted source into this design branch first.
+Pure dependency-free rules may start in isolation while SDK16 acceptance runs. Engine integration waits for that acceptance.
+Dependency: accept, merge, and push SDK16 before engine/API/protocol integration. Merge that accepted source before the dependent simulation/transport/browser lanes.
+The pure geometry and conservation kernel does not depend on the pending SDK16 checks. Prepare it now without sharing compiled targets or changing the accepted build.
 Root owns integration. Use three implementation lanes after the common contract compiles.
 Do not change the accepted default Skirmish or its launcher while this branch is incomplete.
 

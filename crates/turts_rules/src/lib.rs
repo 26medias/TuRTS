@@ -61,3 +61,6 @@ impl Ratio {
         self.denominator
     }
 }
+
+/// Exact terrain geometry and material accounting.
+pub mod terrain;
