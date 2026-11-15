@@ -31,6 +31,8 @@
 
 #[path = "../../turts_server/src/export.rs"]
 mod export;
+#[path = "../../turts_server/src/permissions.rs"]
+mod permissions;
 
 use std::collections::BTreeMap;
 use std::path::Path;

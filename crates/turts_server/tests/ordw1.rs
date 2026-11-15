@@ -11,6 +11,8 @@
 
 #[path = "../src/export.rs"]
 mod export;
+#[path = "../src/permissions.rs"]
+mod permissions;
 
 use std::collections::BTreeMap;
 use std::path::Path;

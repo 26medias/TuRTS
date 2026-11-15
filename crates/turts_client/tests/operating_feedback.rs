@@ -1,5 +1,7 @@
 mod support;
 
+#[path = "../../turts_server/src/permissions.rs"]
+mod permissions;
 #[path = "../../turts_server/src/export.rs"]
 mod server_export;
 

@@ -15,6 +15,8 @@
 
 #[path = "../../turts_server/src/export.rs"]
 mod export;
+#[path = "../../turts_server/src/permissions.rs"]
+mod permissions;
 
 use std::path::Path;
 use std::sync::{Mutex, MutexGuard};

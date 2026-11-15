@@ -1,5 +1,9 @@
 #[path = "../src/export.rs"]
 mod export;
+#[path = "../src/permissions.rs"]
+mod permissions;
+#[path = "../src/permissions.rs"]
+mod permissions;
 
 use bevy::math::Vec2;
 use turts_mod_api::{ContentId, CostSource, WorldPos};
