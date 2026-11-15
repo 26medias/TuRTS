@@ -48,7 +48,7 @@ impl Budget {
 macro_rules! scalar {
     ($($method:ident($ty:ty)),* $(,)?) => { $(fn $method(self, _: $ty) -> Result<(), Limit> { self.bytes(std::mem::size_of::<$ty>() * 4) })* };
 }
-impl<'a> Serializer for &'a mut Budget {
+impl Serializer for &mut Budget {
     type Ok = ();
     type Error = Limit;
     type SerializeSeq = Self;

@@ -122,6 +122,7 @@ fn last_seen_age(current_tick: u32, last_seen_tick: u32, tick_hz: u16) -> String
 }
 
 /// Corpses and delayed death bodies carry no live identity after their event.
+#[allow(clippy::type_complexity)] // Bevy query filters describe the existing body variants.
 fn clear_hidden_bodies(
     mut commands: Commands,
     state: Res<ReplicaState>,

@@ -758,7 +758,9 @@ pub(crate) fn validate_target(
     }
 }
 
-fn capture_units(world: &mut World) -> (Vec<VisibleUnit>, Vec<(u32, u8, WorldPos, f32)>) {
+type SightSource = (u32, u8, WorldPos, f32);
+
+fn capture_units(world: &mut World) -> (Vec<VisibleUnit>, Vec<SightSource>) {
     // A fresh typed query includes structural changes made between phase anchors.
     // Column access avoids repeated dynamic component lookup for every entity.
     let mut query = world.query::<(

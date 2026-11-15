@@ -509,14 +509,13 @@ impl Replica {
                 )
             }
         };
-        if let Some(knowledge) = &knowledge {
-            if knowledge.basis != stamp.basis
+        if let Some(knowledge) = &knowledge
+            && (knowledge.basis != stamp.basis
                 || knowledge.viewer != context.slot
                 || !crate::visibility::valid_snapshot(knowledge)
-                || !valid_known_entities(context, &candidate, knowledge)
-            {
-                return false;
-            }
+                || !valid_known_entities(context, &candidate, knowledge))
+        {
+            return false;
         }
         let mut transient = HashSet::new();
         if event_units.iter().any(|row| {
@@ -760,14 +759,13 @@ impl Replica {
             delta,
             &removed,
         )?;
-        if let Some(knowledge) = knowledge {
-            if knowledge.basis != stamp.basis
+        if let Some(knowledge) = knowledge
+            && (knowledge.basis != stamp.basis
                 || knowledge.viewer != context.slot
                 || !crate::visibility::valid_snapshot(knowledge)
-                || !valid_known_view(context, &final_units, final_nodes, knowledge)
-            {
-                return None;
-            }
+                || !valid_known_view(context, &final_units, final_nodes, knowledge))
+        {
+            return None;
         }
         let mut transient = HashSet::new();
         for row in event_units {
@@ -2161,7 +2159,7 @@ fn valid_economy(
         else {
             return false;
         };
-        let Some(unit_id) = parse_id(&unit.content_id) else {
+        let Some(unit_id) = parse_id(unit.content_id) else {
             return false;
         };
         let Some(definition) =
@@ -2213,7 +2211,7 @@ fn valid_economy(
         let Some(unit_state) = units.get(&order.unit.0).filter(|u| u.owner_slot == slot) else {
             return false;
         };
-        let Some(worker_type) = parse_id(&unit_state.content_id) else {
+        let Some(worker_type) = parse_id(unit_state.content_id) else {
             return false;
         };
         let Some(worker_def) = context.content.catalog.units.get(&worker_type) else {
@@ -2243,7 +2241,7 @@ fn valid_economy(
             let Some(receiver) = units.get(&receiver_id.0).filter(|u| u.owner_slot == slot) else {
                 return false;
             };
-            let Some(receiver_type) = parse_id(&receiver.content_id) else {
+            let Some(receiver_type) = parse_id(receiver.content_id) else {
                 return false;
             };
             let Some(receiver_def) = context.content.catalog.units.get(&receiver_type) else {
@@ -2274,7 +2272,7 @@ fn valid_economy(
         else {
             return false;
         };
-        let Some(owner_type) = parse_id(&owner_unit.content_id) else {
+        let Some(owner_type) = parse_id(owner_unit.content_id) else {
             return false;
         };
         let Some(unit_def) = context.content.catalog.units.get(&owner_type) else {

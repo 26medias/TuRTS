@@ -301,7 +301,7 @@ fn valid_orders(
 ) -> bool {
     let Some(constructor) = units
         .get(&queue.constructor.0)
-        .and_then(|unit| ContentId::parse(&unit.content_id).ok())
+        .and_then(|unit| ContentId::parse(unit.content_id).ok())
         .and_then(|id| context.content.catalog.units.get(&id))
         .and_then(|unit| unit.constructor.as_ref())
     else {
@@ -434,7 +434,7 @@ fn repairer_definition<'a>(
     if !own_unit(context, units, removed, repairer) {
         return None;
     }
-    let id = ContentId::parse(&units.get(&repairer)?.content_id).ok()?;
+    let id = ContentId::parse(units.get(&repairer)?.content_id).ok()?;
     context.content.catalog.units.get(&id)?.repairer.as_ref()
 }
 

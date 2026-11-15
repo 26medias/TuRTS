@@ -820,14 +820,14 @@ fn second_install_is_atomic_and_a_fresh_match_has_no_old_memory() {
             .unwrap();
     let archive = PackageArchive::parse(&bytes).unwrap();
     let (file, map) = archive.maps().unwrap().remove(0);
-    let error = stage_package(
+    let Err(error) = stage_package(
         app.world(),
         archive.content().unwrap(),
         SourceDef { file, value: map },
         20,
-    )
-    .err()
-    .expect("a second live install must refuse");
+    ) else {
+        panic!("a second live install must refuse");
+    };
     assert_eq!(error.field_path, "map");
     assert_eq!(
         before,
@@ -1001,9 +1001,9 @@ fn cached_circle_deltas_match_full_rebuilds_across_routes_radius_changes_and_tea
             );
             let mut rebuilt = prepared(sharing, 10);
             rebuilt.update(step, ObservationPhase::Completed, vec![], vec![], sources);
-            for viewer in 0..usize::from(SLOT_COUNT) {
+            for (viewer, accumulated) in explored.iter_mut().enumerate() {
                 let expected = &rebuilt.coverage[viewer];
-                for (seen, current) in explored[viewer].iter_mut().zip(expected.observed.iter()) {
+                for (seen, current) in accumulated.iter_mut().zip(expected.observed.iter()) {
                     *seen |= current;
                 }
                 assert_eq!(
@@ -1013,7 +1013,7 @@ fn cached_circle_deltas_match_full_rebuilds_across_routes_radius_changes_and_tea
                 assert_eq!(incremental.coverage[viewer].observed, expected.observed);
                 assert_eq!(
                     incremental.coverage[viewer].explored.as_ref(),
-                    explored[viewer]
+                    &*accumulated
                 );
             }
             assert!(incremental.cached_source_cell_bytes() <= MAX_CACHED_SOURCE_CELL_BYTES);

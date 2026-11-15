@@ -87,12 +87,12 @@ impl StateTransactions {
         }
     }
     fn apply_early_cancellation(&mut self) {
-        if let Some((entity, stamp)) = self.early_cancel.take() {
-            if self.ensure_context(entity, &stamp) {
-                self.restricted = true;
-                if let Some(assembler) = self.assembler.as_mut() {
-                    assembler.cancel(&stamp);
-                }
+        if let Some((entity, stamp)) = self.early_cancel.take()
+            && self.ensure_context(entity, &stamp)
+        {
+            self.restricted = true;
+            if let Some(assembler) = self.assembler.as_mut() {
+                assembler.cancel(&stamp);
             }
         }
     }
