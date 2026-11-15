@@ -861,3 +861,64 @@ fn automatic_retarget_keeps_fractional_cost_debt_between_real_damaged_targets() 
             .contains("fractional cost debt")
     );
 }
+
+#[test]
+fn paid_site_cancel_replays_original_balance_and_inventory_refunds() {
+    use bevy::prelude::{IntoScheduleConfigs, World};
+    let mut fixture = Fixture::new();
+    mixed_costs(&mut fixture, 2000, 7, 5, 100);
+    let mut app = fixture.app();
+    construction::construct(
+        app.world_mut(),
+        SlotId(0),
+        2,
+        cid("build_relay"),
+        Vec2::new(40., 30.),
+    )
+    .unwrap();
+    let initial = turts_sim::audit_state(app.world_mut());
+    let site = *initial.economy.construction.sites.keys().next().unwrap();
+    app.add_systems(
+        bevy_app::FixedUpdate,
+        (move |world: &mut World| {
+            if world.resource::<turts_sim::Tick>().0 == 22 {
+                construction::cancel_site(world, SlotId(0), site).unwrap();
+            }
+        })
+        .in_set(turts_sim::SimSet::Commands),
+    );
+    let mut records = start(&mut app);
+    ticks(&mut app, &mut records, 24);
+    assert_records("site-cancel-mixed-refund", &records);
+    let final_state = turts_sim::audit_state(app.world_mut());
+    assert!(
+        !final_state
+            .raw_units
+            .iter()
+            .any(|unit| unit.unit_id == site)
+    );
+    assert_eq!(
+        final_state
+            .economy
+            .balances
+            .iter()
+            .find(|row| row.resource == cid("credits"))
+            .unwrap()
+            .on_hand,
+        1000
+    );
+    assert_eq!(
+        final_state
+            .economy
+            .inventories
+            .iter()
+            .find(|row| row.unit == 2)
+            .unwrap()
+            .items
+            .iter()
+            .find(|row| row.resource == cid("ore"))
+            .unwrap()
+            .on_hand,
+        100
+    );
+}
