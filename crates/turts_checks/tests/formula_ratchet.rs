@@ -64,6 +64,17 @@ const ROOTS: [&str; 4] = [
 const BASELINE: &[(&str, Counts)] = &[
     ("crates/turts_client/src/camera.rs", [0, 0, 1, 0, 0]),
     ("crates/turts_client/src/feedback.rs", [0, 0, 2, 0, 0]),
+    // Paid-work HUD refunds scale authoritative charged rows, rather than predicted
+    // progress. Keep the exact count of this validated refund-ratio adapter.
+    (
+        "crates/turts_client/src/widgets/sources/hud.rs",
+        [1, 0, 0, 0, 0],
+    ),
+    // Site cancellation emits the exact refund from its original charged endpoints.
+    (
+        "crates/turts_sim/src/economy/construction.rs",
+        [1, 0, 0, 0, 0],
+    ),
     // L0-API1: the one mapping of the schema filter to the rule relation, an exhaustive match of
     // five paths. The five copies of the relation match (core_adapter 3, cursor 6, combat 3,
     // run 3: 15 paths) are gone; they call `turts_rules::relation` through this mapping.

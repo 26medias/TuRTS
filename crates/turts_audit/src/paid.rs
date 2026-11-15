@@ -951,7 +951,7 @@ fn refund_rows(
 }
 fn validate_refunds(operation: &OperationAudit) -> Result<Amounts, String> {
     use turts_sim::EconomyEventKind;
-    let mut credits = Amounts::new();
+    let mut refund_totals = Amounts::new();
     for event in &operation.events {
         if let EconomyEventKind::Destroyed { unit, cause, .. } = &event.kind
             && !matches!(
@@ -976,7 +976,7 @@ fn validate_refunds(operation: &OperationAudit) -> Result<Amounts, String> {
                     return Err("manual refund differs from actual paid stage ratio".into());
                 }
                 for (key, amount) in sum(&expected)? {
-                    *credits.entry(key).or_default() += amount;
+                    *refund_totals.entry(key).or_default() += amount;
                 }
             }
             EconomyEventKind::DestructionRefunded {
@@ -1084,13 +1084,13 @@ fn validate_refunds(operation: &OperationAudit) -> Result<Amounts, String> {
                     return Err("destruction refund credited/discarded split differs from destination headroom".into());
                 }
                 for (key, amount) in expected_credits {
-                    *credits.entry(key).or_default() += amount;
+                    *refund_totals.entry(key).or_default() += amount;
                 }
             }
             _ => {}
         }
     }
-    Ok(credits)
+    Ok(refund_totals)
 }
 
 fn progress_step(state: &AuditState, job: &Job) -> Result<u64, String> {
