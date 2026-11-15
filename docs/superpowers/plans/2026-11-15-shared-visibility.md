@@ -89,3 +89,13 @@ After focused checks and review fixes, run the required full gates once on the a
 Run SV6 and final `docs/qa/cold-play.md` probes before asking the CEO to play.
 Update README progress and write a short handoff with verified limits and remaining M5 work.
 Merge only the fully accepted milestone under standing authorization. Do not push main.
+
+## Integration status
+
+SDK15 is accepted on local main at `bc634312`. Main was not pushed.
+API16, protocol9, authoritative phase permissions, hidden-target actions, memory, client activation, and fog presentation are integrated.
+Focused native results: authoring 4 PASS; rules 5 PASS; protocol assembly 7 PASS; simulation 16 PASS; client fixture/activation 7 PASS; verified-map guards 2 PASS.
+Independent checks: export 4 PASS; real human wire 1 PASS; outbound 5 PASS; exact vendored socket/permit tests 4 PASS.
+Current owners: publication agent fixes ordered pipelining and builds SV7; client agent fixes allocation preflight; root integrates and runs browser checks; the same foundation reviewer covers the final transport correction.
+Next checks: allocation preflight, new-match isolation, ordered delayed-ACK transport, SV6 browsers, SV7 frozen measurement, final full gates and cold-play probes.
+The qualified fog map identity is limited to 512 UTF-8 bytes so repeated stamps fit the fixed frame cap. Live hot package replacement is not part of this API; second installation refuses atomically, and each new match uses a fresh world.
