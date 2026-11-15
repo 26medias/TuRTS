@@ -200,8 +200,28 @@ impl TerrainPhase {
                 else {
                     return false;
                 };
-                flat &= low == high && height.is_none_or(|height| height == low);
-                height = Some(low);
+                if low == high {
+                    flat &= height.is_none_or(|height| height == low);
+                    height = Some(low);
+                } else {
+                    let left = min.x.max(cx * self.chunk_width);
+                    let right = max
+                        .x
+                        .min((cx * self.chunk_width).saturating_add(self.chunk_width - 1));
+                    let bottom = min.y.max(cy * self.chunk_width);
+                    let top = max
+                        .y
+                        .min((cy * self.chunk_width).saturating_add(self.chunk_width - 1));
+                    for y in bottom..=top {
+                        for x in left..=right {
+                            let Some(level) = self.planning_elevation(viewer, Cell { x, y }) else {
+                                return false;
+                            };
+                            flat &= height.is_none_or(|height| height == level);
+                            height = Some(level);
+                        }
+                    }
+                }
             }
         }
         flat

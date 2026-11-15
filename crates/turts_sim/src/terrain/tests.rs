@@ -1,6 +1,40 @@
 use super::*;
 
 #[test]
+fn flat_subrectangle_certificates_exclude_other_heights_in_the_same_chunk() {
+    use std::collections::BTreeMap;
+    use turts_rules::terrain::geometry::Cell;
+    let fixture = Fixture::configured(20, 100, 20, |_catalog, map| {
+        let terrain = map.terrain.as_mut().unwrap();
+        terrain.chunk_width = 4;
+        terrain.initial_heights = vec![TerrainHeightRect {
+            cells: TerrainRect {
+                min: TerrainCell { x: 3, y: 3 },
+                max: TerrainCell { x: 4, y: 4 },
+            },
+            elevation: 19,
+        }];
+    });
+    let world = fixture.app.world();
+    let truth = world.resource::<TerrainState>();
+    let phase = super::phase(world, ObservationPhase::Completed).unwrap();
+    let min = Cell { x: 0, y: 0 };
+    let flat_max = Cell { x: 3, y: 2 };
+    let mixed_max = Cell { x: 3, y: 3 };
+    let mut truth_lease = BTreeMap::new();
+    assert!(truth.rectangle_certificate(min, flat_max, &mut truth_lease));
+    assert!(!truth.rectangle_certificate(min, mixed_max, &mut BTreeMap::new()));
+    assert_eq!(truth_lease.len(), 1);
+    for viewer in 0..turts_mod_api::SLOT_COUNT {
+        let mut lease = BTreeMap::new();
+        assert!(phase.planning_rectangle(viewer, min, flat_max, &mut lease));
+        assert!(!phase.planning_rectangle(viewer, min, mixed_max, &mut BTreeMap::new()));
+        assert_eq!(lease.len(), 1);
+        assert!(phase.planning_lease_valid(viewer, &lease));
+    }
+}
+
+#[test]
 fn phase_occupancy_matches_the_original_per_cell_body_scan() {
     use turts_rules::terrain::geometry::{Budget, Cell, Point};
     let mut fixture = Fixture::new(20, 100, 20);

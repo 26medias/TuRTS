@@ -330,9 +330,28 @@ impl TerrainState {
                     return false;
                 };
                 lease.insert(index, chunk.revision);
-                flat &= chunk.minimum == chunk.maximum
-                    && height.is_none_or(|height| height == chunk.minimum);
-                height = Some(chunk.minimum);
+                if chunk.minimum == chunk.maximum {
+                    flat &= height.is_none_or(|height| height == chunk.minimum);
+                    height = Some(chunk.minimum);
+                } else {
+                    let left = minimum.x.max(cx * self.chunk_width);
+                    let right = maximum
+                        .x
+                        .min((cx * self.chunk_width).saturating_add(self.chunk_width - 1));
+                    let bottom = minimum.y.max(cy * self.chunk_width);
+                    let top = maximum
+                        .y
+                        .min((cy * self.chunk_width).saturating_add(self.chunk_width - 1));
+                    for y in bottom..=top {
+                        for x in left..=right {
+                            let Some(level) = self.elevation(Cell { x, y }) else {
+                                return false;
+                            };
+                            flat &= height.is_none_or(|height| height == level);
+                            height = Some(level);
+                        }
+                    }
+                }
             }
         }
         flat
