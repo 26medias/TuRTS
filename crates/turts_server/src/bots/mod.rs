@@ -113,6 +113,8 @@ pub(crate) struct BotHost {
     pub private_projection_scans: u64,
     pub decisions: u64,
     limits: BotLimitsConfig,
+    installation: turts_audit::ActorInstallation,
+    installation_recorded: bool,
 }
 impl BotHost {
     pub fn actors(&self) -> Vec<BotActor> {
@@ -157,6 +159,7 @@ fn install_with_registry_and_limits(
     let hz = app.world().resource::<SimClock>().tick_hz;
     let mut slots = BTreeSet::new();
     let mut bots = Vec::new();
+    let mut installed_bots = Vec::new();
     for (index, config) in configuration.iter().enumerate() {
         let field = format!("bots[{index}]");
         if !slots.insert(config.slot) {
@@ -182,6 +185,13 @@ fn install_with_registry_and_limits(
             slot: config.slot,
             profile: id,
         };
+        installed_bots.push(turts_audit::ActorBotInstallation {
+            slot: config.slot,
+            profile: actor.profile.clone(),
+            seed: config.seed,
+            profile_hash: turts_audit::actor_profile_hash(&profile)
+                .map_err(|e| format!("{field}.profile: {e}"))?,
+        });
         let controllers = registry
             .activate(
                 &actor,
@@ -207,6 +217,18 @@ fn install_with_registry_and_limits(
             last_diagnostic: None,
         });
     }
+    let installation = turts_audit::ActorInstallation {
+        locked_package_hash: app
+            .world()
+            .get_resource::<session::Advertised>()
+            .ok_or("bot installation requires a locked package advertisement")?
+            .lockfile_hash
+            .clone(),
+        engine_api: turts_mod_api::ENGINE_API_VERSION.to_string(),
+        protocol: u32::from(turts_net_protocol::NET_PROTOCOL_VERSION),
+        bots: installed_bots,
+        limits: artifact_limits(limits)?,
+    };
     actors::install_bot_actors(
         app.world_mut(),
         &bots.iter().map(|b| b.actor.clone()).collect::<Vec<_>>(),
@@ -219,6 +241,8 @@ fn install_with_registry_and_limits(
         private_projection_scans: 0,
         decisions: 0,
         limits,
+        installation,
+        installation_recorded: false,
     });
     app.add_systems(
         FixedPreUpdate,
@@ -229,6 +253,24 @@ fn install_with_registry_and_limits(
     );
     Ok(())
 }
+fn artifact_limits(limits: BotLimitsConfig) -> Result<turts_audit::ActorOperatorLimits, String> {
+    Ok(turts_audit::ActorOperatorLimits {
+        queries: limits.queries,
+        candidates: limits.candidates,
+        rows: limits.rows,
+        proposals: limits.proposals,
+        commands: limits.commands,
+        affected_units: limits.affected_units,
+        pending_requests: limits.pending_requests,
+        pending_accounts: limits.pending_accounts,
+        projection_rows: u64::try_from(limits.projection_rows)
+            .map_err(|_| "bot projection limit does not fit the replay artifact")?,
+        lease_steps: 8,
+        page_rows: 64,
+        cursor_records: 1024,
+    })
+}
+
 fn coordinator_limits(limits: BotLimitsConfig) -> CoordinatorLimits {
     CoordinatorLimits {
         commands: limits.commands,
@@ -282,6 +324,16 @@ fn drive_inner(world: &mut World, host: &mut BotHost, execution: &mut BotExecuti
     // Recorded-command replay never regenerates submissions, including its first tick.
     if execution.mode == BotExecutionMode::RecordedCommands {
         return;
+    }
+    if !host.installation_recorded {
+        if let Err(error) = actors::record_installation(
+            world,
+            turts_audit::ActorLogRecord::Installation(host.installation.clone()),
+        ) {
+            execution.error = Some(error);
+            return;
+        }
+        host.installation_recorded = true;
     }
     let tick = world.resource::<Tick>().0;
     if execution.last_scheduler_tick == Some(tick) {
