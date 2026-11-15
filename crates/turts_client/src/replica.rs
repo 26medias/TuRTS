@@ -125,8 +125,8 @@ pub enum SnapshotOutcome {
     Invalid,
 }
 
-/// How many health changes the replica keeps for each unit (design D 9, row DBG1). Without a
-/// window, the trace grows in each fight, and each delta clones it (`Replica::candidate`).
+/// How many health changes the replica keeps for each unit (design D 9, row DBG1).
+/// Atomic staging keeps append steps and never copies the retained history.
 pub const HEALTH_TRACE_WINDOW: usize = 64;
 
 /// Why the replica asked for a `Snapshot`. Each reason has its own counter in the debug state.
