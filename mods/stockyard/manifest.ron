@@ -7,7 +7,7 @@
   combat: ["combat.ron"],
   visual_effects: ["effects/combat.ron"],
   visuals: ["visuals/base.ron", "visuals/builder.ron", "visuals/barracks.ron", "visuals/worker.ron", "visuals/soldier.ron", "visuals/swordsman.ron", "visuals/warrior.ron", "visuals/tower.ron", "visuals/trees.ron"],
-  resources: ["resources/wood.ron", "resources/credits.ron"], nodes: ["nodes/trees.ron"],
+  resources: ["resources/wood.ron", "resources/credits.ron", "resources/beds.ron"], nodes: ["nodes/trees.ron"],
   production: ["production/barracks.ron", "production/worker.ron", "production/soldier.ron", "production/swordsman.ron", "production/warrior.ron", "production/tower.ron"],
   orders: ["orders/rally.ron", "orders/move.ron", "orders/stop.ron", "orders/attack.ron", "orders/gather.ron", "orders/produce.ron", "orders/construct.ron", "orders/cancel.ron", "orders/rules.ron"],
   interface: ["interface/hud.ron"], input: ["input/bindings.ron"], assets: ["assets/assets.ron"], match: ["match.ron"],

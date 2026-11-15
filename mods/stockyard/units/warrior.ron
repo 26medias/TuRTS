@@ -1,4 +1,4 @@
-(id: "warrior", name: "Warrior", footprint: Circle(radius: 0.6), movement: Some((speed: 3.6)),
+(consumes: [(resource: "stockyard:beds", amount: 1)], id: "warrior", name: "Warrior", footprint: Circle(radius: 0.6), movement: Some((speed: 3.6)),
  inventory: None, gatherer: None, drop_off: None, producer: None,
  health: Some((max: 160)), armour: Some((class: "stockyard:heavy", flat: 2)),
  acquire: Some((range: 14.0, leash: 18.0)),

@@ -1,4 +1,4 @@
-(id: "tower", name: "Guard tower", footprint: Circle(radius: 1.0), movement: None,
+(provides: [(resource: "stockyard:beds", amount: 8)], id: "tower", name: "Guard tower", footprint: Circle(radius: 1.0), movement: None,
  inventory: None, gatherer: None, drop_off: None, producer: None,
  health: Some((max: 400)), armour: Some((class: "stockyard:structure", flat: 0)), acquire: Some((range: 7.5, leash: 0.0)),
  weapon: Some((range: 7.5, range_mode: TargetSurface, cooldown_ms: 800, damage: 18, damage_type: Some("stockyard:pierce"), ammo: None, targets: (slots: Enemy))),

@@ -9,6 +9,8 @@
         (centre: (x: 48.0, y: 19.0), size: (x: 16.0, y: 4.5), rotation_deg: 39.3, feather: 1.5, opacity: 0.8),
     ],
 )))), id: "field", size: (x: 64.0, y: 48.0), placements: [
+(unit: "stockyard:tower", owner_slot: 0, pos: (x: 18.0, y: 30.0), contents: []),
+(unit: "stockyard:tower", owner_slot: 1, pos: (x: 46.0, y: 30.0), contents: []),
 (unit: "stockyard:builder", owner_slot: 0, pos: (x: 10, y: 16), contents: [(item: "stockyard:wood", amount: 500)]),
 (unit: "stockyard:barracks", owner_slot: 0, pos: (x: 10, y: 32), contents: [(item: "stockyard:wood", amount: 500)]),
 (unit: "stockyard:builder", owner_slot: 1, pos: (x: 54, y: 16), contents: [(item: "stockyard:wood", amount: 500)]),
