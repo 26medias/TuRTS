@@ -21,7 +21,7 @@ The subdirectory `shared-visibility/` holds independent review logs.
 | SV1 | `shared-visibility-authored-tests.log`: 4 authoring tests. `shared-visibility-new-match-tests.log`: populated second install refuses without changing knowledge; fresh match has no old memory. Client fixture tests load two structurally different packages, including renamed Stockyard. | These focused checks PASS. API-floor and full compatibility campaign remain. |
 | SV2 | `shared-visibility-core-tests-fixed.log`: 15 simulation tests and 5 shared-rule tests. Actual movement, construction completion, overlapping sources, teams, healthless/disabled sources, source death, and exact boundary rules pass. | Focused checks PASS. Full acceptance coverage remains under review. |
 | SV3 | Same simulation log: hidden movement/death equality, stale sightings, observed empty locations, whole-oldest-tick retention, sticky truncation, and bounded large-circle cache. | Focused checks PASS. Long-cycle memory measurement remains. |
-| SV4 | `shared-visibility/review-export.log`, `review-human-wire.log`, `review-outbound-corrected.log`, and `review.md`. Initial protocol assembly tests: `shared-visibility-core-tests-fixed.log` (7 PASS). Client atomic tests: `shared-visibility-client-fixtures-tests.log` (7 PASS). Verified-map guards: `shared-visibility-client-identity-tests.log` (2 PASS). Allocation preflight: `shared-visibility-client-budget-tests-fixed.log` (3 PASS). | Existing focused checks PASS. Ordered delayed-ACK pipeline and runtime cap evidence remain. |
+| SV4 | `shared-visibility/review-export.log`, `review-human-wire.log`, `review-outbound-green.log`, and `review.md`. Initial protocol assembly tests: `shared-visibility-core-tests-fixed.log` (7 PASS). Client atomic tests: `shared-visibility-client-fixtures-tests.log` (7 PASS). Verified-map guards: `shared-visibility-client-identity-tests.log` (2 PASS). Allocation preflight: `shared-visibility-client-budget-tests-fixed.log` (3 PASS). | Existing focused checks PASS. Ordered delayed-ACK pipeline and runtime cap evidence remain. |
 | SV5 | Simulation hidden attack, queued target loss, extraction, and hidden/absent node tests pass. The independent simulation run includes repeated command replay across all phase knowledge bases: `shared-visibility/review-sim-visibility.log`. | These checks PASS. Full public placement/query metadata coverage remains. |
 | SV6 | Public two-human scouting fixture and browser driver are implemented. | Browser run and final cold-play probes remain. |
 | SV7 | Frozen workload is specified. Sender throughput correction and measurement harness are in progress. | Not measured. No performance pass claimed. |
@@ -54,3 +54,21 @@ A circle that cannot fit uses the same exact geometry as a streaming iterator.
 The regression keeps three million-cell circles exact while only two are cached.
 
 No browser fog behavior, final-build cold readiness, 400-unit fog FPS, or SV7 CPU threshold is claimed yet.
+
+## Ordered transport correction
+
+One tagged StateTransactionFrame message now preserves Begin/Chunk/End order across batched delivery.
+The sender uses the registered Lightyear message ID and framing. It tracks real transport MessageIds.
+A bounded successor pipeline removes the per-transaction round-trip barrier.
+Cancellation uses the last issued stamp as a retirement watermark. The active complete view stays available.
+The focused spec clarification took two short turns with the same reviewer because the first turn found the cancellation gap.
+The plan passed one turn with that same reviewer. The original broad spec review was not repeated.
+
+New focused checks pass:
+
+- `shared-visibility-client-ordered-tests.log`: 3 checks, including two complete transactions in one application batch.
+- `shared-visibility-server-ordered-tests.log`: 5 outbound checks with registered raw framing and bounded real message credits.
+- `shared-visibility-human-wire-ordered-tests.log`: the real two-human Hello/slot-specific atomic knowledge test.
+- `shared-visibility-cancel-watermark-tests.log`: early successor cancellation preserves the active view and rejects the old chain.
+
+The sustained 50/100 ms delayed-ACK workload and final independent implementation check remain open.
