@@ -1070,6 +1070,7 @@ impl Transaction<'_> {
             super::income::on_activate(world, activation.unit, activation.income);
         }
         for removal in writes.removed {
+            super::repair::remove_unit(world, removal.unit);
             if let Some(mut identities) =
                 world.get_resource_mut::<crate::orders::PlainMoveOrderIdentities>()
             {

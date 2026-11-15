@@ -76,6 +76,7 @@ pub(crate) fn set_enabled(
         || unit.research.is_some()
         || unit.producer.is_some()
         || unit.constructor.is_some()
+        || unit.repairer.is_some()
         || unit.weapon.is_some();
     if !toggleable {
         return Err(RejectReason::NotToggleable);
