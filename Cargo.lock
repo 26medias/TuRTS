@@ -8734,6 +8734,7 @@ dependencies = [
  "sha2",
  "tar",
  "turts_mod_api",
+ "turts_rules",
 ]
 
 [[package]]
