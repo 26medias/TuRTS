@@ -367,6 +367,9 @@ pub fn queue_tick(world: &mut World, entity: Entity, slot: SlotId) -> Result<boo
         .or_else(|| sender.active.as_ref().map(|stamp| stamp.transaction_id));
     #[cfg(test)]
     let profile = crate::bot_profile::start();
+    // No recoverable operation can fail between recycling the old names and
+    // installing this complete replacement. Errors below discard this locally
+    // taken sender; live callers disconnect before another publication round.
     sender.tip = next;
     #[cfg(test)]
     crate::bot_profile::finish("visibility.old_tip_drop", profile);
@@ -624,6 +627,229 @@ mod tests {
         };
         sender.full(now).unwrap();
         sender
+    }
+    fn recycling_fixture() -> (App, Entity) {
+        let mut app = turts_sim::headless_app(20);
+        app.insert_resource(crate::stats::MatchId(17));
+        app.insert_resource(turts_sim::InstalledMapIdentity(
+            ContentId::parse("fixture:map").unwrap(),
+        ));
+        let mut view = turts_sim::WorldView::default();
+        view.units = (1..=2)
+            .map(|unit_id| turts_sim::world::UnitState {
+                unit_id,
+                content_id: "fixture:unit".into(),
+                owner_slot: 0,
+                facing: None,
+                pos: bevy::math::Vec2::new(unit_id as f32, 2.),
+            })
+            .collect();
+        app.insert_resource(turts_sim::CompletedWorld(view));
+        let entity = app.world_mut().spawn_empty().id();
+        assert!(queue_oversized(app.world_mut(), entity, SlotId(0)).unwrap());
+        (app, entity)
+    }
+    fn decode_pending(
+        pending: &mut Pending,
+        assembler: &mut turts_net_protocol::visibility_transaction::StateTransactionAssembler,
+    ) -> turts_net_protocol::visibility_transaction::StagedStateTransaction {
+        let mut staged = None;
+        while let Some(frame) = pending.encoded.next_frame() {
+            match frame {
+                StateTransactionFrame::Begin(begin) => assembler.begin(begin, 0).unwrap(),
+                StateTransactionFrame::Chunk(chunk) => assembler.chunk(&chunk).unwrap(),
+                StateTransactionFrame::End(end) => staged = assembler.end(&end).unwrap(),
+            }
+        }
+        assert!(pending.encoded.fully_queued());
+        pending.end_sent = true;
+        staged.unwrap()
+    }
+    #[test]
+    fn recycled_names_survive_ring_overflow_restart_and_the_following_old_endpoint() {
+        use turts_net_protocol::{
+            StateTransactionPayload, visibility_transaction::StateTransactionAssembler,
+        };
+        let (mut app, entity) = recycling_fixture();
+        let mut assembler = StateTransactionAssembler::new(
+            17,
+            ContentId::parse("fixture:map").unwrap(),
+            FRAME_LIMIT,
+        );
+        let now = Instant::now();
+        let active = {
+            let mut sender = app.world_mut().get_mut::<KnowledgeSender>(entity).unwrap();
+            let base = decode_pending(sender.pending.as_mut().unwrap(), &mut assembler);
+            let ack = assembler.activate(&base.stamp).unwrap();
+            assert!(sender.acknowledge(&ack.stamp));
+            sender.outstanding.extend([19, 20]);
+            let active = sender.active.clone().unwrap();
+            sender.tip.state.tick = 1;
+            let first = sender.stamp(Some(active.transaction_id)).unwrap();
+            let empty = StateTransactionPayload::Patch {
+                state: Box::new(turts_net_protocol::WorldDelta {
+                    tick: 1,
+                    base_tick: 0,
+                    ..Default::default()
+                }),
+                knowledge: None,
+                event_units: vec![],
+            };
+            sender.pending = Some(Pending::new(
+                encode_transaction(first.clone(), &empty, FRAME_LIMIT).unwrap(),
+                now,
+            ));
+            sender.tip.state.tick = 2;
+            let tail = sender.stamp(Some(first.transaction_id)).unwrap();
+            // This synthetic, unsent buffer fills the actual encoded ring storage.
+            // It tests allocation/restart boundaries, not authored game content.
+            let mut large = StateTransactionPayload::Patch {
+                state: Box::new(turts_net_protocol::WorldDelta {
+                    tick: 2,
+                    base_tick: 1,
+                    economy: turts_net_protocol::EconomyChanges {
+                        balances: vec![turts_net_protocol::BalanceState {
+                            resource: String::new(),
+                            on_hand: 0,
+                            reserved: 0,
+                        }],
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                }),
+                knowledge: None,
+                event_units: vec![],
+            };
+            let overhead = encode_transaction(tail.clone(), &large, FRAME_LIMIT)
+                .unwrap()
+                .retained_bytes();
+            if let StateTransactionPayload::Patch { state, .. } = &mut large {
+                state.economy.balances[0].resource =
+                    "x".repeat(MAX_POST_BASE_PATCH_BYTES as usize - overhead - 16);
+            }
+            let encoded = encode_transaction(tail, &large, FRAME_LIMIT).unwrap();
+            sender.patch_bytes = encoded.retained_bytes();
+            assert!(sender.patch_bytes <= MAX_POST_BASE_PATCH_BYTES as usize);
+            assert!(MAX_POST_BASE_PATCH_BYTES as usize - sender.patch_bytes < 64);
+            sender.patches.push_back(Pending::new(encoded, now));
+            active
+        };
+        {
+            let mut completed = app.world_mut().resource_mut::<turts_sim::CompletedWorld>();
+            completed.0.tick = 3;
+            completed.0.units[0].pos.x += 1.;
+        }
+        app.insert_resource(turts_sim::CommittedTick {
+            tick: 3,
+            ..Default::default()
+        });
+        assert!(queue_tick(app.world_mut(), entity, SlotId(0)).unwrap());
+        let restarted = {
+            let mut sender = app.world_mut().get_mut::<KnowledgeSender>(entity).unwrap();
+            assert_eq!(sender.active.as_ref(), Some(&active));
+            assert_eq!(sender.outstanding, BTreeSet::from([19, 20]));
+            assert!(sender.patches.is_empty());
+            assert_eq!(sender.patch_bytes, 0);
+            assert_eq!(sender.restarts.len(), 1);
+            assert!(
+                sender
+                    .tip
+                    .state
+                    .units
+                    .iter()
+                    .all(|u| u.content_id == "fixture:unit")
+            );
+            let full = decode_pending(sender.pending.as_mut().unwrap(), &mut assembler);
+            let StateTransactionPayload::Snapshot { state, .. } = &full.payload else {
+                panic!("overflow must restart a full basis")
+            };
+            assert_eq!(state.tick, 3);
+            assert!(state.units.iter().all(|u| u.content_id == "fixture:unit"));
+            assert_eq!(
+                assembler.active(),
+                Some(&active),
+                "decoding does not activate the replacement"
+            );
+            let ack = assembler.activate(&full.stamp).unwrap();
+            assert!(sender.acknowledge(&ack.stamp));
+            assert_eq!(
+                sender.outstanding,
+                BTreeSet::from([19, 20]),
+                "activation ACK does not release transport credit"
+            );
+            full.stamp
+        };
+        {
+            let mut completed = app.world_mut().resource_mut::<turts_sim::CompletedWorld>();
+            completed.0.tick = 4;
+            completed.0.units.retain(|u| u.unit_id != 2);
+        }
+        app.insert_resource(turts_sim::CommittedTick {
+            tick: 4,
+            removed: vec![2],
+            effects: vec![
+                turts_sim::economy::events::EffectRow::Fired {
+                    unit: 1,
+                    target: 2,
+                    weapon: 0,
+                    reduced: false,
+                },
+                turts_sim::economy::events::EffectRow::Destroyed { unit: 2 },
+            ],
+            ..Default::default()
+        });
+        assert!(queue_tick(app.world_mut(), entity, SlotId(0)).unwrap());
+        let mut sender = app.world_mut().get_mut::<KnowledgeSender>(entity).unwrap();
+        assert_eq!(sender.active.as_ref(), Some(&restarted));
+        let next = decode_pending(sender.pending.as_mut().unwrap(), &mut assembler);
+        let StateTransactionPayload::Patch { event_units, .. } = next.payload else {
+            panic!("next tick must be a patch")
+        };
+        let old = event_units.iter().find(|u| u.unit.unit_id.0 == 2).unwrap();
+        assert_eq!(old.unit.content_id, "fixture:unit");
+        assert_eq!(old.basis.tick, 3);
+    }
+    #[test]
+    fn fatal_sequence_exhaustion_discards_the_taken_sender_without_corrupting_the_active_view() {
+        use turts_net_protocol::{
+            StateTransactionPayload, visibility_transaction::StateTransactionAssembler,
+        };
+        let (mut app, entity) = recycling_fixture();
+        let mut assembler = StateTransactionAssembler::new(
+            17,
+            ContentId::parse("fixture:map").unwrap(),
+            FRAME_LIMIT,
+        );
+        let base = {
+            let mut sender = app.world_mut().get_mut::<KnowledgeSender>(entity).unwrap();
+            let base = decode_pending(sender.pending.as_mut().unwrap(), &mut assembler);
+            let ack = assembler.activate(&base.stamp).unwrap();
+            assert!(sender.acknowledge(&ack.stamp));
+            sender.next_id = u64::MAX;
+            base
+        };
+        {
+            let mut view = app.world_mut().resource_mut::<turts_sim::CompletedWorld>();
+            view.0.tick = 1;
+            view.0.units[0].pos.x += 1.;
+        }
+        let failure = queue_tick(app.world_mut(), entity, SlotId(0)).unwrap_err();
+        assert!(failure.contains("sequence exhausted"));
+        assert!(
+            app.world().get::<KnowledgeSender>(entity).is_none(),
+            "fatal errors must not reinsert a partial cache; live callers disconnect"
+        );
+        assert_eq!(assembler.active(), Some(&base.stamp));
+        let StateTransactionPayload::Snapshot { state, .. } = base.payload else {
+            panic!()
+        };
+        assert!(state.units.iter().all(|u| u.content_id == "fixture:unit"));
+        assert!(
+            turts_sim::completed_world(app.world())
+                .units
+                .iter()
+                .all(|u| u.content_id == "fixture:unit")
+        );
     }
     #[test]
     fn explicit_full_resync_counts_incomplete_replacements_but_not_completed_views() {
