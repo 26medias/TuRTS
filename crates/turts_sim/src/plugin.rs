@@ -66,13 +66,15 @@ pub enum SimSet {
     Collect,
 }
 
-/// Stable ordering anchors around completed sight, inside the Collect set.
-/// These markers add no systems or state. Hosts can bracket the sight phase
-/// without including earlier input collection or later full-world publication.
+/// Ordering anchors around the three immutable sight phases.
+/// These markers add no systems or state. Hosts can bracket sight without
+/// including tick bookkeeping, target acquisition, or full-world publication.
 #[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum CompletedVisibilityBoundary {
-    Before,
-    After,
+pub enum VisibilityBoundary {
+    StartBefore,
+    TacticalAfter,
+    CompletedBefore,
+    CompletedAfter,
 }
 
 /// Adds the simulation to an app that has `bevy_time::TimePlugin`. `MapBounds` is not inserted
@@ -163,9 +165,15 @@ impl Plugin for SimPlugin {
                 FixedPreUpdate,
                 crate::economy::transaction::begin_tick_audit
                     .in_set(SimSet::Advance)
+                    .in_set(VisibilityBoundary::StartBefore)
                     .before(advance_tick),
             )
-            .add_systems(FixedPreUpdate, advance_tick.in_set(SimSet::Advance))
+            .add_systems(
+                FixedPreUpdate,
+                advance_tick
+                    .in_set(SimSet::Advance)
+                    .in_set(VisibilityBoundary::StartBefore),
+            )
             .add_systems(
                 FixedPreUpdate,
                 crate::visibility::refresh_start
@@ -205,6 +213,7 @@ impl Plugin for SimPlugin {
                 FixedUpdate,
                 crate::economy::acquire::run_acquire
                     .in_set(SimSet::Acquire)
+                    .in_set(VisibilityBoundary::TacticalAfter)
                     .run_if(not_stopped),
             )
             .add_systems(
@@ -244,13 +253,13 @@ impl Plugin for SimPlugin {
             .add_systems(
                 FixedPostUpdate,
                 (
-                    collect_changes.in_set(CompletedVisibilityBoundary::Before),
+                    collect_changes.in_set(VisibilityBoundary::CompletedBefore),
                     crate::orders::writer::collect_order_inputs
-                        .in_set(CompletedVisibilityBoundary::Before),
+                        .in_set(VisibilityBoundary::CompletedBefore),
                     crate::visibility::refresh_completed,
-                    publish_completed_tick.in_set(CompletedVisibilityBoundary::After),
+                    publish_completed_tick.in_set(VisibilityBoundary::CompletedAfter),
                     crate::economy::transaction::finish_tick_audit
-                        .in_set(CompletedVisibilityBoundary::After),
+                        .in_set(VisibilityBoundary::CompletedAfter),
                 )
                     .chain()
                     .in_set(SimSet::Collect)
