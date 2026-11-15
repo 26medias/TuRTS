@@ -11,7 +11,10 @@ pub use navigation::{
     NavigationDiagnostics, privileged_diagnostics as privileged_navigation_diagnostics,
 };
 mod state;
-pub use audit::{TerrainAudit, privileged_audit};
+pub use audit::{
+    TerrainAudit, TerrainClaimAudit, TerrainColumnAudit, TerrainIntervalAudit, TerrainWorkAudit,
+    privileged_audit,
+};
 pub(crate) mod step;
 pub(crate) mod work;
 pub(crate) use state::{PreparedCellEdit, TerrainState, prepare};

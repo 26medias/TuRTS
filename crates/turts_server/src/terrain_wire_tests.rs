@@ -243,6 +243,7 @@ fn geological_pair(seed: u64) -> Fixture {
     )
     .unwrap();
     let map_id = ContentId::parse("quarry:field").unwrap();
+    fixture.app = turts_sim::headless_app(20);
     let staged = turts_sim::stage_package_with_terrain(
         fixture.app.world(),
         catalog,
@@ -580,6 +581,11 @@ fn tiny_all_visible_terrain_uses_atomic_sender_below_the_legacy_frame_limit() {
     terrain.rows = 2;
     terrain.chunk_width = 2;
     terrain.initial_heights.clear();
+    let turts_mod_api::TerrainGenerationDef::Version1 { bands } = &mut terrain.generation;
+    bands.retain(|band| band.bottom < terrain.initial_elevation);
+    if let Some(last) = bands.last_mut() {
+        last.top = terrain.initial_elevation;
+    }
     let resolved = turts_mod_runtime::terrain::validate_terrain_map(
         &fixture.archive.id(),
         &file,
@@ -587,6 +593,7 @@ fn tiny_all_visible_terrain_uses_atomic_sender_below_the_legacy_frame_limit() {
         &catalog,
     )
     .unwrap();
+    fixture.app = turts_sim::headless_app(20);
     let staged = turts_sim::stage_package_with_terrain(
         fixture.app.world(),
         catalog,
