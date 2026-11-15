@@ -1,5 +1,6 @@
 //! Shared bounded atomic-state framing. A staged payload is never an activated view.
 use crate::visibility::*;
+use serde::{Deserialize, Serialize};
 use turts_mod_api::{ContentId, ObservationPhase};
 
 #[path = "visibility_decode.rs"]
@@ -16,7 +17,7 @@ pub enum StateTransactionError {
     MissingChunks,
     MalformedPayload,
 }
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum StateTransactionFrame {
     Begin(StateTransactionBegin),
     Chunk(StateTransactionChunk),
@@ -24,12 +25,8 @@ pub enum StateTransactionFrame {
 }
 impl StateTransactionFrame {
     pub fn encoded_bytes(&self) -> Result<usize, StateTransactionError> {
-        let size = match self {
-            Self::Begin(value) => postcard::experimental::serialized_size(value),
-            Self::Chunk(value) => postcard::experimental::serialized_size(value),
-            Self::End(value) => postcard::experimental::serialized_size(value),
-        };
-        size.map_err(|_| StateTransactionError::MalformedPayload)
+        postcard::experimental::serialized_size(self)
+            .map_err(|_| StateTransactionError::MalformedPayload)
     }
 }
 fn capacity(
@@ -37,11 +34,13 @@ fn capacity(
     frame_limit: usize,
 ) -> Result<usize, StateTransactionError> {
     // Reserve the largest index and vector-length varints. Account transport headers in caller's limit.
-    let overhead = postcard::experimental::serialized_size(&StateTransactionChunk {
-        stamp: stamp.clone(),
-        index: u32::MAX,
-        bytes: Vec::new(),
-    })
+    let overhead = postcard::experimental::serialized_size(&StateTransactionFrame::Chunk(
+        StateTransactionChunk {
+            stamp: stamp.clone(),
+            index: u32::MAX,
+            bytes: Vec::new(),
+        },
+    ))
     .map_err(|_| StateTransactionError::InvalidShape)?;
     frame_limit
         .min(MAX_STATE_CHUNK_BYTES)
@@ -74,8 +73,9 @@ fn shape(
     {
         return Err(StateTransactionError::MemoryLimit);
     }
-    let control = postcard::experimental::serialized_size(begin)
-        .map_err(|_| StateTransactionError::InvalidShape)?;
+    let control =
+        postcard::experimental::serialized_size(&StateTransactionFrame::Begin(begin.clone()))
+            .map_err(|_| StateTransactionError::InvalidShape)?;
     if control > frame_limit.min(MAX_STATE_CHUNK_BYTES) {
         return Err(StateTransactionError::FrameLimit);
     }
@@ -424,19 +424,30 @@ impl StateTransactionAssembler {
         })
     }
     pub fn cancel(&mut self, stamp: &StateTransactionStamp) {
-        // Control cancellation can overtake a state-channel Begin. Retire its ID before receipt.
-        if stamp.basis.match_id != self.match_id || stamp.basis.map != self.map {
+        self.cancel_through(stamp, stamp.transaction_id);
+    }
+    /// Retire a superseded ordered suffix without rolling back the active view.
+    /// The control frame can arrive before any of the cancelled state frames.
+    pub fn cancel_through(&mut self, stamp: &StateTransactionStamp, through: u64) {
+        if stamp.basis.match_id != self.match_id
+            || stamp.basis.map != self.map
+            || through < stamp.transaction_id
+        {
             return;
         }
-        self.highest_seen = self.highest_seen.max(stamp.transaction_id);
+        self.highest_seen = self.highest_seen.max(through);
         if self
             .pending
             .as_ref()
-            .is_some_and(|pending| &pending.begin.stamp == stamp)
+            .is_some_and(|pending| pending.begin.stamp.transaction_id <= through)
         {
             self.pending = None;
         }
-        if self.staged.as_ref() == Some(stamp) {
+        if self
+            .staged
+            .as_ref()
+            .is_some_and(|staged| staged.transaction_id <= through)
+        {
             self.staged = None;
         }
     }

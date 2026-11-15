@@ -65,6 +65,8 @@ impl Plugin for ProtocolPlugin {
             .add_direction(NetworkDirection::ServerToClient);
         app.register_message::<LeaveMatch>()
             .add_direction(NetworkDirection::ClientToServer);
+        app.register_message::<turts_net_protocol::visibility_transaction::StateTransactionFrame>()
+            .add_direction(NetworkDirection::ServerToClient);
         app.register_message::<StateTransactionBegin>()
             .add_direction(NetworkDirection::ServerToClient);
         app.register_message::<StateTransactionChunk>()
