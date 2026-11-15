@@ -333,6 +333,16 @@ pub(crate) fn visual_effects(events: &[EconomyEvent]) -> Vec<EffectRow> {
                 reduced: *reduced,
             }),
             EconomyEventKind::Destroyed { unit, .. } => Some(EffectRow::Destroyed { unit: *unit }),
+            EconomyEventKind::IncomeCredited {
+                unit,
+                balance,
+                credited,
+            } => Some(EffectRow::Credited {
+                unit: *unit,
+                owner_slot: event.owner_slot,
+                resource: balance.clone(),
+                amount: *credited,
+            }),
             _ => None,
         })
         .collect()

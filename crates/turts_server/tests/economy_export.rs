@@ -76,6 +76,8 @@ fn job(id: u64, stage: JobStage, charged: Vec<CostView>, reserved: Vec<CostView>
 }
 fn fixture() -> WorldView {
     WorldView {
+        operating: None,
+
         match_outcomes: None,
         construction: Default::default(),
         tick: 42,

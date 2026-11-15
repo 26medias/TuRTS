@@ -276,7 +276,18 @@ pub fn cancel_production(
 
 /// Advance the head of each producer queue once, in ascending producer-id order.
 pub(crate) fn run_production(world: &mut World) {
-    super::construction::advance_sites(world);
+    let operating = world.contains_resource::<power::OperatingResources>();
+    let site_ids = if operating {
+        world
+            .resource::<super::construction::ConstructionState>()
+            .sites
+            .keys()
+            .copied()
+            .collect::<Vec<_>>()
+    } else {
+        super::construction::advance_sites(world);
+        Vec::new()
+    };
     let research_ids = super::research::research_station_ids(world);
     super::research::run_research(world);
     let machine_ids = super::machine::machine_ids(world);
@@ -294,95 +305,156 @@ pub(crate) fn run_production(world: &mut World) {
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();
-    for producer in producers {
-        let head_stage = world
-            .get_resource::<ProductionQueues>()
-            .and_then(|queues| queues.0.get(&producer))
+    if operating {
+        let mut work = site_ids
+            .into_iter()
+            .map(|id| (id, true))
+            .chain(producers.into_iter().map(|id| (id, false)))
+            .filter_map(|(id, site)| {
+                unit_entity(world, id)
+                    .and_then(|entity| world.get::<crate::Position>(entity))
+                    .map(|position| (position.0, id, site))
+            })
+            .collect::<Vec<_>>();
+        work.sort_by(|a, b| a.0.x.total_cmp(&b.0.x).then(a.0.y.total_cmp(&b.0.y)));
+        for (index, (position, id, site)) in work.iter().copied().enumerate() {
+            // Exact source ties have equal priority. Refuse both instead of selecting an id.
+            if index > 0 && work[index - 1].0 == position
+                || index + 1 < work.len() && work[index + 1].0 == position
+            {
+                super::operating::hold(world, id, RejectReason::IntegrityViolation);
+                continue;
+            }
+            if site {
+                super::construction::advance_site(world, id);
+            } else {
+                advance_producer(world, id);
+            }
+        }
+    } else {
+        for producer in producers {
+            advance_producer(world, producer);
+        }
+    }
+}
+
+fn advance_producer(world: &mut World, producer: u32) {
+    let head_stage = world
+        .get_resource::<ProductionQueues>()
+        .and_then(|queues| queues.0.get(&producer))
+        .and_then(|queue| queue.first())
+        .map(|job| job.stage);
+    if head_stage.is_none() {
+        return;
+    }
+    // Preserve M2 worlds without M3 state, but freeze every frozen legacy producer (a disabled
+    // one today). The one predicate of the freeze: `FreezeFacts::frozen`.
+    let frozen = freeze_facts_in_world(world, producer).frozen();
+    if frozen {
+        return;
+    }
+    let Some(owner_slot) = unit_entity(world, producer)
+        .and_then(|entity| world.get::<Owner>(entity))
+        .map(|owner| owner.0.0)
+    else {
+        return;
+    };
+    if world.contains_resource::<power::OperatingResources>() {
+        let ready = world
+            .resource::<ProductionQueues>()
+            .0
+            .get(&producer)
             .and_then(|queue| queue.first())
-            .map(|job| job.stage);
-        if head_stage.is_none() {
-            continue;
-        }
-        // Preserve M2 worlds without M3 state, but freeze every frozen legacy producer (a disabled
-        // one today). The one predicate of the freeze: `FreezeFacts::frozen`.
-        let frozen = freeze_facts_in_world(world, producer).frozen();
-        if frozen {
-            continue;
-        }
-        let Some(owner_slot) = unit_entity(world, producer)
-            .and_then(|entity| world.get::<Owner>(entity))
-            .map(|owner| owner.0.0)
-        else {
-            continue;
-        };
-        if head_stage != Some(JobStage::OutputBlocked) {
-            let rate = power::rate_factor(world, producer);
-            let _ = transaction::transact(world, |tx| {
-                let mut queues = tx.queues();
-                let mut changed = false;
-                let started = {
-                    let Some(job) = queues
-                        .0
-                        .get_mut(&producer)
-                        .and_then(|queue| queue.first_mut())
-                    else {
-                        return Ok(());
-                    };
-                    match job.stage {
-                        JobStage::Queued => {
-                            let charged = if let Some(reservation) = job.reservation.take() {
-                                transaction::consume_reservation(tx, &reservation)?;
-                                reservation.lines
-                            } else {
-                                job.charged.clone()
-                            };
-                            job.charged = charged.clone();
-                            job.stage = JobStage::Running;
-                            changed = true;
-                            Some((job.id.0, charged))
-                        }
-                        JobStage::Running => {
-                            let steps = job_step(job, frozen, rate);
-                            let elapsed = job
-                                .elapsed_ticks
-                                .checked_add(steps)
-                                .ok_or(RejectReason::ArithmeticOverflow)?;
-                            job.elapsed_ticks = elapsed.min(job.total);
-                            if job.elapsed_ticks >= job.total {
-                                // Task 7 supplies output allocation; until then a completed head blocks FIFO.
-                                job.stage = JobStage::OutputBlocked;
-                            }
-                            changed = steps > 0;
-                            None
-                        }
-                        JobStage::OutputBlocked => None,
-                    }
-                };
-                if changed {
-                    tx.stage_queues(queues);
-                }
-                if let Some((job, charged)) = started {
-                    tx.stage_event(
-                        owner_slot,
-                        EconomyEventKind::ProductionStarted {
-                            producer,
+            .filter(|job| {
+                job.stage == JobStage::OutputBlocked
+                    || job.stage == JobStage::Running
+                        && job.elapsed_ticks.saturating_add(job_step(
                             job,
-                            charged: charged.iter().map(event_cost_line).collect(),
-                        },
-                    )?;
+                            false,
+                            power::rate_factor(world, producer),
+                        )) >= job.total
+            })
+            .map(|job| job.recipe.clone());
+        if let Some(recipe) = ready {
+            if let Err(reason) = prepare_output_activation(world, producer, &recipe) {
+                super::operating::hold(world, producer, reason);
+                return;
+            }
+        }
+        super::operating::clear_hold(world, producer);
+    }
+    if head_stage != Some(JobStage::OutputBlocked) {
+        let rate = power::rate_factor(world, producer);
+        let _ = transaction::transact(world, |tx| {
+            let mut queues = tx.queues();
+            let mut changed = false;
+            let started = {
+                let Some(job) = queues
+                    .0
+                    .get_mut(&producer)
+                    .and_then(|queue| queue.first_mut())
+                else {
+                    return Ok(());
+                };
+                match job.stage {
+                    JobStage::Queued => {
+                        let charged = if let Some(reservation) = job.reservation.take() {
+                            transaction::consume_reservation(tx, &reservation)?;
+                            reservation.lines
+                        } else {
+                            job.charged.clone()
+                        };
+                        job.charged = charged.clone();
+                        job.stage = JobStage::Running;
+                        changed = true;
+                        Some((job.id.0, charged))
+                    }
+                    JobStage::Running => {
+                        let steps = job_step(job, frozen, rate);
+                        let elapsed = job
+                            .elapsed_ticks
+                            .checked_add(
+                                steps.min(
+                                    job.total
+                                        .checked_sub(job.elapsed_ticks)
+                                        .ok_or(RejectReason::IntegrityViolation)?,
+                                ),
+                            )
+                            .ok_or(RejectReason::ArithmeticOverflow)?;
+                        job.elapsed_ticks = elapsed.min(job.total);
+                        if job.elapsed_ticks >= job.total {
+                            // Task 7 supplies output allocation; until then a completed head blocks FIFO.
+                            job.stage = JobStage::OutputBlocked;
+                        }
+                        changed = steps > 0;
+                        None
+                    }
+                    JobStage::OutputBlocked => None,
                 }
-                Ok(())
-            });
-        }
-        let head = world
-            .get_resource::<ProductionQueues>()
-            .and_then(|q| q.0.get(&producer))
-            .and_then(|q| q.first())
-            .cloned();
-        if let Some(job) = head.filter(|job| job.stage == JobStage::OutputBlocked) {
-            let _ =
-                transaction::capture_operation(world, |world| try_output(world, producer, job.id));
-        }
+            };
+            if changed {
+                tx.stage_queues(queues);
+            }
+            if let Some((job, charged)) = started {
+                tx.stage_event(
+                    owner_slot,
+                    EconomyEventKind::ProductionStarted {
+                        producer,
+                        job,
+                        charged: charged.iter().map(event_cost_line).collect(),
+                    },
+                )?;
+            }
+            Ok(())
+        });
+    }
+    let head = world
+        .get_resource::<ProductionQueues>()
+        .and_then(|q| q.0.get(&producer))
+        .and_then(|q| q.first())
+        .cloned();
+    if let Some(job) = head.filter(|job| job.stage == JobStage::OutputBlocked) {
+        let _ = transaction::capture_operation(world, |world| try_output(world, producer, job.id));
     }
 }
 
@@ -453,7 +525,118 @@ pub fn freeze_facts_in_view(view: &super::views::WorldView, unit: u32) -> Freeze
 /// a research station read no rate: they call the function with the full rate.
 pub fn view_job_per_tick(view: &super::views::WorldView, producer: u32, stage: JobStage) -> u64 {
     let frozen = freeze_facts_in_view(view, producer).frozen();
-    job_step_per_tick(stage, frozen, power::full_rate(), 1).unwrap_or(0)
+    let (rate, q) = view
+        .operating
+        .as_ref()
+        .map_or((power::full_rate(), 1), |operating| {
+            let pair = operating
+                .rates
+                .iter()
+                .find(|row| row.unit == producer)
+                .map_or((1, 1), |row| row.producer);
+            (
+                turts_rules::Ratio::new(pair.0, pair.1).expect("validated operating rate"),
+                operating.rate_q,
+            )
+        });
+    let held = view
+        .operating
+        .as_ref()
+        .is_some_and(|operating| operating.holds.iter().any(|hold| hold.unit == producer));
+    job_step_per_tick(stage, frozen || held, rate, q).unwrap_or(0)
+}
+
+/// Exact absolute queue counters. The legacy public view remains in physical ticks.
+pub fn queue_progress_rows(
+    view: &super::views::WorldView,
+    queues: &[super::views::QueueView],
+    tick: u32,
+) -> Vec<super::events::RateRecordRow> {
+    queues
+        .iter()
+        .flat_map(|queue| {
+            queue.jobs.iter().map(move |job| {
+                let operating = view.operating.as_ref();
+                let raw = operating.and_then(|state| {
+                    state
+                        .jobs
+                        .iter()
+                        .find(|row| row.unit == queue.producer && row.job == job.id)
+                });
+                let hold = operating
+                    .and_then(|state| state.holds.iter().find(|hold| hold.unit == queue.producer))
+                    .filter(|_| job.stage != JobStage::Queued);
+                let per_tick = view_job_per_tick(view, queue.producer, job.stage);
+                let q = operating.map_or(1, |state| state.rate_q);
+                let held = raw.is_some_and(|row| row.held) || hold.is_some();
+                super::events::RateRecordRow {
+                    unit: queue.producer,
+                    owner_slot: queue.owner_slot,
+                    job: Some(job.id),
+                    done: raw.map_or(job.elapsed_ticks, |row| row.done),
+                    total: raw.map_or(job.duration_ticks, |row| row.total),
+                    per_tick,
+                    at_tick: tick,
+                    state: if held {
+                        super::events::RecordStateRow::Held
+                    } else {
+                        match job.stage {
+                            JobStage::OutputBlocked => super::events::RecordStateRow::OutputBlocked,
+                            JobStage::Running if per_tick > 0 && per_tick < q => {
+                                super::events::RecordStateRow::Slowed
+                            }
+                            JobStage::Queued | JobStage::Running => {
+                                super::events::RecordStateRow::Running
+                            }
+                        }
+                    },
+                    charged: Vec::new(),
+                    held,
+                    held_since_tick: hold.map_or_else(
+                        || raw.map_or(0, |row| row.held_since_tick),
+                        |hold| hold.since_tick,
+                    ),
+                }
+            })
+        })
+        .collect()
+}
+
+/// Send a new absolute point only when prediction or the work state changes.
+pub(crate) fn progress_changes(
+    before: &super::views::WorldView,
+    after: &super::views::WorldView,
+) -> Vec<super::events::RateRecordRow> {
+    if after.operating.is_none() {
+        return Vec::new();
+    }
+    let old = queue_progress_rows(before, &before.economy.queues, before.tick)
+        .into_iter()
+        .map(|row| ((row.unit, row.job), row))
+        .collect::<BTreeMap<_, _>>();
+    queue_progress_rows(after, &after.economy.queues, after.tick)
+        .into_iter()
+        .filter(|row| {
+            let Some(previous) = old.get(&(row.unit, row.job)) else {
+                return true;
+            };
+            let projected = previous
+                .done
+                .saturating_add(
+                    previous
+                        .per_tick
+                        .saturating_mul(u64::from(row.at_tick.saturating_sub(previous.at_tick))),
+                )
+                .min(previous.total);
+            projected != row.done
+                || previous.total != row.total
+                || previous.per_tick != row.per_tick
+                || previous.state != row.state
+                || previous.held != row.held
+                || previous.held_since_tick != row.held_since_tick
+                || previous.charged != row.charged
+        })
+        .collect()
 }
 
 /// The progress that `job` makes in one tick at `rate`: `Q x num / den` (design 6.4, "Progress in
@@ -511,6 +694,28 @@ pub(crate) fn rally_target(world: &World, producer: u32) -> Option<bevy_math::Ve
     let centre = world.get_resource::<crate::MapBounds>()?.size * 0.5;
     let direction = (centre - pos).try_normalize().unwrap_or(bevy_math::Vec2::Y);
     Some(pos + direction * (entry.radius + 4.0))
+}
+
+fn prepare_output_activation(
+    world: &World,
+    producer: u32,
+    recipe: &ContentId,
+) -> Result<(power::Activation, Option<super::income::IncomeActivation>), RejectReason> {
+    let owner = unit_entity(world, producer)
+        .and_then(|entity| world.get::<Owner>(entity))
+        .ok_or(RejectReason::UnknownUnit)?
+        .0
+        .0;
+    let catalog = &world
+        .get_resource::<InstalledCatalog>()
+        .ok_or(RejectReason::UnknownRecipe)?
+        .0;
+    let output = catalog
+        .production
+        .get(recipe)
+        .and_then(|recipe| catalog.units.get(&recipe.output_unit))
+        .ok_or(RejectReason::UnknownRecipe)?;
+    super::operating::prepare_activation(world, output, owner)
 }
 
 fn try_output(
@@ -666,6 +871,13 @@ fn try_output(
     let binding =
         crate::boot_m3::resolve_spawn_capability_binding(world, output, point, owner.0, None)?;
     let capability_rows = crate::boot_m3::install_capability_rows(output, binding);
+    let activation = if world.contains_resource::<power::OperatingResources>() {
+        Some(super::operating::prepare_activation(
+            world, output, owner.0,
+        )?)
+    } else {
+        None
+    };
     let spawned = transaction::transact(world, |tx| {
         let mut queues = tx.queues();
         let queue = queues
@@ -698,6 +910,9 @@ fn try_output(
             producer: output.producer.is_some(),
             capability_rows,
         });
+        if let Some((grant, clock)) = activation {
+            tx.stage_operating_activation(id, grant, clock)?;
+        }
         tx.stage_event(
             owner.0,
             EconomyEventKind::ProductionCompleted {

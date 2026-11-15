@@ -298,6 +298,9 @@ fn operating_supply_server_wire_and_replica_agree_on_private_zero_and_reset_stat
     let mut view = WorldView {
         tick: 1,
         operating: Some(OperatingView {
+            holds: Vec::new(),
+            jobs: Vec::new(),
+
             rate_q: 1,
             supply: vec![
                 row(0, "muster:power", 10, 8),

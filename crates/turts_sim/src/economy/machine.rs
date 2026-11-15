@@ -53,6 +53,7 @@ pub(crate) fn run_machines(world: &mut World) {
         let Some((owner_slot, recipe_id, duration_ticks)) = machine_recipe(world, machine) else {
             continue;
         };
+        let q = super::power::rate_q(world);
         let status = machine_status(world, machine);
         let _ = transaction::transact(world, |tx| {
             tx.mark_m3();
@@ -62,7 +63,15 @@ pub(crate) fn run_machines(world: &mut World) {
                 if status == Some(MachineStatus::InsufficientInput) {
                     return Err(RejectReason::InsufficientItems);
                 }
-                start_job(tx, machine, owner_slot, &recipe_id, duration_ticks, queue)?;
+                start_job(
+                    tx,
+                    machine,
+                    owner_slot,
+                    &recipe_id,
+                    duration_ticks,
+                    q,
+                    queue,
+                )?;
                 tx.stage_queues(queues);
                 return Ok(());
             }
@@ -93,17 +102,22 @@ pub(crate) fn run_machines(world: &mut World) {
                 job.stage,
                 frozen,
                 super::power::full_rate(),
-                1,
+                job.total.checked_div(job.duration_ticks).unwrap_or(1),
             )
             .unwrap_or(0);
             let elapsed = job
                 .elapsed_ticks
-                .checked_add(step)
-                .ok_or(RejectReason::ArithmeticOverflow)?
-                .min(job.duration_ticks);
+                .checked_add(
+                    step.min(
+                        job.total
+                            .checked_sub(job.elapsed_ticks)
+                            .ok_or(RejectReason::IntegrityViolation)?,
+                    ),
+                )
+                .ok_or(RejectReason::ArithmeticOverflow)?;
             let mut updated = job.clone();
             updated.elapsed_ticks = elapsed;
-            if elapsed == job.duration_ticks {
+            if elapsed == job.total {
                 if credit_outputs(tx, machine, &recipe_id)? {
                     queue.remove(0);
                     tx.stage_queues(queues);
@@ -281,6 +295,7 @@ fn start_job(
     owner_slot: u8,
     recipe_id: &ContentId,
     duration_ticks: u64,
+    q: u64,
     queue: &mut Vec<ProductionJob>,
 ) -> Result<(), RejectReason> {
     let recipe = tx
@@ -314,7 +329,9 @@ fn start_job(
         stage: JobStage::Running,
         elapsed_ticks: 0,
         duration_ticks,
-        total: duration_ticks,
+        total: duration_ticks
+            .checked_mul(q)
+            .ok_or(RejectReason::ArithmeticOverflow)?,
         held: false,
         held_since_tick: 0,
         charged: charged.clone(),

@@ -45,6 +45,8 @@ pub struct Site {
     pub done: u64,
     pub total: u64,
     pub(crate) charged: Vec<ReservationLine>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub constructor_when_short: Vec<turts_mod_api::WhenShort>,
 }
 
 #[derive(Resource, Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -293,6 +295,17 @@ fn place(
         .0
         .get(&recipe_id)
         .ok_or(RejectReason::UnknownRecipe)?;
+    let total = total
+        .checked_mul(super::power::rate_q(world))
+        .ok_or(RejectReason::ArithmeticOverflow)?;
+    let constructor_when_short = if world.contains_resource::<super::power::OperatingResources>() {
+        definition(world, constructor)
+            .and_then(|unit| unit.constructor.as_ref())
+            .map(|constructor| constructor.when_short.clone())
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
     let lines = recipe
         .costs
         .iter()
@@ -355,6 +368,7 @@ fn place(
                 done: 0,
                 total,
                 charged: lines,
+                constructor_when_short,
             },
         );
         tx.stage_construction(state);
@@ -437,72 +451,141 @@ pub(crate) fn run_construction(world: &mut World) {
 
 /// Add construction health by the shared difference rule. Damage is never erased at completion.
 pub(crate) fn advance_sites(world: &mut World) {
-    let sites = world.resource::<ConstructionState>().sites.clone();
-    for (id, site) in sites {
-        let Some(output) = definition(world, id).cloned() else {
-            continue;
-        };
-        let Some(entity) = unit_entity(world, id) else {
-            continue;
-        };
-        let Some(point) = world.get::<Position>(entity).map(|position| position.0) else {
-            continue;
-        };
-        let Some(done) = site.done.checked_add(1).map(|done| done.min(site.total)) else {
-            continue;
-        };
-        let completed = done == site.total;
-        let rows = if completed {
-            let Ok(binding) = crate::boot_m3::resolve_spawn_capability_binding(
-                world,
-                &output,
-                point,
-                site.owner_slot,
-                None,
-            ) else {
-                continue;
-            };
-            let mut rows = crate::boot_m3::install_capability_rows(&output, binding);
-            rows.health = None;
-            Some(rows)
-        } else {
-            None
-        };
-        let _ = transaction::transact(world, |tx| {
-            let mut state = tx.construction();
-            if let (Some(health), Some(placement)) = (output.health, output.placement) {
-                let ratio = turts_rules::Ratio::new(
-                    u64::from(placement.site_health.numerator),
-                    u64::from(placement.site_health.denominator),
-                )
-                .ok_or(RejectReason::IntegrityViolation)?;
-                let gain = turts_rules::heal::site_health_difference(
-                    health.max, ratio, site.done, done, site.total,
-                );
-                let current = tx.health(id)?;
-                tx.stage_health(
-                    id,
-                    current
-                        .checked_add(gain)
-                        .ok_or(RejectReason::ArithmeticOverflow)?
-                        .min(health.max),
-                );
-            }
-            if let Some(rows) = rows {
-                state.sites.remove(&id);
-                state.completed.push(id);
-                tx.stage_completed_building(id, rows)?;
-            } else {
-                state
-                    .sites
-                    .get_mut(&id)
-                    .ok_or(RejectReason::IntegrityViolation)?
-                    .done = done;
-            }
-            tx.stage_construction(state);
-            Ok(())
-        });
+    let ids = world
+        .resource::<ConstructionState>()
+        .sites
+        .keys()
+        .copied()
+        .collect::<Vec<_>>();
+    for id in ids {
+        advance_site(world, id);
     }
+}
+
+pub(crate) fn advance_site(world: &mut World, id: u32) {
+    let Some(site) = world
+        .resource::<ConstructionState>()
+        .sites
+        .get(&id)
+        .cloned()
+    else {
+        return;
+    };
+    let Some(output) = definition(world, id).cloned() else {
+        return;
+    };
+    let Some(entity) = unit_entity(world, id) else {
+        return;
+    };
+    let Some(point) = world.get::<Position>(entity).map(|position| position.0) else {
+        return;
+    };
+    let rate = super::power::rate_for_rules(world, site.owner_slot, &site.constructor_when_short);
+    let Some(step) = super::production::job_step_per_tick(
+        super::production::JobStage::Running,
+        false,
+        rate,
+        super::power::rate_q(world),
+    ) else {
+        return;
+    };
+    let Some(done) = site
+        .total
+        .checked_sub(site.done)
+        .and_then(|remaining| site.done.checked_add(step.min(remaining)))
+    else {
+        return;
+    };
+    let completed = done == site.total;
+    let activation = if completed && world.contains_resource::<super::power::OperatingResources>() {
+        match super::operating::prepare_activation(world, &output, site.owner_slot) {
+            Ok(grant) => Some(grant),
+            Err(reason) => {
+                super::operating::hold(world, id, reason);
+                return;
+            }
+        }
+    } else {
+        None
+    };
+    super::operating::clear_hold(world, id);
+    let rows = if completed {
+        let Ok(binding) = crate::boot_m3::resolve_spawn_capability_binding(
+            world,
+            &output,
+            point,
+            site.owner_slot,
+            None,
+        ) else {
+            return;
+        };
+        let mut rows = crate::boot_m3::install_capability_rows(&output, binding);
+        rows.health = None;
+        Some(rows)
+    } else {
+        None
+    };
+    let _ = transaction::transact(world, |tx| {
+        let mut state = tx.construction();
+        if let (Some(health), Some(placement)) = (output.health, output.placement) {
+            let ratio = turts_rules::Ratio::new(
+                u64::from(placement.site_health.numerator),
+                u64::from(placement.site_health.denominator),
+            )
+            .ok_or(RejectReason::IntegrityViolation)?;
+            let gain = turts_rules::heal::site_health_difference(
+                health.max, ratio, site.done, done, site.total,
+            );
+            let current = tx.health(id)?;
+            tx.stage_health(
+                id,
+                current
+                    .checked_add(gain)
+                    .ok_or(RejectReason::ArithmeticOverflow)?
+                    .min(health.max),
+            );
+        }
+        if let Some(rows) = rows {
+            state.sites.remove(&id);
+            state.completed.push(id);
+            tx.stage_completed_building(id, rows)?;
+            if let Some((grant, clock)) = activation {
+                tx.stage_operating_activation(id, grant, clock)?;
+            }
+        } else {
+            state
+                .sites
+                .get_mut(&id)
+                .ok_or(RejectReason::IntegrityViolation)?
+                .done = done;
+        }
+        tx.stage_construction(state);
+        Ok(())
+    });
+}
+
+fn site_hold(
+    view: &super::views::WorldView,
+    unit: u32,
+) -> Option<&super::operating::OperatingHold> {
+    view.operating
+        .as_ref()?
+        .holds
+        .iter()
+        .find(|hold| hold.unit == unit)
+}
+fn site_step(view: &super::views::WorldView, unit: u32, site: &Site) -> u64 {
+    if site_hold(view, unit).is_some() {
+        return 0;
+    }
+    let q = view
+        .operating
+        .as_ref()
+        .map_or(1, |operating| operating.rate_q);
+    let rate =
+        super::power::rate_for_rules_in_view(view, site.owner_slot, &site.constructor_when_short);
+    super::production::job_step_per_tick(super::production::JobStage::Running, false, rate, q)
+        .unwrap_or(0)
 }
 
 pub fn progress_rows(view: &super::views::WorldView) -> Vec<super::events::RateRecordRow> {
@@ -515,9 +598,20 @@ pub fn progress_rows(view: &super::views::WorldView) -> Vec<super::events::RateR
             job: None,
             done: site.done,
             total: site.total,
-            per_tick: 1,
+            per_tick: site_step(view, *id, site),
             at_tick: view.tick,
-            state: super::events::RecordStateRow::Running,
+            state: if site_hold(view, *id).is_some() {
+                super::events::RecordStateRow::Held
+            } else if super::power::rate_for_rules_in_view(
+                view,
+                site.owner_slot,
+                &site.constructor_when_short,
+            ) != turts_rules::Ratio::ONE
+            {
+                super::events::RecordStateRow::Slowed
+            } else {
+                super::events::RecordStateRow::Running
+            },
             charged: site
                 .charged
                 .iter()
@@ -530,8 +624,8 @@ pub fn progress_rows(view: &super::views::WorldView) -> Vec<super::events::RateR
                     amount: line.amount,
                 })
                 .collect(),
-            held: false,
-            held_since_tick: 0,
+            held: site_hold(view, *id).is_some(),
+            held_since_tick: site_hold(view, *id).map_or(0, |hold| hold.since_tick),
         })
         .collect()
 }

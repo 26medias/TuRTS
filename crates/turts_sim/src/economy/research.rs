@@ -121,6 +121,9 @@ pub(crate) fn queue_research(
             .ok_or(RejectReason::UnknownRecipe)?;
         (definition, duration_ticks)
     };
+    let total = duration_ticks
+        .checked_mul(super::power::rate_q(world))
+        .ok_or(RejectReason::ArithmeticOverflow)?;
     let stations = research_stations_for_slot(world, slot.0);
     let costs = definition
         .costs
@@ -178,7 +181,7 @@ pub(crate) fn queue_research(
             stage: JobStage::Queued,
             elapsed_ticks: 0,
             duration_ticks,
-            total: duration_ticks,
+            total,
             held: false,
             held_since_tick: 0,
             charged,
@@ -332,15 +335,20 @@ pub(crate) fn run_research(world: &mut World) {
                 head.stage,
                 frozen,
                 super::power::full_rate(),
-                1,
+                head.total.checked_div(head.duration_ticks).unwrap_or(1),
             )
             .unwrap_or(0);
             let elapsed = head
                 .elapsed_ticks
-                .checked_add(step)
-                .ok_or(RejectReason::ArithmeticOverflow)?
-                .min(head.duration_ticks);
-            if elapsed == head.duration_ticks {
+                .checked_add(
+                    step.min(
+                        head.total
+                            .checked_sub(head.elapsed_ticks)
+                            .ok_or(RejectReason::IntegrityViolation)?,
+                    ),
+                )
+                .ok_or(RejectReason::ArithmeticOverflow)?;
+            if elapsed == head.total {
                 let technology = head.recipe.clone();
                 queue.remove(0);
                 tx.stage_queues(queues);

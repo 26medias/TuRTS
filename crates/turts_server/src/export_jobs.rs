@@ -58,34 +58,12 @@ pub(super) fn queue_job_records(
     tick: u32,
     view: &turts_sim::WorldView,
 ) -> Vec<wire::JobProgress> {
-    use turts_sim::economy::production::JobStage;
-    queues
+    turts_sim::economy::production::queue_progress_rows(view, queues, tick)
         .iter()
-        .flat_map(|queue| {
-            queue.jobs.iter().map(move |job| wire::JobProgress {
-                producer: wire::UnitId(queue.producer),
-                job: wire::JobId(job.id),
-                progress: wire::RateRecord {
-                    done: job.elapsed_ticks,
-                    total: job.duration_ticks,
-                    // The rate that the sim applies: ONE function, called by the advance step of
-                    // the sim and here (`production::view_job_per_tick`). A disabled producer
-                    // keeps the stage `Running` and has rate 0.
-                    per_tick: turts_sim::economy::production::view_job_per_tick(
-                        view,
-                        queue.producer,
-                        job.stage,
-                    ),
-                    at_tick: tick,
-                    state: match job.stage {
-                        JobStage::OutputBlocked => wire::RecordState::OutputBlocked,
-                        JobStage::Queued | JobStage::Running => wire::RecordState::Running,
-                    },
-                    charged: Vec::new(),
-                    held: false,
-                    held_since_tick: 0,
-                },
-            })
+        .map(|row| wire::JobProgress {
+            producer: wire::UnitId(row.unit),
+            job: wire::JobId(row.job.expect("queue job identity")),
+            progress: rate_record(row),
         })
         .collect()
 }

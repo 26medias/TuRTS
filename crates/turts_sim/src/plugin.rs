@@ -356,6 +356,10 @@ fn publish_completed_tick(world: &mut World) {
             .collect()
     });
     let batch = CommittedTick {
+        job_progress: crate::economy::production::progress_changes(
+            &world.resource::<CompletedWorld>().0,
+            &completed,
+        ),
         supply,
         match_outcomes: (completed.match_outcomes
             != world.resource::<CompletedWorld>().0.match_outcomes)

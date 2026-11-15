@@ -867,6 +867,8 @@ mod tests {
         world.resource_mut::<ConstructionState>().sites.insert(
             3,
             super::super::construction::Site {
+                constructor_when_short: Vec::new(),
+
                 constructor: 1,
                 owner_slot: 0,
                 recipe: id("test:build"),
