@@ -45,6 +45,11 @@ pub enum EconomyEventKind {
         balance: ContentId,
         credited: u64,
     },
+    IncomeCredited {
+        unit: u32,
+        balance: ContentId,
+        credited: u64,
+    },
     ProductionQueued {
         producer: u32,
         job: u64,
