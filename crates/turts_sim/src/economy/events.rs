@@ -26,6 +26,12 @@ pub struct EconomyEvent {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum EconomyEventKind {
     /// Paid-work buffer flush. Intermediate debits remain in authoritative job/site state.
+    DestructionRefunded {
+        unit: u32,
+        desired: Vec<CostLine>,
+        credited: Vec<CostLine>,
+        discarded: Vec<CostLine>,
+    },
     ProgressCharged {
         unit: u32,
         job: u64,
@@ -221,7 +227,7 @@ pub enum EffectRow {
 #[derive(Resource, Debug, Clone, Default, PartialEq)]
 pub struct CommittedTick {
     pub repairs: Vec<super::repair::RepairRow>,
-    pub repairs_cleared: Vec<(u32, u8)>,
+    pub repairs_cleared: Vec<u32>,
     pub match_outcomes: Option<crate::outcome::MatchOutcomes>,
     pub tick: u32,
     pub spawned: Vec<UnitState>,

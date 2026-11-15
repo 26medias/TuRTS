@@ -332,6 +332,8 @@ pub struct CatalogNodeAudit {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CatalogUnitAudit {
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub health_max: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub repairer: Option<turts_mod_api::RepairerDef>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub provides: Vec<turts_mod_api::SupplyAmount>,
@@ -1059,7 +1061,9 @@ fn node_views(world: &World) -> Vec<NodeView> {
                 .collect()
         })
 }
-fn reservation_line_view(line: crate::economy::ledger::ReservationLine) -> ReservationLineView {
+pub(crate) fn reservation_line_view(
+    line: crate::economy::ledger::ReservationLine,
+) -> ReservationLineView {
     ReservationLineView {
         endpoint: match line.endpoint {
             crate::economy::ledger::Endpoint::Slot(slot) => ReservationEndpointView::Slot(slot),
@@ -1210,6 +1214,12 @@ pub fn audit_state(world: &mut World) -> AuditState {
                     .units
                     .iter()
                     .map(|(id, d)| CatalogUnitAudit {
+                        health_max: (c.units.values().any(|unit| unit.repairer.is_some())
+                            || c.production.values().any(|production| {
+                                production.payment == turts_mod_api::PaymentPolicy::ChargeOverTime
+                            }))
+                        .then(|| d.health.as_ref().map(|health| health.max))
+                        .flatten(),
                         repairer: d.repairer.clone(),
                         provides: d.provides.clone(),
                         consumes: d.consumes.clone(),
