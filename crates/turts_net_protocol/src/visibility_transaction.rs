@@ -298,6 +298,16 @@ impl StateTransactionAssembler {
                         .as_ref()
                         .is_none_or(|pending| pending.begin.stamp != *stamp))
     }
+    pub fn required_staging_bytes(
+        &self,
+        begin: &StateTransactionBegin,
+    ) -> Result<usize, StateTransactionError> {
+        let (bytes, _) = shape(begin, self.frame_limit)?;
+        bytes
+            .checked_add((begin.chunk_count as usize).div_ceil(8))
+            .and_then(|bytes| bytes.checked_add(4096))
+            .ok_or(StateTransactionError::MemoryLimit)
+    }
     pub fn retained_bytes(&self) -> usize {
         self.pending
             .as_ref()
@@ -383,6 +393,14 @@ impl StateTransactionAssembler {
         &mut self,
         end: &StateTransactionEnd,
     ) -> Result<Option<StagedStateTransaction>, StateTransactionError> {
+        self.end_with_budget(end, 0)
+    }
+    /// Reserve other held transport frames before decoding this transaction into owned tables.
+    pub fn end_with_budget(
+        &mut self,
+        end: &StateTransactionEnd,
+        reserved_bytes: usize,
+    ) -> Result<Option<StagedStateTransaction>, StateTransactionError> {
         if self.staged.as_ref() == Some(&end.stamp) || self.active.as_ref() == Some(&end.stamp) {
             return Ok(None);
         }
@@ -397,9 +415,12 @@ impl StateTransactionAssembler {
             return Err(StateTransactionError::MissingChunks);
         }
         let pending = self.pending.take().unwrap();
-        let remaining = MAX_PENDING_STATE_BYTES as usize
-            - pending.bytes.capacity()
-            - pending.received.capacity();
+        let remaining = (MAX_PENDING_STATE_BYTES as usize)
+            .checked_sub(pending.bytes.capacity())
+            .and_then(|left| left.checked_sub(pending.received.capacity()))
+            .and_then(|left| left.checked_sub(4096))
+            .and_then(|left| left.checked_sub(reserved_bytes))
+            .ok_or(StateTransactionError::MemoryLimit)?;
         let payload = decode::payload(&pending.bytes, remaining)?;
         if !payload_valid(&end.stamp, &payload) {
             return Err(StateTransactionError::InvalidStamp);
