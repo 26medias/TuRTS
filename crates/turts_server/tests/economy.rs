@@ -2176,6 +2176,48 @@ fn owner_report_projection_from_audit(
             }
         }
     }
+    // SDK14 reports the exact side-store records as well as the economy.
+    // The typed records above are derived from the independently validated
+    // audit, not from production export or the client's observed JSON.
+    let progress = serde_json::json!({
+        "sites":snapshot.records.sites.iter().map(|site|serde_json::json!({
+            "unit":site.unit.0,"production":site.production,"rate":site.progress,"value":site.progress.done
+        })).collect::<Vec<_>>(),
+        "jobs":snapshot.records.jobs.iter().map(|job|serde_json::json!({
+            "producer":job.producer.0,"job":job.job.0,"rate":job.progress,"value":job.progress.done
+        })).collect::<Vec<_>>(),
+        "construction_queues":state.economy.construction.held.iter()
+            .filter(|(constructor,orders)|!orders.is_empty() && state.raw_units.iter().any(|unit|unit.unit_id==**constructor && unit.owner_slot==slot))
+            .map(|(constructor,orders)|serde_json::json!({"constructor":constructor,"orders":orders.iter().map(|order|serde_json::json!({
+                "content":order.recipe.to_string(),"point":{"x":order.point.x,"y":order.point.y}
+            })).collect::<Vec<_>>() })).collect::<Vec<_>>()
+    });
+    let repairs = state
+        .economy
+        .repairs
+        .iter()
+        .filter(|repair| {
+            state
+                .raw_units
+                .iter()
+                .any(|unit| unit.unit_id == repair.repairer && unit.owner_slot == slot)
+        })
+        .map(|repair| turts_net_protocol::RepairRecord {
+            repairer: turts_net_protocol::UnitId(repair.repairer),
+            target: turts_net_protocol::UnitId(repair.target),
+            state: match &repair.state {
+                turts_sim::economy::repair::RepairStatus::Approaching => {
+                    turts_net_protocol::RepairState::Approaching
+                }
+                turts_sim::economy::repair::RepairStatus::Working => {
+                    turts_net_protocol::RepairState::Working
+                }
+                turts_sim::economy::repair::RepairStatus::WaitingForFunds(resource) => {
+                    turts_net_protocol::RepairState::WaitingForFunds(resource.to_string())
+                }
+            },
+        })
+        .collect::<Vec<_>>();
     serde_json::json!({
         "tick": snapshot.tick,
         "units": snapshot.units.iter().map(|unit| serde_json::json!({
@@ -2199,7 +2241,23 @@ fn owner_report_projection_from_audit(
         "research": snapshot.research,
         "health_trace": [],
         "unit_orders": snapshot.unit_orders,
+        "progress":progress,
+        "repairs":repairs,
     })
+}
+
+#[test]
+fn owner_report_keeps_sdk14_progress_and_repair_families_for_legacy_packages() {
+    let mut app = economy_fixture_app_at(20);
+    let state = turts_sim::audit_state(app.world_mut());
+    for slot in [0, 1] {
+        let expected = owner_report_projection_from_audit(&state, slot);
+        assert_eq!(
+            expected["progress"],
+            serde_json::json!({"construction_queues":[],"jobs":[],"sites":[]})
+        );
+        assert_eq!(expected["repairs"], serde_json::json!([]));
+    }
 }
 
 fn canonicalize_wire_snapshot(value: &mut serde_json::Value) {
@@ -2210,6 +2268,12 @@ fn canonicalize_wire_snapshot(value: &mut serde_json::Value) {
     }
     sort_by(&mut value["units"], "unit_id");
     sort_by(&mut value["unit_orders"], "unit");
+    sort_by(&mut value["repairs"], "repairer");
+    sort_by(&mut value["progress"]["sites"], "unit");
+    sort_by(&mut value["progress"]["construction_queues"], "constructor");
+    if let Some(jobs) = value["progress"]["jobs"].as_array_mut() {
+        jobs.sort_by_key(|job| (job["producer"].to_string(), job["job"].to_string()));
+    }
     // These protocol coordinates are f32. JSON number parsing may differ at
     // f64 precision while preserving the exact same f32 wire value.
     fn point_f32(point: &mut serde_json::Value) {
