@@ -369,7 +369,10 @@ mod tests {
         let sink =
             EconomyLogSink::create(&path, app.world().resource::<AuditTrail>(), initial).unwrap();
         app.insert_resource(sink);
-        app.add_systems(FixedLast, crate::economylog::capture_completed_tick);
+        app.add_systems(
+            FixedLast,
+            crate::economylog::capture_completed_tick.after(session::ParticipantTraceComplete),
+        );
         path
     }
     #[test]

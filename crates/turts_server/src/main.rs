@@ -156,10 +156,17 @@ fn run() -> Result<(), String> {
         app.insert_resource(RunTicks(ticks));
         app.add_systems(
             FixedLast,
-            (economylog::capture_completed_tick, exit_after_ticks).chain(),
+            (
+                economylog::capture_completed_tick.after(session::ParticipantTraceComplete),
+                exit_after_ticks,
+            )
+                .chain(),
         );
     } else {
-        app.add_systems(FixedLast, economylog::capture_completed_tick);
+        app.add_systems(
+            FixedLast,
+            economylog::capture_completed_tick.after(session::ParticipantTraceComplete),
+        );
     }
 
     let result = match app.run() {
