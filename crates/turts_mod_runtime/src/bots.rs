@@ -44,8 +44,8 @@ fn validate_bot(
     if bot.name.trim().is_empty() {
         return Err(fail("name", "must not be empty"));
     }
-    if bot.decision_ms == 0 || bot.decision_ms > 3_600_000 {
-        return Err(fail("decision_ms", "must be between 1 and 3600000"));
+    if bot.decision_ms == 0 {
+        return Err(fail("decision_ms", "must be positive"));
     }
     if bot.controllers.is_empty() || bot.controllers.len() > 32 {
         return Err(fail("controllers", "must contain 1 to 32 instances"));
@@ -66,6 +66,15 @@ fn validate_bot(
             &mut count,
             &mut bytes,
         )?;
+        let encoded_bytes = serde_json::to_vec(&c.config)
+            .map_err(|_| fail(&format!("{path}.config"), "configuration cannot be encoded"))?
+            .len();
+        if encoded_bytes > MAX_CONFIG_BYTES {
+            return Err(fail(
+                &format!("{path}.config"),
+                "encoded configuration exceeds 65536 bytes",
+            ));
+        }
         if c.quota.queries == 0
             || c.quota.candidates == 0
             || c.quota.rows == 0

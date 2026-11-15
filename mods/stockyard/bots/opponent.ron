@@ -41,6 +41,7 @@
    (key: "build_defenses", priority: 20, action: EnsureUnits(role: "defenses", count: 2, recipe: "tower")),
   ],
   recovery: [
+   (key: "restore_beds", priority: 110, action: EnsureSupply(resource: "stockyard:beds", amount: 4, provider_role: "defenses", recipe: "tower")),
    (key: "recover_worker", priority: 100, action: EnsureUnits(role: "workers", count: 1, recipe: "worker")),
    (key: "harvest", priority: 90, action: Gather(role: "workers", resource: "stockyard:wood", order: "gather")),
   ],

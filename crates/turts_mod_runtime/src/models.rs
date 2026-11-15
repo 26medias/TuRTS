@@ -689,7 +689,7 @@ pub fn validate_models(archive: &PackageArchive) -> Result<Vec<String>, ModError
             }
         }
     }
-    let content = archive.content()?;
+    let content = archive.content_for_catalog()?;
     let mut warnings = Vec::new();
     for (file, visual) in archive.visuals_unchecked()? {
         let Some(model) = visual.model else { continue };
