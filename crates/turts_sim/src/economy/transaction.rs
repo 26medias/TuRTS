@@ -340,6 +340,7 @@ pub(crate) fn finish_tick_audit(world: &mut World) {
 #[derive(Default)]
 struct WriteSet {
     operating_activations: Vec<OperatingActivationWrite>,
+    repairs: BTreeMap<u32, super::repair::RepairUnitState>,
     construction: Option<super::construction::ConstructionState>,
     completed_buildings: Vec<(u32, crate::boot_m3::PreparedCapabilityRows)>,
     accounts: BTreeMap<(Endpoint, ContentId), Account>,
@@ -413,6 +414,28 @@ fn transact_inner<R>(
 }
 
 impl Transaction<'_> {
+    /// Clone only this source row, including any staged update in the same transaction.
+    pub(crate) fn repair_state(&self, source: u32) -> super::repair::RepairUnitState {
+        self.writes
+            .repairs
+            .get(&source)
+            .cloned()
+            .or_else(|| {
+                self.world
+                    .get_resource::<super::repair::RepairRuntime>()
+                    .and_then(|state| state.units.get(&source).cloned())
+            })
+            .unwrap_or_default()
+    }
+
+    pub(crate) fn stage_repair_state(
+        &mut self,
+        source: u32,
+        state: super::repair::RepairUnitState,
+    ) {
+        self.writes.repairs.insert(source, state);
+    }
+
     /// Stage a grant from the common physical-order admission pass. No world state changes here.
     pub(crate) fn stage_operating_activation(
         &mut self,
@@ -922,6 +945,23 @@ impl Transaction<'_> {
 
     fn commit(self) -> Result<(), RejectReason> {
         self.preflight()?;
+        for (&source, state) in &self.writes.repairs {
+            if unit_entity(self.world, source).is_none()
+                || self.writes.removed.iter().any(|row| row.unit == source)
+            {
+                return Err(RejectReason::IntegrityViolation);
+            }
+            if let Some(action) = &state.action
+                && (unit_entity(self.world, action.target).is_none()
+                    || self
+                        .writes
+                        .removed
+                        .iter()
+                        .any(|row| row.unit == action.target))
+            {
+                return Err(RejectReason::TargetGone);
+            }
+        }
         let deactivate = self.operating_deactivations();
         let Transaction { world, mut writes } = self;
         if world.get_resource::<EconomyLedger>().is_none() {
@@ -933,6 +973,13 @@ impl Transaction<'_> {
             super::income::on_remove(world, unit);
         }
         transaction_m3::apply_overlays(world, &mut writes);
+        if !writes.repairs.is_empty() {
+            world.init_resource::<super::repair::RepairRuntime>();
+            world
+                .resource_mut::<super::repair::RepairRuntime>()
+                .units
+                .extend(std::mem::take(&mut writes.repairs));
+        }
         if let Some(state) = writes.construction.take() {
             world.insert_resource(state);
         }
