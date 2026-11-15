@@ -32,8 +32,21 @@ A fully exposed 1,024×1,024 grid has 11,272,238 encoded bytes but exceeds the c
 The authoring storage bound is not a hosting-capacity claim. Million-cell full exposure remains a capacity limit to address before claiming that scale.
 Evidence: `terrain-work-orders/protocol-terrain-grid-boundary-lib.log`.
 
-The final browser build, High-detail frame rate, scripted cold-play probes and independent implementation review have not run.
+The independent implementation review passes 102 focused tests. Its test compilation finding is fixed.
+Evidence: `terrain-work-orders/review.md`.
+The final browser build, High-detail frame rate and scripted cold-play probes have not run.
 No spec acceptance criterion has been relaxed. The frozen timing workload and thresholds remain unchanged.
+
+The full native campaign ran once. It passed 3,033 tests and found 32 failures in stale fixtures and checks.
+The affected targets pass after those repairs. The obsolete formula-count ledger check was removed.
+Evidence: `terrain-work-orders/final-native.log`, `terrain-work-orders/affected-native/exits.json`,
+`terrain-work-orders/checks-final.log` and `terrain-work-orders/no-content-final.log`.
+Strict workspace Clippy, formatting, the WebAssembly check, dependency boundaries and probe neutrality pass.
+All 21 tooling commands pass, including the focused recheck of a stale browser mutation anchor.
+Evidence: `terrain-work-orders/final-clippy-clean.log`, `terrain-work-orders/final-format-clean.log`,
+`terrain-work-orders/final-wasm-check.log`, `terrain-work-orders/final-boundary.log`,
+`terrain-work-orders/final-probe-neutral.log` and `terrain-work-orders/final-tooling/exits.json`.
+Process acceptance is running. Warmed performance acceptance remains pending.
 
 ## Integration findings
 
@@ -52,8 +65,9 @@ Evidence: `terrain-work-orders/terrain-occupancy-reuse-tests.log` and `terrain-w
 This comparison does not replace the complete warmed acceptance run.
 No geometry approximation, workload reduction, timeout increase or memory-budget increase was made.
 
-Four real terrain audit checks pass: ordinary dig/fill/depletion and failed fill; exact unloading; forged resource/depletion/revision rejection; and same-seed command replay with allocator inversion.
-Evidence: `terrain-work-orders/audit-stream-sixth.log`. The complete audit suite and independent feature review remain pending.
+Nine real terrain audit checks pass. They cover work, unloading, accounting forgeries, replay,
+identifier inversion, identical replacement orders, enable toggles and renamed content.
+Evidence: `terrain-work-orders/review.md` and `terrain-work-orders/final-native.log`.
 
 The later trace isolated a16.47-second simulation tick during a route change. Both clients had valid activated state; the long tick starved the real transfer deadline.
 Whole-chunk flat certificates were too coarse after work changed a different part of the same chunk.
@@ -61,7 +75,10 @@ Truth and permitted planning now certify the exact requested subrectangle inside
 The focused terrain suite passes33 tests. The diagnostic route-change tick now takes36.342ms without a restart.
 The earlier completed trace was unpinned; the new trace uses CPUs0,2,4 and6. This is not a controlled capacity comparison.
 Evidence: `terrain-work-orders/tw7-subrectangle-comparison.json` and `terrain-work-orders/tw7-tick11-perf-report.txt`.
-The unchanged full preflight and warmed acceptance remain pending.
+The unchanged functionality preflight passes all four configurations and 240 actual simulation ticks.
+It checks movement, combat, harvesting, jobs, terrain work, client activation and persistent depletion.
+Evidence: `terrain-work-orders/tw7-preflight-subrectangle-final.log`.
+This cold preflight does not establish the timing limits. Warmed acceptance remains pending.
 
 The prepared400-model terrain fixture passes normal typed package validation. Its73 source files remain unchanged after packing.
 Evidence: `terrain-work-orders/browser-fps-fixture-frozen-v2/typed-pack-result.json`.
