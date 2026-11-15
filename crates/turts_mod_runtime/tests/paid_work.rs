@@ -87,61 +87,68 @@ impl Fixture {
 }
 #[test]
 fn public_repair_and_incremental_production_reach_the_resolved_catalog() {
-    let mut f = Fixture::new();
-    let mut depot: UnitDef = ron::de::from_bytes(&f.files["units/depot.ron"]).unwrap();
-    let mut relay = depot.clone();
-    relay.id = "relay".into();
-    relay.name = "Relay".into();
-    relay.producer = None;
-    relay.drop_off = None;
-    relay.health = Some(HealthDef { max: 100 });
-    relay.removal = None;
-    relay.placement = Some(SitePlacementDef {
-        gap: 2.,
-        node_clearance: 0.,
-        in_build_area: false,
-        site_health: Ratio {
-            numerator: 1,
-            denominator: 4,
-        },
-    });
-    depot.constructor = Some(ConstructorDef {
-        buildings: vec!["cedar:build_relay".into()],
-        concurrent_sites: 2,
-        queue_capacity: 2,
-        progress: ConstructProgress::Autonomous,
-        when_short: vec![],
-    });
-    let mut build = f.hire.clone();
-    build.id = "build_relay".into();
-    build.output_unit = "cedar:relay".into();
-    build.payment = PaymentPolicy::ChargeOnQueue;
-    f.manifest.exports.units.push("units/relay.ron".into());
-    f.manifest
-        .exports
-        .production
-        .push("production/build_relay.ron".into());
-    f.files.insert("units/depot.ron".into(), encode(&depot));
-    f.files.insert("units/relay.ron".into(), encode(&relay));
-    f.files
-        .insert("production/build_relay.ron".into(), encode(&build));
-    f.manifest.exports.match_files.push("match.ron".into());
-    f.files.insert(
-        "match.ron".into(),
-        b"(start:Immediate,victory:None,open_sites_per_slot:Some(4))".to_vec(),
-    );
-    let catalog = f.archive().content().unwrap();
-    let repair = catalog.units[&ContentId::parse("cedar:worker").unwrap()]
-        .repairer
-        .as_ref()
-        .unwrap();
-    assert_eq!(repair.cost[0].resource, "cedar:credits");
-    assert_eq!(repair.classes, ["cedar:heavy"]);
-    assert_eq!(
-        catalog.production[&ContentId::parse("cedar:hire").unwrap()].payment,
-        PaymentPolicy::ChargeOverTime
-    );
+    for payment in [PaymentPolicy::ChargeOnQueue, PaymentPolicy::ChargeOverTime] {
+        let mut f = Fixture::new();
+        let mut depot: UnitDef = ron::de::from_bytes(&f.files["units/depot.ron"]).unwrap();
+        let mut relay = depot.clone();
+        relay.id = "relay".into();
+        relay.name = "Relay".into();
+        relay.producer = None;
+        relay.drop_off = None;
+        relay.health = Some(HealthDef { max: 100 });
+        relay.removal = None;
+        relay.placement = Some(SitePlacementDef {
+            gap: 2.,
+            node_clearance: 0.,
+            in_build_area: false,
+            site_health: Ratio {
+                numerator: 1,
+                denominator: 4,
+            },
+        });
+        depot.constructor = Some(ConstructorDef {
+            buildings: vec!["cedar:build_relay".into()],
+            concurrent_sites: 2,
+            queue_capacity: 2,
+            progress: ConstructProgress::Autonomous,
+            when_short: vec![],
+        });
+        let mut build = f.hire.clone();
+        build.id = "build_relay".into();
+        build.output_unit = "cedar:relay".into();
+        build.payment = payment;
+        f.manifest.exports.units.push("units/relay.ron".into());
+        f.manifest
+            .exports
+            .production
+            .push("production/build_relay.ron".into());
+        f.files.insert("units/depot.ron".into(), encode(&depot));
+        f.files.insert("units/relay.ron".into(), encode(&relay));
+        f.files
+            .insert("production/build_relay.ron".into(), encode(&build));
+        f.manifest.exports.match_files.push("match.ron".into());
+        f.files.insert(
+            "match.ron".into(),
+            b"(start:Immediate,victory:None,open_sites_per_slot:Some(4))".to_vec(),
+        );
+        let catalog = f.archive().content().unwrap();
+        let repair = catalog.units[&ContentId::parse("cedar:worker").unwrap()]
+            .repairer
+            .as_ref()
+            .unwrap();
+        assert_eq!(repair.cost[0].resource, "cedar:credits");
+        assert_eq!(repair.classes, ["cedar:heavy"]);
+        assert_eq!(
+            catalog.production[&ContentId::parse("cedar:hire").unwrap()].payment,
+            PaymentPolicy::ChargeOverTime
+        );
+        assert_eq!(
+            catalog.production[&ContentId::parse("cedar:build_relay").unwrap()].payment,
+            payment
+        );
+    }
 }
+
 #[test]
 fn repair_costs_reject_wrong_kinds_duplicates_and_unqualified_refs_with_paths() {
     let mut f = Fixture::new();
