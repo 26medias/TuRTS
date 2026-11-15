@@ -111,6 +111,7 @@ pub fn alert_state() -> (ReplicaState, AcquiredPackages) {
             acquire: None,
             armour: None,
             constructor: None,
+            repairer: None,
             placement: None,
             build_area: None,
             id: station_id.clone(),

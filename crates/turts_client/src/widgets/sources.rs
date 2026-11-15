@@ -1461,6 +1461,7 @@ mod tests {
             acquire: None,
             armour: None,
             constructor: None,
+            repairer: None,
             placement: None,
             build_area: None,
             id: ContentId::parse(id).unwrap(),

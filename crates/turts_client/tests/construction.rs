@@ -44,6 +44,7 @@ fn fixture(policy: PaymentPolicy, mutate: impl FnOnce(&mut ContentCatalog, &mut 
             spawn_offsets: vec![WorldPos { x: 3.0, y: 0.0 }],
         }),
         constructor: None,
+        repairer: None,
         placement: Some(SitePlacementDef {
             gap: 1.0,
             node_clearance: 1.0,

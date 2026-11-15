@@ -249,21 +249,21 @@ pub fn debug_json(world: &World) -> String {
                 let mut nodes: Vec<_> = replica.nodes.values().map(|node| json!(node)).collect();
                 nodes.sort_by_key(|node| node["id"].as_u64().unwrap_or_default());
                 json!({
-                        "tick": replica.last_applied_tick,
-                        "units": units,
-                        "nodes": nodes,
-                        "economy": economy_json(replica),
-                "repairs": replica.repairs().collect::<Vec<_>>(),
-                "progress": progress_json(replica),
-                        "belts": replica.belts,
-                        "inserters": replica.inserters,
-                        "extractors": replica.extractors,
-                        "weapons": weapons_json(replica),
-                        "healths": replica.healths,
-                        "unit_orders": unit_orders,
-                        "research": replica.research,
-                        "health_trace": health_trace_json(&replica.health_trace),
-                    })
+                    "tick": replica.last_applied_tick,
+                    "units": units,
+                    "nodes": nodes,
+                    "economy": economy_json(replica),
+                    "repairs": replica.repairs().collect::<Vec<_>>(),
+                    "progress": progress_json(replica),
+                    "belts": replica.belts,
+                    "inserters": replica.inserters,
+                    "extractors": replica.extractors,
+                    "weapons": weapons_json(replica),
+                    "healths": replica.healths,
+                    "unit_orders": unit_orders,
+                    "research": replica.research,
+                    "health_trace": health_trace_json(&replica.health_trace),
+                })
             })
         })
         .unwrap_or(Value::Null);
@@ -1013,9 +1013,6 @@ mod command_result_json_tests {
     }
 }
 
-/// The economy of the replica for the debug state. Each job also gets `elapsed_ticks`, derived
-/// from its progress record at the last applied tick (`Replica::job_elapsed_ticks`): the wire
-/// `JobState` has no such field since protocol 5, and the browser oracles (`m2-audit.js`) read it.
 /// Read-only exact progress records and their value at the replica tick.
 fn progress_json(replica: &Replica) -> Value {
     let sites = replica.sites().filter_map(|unit| {
@@ -1044,6 +1041,9 @@ fn progress_json(replica: &Replica) -> Value {
     json!({"sites":sites,"jobs":jobs,"construction_queues":construction_queues})
 }
 
+/// The economy of the replica for the debug state. Each job also gets `elapsed_ticks`, derived
+/// from its progress record at the last applied tick (`Replica::job_elapsed_ticks`): the wire
+/// `JobState` has no such field since protocol 5, and the browser oracles (`m2-audit.js`) read it.
 fn economy_json(replica: &Replica) -> Value {
     let mut value = serde_json::to_value(&replica.economy).unwrap_or(Value::Null);
     if let Some(queues) = value.get_mut("queues").and_then(Value::as_array_mut) {
