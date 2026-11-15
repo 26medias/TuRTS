@@ -792,6 +792,14 @@ fn validate_repair_operation(operation: &OperationAudit) -> Result<(), String> {
             return Err("repair remainder differs from applied healing cost fraction".into());
         }
     }
+    if !advanced
+        && operation.before.raw_repairs != operation.after.raw_repairs
+        && operation.events.is_empty()
+        && (accounts(&operation.before) != accounts(&operation.after)
+            || operation.before.raw_healths != operation.after.raw_healths)
+    {
+        return Err("repair approach, wait, Stop, or retarget changed health or money without an eligible heal tick".into());
+    }
     if advanced {
         let mut expected = accounts(&operation.before);
         for (key, amount) in repair_debits {
