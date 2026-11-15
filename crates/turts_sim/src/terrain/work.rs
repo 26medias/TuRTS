@@ -399,6 +399,9 @@ pub(crate) fn run(world: &mut World) {
         runtime.claims.retain(|_, unit| retained.contains(unit));
     }
     let mut candidates = Vec::new();
+    if orders.is_empty() {
+        return;
+    }
     let mut occupancy = step::Occupancy::capture(world);
     for (unit, order) in orders {
         let Some(cell) = selected_cell(world, unit, &order) else {

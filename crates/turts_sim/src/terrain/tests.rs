@@ -1,6 +1,78 @@
 use super::*;
 
 #[test]
+fn phase_occupancy_matches_the_original_per_cell_body_scan() {
+    use turts_rules::terrain::geometry::{Budget, Cell, Point};
+    let mut fixture = Fixture::new(20, 100, 20);
+    let entity = crate::unit_entity(fixture.app.world(), fixture.worker).unwrap();
+    for point in [
+        crate::Vec2::new(2.0, 1.5),
+        crate::Vec2::new(3.0, 3.0),
+        crate::Vec2::new(-0.0, 1.5),
+        crate::Vec2::new(-1.0, 1.5),
+        crate::Vec2::new(f32::from_bits(1), 1.5),
+        crate::Vec2::new(f32::NAN, 1.5),
+    ] {
+        fixture
+            .app
+            .world_mut()
+            .get_mut::<crate::Position>(entity)
+            .unwrap()
+            .0 = point;
+        let world = fixture.app.world();
+        let state = world.resource::<TerrainState>();
+        let types = world.resource::<crate::UnitTypes>();
+        let catalog = &world.resource::<crate::bootstrap::InstalledCatalog>().0;
+        let cached = step::Occupancy::capture(world);
+        for y in 0..state.grid.rows {
+            for x in 0..state.grid.columns {
+                let cell = Cell { x, y };
+                let covers = |position: crate::Vec2, radius: f32| {
+                    state
+                        .grid
+                        .disk_support(
+                            &|_| Some(state.grid.floor),
+                            Point {
+                                x: f64::from(position.x),
+                                y: f64::from(position.y),
+                            },
+                            f64::from(radius),
+                            0,
+                            &mut Budget::new(4096),
+                        )
+                        .map_or(true, |support| support.cells.contains(&cell))
+                };
+                let bodies = world.iter_entities().any(|body| {
+                    let (Some(position), Some(kind)) =
+                        (body.get::<crate::Position>(), body.get::<crate::UnitType>())
+                    else {
+                        return false;
+                    };
+                    types
+                        .get(kind.0)
+                        .is_none_or(|definition| covers(position.0, definition.radius))
+                });
+                let nodes = world
+                    .get_resource::<crate::SurfaceNodes>()
+                    .is_some_and(|nodes| {
+                        nodes.0.iter().any(|node| {
+                            catalog
+                                .nodes
+                                .get(&node.content_id)
+                                .is_none_or(|definition| covers(node.position.0, definition.radius))
+                        })
+                    });
+                assert_eq!(
+                    cached.blocks(cell),
+                    bodies || nodes,
+                    "pose={point:?}, cell={cell:?}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn non_spawn_terrain_transactions_do_not_require_the_scoped_catalog() {
     let mut fixture = Fixture::new(20, 100, 20);
     fixture.app.world_mut().resource_scope(
