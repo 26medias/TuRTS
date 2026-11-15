@@ -414,7 +414,7 @@ pub fn cancel_production(
     })
 }
 
-/// Advance the head of each producer queue once, in ascending producer-id order.
+/// Advance each queue head once. Operating work competes in physical source order.
 pub(crate) fn run_production(world: &mut World) {
     let operating = world.contains_resource::<power::OperatingResources>();
     let site_ids = if operating {
