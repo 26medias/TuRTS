@@ -13,6 +13,7 @@ pub struct PendingCommitment {
     pub work: Option<WorkIdentity>,
     pub payment: Option<PaymentPolicy>,
     pub observed_done: u64,
+    pub fulfillment: Vec<PendingFulfillment>,
     pub created_at: Watermark,
     pub represented: bool,
 }
@@ -48,6 +49,7 @@ pub struct Selection {
 struct ValidatedProposal {
     members: Vec<VerifiedMember>,
     anchor: WorldPos,
+    fulfillment: Vec<FulfillmentClaim>,
 }
 
 pub struct BotCoordinator {
@@ -368,6 +370,56 @@ impl BotCoordinator {
                 }),
             }
         }
+        let mut baselines = BTreeMap::new();
+        let mut inconsistent = BTreeSet::new();
+        for (_, verified) in &candidates {
+            for claim in &verified.fulfillment {
+                if baselines
+                    .insert(claim.key.clone(), claim.observed)
+                    .is_some_and(|old| old != claim.observed)
+                {
+                    inconsistent.insert(claim.key.clone());
+                }
+            }
+        }
+        candidates.retain(|(proposal, verified)| {
+            if let Some(key) = verified
+                .fulfillment
+                .iter()
+                .map(|claim| &claim.key)
+                .find(|key| inconsistent.contains(*key))
+            {
+                out.refused.push(RejectedProposal {
+                    task: proposal.task.clone(),
+                    reason: ProposalRejection::InconsistentFulfillment(key.clone()),
+                });
+                false
+            } else {
+                true
+            }
+        });
+        let mut fulfilled = BTreeMap::<FulfillmentKey, u64>::new();
+        let mut pending_overflow = false;
+        for entry in self.pending.values().filter(|entry| !entry.represented) {
+            for claim in &entry.fulfillment {
+                let amount = fulfilled.entry(claim.key.clone()).or_default();
+                match amount.checked_add(claim.contribution) {
+                    Some(next) => *amount = next,
+                    None => pending_overflow = true,
+                }
+            }
+        }
+        if pending_overflow {
+            out.refused.extend(
+                candidates
+                    .into_iter()
+                    .map(|(proposal, _)| RejectedProposal {
+                        task: proposal.task,
+                        reason: ProposalRejection::ArithmeticOverflow,
+                    }),
+            );
+            return out;
+        }
         candidates.sort_by(|(a, av), (b, bv)| rank_cmp(a, av, b, bv));
         let mut assigned = self
             .pending
@@ -400,7 +452,14 @@ impl BotCoordinator {
                 }
             } else {
                 let (proposal, verified) = &candidates[i];
-                match self.emit(proposal, verified, &assigned, commands, units) {
+                match self.emit(
+                    proposal,
+                    verified,
+                    &assigned,
+                    commands,
+                    units,
+                    &mut fulfilled,
+                ) {
                     Ok(command) => {
                         commands += 1;
                         units += command.units.len() as u32;
@@ -424,6 +483,7 @@ impl BotCoordinator {
         assigned: &BTreeSet<UnitId>,
         commands: u32,
         units: u32,
+        fulfilled: &mut BTreeMap<FulfillmentKey, u64>,
     ) -> Result<EmittedCommand, ProposalRejection> {
         let count = u32::try_from(verified.members.len()).map_err(|_| ProposalRejection::Budget)?;
         if commands >= self.limits.commands
@@ -439,6 +499,27 @@ impl BotCoordinator {
             .any(|member| assigned.contains(&member.unit))
         {
             return Err(ProposalRejection::ConflictingAssignment);
+        }
+        let mut fulfillment_updates = Vec::new();
+        for claim in &verified.fulfillment {
+            let contribution = claim
+                .contribution
+                .checked_mul(u64::from(count))
+                .ok_or(ProposalRejection::ArithmeticOverflow)?;
+            let planned = fulfilled
+                .get(&claim.key)
+                .copied()
+                .unwrap_or(0)
+                .checked_add(contribution)
+                .ok_or(ProposalRejection::ArithmeticOverflow)?;
+            let total = claim
+                .observed
+                .checked_add(planned)
+                .ok_or(ProposalRejection::ArithmeticOverflow)?;
+            if claim.cap.is_some_and(|cap| total > cap) {
+                return Err(ProposalRejection::FulfillmentSatisfied(claim.key.clone()));
+            }
+            fulfillment_updates.push((claim.key.clone(), planned));
         }
         let envelopes = self
             .pending
@@ -513,10 +594,21 @@ impl BotCoordinator {
                     work: None,
                     payment: member.payment,
                     observed_done: 0,
+                    fulfillment: verified
+                        .fulfillment
+                        .iter()
+                        .map(|claim| PendingFulfillment {
+                            key: claim.key.clone(),
+                            contribution: claim.contribution,
+                        })
+                        .collect(),
                     created_at: watermark,
                     represented: false,
                 },
             );
+        }
+        for (key, amount) in fulfillment_updates {
+            fulfilled.insert(key, amount);
         }
         self.next_sequence = sequence.checked_add(1);
         let mut members = verified.members.iter().collect::<Vec<_>>();
@@ -581,6 +673,15 @@ fn validate_verified(
     if actors != members {
         return Err(ProposalRejection::InvalidCosts);
     }
+    let mut fulfillment_keys = BTreeSet::new();
+    for claim in &verified.fulfillment {
+        if claim.contribution == 0
+            || matches!(&claim.key,FulfillmentKey::Role(role) if role.is_empty())
+            || !fulfillment_keys.insert(claim.key.clone())
+        {
+            return Err(ProposalRejection::InvalidFulfillment);
+        }
+    }
     let anchor = verified
         .members
         .iter()
@@ -590,6 +691,7 @@ fn validate_verified(
     Ok(ValidatedProposal {
         members: verified.members,
         anchor,
+        fulfillment: verified.fulfillment,
     })
 }
 fn coordinate_cmp(a: f32, b: f32) -> std::cmp::Ordering {
