@@ -86,6 +86,37 @@ pub(crate) fn apply_order(
     if command.behaviour == Behaviour::CancelConstruction {
         return cancel_sites(world, slot, command, &unit_ids, &entity_by_unit);
     }
+    let financial = matches!(command.behaviour, Behaviour::Produce | Behaviour::Construct);
+    let mut anchors = BTreeMap::new();
+    let mut tied = std::collections::BTreeSet::new();
+    if financial {
+        for &unit in &unit_ids {
+            if let Ok(entity) = validate_member(world, slot, command, &unit, &entity_by_unit)
+                && let Some(position) = world.get::<crate::Position>(entity)
+                && position.0.is_finite()
+            {
+                anchors.insert(unit, position.0);
+            }
+        }
+        let coordinate = |value: f32| if value == 0.0 { 0.0 } else { value };
+        unit_ids.sort_by(
+            |left, right| match (anchors.get(left), anchors.get(right)) {
+                (Some(left), Some(right)) => coordinate(left.x)
+                    .total_cmp(&coordinate(right.x))
+                    .then_with(|| coordinate(left.y).total_cmp(&coordinate(right.y))),
+                (None, None) => left.cmp(right),
+                (None, Some(_)) => std::cmp::Ordering::Less,
+                (Some(_), None) => std::cmp::Ordering::Greater,
+            },
+        );
+        for pair in unit_ids.windows(2) {
+            if let (Some(left), Some(right)) = (anchors.get(&pair[0]), anchors.get(&pair[1]))
+                && left == right
+            {
+                tied.extend(pair.iter().copied());
+            }
+        }
+    }
     let mut outcomes = UnitOutcomes::default();
     let mut first_job_id = None;
     let mut spread_units = Vec::new();
@@ -101,107 +132,22 @@ pub(crate) fn apply_order(
             | Behaviour::SetEnabled(_)
     );
     for unit_id in &unit_ids {
-        let Some(entity) = entity_by_unit.get(unit_id).copied() else {
-            outcomes.refused.push((*unit_id, R::UnknownUnit));
-            continue;
-        };
-        let owner = world
-            .entity(entity)
-            .get::<crate::world::Owner>()
-            .map(|owner| owner.0);
-        if owner != Some(slot) {
-            outcomes.refused.push((*unit_id, R::NotOwner));
-            continue;
-        }
-        if world
-            .resource::<crate::economy::construction::ConstructionState>()
-            .sites
-            .contains_key(unit_id)
-        {
-            outcomes.refused.push((*unit_id, R::NotApplicable));
-            continue;
-        }
-        let Some(unit_type) = world
-            .entity(entity)
-            .get::<crate::world::UnitType>()
-            .map(|kind| kind.0)
-        else {
-            outcomes.refused.push((*unit_id, R::NotApplicable));
-            continue;
-        };
-        let unit_id_text = world
-            .resource::<crate::registry::UnitTypes>()
-            .get(unit_type)
-            .map(|entry| entry.content_id.clone());
-        let registry_movement = world
-            .resource::<crate::registry::UnitTypes>()
-            .get(unit_type)
-            .is_some_and(|entry| entry.movement.is_some());
-        let definition = world
-            .get_resource::<crate::bootstrap::InstalledCatalog>()
-            .and_then(|catalog| {
-                let content_id = unit_id_text.as_deref()?;
-                catalog
-                    .0
-                    .units
-                    .values()
-                    .find(|unit| unit.id.to_string() == content_id)
-            });
-        let capable = match command.behaviour {
-            Behaviour::Move => registry_movement,
-            Behaviour::Stop | Behaviour::Hold => {
-                definition.is_some_and(|unit| {
-                    unit.weapon.is_some() || unit.constructor.is_some() || unit.repairer.is_some()
-                }) || registry_movement
+        let entity = match validate_member(world, slot, command, unit_id, &entity_by_unit) {
+            Ok(entity) => entity,
+            Err(reason) => {
+                outcomes.refused.push((*unit_id, reason));
+                continue;
             }
-            Behaviour::Attack => match command.target {
-                OrderTargetSim::Point(_) => registry_movement,
-                OrderTargetSim::Unit(_) => definition.is_some_and(|unit| unit.weapon.is_some()),
-                _ => false,
-            },
-            Behaviour::Gather => definition.is_some_and(|unit| unit.gatherer.is_some()),
-            Behaviour::Produce => {
-                definition.is_some_and(|unit| unit.producer.is_some() || unit.research.is_some())
-            }
-            Behaviour::CancelProduction => definition.is_some_and(|unit| {
-                unit.producer.is_some() || unit.research.is_some() || unit.machine.is_some()
-            }),
-            Behaviour::Remove => definition
-                .and_then(|unit| unit.removal.as_ref())
-                .is_some_and(|removal| removal.by_command),
-            Behaviour::SetEnabled(_) => definition.is_some_and(unit_toggleable),
-            // API 0.2.4: no unit is capable of a new behaviour until its lane builds it (the
-            // packer refuses these orders with `UNBUILT_FEATURES` until then).
-            Behaviour::Construct => definition.is_some_and(|unit| unit.constructor.is_some()),
-            Behaviour::SetRally => definition.is_some_and(|unit| unit.producer.is_some()),
-            Behaviour::Repair => definition.is_some_and(|unit| unit.repairer.is_some()),
-            Behaviour::CancelConstruction | Behaviour::Surrender => false,
         };
-        if !capable {
-            let reason = match command.behaviour {
-                Behaviour::Gather
-                | Behaviour::Produce
-                | Behaviour::CancelProduction
-                | Behaviour::Construct
-                | Behaviour::Repair => R::MissingCapability,
-                Behaviour::Remove => R::NotRemovable,
-                Behaviour::SetEnabled(_) => R::NotToggleable,
-                _ => R::NotApplicable,
-            };
-            outcomes.refused.push((*unit_id, reason));
-            continue;
-        }
-        if !command.allowed_units.is_empty()
-            && !unit_id_text
-                .as_ref()
-                .is_some_and(|id| command.allowed_units.iter().any(|allowed| allowed == id))
-        {
-            outcomes.refused.push((*unit_id, R::NotApplicable));
-            continue;
-        }
-        if let Err(reason) = validate_target(world, command) {
-            outcomes.refused.push((*unit_id, reason));
-            continue;
+        if financial {
+            if !anchors.contains_key(unit_id) {
+                outcomes.refused.push((*unit_id, R::IntegrityViolation));
+                continue;
+            }
+            if tied.contains(unit_id) {
+                outcomes.refused.push((*unit_id, R::Blocked));
+                continue;
+            }
         }
         if command.behaviour == Behaviour::Repair {
             let OrderTargetSim::Unit(target) = command.target else {
@@ -489,6 +435,9 @@ pub(crate) fn apply_order(
         }
     }
 
+    // Processing priority is physical. Public per-unit records keep their canonical ID order.
+    outcomes.accepted.sort_unstable();
+    outcomes.refused.sort_unstable_by_key(|(unit, _)| *unit);
     for &unit in &outcomes.accepted {
         note_accepted_player_order(world, unit, command.behaviour, command.queue);
     }
@@ -648,6 +597,110 @@ fn cancel_sites(
         Ok(crate::command::Applied { job_id: None })
     };
     (result, outcomes)
+}
+
+fn validate_member(
+    world: &World,
+    slot: SlotId,
+    command: &OrderCommand,
+    unit_id: &u32,
+    entity_by_unit: &BTreeMap<u32, bevy_ecs::entity::Entity>,
+) -> Result<bevy_ecs::entity::Entity, crate::command::RejectReason> {
+    use crate::command::RejectReason as R;
+    let Some(entity) = entity_by_unit.get(unit_id).copied() else {
+        return Err(R::UnknownUnit);
+    };
+    let owner = world
+        .entity(entity)
+        .get::<crate::world::Owner>()
+        .map(|owner| owner.0);
+    if owner != Some(slot) {
+        return Err(R::NotOwner);
+    }
+    if world
+        .resource::<crate::economy::construction::ConstructionState>()
+        .sites
+        .contains_key(unit_id)
+    {
+        return Err(R::NotApplicable);
+    }
+    let Some(unit_type) = world
+        .entity(entity)
+        .get::<crate::world::UnitType>()
+        .map(|kind| kind.0)
+    else {
+        return Err(R::NotApplicable);
+    };
+    let unit_id_text = world
+        .resource::<crate::registry::UnitTypes>()
+        .get(unit_type)
+        .map(|entry| entry.content_id.clone());
+    let registry_movement = world
+        .resource::<crate::registry::UnitTypes>()
+        .get(unit_type)
+        .is_some_and(|entry| entry.movement.is_some());
+    let definition = world
+        .get_resource::<crate::bootstrap::InstalledCatalog>()
+        .and_then(|catalog| {
+            let content_id = unit_id_text.as_deref()?;
+            catalog
+                .0
+                .units
+                .values()
+                .find(|unit| unit.id.to_string() == content_id)
+        });
+    let capable = match command.behaviour {
+        Behaviour::Move => registry_movement,
+        Behaviour::Stop | Behaviour::Hold => {
+            definition.is_some_and(|unit| {
+                unit.weapon.is_some() || unit.constructor.is_some() || unit.repairer.is_some()
+            }) || registry_movement
+        }
+        Behaviour::Attack => match command.target {
+            OrderTargetSim::Point(_) => registry_movement,
+            OrderTargetSim::Unit(_) => definition.is_some_and(|unit| unit.weapon.is_some()),
+            _ => false,
+        },
+        Behaviour::Gather => definition.is_some_and(|unit| unit.gatherer.is_some()),
+        Behaviour::Produce => {
+            definition.is_some_and(|unit| unit.producer.is_some() || unit.research.is_some())
+        }
+        Behaviour::CancelProduction => definition.is_some_and(|unit| {
+            unit.producer.is_some() || unit.research.is_some() || unit.machine.is_some()
+        }),
+        Behaviour::Remove => definition
+            .and_then(|unit| unit.removal.as_ref())
+            .is_some_and(|removal| removal.by_command),
+        Behaviour::SetEnabled(_) => definition.is_some_and(unit_toggleable),
+        // API 0.2.4: no unit is capable of a new behaviour until its lane builds it (the
+        // packer refuses these orders with `UNBUILT_FEATURES` until then).
+        Behaviour::Construct => definition.is_some_and(|unit| unit.constructor.is_some()),
+        Behaviour::SetRally => definition.is_some_and(|unit| unit.producer.is_some()),
+        Behaviour::Repair => definition.is_some_and(|unit| unit.repairer.is_some()),
+        Behaviour::CancelConstruction | Behaviour::Surrender => false,
+    };
+    if !capable {
+        let reason = match command.behaviour {
+            Behaviour::Gather
+            | Behaviour::Produce
+            | Behaviour::CancelProduction
+            | Behaviour::Construct
+            | Behaviour::Repair => R::MissingCapability,
+            Behaviour::Remove => R::NotRemovable,
+            Behaviour::SetEnabled(_) => R::NotToggleable,
+            _ => R::NotApplicable,
+        };
+        return Err(reason);
+    }
+    if !command.allowed_units.is_empty()
+        && !unit_id_text
+            .as_ref()
+            .is_some_and(|id| command.allowed_units.iter().any(|allowed| allowed == id))
+    {
+        return Err(R::NotApplicable);
+    }
+    validate_target(world, command)?;
+    Ok(entity)
 }
 
 fn validate_target(
