@@ -845,3 +845,81 @@ fn second_install_is_atomic_and_a_fresh_match_has_no_old_memory() {
     assert_eq!(clean.basis.tick, 0);
     assert!(!clean.retention_truncated);
 }
+
+#[test]
+fn stale_only_storage_uses_the_latest_permitted_phase_for_units_and_nodes() {
+    let mut state = prepared(VisionSharing::OwnSlot, 10);
+    let mut enemy = visible(2, 1, p(4.0, 2.0));
+    let mut node = VisibleNode {
+        node: 3,
+        content: Arc::new(id("wood")),
+        position: p(4.0, 3.0),
+        remaining: 100,
+    };
+    state.update(
+        6,
+        ObservationPhase::Completed,
+        vec![enemy.clone()],
+        vec![node.clone()],
+        vec![(1, 0, p(2.0, 2.0), 6.0)],
+    );
+    enemy.position = p(5.0, 2.0);
+    enemy.facing = Some(Facing::NegY);
+    node.remaining = 40;
+    state.update(
+        7,
+        ObservationPhase::Start,
+        vec![enemy.clone()],
+        vec![node.clone()],
+        vec![(1, 0, p(2.0, 2.0), 6.0)],
+    );
+    let permitted = state.phase(ObservationPhase::Start);
+    assert!(state.memories[0].units.is_empty());
+    assert!(state.memories[0].nodes.is_empty());
+    state.update(
+        7,
+        ObservationPhase::Tactical,
+        vec![visible(2, 1, p(50.0, 50.0))],
+        vec![node.clone()],
+        vec![],
+    );
+    let hidden = state.phase(ObservationPhase::Tactical);
+    let knowledge = hidden.knowledge(0).unwrap();
+    assert_eq!(knowledge.remembered_units, [enemy.remembered(7)]);
+    assert_eq!(knowledge.remembered_nodes, [node.remembered(7)]);
+    assert!(permitted.knowledge(0).unwrap().remembered_units.is_empty());
+    assert_eq!(permitted.permitted_unit(0, 2), Some(&enemy));
+    state.update(
+        8,
+        ObservationPhase::Completed,
+        vec![enemy],
+        vec![node],
+        vec![(1, 0, p(2.0, 2.0), 6.0)],
+    );
+    assert!(state.memories[0].units.is_empty());
+    assert!(state.memories[0].nodes.is_empty());
+    assert_eq!(hidden.knowledge(0).unwrap(), knowledge);
+}
+
+#[test]
+fn observed_removal_cannot_restore_a_previous_phase_row_as_stale_memory() {
+    let mut state = prepared(VisionSharing::OwnSlot, 10);
+    state.update(
+        7,
+        ObservationPhase::Start,
+        vec![visible(2, 1, p(4.0, 2.0))],
+        vec![],
+        vec![(1, 0, p(2.0, 2.0), 6.0)],
+    );
+    state.observed_removals[0].insert(2);
+    state.update(7, ObservationPhase::Completed, vec![], vec![], vec![]);
+    assert!(state.memories[0].units.is_empty());
+    assert!(
+        state
+            .completed
+            .knowledge(0)
+            .unwrap()
+            .remembered_units
+            .is_empty()
+    );
+}

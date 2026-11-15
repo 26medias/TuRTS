@@ -189,6 +189,7 @@ impl Source {
 }
 #[derive(Debug, Clone, Default)]
 struct SlotMemory {
+    // Current facts live in the immutable basis. Store only hidden sightings here.
     units: BTreeMap<u32, (VisibleUnit, u32)>,
     nodes: BTreeMap<u32, (VisibleNode, u32)>,
     truncated: bool,
@@ -340,6 +341,10 @@ impl VisibilityState {
                 continue;
             }
             let coverage = &mut self.coverage[usize::from(viewer)];
+            // Detach each phase mask once, rather than checking Arc ownership for
+            // every cell in every source circle. Removal cannot explore new cells.
+            let observed = Arc::make_mut(&mut coverage.observed);
+            let mut explored = add.then(|| Arc::make_mut(&mut coverage.explored));
             let mut adjust = |cell: u32| {
                 let count = &mut coverage.counts[cell as usize];
                 // A live source has one allocator-unique unit identity. Coverage
@@ -349,12 +354,13 @@ impl VisibilityState {
                 } else {
                     *count -= 1;
                 }
-                let observed = Arc::make_mut(&mut coverage.observed);
                 let flag = 1 << (cell % 8);
                 let byte = cell as usize / 8;
                 if *count > 0 {
                     observed[byte] |= flag;
-                    Arc::make_mut(&mut coverage.explored)[byte] |= flag;
+                    if let Some(explored) = &mut explored {
+                        explored[byte] |= flag;
+                    }
                 } else {
                     observed[byte] &= !flag;
                 }
@@ -457,45 +463,63 @@ impl VisibilityState {
         let previous = self.phase(self.active);
         for viewer in 0..SLOT_COUNT {
             let memory = &mut self.memories[usize::from(viewer)];
-            for unit in next
-                .units
-                .iter()
-                .filter(|unit| next.unit_permitted(viewer, unit.unit))
-            {
-                memory.units.insert(unit.unit, (unit.clone(), tick));
+            // Capture the last permitted phase only when observation ends. The
+            // previous basis keeps same-tick movement/facing and its exact tick.
+            // Merge the sorted rows to avoid a binary lookup per current subject.
+            let mut current_units = next.units.iter().peekable();
+            for unit in previous.units.iter() {
+                while current_units.peek().is_some_and(|row| row.unit < unit.unit) {
+                    current_units.next();
+                }
+                let currently_permitted = current_units.peek().is_some_and(|row| {
+                    row.unit == unit.unit
+                        && (row.owner == viewer || next.point_observed(viewer, row.position))
+                });
+                if !currently_permitted
+                    && (unit.owner == viewer || previous.point_observed(viewer, unit.position))
+                {
+                    memory
+                        .units
+                        .insert(unit.unit, (unit.clone(), previous.stamp.tick));
+                }
             }
-            for node in next
-                .nodes
-                .iter()
-                .filter(|node| next.node_permitted(viewer, node.node))
-            {
-                memory.nodes.insert(node.node, (node.clone(), tick));
+            let mut current_nodes = next.nodes.iter().peekable();
+            for node in previous.nodes.iter() {
+                while current_nodes.peek().is_some_and(|row| row.node < node.node) {
+                    current_nodes.next();
+                }
+                let currently_permitted = current_nodes.peek().is_some_and(|row| {
+                    row.node == node.node && next.point_observed(viewer, row.position)
+                });
+                if !currently_permitted && previous.point_observed(viewer, node.position) {
+                    memory
+                        .nodes
+                        .insert(node.node, (node.clone(), previous.stamp.tick));
+                }
             }
             memory.units.retain(|id, (old, _)| {
                 !self.observed_removals[usize::from(viewer)].contains(id)
-                    && (next.unit_permitted(viewer, *id)
-                        || !next.point_observed(viewer, old.position))
+                    && !next.unit_permitted(viewer, *id)
+                    && !next.point_observed(viewer, old.position)
             });
             memory.nodes.retain(|id, (old, _)| {
-                next.node_permitted(viewer, *id) || !next.point_observed(viewer, old.position)
+                !next.node_permitted(viewer, *id) && !next.point_observed(viewer, old.position)
             });
-            // Keep current observation storage separate from bounded stale memory.
             // Select the oldest timestamp group in one sort, never by subject ID.
-            let mut stale = memory
-                .units
-                .iter()
-                .filter(|(id, _)| !next.unit_permitted(viewer, **id))
-                .map(|(id, (_, tick))| (*tick, true, *id))
-                .chain(
-                    memory
-                        .nodes
-                        .iter()
-                        .filter(|(id, _)| !next.node_permitted(viewer, **id))
-                        .map(|(id, (_, tick))| (*tick, false, *id)),
-                )
-                .collect::<Vec<_>>();
+            // Avoid building retention work when all stale records fit the limit.
             let limit = self.definition.effective_memory_limit() as usize;
-            if stale.len() > limit {
+            if memory.units.len() + memory.nodes.len() > limit {
+                let mut stale = memory
+                    .units
+                    .iter()
+                    .map(|(id, (_, tick))| (*tick, true, *id))
+                    .chain(
+                        memory
+                            .nodes
+                            .iter()
+                            .map(|(id, (_, tick))| (*tick, false, *id)),
+                    )
+                    .collect::<Vec<_>>();
                 stale.sort_unstable_by_key(|row| row.0);
                 let cutoff = stale[stale.len() - limit - 1].0;
                 memory.truncated = true;
@@ -508,52 +532,46 @@ impl VisibilityState {
                 }
             }
             let previous = &previous.slots[usize::from(viewer)];
-            let units = || {
-                memory
-                    .units
-                    .values()
-                    .filter(|(unit, _)| !next.unit_permitted(viewer, unit.unit))
-            };
-            let same_units = units().count() == previous.units.len()
-                && units()
-                    .zip(previous.units.iter())
-                    .all(|((unit, tick), old)| {
-                        unit.unit == old.unit
-                            && unit.content.as_ref() == &old.content
-                            && unit.owner == old.owner
-                            && unit.position == old.position
-                            && unit.facing == old.facing
-                            && unit.site == old.site
-                            && *tick == old.last_seen_tick
-                    });
+            let same_units =
+                memory.units.len() == previous.units.len()
+                    && memory.units.values().zip(previous.units.iter()).all(
+                        |((unit, tick), old)| {
+                            unit.unit == old.unit
+                                && unit.content.as_ref() == &old.content
+                                && unit.owner == old.owner
+                                && unit.position == old.position
+                                && unit.facing == old.facing
+                                && unit.site == old.site
+                                && *tick == old.last_seen_tick
+                        },
+                    );
             let stale_units = if same_units {
                 Arc::clone(&previous.units)
             } else {
-                units()
+                memory
+                    .units
+                    .values()
                     .map(|(unit, tick)| unit.remembered(*tick))
                     .collect::<Vec<_>>()
                     .into()
             };
-            let nodes = || {
-                memory
-                    .nodes
-                    .values()
-                    .filter(|(node, _)| !next.node_permitted(viewer, node.node))
-            };
-            let same_nodes = nodes().count() == previous.nodes.len()
-                && nodes()
-                    .zip(previous.nodes.iter())
-                    .all(|((node, tick), old)| {
-                        node.node == old.node
-                            && node.content.as_ref() == &old.content
-                            && node.position == old.position
-                            && node.remaining == old.remaining
-                            && *tick == old.last_seen_tick
-                    });
+            let same_nodes =
+                memory.nodes.len() == previous.nodes.len()
+                    && memory.nodes.values().zip(previous.nodes.iter()).all(
+                        |((node, tick), old)| {
+                            node.node == old.node
+                                && node.content.as_ref() == &old.content
+                                && node.position == old.position
+                                && node.remaining == old.remaining
+                                && *tick == old.last_seen_tick
+                        },
+                    );
             let stale_nodes = if same_nodes {
                 Arc::clone(&previous.nodes)
             } else {
-                nodes()
+                memory
+                    .nodes
+                    .values()
                     .map(|(node, tick)| node.remembered(*tick))
                     .collect::<Vec<_>>()
                     .into()
