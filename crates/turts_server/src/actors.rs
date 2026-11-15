@@ -621,6 +621,8 @@ pub(crate) fn publish_completed(world: &mut World) {
     if book.last_published_tick == Some(tick) {
         return;
     }
+    #[cfg(test)]
+    let results_started = crate::bot_profile::start();
     let pending = book.pending.clone();
     for ((slot, seq), envelope) in pending {
         let actor = world.resource::<BotActors>().entries[&slot].actor.clone();
@@ -653,6 +655,10 @@ pub(crate) fn publish_completed(world: &mut World) {
             .pending
             .remove(&(slot, seq));
     }
+    #[cfg(test)]
+    crate::bot_profile::finish("publication.results", results_started);
+    #[cfg(test)]
+    let hints_started = crate::bot_profile::start();
     // Held placement happens before the next command phase. Its hint must be
     // collected even when its site also completes or dies in the current tick.
     let keys = world
@@ -681,6 +687,8 @@ pub(crate) fn publish_completed(world: &mut World) {
             }
         }
     }
+    #[cfg(test)]
+    crate::bot_profile::finish("publication.held_hints", hints_started);
     // The completed resources remain borrowed in place. Only actor bookkeeping
     // leaves the World, so publication does not clone the package or full world.
     let mut book = world
