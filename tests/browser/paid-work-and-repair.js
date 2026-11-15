@@ -132,6 +132,10 @@ function project(scene,pos){const m=scene.clip_from_world,c=[0,1,2,3].map(r=>[..
   if(widget(result['repair-funds'],'repair_resource')?.text!=='Credits')throw Error('repair resource name');
   const damage=health(result['repair-funds'],3);
   await shot('repair-healed',await wait(s=>health(s,3)>damage,'income pays real repair',15000));
+  await page.reload();
+  await wait(s=>s.debug.slot===0&&world(s).repairs.some(x=>x.repairer===2&&x.target===3)&&s.scene.models.every(x=>x.ready),'rejoined owner repair snapshot',30000);
+  await page.mouse.click(640,360);await select(2);
+  await shot('repair-rejoined',await wait(s=>widget(s,'repair_state')&&widget(s,'repair_target')?.text==='Damaged workshop','rejoined repair HUD'));
   await select(4);const foreign=await read();
   if(!world(foreign).repairs.some(x=>x.repairer===2))throw Error('privacy probe requires an active own repair action');
   if(widget(foreign,'repair_state')||widget(foreign,'repair_target')||widget(foreign,'repair_resource'))throw Error('foreign selection leaked repair fields');
