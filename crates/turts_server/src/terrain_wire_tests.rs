@@ -698,3 +698,105 @@ fn leaving_observation_retains_the_last_authorized_surface_and_stamp() {
         (stale.elevation, stale.material, stale.provenance)
     );
 }
+
+#[test]
+fn actual_http_downloads_never_include_private_terrain_seed_or_realized_columns() {
+    use std::{fs, net::TcpListener, time::Duration};
+    struct Temporary(PathBuf);
+    impl Drop for Temporary {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+    for package in ["quarry", "terrain_stockyard"] {
+        let temporary = Temporary(std::env::temp_dir().join(format!(
+            "turts-terrain-http-review-{:016x}",
+            getrandom::u64().unwrap()
+        )));
+        fs::create_dir_all(temporary.0.join("public")).unwrap();
+        let seed = "173640015987654321";
+        fs::write(temporary.0.join("seed.txt"), seed).unwrap();
+        let reservation = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = reservation.local_addr().unwrap();
+        let base = format!("http://{address}");
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../mods")
+            .join(package);
+        let archive_bytes = pack_dir(&root).unwrap();
+        let config = crate::config::HostConfig {
+            game_package: "unused.tar".into(),
+            http_listen: address.to_string(),
+            ws_listen: "127.0.0.1:0".into(),
+            public_url: base.clone(),
+            tick_hz: 20,
+            static_dir: Some(temporary.0.join("public").to_string_lossy().into_owned()),
+            start_policy: None,
+            bots: vec![],
+            bot_limits: Default::default(),
+            terrain_seed_file: Some(temporary.0.join("seed.txt").to_string_lossy().into_owned()),
+            terrain_provenance: Some(
+                temporary
+                    .0
+                    .join("private/provenance.json")
+                    .to_string_lossy()
+                    .into_owned(),
+            ),
+        };
+        let mut app = turts_sim::headless_app(20);
+        let booted = Arc::new(crate::boot::boot(app.world_mut(), &config, &archive_bytes).unwrap());
+        let provenance = fs::read_to_string(temporary.0.join("private/provenance.json")).unwrap();
+        assert!(
+            provenance.contains(seed),
+            "host did not preserve replay provenance"
+        );
+        drop(reservation);
+        let _server = crate::http::spawn_http(
+            address,
+            Arc::clone(&booted),
+            Some(temporary.0.join("public")),
+        );
+        let agent: ureq::Agent = ureq::Agent::config_builder()
+            .timeout_global(Some(Duration::from_secs(5)))
+            .http_status_as_error(false)
+            .build()
+            .into();
+        for path in [
+            "/advertisement.json".to_string(),
+            "/lockfile.json".to_string(),
+            format!("/packages/{}", booted.package_file_name),
+        ] {
+            let mut response = agent.get(&format!("{base}{path}")).call().unwrap();
+            assert_eq!(response.status().as_u16(), 200, "{package} {path}");
+            let body = response.body_mut().read_to_vec().unwrap();
+            assert!(
+                !body
+                    .windows(seed.len())
+                    .any(|window| window == seed.as_bytes()),
+                "private seed leaked through {path}"
+            );
+            assert!(
+                !body.windows(13).any(|window| window == b"columns_state"),
+                "realized columns leaked through {path}"
+            );
+            if path.starts_with("/packages/") {
+                assert_eq!(
+                    body, archive_bytes,
+                    "HTTP archive changed after private generation"
+                );
+            }
+        }
+        for path in [
+            "/seed.txt",
+            "/private/provenance.json",
+            "/.turts-private/provenance.json",
+            "/%2e%2e/private/provenance.json",
+        ] {
+            let response = agent.get(&format!("{base}{path}")).call().unwrap();
+            assert_ne!(
+                response.status().as_u16(),
+                200,
+                "private host file served at {path}"
+            );
+        }
+    }
+}
