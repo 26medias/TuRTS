@@ -400,7 +400,7 @@ impl StockController {
                 .collect();
             let Some(QueryData::Units(mut targets)) = self.collect(
                 Query::Units(UnitQuery {
-                    relation: SlotRelation::Other,
+                    relation: SlotRelation::Enemy,
                     content: target_content,
                     center: None,
                     radius: None,
@@ -441,7 +441,17 @@ impl StockController {
             if let Some(order) = self.order(frame, binding, target) {
                 let _ = out.propose(Proposal {
                     task: TaskKey::new(&self.key, &rule.key, "squad"),
-                    actors: units.iter().map(|u| u.unit).collect(),
+                    actors: units
+                        .iter()
+                        .filter(|u| {
+                            u.own.as_ref().is_some_and(|own| {
+                                own.enabled
+                                    && own.queued_orders == 0
+                                    && own.current_order.as_ref() != Some(&order)
+                            })
+                        })
+                        .map(|u| u.unit)
+                        .collect(),
                     order,
                     priority: rule.priority,
                     goal_order: rank as u32,
@@ -526,3 +536,6 @@ fn idle(unit: &UnitObservation) -> bool {
             && matches!(own.activity, OwnActivity::Idle | OwnActivity::Blocked)
     })
 }
+
+#[cfg(test)]
+mod tests;
