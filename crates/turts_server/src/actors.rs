@@ -6,12 +6,17 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use bevy::prelude::*;
-use turts_audit::ActorLogRecord;
-use turts_bot::{ActorResult, BotActor, EmittedCommand, ReconcileBatch, RequestKey, Watermark};
-use turts_net_protocol::CommandRejectReason;
+use turts_audit::{ActorLogIdentity, ActorLogRecord, ActorTask};
+use turts_bot::{
+    ActorResult, BotActor, BotQueueMode, BotTarget, CoordinatorLimits, EmittedCommand,
+    ReconcileBatch, RequestKey, Watermark, WorkIdentity, WorkKind,
+};
+use turts_net_protocol::{
+    CommandRejectReason, OrderEnvelope, OrderResult, OrderTarget, PlayerCommand, Pos,
+};
 use turts_sim::{SlotId, Slots};
 
-const DEFAULT_PENDING_MEMBERS: usize = 64;
+const DEFAULT_PENDING_MEMBERS: usize = 64 * 256;
 
 pub(crate) use crate::actor_accounting::TrackedRequest;
 
@@ -25,10 +30,112 @@ pub(crate) struct BotActorState {
     pub pending_limit: usize,
 }
 
-#[derive(Resource, Default)]
+#[derive(Resource)]
 pub(crate) struct BotActors {
     pub entries: BTreeMap<u8, BotActorState>,
     pub staged: VecDeque<EmittedCommand>,
+    pending: BTreeMap<(u8, u32), PlayerCommand>,
+    limits: CoordinatorLimits,
+    row_limit: usize,
+    last_published_tick: Option<u32>,
+    error: Option<String>,
+}
+impl Default for BotActors {
+    fn default() -> Self {
+        Self {
+            entries: BTreeMap::new(),
+            staged: VecDeque::new(),
+            pending: BTreeMap::new(),
+            limits: CoordinatorLimits::default(),
+            row_limit: 65_536,
+            last_published_tick: None,
+            error: None,
+        }
+    }
+}
+
+pub(crate) struct PreparedActorLimits {
+    limits: CoordinatorLimits,
+    row_limit: usize,
+    member_limit: usize,
+    initial: BTreeMap<BotActor, ReconcileBatch>,
+}
+/// Prepare bounds and the initial accounting publication before permanent claims.
+pub(crate) fn prepare_actor_limits(
+    world: &World,
+    actors: &[BotActor],
+    limits: CoordinatorLimits,
+    row_limit: usize,
+) -> Result<PreparedActorLimits, String> {
+    let member_limit = usize::try_from(limits.pending_requests)
+        .ok()
+        .and_then(|envelopes| {
+            usize::try_from(limits.affected_units)
+                .ok()
+                .and_then(|units| envelopes.checked_mul(units))
+        })
+        .ok_or("bot pending member limit overflow")?;
+    if limits.pending_requests == 0 || limits.affected_units == 0 || row_limit == 0 {
+        return Err(
+            "bot actor limits must allow pending envelopes, members and account rows".into(),
+        );
+    }
+    let view = turts_sim::completed_world(world);
+    let committed = turts_sim::committed_tick(world);
+    let catalog = &world.resource::<crate::orders::ServerCatalog>().0;
+    let watermark = Watermark {
+        completed_tick: view.tick,
+        revision: u64::from(view.tick),
+    };
+    let mut initial = BTreeMap::new();
+    for actor in actors {
+        let batch = crate::actor_accounting::build_batch(
+            view,
+            committed,
+            catalog,
+            actor,
+            &mut BTreeMap::new(),
+            watermark,
+            row_limit,
+        )?;
+        if initial.insert(actor.clone(), batch).is_some() {
+            return Err("duplicate prepared bot actor".into());
+        }
+    }
+    Ok(PreparedActorLimits {
+        limits,
+        row_limit,
+        member_limit,
+        initial,
+    })
+}
+/// Apply only the already validated setup after the matching atomic claim batch.
+pub(crate) fn configure_actor_limits(world: &mut World, prepared: PreparedActorLimits) {
+    let mut book = world.resource_mut::<BotActors>();
+    book.limits = prepared.limits;
+    book.row_limit = prepared.row_limit;
+    for entry in book.entries.values_mut() {
+        entry.pending_limit = prepared.member_limit;
+        entry.published = prepared.initial.get(&entry.actor).cloned();
+    }
+}
+#[derive(Resource)]
+struct ActorPipelineInstalled;
+pub(crate) fn install(app: &mut App) {
+    if app.world().contains_resource::<ActorPipelineInstalled>() {
+        return;
+    }
+    app.insert_resource(ActorPipelineInstalled);
+    app.add_systems(
+        FixedPreUpdate,
+        dispatch_staged
+            .after(crate::session::admit_player_commands)
+            .before(turts_sim::SimSet::Commands),
+    );
+    app.add_systems(
+        FixedPostUpdate,
+        publish_completed.after(turts_sim::SimSet::Collect),
+    );
 }
 
 impl BotActors {
@@ -122,6 +229,13 @@ pub(crate) fn stage_bot_command(
     if command.units.iter().any(|unit| !units.insert(*unit)) {
         return Err(CommandRejectReason::DuplicateUnit);
     }
+    if book.error.is_some() {
+        return Err(CommandRejectReason::Internal);
+    }
+    let envelope_limit = book.limits.pending_requests as usize;
+    if command.units.len() > book.limits.affected_units as usize {
+        return Err(CommandRejectReason::TooManyUnits);
+    }
     let entry = book
         .entries
         .get_mut(&command.actor.slot)
@@ -133,6 +247,16 @@ pub(crate) fn stage_bot_command(
             .any(|key| key.sequence == command.sequence)
     {
         return Err(CommandRejectReason::BadSequence);
+    }
+    if entry
+        .requests
+        .keys()
+        .map(|key| key.sequence)
+        .collect::<BTreeSet<_>>()
+        .len()
+        >= envelope_limit
+    {
+        return Err(CommandRejectReason::RateLimited);
     }
     if entry
         .requests
@@ -230,56 +354,317 @@ pub(crate) fn human_present(world: &World) -> bool {
         .any(|entity| entity.contains::<crate::session::Session>())
 }
 
-#[derive(Resource, Default)]
-struct ActorLogState {
-    installed: bool,
-    lifecycle_tick: Option<u32>,
-}
-
-/// The host publishes its locked installation once, before guards and submissions.
+/// Trusted trace ports are shared with transported and replayed human inputs.
 pub(crate) fn record_installation(world: &mut World, record: ActorLogRecord) -> Result<(), String> {
-    if !matches!(&record, ActorLogRecord::Installation(_)) {
-        return Err("actor installation port requires an Installation record".into());
-    }
-    world.init_resource::<ActorLogState>();
-    if world.resource::<ActorLogState>().installed {
-        return Err("actor installation was already recorded".into());
-    }
-    if let Some(mut sink) = world.get_resource_mut::<crate::economylog::EconomyLogSink>() {
-        sink.write_actor(record);
-        if let Some(error) = &sink.error {
-            return Err(error.clone());
-        }
-    }
-    world.resource_mut::<ActorLogState>().installed = true;
-    Ok(())
+    crate::session::participant_trace::record(world, record)
+}
+pub(crate) fn record_lifecycle(world: &mut World, record: ActorLogRecord) -> Result<(), String> {
+    crate::session::participant_trace::record(world, record)
 }
 
-/// Lifecycle is trusted runtime input. It is recorded before this tick's decisions.
-pub(crate) fn record_lifecycle(world: &mut World, record: ActorLogRecord) -> Result<(), String> {
-    let ActorLogRecord::Lifecycle { tick, .. } = &record else {
-        return Err("actor lifecycle port requires a Lifecycle record".into());
+fn wire_command(command: &EmittedCommand) -> PlayerCommand {
+    let point = |point: &turts_mod_api::WorldPos| Pos {
+        x: point.x,
+        y: point.y,
     };
-    if *tick != world.resource::<turts_sim::Tick>().0 {
-        return Err("actor lifecycle does not name the current fixed tick".into());
+    PlayerCommand {
+        seq: command.sequence,
+        order: OrderEnvelope {
+            order: command.order.content.to_string(),
+            units: command
+                .units
+                .iter()
+                .copied()
+                .map(turts_net_protocol::UnitId)
+                .collect(),
+            target: match &command.order.target {
+                BotTarget::None => OrderTarget::None,
+                BotTarget::Point(at) => OrderTarget::Point(point(at)),
+                BotTarget::Unit(unit) => OrderTarget::Unit(turts_net_protocol::UnitId(*unit)),
+                BotTarget::Node(node) => OrderTarget::Node(turts_net_protocol::NodeId(*node)),
+                BotTarget::Job(job) => OrderTarget::Job(turts_net_protocol::JobId(*job)),
+                BotTarget::Content(content) => OrderTarget::Content(content.to_string()),
+                BotTarget::ContentAtPoint { content, point: at } => OrderTarget::ContentAtPoint {
+                    content: content.to_string(),
+                    point: point(at),
+                },
+            },
+            queue: match command.order.queue {
+                BotQueueMode::Replace => turts_net_protocol::QueueMode::Replace,
+                BotQueueMode::Append => turts_net_protocol::QueueMode::Append,
+            },
+            group: command.order.group,
+        },
     }
-    let state = world
-        .get_resource::<ActorLogState>()
-        .ok_or("actor installation is missing")?;
-    if !state.installed
-        || state
-            .lifecycle_tick
-            .is_some_and(|previous| *tick <= previous)
-    {
-        return Err("actor lifecycle input is duplicate or precedes installation".into());
+}
+fn fail_pipeline(world: &mut World, error: String) {
+    eprintln!("turts_server: bot actor pipeline: {error}");
+    let mut book = world.resource_mut::<BotActors>();
+    book.error = Some(error.clone());
+    for entry in book.entries.values_mut() {
+        entry.published = None;
     }
-    let tick = *tick;
-    if let Some(mut sink) = world.get_resource_mut::<crate::economylog::EconomyLogSink>() {
-        sink.write_actor(record);
-        if let Some(error) = &sink.error {
-            return Err(error.clone());
+    if let Some(mut execution) = world.get_resource_mut::<crate::bots::BotExecution>() {
+        execution.error = Some(error);
+    }
+}
+/// Humans already admitted in this tick retain their ordinary queue order.
+/// Bot envelopes retain the coordinator's deterministic staged order.
+pub(crate) fn dispatch_staged(world: &mut World) {
+    let Some(mut book) = world.get_resource_mut::<BotActors>() else {
+        return;
+    };
+    if book.error.is_some() {
+        return;
+    }
+    let staged = std::mem::take(&mut book.staged);
+    let _ = book;
+    let tick = world.resource::<turts_sim::Tick>().0;
+    let hz = world.resource::<crate::session::Advertised>().tick_hz;
+    for command in staged {
+        let identity = ActorLogIdentity::Bot {
+            profile: command.actor.profile.clone(),
+            slot: command.actor.slot,
+        };
+        let envelope = wire_command(&command);
+        let task = Some(ActorTask {
+            controller: command.task.controller.clone(),
+            goal: command.task.goal.clone(),
+            instance: command.task.instance.clone(),
+        });
+        let ordinal = match crate::session::participant_trace::submission(
+            world, &identity, task, &envelope,
+        ) {
+            Ok(ordinal) => ordinal,
+            Err(error) => {
+                fail_pipeline(world, error);
+                return;
+            }
+        };
+        let admitted = world
+            .resource_mut::<crate::session::RateLimitBuckets>()
+            .admit(command.actor.slot, tick, hz, command.units.len());
+        let newer = world
+            .resource_mut::<BotActors>()
+            .entries
+            .get_mut(&command.actor.slot)
+            .filter(|entry| entry.actor == command.actor)
+            .is_some_and(|entry| {
+                crate::session::advance_sequence(&mut entry.last_seq, command.sequence)
+            });
+        match crate::session::admit_actor_envelope(
+            world,
+            SlotId(command.actor.slot),
+            &envelope,
+            admitted,
+            newer,
+        ) {
+            Ok(commands) => {
+                if let Err(error) = crate::session::participant_trace::accept(
+                    world,
+                    command.actor.slot,
+                    command.sequence,
+                    ordinal,
+                    identity,
+                ) {
+                    fail_pipeline(world, error);
+                    return;
+                }
+                world
+                    .resource_mut::<turts_sim::receipts::CommandWorkReceipts>()
+                    .watch(SlotId(command.actor.slot), command.sequence);
+                world
+                    .resource_mut::<BotActors>()
+                    .pending
+                    .insert((command.actor.slot, command.sequence), envelope);
+                world
+                    .resource_mut::<turts_sim::CommandQueue>()
+                    .0
+                    .extend(commands);
+            }
+            Err((mut result, reason)) => {
+                result.tick = tick;
+                if let Err(error) = crate::session::participant_trace::rejection(
+                    world, &identity, ordinal, &envelope, &result, reason,
+                ) {
+                    fail_pipeline(world, error);
+                    return;
+                }
+                finalize_members(world, &command.actor, &envelope, &result, BTreeMap::new());
+            }
         }
     }
-    world.resource_mut::<ActorLogState>().lifecycle_tick = Some(tick);
-    Ok(())
 }
+fn finalize_members(
+    world: &mut World,
+    actor: &BotActor,
+    envelope: &PlayerCommand,
+    result: &OrderResult,
+    hints: BTreeMap<u32, turts_sim::receipts::AdmittedWork>,
+) {
+    let catalog = &world.resource::<crate::orders::ServerCatalog>().0;
+    let kinds = hints
+        .iter()
+        .map(|(unit, hint)| {
+            (
+                *unit,
+                if hint.construction {
+                    WorkKind::Construction
+                } else if catalog.technologies.contains_key(&hint.recipe) {
+                    WorkKind::Research
+                } else {
+                    WorkKind::Production
+                },
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    let mut book = world.resource_mut::<BotActors>();
+    let Some(entry) = book
+        .entries
+        .get_mut(&actor.slot)
+        .filter(|entry| entry.actor == *actor)
+    else {
+        return;
+    };
+    for unit in &envelope.order.units {
+        let key = RequestKey {
+            actor: actor.clone(),
+            sequence: envelope.seq,
+            unit: unit.0,
+        };
+        let Some(tracked) = entry.requests.get_mut(&key) else {
+            continue;
+        };
+        let accepted = result.accepted.contains(unit);
+        let reason = result
+            .refused
+            .iter()
+            .find(|row| row.unit == *unit)
+            .map(|row| row.reason)
+            .or(result.envelope);
+        let hint = hints.get(&unit.0).cloned().filter(|_| accepted);
+        let work = hint.as_ref().map(|hint| WorkIdentity {
+            unit: hint.unit,
+            id: hint.job.0,
+            kind: kinds[&unit.0],
+        });
+        tracked.finalize(
+            ActorResult {
+                request: key,
+                effect_watermark: Watermark {
+                    completed_tick: result.tick,
+                    revision: u64::from(result.tick),
+                },
+                accepted,
+                work,
+                reason: reason.map(|reason| format!("{reason:?}")),
+            },
+            hint,
+        );
+    }
+}
+/// Finalize member outcomes and exact work hints before publishing the immutable basis.
+pub(crate) fn publish_completed(world: &mut World) {
+    let Some(book) = world.get_resource::<BotActors>() else {
+        return;
+    };
+    if book.error.is_some() {
+        return;
+    }
+    let tick = turts_sim::completed_world(world).tick;
+    if book.last_published_tick == Some(tick) {
+        return;
+    }
+    let pending = book.pending.clone();
+    for ((slot, seq), envelope) in pending {
+        let actor = world.resource::<BotActors>().entries[&slot].actor.clone();
+        let results = world
+            .resource::<turts_sim::CommandResults>()
+            .0
+            .iter()
+            .filter(|result| result.slot.0 == slot && result.seq == seq)
+            .cloned()
+            .collect::<Vec<_>>();
+        if results.is_empty() {
+            fail_pipeline(
+                world,
+                format!("ordinary bot command {slot}/{seq} has no completed result"),
+            );
+            return;
+        }
+        let mut result = crate::orders::to_wire(&results, &envelope);
+        result.tick = tick;
+        if let Err(error) = crate::session::participant_trace::result(world, slot, seq, &result) {
+            fail_pipeline(world, error);
+            return;
+        }
+        let hints = world
+            .resource_mut::<turts_sim::receipts::CommandWorkReceipts>()
+            .take(SlotId(slot), seq);
+        finalize_members(world, &actor, &envelope, &result, hints);
+        world
+            .resource_mut::<BotActors>()
+            .pending
+            .remove(&(slot, seq));
+    }
+    // Held placement happens before the next command phase. Its hint must be
+    // collected even when its site also completes or dies in the current tick.
+    let keys = world
+        .resource::<BotActors>()
+        .entries
+        .iter()
+        .flat_map(|(slot, entry)| entry.requests.keys().map(|key| (*slot, key.sequence)))
+        .collect::<BTreeSet<_>>();
+    for (slot, seq) in keys {
+        let hints = world
+            .resource_mut::<turts_sim::receipts::CommandWorkReceipts>()
+            .take(SlotId(slot), seq);
+        if hints.is_empty() {
+            continue;
+        }
+        if let Some(entry) = world.resource_mut::<BotActors>().entries.get_mut(&slot) {
+            for (unit, hint) in hints {
+                let key = RequestKey {
+                    actor: entry.actor.clone(),
+                    sequence: seq,
+                    unit,
+                };
+                if let Some(tracked) = entry.requests.get_mut(&key) {
+                    tracked.admitted_work = Some(hint);
+                }
+            }
+        }
+    }
+    let view = turts_sim::completed_world(world).clone();
+    let committed = turts_sim::committed_tick(world).clone();
+    let catalog = world.resource::<crate::orders::ServerCatalog>().0.clone();
+    let mut book = world.resource_mut::<BotActors>();
+    let row_limit = book.row_limit;
+    for entry in book.entries.values_mut() {
+        let watermark = Watermark {
+            completed_tick: tick,
+            revision: u64::from(tick),
+        };
+        match crate::actor_accounting::build_batch(
+            &view,
+            &committed,
+            &catalog,
+            &entry.actor,
+            &mut entry.requests,
+            watermark,
+            row_limit,
+        ) {
+            Ok(batch) => entry.published = Some(batch),
+            Err(error) => {
+                let _ = book;
+                fail_pipeline(world, error);
+                return;
+            }
+        }
+    }
+    book.last_published_tick = Some(tick);
+}
+
+#[cfg(test)]
+#[path = "actors_tests.rs"]
+mod tests;
