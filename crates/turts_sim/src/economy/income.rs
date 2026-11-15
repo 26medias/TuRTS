@@ -568,6 +568,8 @@ mod tests {
         world.resource_mut::<ConstructionState>().sites.insert(
             1,
             super::super::construction::Site {
+                funding: None,
+
                 constructor_when_short: Vec::new(),
 
                 constructor: 99,

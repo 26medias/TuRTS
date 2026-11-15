@@ -1219,6 +1219,8 @@ mod tests {
 
     fn unit(id: &str, health: Option<u64>) -> ResolvedUnit {
         ResolvedUnit {
+            repairer: None,
+
             consumes: Vec::new(),
             income: None,
             provides: Vec::new(),

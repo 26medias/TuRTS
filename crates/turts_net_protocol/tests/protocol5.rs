@@ -133,8 +133,13 @@ fn the_record_list_round_trips() {
         held_since_tick: 31,
     };
     let records = DeltaRecords {
+        repairs: Vec::new(),
+        repairs_cleared: Vec::new(),
+
         sites_completed: vec![UnitId(4)],
         sites: vec![SiteProgress {
+            production: "test:build".into(),
+
             unit: UnitId(5),
             progress: progress.clone(),
         }],

@@ -176,6 +176,8 @@ pub(crate) fn queue_research(
             PaymentPolicy::ChargeOverTime => return Err(RejectReason::NotApplicable),
         };
         queue.push(ProductionJob {
+            funding: None,
+
             id: job_id,
             recipe: technology.clone(),
             stage: JobStage::Queued,
@@ -500,6 +502,8 @@ mod tests {
         let second_technology = cid("research_fixture:second");
         let turret = cid("research_fixture:turret");
         let station = |id: ContentId, name: &str| ResolvedUnit {
+            repairer: None,
+
             consumes: Vec::new(),
             income: None,
             provides: Vec::new(),
@@ -552,6 +556,8 @@ mod tests {
                 (
                     turret.clone(),
                     ResolvedUnit {
+                        repairer: None,
+
                         consumes: Vec::new(),
                         income: None,
                         provides: Vec::new(),
@@ -906,6 +912,8 @@ mod tests {
             .get_mut(&1)
             .unwrap()
             .push(crate::economy::production::ProductionJob {
+                funding: None,
+
                 id: crate::ids::JobId(99),
                 recipe: cid("research_fixture:first"),
                 stage: crate::economy::production::JobStage::Queued,

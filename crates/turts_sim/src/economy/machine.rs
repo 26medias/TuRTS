@@ -325,6 +325,8 @@ fn start_job(
     transaction::charge_costs(tx, &charged)?;
     let id = tx.allocate_job_id()?;
     queue.push(ProductionJob {
+        funding: None,
+
         id,
         recipe: recipe_id.clone(),
         stage: JobStage::Running,
@@ -507,6 +509,8 @@ mod tests {
         let ore = cid("machine_fixture:ore");
         let part = cid("machine_fixture:part");
         let definition = ResolvedUnit {
+            repairer: None,
+
             consumes: Vec::new(),
             income: None,
             provides: Vec::new(),
