@@ -1143,7 +1143,7 @@ fn prepare_output(
             && point.x + radius <= bounds.size.x
             && point.y + radius <= bounds.size.y
             && grid
-                .within(&points, point, radius + max_radius)
+                .within_unsorted(&points, point, radius + max_radius)
                 .into_iter()
                 .all(|i| point.distance(circles[i].1) >= radius + circles[i].2)
             && nodes.0.iter().filter(|n| n.remaining > 0).all(|n| {

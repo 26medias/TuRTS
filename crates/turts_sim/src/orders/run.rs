@@ -508,9 +508,10 @@ fn attack_point_has_target_in_range(
         return false;
     };
     let radius = index.radii.get(&unit_id).copied().unwrap_or(0.0);
+    let sight = crate::visibility::active_basis(world);
     index
         .grid
-        .within(
+        .within_unsorted(
             index.points,
             origin,
             weapon
@@ -520,9 +521,7 @@ fn attack_point_has_target_in_range(
         .into_iter()
         .any(|point_index| {
             let target = index.points[point_index].id;
-            if crate::visibility::active_basis(world)
-                .is_some_and(|basis| !basis.unit_permitted(owner, target))
-            {
+            if sight.is_some_and(|basis| !basis.unit_permitted(owner, target)) {
                 return false;
             }
             let Some(target_owner) = index.owners.get(&target).copied() else {

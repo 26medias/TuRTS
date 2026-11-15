@@ -104,7 +104,7 @@ impl SpreadContext {
         excluded_unit: u32,
     ) -> bool {
         self.reserved_grid
-            .within(
+            .within_unsorted(
                 &self.reserved_points,
                 candidate,
                 radius + self.max_reserved_radius,
@@ -353,7 +353,7 @@ fn free_slot_grid(
         && candidate.y <= context.bounds.y - radius
         && context
             .static_grid
-            .within(
+            .within_unsorted(
                 &context.static_points,
                 candidate,
                 radius + context.max_static_radius,
@@ -365,7 +365,7 @@ fn free_slot_grid(
             })
         && context
             .reserved_grid
-            .within(
+            .within_unsorted(
                 &context.reserved_points,
                 candidate,
                 radius + context.max_reserved_radius + 0.1,
@@ -377,7 +377,7 @@ fn free_slot_grid(
                         >= radius + context.reserved[i].radius + 0.1 - 1.0e-5
             })
         && pool_grid
-            .within(pool_points, candidate, radius * 2.0 + 0.1)
+            .within_unsorted(pool_points, candidate, radius * 2.0 + 0.1)
             .into_iter()
             .all(|i| candidate.distance(already_in_pool[i]) >= radius * 2.0 + 0.1 - 1.0e-5)
 }
