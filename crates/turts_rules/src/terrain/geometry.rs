@@ -713,6 +713,10 @@ fn schedule(events: &mut Vec<u32>, t: f64, budget: &mut Budget) -> Result<(), Er
     Ok(())
 }
 impl Grid {
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "Exact sweep coordinates, interval, profile and budget are distinct geometric inputs"
+    )]
     fn interval_support(
         &self,
         surface: &impl Surface,
@@ -876,6 +880,10 @@ struct ExactHit {
     face: Face,
     elevation: i32,
 }
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Ray, face bounds and surface ownership remain explicit for exact hit certification"
+)]
 fn face_hit(
     origin: [Q; 3],
     direction: [Q; 3],
