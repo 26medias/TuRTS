@@ -501,7 +501,10 @@ fn advance_producer(world: &mut World, producer: u32) {
         .and_then(|queue| queue.first())
         .is_some_and(|job| job.funding.is_some())
     {
-        advance_paid_producer(world, producer, owner_slot);
+        // Include the post-spawn rally order in the same authoritative audit boundary.
+        transaction::capture_operation(world, |world| {
+            advance_paid_producer(world, producer, owner_slot)
+        });
         return;
     }
     if world.contains_resource::<power::OperatingResources>() {
