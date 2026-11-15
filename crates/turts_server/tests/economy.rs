@@ -2210,6 +2210,48 @@ fn canonicalize_wire_snapshot(value: &mut serde_json::Value) {
     }
     sort_by(&mut value["units"], "unit_id");
     sort_by(&mut value["unit_orders"], "unit");
+    // These protocol coordinates are f32. JSON number parsing may differ at
+    // f64 precision while preserving the exact same f32 wire value.
+    fn point_f32(point: &mut serde_json::Value) {
+        if let Some(point) = point.as_object_mut() {
+            for axis in ["x", "y"] {
+                if let Some(value) = point.get_mut(axis)
+                    && let Some(number) = value.as_f64()
+                {
+                    *value = serde_json::json!(number as f32);
+                }
+            }
+        }
+    }
+    fn target_f32(target: &mut serde_json::Value) {
+        if let Some(target) = target.as_object_mut() {
+            if let Some(point) = target.get_mut("Point") {
+                point_f32(point);
+            }
+            if let Some(content) = target.get_mut("ContentAtPoint")
+                && let Some(point) = content.get_mut("point")
+            {
+                point_f32(point);
+            }
+        }
+    }
+    if let Some(records) = value["unit_orders"].as_array_mut() {
+        for record in records {
+            target_f32(&mut record["rally"]);
+            if let Some(current) = record["current"].as_object_mut()
+                && let Some(target) = current.get_mut("target")
+            {
+                target_f32(target);
+            }
+            if let Some(queued) = record["queued"].as_array_mut() {
+                for order in queued {
+                    if let Some(target) = order.get_mut("target") {
+                        target_f32(target);
+                    }
+                }
+            }
+        }
+    }
     sort_by(&mut value["nodes"], "id");
     sort_by(&mut value["economy"]["balances"], "resource");
     sort_by(&mut value["economy"]["inventories"], "unit");
