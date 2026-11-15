@@ -189,6 +189,7 @@ fn snapshot(tick: u32) -> Snapshot {
         progress: rate(10, 100, 1, 10),
     }];
     snapshot.records.sites = vec![SiteProgress {
+        production: "base:build_command_center".into(),
         unit: UnitId(SITE),
         progress: rate(5, 100, 1, 10),
     }];
@@ -276,6 +277,7 @@ fn the_getters_return_the_records_of_a_snapshot_and_a_delta() {
     let mut change = delta(15);
     change.records.supply = vec![supply(120, 130)];
     change.records.sites = vec![SiteProgress {
+        production: "base:build_command_center".into(),
         unit: UnitId(SITE),
         progress: rate(30, 100, 2, 15),
     }];
@@ -619,6 +621,7 @@ fn a_resync_with_two_replayed_deltas_ends_with_the_store_of_a_continuous_client(
     let mut twelve = delta(12);
     twelve.records.supply = vec![supply(112, 42)];
     twelve.records.sites = vec![SiteProgress {
+        production: "base:build_command_center".into(),
         unit: UnitId(SITE),
         progress: rate(9, 100, 3, 12),
     }];
@@ -669,6 +672,7 @@ fn a_hundred_deltas_clone_the_store_zero_times() {
         let mut change = delta(tick);
         change.records.supply = vec![supply(u64::from(tick), 40)];
         change.records.sites = vec![SiteProgress {
+            production: "base:build_command_center".into(),
             unit: UnitId(SITE),
             progress: rate(u64::from(tick), 1000, 1, tick),
         }];
@@ -802,6 +806,7 @@ fn a_record_that_names_a_gone_or_wrong_unit_is_refused() {
             Box::new(|d| {
                 d.removed = vec![UnitId(SITE)];
                 d.records.sites = vec![SiteProgress {
+                    production: "base:build_command_center".into(),
                     unit: UnitId(SITE),
                     progress: rate(1, 100, 1, 11),
                 }];
@@ -811,6 +816,7 @@ fn a_record_that_names_a_gone_or_wrong_unit_is_refused() {
             "site progress of a unit that is not a site",
             Box::new(|d| {
                 d.records.sites = vec![SiteProgress {
+                    production: "base:build_command_center".into(),
                     unit: UnitId(OWN),
                     progress: rate(1, 100, 1, 11),
                 }];
@@ -820,6 +826,7 @@ fn a_record_that_names_a_gone_or_wrong_unit_is_refused() {
             "site progress of an enemy site",
             Box::new(|d| {
                 d.records.sites = vec![SiteProgress {
+                    production: "base:build_command_center".into(),
                     unit: UnitId(ENEMY_SITE),
                     progress: rate(1, 100, 1, 11),
                 }];
@@ -829,6 +836,7 @@ fn a_record_that_names_a_gone_or_wrong_unit_is_refused() {
             "site progress twice",
             Box::new(|d| {
                 let row = SiteProgress {
+                    production: "base:build_command_center".into(),
                     unit: UnitId(SITE),
                     progress: rate(1, 100, 1, 11),
                 };
@@ -983,6 +991,7 @@ fn the_record_of_a_site_that_completes_in_the_same_delta_is_dropped() {
     applied(&mut replica, &snapshot(10));
     let mut done = delta(11);
     done.records.sites = vec![SiteProgress {
+        production: "base:build_command_center".into(),
         unit: UnitId(SITE),
         progress: rate(100, 100, 0, 11),
     }];
@@ -1004,6 +1013,7 @@ fn a_site_spawned_by_a_delta_is_a_site_with_its_record() {
     let mut spawn = delta(11);
     spawn.spawned = vec![unit(30, "command_center", 0, true)];
     spawn.records.sites = vec![SiteProgress {
+        production: "base:build_command_center".into(),
         unit: UnitId(30),
         progress: rate(0, 50, 1, 11),
     }];
@@ -1097,6 +1107,7 @@ impl Truth {
             .sites
             .iter()
             .map(|(unit, progress)| SiteProgress {
+                production: "base:build_command_center".into(),
                 unit: UnitId(*unit),
                 progress: progress.clone(),
             })
@@ -1126,6 +1137,7 @@ impl Truth {
                 d.spawned = vec![unit];
                 self.sites.insert(40, rate(0, 80, 1, 12));
                 d.records.sites = vec![SiteProgress {
+                    production: "base:build_command_center".into(),
                     unit: UnitId(40),
                     progress: rate(0, 80, 1, 12),
                 }];
@@ -1146,6 +1158,7 @@ impl Truth {
                 let progress = rate(21, 100, 2, 20);
                 self.sites.insert(SITE, progress.clone());
                 d.records.sites = vec![SiteProgress {
+                    production: "base:build_command_center".into(),
                     unit: UnitId(SITE),
                     progress,
                 }];
@@ -1390,6 +1403,7 @@ fn a_replayed_delta_stages_against_the_store_of_its_snapshot() {
     applied(&mut replica, &snapshot(10));
     let mut twelve = delta(12);
     twelve.records.sites = vec![SiteProgress {
+        production: "base:build_command_center".into(),
         unit: UnitId(40),
         progress: rate(4, 80, 2, 12),
     }];
@@ -1400,6 +1414,7 @@ fn a_replayed_delta_stages_against_the_store_of_its_snapshot() {
     let mut eleven = snapshot(11);
     eleven.units.push(unit(40, "command_center", 0, true));
     eleven.records.sites.push(SiteProgress {
+        production: "base:build_command_center".into(),
         unit: UnitId(40),
         progress: rate(2, 80, 2, 11),
     });
@@ -1485,6 +1500,7 @@ fn a_store_refusal_keeps_the_old_tick_and_asks_one_resync() {
         pos: Pos { x: 50.0, y: 8.0 },
     }];
     bad.records.sites = vec![SiteProgress {
+        production: "base:build_command_center".into(),
         unit: UnitId(CONSTRUCTOR),
         progress: rate(1, 100, 1, 11),
     }];

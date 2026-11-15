@@ -1016,7 +1016,7 @@ mod command_result_json_tests {
 /// Read-only exact progress records and their value at the replica tick.
 fn progress_json(replica: &Replica) -> Value {
     let sites = replica.sites().filter_map(|unit| {
-        Some(json!({"unit":unit,"rate":replica.site_progress(unit)?,"value":replica.site_value(unit)?}))
+        Some(json!({"unit":unit,"production":replica.site_production(unit)?,"rate":replica.site_progress(unit)?,"value":replica.site_value(unit)?}))
     }).collect::<Vec<_>>();
     let jobs = replica
         .economy

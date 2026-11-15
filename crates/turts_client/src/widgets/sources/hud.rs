@@ -11,8 +11,46 @@ fn no_rows() -> SourceData {
     }
 }
 
-pub(in crate::widgets) fn source_construction_queue(_context: SourceContext<'_>) -> SourceData {
-    no_rows()
+pub(in crate::widgets) fn source_construction_queue(context: SourceContext<'_>) -> SourceData {
+    let Some(id) = context.selection.first().copied().filter(|id| {
+        context
+            .replica
+            .units
+            .get(id)
+            .is_some_and(|unit| unit.owner_slot == context.owner_slot)
+    }) else {
+        return no_rows();
+    };
+    let items = context
+        .replica
+        .construction_queue(id)
+        .iter()
+        .filter_map(|order| {
+            let recipe = ContentId::parse(&order.content)
+                .ok()
+                .and_then(|id| context.content.catalog.production.get(&id))?;
+            let mut row = ItemData::default();
+            row.set(ItemField::Name, &recipe.name);
+            row.set(
+                ItemField::State,
+                context
+                    .interface
+                    .and_then(|interface| interface.states.get("held"))
+                    .map_or("Held", String::as_str),
+            );
+            set_payment_fields(
+                &mut row,
+                &[],
+                Some(turts_mod_api::RefundRatio::ZERO),
+                context,
+            );
+            Some(row)
+        })
+        .collect();
+    SourceData {
+        scalar: None,
+        items,
+    }
 }
 
 pub(in crate::widgets) fn source_sites(context: SourceContext<'_>) -> SourceData {
@@ -35,6 +73,13 @@ pub(in crate::widgets) fn source_sites(context: SourceContext<'_>) -> SourceData
             row.set(ItemField::Action, WidgetAction::Select { unit: id });
             row.set(ItemField::Enabled, true);
             set_work_state(&mut row, record, context);
+            let refund = context
+                .replica
+                .site_production(id)
+                .and_then(|id| ContentId::parse(id).ok())
+                .and_then(|id| context.content.catalog.production.get(&id))
+                .map(|recipe| recipe.cancel_refunds.running);
+            set_payment_fields(&mut row, &record.charged, refund, context);
             row.set(
                 ItemField::Progress,
                 done as f64 / record.total.max(1) as f64,
@@ -119,4 +164,42 @@ pub(in crate::widgets) fn set_work_state(
         None => label.to_owned(),
     };
     row.set(ItemField::State, label);
+}
+
+/// Amounts come from committed charged rows. The display never predicts a payment.
+pub(in crate::widgets) fn set_payment_fields(
+    row: &mut ItemData,
+    charged: &[turts_mod_api::Cost],
+    refund: Option<turts_mod_api::RefundRatio>,
+    context: SourceContext<'_>,
+) {
+    fn label(
+        charged: &[turts_mod_api::Cost],
+        ratio: turts_mod_api::RefundRatio,
+        context: SourceContext<'_>,
+    ) -> String {
+        let costs = charged
+            .iter()
+            .filter_map(|cost| {
+                Some(turts_mod_api::ResolvedCost {
+                    resource: ContentId::parse(&cost.resource).ok()?,
+                    amount: ((u128::from(cost.amount) * u128::from(ratio.numerator))
+                        / u128::from(ratio.denominator)) as u64,
+                    source: cost.source,
+                })
+            })
+            .collect::<Vec<_>>();
+        if costs.is_empty() {
+            "0".into()
+        } else {
+            super::cost_label(&costs, context.content)
+        }
+    }
+    row.set(
+        ItemField::Paid,
+        label(charged, turts_mod_api::RefundRatio::ONE, context),
+    );
+    if let Some(ratio) = refund {
+        row.set(ItemField::Refund, label(charged, ratio, context));
+    }
 }

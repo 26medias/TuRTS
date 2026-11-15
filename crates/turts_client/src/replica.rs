@@ -959,6 +959,11 @@ impl Replica {
         self.store.site_progress(unit)
     }
 
+    /// The authoritative construction recipe that owns this site's refund policy.
+    pub fn site_production(&self, unit: u32) -> Option<&str> {
+        self.store.site_production(unit)
+    }
+
     /// The value of an own site in raw units of 1/Q tick at the last applied tick.
     pub fn site_value(&self, unit: u32) -> Option<u64> {
         let record = self.store.site_progress(unit)?;

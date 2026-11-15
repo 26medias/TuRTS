@@ -686,6 +686,32 @@ fn production_queue(context: SourceContext<'_>) -> SourceData {
             if let Some(record) = context.replica.job_progress(selected, job.id.0) {
                 hud::set_work_state(&mut item, record, context);
             }
+            let refunds = ContentId::parse(&job.recipe).ok().and_then(|id| {
+                context
+                    .content
+                    .catalog
+                    .production
+                    .get(&id)
+                    .map(|recipe| recipe.cancel_refunds)
+                    .or_else(|| {
+                        context
+                            .content
+                            .catalog
+                            .technologies
+                            .get(&id)
+                            .map(|technology| technology.cancel_refunds)
+                    })
+            });
+            let refund = refunds.map(|refund| match job.stage {
+                turts_net_protocol::JobStage::Queued => refund.queued,
+                turts_net_protocol::JobStage::Running => refund.running,
+                turts_net_protocol::JobStage::OutputBlocked => refund.output_blocked,
+            });
+            let charged = context
+                .replica
+                .job_progress(selected, job.id.0)
+                .map_or(job.charged.as_slice(), |record| record.charged.as_slice());
+            hud::set_payment_fields(&mut item, charged, refund, context);
             item.set(
                 ItemField::Progress,
                 if job.duration_ticks == 0 {
