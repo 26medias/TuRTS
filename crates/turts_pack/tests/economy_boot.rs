@@ -7,6 +7,7 @@ use turts_sim::{IdAllocators, MapBounds, Slots, UnitTypes, audit_state, load_map
 
 fn direct_map(unit: &str, x: f32, y: f32) -> MapDef {
     MapDef {
+        terrain: None,
         visibility: None,
         environment: None,
         ground: None,
