@@ -136,6 +136,13 @@ Keep the public sight-source movement. Tool sight is additional real authored wo
 Use explicit non-overlapping coordinates and validate work reach, support, coverage, claims and resource conservation before timing.
 Freeze those coordinates and all remaining fixture values in the committed driver before its first timing run.
 
+The committed driver uses work cells `x=9+2*(index%10)`, `y=44+64*slot+2*(index/10)` for indices0 through49 and slots0 and1.
+Each worker stands at `(cell.x-0.5, cell.y+0.5)`. The two ridge rectangles are `[104,108)×[42,56)` and `[104,108)×[106,120)`, at elevation2.
+Each20-tick interval normally commits100 one-prism digs and100 paid fills on100 distinct cells. Their eight changed chunks have X0 or1 and Y2,3,6 or7.
+The driver records actual per-worker steps and the changed chunk set. Final privileged checks require retained natural top-1, one placed run[-1,0], and two revisions per complete interval.
+All inherited static bodies explicitly use ForbidEdit. Inherited movement keeps the default zero-step traversal limit on these flat routes.
+Record both50ms and100ms application ACK delays for each of the two terrain visibility modes. These use the same workload, quality and deadline criteria.
+
 Run100 warm-up intervals, then1000 measured20-tick intervals in fog mode; record an equivalent AllVisible terrain-work run with the same workload.
 Request a full resync per slot every100 measured intervals. Include all deferred work and final ACK drains.
 Reuse the SDK16 direct full-service, per-client whole-batch and chronological debt timers, with no baseline subtraction.
