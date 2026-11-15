@@ -6,6 +6,7 @@ pub mod events;
 pub mod extractor;
 pub mod gather;
 pub mod income;
+pub mod operating;
 pub mod inserter;
 pub mod ledger;
 pub mod machine;
