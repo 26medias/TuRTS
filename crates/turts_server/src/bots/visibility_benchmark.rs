@@ -738,7 +738,7 @@ impl Harness {
                 .accounts
                 .iter()
                 .map(|row| row.account.clone())
-                .collect();
+                .collect::<Vec<_>>();
             let mut coordinator = turts_bot::BotCoordinator::new(
                 turts_bot::BotActor {
                     slot,
@@ -761,7 +761,7 @@ impl Harness {
             let mut lease = observation::CandidateLease::new(basis, u64::from(view.tick));
             let mut queries = lease.queries("sv7-public", operator_quota());
             queries.pin_basis(u64::from(view.tick)).unwrap();
-            for query in [
+            let mut requested = vec![
                 Query::Units(UnitQuery::own(vec![])),
                 Query::RememberedUnits(UnitQuery {
                     relation: turts_mod_api::SlotRelation::Enemy,
@@ -785,12 +785,17 @@ impl Harness {
                     center: None,
                     radius: None,
                 }),
-                Query::Accounts(keys),
                 Query::Works,
-            ] {
+            ];
+            // Public account queries accept at most64 keys. The complete private
+            // reconciliation above remains one atomic batch, never key-chunked.
+            requested.extend(keys.chunks(64).map(|keys| Query::Accounts(keys.to_vec())));
+            for query in requested {
                 let mut cursor = None;
                 loop {
-                    let page = queries.query(query.clone(), cursor, 64).unwrap();
+                    let page = queries
+                        .query(query.clone(), cursor, 64)
+                        .unwrap_or_else(|error| panic!("public SV7 query {query:?}: {error:?}"));
                     match page.state {
                         PageState::More(next) => cursor = Some(next),
                         PageState::Complete => break,
