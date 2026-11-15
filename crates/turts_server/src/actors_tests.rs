@@ -14,6 +14,9 @@ fn actor() -> BotActor {
     }
 }
 fn fixture(duration_ms: u64) -> App {
+    fixture_with(duration_ms, |_| {})
+}
+fn fixture_with(duration_ms: u64, prepare: impl FnOnce(&mut turts_mod_api::ContentCatalog)) -> App {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../mods/cedar");
     let archive = PackageArchive::parse(&pack_dir(&path).unwrap()).unwrap();
     let mut catalog = archive.content().unwrap();
@@ -21,6 +24,7 @@ fn fixture(duration_ms: u64) -> App {
     recipe.payment = PaymentPolicy::ChargeOverTime;
     recipe.duration_ms = duration_ms;
     recipe.costs[0].amount = 12;
+    prepare(&mut catalog);
     let map = archive.maps().unwrap().remove(0).1;
     let mut app = turts_sim::headless_app(20);
     let staged = turts_sim::stage_package(
@@ -254,4 +258,251 @@ fn initial_account_rows_and_invalid_setup_are_prepared_before_permanent_claims()
     );
     assert_eq!(app.world().resource::<Slots>().owners(), before);
     assert_eq!(before[0], Some(u64::MAX));
+}
+
+#[test]
+fn a_real_weapon_kill_after_the_first_cot_step_keeps_its_exact_terminal_debit() {
+    use turts_mod_api::{
+        Behaviour, EngagePolicy, FirePolicy, HealthDef, ResolvedWeapon, SlotRelation, TargetFilter,
+        TargetKind, WeaponRangeMode,
+    };
+    let mut app = fixture_with(600, |catalog| {
+        catalog.units.get_mut(&id("depot")).unwrap().health = Some(HealthDef { max: 1 });
+        catalog.units.get_mut(&id("worker")).unwrap().weapon = Some(ResolvedWeapon {
+            range: 120.0,
+            range_mode: WeaponRangeMode::Centre,
+            cooldown_ms: 50,
+            damage: 1000,
+            ammo: None,
+            targets: TargetFilter {
+                slots: SlotRelation::Other,
+            },
+            damage_type: None,
+            bonus: vec![],
+            when_short: vec![],
+        });
+        let mut attack = catalog.orders[&id("order_stop")].clone();
+        attack.id = "order_attack".into();
+        attack.behaviour = Behaviour::Attack;
+        attack.target = TargetKind::Unit;
+        attack.fire = Some(FirePolicy::InRange);
+        attack.engage = Some(EngagePolicy::None);
+        attack.units = vec![];
+        catalog.orders.insert(id("order_attack"), attack);
+    });
+    stage_bot_command(
+        app.world_mut(),
+        command(1, vec![1], "order_produce", BotTarget::Content(id("hire"))),
+    )
+    .unwrap();
+    app.update(); // The actual production queue enters Running with no paid work yet.
+    assert_eq!(queued(&app).included[0].work.as_ref().unwrap().done, 0);
+    let attack = PlayerCommand {
+        seq: 99,
+        order: OrderEnvelope {
+            order: id("order_attack").to_string(),
+            units: vec![turts_net_protocol::UnitId(5)],
+            target: OrderTarget::Unit(turts_net_protocol::UnitId(1)),
+            queue: turts_net_protocol::QueueMode::Replace,
+            group: 0,
+        },
+    };
+    let commands = crate::orders::to_sim(
+        SlotId(1),
+        &attack,
+        &app.world().resource::<crate::orders::ServerCatalog>().0,
+    )
+    .unwrap();
+    app.world_mut()
+        .resource_mut::<turts_sim::CommandQueue>()
+        .0
+        .extend(commands);
+    app.update(); // Production pays one twelfth; Combat then kills the producer.
+    let batch = queued(&app);
+    let effect = &batch.included[0];
+    let work = effect.work.as_ref().unwrap();
+    assert!(effect.terminal && !effect.refused);
+    assert_eq!((work.done, work.total), (1, 12));
+    assert_eq!(work.state, turts_bot::WorkState::Failed);
+    assert_eq!(effect.paid.iter().map(|row| row.amount).sum::<u64>(), 1);
+    assert_eq!(
+        effect.paid[0].account.endpoint,
+        turts_bot::SourceEndpoint::Inventory {
+            unit: 1,
+            port: turts_bot::InventoryPort::Main
+        }
+    );
+    assert!(
+        !turts_sim::completed_world(app.world())
+            .units
+            .iter()
+            .any(|unit| unit.unit_id == 1)
+    );
+    assert!(!batch.accounts.iter().any(|row| matches!(
+        row.account.endpoint,
+        turts_bot::SourceEndpoint::Inventory { unit: 1, .. }
+    )));
+    let terminal = &turts_sim::committed_tick(app.world()).terminal_work[0];
+    assert_eq!(
+        (terminal.unit, terminal.job, terminal.done, terminal.total),
+        (1, work.identity.id, 1, 12)
+    );
+    assert_eq!(
+        terminal.state,
+        turts_sim::receipts::TerminalWorkState::Destroyed
+    );
+    assert!(
+        turts_sim::committed_tick(app.world())
+            .events
+            .iter()
+            .any(|event| matches!(
+                event.kind,
+                turts_sim::EconomyEventKind::Destroyed { unit: 1, .. }
+            ))
+    );
+    assert!(app.world().resource::<BotActors>().error.is_none());
+}
+
+#[test]
+fn an_automatic_held_site_can_place_and_complete_before_its_first_publication() {
+    use turts_mod_api::{
+        Behaviour, ConstructProgress, HealthDef, Ratio, ResolvedConstructor, SitePlacementDef,
+        TargetKind,
+    };
+    let mut app = fixture_with(600, |catalog| {
+        let mut building = catalog.units[&id("worker")].clone();
+        building.id = id("building");
+        building.movement = None;
+        building.inventory = None;
+        building.gatherer = None;
+        building.health = Some(HealthDef { max: 100 });
+        building.placement = Some(SitePlacementDef {
+            gap: 0.0,
+            node_clearance: 0.0,
+            in_build_area: false,
+            site_health: Ratio {
+                numerator: 1,
+                denominator: 4,
+            },
+        });
+        catalog.units.insert(id("building"), building);
+        for (name, duration) in [("build_slow", 100), ("build_fast", 50)] {
+            let mut recipe = catalog.production[&id("hire")].clone();
+            recipe.id = id(name);
+            recipe.output_unit = id("building");
+            recipe.duration_ms = duration;
+            catalog.production.insert(id(name), recipe);
+        }
+        let builder = catalog.units.get_mut(&id("depot")).unwrap();
+        builder.constructor = Some(ResolvedConstructor {
+            buildings: vec![id("build_slow"), id("build_fast")],
+            concurrent_sites: 1,
+            queue_capacity: 8,
+            progress: ConstructProgress::Autonomous,
+            when_short: vec![],
+        });
+        let mut order = catalog.orders[&id("order_produce")].clone();
+        order.id = "order_build".into();
+        order.behaviour = Behaviour::Construct;
+        order.target = TargetKind::ContentAtPoint;
+        catalog.orders.insert(id("order_build"), order);
+    });
+    app.insert_resource(turts_sim::economy::construction::ConstructionLimit(8));
+    stage_bot_command(
+        app.world_mut(),
+        command(
+            1,
+            vec![1],
+            "order_build",
+            BotTarget::ContentAtPoint {
+                content: id("build_slow"),
+                point: turts_mod_api::WorldPos { x: 20.0, y: 20.0 },
+            },
+        ),
+    )
+    .unwrap();
+    app.update();
+    let first = queued(&app);
+    assert_eq!(first.included[0].work.as_ref().unwrap().done, 1);
+    stage_bot_command(
+        app.world_mut(),
+        command(
+            2,
+            vec![1],
+            "order_build",
+            BotTarget::ContentAtPoint {
+                content: id("build_fast"),
+                point: turts_mod_api::WorldPos { x: 28.0, y: 20.0 },
+            },
+        ),
+    )
+    .unwrap();
+    app.update(); // The second order is held; the first site completes later this tick.
+    let held = queued(&app);
+    let effect = held
+        .included
+        .iter()
+        .find(|effect| effect.request.sequence == 2)
+        .unwrap();
+    assert!(effect.pending_placement && !effect.terminal && effect.work.is_none());
+    assert!(effect.paid.is_empty() && effect.reserved.is_empty());
+    assert_eq!(
+        turts_sim::completed_world(app.world()).construction.held[&1].len(),
+        1
+    );
+    app.update(); // Auto placement precedes Commands; its single work step then completes.
+    let completed = queued(&app);
+    let effect = completed
+        .included
+        .iter()
+        .find(|effect| effect.request.sequence == 2)
+        .unwrap();
+    let work = effect.work.as_ref().unwrap();
+    assert!(effect.terminal && !effect.pending_placement);
+    assert_eq!(work.identity.kind, WorkKind::Construction);
+    assert_eq!(work.actor_unit, 1);
+    assert_eq!((work.done, work.total), (1, 1));
+    assert_eq!(work.state, turts_bot::WorkState::Finished);
+    assert_eq!(
+        effect.effect_watermark,
+        Watermark {
+            completed_tick: 2,
+            revision: 2
+        }
+    );
+    assert_eq!(effect.paid.iter().map(|row| row.amount).sum::<u64>(), 12);
+    assert!(
+        turts_sim::completed_world(app.world())
+            .construction
+            .sites
+            .is_empty()
+    );
+    assert!(
+        turts_sim::completed_world(app.world())
+            .construction
+            .held
+            .is_empty()
+    );
+    let terminal = &turts_sim::committed_tick(app.world()).terminal_work[0];
+    assert!(terminal.construction);
+    assert_eq!(
+        (terminal.unit, terminal.job),
+        (work.identity.unit, work.identity.id)
+    );
+    let amount = completed
+        .accounts
+        .iter()
+        .find(|row| {
+            row.account
+                == turts_bot::SpendKey {
+                    endpoint: turts_bot::SourceEndpoint::Inventory {
+                        unit: 1,
+                        port: turts_bot::InventoryPort::Main,
+                    },
+                    resource: id("wood"),
+                }
+        })
+        .unwrap();
+    assert_eq!(amount.on_hand, 76);
+    assert!(app.world().resource::<BotActors>().error.is_none());
 }
