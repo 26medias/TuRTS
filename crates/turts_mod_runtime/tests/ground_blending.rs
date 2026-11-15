@@ -88,7 +88,15 @@ fn bad_layer_values_fail_content_and_model_validation_with_their_field() {
         l.patches[0].centre.y = n;
         cases.push((l, "centre"));
     }
-    for n in [0.0, -1.0, 7.1, f32::NAN, f32::INFINITY] {
+    for n in [
+        0.0,
+        0.000001,
+        f32::MIN_POSITIVE,
+        -1.0,
+        7.1,
+        f32::NAN,
+        f32::INFINITY,
+    ] {
         let mut l = layer();
         l.patches[0].feather = n;
         cases.push((l, "feather"));
@@ -126,4 +134,36 @@ fn optional_image_and_maximum_patch_count_are_accepted() {
     let a = archive(Some(l), "^0.2.11");
     a.content().unwrap();
     turts_mod_runtime::models::validate_models(&a).unwrap();
+}
+
+#[test]
+fn minimum_supported_feather_is_explicit_and_preserves_a_full_patch_centre() {
+    let mut value = layer();
+    value.patches[0].size = MapSize {
+        x: 0.00002,
+        y: 0.00002,
+    };
+    value.patches[0].feather = 0.00001;
+    let package = archive(Some(value.clone()), "^0.2.11");
+    package.content().unwrap();
+    turts_mod_runtime::models::validate_models(&package).unwrap();
+    value.patches[0].size = MapSize {
+        x: 0.00001,
+        y: 0.00001,
+    };
+    value.patches[0].feather = 0.000001;
+    let package = archive(Some(value), "^0.2.11");
+    assert!(
+        package
+            .content()
+            .unwrap_err()
+            .to_string()
+            .contains("feather")
+    );
+    assert!(
+        turts_mod_runtime::models::validate_models(&package)
+            .unwrap_err()
+            .to_string()
+            .contains("feather")
+    );
 }

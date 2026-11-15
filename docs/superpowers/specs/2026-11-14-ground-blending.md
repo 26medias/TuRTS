@@ -17,7 +17,7 @@ An image multiplies the colour. Without an image the layer uses the colour alone
 A patch has `centre` (map x/y), `size` (full width/depth), `rotation_deg`,
 `feather` (world units), and `opacity` (0 to 1, default 1).
 Patch values are finite. Centres and sizes are bounded to 10000 world units in magnitude.
-Sizes are positive. Feather is positive and no larger than half the smaller size.
+Sizes are positive. Feather is at least 0.00001 and no larger than half the smaller size.
 Rotation is between -360 and 360 degrees. There are at most 16 patches.
 Patches are rotated rectangles. The layer fades to zero inward from each rectangle edge.
 Overlaps take the maximum mask, so a path does not become darker at a join.
@@ -48,3 +48,9 @@ Do not change map dimensions, unit stats, placements, or resources.
 | GB7 | One independent review runs code after the build. Fix its findings. Scripted cold-player probes and the actual launcher pass on the final build. |
 
 Do not merge or push main. Every test browser uses a fresh profile and --alsa-output-device=null.
+
+## Review correction
+
+The initial positive-only feather rule admitted values below the shader precision guard.
+The independent GPU probe found a half-opaque centre for a valid tiny patch.
+The minimum is now explicit in validation and this contract. Smaller values fail before rendering.

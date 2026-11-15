@@ -59,7 +59,8 @@ An absent image uses white, so the authored colour works alone.
 There are at most 16 patches. A patch is a rectangle in world map coordinates.
 Size is the full width and depth, each positive and at most 10000 world units.
 Centre coordinates range from -10000 to 10000. Rotation ranges from -360 to 360 degrees.
-Feather is positive and no larger than half the smaller size.
+Feather is at least 0.00001 world units and no larger than half the smaller size.
+This minimum matches the shader precision guard. Smaller values fail package validation.
 It fades inward from the rectangle edge. Opacity defaults to 1 and ranges from 0 to 1.
 Every numeric value must be finite. Overlaps use the maximum mask.
 

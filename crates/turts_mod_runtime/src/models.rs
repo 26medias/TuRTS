@@ -594,12 +594,12 @@ pub(crate) fn validate_ground_overlay(
             ));
         }
         if !patch.feather.is_finite()
-            || patch.feather <= 0.0
+            || patch.feather < 0.00001
             || patch.feather > patch.size.x.min(patch.size.y) * 0.5
         {
             return Err(field(
                 "feather",
-                "must be positive and no larger than half the smaller size",
+                "must be at least 0.00001 and no larger than half the smaller size",
             ));
         }
         if !patch.opacity.is_finite() || !(0.0..=1.0).contains(&patch.opacity) {
