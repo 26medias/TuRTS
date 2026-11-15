@@ -4,6 +4,16 @@ use super::*;
 use turts_mod_runtime::{archive::PackageArchive, pack::pack_dir};
 use turts_sim::{SlotId, Slots};
 
+fn archive_lockfile_hash(archive: &PackageArchive) -> String {
+    let package_file = format!("{}-{}.tar", archive.manifest.id, archive.manifest.version);
+    let bytes = turts_mod_runtime::lock::write_lockfile(&turts_mod_api::Lockfile {
+        packages: vec![
+            archive.lock_entry(vec![format!("http://bot.test/packages/{package_file}")]),
+        ],
+    });
+    turts_mod_runtime::hash::sha256_hex(&bytes)
+}
+
 fn package_app() -> App {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../mods/stockyard");
     let archive = PackageArchive::parse(&pack_dir(&root).unwrap()).unwrap();
@@ -11,7 +21,7 @@ fn package_app() -> App {
     turts_pack::load_package(app.world_mut(), &archive).unwrap();
     app.insert_resource(ServerCatalog(archive.content().unwrap()));
     app.insert_resource(session::Advertised {
-        lockfile_hash: "0".repeat(64),
+        lockfile_hash: archive_lockfile_hash(&archive),
         tick_hz: 20,
     });
     turts_sim::initialize_completed_world(app.world_mut());
@@ -152,7 +162,7 @@ fn live_archive(archive: &PackageArchive, profile: &str, guard: Option<BotStartW
     session::install(
         &mut app,
         session::Advertised {
-            lockfile_hash: "0".repeat(64),
+            lockfile_hash: archive_lockfile_hash(archive),
             tick_hz: 20,
         },
     );
@@ -360,7 +370,7 @@ fn allocated_catalog(catalog: turts_mod_api::ContentCatalog, map: turts_mod_api:
     session::install(
         &mut app,
         session::Advertised {
-            lockfile_hash: "0".repeat(64),
+            lockfile_hash: turts_mod_runtime::hash::sha256_hex(b"public-bot-allocator-fixture"),
             tick_hz: 20,
         },
     );

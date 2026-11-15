@@ -41,7 +41,7 @@ fn fixture_with(duration_ms: u64, prepare: impl FnOnce(&mut turts_mod_api::Conte
     turts_sim::install_package(app.world_mut(), staged);
     app.insert_resource(crate::orders::ServerCatalog(catalog));
     app.insert_resource(crate::session::Advertised {
-        lockfile_hash: "0".repeat(64),
+        lockfile_hash: turts_mod_runtime::hash::sha256_hex(b"actor-receipt-fixture"),
         tick_hz: 20,
     });
     app.init_resource::<crate::session::RateLimitBuckets>();
