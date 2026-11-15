@@ -254,3 +254,59 @@ fn the_repair_charge_difference_is_exact_above_u64() {
         );
     }
 }
+
+#[test]
+fn fractional_repair_payment_survives_separate_actions() {
+    use turts_rules::heal::repair_charge_with_remainder;
+    let mut remainder = 0;
+    let mut charges = Vec::new();
+    for _ in 0..8 {
+        let (charge, next) = repair_charge_with_remainder(1, 3, per(4), remainder).unwrap();
+        charges.push(charge);
+        remainder = next;
+    }
+    assert_eq!(charges, [0, 1, 1, 1, 0, 1, 1, 1]);
+    assert_eq!(remainder, 0);
+}
+
+#[test]
+fn repair_remainder_refuses_invalid_state_and_unrepresentable_charge() {
+    use turts_rules::heal::repair_charge_with_remainder;
+    assert_eq!(repair_charge_with_remainder(1, 1, per(4), 4), None);
+    assert_eq!(repair_charge_with_remainder(u64::MAX, 2, per(1), 0), None);
+    assert_eq!(
+        repair_charge_with_remainder(u64::MAX, u64::MAX, per(u64::MAX), 0),
+        Some((u64::MAX, 0))
+    );
+    assert_eq!(
+        repair_charge_with_remainder(u64::MAX, 0, per(4), 3),
+        Some((0, 3))
+    );
+}
+
+#[test]
+fn partitioning_applied_health_cannot_avoid_repair_payment() {
+    use turts_rules::heal::repair_charge_with_remainder;
+    let mut rng = Rng::new(0x52E9_0014);
+    for _ in 0..2000 {
+        let amount = rng.range(0, 1000);
+        let denominator = per(rng.range(1, 1000));
+        let mut health = 0u64;
+        let mut paid = 0u64;
+        let mut remainder = 0u64;
+        for _ in 0..20 {
+            let applied = rng.range(0, 100);
+            let (charge, next) =
+                repair_charge_with_remainder(applied, amount, denominator, remainder).unwrap();
+            health += applied;
+            paid += charge;
+            remainder = next;
+        }
+        let numerator = u128::from(health) * u128::from(amount);
+        assert_eq!(u128::from(paid), numerator / u128::from(denominator.get()));
+        assert_eq!(
+            u128::from(remainder),
+            numerator % u128::from(denominator.get())
+        );
+    }
+}

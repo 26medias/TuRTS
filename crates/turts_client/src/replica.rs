@@ -931,6 +931,15 @@ impl Replica {
             .is_some_and(|record| turts_rules::supply::is_short(record.provided, record.consumed))
     }
 
+    /// Accepted owner-only repair action, if this source currently has one.
+    pub fn repair(&self, repairer: u32) -> Option<&turts_net_protocol::RepairRecord> {
+        self.store.repair(repairer)
+    }
+
+    pub fn repairs(&self) -> impl Iterator<Item = &turts_net_protocol::RepairRecord> {
+        self.store.repairs()
+    }
+
     /// `Source::ConstructionQueue`: the held orders of an own constructor.
     pub fn construction_queue(&self, constructor: u32) -> &[HeldOrder] {
         self.store.construction_queue(constructor)
