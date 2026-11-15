@@ -372,10 +372,18 @@ impl VisibilityState {
         &mut self,
         tick: u32,
         phase: ObservationPhase,
-        units: Vec<VisibleUnit>,
-        nodes: Vec<VisibleNode>,
+        mut units: Vec<VisibleUnit>,
+        mut nodes: Vec<VisibleNode>,
         sources: Vec<(u32, u8, WorldPos, f32)>,
     ) {
+        // Public lookups use binary search. Canonicalize once at the basis
+        // boundary, including callers that enumerate ECS entities in another order.
+        if !units.is_sorted_by_key(|row| row.unit) {
+            units.sort_unstable_by_key(|row| row.unit);
+        }
+        if !nodes.is_sorted_by_key(|row| row.node) {
+            nodes.sort_unstable_by_key(|row| row.node);
+        }
         if self.event_tick != tick {
             self.event_tick = tick;
             self.events.clear();

@@ -45,6 +45,8 @@ Sight and memories are match-local. Package replacement clears them before insta
 
 Validate grid dimensions and checked allocation sizes before changing the world.
 The map may have at most 1,048,576 cells. Checked total slot coverage storage must not exceed 64 MiB.
+An opt-in fog map's qualified identity must fit 512 UTF-8 bytes. Reject longer identities at the `id` field before installation.
+This leaves room for the repeated transaction stamp inside each 1024-byte frame. AllVisible authoring is unchanged.
 Oversized grids fail with a field path. Coverage cannot silently truncate or become all-visible.
 A large finite radius clips to the map. It cannot overflow grid arithmetic or allocate an unbounded circle.
 No sight callback, script, asset name, or Skirmish-specific rule supplies permission.
