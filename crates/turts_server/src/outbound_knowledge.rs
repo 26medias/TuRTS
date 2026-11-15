@@ -47,6 +47,7 @@ impl Pending {
 #[derive(Component)]
 pub struct KnowledgeSender {
     tip: PermittedBaseline,
+    context: turts_mod_api::KnowledgeBasis,
     active: Option<StateTransactionStamp>,
     pending: Option<Pending>,
     patches: VecDeque<EncodedStateTransaction>,
@@ -73,13 +74,12 @@ impl KnowledgeSender {
             .saturating_add(BRIDGE_RESERVE + TRANSPORT_RESERVE)
     }
     fn stamp(&mut self, parent: Option<u64>) -> Result<StateTransactionStamp, String> {
-        let basis = self
+        let mut basis = self
             .tip
             .knowledge
             .as_ref()
-            .ok_or("restricted publication has no knowledge basis")?
-            .basis
-            .clone();
+            .map_or_else(|| self.context.clone(), |knowledge| knowledge.basis.clone());
+        basis.tick = self.tip.state.tick;
         self.next_id = self
             .next_id
             .checked_add(1)
@@ -156,27 +156,62 @@ fn emit_cancel(world: &mut World, entity: Entity, cancel: Option<StateTransactio
         }
     }
 }
-/// Returns false only for the unchanged AllVisible publication path.
+/// Small AllVisible baselines retain their legacy fast path.
 pub fn queue_full(world: &mut World, entity: Entity, slot: SlotId) -> Result<bool, String> {
+    queue_snapshot(world, entity, slot, false)
+}
+/// A large legacy patch needs its first atomic baseline before any following patch can name it.
+pub fn queue_oversized(world: &mut World, entity: Entity, slot: SlotId) -> Result<bool, String> {
+    queue_snapshot(world, entity, slot, true)
+}
+fn queue_snapshot(
+    world: &mut World,
+    entity: Entity,
+    slot: SlotId,
+    force: bool,
+) -> Result<bool, String> {
     let policy = crate::permissions::completed(world);
-    if policy.0.knowledge_basis().is_none() {
-        return Ok(false);
-    }
     if !turts_sim::visibility::context_ready(world) {
         return Err("Sight context is not ready for publication".into());
     }
     let tip =
         PermittedBaseline::capture(turts_sim::completed_world(world), slot, policy.0.as_ref());
+    if tip.knowledge.is_none()
+        && !force
+        && world.get::<KnowledgeSender>(entity).is_none()
+        && postcard::experimental::serialized_size(&tip.state).map_err(|error| error.to_string())?
+            <= FRAME_LIMIT
+    {
+        return Ok(false);
+    }
+    let context = match &tip.knowledge {
+        Some(knowledge) => knowledge.basis.clone(),
+        None => turts_mod_api::KnowledgeBasis {
+            match_id: world
+                .get_resource::<crate::stats::MatchId>()
+                .ok_or("Missing match identity for atomic state")?
+                .0,
+            map: world
+                .get_resource::<turts_sim::bootstrap::InstalledMapIdentity>()
+                .ok_or("Missing installed map identity for atomic state")?
+                .0
+                .clone(),
+            tick: tip.state.tick,
+            phase: turts_mod_api::ObservationPhase::Completed,
+        },
+    };
     let now = Instant::now();
     let mut sender = if let Some(mut existing) = world.entity_mut(entity).take::<KnowledgeSender>()
     {
         let cancel = existing.cancel(StateTransactionCancelReason::Superseded);
         emit_cancel(world, entity, cancel);
         existing.tip = tip;
+        existing.context = context;
         existing
     } else {
         KnowledgeSender {
             tip,
+            context,
             active: None,
             pending: None,
             patches: VecDeque::new(),
@@ -192,6 +227,13 @@ pub fn queue_full(world: &mut World, entity: Entity, slot: SlotId) -> Result<boo
 }
 pub fn queue_tick(world: &mut World, entity: Entity, slot: SlotId) -> Result<bool, String> {
     let Some(mut sender) = world.entity_mut(entity).take::<KnowledgeSender>() else {
+        if crate::permissions::completed(world)
+            .0
+            .knowledge_basis()
+            .is_none()
+        {
+            return Ok(false);
+        }
         return queue_full(world, entity, slot);
     };
     let policy = crate::permissions::completed(world);
@@ -202,9 +244,18 @@ pub fn queue_tick(world: &mut World, entity: Entity, slot: SlotId) -> Result<boo
         return Ok(true);
     }
     let facts = turts_sim::visibility::event_units(world, slot.0);
-    let payload = sender
-        .tip
-        .patch(&next, turts_sim::committed_tick(world), slot, &facts);
+    let payload = if sender.tip.knowledge.is_none() && next.knowledge.is_none() {
+        sender.tip.all_visible_patch(
+            &next,
+            turts_sim::committed_tick(world),
+            slot,
+            &sender.context,
+        )
+    } else {
+        sender
+            .tip
+            .patch(&next, turts_sim::committed_tick(world), slot, &facts)
+    };
     let parent = sender
         .patches
         .back()
@@ -417,8 +468,10 @@ mod tests {
                 retention_truncated: false,
             }),
         };
+        let context = tip.knowledge.as_ref().unwrap().basis.clone();
         let mut sender = KnowledgeSender {
             tip,
+            context,
             active: None,
             pending: None,
             patches: VecDeque::new(),
