@@ -87,6 +87,25 @@ impl PermittedBaseline {
             knowledge: policy.knowledge(slot.0),
         }
     }
+    /// Build the next basis by transferring unchanged live unit names. The old
+    /// basis is consumed for diffing only; it must not be serialized afterward.
+    /// Names of hidden/removed units remain intact for truthful old event handles.
+    pub(crate) fn capture_reusing_metadata(
+        &mut self,
+        view: &WorldView,
+        slot: SlotId,
+        policy: &dyn ObservationPermissions,
+    ) -> Self {
+        Self {
+            state: super::export_permitted::snapshot_reusing(
+                view,
+                slot,
+                policy,
+                Some(&mut self.state.units),
+            ),
+            knowledge: policy.knowledge(slot.0),
+        }
+    }
     /// The legacy AllVisible path can retain an earlier truthful public observation for cosmetics.
     /// It never labels that old position as a current phase observation.
     pub fn all_visible_patch(

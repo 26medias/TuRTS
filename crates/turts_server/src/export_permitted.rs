@@ -25,8 +25,16 @@ pub(super) fn snapshot(
     slot: SlotId,
     policy: &dyn ObservationPermissions,
 ) -> wire::Snapshot {
+    snapshot_reusing(view, slot, policy, None)
+}
+pub(super) fn snapshot_reusing(
+    view: &WorldView,
+    slot: SlotId,
+    policy: &dyn ObservationPermissions,
+    reuse: Option<&mut [wire::UnitSnapshot]>,
+) -> wire::Snapshot {
     if policy.all_public_geometry(slot.0) {
-        return super::snapshot_for(view, slot);
+        return super::snapshot_projected_reusing(view, slot, None, reuse);
     }
     let mut geometry = Geometry {
         units: view
@@ -44,7 +52,7 @@ pub(super) fn snapshot(
     };
     geometry.units.sort_unstable();
     geometry.nodes.sort_unstable();
-    let mut state = super::snapshot_projected(view, slot, Some(&geometry));
+    let mut state = super::snapshot_projected_reusing(view, slot, Some(&geometry), reuse);
     for row in &mut state.weapons {
         row.last_target = row.last_target.filter(|id| geometry.unit(id.0));
     }

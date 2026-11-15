@@ -88,6 +88,20 @@ fn snapshot_projected(
     slot: SlotId,
     permitted: Option<&export_permitted::Geometry>,
 ) -> wire::Snapshot {
+    snapshot_projected_reusing(view, slot, permitted, None)
+}
+fn snapshot_projected_reusing(
+    view: &WorldView,
+    slot: SlotId,
+    permitted: Option<&export_permitted::Geometry>,
+    mut reuse: Option<&mut [wire::UnitSnapshot]>,
+) -> wire::Snapshot {
+    // Published simulation views and their baseline use canonical unit IDs.
+    // Defensive unsorted fixtures keep the ordinary cloning path.
+    let reusable = reuse.as_ref().is_some_and(|rows| {
+        rows.windows(2)
+            .all(|pair| pair[0].unit_id.0 < pair[1].unit_id.0)
+    });
     wire::Snapshot {
         tick: view.tick,
         units: view
@@ -95,7 +109,21 @@ fn snapshot_projected(
             .iter()
             .filter(|unit| permitted.is_none_or(|p| p.unit(unit.unit_id)))
             .map(|unit| {
-                let mut snapshot = unit_snapshot(unit);
+                let content = if reusable {
+                    reuse
+                        .as_deref_mut()
+                        .and_then(|rows| {
+                            let index = rows
+                                .binary_search_by_key(&unit.unit_id, |row| row.unit_id.0)
+                                .ok()?;
+                            (rows[index].content_id == unit.content_id)
+                                .then(|| std::mem::take(&mut rows[index].content_id))
+                        })
+                        .unwrap_or_else(|| unit.content_id.clone())
+                } else {
+                    unit.content_id.clone()
+                };
+                let mut snapshot = unit_snapshot_with_content(unit, content);
                 snapshot.site = view.construction.sites.contains_key(&unit.unit_id);
                 snapshot
             })
@@ -371,9 +399,12 @@ fn owns_balance(record: &BalanceView, slot: SlotId) -> bool {
 }
 
 fn unit_snapshot(unit: &UnitState) -> messages::UnitSnapshot {
+    unit_snapshot_with_content(unit, unit.content_id.clone())
+}
+fn unit_snapshot_with_content(unit: &UnitState, content_id: String) -> messages::UnitSnapshot {
     messages::UnitSnapshot {
         unit_id: messages::UnitId(unit.unit_id),
-        content_id: unit.content_id.clone(),
+        content_id,
         owner_slot: messages::SlotId(unit.owner_slot),
         facing: unit.facing,
         pos: messages::Pos {
