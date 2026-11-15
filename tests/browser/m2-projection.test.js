@@ -137,6 +137,7 @@ test("MC projection permits unit_orders and max_health and still refuses a new p
     const world = JSON.parse(JSON.stringify(actualPublicDebug.replicated_world));
     world.unit_orders = [];
     world.progress={sites:[],jobs:[],construction_queues:[]};world.repairs=[];
+    world.knowledge = null;
     for (const unit of world.units) unit.max_health = null;
     const debug = { ...actualPublicDebug, replicated_world: world };
     assertPublicProjectionSchema({ debug });
@@ -156,8 +157,25 @@ test("MC projection refuses the order state of a unit that the client slot does 
     assert(own && foreign, "the saved fixture holds units of two slots");
     world.unit_orders = [{ unit: own.unit_id }];
     world.progress={sites:[],jobs:[],construction_queues:[]};world.repairs=[];
+    world.knowledge = null;
     assertPublicProjectionSchema({ debug: { ...actualPublicDebug, slot: 0, replicated_world: world } });
     world.unit_orders = [{ unit: foreign.unit_id }];
     assert.throws(() => assertPublicProjectionSchema({ debug: { ...actualPublicDebug, slot: 0, replicated_world: world } }),
         /order state of unit/);
+});
+
+
+test("current M2 AllVisible projection requires explicit null knowledge", () => {
+    const world = JSON.parse(JSON.stringify(actualPublicDebug.replicated_world));
+    world.unit_orders = [];
+    world.progress = { sites: [], jobs: [], construction_queues: [] };
+    world.repairs = [];
+    world.knowledge = null;
+    for (const unit of world.units) unit.max_health = null;
+    const snapshot = { debug: { ...actualPublicDebug, replicated_world: world } };
+    assertPublicProjectionSchema(snapshot, { requireCurrent: true });
+    world.knowledge = { observed: [], remembered_units: [] };
+    assert.throws(() => assertPublicProjectionSchema(snapshot, { requireCurrent: true }), /AllVisible.*null knowledge/);
+    delete world.knowledge;
+    assert.throws(() => assertPublicProjectionSchema(snapshot, { requireCurrent: true }), /permitted M2\/M3 client state only/);
 });

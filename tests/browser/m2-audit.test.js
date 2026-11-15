@@ -70,6 +70,7 @@ test("projects a complete owner-only audit world into the browser snapshot schem
     const actual = projectAuditOwnerWorld(state, 0);
     assert.deepEqual(actual, {
         tick: 4,
+        knowledge: null,
         units: [
             { unit_id: 1, content_id: "base:command_center", owner_slot: 0, facing: null, pos: [8, 8] },
             { unit_id: 2, content_id: "base:harvester", owner_slot: 0, facing: null, pos: [12, 8] },
@@ -242,4 +243,15 @@ test("site work, held construction and repair rows come from owned audit records
     assert.equal(assertOwnerWorldMatchesAudit(actual, states[3], 0, expected), 3);
     const bad = structuredClone(actual); bad.repairs[0].state = "Working";
     assert.throws(() => assertOwnerWorldMatchesAudit(bad, states[3], 0, expected), /owner replica mismatch/);
+});
+
+
+test("AllVisible audit comparison rejects unexpected fog knowledge", () => {
+    const state = auditState(4);
+    const actual = projectAuditOwnerWorld(state, 0);
+    assert.equal(actual.knowledge, null);
+    actual.knowledge = { observed: [], remembered_units: [] };
+    assert.throws(() => assertOwnerWorldMatchesAudit(actual, state, 0));
+    delete actual.knowledge;
+    assert.throws(() => assertOwnerWorldMatchesAudit(actual, state, 0));
 });
