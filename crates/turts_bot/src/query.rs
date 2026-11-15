@@ -1,0 +1,136 @@
+//! Bounded queries expose permitted facts and identical metadata for equivalent permissions.
+use crate::{budget::BudgetUsage, types::*};
+use serde::{Deserialize, Serialize};
+use turts_mod_api::{Capability, ContentId, SlotRelation, WorldPos};
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct UnitObservation {
+    pub unit: UnitId,
+    pub owner_slot: u8,
+    pub content: ContentId,
+    pub position: WorldPos,
+    pub radius: f32,
+    pub capabilities: Vec<Capability>,
+    pub health: Option<(u64, u64)>,
+    pub site: bool,
+}
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct NodeObservation {
+    pub node: NodeId,
+    pub content: ContentId,
+    pub position: WorldPos,
+    pub radius: f32,
+    pub remaining: u64,
+}
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct UnitQuery {
+    pub relation: SlotRelation,
+    pub content: Vec<ContentId>,
+    pub center: Option<WorldPos>,
+    pub radius: Option<f32>,
+}
+impl UnitQuery {
+    pub fn own(content: Vec<ContentId>) -> Self {
+        Self {
+            relation: SlotRelation::Same,
+            content,
+            center: None,
+            radius: None,
+        }
+    }
+}
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct NodeQuery {
+    pub resources: Vec<ContentId>,
+    pub center: Option<WorldPos>,
+    pub radius: Option<f32>,
+}
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PlacementQuery {
+    pub actor: UnitId,
+    pub production: ContentId,
+    pub point: WorldPos,
+}
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AffordabilityQuery {
+    pub actor: UnitId,
+    pub production: ContentId,
+}
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum Query {
+    Units(UnitQuery),
+    Nodes(NodeQuery),
+    LookupUnit(UnitId),
+    Accounts(Vec<SpendKey>),
+    Works,
+    Placement(PlacementQuery),
+    Affordability(AffordabilityQuery),
+}
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct QueryCursor {
+    pub basis: BasisId,
+    pub token: u64,
+}
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PageState {
+    Complete,
+    More(QueryCursor),
+    UnresolvedTie(QueryCursor),
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Coverage {
+    Complete,
+    NotObserved,
+}
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Advice<T> {
+    Known(T),
+    NotObserved,
+}
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PlacementAdvice {
+    Allowed,
+    Blocked,
+}
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CostQuote {
+    pub costs: Vec<AccountAmount>,
+    pub affordable: bool,
+}
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum QueryData {
+    Units(Vec<UnitObservation>),
+    Nodes(Vec<NodeObservation>),
+    Lookup(Advice<UnitObservation>),
+    Accounts(Vec<AccountObservation>),
+    Works(Vec<WorkObservation>),
+    Placement(Advice<PlacementAdvice>),
+    Affordability(Advice<CostQuote>),
+}
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct QueryPage {
+    pub basis: BasisId,
+    pub completed_tick: u32,
+    pub data: QueryData,
+    pub state: PageState,
+    pub coverage: Coverage,
+    pub usage: BudgetUsage,
+}
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum QueryError {
+    Budget,
+    ExpiredBasis,
+    InvalidContinuation,
+    InvalidQuery,
+    NotObserved,
+}
+/// Every examined count and cursor describes permitted candidates only.
+/// Private projection scans are accounted by the host, outside public metadata.
+pub trait BotQueries {
+    fn query(
+        &mut self,
+        query: Query,
+        continuation: Option<QueryCursor>,
+        limit: u32,
+    ) -> Result<QueryPage, QueryError>;
+}
