@@ -1,0 +1,89 @@
+# Shared visibility implementation plan
+
+Status: proposed for the same Anvil reviewer after incorporation of gate1 findings.
+Spec: `docs/superpowers/specs/2026-11-15-shared-visibility.md`.
+Baseline: SDK15 candidate `a96cbaeb`. SDK15 acceptance remains independent.
+Budget: the existing one reviewer performs this plan review. No extra spec-review round or per-task reviews.
+Implement only after this review passes. Use three implementation children and one implementing root.
+
+## Shared contracts first: root
+
+Publish API16 authoring/resolved types and validation in `turts_mod_api` and `turts_mod_runtime`.
+Publish protocol9 portable knowledge, event-reference, and transaction stamps in `turts_net_protocol`.
+Freeze optional/default omission rules and explicit-empty/null floor checks before dependent edits.
+Reuse qualified ContentId, map bounds, installed teams, match tick, and the existing public bot provider boundary.
+Publish the provider's phase/tick metadata, current/remembered queries, coverage answers, and sticky retention flag.
+Keep current, tactical, and completed bases explicit. Nothing receives unrestricted world access through a public query port.
+Root owns package boot/reinstall staging, shared schedule registration, common fixture defaults, and declaration conflicts.
+Validate grid/allocation limits before world mutation. Build initial coverage/memory before initial exports or bot decisions.
+Publish small coherent WIP commits early. Integrate before each child waits for an isolated complete workspace compile.
+
+## Lane 1: authoritative sight, memory, and actions
+
+Own a focused `turts_rules::visibility` module and `turts_sim` visibility state/systems/tests.
+Own action permission hooks in orders, acquisition, combat, gather/extract, and repair.
+Use one grid rule for coverage, point lookup, boundary clipping, and source circles.
+Track source/position/life changes without copying every world per viewer or keeping per-tick history.
+Maintain current/explored cells and bounded stale records; oldest timestamp ties expire as a group.
+Refresh start, tactical, and completed bases at the specified phase boundaries.
+Keep event-time permission witnesses until that completed tick exports; store only permitted endpoint facts.
+A subject appearing and dying within one tick needs a permitted transient identity before any event refers to it.
+If the last source dies after an authorized shot, export that authorized observation without revealing later hidden truth.
+Drop hidden live targets. Preserve only the last permitted destination for an ordinary chase fallback.
+Keep movement/physical collisions authoritative; do not introduce ID-based target or memory retention priority.
+Provide independent native SV2/SV3/SV5 tests, including construction, source removal, teams, and repeated same-build replay.
+
+## Lane 2: permitted publication, queries, and bounded transport
+
+Own `turts_server` permission/export/session/outbound integration and bot observation/query/controller adapters.
+Own shared portable transaction encoding/assembly helpers and their tests; root retains message declarations/registration.
+Project every public/reference-bearing field through the authoritative basis before diffing or serialization.
+Build placement advice exclusively from permitted rows and public rules.
+Its coverage region includes candidate footprint plus public maxima for node clearance, static gaps, and possible blocker radii.
+Use own permitted anchors directly; cover any other rule-dependent anchor region before a geometry verdict.
+Unknown depends only on this public region and coverage, never on whether hidden blockers exist there.
+Add the paired outside-footprint/inside-clearance tests with all query metadata equality assertions.
+Preserve SDK15 account basis, provisional debt, leases, fairness, and actor-local failure handling.
+Expose stale queries separately. Stock controllers can move to remembered points without targeting stale IDs.
+
+Implement one pending transaction per connection, plus one active baseline.
+Use match/map/tick/transaction/parent stamps and indexed chunks with checked total size.
+Encoded chunks are <=1,024 bytes and must fit the existing transport frame budget after its headers.
+Do not enlarge Lightyear transport limits. Register a reliable ordered state channel for transaction traffic.
+Bound all queued copies/encoding/staging at 64 MiB and post-base patches at 8 MiB per connection.
+Use bounded incremental sending; ordinary command results must not sit behind an unlimited state queue.
+Require complete assembly and activation acknowledgement before advancing that connection's baseline.
+Cancel/release/restart from latest permitted state on overflow or 5-second timeout; apply the spec's restart/disconnect policy.
+Superseded stamps cannot reactivate. Ordinary large patches use the same atomic transport without routine full resync.
+Do not retain raw worlds for every tick. Retain bounded permitted differences while the base transfers.
+Provide SV4 paired-world, interruption/reorder/duplicate, byte-cap, slow-viewer, and healthy-viewer isolation tests.
+
+## Lane 3: browser state activation and fog presentation
+
+Own `turts_client` ingestion/replica, world/minimap fog, stale markers, picking, HUD, and browser probe extensions.
+Consume the lane2 assembler; validate a complete stamped replacement/patch before changing any live client tables.
+Keep the old complete view during staging. Apply coverage, memories, entities, health, and cleared references together.
+Reject stale or conflicting transactions. Never combine unordered legacy deltas with an incomplete restricted transaction.
+Clear interpolation, selection targets, health bars, minimap rows, labels, and effects on visibility loss.
+Draw remembered records through a separate dim/stale presentation with last-seen information.
+Render unexplored and explored-but-unobserved ground consistently in the world and minimap.
+Use existing rendering/assets. Do not reduce model or texture quality.
+Add native atomic-ingestion tests and the SV6 browser driver using actual pointer/key actions and screenshot checks.
+Every browser has a fresh profile and `--alsa-output-device=null`.
+
+## Integration, validation, and delivery: root
+
+Integrate declaration, phase/provider, transport, and client checkpoints early on a non-main branch.
+Assemble two public fixtures with different economy/ownership structures and renamed content. Keep Skirmish defaults unchanged.
+Root owns the authoritative replay/audit additions and independent whole-feature foundation review that runs code.
+Run focused native tests through `~/.codex/bin/turts-cargo`; serialize the shared native cache and avoid duplicate targets.
+Before WASM release work, switch the native cache back to integration. Reserve quiet CPU/GPU windows for measurements.
+Use one SV1-SV7 evidence report. Each row identifies actual tests, commands, result, and evidence path.
+SV7 fixes its authored routes, unit mix, source count, transition counters, resync schedule, and warm-up before timing.
+Time every tick and all deferred transport/activation work. Report server/client CPU and their sum; never subtract a baseline.
+Use native client-ingestion timing for reproducible CPU accounting and separately verify the real browser's >=30 fps requirement.
+Report AllVisible/concentrated-battle comparison, encoded traffic, retained memory, and the largest interrupted transaction.
+After focused checks and review fixes, run the required full gates once on the assembled candidate.
+Run SV6 and final `docs/qa/cold-play.md` probes before asking the CEO to play.
+Update README progress and write a short handoff with verified limits and remaining M5 work.
+Merge only the fully accepted milestone under standing authorization. Do not push main.
