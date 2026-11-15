@@ -1154,3 +1154,58 @@ fn real_lethal_damage_refunds_only_balance_headroom_without_removal_permission()
             .any(|unit| unit.unit_id == 1)
     );
 }
+
+/// Rebuild each authoritative world independently and compare every audit boundary,
+/// not only final balances. This includes payment, wait recovery and repair debt.
+#[test]
+fn paid_work_and_repair_repeated_worlds_match_at_every_boundary() {
+    fn paid_run(hz: u16) -> Vec<String> {
+        let mut fixture = Fixture::new();
+        mixed_costs(&mut fixture, 800, 17, 11, 100);
+        fixture.map.slot_economy[0].balances[0].amount = 1;
+        fixture.unit("factory").income = Some(IncomeDef {
+            resource: cid("credits").to_string(),
+            amount: 3,
+            period_ms: 350,
+        });
+        let mut app = fixture.app_at(hz);
+        production::queue_production(app.world_mut(), SlotId(0), 1, cid("train")).unwrap();
+        construction::construct(
+            app.world_mut(),
+            SlotId(0),
+            2,
+            cid("build_relay"),
+            Vec2::new(40., 30.),
+        )
+        .unwrap();
+        let mut records = start(&mut app);
+        ticks(&mut app, &mut records, 60);
+        validate_records(&records).unwrap();
+        records
+            .iter()
+            .map(|row| serde_json::to_string(row).unwrap())
+            .collect()
+    }
+    fn repair_run(hz: u16) -> Vec<String> {
+        let mut app = repair_fixture().app_at(hz);
+        let mut records = start(&mut app);
+        ticks(&mut app, &mut records, 60);
+        validate_records(&records).unwrap();
+        records
+            .iter()
+            .map(|row| serde_json::to_string(row).unwrap())
+            .collect()
+    }
+    for hz in [10, 20] {
+        assert_eq!(
+            paid_run(hz),
+            paid_run(hz),
+            "paid-work trace differs at {hz} Hz"
+        );
+        assert_eq!(
+            repair_run(hz),
+            repair_run(hz),
+            "repair trace differs at {hz} Hz"
+        );
+    }
+}
