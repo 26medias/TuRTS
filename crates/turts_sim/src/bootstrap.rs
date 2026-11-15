@@ -599,3 +599,430 @@ pub fn install_package(world: &mut World, staged: StagedPackage) {
         income::on_activate(world, id, Some(clock));
     }
 }
+
+#[cfg(test)]
+mod operating_tests {
+    use super::*;
+    use crate::economy::{power, views};
+    use turts_mod_api::{
+        ConstructProgress, HealthDef, IncomeDef, MapSize, Placement, ResolvedConstructor,
+        ResolvedProducer, ResourceDef, ShortEffect, SupplyAmount, SupplyCounts, SupplyScope,
+        WhenShort, WorldPos,
+    };
+
+    fn cid(value: &str) -> ContentId {
+        ContentId::parse(value).unwrap()
+    }
+    fn definition(name: &str) -> turts_mod_api::ResolvedUnit {
+        turts_mod_api::ResolvedUnit {
+            id: cid(name),
+            name: name.into(),
+            footprint: Footprint::Circle { radius: 0.5 },
+            movement: None,
+            inventory: None,
+            gatherer: None,
+            drop_off: None,
+            producer: None,
+            constructor: None,
+            placement: None,
+            build_area: None,
+            output_inventory: None,
+            extractor: None,
+            conveyor: None,
+            inserter: None,
+            machine: None,
+            research: None,
+            health: Some(HealthDef { max: 100 }),
+            weapon: None,
+            removal: None,
+            provides: vec![],
+            consumes: vec![],
+            income: None,
+            armour: None,
+            acquire: None,
+        }
+    }
+    fn fixture() -> (ContentCatalog, SourceDef<MapDef>) {
+        let mut provider = definition("operating:provider");
+        provider.provides = vec![SupplyAmount {
+            resource: "operating:power".into(),
+            amount: 10,
+        }];
+        provider.income = Some(IncomeDef {
+            resource: "operating:credits".into(),
+            amount: 3,
+            period_ms: 1050,
+        });
+        let mut consumer = definition("operating:consumer");
+        consumer.consumes = vec![SupplyAmount {
+            resource: "operating:power".into(),
+            amount: 20,
+        }];
+        let short = |denominator| WhenShort {
+            resource: "operating:power".into(),
+            effect: ShortEffect::Rate(turts_mod_api::Ratio {
+                numerator: 1,
+                denominator,
+            }),
+        };
+        consumer.producer = Some(ResolvedProducer {
+            recipes: vec![],
+            queue_capacity: 1,
+            spawn_offsets: vec![WorldPos { x: 2.0, y: 0.0 }],
+            when_short: vec![short(2)],
+        });
+        consumer.constructor = Some(ResolvedConstructor {
+            buildings: vec![],
+            concurrent_sites: 1,
+            queue_capacity: 1,
+            progress: ConstructProgress::Autonomous,
+            when_short: vec![short(3)],
+        });
+        let resources = [
+            (
+                "operating:power",
+                ResourceKind::Supply {
+                    scope: SupplyScope::Slot,
+                    counts: SupplyCounts::Completed,
+                },
+            ),
+            ("operating:credits", ResourceKind::Balance),
+        ]
+        .into_iter()
+        .map(|(name, kind)| {
+            (
+                cid(name),
+                ResourceDef {
+                    id: name.rsplit(':').next().unwrap().into(),
+                    name: name.into(),
+                    unit_name: String::new(),
+                    kind,
+                },
+            )
+        })
+        .collect();
+        let catalog = ContentCatalog {
+            combat: None,
+            resources,
+            units: [provider, consumer]
+                .into_iter()
+                .map(|unit| (unit.id.clone(), unit))
+                .collect(),
+            nodes: BTreeMap::new(),
+            production: BTreeMap::new(),
+            recipes: BTreeMap::new(),
+            technologies: BTreeMap::new(),
+            orders: BTreeMap::new(),
+            order_queue_depths: BTreeMap::new(),
+            source_files: BTreeMap::from([
+                (cid("operating:provider"), "units/provider.ron".into()),
+                (cid("operating:consumer"), "units/consumer.ron".into()),
+            ]),
+        };
+        let placement = |unit: &str, x: f32| Placement {
+            unit: unit.into(),
+            owner_slot: 0,
+            pos: WorldPos { x, y: 8.0 },
+            contents: vec![],
+            facing: None,
+            start_order: None,
+        };
+        let map = SourceDef {
+            file: "maps/field.ron".into(),
+            value: MapDef {
+                id: "field".into(),
+                size: MapSize { x: 40.0, y: 30.0 },
+                placements: vec![
+                    placement("operating:provider", 8.0),
+                    placement("operating:consumer", 15.0),
+                ],
+                nodes: vec![],
+                slot_economy: vec![],
+                belts: vec![],
+                environment: None,
+                ground: None,
+            },
+        };
+        (catalog, map)
+    }
+
+    #[test]
+    fn staging_is_atomic_and_installs_tick_zero_clocks_and_exact_capability_rates() {
+        let mut app = crate::headless_app(20);
+        let (catalog, map) = fixture();
+        let before = views::audit_state(app.world_mut());
+        let staged = stage_package(app.world(), catalog, map, 20).unwrap();
+        assert_eq!(views::audit_state(app.world_mut()), before);
+        install_package(app.world_mut(), staged);
+        assert_eq!(app.world().resource::<RateQ>().0, 6);
+        assert_eq!(
+            app.world().resource::<IncomePeriods>().0[&cid("operating:provider")],
+            21
+        );
+        let clocks = income::clock_audit(app.world());
+        assert_eq!(clocks.len(), 1);
+        assert_eq!((clocks[0].activation_tick, clocks[0].next_due), (0, 21));
+        let view = views::world_view(app.world_mut());
+        let operating = view.operating.unwrap();
+        assert_eq!(operating.rate_q, 6);
+        assert_eq!(
+            operating
+                .rates
+                .iter()
+                .find(|row| row.unit == 2)
+                .unwrap()
+                .producer,
+            (1, 2)
+        );
+        assert_eq!(
+            operating
+                .rates
+                .iter()
+                .find(|row| row.unit == 2)
+                .unwrap()
+                .constructor,
+            (1, 3)
+        );
+        assert!(
+            operating
+                .supply
+                .iter()
+                .any(|row| row.slot == 0 && row.provided == 10 && row.consumed == 20)
+        );
+        assert!(
+            operating
+                .supply
+                .iter()
+                .any(|row| row.slot == 1 && row.provided == 0 && row.consumed == 0)
+        );
+        for tick in 1..=20 {
+            app.world_mut().resource_mut::<crate::world::Tick>().0 = tick;
+            income::run_income(app.world_mut());
+        }
+        assert_eq!(
+            app.world().resource::<EconomyLedger>().balances[&(0, cid("operating:credits"))]
+                .on_hand,
+            0
+        );
+        app.world_mut().resource_mut::<crate::world::Tick>().0 = 21;
+        income::run_income(app.world_mut());
+        assert_eq!(
+            app.world().resource::<EconomyLedger>().balances[&(0, cid("operating:credits"))]
+                .on_hand,
+            3
+        );
+        let audit = views::audit_state(app.world_mut());
+        assert_eq!(audit.raw_income_clocks[0].next_due, 42);
+        assert_eq!(audit.raw_operating.unwrap().active.len(), 2);
+    }
+
+    #[test]
+    fn boot_supply_overflow_leaves_the_entire_world_unchanged() {
+        let mut app = crate::headless_app(20);
+        let (mut catalog, mut map) = fixture();
+        catalog
+            .units
+            .get_mut(&cid("operating:provider"))
+            .unwrap()
+            .provides[0]
+            .amount = u64::MAX;
+        map.value.placements[1].unit = "operating:provider".into();
+        let before = views::audit_state(app.world_mut());
+        let error = stage_package(app.world(), catalog, map, 20).unwrap_err();
+        assert!(error.message.contains("ArithmeticOverflow"));
+        assert_eq!(views::audit_state(app.world_mut()), before);
+        assert!(!app.world().contains_resource::<OperatingResources>());
+    }
+
+    #[test]
+    fn period_zero_is_source_aware_and_maximum_authored_period_is_valid() {
+        let app = crate::headless_app(20);
+        let (mut catalog, map) = fixture();
+        catalog
+            .units
+            .get_mut(&cid("operating:provider"))
+            .unwrap()
+            .income
+            .as_mut()
+            .unwrap()
+            .period_ms = 0;
+        let error = stage_package(app.world(), catalog.clone(), map.clone(), 20).unwrap_err();
+        assert_eq!(error.field_path, "income.period_ms");
+        assert_eq!(error.file.as_deref(), Some("units/provider.ron"));
+        catalog
+            .units
+            .get_mut(&cid("operating:provider"))
+            .unwrap()
+            .income
+            .as_mut()
+            .unwrap()
+            .period_ms = u32::MAX;
+        let staged = stage_package(app.world(), catalog, map, u16::MAX).unwrap();
+        assert_eq!(
+            staged.income_periods.0[&cid("operating:provider")],
+            (u64::from(u32::MAX) * u64::from(u16::MAX)).div_ceil(1000)
+        );
+        assert!(boot_m3::try_ms_to_ticks(u64::MAX, u32::MAX).is_none());
+    }
+
+    #[test]
+    fn merged_denominator_error_names_the_library_source_before_world_mutation() {
+        let mut app = crate::headless_app(20);
+        let (mut catalog, map) = fixture();
+        let consumer = catalog.units.get_mut(&cid("operating:consumer")).unwrap();
+        consumer.producer.as_mut().unwrap().when_short[0].effect =
+            ShortEffect::Rate(turts_mod_api::Ratio {
+                numerator: 1,
+                denominator: 257,
+            });
+        consumer.constructor.as_mut().unwrap().when_short.clear();
+        let mut library = consumer.clone();
+        library.id = cid("library:unit");
+        library.producer.as_mut().unwrap().when_short[0].effect =
+            ShortEffect::Rate(turts_mod_api::Ratio {
+                numerator: 1,
+                denominator: 263,
+            });
+        catalog
+            .source_files
+            .insert(library.id.clone(), "units/library.ron".into());
+        catalog.units.insert(library.id.clone(), library);
+        let before = views::audit_state(app.world_mut());
+        let error = stage_package(app.world(), catalog, map, 20).unwrap_err();
+        assert!(error.message.contains("65,536"));
+        // The merged catalog's final rate, not a package-local subtotal, exceeds the bound.
+        assert!(error.field_path.contains("when_short"));
+        assert_eq!(error.package, "operating");
+        assert_eq!(error.file.as_deref(), Some("units/consumer.ron"));
+        assert_eq!(views::audit_state(app.world_mut()), before);
+    }
+
+    #[test]
+    fn scaled_work_duration_overflow_is_refused_before_package_commit() {
+        let mut app = crate::headless_app(20);
+        let (mut catalog, map) = fixture();
+        let consumer = catalog.units.get_mut(&cid("operating:consumer")).unwrap();
+        consumer.producer.as_mut().unwrap().when_short[0].effect =
+            ShortEffect::Rate(turts_mod_api::Ratio {
+                numerator: 1,
+                denominator: 65_536,
+            });
+        consumer.constructor.as_mut().unwrap().when_short.clear();
+        let recipe = cid("operating:slow");
+        catalog
+            .source_files
+            .insert(recipe.clone(), "production/slow.ron".into());
+        catalog.production.insert(
+            recipe.clone(),
+            turts_mod_api::ResolvedProduction {
+                id: recipe,
+                name: "Slow".into(),
+                output_unit: cid("operating:provider"),
+                duration_ms: u64::MAX,
+                costs: vec![],
+                payment: turts_mod_api::PaymentPolicy::ChargeOnQueue,
+                cancel_refunds: turts_mod_api::CancelRefunds {
+                    queued: turts_mod_api::RefundRatio::ZERO,
+                    running: turts_mod_api::RefundRatio::ZERO,
+                    output_blocked: turts_mod_api::RefundRatio::ZERO,
+                    destroyed: turts_mod_api::RefundRatio::ZERO,
+                },
+            },
+        );
+        let before = views::audit_state(app.world_mut());
+        let error = stage_package(app.world(), catalog, map, 20).unwrap_err();
+        assert_eq!(error.field_path, "duration_ms");
+        assert_eq!(error.file.as_deref(), Some("production/slow.ron"));
+        assert!(error.message.contains("RateQ"));
+        assert_eq!(views::audit_state(app.world_mut()), before);
+    }
+
+    #[test]
+    fn retained_site_rules_match_world_and_view_after_constructor_removal() {
+        let mut app = crate::headless_app(20);
+        let (mut catalog, mut map) = fixture();
+        let constructor = catalog.units.get_mut(&cid("operating:consumer")).unwrap();
+        let rules = constructor.constructor.as_ref().unwrap().when_short.clone();
+        constructor.consumes.clear();
+        let mut demand = definition("operating:demand");
+        demand.consumes = vec![SupplyAmount {
+            resource: "operating:power".into(),
+            amount: 20,
+        }];
+        catalog.units.insert(demand.id.clone(), demand);
+        map.value.placements.push(Placement {
+            unit: "operating:demand".into(),
+            owner_slot: 0,
+            pos: WorldPos { x: 22.0, y: 8.0 },
+            contents: vec![],
+            facing: None,
+            start_order: None,
+        });
+        let staged = stage_package(app.world(), catalog, map, 20).unwrap();
+        install_package(app.world_mut(), staged);
+        let source = crate::unit_entity(app.world(), 2).unwrap();
+        power::remove_active(app.world_mut(), 2);
+        app.world_mut().despawn(source);
+        app.world_mut()
+            .resource_mut::<crate::economy::combat::Healths>()
+            .0
+            .remove(&2);
+        power::run_supply(app.world_mut());
+        let view = views::world_view(app.world_mut());
+        assert_eq!(
+            power::rate_for_rules(app.world(), 0, &rules),
+            turts_rules::Ratio::new(1, 3).unwrap()
+        );
+        assert_eq!(
+            power::rate_for_rules_in_view(&view, 0, &rules),
+            turts_rules::Ratio::new(1, 3).unwrap()
+        );
+        assert_eq!(
+            power::rate_for_rules_in_view(&view, 1, &rules),
+            turts_rules::Ratio::ONE
+        );
+    }
+
+    #[test]
+    fn no_operating_install_clears_old_supply_and_income_without_audit_fields() {
+        let mut app = crate::headless_app(20);
+        let (catalog, map) = fixture();
+        let state = OperatingResources::from_catalog(&catalog, 2);
+        app.world_mut().insert_resource(state);
+        let clock = income::prepare_activation(
+            0,
+            catalog.units[&cid("operating:provider")]
+                .income
+                .as_ref()
+                .unwrap(),
+            21,
+            0,
+        )
+        .unwrap();
+        income::on_activate(app.world_mut(), 99, Some(clock));
+        let mut catalog = catalog;
+        for unit in catalog.units.values_mut() {
+            unit.provides.clear();
+            unit.consumes.clear();
+            unit.income = None;
+            if let Some(producer) = unit.producer.as_mut() {
+                producer.when_short.clear()
+            }
+            if let Some(constructor) = unit.constructor.as_mut() {
+                constructor.when_short.clear()
+            }
+        }
+        catalog
+            .resources
+            .retain(|_, resource| resource.kind == ResourceKind::Balance);
+        let staged = stage_package(app.world(), catalog, map, 20).unwrap();
+        install_package(app.world_mut(), staged);
+        assert!(!app.world().contains_resource::<OperatingResources>());
+        assert!(income::clock_audit(app.world()).is_empty());
+        assert_eq!(app.world().resource::<RateQ>().0, 1);
+        let json = serde_json::to_value(views::audit_state(app.world_mut())).unwrap();
+        assert!(json.get("raw_operating").is_none());
+        assert!(json.get("raw_income_clocks").is_none());
+        assert!(json["economy"].get("operating").is_none());
+    }
+}

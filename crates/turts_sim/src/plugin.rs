@@ -335,10 +335,18 @@ fn publish_completed_tick(world: &mut World) {
         .as_ref()
         .map(|view| view.supply.as_slice())
         .unwrap_or_default();
+    let previous_supply: std::collections::BTreeMap<_, _> = previous_supply
+        .iter()
+        .map(|row| ((row.slot, &row.resource), row))
+        .collect();
     let supply = completed.operating.as_ref().map_or_else(Vec::new, |view| {
         view.supply
             .iter()
-            .filter(|row| !previous_supply.contains(row))
+            .filter(|row| {
+                previous_supply
+                    .get(&(row.slot, &row.resource))
+                    .is_none_or(|previous| *previous != *row)
+            })
             .map(|row| crate::economy::events::SupplyRow {
                 slot: row.slot,
                 resource: row.resource.clone(),

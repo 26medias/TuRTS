@@ -6,7 +6,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use bevy_ecs::{prelude::Resource, world::World};
-use turts_mod_api::{ContentCatalog, ContentId, ModError, ResolvedUnit, ResourceKind, ShortEffect};
+use turts_mod_api::{
+    ContentCatalog, ContentId, ModError, ResolvedUnit, ResourceKind, ShortEffect, WhenShort,
+};
 use turts_rules::Ratio;
 
 use crate::{
@@ -566,6 +568,52 @@ pub(crate) fn full_rate() -> Ratio {
     Ratio::ONE
 }
 
+fn constrained_rate(entries: &[WhenShort], short: impl Fn(&str) -> bool) -> Ratio {
+    entries.iter().fold(full_rate(), |rate, entry| {
+        if let ShortEffect::Rate(other) = entry.effect
+            && short(&entry.resource)
+        {
+            let Some(other) = Ratio::new(u64::from(other.numerator), u64::from(other.denominator))
+            else {
+                return rate;
+            };
+            turts_rules::supply::minimum_rate(rate, other)
+        } else {
+            rate
+        }
+    })
+}
+
+/// Site progress retains its constructor's rules even after that source unit is removed.
+pub(crate) fn rate_for_rules(world: &World, slot: u8, entries: &[WhenShort]) -> Ratio {
+    #[cfg(test)]
+    if let Some(probe) = world.get_resource::<PowerProbe>() {
+        return probe.rate;
+    }
+    constrained_rate(entries, |resource| shortage(world, slot, resource))
+}
+
+/// The same rule applied to an immutable, completed view for published progress records.
+pub(crate) fn rate_for_rules_in_view(
+    view: &super::views::WorldView,
+    slot: u8,
+    entries: &[WhenShort],
+) -> Ratio {
+    let Some(operating) = &view.operating else {
+        return full_rate();
+    };
+    constrained_rate(entries, |reference| {
+        let Ok(resource) = ContentId::parse(reference) else {
+            return false;
+        };
+        operating
+            .supply
+            .iter()
+            .find(|row| row.slot == slot && row.resource == resource)
+            .is_some_and(|row| turts_rules::supply::is_short(row.provided, row.consumed))
+    })
+}
+
 pub(crate) fn rate_for(world: &World, unit: u32, capability: WorkCapability) -> Ratio {
     if matches!(
         capability,
@@ -597,23 +645,7 @@ pub(crate) fn rate_for(world: &World, unit: u32, capability: WorkCapability) -> 
     let Some(slot) = slot_of(world, unit) else {
         return full_rate();
     };
-    entries
-        .into_iter()
-        .flatten()
-        .fold(full_rate(), |rate, entry| {
-            if let ShortEffect::Rate(other) = entry.effect
-                && shortage(world, slot, &entry.resource)
-            {
-                let Some(other) =
-                    Ratio::new(u64::from(other.numerator), u64::from(other.denominator))
-                else {
-                    return rate;
-                };
-                turts_rules::supply::minimum_rate(rate, other)
-            } else {
-                rate
-            }
-        })
+    rate_for_rules(world, slot, entries.unwrap_or_default())
 }
 
 /// Compatibility accessor for existing producer callers. Constructor callers use `rate_for`.
