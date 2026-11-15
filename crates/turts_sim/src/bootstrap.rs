@@ -544,6 +544,7 @@ pub fn stage_package(
 
 /// Commit a fully validated package. This operation has no fallible steps.
 pub fn install_package(world: &mut World, staged: StagedPackage) {
+    world.remove_resource::<crate::economy::repair::RepairRuntime>();
     world.remove_resource::<crate::economy::operating::OperatingHolds>();
     world.remove_resource::<OperatingResources>();
     income::clear(world);

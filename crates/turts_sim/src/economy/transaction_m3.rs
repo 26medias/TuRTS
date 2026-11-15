@@ -12,12 +12,12 @@ use crate::{
         combat::{Healths, Weapons},
         conveyor::{BeltLine, Conveyors, ItemTable},
         events::{
-            DestroyedLine, DestroyedLocation, EconomyEventKind, NextEventOrdinal,
+            CostLine, DestroyedLine, DestroyedLocation, EconomyEventKind, NextEventOrdinal,
             PendingEconomyEvents, RemoveCause, RemovedThisTick, SpawnedThisTick,
         },
         extractor::{ExtractorState, Extractors},
         inserter::Inserters,
-        ledger::{Account, EconomyLedger, Endpoint, ReservationClaim},
+        ledger::{Account, EconomyLedger, Endpoint, ReservationClaim, ReservationLine},
         research::{Disabled, ResearchState},
     },
 };
@@ -364,6 +364,146 @@ pub(crate) fn extract_from_node(
 }
 
 #[allow(dead_code)] // used from Task 11
+fn append_desired_refunds(
+    charged: &[ReservationLine],
+    ratio: turts_mod_api::RefundRatio,
+    desired: &mut Vec<ReservationLine>,
+) -> Result<(), RejectReason> {
+    let ratio = turts_rules::Ratio::new(u64::from(ratio.numerator), u64::from(ratio.denominator))
+        .ok_or(RejectReason::IntegrityViolation)?;
+    for line in charged {
+        let amount = turts_rules::charge::refund(line.amount, ratio);
+        if amount != 0 {
+            desired.push(ReservationLine {
+                amount,
+                ..line.clone()
+            });
+        }
+    }
+    Ok(())
+}
+
+fn split_refund_rows(
+    out: &mut Vec<CostLine>,
+    endpoint: Endpoint,
+    resource: &ContentId,
+    mut amount: u128,
+) {
+    while amount != 0 {
+        let part = amount.min(u128::from(u64::MAX)) as u64;
+        out.push(crate::economy::production::event_cost_line(
+            &ReservationLine {
+                endpoint,
+                resource: resource.clone(),
+                amount: part,
+            },
+        ));
+        amount -= u128::from(part);
+    }
+}
+
+/// Destination capacity can discard mandatory refunds; it cannot preserve the victim.
+fn mandatory_refunds(
+    tx: &mut Transaction<'_>,
+    unit: u32,
+    owner: u8,
+    mut desired: Vec<ReservationLine>,
+) -> Result<(), RejectReason> {
+    if desired.is_empty() {
+        return Ok(());
+    }
+    desired.sort_by(|a, b| {
+        (a.endpoint, &a.resource, a.amount).cmp(&(b.endpoint, &b.resource, b.amount))
+    });
+    let mut destinations = BTreeMap::<Endpoint, BTreeMap<ContentId, u128>>::new();
+    for line in &desired {
+        let sum = destinations
+            .entry(line.endpoint)
+            .or_default()
+            .entry(line.resource.clone())
+            .or_default();
+        *sum = sum
+            .checked_add(u128::from(line.amount))
+            .ok_or(RejectReason::ArithmeticOverflow)?;
+    }
+    let mut credited = Vec::new();
+    let mut discarded = Vec::new();
+    for (endpoint, amounts) in destinations {
+        match endpoint {
+            Endpoint::Slot(_) => {
+                for (resource, amount) in amounts {
+                    let old = tx.account(endpoint, &resource);
+                    let paid = if tx.validate_endpoint_legacy(endpoint, &resource).is_ok() {
+                        amount.min(u128::from(u64::MAX - old.on_hand)) as u64
+                    } else {
+                        0
+                    };
+                    if paid != 0 {
+                        tx.stage_account(
+                            endpoint,
+                            resource.clone(),
+                            Account {
+                                on_hand: old.on_hand + paid,
+                                ..old
+                            },
+                        );
+                    }
+                    split_refund_rows(&mut credited, endpoint, &resource, u128::from(paid));
+                    split_refund_rows(
+                        &mut discarded,
+                        endpoint,
+                        &resource,
+                        amount - u128::from(paid),
+                    );
+                }
+            }
+            Endpoint::Inventory(destination) | Endpoint::Output(destination) => {
+                let destroyed = destination == unit
+                    || tx.writes.removed.iter().any(|row| row.unit == destination)
+                    || tx.writes.healths.get(&destination) == Some(&Some(0));
+                let batch: Option<Vec<_>> = amounts
+                    .iter()
+                    .map(|(resource, amount)| {
+                        u64::try_from(*amount).ok().map(|amount| ReservationLine {
+                            endpoint,
+                            resource: resource.clone(),
+                            amount,
+                        })
+                    })
+                    .collect();
+                let received = !destroyed
+                    && batch
+                        .as_ref()
+                        .is_some_and(|batch| super::refund_charged(tx, batch, 1, 1).is_ok());
+                for (resource, amount) in amounts {
+                    split_refund_rows(
+                        if received {
+                            &mut credited
+                        } else {
+                            &mut discarded
+                        },
+                        endpoint,
+                        &resource,
+                        amount,
+                    );
+                }
+            }
+        }
+    }
+    tx.stage_event(
+        owner,
+        EconomyEventKind::DestructionRefunded {
+            unit,
+            desired: desired
+                .iter()
+                .map(crate::economy::production::event_cost_line)
+                .collect(),
+            credited,
+            discarded,
+        },
+    )
+}
+
 pub(crate) fn remove_unit(
     tx: &mut Transaction<'_>,
     unit: u32,
@@ -379,23 +519,55 @@ pub(crate) fn remove_unit(
     }
     let entity = find_unit_entity(tx.world, unit).ok_or(RejectReason::UnknownUnit)?;
     tx.mark_m3();
-    let mut construction = tx.construction();
-    construction.sites.remove(&unit);
-    construction.held.remove(&unit);
-    tx.stage_construction(construction);
     let owner = tx
         .world
         .get::<Owner>(entity)
         .map(|owner| owner.0.0)
         .ok_or(RejectReason::IntegrityViolation)?;
+    let mut desired = Vec::new();
+    let mut construction = tx.construction();
+    if let Some(mut site) = construction.sites.remove(&unit)
+        && cause != RemoveCause::CancelledConstruction
+    {
+        let ratio = tx
+            .catalog()?
+            .0
+            .production
+            .get(&site.recipe)
+            .map(|recipe| recipe.cancel_refunds.destroyed)
+            .unwrap_or(turts_mod_api::RefundRatio::ZERO);
+        append_desired_refunds(&site.charged, ratio, &mut desired)?;
+        crate::economy::production::flush_funding(tx, owner, unit, site.job.0, &mut site.funding)?;
+    }
+    construction.held.remove(&unit);
+    tx.stage_construction(construction);
     let mut queues = tx.queues();
     if let Some(jobs) = queues.0.get_mut(&unit)
         && !jobs.is_empty()
     {
-        if cause == RemoveCause::Removed {
-            return Err(RejectReason::NotRemovable);
-        }
-        for job in jobs.iter() {
+        for job in jobs.iter_mut() {
+            if cause != RemoveCause::CancelledConstruction {
+                let catalog = &tx.catalog()?.0;
+                let ratio = catalog
+                    .production
+                    .get(&job.recipe)
+                    .map(|recipe| recipe.cancel_refunds.destroyed)
+                    .or_else(|| {
+                        catalog
+                            .technologies
+                            .get(&job.recipe)
+                            .map(|technology| technology.cancel_refunds.destroyed)
+                    })
+                    .unwrap_or(turts_mod_api::RefundRatio::ZERO);
+                append_desired_refunds(&job.charged, ratio, &mut desired)?;
+                crate::economy::production::flush_funding(
+                    tx,
+                    owner,
+                    unit,
+                    job.id.0,
+                    &mut job.funding,
+                )?;
+            }
             if let Some(reservation) = &job.reservation {
                 super::release_reservation(tx, reservation)?;
             }
@@ -403,6 +575,7 @@ pub(crate) fn remove_unit(
         jobs.clear();
         tx.stage_queues(queues);
     }
+    mandatory_refunds(tx, unit, owner, desired)?;
 
     let ledger = tx
         .world
