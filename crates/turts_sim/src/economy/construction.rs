@@ -433,6 +433,13 @@ pub fn cancel_site(world: &mut World, slot: SlotId, id: u32) -> Result<(), Rejec
         }
         let mut funding = site.funding.clone();
         super::production::flush_funding(tx, slot.0, id, site.job.0, &mut funding)?;
+        let mut construction = tx.construction();
+        construction
+            .sites
+            .get_mut(&id)
+            .ok_or(RejectReason::IntegrityViolation)?
+            .funding = funding;
+        tx.stage_construction(construction);
         let refunded = site
             .charged
             .iter()
@@ -621,7 +628,6 @@ pub(crate) fn advance_site(world: &mut World, id: u32) {
     } else {
         None
     };
-    super::operating::clear_hold(world, id);
     let rows = if completed {
         let Ok(binding) = crate::boot_m3::resolve_spawn_capability_binding(
             world,
@@ -719,8 +725,9 @@ pub(crate) fn advance_site(world: &mut World, id: u32) {
         tx.stage_construction(state);
         Ok(())
     });
-    if let Err(reason) = result {
-        super::operating::hold(world, id, reason);
+    match result {
+        Err(reason) => super::operating::hold(world, id, reason),
+        Ok(()) => super::operating::clear_hold(world, id),
     }
 }
 
@@ -735,7 +742,14 @@ fn site_hold(
         .find(|hold| hold.unit == unit)
 }
 fn site_step(view: &super::views::WorldView, unit: u32, site: &Site) -> u64 {
-    if site_hold(view, unit).is_some() {
+    if site_hold(view, unit).is_some()
+        || site
+            .funding
+            .as_ref()
+            .is_some_and(|state| state.waiting_for_funds.is_some())
+        || super::production::freeze_facts_in_view(view, unit).frozen()
+        || super::production::freeze_facts_in_view(view, site.constructor).frozen()
+    {
         return 0;
     }
     let q = view
@@ -760,7 +774,13 @@ pub fn progress_rows(view: &super::views::WorldView) -> Vec<super::events::RateR
             total: site.total,
             per_tick: site_step(view, *id, site),
             at_tick: view.tick,
-            state: if site_hold(view, *id).is_some() {
+            state: if let Some(resource) = site
+                .funding
+                .as_ref()
+                .and_then(|state| state.waiting_for_funds.clone())
+            {
+                super::events::RecordStateRow::WaitingForFunds(resource)
+            } else if site_hold(view, *id).is_some() {
                 super::events::RecordStateRow::Held
             } else if super::power::rate_for_rules_in_view(
                 view,
@@ -784,8 +804,20 @@ pub fn progress_rows(view: &super::views::WorldView) -> Vec<super::events::RateR
                     amount: line.amount,
                 })
                 .collect(),
-            held: site_hold(view, *id).is_some(),
-            held_since_tick: site_hold(view, *id).map_or(0, |hold| hold.since_tick),
+            held: site_hold(view, *id).is_some()
+                || site
+                    .funding
+                    .as_ref()
+                    .is_some_and(|state| state.held_since_tick.is_some()),
+            held_since_tick: site_hold(view, *id).map_or_else(
+                || {
+                    site.funding
+                        .as_ref()
+                        .and_then(|state| state.held_since_tick)
+                        .unwrap_or(0)
+                },
+                |hold| hold.since_tick,
+            ),
         })
         .collect()
 }
