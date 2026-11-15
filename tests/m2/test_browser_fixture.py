@@ -31,27 +31,24 @@ class BrowserFixtureTranslationTests(unittest.TestCase):
                 self.assertEqual(receipt["pairwise_squared_distance_sha256_before"], receipt["pairwise_squared_distance_sha256_after"])
                 self.assertTrue(all(0 <= record["x"] <= after["width"] and 0 <= record["y"] <= after["height"] for record in after["records"]))
 
-    def test_translation_is_rigid_bounded_and_preserves_case_overrides(self):
+    def test_small_output_blocked_fixture_keeps_real_producer_and_costs(self):
+        import math
+        import re
         source = (fixture.ROOT / "mods/base/maps/flat.ron").read_text()
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            source_path = fixture.ROOT / "mods/base/maps/flat.ron"
-            packed_path = root / "pack/base/maps/flat.ron"
-            packed_path.parent.mkdir(parents=True)
-            blocker_case = "E9-browser-base-loss-final_change"
-            packed_path.write_text(fixture.add_expected_case_override(source, "base", blocker_case))
-            receipt_path = root / "translation.json"
-            receipt = fixture.translate(source_path, packed_path, receipt_path, "base", blocker_case, 18)
-            translated = fixture.parse_map(packed_path.read_text(), "base", translated=True)
-            self.assertEqual(translated["width"], 82)
-            self.assertEqual(translated["height"], 64)
-            self.assertEqual(receipt["placement_count"], 6)
-            self.assertEqual(receipt["node_count"], 2)
-            self.assertEqual(receipt["pairwise_squared_distance_sha256_before"], receipt["pairwise_squared_distance_sha256_after"])
-            self.assertEqual(receipt["packed_after_translation_sha256"], fixture.sha256(packed_path.read_bytes()))
-            self.assertTrue(receipt["non_coordinate_source_text_preserved"])
-            self.assertEqual([row["x"] for row in translated["records"][:2]], [26, 30])
-            self.assertEqual([row["x"] for row in translated["records"][-2:]], [42, 58])
+        blocked = fixture.add_expected_case_override(source, "base", "E9-browser-base-loss-final_change")
+        self.assertIn('size: (x: 4.0, y: 4.0)', blocked)
+        placements = list(fixture.PLACEMENT.finditer(blocked))
+        self.assertEqual(len(placements), 1)
+        self.assertEqual(placements[0].groups(), ('base:command_center', '0', '2.0', '2.0'))
+        self.assertIn('nodes: []', blocked)
+        self.assertEqual(blocked[blocked.index('    slot_economy:'):], source[source.index('    slot_economy:'):])
+        producer = (fixture.ROOT / "mods/base/units/command_center.ron").read_text()
+        output = (fixture.ROOT / "mods/base/units/rifleman.ron").read_text()
+        radius = float(re.search(r'Circle\(radius: ([0-9.]+)\)', producer)[1])
+        output_radius = float(re.search(r'Circle\(radius: ([0-9.]+)\)', output)[1])
+        self.assertEqual(radius, 2)
+        # Farthest legal output center is a corner of the inset map rectangle.
+        self.assertLess(math.sqrt(2) * (2 - output_radius), radius + output_radius)
 
     def test_old_world_x_lookup_fails_and_shifted_lookup_finds_same_base_subjects(self):
         source_path = fixture.ROOT / "mods/base/maps/flat.ron"

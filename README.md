@@ -62,6 +62,7 @@ The checker reports PARTIAL-PASS with manual/reference checks open. The full fre
 The two-human and Internet modes retain their tested launch flags. Their full matches and a new normal-stat victory were not repeated for SDK16.
 Default Skirmish uses its existing AllVisible map. Mods can opt into the new shared knowledge provider.
 Tested milestones are merged and pushed to main under the CEO's standing approval.
+Legacy browser fixtures now prove blocked output and real loss recovery with valid current exit rules.
 CI keeps native, WebAssembly, process, browser, and test-tool checks. Historical fault campaigns remain manual. The SDK15 browser oracle now checks owner work and repair data against audit history. The [CI repair report](docs/reports/2026-11-15-ci-product-checks.md) records local validation and limits. The corrected hosted workflow has not run yet. Prior hosted browser runner losses remain unexplained.
 See [working rules](AGENTS.md) for parallel delivery, review, and milestone integration.
 

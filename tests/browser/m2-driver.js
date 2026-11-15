@@ -31,7 +31,9 @@ const BUTTON_FILL = { enabled: [33, 66, 77], hovered: [46, 102, 112], pressed: [
 
 function layout(params) {
     const name = params.m2?.package;
-    const map = PACKAGES[name];
+    const baseMap = PACKAGES[name];
+    const map = params.m2?.case_id === "E9-browser-base-loss-final_change"
+        ? { ...baseMap, producer: [2, 2], size: [4, 4], offset: 0 } : baseMap;
     if (!map) throw new Error(`M2 driver has no map literals for package ${name}`);
     const at = (point) => point && [point[0] + map.offset, point[1]];
     const camera = { height: 40, pitch: 0.7, yaw: 0, fov: Math.PI / 3, lookAt: [(map.size[0] + map.offset) / 2, map.size[1] / 2] };
@@ -75,6 +77,9 @@ async function stop(io, label, reason) {
 
 // A node has no slot colour. The projected node point must not be the plain ground colour.
 async function nodeAt(io, where, label) {
+    // Clear the previous unit hover tooltip before inspecting the node pixel.
+    await io.move(700, 520);
+    await io.wait(150);
     const seed = where.seed(where.map.node, where.map.visualHeights.node);
     const image = decodePng(Buffer.from(await io.screenshot()));
     const pixel = pixelAt(image, seed.x, seed.y);
