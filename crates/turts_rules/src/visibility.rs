@@ -37,6 +37,10 @@ impl Grid {
         })
     }
     pub fn cell(self, point: Point) -> Option<u32> {
+        if self.columns == 0 || self.rows == 0 {
+            return None;
+        }
+        self.columns.checked_mul(self.rows)?;
         if !point.x.is_finite()
             || !point.y.is_finite()
             || point.x < 0.0
@@ -53,6 +57,9 @@ impl Grid {
         Some(row * self.columns + column)
     }
     pub fn centre(self, cell: u32) -> Option<Point> {
+        if self.columns == 0 || self.rows == 0 {
+            return None;
+        }
         if cell >= self.columns.checked_mul(self.rows)? {
             return None;
         }
