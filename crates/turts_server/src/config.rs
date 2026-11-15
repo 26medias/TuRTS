@@ -18,7 +18,7 @@ usage: turts_server <server.ron> [options]
 Run the headless authoritative server. It loads the game package that server.ron names,
 serves the package to clients over HTTP, and runs the match over WebSocket.
 
-server.ron is one RON record. Every field is required, except static_dir and start_policy:
+server.ron is one RON record. Every field is required, except static_dir, start_policy, and bots:
   game_package  Path of the package archive that turts-pack wrote.
   http_listen   Address of the HTTP listener, for example \"127.0.0.1:7000\".
   ws_listen     Address of the WebSocket listener, for example \"127.0.0.1:7001\".
@@ -26,6 +26,7 @@ server.ron is one RON record. Every field is required, except static_dir and sta
                 The lockfile and the advertisement build their URLs from it.
   tick_hz       Simulation ticks per second. It must be above 0.
   static_dir    A folder that the HTTP listener also serves, for the browser page.
+  bots          Optional list of (slot, profile, seed) public bot selections.
   start_policy  Optional override: Immediate, AllSeated, or AllSeatedReady with countdown_secs.
 
 HTTP endpoints (GET):
@@ -42,8 +43,11 @@ Options:
   --stats PATH    Rewrite PATH with one line of JSON statistics every second and at exit.
                   Also enable private session observations in the sibling PATH.sessions.jsonl (mode 0600).
                   This option is a local test hook; the file is not served over HTTP.
+  --bot SLOT,PROFILE,SEED
+                  Select a public bot profile, for example 1,skirmish:opponent,42.
+                  Repeat this option for different bot slots.
   --computer-slot SLOT
-                  Start a computer player in this map slot. It uses normal game orders.
+                  Select the sole exported public bot profile. Ambiguous profiles are refused.
   --economy-log PATH
                   Write trusted economy audit JSONL to PATH. The file contains private data
                   for all players and is intended only for local test evidence.
@@ -82,6 +86,18 @@ pub struct HostConfig {
     pub static_dir: Option<String>,
     #[serde(default)]
     pub start_policy: Option<turts_mod_api::StartPolicy>,
+    /// Explicit public profiles. Loading a package does not activate its profiles.
+    #[serde(default)]
+    pub bots: Vec<BotConfig>,
+}
+
+/// One explicitly selected bot actor. The seed does not use connection or wall time.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BotConfig {
+    pub slot: u8,
+    pub profile: String,
+    pub seed: u64,
 }
 
 impl HostConfig {
@@ -142,6 +158,7 @@ pub fn read_config(path: &Path) -> Result<HostConfig, String> {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Cli {
     pub computer_slot: Option<u8>,
+    pub bots: Vec<BotConfig>,
     pub config: PathBuf,
     pub tick_log: Option<PathBuf>,
     pub stats: Option<PathBuf>,
@@ -157,6 +174,7 @@ pub fn parse_cli(args: &[String]) -> Result<Cli, String> {
     let mut config = None;
     let mut cli = Cli {
         computer_slot: None,
+        bots: Vec::new(),
         config: PathBuf::new(),
         tick_log: None,
         stats: None,
@@ -173,7 +191,11 @@ pub fn parse_cli(args: &[String]) -> Result<Cli, String> {
                 .ok_or_else(|| format!("{name} needs a value\n{USAGE}"))
         };
         match arg.as_str() {
+            "--bot" => cli.bots.push(parse_bot(value(arg)?)?),
             "--computer-slot" => {
+                if cli.computer_slot.is_some() {
+                    return Err("--computer-slot may appear only once".into());
+                }
                 cli.computer_slot = Some(
                     u8::try_from(number(arg, value(arg)?)?)
                         .map_err(|_| "--computer-slot must fit in a slot number".to_string())?,
@@ -196,6 +218,9 @@ pub fn parse_cli(args: &[String]) -> Result<Cli, String> {
             }
         }
     }
+    if cli.computer_slot.is_some() && !cli.bots.is_empty() {
+        return Err("--computer-slot cannot be combined with --bot".into());
+    }
     cli.config = config.ok_or_else(|| format!("no server.ron path\n{USAGE}"))?;
     Ok(cli)
 }
@@ -203,4 +228,23 @@ pub fn parse_cli(args: &[String]) -> Result<Cli, String> {
 fn number(name: &str, text: &str) -> Result<u32, String> {
     text.parse()
         .map_err(|_| format!("{name} needs a whole number, got `{text}`"))
+}
+
+fn parse_bot(value: &str) -> Result<BotConfig, String> {
+    let fields = value.split(',').collect::<Vec<_>>();
+    if fields.len() != 3 {
+        return Err("--bot needs SLOT,PROFILE,SEED".into());
+    }
+    let slot = fields[0]
+        .parse::<u8>()
+        .map_err(|_| "--bot slot must fit in a slot number")?;
+    turts_mod_api::ContentId::parse(fields[1]).map_err(|e| format!("--bot profile: {e}"))?;
+    let seed = fields[2]
+        .parse::<u64>()
+        .map_err(|_| "--bot seed must be an unsigned 64-bit integer")?;
+    Ok(BotConfig {
+        slot,
+        profile: fields[1].into(),
+        seed,
+    })
 }

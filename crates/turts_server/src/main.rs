@@ -1,7 +1,9 @@
 //! Headless authoritative server: loads the game package, serves HTTP, and runs the fixed-tick
 //! simulation with lightyear sessions.
 
+mod actors;
 mod boot;
+mod bots;
 mod command_script;
 mod computer;
 mod config;
@@ -13,6 +15,7 @@ mod net;
 mod orderlog;
 mod orders;
 mod outbound;
+mod permissions;
 mod room;
 mod session;
 mod session_diagnostics;
@@ -82,6 +85,7 @@ fn run() -> Result<(), String> {
         .archive
         .content()
         .map_err(|error| error.to_string())?;
+    let bot_configuration = computer::configuration(&cfg, &cli, &server_catalog)?;
     app.insert_resource(orders::ServerCatalog(server_catalog));
     app.insert_resource(stats::generate_match_id());
     let policy = cfg.start_policy.unwrap_or_else(|| {
@@ -97,9 +101,6 @@ fn run() -> Result<(), String> {
     if policy == turts_mod_api::StartPolicy::Immediate {
         app.insert_resource(turts_sim::MatchConfig::immediate(cfg.tick_hz));
     } else {
-        if cli.computer_slot.is_some() {
-            return Err("computer players require the Immediate start policy in this build".into());
-        }
         let palettes = booted
             .archive
             .interfaces()
@@ -129,7 +130,7 @@ fn run() -> Result<(), String> {
     ));
 
     session::install(&mut app, advertised);
-    computer::install(&mut app, cli.computer_slot)?;
+    bots::install(&mut app, &bot_configuration)?;
     command_script::install(&mut app, cli.command_script.as_deref())?;
     orderlog::install(&mut app, cli.order_log.as_deref())?;
     outbound::install(&mut app);

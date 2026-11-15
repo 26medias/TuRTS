@@ -17,6 +17,7 @@ pub(crate) struct ObservedArea {
     pub complete: bool,
 }
 
+#[derive(Clone)]
 pub(crate) struct ObservationBasis {
     pub id: BasisId,
     pub tick: u32,
