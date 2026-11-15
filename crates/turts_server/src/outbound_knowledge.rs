@@ -382,3 +382,125 @@ fn pump(world: &mut World) {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use turts_mod_api::{
+        ContentId, KnowledgeBasis, KnowledgeSnapshot, ObservationPhase, VisibilityGrid, WorldPos,
+    };
+    fn sender(now: Instant) -> KnowledgeSender {
+        let tip = PermittedBaseline {
+            state: turts_net_protocol::Snapshot::default(),
+            knowledge: Some(KnowledgeSnapshot {
+                basis: KnowledgeBasis {
+                    match_id: 1,
+                    map: ContentId::parse("fixture:map").unwrap(),
+                    tick: 0,
+                    phase: ObservationPhase::Completed,
+                },
+                viewer: 0,
+                grid: VisibilityGrid {
+                    size: WorldPos { x: 8.0, y: 8.0 },
+                    cell_size: 2.0,
+                    columns: 4,
+                    rows: 4,
+                },
+                observed: vec![0; 2],
+                explored: vec![0; 2],
+                remembered_units: vec![],
+                remembered_nodes: vec![],
+                retention_truncated: false,
+            }),
+        };
+        let mut sender = KnowledgeSender {
+            tip,
+            active: None,
+            pending: None,
+            patches: VecDeque::new(),
+            patch_bytes: 0,
+            next_id: 0,
+            outstanding: 0,
+            restarts: VecDeque::new(),
+        };
+        sender.full(now).unwrap();
+        sender
+    }
+    #[test]
+    fn logical_cancel_releases_unsent_buffers_but_carries_inflight_credit_until_ack() {
+        let now = Instant::now();
+        let mut sender = sender(now);
+        sender.outstanding = WINDOW;
+        let stamp = sender
+            .pending
+            .as_ref()
+            .unwrap()
+            .encoded
+            .begin()
+            .stamp
+            .clone();
+        let cancel = sender
+            .cancel(StateTransactionCancelReason::TimedOut)
+            .unwrap();
+        assert_eq!(cancel.stamp, stamp);
+        assert!(sender.pending.is_none());
+        assert_eq!(sender.patch_bytes, 0);
+        assert_eq!(sender.outstanding, WINDOW);
+        sender.restart(now).unwrap();
+        assert_eq!(sender.outstanding, WINDOW);
+        assert!(
+            sender
+                .pending
+                .as_ref()
+                .unwrap()
+                .encoded
+                .begin()
+                .stamp
+                .transaction_id
+                > stamp.transaction_id
+        );
+    }
+    #[test]
+    fn restart_window_disconnects_only_the_slow_viewer_and_old_attempts_expire() {
+        let now = Instant::now();
+        let mut slow = sender(now);
+        let healthy = sender(now);
+        for step in 0..2 {
+            slow.cancel(StateTransactionCancelReason::TimedOut);
+            slow.restart(now + Duration::from_secs(step * 5)).unwrap();
+        }
+        slow.cancel(StateTransactionCancelReason::TimedOut);
+        assert!(
+            slow.restart(now + Duration::from_secs(10))
+                .unwrap_err()
+                .contains("three times")
+        );
+        assert_eq!(healthy.restarts.len(), 0);
+        assert_eq!(healthy.next_id, 1);
+        assert!(healthy.pending.is_some());
+        slow.restart(now + Duration::from_secs(41)).unwrap();
+        assert_eq!(slow.restarts.len(), 1);
+    }
+    #[test]
+    fn capacity_accounting_rejects_large_typed_storage_before_snapshot_encoding() {
+        let now = Instant::now();
+        let mut sender = sender(now);
+        sender.cancel(StateTransactionCancelReason::Superseded);
+        let content = String::with_capacity(MAX_PENDING_STATE_BYTES as usize);
+        sender
+            .tip
+            .state
+            .units
+            .push(turts_net_protocol::UnitSnapshot {
+                unit_id: turts_net_protocol::UnitId(1),
+                content_id: content,
+                owner_slot: turts_net_protocol::SlotId(0),
+                facing: None,
+                pos: turts_net_protocol::Pos { x: 1.0, y: 1.0 },
+                site: false,
+            });
+        assert!(sender.tip.retained_bytes() >= MAX_PENDING_STATE_BYTES as usize);
+        assert!(sender.full(now).unwrap_err().contains("64MiB"));
+        assert!(sender.pending.is_none());
+    }
+}
