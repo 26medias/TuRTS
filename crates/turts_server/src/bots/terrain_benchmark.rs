@@ -496,6 +496,10 @@ fn run(intervals: usize, acceptance: bool, warmup: usize) {
                 [&clients[0], &clients[1]],
                 [&batches[0], &batches[1]],
             );
+            println!(
+                "TW7_CONFIG_RESULT {}",
+                serde_json::json!({"fog":fog,"rtt":rtt,"deadline":deadline})
+            );
             rows.push(serde_json::json!({"fog":fog,"activation_ack_rtt_ms":rtt,"frozen_authoring_hash":hash,"inputs":frozen,"deadline":deadline,"samples":samples,"work":work,"peak_resident_bytes":pipeline::peak_resident_bytes()}));
         }
     }
