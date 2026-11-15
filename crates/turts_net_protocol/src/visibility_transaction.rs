@@ -116,7 +116,11 @@ impl EncodedStateTransaction {
         &self.begin
     }
     pub fn retained_bytes(&self) -> usize {
-        self.bytes.capacity()
+        self.bytes
+            .capacity()
+            .saturating_add(std::mem::size_of::<Self>())
+            .saturating_add(self.begin.stamp.basis.map.package.0.capacity())
+            .saturating_add(self.begin.stamp.basis.map.local.capacity())
     }
     /// Produces at most one bounded frame. Call only when the transport has queue headroom.
     pub fn next_frame(&mut self) -> Option<StateTransactionFrame> {
@@ -226,8 +230,15 @@ fn encode_serialized(
             .map_err(|_| StateTransactionError::MemoryLimit)?,
     };
     shape(&begin, frame_limit)?;
-    let bytes =
-        postcard::to_allocvec(payload).map_err(|_| StateTransactionError::MalformedPayload)?;
+    // Exact capacity avoids an unaccounted doubling of the pending encoded buffer.
+    let mut bytes = vec![0; size];
+    let written = postcard::to_slice(payload, &mut bytes)
+        .map_err(|_| StateTransactionError::MalformedPayload)?
+        .len();
+    if written != size {
+        return Err(StateTransactionError::MalformedPayload);
+    }
+
     Ok(EncodedStateTransaction {
         begin,
         bytes,

@@ -24,13 +24,6 @@ impl PermittedBaseline {
             knowledge: policy.knowledge(slot.0),
         }
     }
-    pub fn snapshot_payload(&self) -> StateTransactionPayload {
-        StateTransactionPayload::Snapshot {
-            state: Box::new(self.state.clone()),
-            knowledge: self.knowledge.clone(),
-            event_units: vec![],
-        }
-    }
     /// The legacy AllVisible path can retain an earlier truthful public observation for cosmetics.
     /// It never labels that old position as a current phase observation.
     pub fn all_visible_patch(

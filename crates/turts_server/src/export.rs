@@ -12,6 +12,8 @@
 use turts_mod_api::Cost;
 #[path = "export_visibility.rs"]
 mod export_visibility;
+// Legacy standalone export fixtures include this module without the atomic sender.
+#[cfg_attr(test, allow(unused_imports))]
 pub use export_visibility::PermittedBaseline;
 #[path = "export_observation.rs"]
 mod export_observation;
