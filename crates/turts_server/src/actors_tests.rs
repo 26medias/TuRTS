@@ -533,3 +533,59 @@ fn an_automatic_held_site_can_place_and_complete_before_its_first_publication() 
     assert_eq!(amount.on_hand, 76);
     assert!(app.world().resource::<BotActors>().error.is_none());
 }
+
+#[test]
+fn independent_review_one_accounting_row_exhaustion_keeps_the_other_actor_advancing() {
+    let mut app = fixture(600);
+    let other = BotActor {
+        slot: 1,
+        profile: id("policy"),
+    };
+    let actors = [actor(), other.clone()];
+    let initial =
+        prepare_actor_limits(app.world(), &actors, CoordinatorLimits::default(), 65536).unwrap();
+    let row_limit = initial
+        .initial
+        .values()
+        .map(|batch| batch.accounts.len())
+        .max()
+        .unwrap();
+    let prepared = prepare_actor_limits(
+        app.world(),
+        &actors,
+        CoordinatorLimits::default(),
+        row_limit,
+    )
+    .unwrap();
+    install_bot_actors(app.world_mut(), &[other.clone()]).unwrap();
+    configure_actor_limits(app.world_mut(), prepared);
+    stage_bot_command(
+        app.world_mut(),
+        command(1, vec![1], "order_stop", BotTarget::None),
+    )
+    .unwrap();
+    app.update();
+    // The first actor now needs an extra receipt row. The second actor still fits.
+    let healthy = actor_reconciliation(app.world(), &other)
+        .expect("one actor's accounting exhaustion must not erase the other actor's basis");
+    assert_eq!(healthy.watermark.completed_tick, 1);
+    let mut next = command(1, vec![4], "order_stop", BotTarget::None);
+    next.actor = other.clone();
+    // Give the healthy actor enough room for its own receipt after the isolation check.
+    app.world_mut().resource_mut::<BotActors>().row_limit = 65536;
+    stage_bot_command(app.world_mut(), next)
+        .expect("one exhausted actor must not disable the shared admission pipeline");
+    app.update();
+    assert_eq!(
+        actor_reconciliation(app.world(), &other)
+            .unwrap()
+            .watermark
+            .completed_tick,
+        2
+    );
+    assert!(
+        actor_results(app.world(), &other)
+            .iter()
+            .any(|result| result.accepted)
+    );
+}
