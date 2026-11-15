@@ -50,6 +50,12 @@ pub(crate) enum IncomeTransition {
 #[derive(Resource, Debug, Default, PartialEq, Eq)]
 pub(crate) struct IncomeTransitions(pub(crate) Vec<IncomeTransition>);
 
+/// Package replacement discards all clocks and owner-display transitions.
+pub(crate) fn clear(world: &mut World) {
+    world.remove_resource::<IncomeState>();
+    world.remove_resource::<IncomeTransitions>();
+}
+
 /// A copy of authoritative clock state for audits. It grants no mutation access.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct IncomeClockAudit {

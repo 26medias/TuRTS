@@ -339,6 +339,7 @@ pub(crate) fn finish_tick_audit(world: &mut World) {
 
 #[derive(Default)]
 struct WriteSet {
+    operating_activations: Vec<OperatingActivationWrite>,
     construction: Option<super::construction::ConstructionState>,
     completed_buildings: Vec<(u32, crate::boot_m3::PreparedCapabilityRows)>,
     accounts: BTreeMap<(Endpoint, ContentId), Account>,
@@ -361,6 +362,12 @@ struct WriteSet {
     events: Vec<(u8, EconomyEventKind)>,
     next_event_ordinal: Option<u64>,
     strict_m3: bool,
+}
+
+struct OperatingActivationWrite {
+    unit: u32,
+    supply: super::power::Activation,
+    income: Option<super::income::IncomeActivation>,
 }
 
 struct RemoveWrite {
@@ -406,6 +413,201 @@ fn transact_inner<R>(
 }
 
 impl Transaction<'_> {
+    /// Stage a grant from the common physical-order admission pass. No world state changes here.
+    pub(crate) fn stage_operating_activation(
+        &mut self,
+        unit: u32,
+        supply: super::power::Activation,
+        income: Option<super::income::IncomeActivation>,
+    ) -> Result<(), RejectReason> {
+        if supply.is_empty() && income.is_none() {
+            return Ok(());
+        }
+        if self
+            .writes
+            .operating_activations
+            .iter()
+            .any(|write| write.unit == unit)
+        {
+            return Err(RejectReason::IntegrityViolation);
+        }
+        self.writes
+            .operating_activations
+            .push(OperatingActivationWrite {
+                unit,
+                supply,
+                income,
+            });
+        Ok(())
+    }
+
+    fn operating_target(
+        &self,
+        unit: u32,
+    ) -> Result<(u8, &turts_mod_api::ResolvedUnit), RejectReason> {
+        let (slot, kind) =
+            if let Some(spawn) = self.writes.spawned.iter().find(|spawn| spawn.id == unit) {
+                (spawn.owner_slot, spawn.unit_type)
+            } else {
+                let entity = crate::unit_index::unit_entity(self.world, unit)
+                    .ok_or(RejectReason::UnknownUnit)?;
+                let slot = self
+                    .world
+                    .get::<Owner>(entity)
+                    .ok_or(RejectReason::IntegrityViolation)?
+                    .0
+                    .0;
+                let kind = self
+                    .world
+                    .get::<crate::world::UnitType>(entity)
+                    .ok_or(RejectReason::IntegrityViolation)?
+                    .0;
+                (slot, kind)
+            };
+        let registry = self
+            .world
+            .get_resource::<crate::registry::UnitTypes>()
+            .ok_or(RejectReason::IntegrityViolation)?;
+        let id = registry
+            .get(kind)
+            .ok_or(RejectReason::IntegrityViolation)?
+            .content_id
+            .as_str();
+        let id = ContentId::parse(id).map_err(|_| RejectReason::IntegrityViolation)?;
+        let definition = self
+            .catalog()?
+            .0
+            .units
+            .get(&id)
+            .ok_or(RejectReason::IntegrityViolation)?;
+        Ok((slot, definition))
+    }
+
+    fn operating_deactivations(&self) -> BTreeSet<u32> {
+        if !self
+            .world
+            .contains_resource::<super::power::OperatingResources>()
+            && self.writes.operating_activations.is_empty()
+        {
+            return BTreeSet::new();
+        }
+        self.writes
+            .removed
+            .iter()
+            .map(|write| write.unit)
+            .chain(
+                self.writes
+                    .healths
+                    .iter()
+                    .filter_map(|(&unit, health)| matches!(health, None | Some(0)).then_some(unit)),
+            )
+            .collect()
+    }
+
+    fn preflight_operating(&self) -> Result<(), RejectReason> {
+        use super::{income, power};
+        let operating = self.world.get_resource::<power::OperatingResources>();
+        if operating.is_none() && self.writes.operating_activations.is_empty() {
+            return Ok(());
+        }
+        // A health write cannot bypass admission by reviving an operating unit directly.
+        for (&unit, health) in &self.writes.healths {
+            if health.is_some_and(|health| health > 0)
+                && self
+                    .world
+                    .get_resource::<super::combat::Healths>()
+                    .and_then(|healths| healths.0.get(&unit))
+                    == Some(&0)
+            {
+                let (_, definition) = self.operating_target(unit)?;
+                if (!definition.provides.is_empty()
+                    || !definition.consumes.is_empty()
+                    || definition.income.is_some())
+                    && !self
+                        .writes
+                        .operating_activations
+                        .iter()
+                        .any(|write| write.unit == unit)
+                {
+                    return Err(RejectReason::IntegrityViolation);
+                }
+            }
+        }
+        if self.writes.operating_activations.is_empty() {
+            return Ok(());
+        }
+        let mut tentative = operating.cloned().unwrap_or_default();
+        for unit in self.operating_deactivations() {
+            tentative.remove(unit);
+        }
+        let now = self
+            .world
+            .get_resource::<crate::world::Tick>()
+            .ok_or(RejectReason::IntegrityViolation)?
+            .0;
+        for activation in &self.writes.operating_activations {
+            let unit = activation.unit;
+            if self.writes.removed.iter().any(|write| write.unit == unit) {
+                return Err(RejectReason::IntegrityViolation);
+            }
+            let sites = self.writes.construction.as_ref().or_else(|| {
+                self.world
+                    .get_resource::<super::construction::ConstructionState>()
+            });
+            if sites.is_some_and(|state| state.sites.contains_key(&unit)) {
+                return Err(RejectReason::IntegrityViolation);
+            }
+            let health =
+                if let Some(spawn) = self.writes.spawned.iter().find(|spawn| spawn.id == unit) {
+                    spawn.capability_rows.health
+                } else if let Some((_, rows)) = self
+                    .writes
+                    .completed_buildings
+                    .iter()
+                    .find(|(id, _)| *id == unit)
+                {
+                    rows.health
+                } else if let Some(health) = self.writes.healths.get(&unit) {
+                    *health
+                } else {
+                    self.world
+                        .get_resource::<super::combat::Healths>()
+                        .and_then(|healths| healths.0.get(&unit))
+                        .copied()
+                };
+            if health == Some(0) {
+                return Err(RejectReason::IntegrityViolation);
+            }
+            let (slot, definition) = self.operating_target(unit)?;
+            if definition.health.is_some() && !health.is_some_and(|health| health > 0) {
+                return Err(RejectReason::IntegrityViolation);
+            }
+            let expected = tentative.prepare_activation(definition, slot)?;
+            if expected != activation.supply {
+                return Err(RejectReason::IntegrityViolation);
+            }
+            let expected_income = definition
+                .income
+                .as_ref()
+                .map(|definition_income| {
+                    let period = self
+                        .world
+                        .get_resource::<crate::bootstrap::IncomePeriods>()
+                        .and_then(|periods| periods.0.get(&definition.id))
+                        .copied()
+                        .ok_or(RejectReason::IntegrityViolation)?;
+                    income::prepare_activation(slot, definition_income, period, now)
+                })
+                .transpose()?;
+            if expected_income != activation.income {
+                return Err(RejectReason::IntegrityViolation);
+            }
+            tentative.validate_activation(unit, &activation.supply)?;
+            tentative.apply_activation(unit, activation.supply.clone());
+        }
+        Ok(())
+    }
+
     pub(crate) fn construction(&self) -> super::construction::ConstructionState {
         self.writes.construction.clone().unwrap_or_else(|| {
             self.world
@@ -674,9 +876,14 @@ impl Transaction<'_> {
 
     fn commit(self) -> Result<(), RejectReason> {
         self.preflight()?;
+        let deactivate = self.operating_deactivations();
         let Transaction { world, mut writes } = self;
         if world.get_resource::<EconomyLedger>().is_none() {
             world.insert_resource(EconomyLedger::default());
+        }
+        for unit in deactivate {
+            super::power::remove_active(world, unit);
+            super::income::on_remove(world, unit);
         }
         transaction_m3::apply_overlays(world, &mut writes);
         if let Some(state) = writes.construction.take() {
@@ -762,6 +969,10 @@ impl Transaction<'_> {
                 .resource_mut::<crate::economy::events::SpawnedThisTick>()
                 .0
                 .push(spawn.state);
+        }
+        for activation in writes.operating_activations {
+            super::power::commit_activate(world, activation.unit, activation.supply);
+            super::income::on_activate(world, activation.unit, activation.income);
         }
         for removal in writes.removed {
             if let Some(mut identities) =
@@ -2523,5 +2734,416 @@ mod unit_index_tests {
             Err(RejectReason::UnknownInventory),
             "inventory_owner scanned the world"
         );
+    }
+}
+
+#[cfg(test)]
+mod operating_transaction_tests {
+    use super::*;
+    use crate::{
+        Position, Tick, UnitType,
+        bootstrap::{IncomePeriods, InstalledCatalog},
+        economy::{
+            combat::Healths,
+            events::RemoveCause,
+            income,
+            power::{self, OperatingResources},
+        },
+    };
+    use bevy_math::Vec2;
+    use turts_mod_api::{
+        ContentCatalog, ContentsPolicy, Footprint, HealthDef, IncomeDef, RemovalDef,
+        ResolvedProducer, ResolvedUnit, ResourceDef, ResourceKind, SupplyAmount, SupplyCounts,
+        SupplyScope,
+    };
+
+    fn id(text: &str) -> ContentId {
+        ContentId::parse(text).unwrap()
+    }
+
+    fn fixture() -> (bevy_app::App, ResolvedUnit) {
+        let definition = ResolvedUnit {
+            id: id("test:generator"),
+            name: "Generator".into(),
+            footprint: Footprint::Circle { radius: 0.5 },
+            movement: None,
+            inventory: None,
+            gatherer: None,
+            drop_off: None,
+            producer: Some(ResolvedProducer {
+                recipes: Vec::new(),
+                queue_capacity: 1,
+                spawn_offsets: Vec::new(),
+                when_short: Vec::new(),
+            }),
+            constructor: None,
+            placement: None,
+            build_area: None,
+            output_inventory: None,
+            extractor: None,
+            conveyor: None,
+            inserter: None,
+            machine: None,
+            research: None,
+            health: Some(HealthDef { max: 100 }),
+            weapon: None,
+            removal: Some(RemovalDef {
+                by_command: true,
+                contents: ContentsPolicy::Destroy,
+            }),
+            acquire: None,
+            armour: None,
+            provides: vec![SupplyAmount {
+                resource: "test:power".into(),
+                amount: 10,
+            }],
+            consumes: Vec::new(),
+            income: Some(IncomeDef {
+                resource: "test:credits".into(),
+                amount: 7,
+                period_ms: 500,
+            }),
+        };
+        let resources = [
+            (
+                "test:power",
+                ResourceKind::Supply {
+                    scope: SupplyScope::Slot,
+                    counts: SupplyCounts::Completed,
+                },
+            ),
+            ("test:credits", ResourceKind::Balance),
+        ]
+        .into_iter()
+        .map(|(name, kind)| {
+            (
+                id(name),
+                ResourceDef {
+                    id: name.split_once(':').unwrap().1.into(),
+                    name: name.into(),
+                    unit_name: String::new(),
+                    kind,
+                },
+            )
+        })
+        .collect();
+        let catalog = ContentCatalog {
+            combat: None,
+            resources,
+            units: BTreeMap::from([(definition.id.clone(), definition.clone())]),
+            nodes: BTreeMap::new(),
+            production: BTreeMap::new(),
+            recipes: BTreeMap::new(),
+            technologies: BTreeMap::new(),
+            orders: BTreeMap::new(),
+            order_queue_depths: BTreeMap::new(),
+            source_files: BTreeMap::new(),
+        };
+        let mut app = crate::headless_app(20);
+        let world = app.world_mut();
+        let types =
+            crate::registry::UnitTypes::from_catalog(&catalog, &Default::default()).unwrap();
+        let kind = types.find("test:generator").unwrap();
+        world.insert_resource(types);
+        world.insert_resource(OperatingResources::from_catalog(&catalog, 2));
+        world.insert_resource(IncomePeriods(BTreeMap::from([(definition.id.clone(), 10)])));
+        world.insert_resource(InstalledCatalog(catalog));
+        world.resource_mut::<EconomyLedger>().balances.insert(
+            (0, id("test:credits")),
+            Account {
+                on_hand: 30,
+                reserved: 0,
+            },
+        );
+        world.spawn((
+            UnitId(1),
+            UnitType(kind),
+            Owner(SlotId(0)),
+            Position(Vec2::new(10.0, 10.0)),
+        ));
+        crate::boot_m3::apply_capability_rows(
+            world,
+            1,
+            crate::boot_m3::install_capability_rows(&definition, Default::default()),
+        );
+        world.resource_mut::<IdAllocators>().next_unit = 2;
+        (app, definition)
+    }
+
+    fn prepared(
+        world: &World,
+        definition: &ResolvedUnit,
+        slot: u8,
+    ) -> (power::Activation, Option<income::IncomeActivation>) {
+        let grant = power::can_activate(world, definition, slot).unwrap();
+        let clock = definition.income.as_ref().map(|definition| {
+            income::prepare_activation(slot, definition, 10, world.resource::<Tick>().0).unwrap()
+        });
+        (grant, clock)
+    }
+
+    fn activate(world: &mut World, definition: &ResolvedUnit) {
+        let (grant, clock) = prepared(world, definition, 0);
+        transact(world, |tx| tx.stage_operating_activation(1, grant, clock)).unwrap();
+    }
+
+    fn cash(world: &World) -> u64 {
+        world.resource::<EconomyLedger>().balances[&(0, id("test:credits"))].on_hand
+    }
+
+    fn spawn(tx: &mut Transaction<'_>, definition: &ResolvedUnit) -> Result<u32, RejectReason> {
+        let unit = tx.allocate_unit_id()?;
+        let kind = tx
+            .world
+            .resource::<crate::registry::UnitTypes>()
+            .find("test:generator")
+            .unwrap();
+        tx.stage_spawn(SpawnWrite {
+            id: unit,
+            unit_type: kind,
+            owner_slot: 0,
+            position: Vec2::new(20.0, 10.0),
+            state: crate::world::UnitState {
+                unit_id: unit,
+                content_id: definition.id.to_string(),
+                owner_slot: 0,
+                pos: Vec2::new(20.0, 10.0),
+                facing: None,
+            },
+            inventory: None,
+            gatherer: false,
+            producer: true,
+            capability_rows: crate::boot_m3::install_capability_rows(
+                definition,
+                Default::default(),
+            ),
+        });
+        Ok(unit)
+    }
+
+    #[test]
+    fn an_activation_and_charge_roll_back_when_the_operation_refuses() {
+        let (mut app, definition) = fixture();
+        let world = app.world_mut();
+        let before = crate::audit_state(world);
+        let operating = world.resource::<OperatingResources>().clone();
+        let (grant, clock) = prepared(world, &definition, 0);
+        let result = transact(world, |tx| {
+            tx.stage_account(Endpoint::Slot(0), id("test:credits"), Account::default());
+            let unit = spawn(tx, &definition)?;
+            tx.stage_operating_activation(unit, grant, clock)?;
+            Err::<(), _>(RejectReason::ArithmeticOverflow)
+        });
+        assert_eq!(result, Err(RejectReason::ArithmeticOverflow));
+        assert_eq!(crate::audit_state(world), before);
+        assert_eq!(*world.resource::<OperatingResources>(), operating);
+        assert!(income::clock_audit(world).is_empty());
+        assert!(crate::unit_entity(world, 2).is_none());
+    }
+
+    #[test]
+    fn a_committed_spawn_activates_after_its_rows_and_inside_its_audit_boundary() {
+        let (mut app, definition) = fixture();
+        let world = app.world_mut();
+        world.resource_mut::<Tick>().0 = 4;
+        world.resource_mut::<AuditTrail>().enable();
+        let (grant, clock) = prepared(world, &definition, 0);
+        transact(world, |tx| {
+            tx.stage_account(
+                Endpoint::Slot(0),
+                id("test:credits"),
+                Account {
+                    on_hand: 20,
+                    reserved: 0,
+                },
+            );
+            let unit = spawn(tx, &definition)?;
+            tx.stage_operating_activation(unit, grant, clock)
+        })
+        .unwrap();
+        assert_eq!(cash(world), 20);
+        assert_eq!(world.resource::<Healths>().0[&2], 100);
+        assert_eq!(
+            world
+                .resource::<OperatingResources>()
+                .income_amount(0, &id("test:credits")),
+            7
+        );
+        let clocks = income::clock_audit(world);
+        assert_eq!(
+            (
+                clocks[0].unit,
+                clocks[0].activation_tick,
+                clocks[0].next_due
+            ),
+            (2, 4, 14)
+        );
+        let after = crate::audit_state(world);
+        assert_eq!(
+            world
+                .resource::<AuditTrail>()
+                .operations
+                .last()
+                .unwrap()
+                .after,
+            after
+        );
+    }
+
+    #[test]
+    fn a_stale_or_duplicate_grant_refuses_before_any_charge_or_spawn() {
+        let (mut app, definition) = fixture();
+        let world = app.world_mut();
+        let stale = prepared(world, &definition, 0);
+        activate(world, &definition);
+        let before = crate::audit_state(world);
+        let result = transact(world, |tx| {
+            tx.stage_account(Endpoint::Slot(0), id("test:credits"), Account::default());
+            let unit = spawn(tx, &definition)?;
+            tx.stage_operating_activation(unit, stale.0, stale.1)
+        });
+        assert_eq!(result, Err(RejectReason::IntegrityViolation));
+        assert_eq!(crate::audit_state(world), before);
+        assert!(crate::unit_entity(world, 2).is_none());
+        let duplicate = prepared(world, &definition, 0);
+        assert_eq!(
+            transact(world, |tx| tx.stage_operating_activation(
+                1,
+                duplicate.0,
+                duplicate.1
+            )),
+            Err(RejectReason::IntegrityViolation)
+        );
+        assert_eq!(crate::audit_state(world), before);
+    }
+
+    #[test]
+    fn wrong_owner_period_clock_and_missing_income_payloads_refuse_atomically() {
+        for case in ["owner", "period", "activation_tick", "amount", "missing"] {
+            let (mut app, definition) = fixture();
+            let world = app.world_mut();
+            world.resource_mut::<Tick>().0 = 5;
+            let (mut grant, mut clock) = prepared(world, &definition, 0);
+            match case {
+                "owner" => grant = power::can_activate(world, &definition, 1).unwrap(),
+                "period" => {
+                    clock = Some(
+                        income::prepare_activation(0, definition.income.as_ref().unwrap(), 9, 5)
+                            .unwrap(),
+                    )
+                }
+                "activation_tick" => {
+                    clock = Some(
+                        income::prepare_activation(0, definition.income.as_ref().unwrap(), 10, 0)
+                            .unwrap(),
+                    )
+                }
+                "amount" => {
+                    let mut altered = definition.income.clone().unwrap();
+                    altered.amount = 8;
+                    clock = Some(income::prepare_activation(0, &altered, 10, 5).unwrap());
+                }
+                "missing" => clock = None,
+                _ => unreachable!(),
+            }
+            let before = crate::audit_state(world);
+            let result = transact(world, |tx| {
+                tx.stage_account(Endpoint::Slot(0), id("test:credits"), Account::default());
+                tx.stage_operating_activation(1, grant, clock)
+            });
+            assert_eq!(result, Err(RejectReason::IntegrityViolation), "{case}");
+            assert_eq!(crate::audit_state(world), before, "{case}");
+            assert_eq!(
+                world
+                    .resource::<OperatingResources>()
+                    .income_amount(0, &id("test:credits")),
+                0,
+                "{case}"
+            );
+            assert!(income::clock_audit(world).is_empty(), "{case}");
+        }
+    }
+
+    #[test]
+    fn zero_health_releases_admission_and_revival_requires_a_new_full_period() {
+        let (mut app, definition) = fixture();
+        let world = app.world_mut();
+        activate(world, &definition);
+        world.resource_mut::<Tick>().0 = 6;
+        transact(world, |tx| {
+            tx.stage_health(1, 0);
+            Ok(())
+        })
+        .unwrap();
+        assert!(crate::unit_entity(world, 1).is_some());
+        assert!(income::clock_audit(world).is_empty());
+        assert_eq!(
+            world
+                .resource::<OperatingResources>()
+                .income_amount(0, &id("test:credits")),
+            0
+        );
+        assert_eq!(
+            transact(world, |tx| {
+                tx.stage_health(1, 100);
+                Ok(())
+            }),
+            Err(RejectReason::IntegrityViolation)
+        );
+        assert_eq!(world.resource::<Healths>().0[&1], 0);
+        let (grant, clock) = prepared(world, &definition, 0);
+        transact(world, |tx| {
+            tx.stage_health(1, 100);
+            tx.stage_operating_activation(1, grant, clock)
+        })
+        .unwrap();
+        let clocks = income::clock_audit(world);
+        assert_eq!((clocks[0].activation_tick, clocks[0].next_due), (6, 16));
+        world.resource_mut::<Tick>().0 = 10;
+        income::run_income(world);
+        assert_eq!(cash(world), 30, "the old partial period was discarded");
+        world.resource_mut::<Tick>().0 = 16;
+        income::run_income(world);
+        assert_eq!(cash(world), 37);
+    }
+
+    #[test]
+    fn manual_disable_keeps_operating_state_and_real_removal_releases_it() {
+        let (mut app, definition) = fixture();
+        let world = app.world_mut();
+        activate(world, &definition);
+        let clocks = income::clock_audit(world);
+        let state = world.resource::<OperatingResources>().clone();
+        crate::command_m3::set_enabled(world, SlotId(0), 1, false).unwrap();
+        assert_eq!(*world.resource::<OperatingResources>(), state);
+        assert_eq!(income::clock_audit(world), clocks);
+        crate::command_m3::remove(world, SlotId(0), 1).unwrap();
+        assert!(crate::unit_entity(world, 1).is_none());
+        assert!(income::clock_audit(world).is_empty());
+        assert_eq!(
+            world
+                .resource::<OperatingResources>()
+                .income_amount(0, &id("test:credits")),
+            0
+        );
+    }
+
+    #[test]
+    fn rejected_removal_keeps_the_contribution_and_clock() {
+        let (mut app, definition) = fixture();
+        let world = app.world_mut();
+        activate(world, &definition);
+        let state = world.resource::<OperatingResources>().clone();
+        let clocks = income::clock_audit(world);
+        assert_eq!(
+            transact(world, |tx| {
+                remove_unit(tx, 1, RemoveCause::Removed)?;
+                Err::<(), _>(RejectReason::ArithmeticOverflow)
+            }),
+            Err(RejectReason::ArithmeticOverflow)
+        );
+        assert!(crate::unit_entity(world, 1).is_some());
+        assert_eq!(*world.resource::<OperatingResources>(), state);
+        assert_eq!(income::clock_audit(world), clocks);
     }
 }

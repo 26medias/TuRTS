@@ -45,6 +45,7 @@ impl Transaction<'_> {
     }
 
     pub(super) fn preflight(&self) -> Result<(), RejectReason> {
+        self.preflight_operating()?;
         for (endpoint, resource) in self.writes.accounts.keys() {
             let missing_main_inventory = match endpoint {
                 Endpoint::Inventory(unit) => !self
