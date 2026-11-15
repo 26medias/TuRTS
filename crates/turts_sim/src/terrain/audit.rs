@@ -51,6 +51,8 @@ pub struct TerrainAudit {
     pub work: Vec<TerrainWorkAudit>,
     pub claims: Vec<TerrainClaimAudit>,
     pub paused: Vec<super::pause::TerrainPauseAudit>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub cargo_carries: Vec<(u32, u64)>,
 }
 /// Explicit privileged inspection. Seed provenance belongs to the private host replay header.
 pub fn privileged_audit(world: &World) -> Option<TerrainAudit> {
@@ -133,5 +135,6 @@ pub fn privileged_audit(world: &World) -> Option<TerrainAudit> {
         work,
         claims,
         paused: super::pause::audit(world),
+        cargo_carries: super::cargo::audit_carries(world),
     })
 }

@@ -21,6 +21,11 @@ fn cell_for(index: usize, slot: u8) -> TerrainCell {
 }
 fn authored(fog: bool) -> pipeline::Fixture {
     let mut fixture = pipeline::authored_fixture(fog, false);
+    for unit in fixture.catalog.units.values_mut() {
+        if unit.movement.is_none() {
+            unit.terrain_foundation = Some(TerrainFoundation::ForbidEdit);
+        }
+    }
     fixture.map.id = "tw7".into();
     let mut tool_worker = fixture.catalog.units[&id("worker")].clone();
     tool_worker.id = id("tw7_worker");

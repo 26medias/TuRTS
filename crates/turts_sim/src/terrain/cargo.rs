@@ -13,6 +13,13 @@ use turts_mod_api::{Behaviour, ContentId, ResolvedDropOffEffect, TerrainCargoDef
 pub(crate) struct CargoRuntime {
     carries: BTreeMap<u32, u64>,
 }
+pub(super) fn audit_carries(world: &World) -> Vec<(u32, u64)> {
+    world
+        .get_resource::<CargoRuntime>()
+        .into_iter()
+        .flat_map(|runtime| runtime.carries.iter().map(|(&unit, &carry)| (unit, carry)))
+        .collect()
+}
 fn definition(world: &World, unit: u32) -> Option<&turts_mod_api::ResolvedUnit> {
     let kind = world.get::<UnitType>(unit_entity(world, unit)?)?;
     let id = ContentId::parse(
