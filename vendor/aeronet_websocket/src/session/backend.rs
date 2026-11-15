@@ -351,7 +351,7 @@ pub mod native {
                     .send("blocked-write test".into())
                     .unwrap();
                 let error = task.await.unwrap_err();
-                assert!(error.to_string().contains("blocked-write test"));
+                assert!(matches!(error, DisconnectReason::ByUser(reason) if reason == "blocked-write test"));
                 assert_eq!(budget.used(), 0);
             });
         }
