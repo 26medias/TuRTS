@@ -141,7 +141,7 @@ fn exact_gcd_microbenchmark() {
             }
         }
         println!(
-            "gcd_diagnostic {{\"dataset\":\"{name}\",\"pairs\":{},\"repeats\":8,\"old_ns\":{old:?},\"optimized_ns\":{optimized:?}}",
+            "gcd_diagnostic {{\"dataset\":\"{name}\",\"pairs\":{},\"repeats\":8,\"old_ns\":{old:?},\"optimized_ns\":{optimized:?}}}",
             pairs.len()
         );
     }
