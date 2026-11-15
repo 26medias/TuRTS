@@ -2,11 +2,15 @@
 //!
 //! lightyear assigns ids in registration order. Both ends use this plugin.
 
-use crate::channels::{ReliableChannel, StateChannel};
+use crate::channels::{KnowledgeChannel, ReliableChannel, StateChannel};
 use bevy_app::{App, Plugin};
 use core::time::Duration;
 use lightyear::prelude::*;
 use turts_net_protocol::messages::*;
+use turts_net_protocol::{
+    StateTransactionAck, StateTransactionBegin, StateTransactionCancel, StateTransactionChunk,
+    StateTransactionEnd,
+};
 
 pub struct ProtocolPlugin;
 
@@ -20,6 +24,11 @@ impl Plugin for ProtocolPlugin {
         app.add_channel::<StateChannel>(ChannelSettings {
             mode: ChannelMode::UnorderedUnreliable,
             send_frequency: Duration::default(),
+            ..Default::default()
+        })
+        .add_direction(NetworkDirection::ServerToClient);
+        app.add_channel::<KnowledgeChannel>(ChannelSettings {
+            mode: ChannelMode::OrderedReliable(ReliableSettings::default()),
             ..Default::default()
         })
         .add_direction(NetworkDirection::ServerToClient);
@@ -53,5 +62,15 @@ impl Plugin for ProtocolPlugin {
             .add_direction(NetworkDirection::ServerToClient);
         app.register_message::<LeaveMatch>()
             .add_direction(NetworkDirection::ClientToServer);
+        app.register_message::<StateTransactionBegin>()
+            .add_direction(NetworkDirection::ServerToClient);
+        app.register_message::<StateTransactionChunk>()
+            .add_direction(NetworkDirection::ServerToClient);
+        app.register_message::<StateTransactionEnd>()
+            .add_direction(NetworkDirection::ServerToClient);
+        app.register_message::<StateTransactionAck>()
+            .add_direction(NetworkDirection::ClientToServer);
+        app.register_message::<StateTransactionCancel>()
+            .add_direction(NetworkDirection::Bidirectional);
     }
 }

@@ -11,3 +11,7 @@ pub struct ReliableChannel;
 /// Unordered and unreliable, server to client. Carries `WorldDelta`. Every delta that arrives
 /// reaches the application; the client detects a gap with the `base_tick` chain.
 pub struct StateChannel;
+
+/// Ordered reliable restricted-state transactions. Separate from commands and
+/// their results so a large knowledge transfer cannot block control traffic.
+pub struct KnowledgeChannel;
