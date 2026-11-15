@@ -549,3 +549,35 @@ fn listed_test_module_with_inline_body_is_red() {
 fn listed_test_module_without_declaration_is_red() {
     assert_test_module_plant_is_red("missing", "fn a() {}\n", "declares no `mod tests`");
 }
+
+#[test]
+fn api17_terrain_exports_and_refs_remain_content_tokens() {
+    let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let catalog = derive_tokens(&repo.join("mods")).expect("all API17 public exports derive");
+    let scratch = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("terrain_content_refs");
+    let _ = std::fs::remove_dir_all(&scratch);
+    std::fs::create_dir_all(&scratch).unwrap();
+    let file = scratch.join("refs.rs");
+    std::fs::write(
+        &file,
+        r#"fn render(light: u8) {}
+const MATERIAL: &str="quarry:soil_layer";
+const TOOL: &str="quarry:spade";
+const CLASS: &str="quarry:light";
+const WRONG: &str="light";
+"#,
+    )
+    .unwrap();
+    let hits = scan_rust(&[scratch.clone()], &catalog).unwrap();
+    for token in ["quarry:soil_layer", "quarry:spade", "quarry:light", "light"] {
+        assert!(
+            hits.iter().any(|hit| hit.token == token),
+            "missing actual content token {token}: {hits:?}"
+        );
+    }
+    assert!(
+        !hits.iter().any(|hit| hit.token == "light" && hit.line == 1),
+        "generic light identifier must not become a mod dependency"
+    );
+    std::fs::remove_dir_all(scratch).unwrap();
+}

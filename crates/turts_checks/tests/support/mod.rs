@@ -109,6 +109,15 @@ pub fn derive_tokens(root: &Path) -> Result<TokenCatalog, ScanError> {
             ("combat-export", &a.manifest.exports.combat),
             ("visual-effect-export", &a.manifest.exports.visual_effects),
             ("bot-export", &a.manifest.exports.bots),
+            (
+                "terrain-material-export",
+                &a.manifest.exports.terrain_materials,
+            ),
+            (
+                "terrain-movement-class-export",
+                &a.manifest.exports.terrain_movement_classes,
+            ),
+            ("terrain-tool-export", &a.manifest.exports.terrain_tools),
         ] {
             for path in xs {
                 exports.insert(path.clone());
@@ -134,6 +143,20 @@ pub fn derive_tokens(root: &Path) -> Result<TokenCatalog, ScanError> {
         stray_ron(&dir, &dir, &exports)?;
         let content = a.content().map_err(|e| pkgerr(&dir, e))?;
         validate_map_references(&dir, &a, &content)?;
+        turts_mod_runtime::terrain::validate_terrain_catalog(
+            &turts_mod_api::PackageId(p.clone()),
+            &content,
+        )
+        .map_err(|error| pkgerr(&dir, error))?;
+        for (file, map) in a.maps().map_err(|error| pkgerr(&dir, error))? {
+            turts_mod_runtime::terrain::validate_terrain_map(
+                &turts_mod_api::PackageId(p.clone()),
+                &file,
+                &map,
+                &content,
+            )
+            .map_err(|error| pkgerr(&dir, error))?;
+        }
         validate_visual_references(&dir, &a, &content)?;
         add(&mut c, &p, "package", &pname, "manifest.id", &p);
         add(
@@ -174,6 +197,83 @@ pub fn derive_tokens(root: &Path) -> Result<TokenCatalog, ScanError> {
                 "id",
                 &format!("{p}:{}", definition.id),
             );
+        }
+        for (path, definition) in a.terrain_materials().map_err(|error| pkgerr(&dir, error))? {
+            add_id(&mut c, &p, &path, "id", &definition.id, "terrain-material");
+            add(
+                &mut c,
+                &p,
+                "terrain-material-name",
+                &path,
+                "name",
+                &definition.name,
+            );
+            for rate in definition
+                .natural_outputs
+                .iter()
+                .chain(&definition.fill_inputs)
+            {
+                add_id(
+                    &mut c,
+                    &p,
+                    &path,
+                    "resource",
+                    &rate.resource,
+                    "resource-ref",
+                );
+            }
+        }
+        for (path, definition) in a
+            .terrain_movement_classes()
+            .map_err(|error| pkgerr(&dir, error))?
+        {
+            add_id(
+                &mut c,
+                &p,
+                &path,
+                "id",
+                &definition.id,
+                "terrain-movement-class",
+            );
+            add(
+                &mut c,
+                &p,
+                "terrain-movement-class-name",
+                &path,
+                "name",
+                &definition.name,
+            );
+        }
+        for (path, definition) in a.terrain_tools().map_err(|error| pkgerr(&dir, error))? {
+            add_id(&mut c, &p, &path, "id", &definition.id, "terrain-tool");
+            add(
+                &mut c,
+                &p,
+                "terrain-tool-name",
+                &path,
+                "name",
+                &definition.name,
+            );
+            for material in &definition.allowed_materials {
+                add_id(
+                    &mut c,
+                    &p,
+                    &path,
+                    "allowed_materials",
+                    material,
+                    "terrain-material-ref",
+                );
+            }
+            if let turts_mod_api::TerrainOperation::Fill { material } = &definition.operation {
+                add_id(
+                    &mut c,
+                    &p,
+                    &path,
+                    "operation.material",
+                    material,
+                    "terrain-material-ref",
+                );
+            }
         }
         for (path, d) in a.orders().map_err(|e| pkgerr(&dir, e))? {
             add_id(&mut c, &p, &path, "id", &d.id, "order");
@@ -325,6 +425,12 @@ pub fn derive_tokens(root: &Path) -> Result<TokenCatalog, ScanError> {
         ("field", "map id is an ordinary source identifier", false),
         ("builder", "generic Rust builder-pattern identifier", true),
         ("deposit", "generic gather-order target handle", true),
+        (
+            "light",
+            "generic renderer light handle and Bevy module",
+            true,
+        ),
+        ("wide", "generic widened integer intermediate", true),
         ("Item", "resource kind is a common Rust type word", false),
         ("Balance", "resource kind is a common Rust type word", false),
         ("Move", "engine behaviour name", false),
@@ -518,7 +624,20 @@ fn add_id(c: &mut TokenCatalog, p: &str, path: &str, field: &str, id: &str, cat:
 
 fn add_unit(c: &mut TokenCatalog, p: &str, path: &str, d: &UnitDef) {
     add_id(c, p, path, "id", &d.id, "unit");
-    add(c, p, "unit-name", path, "name", &d.name)
+    add(c, p, "unit-name", path, "name", &d.name);
+    if let Some(class) = &d.terrain_class {
+        add_id(
+            c,
+            p,
+            path,
+            "terrain_class",
+            class,
+            "terrain-movement-class-ref",
+        );
+    }
+    for tool in &d.terrain_tools {
+        add_id(c, p, path, "terrain_tools", tool, "terrain-tool-ref");
+    }
 }
 fn add_map(c: &mut TokenCatalog, p: &str, path: &str, d: &MapDef) {
     add_id(c, p, path, "id", &d.id, "map");
@@ -612,14 +731,6 @@ pub fn production_sources(roots: &[PathBuf]) -> Result<Vec<PathBuf>, ScanError> 
 }
 /// Test modules in their own file. The parent file declares each one with `#[cfg(test)] mod`,
 /// so the scan skips the file as it skips an inline `#[cfg(test)]` module.
-const TEST_MODULE_FILES: &[&str] = &[
-    "crates/turts_client/src/client_shell/tests.rs",
-    "crates/turts_client/src/core_adapter/adapter_tests.rs",
-    "crates/turts_client/src/visuals/scene_tests.rs",
-    "crates/turts_client/src/visuals/tests.rs",
-    "crates/turts_client/src/widgets/tests.rs",
-    "crates/turts_sim/src/orders/tests.rs",
-];
 /// The scan skips a listed file by path only. This check reads the parent file and requires an
 /// `ItemMod` named like the file stem, with no inline body and a `#[cfg(test)]` gate. Without it,
 /// production code could hide in a skipped file.
@@ -629,31 +740,68 @@ fn check_test_module_gate(file: &Path) -> Result<(), ScanError> {
     let stem = file.file_stem().and_then(|x| x.to_str()).unwrap_or("");
     let sibling = dir.with_extension("rs");
     let mod_rs = dir.join("mod.rs");
-    let parent = [sibling.as_path(), mod_rs.as_path()]
-        .into_iter()
-        .find(|c| c.is_file())
-        .ok_or_else(|| {
-            fail(
-                &sibling,
-                "no parent file (`<dir>.rs` or `<dir>/mod.rs`)".into(),
-            )
-        })?;
-    let source = fs::read_to_string(parent).map_err(|e| ScanError::Io(parent.into(), e))?;
-    let parsed =
-        syn::parse_file(&source).map_err(|e| ScanError::Rust(parent.into(), e.to_string()))?;
-    let declaration = parsed.items.iter().find_map(|item| match item {
-        Item::Mod(m) if m.ident == stem => Some(m),
-        _ => None,
-    });
-    let Some(declaration) = declaration else {
-        return Err(fail(parent, format!("declares no `mod {stem}`")));
+    let mut parents = vec![sibling.clone(), mod_rs.clone()];
+    parents.extend(
+        fs::read_dir(dir)
+            .map_err(|error| ScanError::Io(dir.into(), error))?
+            .filter_map(Result::ok)
+            .map(|entry| entry.path())
+            .filter(|candidate| {
+                candidate
+                    .extension()
+                    .is_some_and(|extension| extension == "rs")
+                    && candidate != file
+            }),
+    );
+    parents.dedup();
+    let mut found = None;
+    for parent in parents.iter().filter(|parent| parent.is_file()) {
+        let source =
+            fs::read_to_string(parent).map_err(|error| ScanError::Io(parent.clone(), error))?;
+        let parsed = syn::parse_file(&source)
+            .map_err(|error| ScanError::Rust(parent.clone(), error.to_string()))?;
+        for item in parsed.items {
+            let Item::Mod(declaration) = item else {
+                continue;
+            };
+            let explicit = declaration.attrs.iter().find_map(|attribute| {
+                if attribute.path().is_ident("path")
+                    && let syn::Meta::NameValue(value) = &attribute.meta
+                    && let Expr::Lit(literal) = &value.value
+                    && let Lit::Str(path) = &literal.lit
+                {
+                    Some(parent.parent().unwrap().join(path.value()))
+                } else {
+                    None
+                }
+            });
+            let base = if parent
+                .file_stem()
+                .is_some_and(|name| matches!(name.to_str(), Some("mod" | "lib" | "main")))
+            {
+                parent.parent().unwrap().to_path_buf()
+            } else {
+                parent.with_extension("")
+            };
+            let target = explicit.unwrap_or_else(|| base.join(format!("{}.rs", declaration.ident)));
+            if target == file {
+                found = Some((parent.clone(), declaration));
+                break;
+            }
+        }
+        if found.is_some() {
+            break;
+        }
+    }
+    let Some((parent, declaration)) = found else {
+        return Err(fail(&sibling, format!("declares no `mod {stem}`")));
     };
     if declaration.content.is_some() {
-        return Err(fail(parent, format!("`mod {stem}` has an inline body")));
+        return Err(fail(&parent, format!("`mod {stem}` has an inline body")));
     }
     if production_cfg(&declaration.attrs) {
         return Err(fail(
-            parent,
+            &parent,
             format!("`mod {stem}` is not gated by `#[cfg(test)]`"),
         ));
     }
@@ -664,7 +812,14 @@ fn collect(p: &Path, out: &mut Vec<PathBuf>, skipped: &mut Vec<PathBuf>) -> Resu
         if p.extension().is_some_and(|x| x == "rs")
             && !p.components().any(|x| x.as_os_str() == "tests")
         {
-            if TEST_MODULE_FILES.iter().any(|file| p.ends_with(file)) {
+            let source = fs::read_to_string(p).map_err(|error| ScanError::Io(p.into(), error))?;
+            let parsed = syn::parse_file(&source)
+                .map_err(|error| ScanError::Rust(p.into(), error.to_string()))?;
+            if !production_attrs(&parsed.attrs) {
+                return Ok(());
+            }
+            let stem = p.file_stem().and_then(|stem| stem.to_str()).unwrap_or("");
+            if stem == "tests" || stem.ends_with("_tests") {
                 skipped.push(p.into())
             } else {
                 out.push(p.into())

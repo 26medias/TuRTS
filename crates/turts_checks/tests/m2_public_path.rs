@@ -22,8 +22,8 @@ fn public_loading_path_has_no_native_hooks() {
     let pack_main = source(&root.join("crates/turts_pack/src/main.rs"));
     let pack_lib = source(&root.join("crates/turts_pack/src/lib.rs"));
     assert!(
-        function_has_call(&boot, "boot", "turts_pack::load_package"),
-        "server boot must call the public turts_pack::load_package path"
+        function_has_call(&boot, "boot", "turts_pack::load_package_with_terrain_seed"),
+        "server boot must call the public terrain-aware package loader"
     );
     assert!(
         function_has_call(&pack_main, "run", "turts_pack::pack_checked"),
@@ -34,8 +34,20 @@ fn public_loading_path_has_no_native_hooks() {
         "pack_checked must call local check_package"
     );
     assert!(
-        function_has_call(&pack_lib, "check_package", "load_package"),
-        "check_package must call local load_package"
+        function_has_call(&pack_lib, "check_package", "load_package_with_terrain_seed"),
+        "package checks must use the same public terrain-aware loader as the server"
+    );
+    assert!(
+        function_has_call(&pack_lib, "load_package", "load_package_with_terrain_seed"),
+        "legacy public load_package must forward through the terrain-aware public loader"
+    );
+    assert!(
+        function_has_call(
+            &pack_lib,
+            "load_package_with_terrain_seed",
+            "turts_mod_runtime::terrain::validate_terrain_map"
+        ),
+        "the public loader must validate authored terrain rather than bypass runtime checks"
     );
     for (name, text) in [("server boot", boot), ("pack CLI", pack_main)] {
         let bypass = forbidden_bypasses(&text);
@@ -127,6 +139,27 @@ fn public_loader_guard_requires_actual_expected_production_calls() {
         "boot",
         "turts_pack::load_package"
     ));
+    for expected in [
+        "turts_pack::load_package",
+        "turts_pack::load_package_with_terrain_seed",
+    ] {
+        let name = expected.rsplit("::").next().unwrap();
+        assert!(function_has_call(
+            &format!("use turts_pack::{name} as load; fn boot() {{ load(); }}"),
+            "boot",
+            expected
+        ));
+        for code in [
+            format!("fn boot() {{ let _ = {expected}; }}"),
+            format!("fn boot() {{ other::{name}(); }}"),
+            format!("#[cfg(test)] fn boot() {{ {expected}(); }}"),
+        ] {
+            assert!(
+                !function_has_call(&code, "boot", expected),
+                "wrong loader proof: {code}"
+            );
+        }
+    }
     assert!(!function_has_call(
         "fn pack_checked() { other::check_package(); }",
         "pack_checked",
