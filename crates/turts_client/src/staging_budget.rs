@@ -33,16 +33,20 @@ impl Budget {
     }
     fn sized<T: Serialize + ?Sized>(&mut self, value: &T) -> Result<(), Limit> {
         let size = std::mem::size_of_val(value);
-        self.bytes(
-            size.checked_mul(4)
-                .and_then(|n| n.checked_add(if size > 8 { 64 } else { 0 }))
-                .ok_or(Limit)?,
-        )?;
+        // collect_seq passes references. Never treat a primitive reference as its storage width.
+        // Large direct values add conservative inline storage; containers/rows count themselves too.
+        if size > 8 {
+            self.bytes(
+                size.checked_mul(4)
+                    .and_then(|n| n.checked_add(64))
+                    .ok_or(Limit)?,
+            )?;
+        }
         value.serialize(self)
     }
 }
 macro_rules! scalar {
-    ($($method:ident($ty:ty)),* $(,)?) => { $(fn $method(self, _: $ty) -> Result<(), Limit> { Ok(()) })* };
+    ($($method:ident($ty:ty)),* $(,)?) => { $(fn $method(self, _: $ty) -> Result<(), Limit> { self.bytes(std::mem::size_of::<$ty>() * 4) })* };
 }
 impl<'a> Serializer for &'a mut Budget {
     type Ok = ();
@@ -74,7 +78,8 @@ impl<'a> Serializer for &'a mut Budget {
         self.bytes(
             value
                 .len()
-                .checked_mul(4)
+                .checked_add(std::mem::size_of::<String>())
+                .and_then(|n| n.checked_mul(4))
                 .and_then(|n| n.checked_add(64))
                 .ok_or(Limit)?,
         )
@@ -83,9 +88,11 @@ impl<'a> Serializer for &'a mut Budget {
         self.bytes(value.len().checked_mul(4).ok_or(Limit)?)
     }
     fn serialize_none(self) -> Result<(), Limit> {
-        Ok(())
+        // Protocol nullable sequences contain ContentRef or SlotOutcome rows.
+        self.bytes(128)
     }
     fn serialize_some<T: Serialize + ?Sized>(self, value: &T) -> Result<(), Limit> {
+        self.bytes(32)?;
         value.serialize(self)
     }
     fn serialize_unit(self) -> Result<(), Limit> {
@@ -95,7 +102,7 @@ impl<'a> Serializer for &'a mut Budget {
         Ok(())
     }
     fn serialize_unit_variant(self, _: &'static str, _: u32, _: &'static str) -> Result<(), Limit> {
-        Ok(())
+        self.bytes(256)
     }
     fn serialize_newtype_struct<T: Serialize + ?Sized>(
         self,
@@ -114,9 +121,15 @@ impl<'a> Serializer for &'a mut Budget {
         value.serialize(self)
     }
     fn serialize_seq(self, _: Option<usize>) -> Result<Self, Limit> {
+        self.bytes(4 * std::mem::size_of::<Vec<()>>() + 64)?;
         Ok(self)
     }
-    fn serialize_tuple(self, _: usize) -> Result<Self, Limit> {
+    fn serialize_tuple(self, len: usize) -> Result<Self, Limit> {
+        self.bytes(
+            len.checked_mul(32)
+                .and_then(|n| n.checked_add(64))
+                .ok_or(Limit)?,
+        )?;
         Ok(self)
     }
     fn serialize_tuple_struct(self, _: &'static str, _: usize) -> Result<Self, Limit> {
@@ -134,7 +147,12 @@ impl<'a> Serializer for &'a mut Budget {
     fn serialize_map(self, _: Option<usize>) -> Result<Self, Limit> {
         Ok(self)
     }
-    fn serialize_struct(self, _: &'static str, _: usize) -> Result<Self, Limit> {
+    fn serialize_struct(self, _: &'static str, len: usize) -> Result<Self, Limit> {
+        self.bytes(
+            len.checked_mul(32)
+                .and_then(|n| n.checked_add(64))
+                .ok_or(Limit)?,
+        )?;
         Ok(self)
     }
     fn serialize_struct_variant(
@@ -217,6 +235,7 @@ impl ser::SerializeMap for &mut Budget {
     type Ok = ();
     type Error = Limit;
     fn serialize_key<T: Serialize + ?Sized>(&mut self, value: &T) -> Result<(), Limit> {
+        self.bytes(64)?;
         self.sized(value)
     }
     fn serialize_value<T: Serialize + ?Sized>(&mut self, value: &T) -> Result<(), Limit> {
