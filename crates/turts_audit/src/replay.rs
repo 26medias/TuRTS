@@ -13179,7 +13179,7 @@ mod tests {
         );
         if let EconomyLogRecord::Operation(operation) = &mut records[1] {
             let forged_position = WorldPos { x: 7.0, y: 7.0 };
-            operation.after.raw_units[0].pos = forged_position.clone();
+            operation.after.raw_units[0].pos = forged_position;
             operation.after.units[0].pos = forged_position;
         }
         assert!(
@@ -17014,7 +17014,7 @@ mod tests {
                         if *run > longest_overlap_run {
                             longest_overlap_run = *run;
                             longest_pair = key;
-                            longest_pair_positions = (a.pos.clone(), b.pos.clone());
+                            longest_pair_positions = (a.pos, b.pos);
                         }
                     } else {
                         overlap_runs.remove(&key);
@@ -18496,7 +18496,7 @@ mod tests {
                 state
                     .raw_units
                     .first()
-                    .map(|unit| (unit.pos.clone(), unit.move_target.clone())),
+                    .map(|unit| (unit.pos, unit.move_target)),
                 state
                     .raw_orders
                     .first()
@@ -18599,11 +18599,11 @@ mod tests {
         let mut forged = valid;
         let position = WorldPos { x: 7.0, y: 7.0 };
         if let EconomyLogRecord::CommandBoundary(boundary) = &mut forged[1] {
-            boundary.after.raw_units[0].pos = position.clone();
-            boundary.after.units[0].pos = position.clone();
+            boundary.after.raw_units[0].pos = position;
+            boundary.after.units[0].pos = position;
         }
         if let EconomyLogRecord::Operation(operation) = &mut forged[2] {
-            operation.after.raw_units[0].pos = position.clone();
+            operation.after.raw_units[0].pos = position;
             operation.after.units[0].pos = position;
         }
         assert!(

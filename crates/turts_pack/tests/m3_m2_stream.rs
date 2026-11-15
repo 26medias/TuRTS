@@ -253,8 +253,7 @@ fn run_package(package: &str) -> PackageStream {
             .iter()
             .find(|raw| raw.unit_id == unit)
             .expect("acme unit has a position")
-            .pos
-            .clone();
+            .pos;
         let result = apply_command(
             app.world_mut(),
             &Command {
@@ -282,8 +281,7 @@ fn run_package(package: &str) -> PackageStream {
             .iter()
             .find(|raw| raw.unit_id == unit)
             .expect("acme unit remains present")
-            .pos
-            .clone();
+            .pos;
         assert!(
             before_pos != after_pos,
             "acme MoveTo changes the real unit position"
@@ -310,8 +308,7 @@ fn run_package(package: &str) -> PackageStream {
         .iter()
         .find(|unit| unit.unit_id == worker)
         .expect("gatherer has position")
-        .pos
-        .clone();
+        .pos;
     let node = state
         .nodes
         .iter()

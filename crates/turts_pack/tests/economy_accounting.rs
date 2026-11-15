@@ -760,13 +760,13 @@ fn stationary_unit_teleport_at_automatic_boundary_is_rejected() {
         .find(|u| u.unit_id == 3)
         .unwrap();
     unit.pos.x += 1.0;
-    let pos = unit.pos.clone();
+    let pos = unit.pos;
     forged
         .units
         .iter_mut()
         .find(|u| u.unit_id == 3)
         .unwrap()
-        .pos = pos.clone();
+        .pos = pos;
     forged
         .economy
         .units
@@ -1082,13 +1082,13 @@ fn movement_gate_rejects_tick_skip_second_step_and_boundary_teleport() {
     let mut second_before = oracle.modeled_state().clone();
     if let Some(unit) = second_before.raw_units.iter_mut().find(|u| u.unit_id == 3) {
         unit.pos.x += 0.1;
-        let pos = unit.pos.clone();
+        let pos = unit.pos;
         second_before
             .units
             .iter_mut()
             .find(|u| u.unit_id == 3)
             .unwrap()
-            .pos = pos.clone();
+            .pos = pos;
         second_before
             .economy
             .units
@@ -1150,13 +1150,13 @@ fn movement_gate_rejects_tick_skip_second_step_and_boundary_teleport() {
         .find(|u| u.unit_id == 3)
         .unwrap();
     raw.pos.x += 2.0;
-    let pos = raw.pos.clone();
+    let pos = raw.pos;
     forged
         .units
         .iter_mut()
         .find(|u| u.unit_id == 3)
         .unwrap()
-        .pos = pos.clone();
+        .pos = pos;
     forged
         .economy
         .units
