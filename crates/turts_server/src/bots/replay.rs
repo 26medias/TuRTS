@@ -222,6 +222,7 @@ fn prepare_inner(world: &mut World, playback: &mut Playback) -> Result<(), Strin
             .ok_or("recorded tick lacks lifecycle")?;
         actors::record_lifecycle(world, lifecycle.clone())?;
     }
+    let mut prepared_actors = std::collections::BTreeSet::new();
     for record in records {
         let ActorLogRecord::Submission {
             actor, envelope, ..
@@ -236,14 +237,31 @@ fn prepare_inner(world: &mut World, playback: &mut Playback) -> Result<(), Strin
             }
             ActorLogIdentity::Bot { .. } if playback.mode == BotExecutionMode::RecordedCommands => {
                 let command = bot_command(record)?;
-                // Refusal is a recorded effect too. The shared path retains its result witness.
-                let _ = actors::stage_bot_command(world, command);
+                if prepared_actors.insert(command.actor.clone()) {
+                    prepare_recorded_actor(world, &command.actor)?;
+                }
+                actors::stage_bot_command(world, command)
+                    .map_err(|error| format!("replay bot staging tick{tick}: {error:?}"))?;
             }
             ActorLogIdentity::Bot { .. } => {}
         }
     }
     Ok(())
 }
+fn prepare_recorded_actor(world: &mut World, actor: &BotActor) -> Result<(), String> {
+    actors::prepare_reconciliation(world, actor)?;
+    let batch = actors::actor_reconciliation(world, actor)?;
+    // Recorded playback retires terminal receipts without regenerating decisions.
+    let retained = batch
+        .included
+        .iter()
+        .filter(|effect| !effect.terminal)
+        .map(|effect| effect.request.clone())
+        .chain(batch.unapplied.iter().cloned())
+        .collect::<Vec<_>>();
+    actors::acknowledge(world, actor, batch.watermark, &retained)
+}
+
 fn verify(world: &mut World) {
     let Some(mut playback) = world.remove_resource::<Playback>() else {
         return;
@@ -401,6 +419,49 @@ mod tests {
                     },
                 },
             });
+    }
+    #[test]
+    fn recorded_actor_retires_terminal_receipts_beyond_the_envelope_limit() {
+        let mut app = fixture();
+        app.world_mut().resource_mut::<BotExecution>().mode = BotExecutionMode::RecordedCommands;
+        let actor = app.world().resource::<BotHost>().bots[0].actor.clone();
+        let unit = turts_sim::completed_world(app.world())
+            .units
+            .iter()
+            .find(|unit| unit.owner_slot == actor.slot && unit.content_id == "stockyard:worker")
+            .unwrap()
+            .unit_id;
+        for sequence in 1..=70 {
+            prepare_recorded_actor(app.world_mut(), &actor).unwrap();
+            actors::stage_bot_command(
+                app.world_mut(),
+                EmittedCommand {
+                    actor: actor.clone(),
+                    sequence,
+                    task: TaskKey::new("replay", "bounded", sequence.to_string()),
+                    units: vec![unit],
+                    order: BotOrder {
+                        content: ContentId::parse("stockyard:order_stop").unwrap(),
+                        target: BotTarget::None,
+                        queue: BotQueueMode::Replace,
+                        group: sequence,
+                    },
+                },
+            )
+            .unwrap();
+            app.update();
+            assert!(
+                app.world().resource::<actors::BotActors>().entries[&actor.slot]
+                    .requests
+                    .len()
+                    <= 1
+            );
+            assert!(
+                actors::actor_results(app.world(), &actor)
+                    .iter()
+                    .any(|result| result.accepted)
+            );
+        }
     }
     #[test]
     fn recorded_and_regenerated_cot_pause_replay_compare_every_tick_and_command() {

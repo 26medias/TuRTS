@@ -214,7 +214,9 @@ pub(crate) fn stage_bot_command(
     world: &mut World,
     command: EmittedCommand,
 ) -> Result<(), CommandRejectReason> {
-    let completed_tick = turts_sim::completed_world(world).tick;
+    let completed_tick = world
+        .get_resource::<turts_sim::CompletedWorld>()
+        .map(|completed| completed.0.tick);
     let Some(mut book) = world.get_resource_mut::<BotActors>() else {
         return Err(CommandRejectReason::NotOwner);
     };
@@ -245,7 +247,7 @@ pub(crate) fn stage_bot_command(
     if entry.publication_error.is_some()
         || entry.demand_publication
             && entry.published.as_ref().is_none_or(|batch| {
-                !batch.complete || batch.watermark.completed_tick != completed_tick
+                !batch.complete || Some(batch.watermark.completed_tick) != completed_tick
             })
     {
         return Err(CommandRejectReason::RateLimited);
