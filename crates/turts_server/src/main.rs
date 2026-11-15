@@ -119,6 +119,14 @@ fn run() -> Result<(), String> {
         turts_mod_runtime::content::validate_lobby_palette(colours)?;
         app.insert_resource(lobby::HostedLobby::new(policy, colours.len() as u8));
     }
+    if let Some(config) = app
+        .world()
+        .get_resource::<turts_sim::MatchConfig>()
+        .cloned()
+    {
+        let match_id = app.world().resource::<stats::MatchId>().0;
+        turts_sim::visibility::initialize_context(app.world_mut(), match_id, &config.teams)?;
+    }
     let package = &booted.archive.manifest;
     eprintln!(
         "turts_server: package {} {}, lockfile {}",
