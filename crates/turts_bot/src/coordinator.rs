@@ -2,7 +2,7 @@
 use crate::{controller::CoordinatorLimits, types::*};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
-use turts_mod_api::WorldPos;
+use turts_mod_api::{PaymentPolicy, WorldPos};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PendingCommitment {
@@ -11,6 +11,8 @@ pub struct PendingCommitment {
     pub declared: Vec<AccountAmount>,
     pub unpaid: Vec<AccountAmount>,
     pub work: Option<WorkIdentity>,
+    pub payment: Option<PaymentPolicy>,
+    pub observed_done: u64,
     pub created_at: Watermark,
     pub represented: bool,
 }
@@ -248,6 +250,8 @@ impl BotCoordinator {
             if let Some(work) = &effect.work {
                 if work.actor_unit != key.unit
                     || work.done > work.total
+                    || work.done < entry.observed_done
+                    || work.payment != entry.payment
                     || entry.work.as_ref().is_some_and(|old| old != &work.identity)
                     || amounts(&work.paid).map_err(|_| ReconcileError::InvalidEffect)? != paid
                     || amounts(&work.reserved).map_err(|_| ReconcileError::InvalidEffect)?
@@ -255,7 +259,20 @@ impl BotCoordinator {
                 {
                     return Err(ReconcileError::InvalidEffect);
                 }
+                if work.payment == Some(PaymentPolicy::ChargeOverTime) {
+                    if work.total == 0 || !reserved.is_empty() {
+                        return Err(ReconcileError::InvalidEffect);
+                    }
+                    for (account, full) in &declared {
+                        let expected = (u128::from(*full) * u128::from(work.done)
+                            / u128::from(work.total)) as u64;
+                        if paid.get(account).copied().unwrap_or(0) != expected {
+                            return Err(ReconcileError::InvalidEffect);
+                        }
+                    }
+                }
                 entry.work = Some(work.identity.clone());
+                entry.observed_done = work.done;
             }
             let mut remaining = Vec::new();
             for (account, full) in declared {
@@ -269,6 +286,16 @@ impl BotCoordinator {
                     .checked_sub(represented)
                     .ok_or(ReconcileError::InvalidEffect)?;
                 if amount > 0 {
+                    if entry.represented
+                        && amount
+                            > entry
+                                .unpaid
+                                .iter()
+                                .find(|old| old.account == account)
+                                .map_or(0, |old| old.amount)
+                    {
+                        return Err(ReconcileError::InvalidEffect);
+                    }
                     remaining.push(AccountAmount { account, amount });
                 }
             }
@@ -301,7 +328,7 @@ impl BotCoordinator {
         let mut candidates = Vec::new();
         let mut task_counts = BTreeMap::new();
         for proposal in &proposals {
-            *task_counts.entry(proposal.task.clone()).or_insert(0_u32) += 1;
+            *task_counts.entry(proposal.task.clone()).or_insert(0_usize) += 1;
         }
         for proposal in proposals {
             let reject = if !self.ready || self.basis != Some(basis) {
@@ -468,6 +495,8 @@ impl BotCoordinator {
                     declared: member.costs.clone(),
                     unpaid: member.costs.clone(),
                     work: None,
+                    payment: member.payment,
+                    observed_done: 0,
                     created_at: watermark,
                     represented: false,
                 },
