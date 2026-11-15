@@ -474,6 +474,35 @@ pub fn node_permitted(world: &World, viewer: u8, node: u32, phase: ObservationPh
     basis(world, phase).is_none_or(|basis| basis.node_permitted(viewer, node))
 }
 
+/// Current simulation action basis. None is explicit AllVisible only.
+pub fn active_basis(world: &World) -> Option<&VisibilityBasis> {
+    let state = world.get_resource::<VisibilityState>()?;
+    Some(match state.active {
+        ObservationPhase::Start => &state.start,
+        ObservationPhase::Tactical => &state.tactical,
+        ObservationPhase::Completed => &state.completed,
+    })
+}
+pub(crate) fn validate_target(
+    world: &World,
+    viewer: u8,
+    target: &crate::orders::OrderTargetSim,
+) -> Result<(), crate::RejectReason> {
+    let Some(basis) = active_basis(world) else {
+        return Ok(());
+    };
+    let permitted = match target {
+        crate::orders::OrderTargetSim::Unit(id) => basis.unit_permitted(viewer, *id),
+        crate::orders::OrderTargetSim::Node(id) => basis.node_permitted(viewer, id.0),
+        _ => true,
+    };
+    if permitted {
+        Ok(())
+    } else {
+        Err(crate::RejectReason::TargetInvalid)
+    }
+}
+
 fn capture_units(world: &World) -> (Vec<VisibleUnit>, Vec<(u32, u8, WorldPos, f32)>) {
     let Some(types) = world.get_resource::<crate::UnitTypes>() else {
         return (Vec::new(), Vec::new());

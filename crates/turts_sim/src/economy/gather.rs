@@ -107,6 +107,11 @@ pub fn assign_gather(
     if world.get::<Owner>(entity).map(|owner| owner.0) != Some(slot) {
         return Err(RejectReason::NotOwner);
     }
+    if crate::visibility::active_basis(world)
+        .is_some_and(|basis| !basis.node_permitted(slot.0, node.0))
+    {
+        return Err(RejectReason::TargetInvalid);
+    }
     let unit_type = world
         .get::<UnitType>(entity)
         .ok_or(RejectReason::UnknownUnit)?
@@ -277,6 +282,16 @@ fn process_gatherer(world: &mut World, unit: u32, catalog: &turts_mod_api::Conte
     let Some(node_id) = order.deposit else {
         return;
     };
+    let permitted = crate::visibility::active_basis(world).is_none_or(|basis| {
+        basis.node_permitted(owner.0, node_id.0)
+            && order
+                .receiver
+                .is_none_or(|receiver| basis.unit_permitted(owner.0, receiver))
+    });
+    if !permitted {
+        let _ = interrupt_order(world, owner, unit);
+        return;
+    }
     match order.stage {
         GatherStage::Idle => {}
         GatherStage::MovingToNode => move_or_arrive_node(

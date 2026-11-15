@@ -916,12 +916,21 @@ pub(super) fn dispatch_pending_movement(world: &mut World) {
                             OrderTargetSim::Unit(target_id) => Some(target_id),
                             _ => None,
                         })
-                        .is_some_and(|target_id| !entity_by_unit.contains_key(&target_id))
+                        .is_some_and(|target_id| {
+                            !entity_by_unit.contains_key(&target_id)
+                                || crate::visibility::active_basis(world)
+                                    .is_some_and(|basis| !basis.unit_permitted(slot, target_id))
+                        })
                 })
                 .collect();
             for unit_id in target_gone_ids {
                 let Some(entity) = entity_by_unit.get(&unit_id).copied() else {
                     continue;
+                };
+                let target_failure = if crate::visibility::active_basis(world).is_some() {
+                    crate::command::RejectReason::TargetInvalid
+                } else {
+                    crate::command::RejectReason::TargetGone
                 };
                 let failure_order = request.order_for_unit(unit_id).cloned();
                 crate::economy::transaction::capture_unit_order_operation(
@@ -970,7 +979,7 @@ pub(super) fn dispatch_pending_movement(world: &mut World) {
                                 orders.current = None;
                                 orders.last_failure = Some(OrderFailure {
                                     order: order.order,
-                                    reason: crate::command::RejectReason::TargetGone,
+                                    reason: target_failure,
                                     tick,
                                 });
                             });
