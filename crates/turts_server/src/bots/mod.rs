@@ -157,6 +157,9 @@ fn install_with_registry_and_limits(
     if configuration.is_empty() {
         return Ok(());
     }
+    if app.world().resource::<Tick>().0 != 0 {
+        return Err("public bots must be installed before the first tick".into());
+    }
     if app.world().contains_resource::<BotHost>() {
         return Err("bots are already installed for this match".into());
     }
@@ -236,10 +239,17 @@ fn install_with_registry_and_limits(
         bots: installed_bots,
         limits: artifact_limits(limits)?,
     };
-    actors::install_bot_actors(
-        app.world_mut(),
-        &bots.iter().map(|b| b.actor.clone()).collect::<Vec<_>>(),
+    let installed_actors = bots.iter().map(|bot| bot.actor.clone()).collect::<Vec<_>>();
+    turts_sim::initialize_completed_world(app.world_mut());
+    let prepared_limits = actors::prepare_actor_limits(
+        app.world(),
+        &installed_actors,
+        coordinator_limits(limits),
+        limits.projection_rows,
     )?;
+    actors::install_bot_actors(app.world_mut(), &installed_actors)?;
+    actors::configure_actor_limits(app.world_mut(), prepared_limits);
+    actors::install(app);
     app.init_resource::<BotExecution>();
     app.insert_resource(BotHost {
         bots,
