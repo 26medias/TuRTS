@@ -93,6 +93,7 @@ fn catalog() -> ContentCatalog {
         orders: BTreeMap::new(),
         order_queue_depths: BTreeMap::from([(PackageId("fixture".into()), 16)]),
         source_files: BTreeMap::new(),
+        bots: Default::default(),
     };
     let id = ContentId::parse("fixture:move").unwrap();
     catalog.orders.insert(
