@@ -45,9 +45,16 @@ The reviewer did not repeat the whole review after these fixes.
 ## Remaining acceptance
 
 BF1-BF9 are not yet all complete.
-Open checks include final integration replay after the accounting fix, renamed fixture execution, genuine creation-ID inversion, the complete-phase performance measurement, final integration checks, browser profiles, and cold-play probes.
+Native renamed-package execution, genuine creation-ID inversion, and exact recorded/regenerated replay have passed.
+The full native and Node campaigns passed after scoped repairs. Final preparation and browser acceptance remain open.
+The first required 1,000-phase BF8 run failed at 25.079 ms p99 against 5 ms (`bf8-final.log`).
+The next two 40-phase diagnostics reached 13.918 ms and 11.377 ms. Neither is an acceptance run.
+Demand-time publication now retains exact debit and terminal facts each tick, then prepares the latest completed account basis before a decision.
+Its focused independent review passed, including pause recovery, replay bounds, endpoint validation, and atomic failed capture (`review/lazy-publication-review.md`).
+The next timing run must measure this change on the unchanged workload. See `docs/measurements/public-bots.md`.
+Open checks are the complete-phase performance budget, final integration checks, browser profiles, and cold-play probes.
 The final report must replace this section with a row-by-row acceptance result and evidence paths.
-No main merge or push is authorized by this incomplete report.
+Main may receive this milestone only after acceptance and a README progress update. Main must not be pushed.
 
 ## Limits
 
