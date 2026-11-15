@@ -237,6 +237,7 @@ impl Plugin for SimPlugin {
                 (
                     collect_changes,
                     crate::orders::writer::collect_order_inputs,
+                    crate::visibility::refresh_completed,
                     publish_completed_tick,
                     crate::economy::transaction::finish_tick_audit,
                 )
@@ -270,7 +271,6 @@ fn not_stopped(stopped: Option<Res<MatchStopped>>) -> bool {
 }
 
 fn publish_completed_tick(world: &mut World) {
-    crate::visibility::refresh_completed(world);
     let tick = world.resource::<Tick>().0;
     let changed = world.resource::<ChangedThisTick>().0.clone();
     let mut completed = world_view(world);
