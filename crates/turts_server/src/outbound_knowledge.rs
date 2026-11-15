@@ -237,6 +237,16 @@ fn emit_cancel(world: &mut World, entity: Entity, cancel: Option<StateTransactio
         }
     }
 }
+fn validate_terrain_publication(world: &World) -> Result<(), String> {
+    let installed = turts_sim::terrain::grid(world).is_some();
+    if installed != turts_sim::completed_world(world).terrain.is_some() {
+        return Err("Completed terrain basis is missing or belongs to a retired map".into());
+    }
+    if installed && !turts_sim::visibility::event_units_complete(world) {
+        return Err("Terrain event witness context is incomplete".into());
+    }
+    Ok(())
+}
 /// Small AllVisible baselines retain their legacy fast path.
 pub fn queue_full(world: &mut World, entity: Entity, slot: SlotId) -> Result<bool, String> {
     queue_snapshot(world, entity, slot, false)
@@ -255,11 +265,7 @@ fn queue_snapshot(
     if !turts_sim::visibility::context_ready(world) {
         return Err("Sight context is not ready for publication".into());
     }
-    if turts_sim::completed_world(world).terrain.is_some()
-        && !turts_sim::visibility::event_units_complete(world)
-    {
-        return Err("Terrain event witness context is incomplete".into());
-    }
+    validate_terrain_publication(world)?;
     let tip = PermittedBaseline::capture_checked(
         turts_sim::completed_world(world),
         slot,
@@ -322,11 +328,7 @@ fn queue_snapshot(
     Ok(true)
 }
 pub fn queue_tick(world: &mut World, entity: Entity, slot: SlotId) -> Result<bool, String> {
-    if turts_sim::completed_world(world).terrain.is_some()
-        && !turts_sim::visibility::event_units_complete(world)
-    {
-        return Err("Terrain event witness context is incomplete".into());
-    }
+    validate_terrain_publication(world)?;
     let Some(mut sender) = world.entity_mut(entity).take::<KnowledgeSender>() else {
         if crate::permissions::completed(world)
             .0

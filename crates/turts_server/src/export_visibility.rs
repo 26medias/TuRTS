@@ -130,16 +130,6 @@ impl PermittedBaseline {
             knowledge: policy.knowledge(slot.0),
         })
     }
-    #[cfg(test)]
-    pub(crate) fn capture_reusing_metadata(
-        &mut self,
-        view: &WorldView,
-        slot: SlotId,
-        policy: &dyn ObservationPermissions,
-    ) -> Self {
-        self.capture_reusing_metadata_checked(view, slot, policy)
-            .expect("trusted permitted terrain metadata capture")
-    }
     /// The legacy AllVisible path can retain an earlier truthful public observation for cosmetics.
     /// It never labels that old position as a current phase observation.
     pub fn all_visible_patch(

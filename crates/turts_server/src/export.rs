@@ -75,7 +75,9 @@ use turts_sim::{
 /// Build a snapshot from an already-permitted completed view. Live transport applies the shared
 /// permission provider first. Direct full-world use is only valid for AllVisible.
 pub fn snapshot_for(view: &WorldView, slot: SlotId) -> wire::Snapshot {
-    snapshot_projected(view, slot, None)
+    let mut state = snapshot_projected(view, slot, None);
+    state.records.terrain = export_terrain::snapshot(view, slot, &crate::permissions::AllVisible);
+    state
 }
 
 pub(super) fn snapshot_permitted(
