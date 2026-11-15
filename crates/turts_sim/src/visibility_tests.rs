@@ -1020,3 +1020,88 @@ fn cached_circle_deltas_match_full_rebuilds_across_routes_radius_changes_and_tea
         }
     }
 }
+
+#[test]
+fn immutable_permission_index_matches_geometry_for_dense_sparse_and_inverted_ids() {
+    for identities in [[1, 2, 3, 4], [u32::MAX, 1_000_000, 7, 0], [4, 3, 2, 1]] {
+        for sharing in [VisionSharing::OwnSlot, VisionSharing::Team] {
+            let mut state = prepared(sharing, 10);
+            let units = vec![
+                visible(identities[0], 0, p(60.0, 60.0)),
+                visible(identities[1], 1, p(4.0, 2.0)),
+                visible(identities[2], 1, p(50.0, 50.0)),
+                visible(identities[3], 1, p(0.0, 0.0)),
+            ];
+            state.update(
+                1,
+                ObservationPhase::Start,
+                units.clone(),
+                vec![],
+                vec![(9, 0, p(2.0, 2.0), 4.0)],
+            );
+            let old = state.phase(ObservationPhase::Start);
+            for viewer in 0..=SLOT_COUNT {
+                for unit in &units {
+                    let expected = viewer < SLOT_COUNT
+                        && (unit.owner == viewer || old.point_observed(viewer, unit.position));
+                    assert_eq!(old.unit_permitted(viewer, unit.unit), expected);
+                    assert_eq!(
+                        old.permitted_unit(viewer, unit.unit),
+                        expected.then_some(unit)
+                    );
+                }
+                assert!(!old.unit_permitted(viewer, 8));
+            }
+            if identities[0] == u32::MAX {
+                assert!(
+                    old.unit_rows.is_none(),
+                    "sparse IDs must not allocate a dense table"
+                );
+            } else {
+                let rows = old.unit_rows.as_ref().unwrap();
+                assert!(rows.len() <= MAX_DENSE_UNIT_ROWS);
+                assert!(rows.len() <= units.len() * 4);
+            }
+            let mut changed = units;
+            changed[1].position = p(55.0, 55.0);
+            changed[1].facing = Some(Facing::PosY);
+            state.update(
+                1,
+                ObservationPhase::Tactical,
+                changed.clone(),
+                vec![],
+                vec![],
+            );
+            let next = state.phase(ObservationPhase::Tactical);
+            if let Some(rows) = &old.unit_rows {
+                assert!(
+                    Arc::ptr_eq(rows, next.unit_rows.as_ref().unwrap()),
+                    "unchanged IDs reuse the immutable index"
+                );
+            }
+            assert!(old.unit_permitted(0, identities[1]));
+            assert!(!next.unit_permitted(0, identities[1]));
+            assert_eq!(
+                old.permitted_unit(0, identities[1]).unwrap().position,
+                p(4.0, 2.0)
+            );
+            changed.remove(0);
+            state.update(2, ObservationPhase::Completed, changed, vec![], vec![]);
+            assert!(state.completed.permitted_unit(0, identities[0]).is_none());
+            assert!(old.permitted_unit(0, identities[0]).is_some());
+        }
+    }
+}
+
+#[test]
+fn dense_permission_index_rejects_unbounded_sparse_storage() {
+    for identity in [8, MAX_DENSE_UNIT_ROWS as u32, u32::MAX] {
+        let units = [
+            visible(0, 0, p(1.0, 1.0)),
+            visible(identity, 1, p(2.0, 2.0)),
+        ];
+        assert!(dense_unit_rows(&units).is_none());
+    }
+    let units = [visible(0, 0, p(1.0, 1.0)), visible(7, 1, p(2.0, 2.0))];
+    assert_eq!(dense_unit_rows(&units).unwrap().len(), units.len() * 4);
+}
