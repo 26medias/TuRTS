@@ -181,7 +181,7 @@ fn sync_fog(
         );
         let handle = if let Some((_, handle)) = cached.as_ref() {
             let handle = handle.clone();
-            if let Some(existing) = images.get_mut(&handle) {
+            if let Some(mut existing) = images.get_mut(&handle) {
                 *existing = image;
             }
             handle
