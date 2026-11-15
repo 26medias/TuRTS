@@ -28,7 +28,7 @@ for(const [id,name,unit,duration,cost,payment] of [
  ['build_wall','Build Paid wall','wall',12000,120,'ChargeOverTime'],
  ['build_mint','Build Mint','mint',1000,0,'ChargeOnQueue'],
  ['train_trainee','Train Paid trainee','trainee',6000,60,'ChargeOverTime'],
-]) write('production/'+id+'.ron',`(id:"${id}",name:"${name}",output_unit:"paid:${unit}",duration_ms:${duration},costs:[(resource:"paid:credits",amount:${cost},source:SlotBalance)],payment:${payment},cancel_refunds:${refunds})`);
+]) write('production/'+id+'.ron',`(id:"${id}",name:"${name}",output_unit:"paid:${unit}",duration_ms:${duration},costs:[${cost ? `(resource:"paid:credits",amount:${cost},source:SlotBalance)` : ""}],payment:${payment},cancel_refunds:${refunds})`);
 const visuals={workshop:'barracks',wall:'barracks',mint:'base',trainee:'worker',engineer:'worker',target:'barracks',shooter:'tower'};
 for(const[k,v]of Object.entries(visuals))write('visuals/'+k+'.ron',fs.readFileSync(fixture+'/visuals/'+v+'.ron','utf8').replace(`Unit("paid:${v}")`,`Unit("paid:${k}")`));
 const all=Object.keys(visuals).map(x=>`"paid:${x}"`).join(',');
