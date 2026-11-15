@@ -8,3 +8,7 @@ The castle is only a victory anchor. It cannot build or train units.
 The public profile uses the same four stock factories as Skirmish.
 The bot can start without a connected human.
 Art and its license files are copied unchanged from the Skirmish package.
+
+Guard towers provide Garrison space. Soldiers consume it.
+The recovery controller restores lost space before optional opening work.
+The bot profile lives in `bots/opponent.ron`. Its role and order bindings are explicit.

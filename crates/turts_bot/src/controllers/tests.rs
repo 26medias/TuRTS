@@ -67,6 +67,16 @@ fn run(
     profile: &BotDef,
     queries: &mut dyn BotQueries,
 ) -> Vec<Proposal> {
+    run_with_metadata(policy, profile, queries, 1, &[], &[])
+}
+fn run_with_metadata(
+    policy: &mut StockController,
+    profile: &BotDef,
+    queries: &mut dyn BotQueries,
+    basis: BasisId,
+    role_counts: &[RoleCount],
+    supply: &[SupplyObservation],
+) -> Vec<Proposal> {
     let actor = BotActor {
         slot: 0,
         profile: id("fixture:opponent"),
@@ -82,8 +92,8 @@ fn run(
         complete: true,
     };
     let frame = BotFrame {
-        basis: 1,
-        accounting_basis: 1,
+        basis,
+        accounting_basis: basis,
         completed_tick: 1,
         scheduler_tick: 1,
         active_ticks: 20,
@@ -99,8 +109,8 @@ fn run(
         },
         limits: Default::default(),
         reconciliation: &batch,
-        role_counts: &[],
-        supply: &[],
+        role_counts,
+        supply,
     };
     let mut sink = ProposalBuffer::new("policy", 32, 256);
     policy.step(&frame, queries, &mut sink);
@@ -257,4 +267,155 @@ fn completed_queries_remain_cached_while_a_later_selection_is_incomplete() {
     assert!(policy.collect(query.clone(), &mut q).is_some());
     let mut no_queries = Pages(VecDeque::new());
     assert!(policy.collect(query, &mut no_queries).is_some());
+}
+
+#[test]
+fn later_query_resumes_its_old_basis_after_accounting_advances() {
+    let mut policy = controller();
+    let mut q = Pages(VecDeque::from([
+        page(
+            QueryData::Units(vec![unit(10, 0., 0.)]),
+            PageState::Complete,
+        ),
+        Err(QueryError::Budget),
+    ]));
+    assert!(run(&mut policy, &profile(), &mut q).is_empty());
+    assert_eq!(policy.basis, Some(1));
+    // The completed actor page must not be re-read on the newer account basis.
+    let mut q = Pages(VecDeque::from([page(
+        QueryData::Nodes(vec![node(20, 1., 0.)]),
+        PageState::Complete,
+    )]));
+    let proposals = run_with_metadata(&mut policy, &profile(), &mut q, 2, &[], &[]);
+    assert_eq!(proposals.len(), 1);
+    assert_eq!(proposals[0].source_basis, 1);
+    assert!(policy.basis.is_none());
+    assert!(policy.scans.is_empty());
+}
+fn recovery_profile() -> BotDef {
+    let mut p = profile();
+    p.knowledge.roles.push(BotRole {
+        key: "trainers".into(),
+        units: vec!["fixture:trainer".into()],
+        requires: vec![],
+    });
+    p.knowledge.orders.push(BotOrderBinding {
+        key: "train".into(),
+        order: "fixture:produce".into(),
+        actor_role: "trainers".into(),
+    });
+    p.knowledge.recipes.push(BotRecipeBinding {
+        key: "replacement".into(),
+        recipe: "fixture:worker_recipe".into(),
+        actor_role: "trainers".into(),
+        order: "train".into(),
+        kind: BotRecipeKind::Produce,
+    });
+    p.knowledge.recovery = vec![BotGoal {
+        key: "restore_worker".into(),
+        priority: 100,
+        action: BotGoalAction::EnsureUnits {
+            role: "workers".into(),
+            count: 1,
+            recipe: "replacement".into(),
+        },
+    }];
+    p
+}
+#[test]
+fn missing_gatherer_emits_an_ordinary_high_priority_replacement() {
+    let mut trainer = unit(40, 2., 3.);
+    trainer.content = id("fixture:trainer");
+    let mut q = Pages(VecDeque::from([page(
+        QueryData::Units(vec![trainer]),
+        PageState::Complete,
+    )]));
+    let proposals = run(&mut controller(), &recovery_profile(), &mut q);
+    assert_eq!(proposals.len(), 1);
+    assert_eq!(proposals[0].priority, 100);
+    assert_eq!(proposals[0].actors, vec![40]);
+    assert_eq!(proposals[0].order.content, id("fixture:produce"));
+    assert_eq!(
+        proposals[0].order.target,
+        BotTarget::Content(id("fixture:worker_recipe"))
+    );
+}
+#[test]
+fn a_pending_paid_replacement_prevents_duplicate_recovery_proposals() {
+    let mut q = Pages(VecDeque::new());
+    let counts = [RoleCount {
+        role: "workers".into(),
+        completed: 0,
+        pending: 1,
+    }];
+    assert!(
+        run_with_metadata(
+            &mut controller(),
+            &recovery_profile(),
+            &mut q,
+            1,
+            &counts,
+            &[]
+        )
+        .is_empty()
+    );
+}
+#[test]
+fn pending_supply_provider_prevents_duplicate_construction_and_loss_replans() {
+    let mut p = recovery_profile();
+    p.knowledge.recovery[0].action = BotGoalAction::EnsureSupply {
+        resource: "fixture:beds".into(),
+        amount: 4,
+        provider_role: "housing".into(),
+        recipe: "replacement".into(),
+    };
+    p.knowledge.recipes[0].kind = BotRecipeKind::Construct;
+    let supply = [SupplyObservation {
+        resource: id("fixture:beds"),
+        provided: 0,
+        consumed: 0,
+    }];
+    let counts = [RoleCount {
+        role: "housing".into(),
+        completed: 0,
+        pending: 1,
+    }];
+    let mut q = Pages(VecDeque::new());
+    assert!(run_with_metadata(&mut controller(), &p, &mut q, 1, &counts, &supply).is_empty());
+    let mut q = Pages(VecDeque::from([
+        page(
+            QueryData::Units(vec![unit(40, 2., 3.)]),
+            PageState::Complete,
+        ),
+        page(
+            QueryData::Placement(Advice::Known(PlacementAdvice::Allowed)),
+            PageState::Complete,
+        ),
+    ]));
+    let proposals = run_with_metadata(&mut controller(), &p, &mut q, 1, &[], &supply);
+    assert_eq!(proposals.len(), 1);
+    assert!(matches!(
+        proposals[0].order.target,
+        BotTarget::ContentAtPoint { .. }
+    ));
+}
+
+#[test]
+fn actor_quota_never_chooses_one_coincident_source_by_storage_order() {
+    for rows in [
+        vec![unit(1, 0., 0.), unit(2, 0., 0.), unit(3, 2., 0.)],
+        vec![unit(2, 0., 0.), unit(1, 0., 0.), unit(3, 2., 0.)],
+    ] {
+        let selected = ranked_sources(rows, 1);
+        assert_eq!(selected.len(), 1);
+        assert_eq!(selected[0].unit, 3);
+    }
+}
+#[test]
+fn large_squads_select_within_affected_unit_quota_by_physical_rank() {
+    let rows = (0..300).map(|n| unit(300 - n, n as f32, 0.)).collect();
+    let selected = ranked_sources(rows, 256);
+    assert_eq!(selected.len(), 256);
+    assert_eq!(selected.first().unwrap().unit, 300);
+    assert_eq!(selected.last().unwrap().unit, 45);
 }
