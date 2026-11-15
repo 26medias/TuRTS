@@ -7,8 +7,8 @@ use turts_client::{
     replica::{DeltaOutcome, Replica, ReplicaContext, SnapshotOutcome},
 };
 use turts_net_protocol::{
-    BalanceState, DeltaRecords, HealthRecord, Pos, RepairRecord, RepairState, SlotId, Snapshot,
-    SnapshotRecords, UnitId, UnitSnapshot, WorldDelta,
+    BalanceState, HealthRecord, Pos, RepairRecord, RepairState, SlotId, Snapshot, SnapshotRecords,
+    UnitId, UnitSnapshot, WorldDelta,
 };
 
 fn content() -> ClientContent {
