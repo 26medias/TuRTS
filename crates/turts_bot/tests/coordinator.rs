@@ -624,3 +624,54 @@ fn fulfillment_arithmetic_overflow_has_no_partial_allocation() {
     assert!(c.tracked_requests().is_empty());
     assert_eq!(c.next_sequence(), Some(0));
 }
+
+#[test]
+fn a_failed_later_fulfillment_sum_does_not_consume_an_earlier_roles_deficit() {
+    let mut c = ready(vec![]);
+    let v = ClaimsVerifier {
+        members: verifier(vec![member(1, 8., vec![]), member(2, 30., vec![])]),
+        claims: [
+            (
+                "bad".into(),
+                vec![role("worker", 0, Some(1)), role("overflow", u64::MAX, None)],
+            ),
+            ("good".into(), vec![role("worker", 0, Some(1))]),
+        ]
+        .into(),
+    };
+    let out = c.select(
+        0,
+        vec![proposal("bad", vec![1]), proposal("good", vec![2])],
+        &v,
+    );
+    assert_eq!(out.refused[0].reason, ProposalRejection::ArithmeticOverflow);
+    assert_eq!(out.commands.len(), 1);
+    assert_eq!(out.commands[0].task.goal, "good");
+}
+#[test]
+fn an_unaffordable_proposal_does_not_consume_a_funded_proposals_same_role_deficit() {
+    let mut c = ready(vec![balance(money(), 20, 0)]);
+    let v = ClaimsVerifier {
+        members: verifier(vec![
+            member(1, 8., vec![amount(money(), 30)]),
+            member(2, 30., vec![amount(money(), 10)]),
+        ]),
+        claims: [
+            ("bad".into(), vec![role("worker", 0, Some(1))]),
+            ("good".into(), vec![role("worker", 0, Some(1))]),
+        ]
+        .into(),
+    };
+    let out = c.select(
+        0,
+        vec![proposal("bad", vec![1]), proposal("good", vec![2])],
+        &v,
+    );
+    assert!(matches!(
+        out.refused[0].reason,
+        ProposalRejection::InsufficientResources(_)
+    ));
+    assert_eq!(out.commands.len(), 1);
+    assert_eq!(out.commands[0].task.goal, "good");
+    assert_eq!(c.pending().len(), 1);
+}
