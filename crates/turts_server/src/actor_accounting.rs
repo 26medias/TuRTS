@@ -1,5 +1,8 @@
 //! Immutable completed-basis accounting for trusted participant receipts.
-use std::collections::{BTreeMap, BTreeSet};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::Arc,
+};
 
 use turts_bot::{
     AccountAmount, AccountObservation, ActorResult, BotActor, EmittedCommand, InventoryPort,
@@ -17,7 +20,7 @@ type Amounts = BTreeMap<SpendKey, u64>;
 
 #[derive(Debug, Clone)]
 pub(crate) struct TrackedRequest {
-    pub command: EmittedCommand,
+    pub command: Arc<EmittedCommand>,
     pub result: Option<ActorResult>,
     pub admitted_work: Option<AdmittedWork>,
     accounted: Option<Watermark>,
@@ -26,9 +29,9 @@ pub(crate) struct TrackedRequest {
     last_effect: Option<ObservedRequestEffect>,
 }
 impl TrackedRequest {
-    pub(crate) fn new(command: EmittedCommand) -> Self {
+    pub(crate) fn new(command: impl Into<Arc<EmittedCommand>>) -> Self {
         Self {
-            command,
+            command: command.into(),
             result: None,
             admitted_work: None,
             accounted: None,

@@ -3,7 +3,10 @@
 //! A player message never constructs a bot identity. Gameplay authorization remains
 //! in the shared admission and simulation command paths.
 
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::{
+    collections::{BTreeMap, BTreeSet, VecDeque},
+    sync::Arc,
+};
 
 use bevy::prelude::*;
 use turts_audit::{ActorLogIdentity, ActorLogRecord, ActorTask};
@@ -34,7 +37,7 @@ pub(crate) struct BotActorState {
 #[derive(Resource)]
 pub(crate) struct BotActors {
     pub entries: BTreeMap<u8, BotActorState>,
-    pub staged: VecDeque<EmittedCommand>,
+    pub staged: VecDeque<Arc<EmittedCommand>>,
     pending: BTreeMap<(u8, u32), PlayerCommand>,
     limits: CoordinatorLimits,
     row_limit: usize,
@@ -265,6 +268,9 @@ pub(crate) fn stage_bot_command(
     {
         return Err(CommandRejectReason::RateLimited);
     }
+    // The queue and all per-member receipts share one immutable intent. A group
+    // never copies its complete unit vector once for every affected unit.
+    let command = Arc::new(command);
     for unit in &command.units {
         entry.requests.insert(
             RequestKey {
@@ -272,7 +278,7 @@ pub(crate) fn stage_bot_command(
                 sequence: command.sequence,
                 unit: *unit,
             },
-            TrackedRequest::new(command.clone()),
+            TrackedRequest::new(Arc::clone(&command)),
         );
     }
     book.staged.push_back(command);

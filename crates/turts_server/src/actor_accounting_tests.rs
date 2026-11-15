@@ -462,7 +462,7 @@ fn held_construction_retains_full_debt_then_tracks_a_site_after_constructor_loss
     use turts_sim::{economy::construction::HeldConstruction, receipts::CommandMember};
     let catalog = catalog();
     let (key, mut tracked) = request(1, 1);
-    tracked.command.order.target = BotTarget::ContentAtPoint {
+    std::sync::Arc::make_mut(&mut tracked.command).order.target = BotTarget::ContentAtPoint {
         content: id("paid"),
         point: turts_mod_api::WorldPos { x: 10.0, y: 10.0 },
     };
