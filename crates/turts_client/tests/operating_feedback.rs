@@ -1,5 +1,8 @@
 mod support;
 
+#[path = "../../turts_server/src/export.rs"]
+mod server_export;
+
 use bevy::{app::App, platform::time::Instant};
 use support::feedback::{alert_state, feedback_app};
 use turts_client::{
@@ -270,4 +273,149 @@ fn operating_supply_distinct_transitions_are_not_lost_with_zero_authored_cooldow
         app.update();
         assert_eq!(frame_alerts(&app), [expected]);
     }
+}
+
+#[test]
+fn operating_supply_server_wire_and_replica_agree_on_private_zero_and_reset_state() {
+    use turts_client::{content::ClientContent, join::AcquiredPackages};
+    use turts_mod_api::SupplySide;
+    use turts_sim::{
+        CommittedTick, WorldView,
+        economy::{
+            events::SupplyRow,
+            views::{OperatingView, SupplyView},
+        },
+    };
+
+    let app = supply_app(10, 8);
+    let content = app.world().resource::<AcquiredPackages>().0.content.clone();
+    let row = |slot, resource: &str, provided, consumed| SupplyView {
+        slot,
+        resource: ContentId::parse(resource).unwrap(),
+        provided,
+        consumed,
+    };
+    let mut view = WorldView {
+        tick: 1,
+        operating: Some(OperatingView {
+            rate_q: 1,
+            supply: vec![
+                row(0, "muster:power", 10, 8),
+                row(0, "muster:population", 0, 0),
+                row(1, "muster:power", 77, 1),
+                row(1, "muster:population", 88, 0),
+            ],
+            rates: vec![],
+        }),
+        ..Default::default()
+    };
+    let baseline = server_export::snapshot_for(&view, turts_sim::SlotId(0));
+    let encoded = postcard::to_vec::<_, 4096>(&baseline).unwrap();
+    let decoded: Snapshot = postcard::from_bytes(&encoded).unwrap();
+    assert_eq!(decoded.records.supply.len(), 2);
+    assert!(
+        decoded
+            .records
+            .supply
+            .iter()
+            .all(|record| record.slot.0 == 0)
+    );
+    let mut live = Replica::new(20);
+    live.set_context(ReplicaContext::new(content.clone(), 0));
+    assert_eq!(
+        live.apply_snapshot(&decoded, Instant::now()),
+        SnapshotOutcome::Applied { replayed: 0 }
+    );
+    assert_eq!(live.supply("muster:power", SupplySide::Provided), Some(10));
+    assert_eq!(
+        live.supply("muster:population", SupplySide::Provided),
+        Some(0)
+    );
+    let mut resync = live.clone();
+    let mut peer = Replica::new(20);
+    peer.set_context(ReplicaContext::new(content.clone(), 1));
+    assert_eq!(
+        peer.apply_snapshot(
+            &server_export::snapshot_for(&view, turts_sim::SlotId(1)),
+            Instant::now()
+        ),
+        SnapshotOutcome::Applied { replayed: 0 }
+    );
+    assert_eq!(peer.supply("muster:power", SupplySide::Provided), Some(77));
+    assert_eq!(
+        peer.supply("muster:population", SupplySide::Provided),
+        Some(88)
+    );
+
+    view.tick = 2;
+    let mut foreign_receiver = live.clone();
+    assert_eq!(
+        foreign_receiver.apply_snapshot(
+            &server_export::snapshot_for(&view, turts_sim::SlotId(1)),
+            Instant::now()
+        ),
+        SnapshotOutcome::Invalid
+    );
+    assert_eq!(
+        foreign_receiver.supply("muster:power", SupplySide::Provided),
+        Some(10)
+    );
+    let power = &mut view.operating.as_mut().unwrap().supply[0];
+    power.provided = 0;
+    power.consumed = 0;
+    let batch = CommittedTick {
+        tick: 2,
+        supply: vec![SupplyRow {
+            slot: 0,
+            resource: ContentId::parse("muster:power").unwrap(),
+            provided: 0,
+            consumed: 0,
+        }],
+        ..Default::default()
+    };
+    let delta = server_export::delta_for(&batch, &view, turts_sim::SlotId(0));
+    let encoded = postcard::to_vec::<_, 4096>(&delta).unwrap();
+    let decoded: WorldDelta = postcard::from_bytes(&encoded).unwrap();
+    assert_eq!(
+        live.apply_delta(&decoded, Instant::now()),
+        DeltaOutcome::Applied
+    );
+    assert_eq!(live.supply("muster:power", SupplySide::Provided), Some(0));
+    assert_eq!(live.supply("muster:power", SupplySide::Consumed), Some(0));
+    let peer_delta = server_export::delta_for(&batch, &view, turts_sim::SlotId(1));
+    assert!(peer_delta.records.supply.is_empty());
+    assert_eq!(
+        peer.apply_delta(&peer_delta, Instant::now()),
+        DeltaOutcome::Applied
+    );
+    assert_eq!(peer.supply("muster:power", SupplySide::Provided), Some(77));
+
+    view.tick = 5;
+    assert_eq!(
+        resync.apply_snapshot(
+            &server_export::snapshot_for(&view, turts_sim::SlotId(0)),
+            Instant::now()
+        ),
+        SnapshotOutcome::Applied { replayed: 0 }
+    );
+    for resource in ["muster:power", "muster:population"] {
+        for side in [SupplySide::Provided, SupplySide::Consumed] {
+            assert_eq!(
+                resync.supply(resource, side),
+                live.supply(resource, side),
+                "late snapshot disagrees with the accepted change for {resource}"
+            );
+        }
+    }
+    let mut new_match = Replica::new(20);
+    new_match.set_context(ReplicaContext::new(ClientContent::default(), 0));
+    assert_eq!(
+        new_match.apply_snapshot(
+            &server_export::snapshot_for(&WorldView::default(), turts_sim::SlotId(0)),
+            Instant::now()
+        ),
+        SnapshotOutcome::Applied { replayed: 0 }
+    );
+    assert_eq!(new_match.supply("muster:power", SupplySide::Provided), None);
+    assert!(!new_match.supply_short("muster:power"));
 }

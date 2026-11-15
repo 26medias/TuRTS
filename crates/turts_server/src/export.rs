@@ -125,9 +125,9 @@ pub fn snapshot_for(view: &WorldView, slot: SlotId) -> wire::Snapshot {
             .filter(|record| record.owner_slot == slot.0)
             .map(unit_order_state)
             .collect(),
-        // The site, job, queue, supply and match rows have no source in the view yet: their
-        // writers (`L-CON1`, `L-PAY`, `L-PWR`, `L-MATCH-SIM`) add it.
+        // Reliable baselines project the same completed immutable view as change records.
         records: wire::SnapshotRecords {
+            supply: export_supply::snapshot(view.operating.as_ref(), slot),
             sites: turts_sim::economy::construction::progress_rows(view)
                 .iter()
                 .filter(|row| row.owner_slot == slot.0)
