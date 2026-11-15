@@ -126,6 +126,7 @@ fn terrain_and_resource_snapshot_activation_is_atomic_on_invalid_account() {
             unit: UnitId(1),
             elevation: 0,
             observed_tick: 10,
+            current: true,
         }],
         work: vec![],
     });
@@ -136,6 +137,21 @@ fn terrain_and_resource_snapshot_activation_is_atomic_on_invalid_account() {
         transaction_id: 1,
         parent_transaction_id: None,
     };
+    let mut stale_contact = state.clone();
+    stale_contact.records.terrain.as_mut().unwrap().anchors[0].current = false;
+    assert!(
+        !replica.activate_transaction(
+            &stamp,
+            &StateTransactionPayload::Snapshot {
+                state: Box::new(stale_contact),
+                knowledge: Some(knowledge.clone()),
+                event_units: vec![]
+            },
+            Instant::now()
+        ),
+        "remembered contact cannot ground a live unit"
+    );
+    assert!(replica.terrain.is_none());
     let event = EventUnitObservation {
         basis: stamp.basis.clone(),
         unit: UnitSnapshot {

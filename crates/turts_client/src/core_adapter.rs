@@ -944,6 +944,7 @@ fn frame_world(
                 terrain
                     .anchors
                     .iter()
+                    .filter(|(_, anchor)| anchor.current)
                     .map(|(id, anchor)| (*id, terrain.layout.elevation_height(anchor.elevation)))
                     .collect()
             })

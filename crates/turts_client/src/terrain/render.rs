@@ -160,6 +160,7 @@ pub(crate) fn live_height(terrain: Option<&PermittedTerrain>, unit: u32) -> Opti
         Some(terrain) => terrain
             .anchors
             .get(&unit)
+            .filter(|anchor| anchor.current)
             .map(|anchor| terrain.layout.elevation_height(anchor.elevation)),
     }
 }

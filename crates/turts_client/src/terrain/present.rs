@@ -337,6 +337,8 @@ fn wait_text(wait: TerrainWorkWait) -> &'static str {
         TerrainWorkWait::InsufficientInput => "Waiting for fill resources",
         TerrainWorkWait::Blocked => "Work cell is unreachable",
         TerrainWorkWait::Paused => "Work paused",
+        TerrainWorkWait::Disabled => "Worker disabled; enable it to resume work",
+        TerrainWorkWait::Invalid => "Work target is unavailable",
         TerrainWorkWait::Unloading => "Unloading; the same work and partial progress will resume",
     }
 }
