@@ -663,7 +663,10 @@ impl ProposalVerifier for ObservationVerifier<'_> {
                     .filter(|unit| {
                         unit.owner_slot == self.current.slot
                             && !unit.site
-                            && role.units.iter().any(|c| c == &unit.content.to_string())
+                            && role
+                                .units
+                                .iter()
+                                .any(|c| super::content_ref_matches(c, &unit.content))
                     })
                     .count() as u64;
                 let pending = self
@@ -672,17 +675,20 @@ impl ProposalVerifier for ObservationVerifier<'_> {
                     .iter()
                     .filter(|work| {
                         !work.state.terminal()
-                            && work
-                                .content
-                                .as_ref()
-                                .is_some_and(|c| role.units.iter().any(|r| r == &c.to_string()))
+                            && work.content.as_ref().is_some_and(|c| {
+                                role.units.iter().any(|r| super::content_ref_matches(r, c))
+                            })
                     })
                     .count() as u64;
                 let held = self
                     .current
                     .pending_content
                     .iter()
-                    .filter(|(content, _)| role.units.iter().any(|r| r == &content.to_string()))
+                    .filter(|(content, _)| {
+                        role.units
+                            .iter()
+                            .any(|r| super::content_ref_matches(r, content))
+                    })
                     .try_fold(0u64, |total, (_, count)| total.checked_add(*count))
                     .ok_or(ProposalRejection::ArithmeticOverflow)?;
                 let observed = completed
@@ -795,7 +801,9 @@ fn supply_totals(
 }
 
 fn role_matches(role: &turts_mod_api::BotRole, unit: &turts_mod_api::ResolvedUnit) -> bool {
-    role.units.iter().any(|id| id == &unit.id.to_string())
+    role.units
+        .iter()
+        .any(|id| super::content_ref_matches(id, &unit.id))
         && role.requires.iter().all(|cap| match cap {
             turts_mod_api::Capability::Movement => unit.movement.is_some(),
             turts_mod_api::Capability::Weapon => unit.weapon.is_some(),
@@ -810,6 +818,135 @@ fn role_matches(role: &turts_mod_api::BotRole, unit: &turts_mod_api::ResolvedUni
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn content_matching_preserves_exact_display_equality_without_formatting_in_scans() {
+        for package in ["fixture", "fixture-long", "", "with:colon"] {
+            for local in ["unit", "unit-long", "", "with:colon"] {
+                let id = ContentId {
+                    package: turts_mod_api::PackageId(package.into()),
+                    local: local.into(),
+                };
+                let printed = id.to_string();
+                for candidate in [
+                    printed.clone(),
+                    format!("{printed}x"),
+                    format!("x{printed}"),
+                    local.into(),
+                    package.into(),
+                    "fixture:unit".into(),
+                ] {
+                    assert_eq!(
+                        super::super::content_ref_matches(&candidate, &id),
+                        candidate == printed
+                    );
+                }
+            }
+        }
+    }
+    #[test]
+    fn role_counts_keep_owner_site_capability_and_pending_work_rules() {
+        let mut current = basis();
+        for unit in &mut current.units {
+            unit.capabilities.push(turts_mod_api::Capability::Weapon);
+        }
+        current.units[1].site = true;
+        current.units[2].owner_slot = 1;
+        let content = current.units[0].content.clone();
+        for (id, state, output) in [
+            (1, WorkState::Running, Some(content.clone())),
+            (
+                2,
+                WorkState::WaitingForFunds(content.clone()),
+                Some(content.clone()),
+            ),
+            (3, WorkState::OutputBlocked, Some(content.clone())),
+            (4, WorkState::Finished, Some(content.clone())),
+            (5, WorkState::Failed, Some(content.clone())),
+            (6, WorkState::Running, None),
+            (
+                7,
+                WorkState::Running,
+                Some(ContentId::parse("foreign:unit").unwrap()),
+            ),
+        ] {
+            current.works.push(WorkObservation {
+                identity: WorkIdentity {
+                    unit: 1,
+                    id,
+                    kind: WorkKind::Production,
+                },
+                actor_unit: 1,
+                content: output,
+                payment: None,
+                done: 1,
+                total: 2,
+                paid: vec![],
+                reserved: vec![],
+                state,
+            });
+        }
+        current.pending_content.insert(content, 2);
+        current
+            .pending_content
+            .insert(ContentId::parse("foreign:unit").unwrap(), 100);
+        let profile = turts_mod_api::BotDef {
+            id: "policy".into(),
+            name: "Policy".into(),
+            decision_ms: 1000,
+            start_when: turts_mod_api::BotStartWhen::MatchRunning,
+            knowledge: turts_mod_api::BotKnowledge {
+                roles: vec![
+                    turts_mod_api::BotRole {
+                        key: "armed".into(),
+                        units: vec!["fixture:unit".into()],
+                        requires: vec![turts_mod_api::Capability::Weapon],
+                    },
+                    turts_mod_api::BotRole {
+                        key: "worker".into(),
+                        units: vec!["fixture:unit".into()],
+                        requires: vec![turts_mod_api::Capability::Gatherer],
+                    },
+                    turts_mod_api::BotRole {
+                        key: "foreign".into(),
+                        units: vec!["foreign:unit".into()],
+                        requires: vec![],
+                    },
+                ],
+                ..Default::default()
+            },
+            controllers: vec![],
+        };
+        assert_eq!(
+            super::super::role_counts(&current, &profile),
+            vec![
+                RoleCount {
+                    role: "armed".into(),
+                    completed: 1,
+                    pending: 5
+                },
+                RoleCount {
+                    role: "worker".into(),
+                    completed: 0,
+                    pending: 5
+                },
+                RoleCount {
+                    role: "foreign".into(),
+                    completed: 0,
+                    pending: 101
+                },
+            ]
+        );
+        current.units.reverse();
+        current.works.reverse();
+        assert_eq!(
+            super::super::role_counts(&current, &profile)[0],
+            RoleCount {
+                role: "armed".into(),
+                completed: 1,
+                pending: 5
+            }
+        );
+    }
     #[test]
     fn independent_review_wildcard_orders_remain_valid_for_bot_proposals() {
         use turts_mod_runtime::{archive::PackageArchive, pack::pack_dir};
