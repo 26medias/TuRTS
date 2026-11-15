@@ -40,12 +40,13 @@ pub(super) struct SurfaceChunk {
 const CHUNKS_PER_PAGE: usize = 1024;
 /// Two-level COW table: an edit copies at most two public pointer pages plus its one chunk.
 #[derive(Clone, PartialEq, Eq)]
-pub(super) struct ChunkTable {
-    pages: Arc<Vec<Arc<Vec<Arc<SurfaceChunk>>>>>,
+pub(super) struct PagedChunks<T> {
+    pages: Arc<Vec<Arc<Vec<Arc<T>>>>>,
     len: usize,
 }
-impl ChunkTable {
-    fn new(chunks: Vec<Arc<SurfaceChunk>>) -> Result<Self, TerrainError> {
+pub(super) type ChunkTable = PagedChunks<SurfaceChunk>;
+impl<T> PagedChunks<T> {
+    pub(super) fn new(chunks: Vec<Arc<T>>) -> Result<Self, TerrainError> {
         let len = chunks.len();
         let mut pages = Vec::new();
         pages
@@ -60,15 +61,57 @@ impl ChunkTable {
             len,
         })
     }
-    pub(super) fn get(&self, index: usize) -> Option<&Arc<SurfaceChunk>> {
+    pub(super) fn get(&self, index: usize) -> Option<&Arc<T>> {
         self.pages
             .get(index / CHUNKS_PER_PAGE)?
             .get(index % CHUNKS_PER_PAGE)
     }
-    fn len(&self) -> usize {
+    pub(super) fn replaced_many(
+        &self,
+        replacements: &[(usize, Arc<T>)],
+    ) -> Result<Self, TerrainError> {
+        if replacements.is_empty() {
+            return Ok(Self {
+                pages: Arc::clone(&self.pages),
+                len: self.len,
+            });
+        }
+        if replacements.windows(2).any(|rows| rows[0].0 >= rows[1].0) {
+            return Err(TerrainError::InvalidGrid);
+        }
+        let mut pages = Vec::new();
+        pages
+            .try_reserve_exact(self.pages.len())
+            .map_err(|_| TerrainError::Allocation)?;
+        pages.extend(self.pages.iter().cloned());
+        let mut cursor = 0;
+        while cursor < replacements.len() {
+            let page_index = replacements[cursor].0 / CHUNKS_PER_PAGE;
+            let source = pages.get(page_index).ok_or(TerrainError::InvalidGrid)?;
+            let mut page = Vec::new();
+            page.try_reserve_exact(source.len())
+                .map_err(|_| TerrainError::Allocation)?;
+            page.extend(source.iter().cloned());
+            while cursor < replacements.len()
+                && replacements[cursor].0 / CHUNKS_PER_PAGE == page_index
+            {
+                let (index, value) = &replacements[cursor];
+                *page
+                    .get_mut(index % CHUNKS_PER_PAGE)
+                    .ok_or(TerrainError::InvalidGrid)? = Arc::clone(value);
+                cursor += 1;
+            }
+            pages[page_index] = Arc::new(page);
+        }
+        Ok(Self {
+            pages: Arc::new(pages),
+            len: self.len,
+        })
+    }
+    pub(super) fn len(&self) -> usize {
         self.len
     }
-    fn replaced(&self, index: usize, value: Arc<SurfaceChunk>) -> Result<Self, TerrainError> {
+    pub(super) fn replaced(&self, index: usize, value: Arc<T>) -> Result<Self, TerrainError> {
         let page_index = index / CHUNKS_PER_PAGE;
         let source = self
             .pages
@@ -93,8 +136,8 @@ impl ChunkTable {
         })
     }
 }
-impl std::ops::Index<usize> for ChunkTable {
-    type Output = Arc<SurfaceChunk>;
+impl<T> std::ops::Index<usize> for PagedChunks<T> {
+    type Output = Arc<T>;
     fn index(&self, index: usize) -> &Self::Output {
         self.get(index).expect("validated public chunk index")
     }
@@ -107,6 +150,7 @@ pub(crate) struct TerrainState {
     pub(super) chunk_columns: u32,
     pub(crate) columns: Vec<Column>,
     pub(crate) materials: Arc<[ContentId]>,
+    pub(super) initial: Arc<[i32]>,
     pub(super) chunks: ChunkTable,
     table_revision: u64,
     dirty_chunks: Vec<bool>,
@@ -147,7 +191,7 @@ impl TerrainState {
         }
         usize::try_from(u64::from(cell.y) * u64::from(self.grid.columns) + u64::from(cell.x)).ok()
     }
-    fn chunk_location(&self, cell: Cell) -> Option<(usize, usize)> {
+    pub(super) fn chunk_location(&self, cell: Cell) -> Option<(usize, usize)> {
         self.index(cell)?;
         let cx = cell.x / self.chunk_width;
         let cy = cell.y / self.chunk_width;
@@ -497,6 +541,7 @@ pub(crate) fn prepare(
         chunk_columns,
         columns,
         materials: materials.into(),
+        initial: initial.into(),
         dirty_chunks: vec![false; chunk_count],
         chunks: ChunkTable::new(chunks)?,
         table_revision: 0,

@@ -1,7 +1,8 @@
 //! Authoritative terrain. Selected geology is private; callers must request permitted facts.
 mod audit;
+pub(crate) mod history;
 pub(crate) mod phase;
-pub use phase::{TerrainGroundObservation, TerrainPhase, phase};
+pub use phase::{TerrainGroundObservation, TerrainPhase, TerrainSurfaceObservation, phase};
 pub(crate) mod cargo;
 pub(crate) mod navigation;
 pub use navigation::{

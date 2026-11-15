@@ -15,12 +15,24 @@ pub struct TerrainGroundObservation {
     pub elevation: i32,
     pub observed_tick: u32,
 }
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TerrainSurfaceObservation {
+    pub cell: TerrainCell,
+    pub elevation: i32,
+    pub material: Option<ContentId>,
+    pub provenance: Option<turts_mod_api::TerrainProvenance>,
+    pub last_seen_tick: u32,
+    pub current: bool,
+}
 /// Retain this Arc alongside its WorldView/visibility basis. It never reads live World data.
 pub struct TerrainPhase {
     grid: Grid,
     chunk_width: u32,
     chunk_columns: u32,
     surface: ChunkTable,
+    memory: BTreeMap<u8, super::history::MemoryTable>,
+    coverage: Option<Arc<super::history::Coverage>>,
+    initial: Arc<[i32]>,
     materials: Arc<[ContentId]>,
     ground: BTreeMap<u32, Ground>,
     work: Vec<super::TerrainWorkView>,
@@ -43,6 +55,8 @@ impl PartialEq for TerrainPhase {
             && self.chunk_width == other.chunk_width
             && self.chunk_columns == other.chunk_columns
             && self.surface == other.surface
+            && self.memory == other.memory
+            && self.initial == other.initial
             && self.materials == other.materials
             && self.ground == other.ground
             && self.work == other.work
@@ -75,34 +89,9 @@ impl TerrainPhase {
     pub fn knowledge_basis(&self) -> Option<&turts_mod_api::KnowledgeBasis> {
         self.permissions.as_ref().map(|basis| basis.stamp())
     }
-    pub fn observe_cell(&self, viewer: u8, cell: TerrainCell) -> Option<TerrainObservedCell> {
-        if viewer >= turts_mod_api::SLOT_COUNT
-            || cell.x >= self.grid.columns
-            || cell.y >= self.grid.rows
-        {
+    fn location(&self, cell: TerrainCell) -> Option<(usize, usize)> {
+        if cell.x >= self.grid.columns || cell.y >= self.grid.rows {
             return None;
-        }
-        if let Some(permissions) = &self.permissions {
-            let fog = permissions.grid();
-            let visits = usize::try_from(u64::from(fog.columns) * u64::from(fog.rows))
-                .ok()?
-                .checked_mul(2)?
-                .checked_add(16)?;
-            let mut budget = Budget::new(visits);
-            if !permissions
-                .terrain_cell_observed(
-                    viewer,
-                    &self.grid,
-                    Cell {
-                        x: cell.x,
-                        y: cell.y,
-                    },
-                    &mut budget,
-                )
-                .ok()?
-            {
-                return None;
-            }
         }
         let cx = cell.x / self.chunk_width;
         let cy = cell.y / self.chunk_width;
@@ -116,19 +105,72 @@ impl TerrainPhase {
                 + u64::from(cell.x % self.chunk_width),
         )
         .ok()?;
-        let chunk = self.surface.get(index)?;
-        let material = chunk
-            .materials
+        Some((index, offset))
+    }
+    pub fn initial_elevation(&self, cell: TerrainCell) -> Option<i32> {
+        self.location(cell)?;
+        let index =
+            usize::try_from(u64::from(cell.y) * u64::from(self.grid.columns) + u64::from(cell.x))
+                .ok()?;
+        self.initial.get(index).copied()
+    }
+    pub fn surface(&self, viewer: u8, cell: TerrainCell) -> Option<TerrainSurfaceObservation> {
+        if viewer >= turts_mod_api::SLOT_COUNT {
+            return None;
+        }
+        let (chunk, offset) = self.location(cell)?;
+        let row = self
+            .memory
+            .get(&viewer)?
+            .get(chunk)?
+            .rows
+            .as_ref()?
             .get(offset)?
+            .as_ref()?;
+        let material = row
+            .material
             .and_then(|key| self.materials.get(key as usize))
             .cloned();
-        let provenance = *chunk.provenance.get(offset)?;
-        Some(TerrainObservedCell {
+        let current = super::history::seen(
+            self.permissions.as_deref(),
+            self.coverage.as_deref(),
+            viewer,
+            self.grid,
+            Cell {
+                x: cell.x,
+                y: cell.y,
+            },
+        );
+        Some(TerrainSurfaceObservation {
             cell,
-            elevation: *chunk.elevations.get(offset)?,
+            elevation: row.elevation,
             material,
-            provenance,
+            provenance: row.provenance,
+            last_seen_tick: row.last_seen_tick,
+            current,
         })
+    }
+    pub fn observe_cell(&self, viewer: u8, cell: TerrainCell) -> Option<TerrainObservedCell> {
+        let row = self.surface(viewer, cell)?;
+        row.current.then_some(TerrainObservedCell {
+            cell,
+            elevation: row.elevation,
+            material: row.material,
+            provenance: row.provenance,
+        })
+    }
+    pub(crate) fn knowledge_revision(&self, viewer: u8, chunk: usize) -> u64 {
+        self.memory
+            .get(&viewer)
+            .and_then(|memory| memory.get(chunk))
+            .map_or(0, |chunk| chunk.geometry_revision)
+    }
+    pub(crate) fn chunk_for(&self, cell: Cell) -> Option<usize> {
+        self.location(TerrainCell {
+            x: cell.x,
+            y: cell.y,
+        })
+        .map(|(index, _)| index)
     }
     pub fn work_for(&self, viewer: u8) -> impl Iterator<Item = &super::TerrainWorkView> {
         self.work.iter().filter(move |row| row.owner_slot == viewer)
@@ -169,6 +211,12 @@ pub fn phase(world: &World, requested: ObservationPhase) -> Option<Arc<TerrainPh
     .clone()
 }
 pub(crate) fn capture_phase(world: &mut World, phase: ObservationPhase) {
+    if world.get_resource::<TerrainState>().is_none() {
+        return;
+    }
+    let Some(history) = super::history::capture(world, phase) else {
+        return;
+    };
     let Some(terrain) = world.get_resource::<TerrainState>() else {
         return;
     };
@@ -186,19 +234,43 @@ pub(crate) fn capture_phase(world: &mut World, phase: ObservationPhase) {
             ))
         })
         .collect();
+    let permissions = crate::visibility::basis(world, phase);
+    let work = (0..turts_mod_api::SLOT_COUNT)
+        .flat_map(|viewer| super::work_for(world, viewer))
+        .map(|mut row| {
+            if row.current_cell.is_some_and(|cell| {
+                !super::history::seen(
+                    permissions.as_deref(),
+                    history.coverage.as_deref(),
+                    row.owner_slot,
+                    terrain.grid,
+                    Cell {
+                        x: cell.x,
+                        y: cell.y,
+                    },
+                )
+            }) {
+                row.required_work = None;
+                row.completed_work = 0;
+                row.wait = super::TerrainWorkWait::Unknown;
+            }
+            row
+        })
+        .collect();
     let snapshot = Arc::new(TerrainPhase {
         grid: terrain.grid,
         chunk_width: terrain.chunk_width,
         chunk_columns: terrain.chunk_columns,
         surface: terrain.chunks.clone(),
+        memory: history.slots,
+        coverage: history.coverage,
+        initial: Arc::clone(&terrain.initial),
         materials: Arc::clone(&terrain.materials),
         ground,
-        work: (0..turts_mod_api::SLOT_COUNT)
-            .flat_map(|viewer| super::work_for(world, viewer))
-            .collect(),
+        work,
         tick: world.get_resource::<crate::Tick>().map_or(0, |tick| tick.0),
         phase,
-        permissions: crate::visibility::basis(world, phase),
+        permissions,
     });
     world.init_resource::<TerrainPhases>();
     let mut phases = world.resource_mut::<TerrainPhases>();

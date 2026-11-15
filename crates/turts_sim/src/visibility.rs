@@ -112,6 +112,19 @@ impl VisibilityBasis {
     pub fn grid(&self) -> VisibilityGrid {
         self.grid
     }
+    pub(crate) fn fog_cell_observed(&self, viewer: u8, cell: u32) -> bool {
+        self.slots
+            .get(usize::from(viewer))
+            .is_some_and(|slot| bit(&slot.observed, cell))
+    }
+    pub(crate) fn same_observation_mask(&self, viewer: u8, other: &Self) -> bool {
+        self.grid == other.grid
+            && self
+                .slots
+                .get(usize::from(viewer))
+                .zip(other.slots.get(usize::from(viewer)))
+                .is_some_and(|(left, right)| left.observed == right.observed)
+    }
     pub fn point_observed(&self, viewer: u8, position: WorldPos) -> bool {
         self.slots.get(usize::from(viewer)).is_some_and(|slot| {
             rule_grid(self.grid)
