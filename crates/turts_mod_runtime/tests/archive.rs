@@ -117,6 +117,10 @@ fn archive_reads_recipe_and_technology_exports_into_catalog() {
     let bytes = raw_tar(&[
         ("manifest.ron", manifest.as_bytes()),
         (
+            "maps/test.ron",
+            br#"(id: "test", size: (x: 8.0, y: 8.0), placements: [], nodes: [], slot_economy: [])"#,
+        ),
+        (
             "resources/ore.ron",
             r#"(id: "ore", name: "Ore", unit_name: "ore", kind: Item)"#.as_bytes(),
         ),
@@ -179,6 +183,10 @@ fn parse_ron_rewrites_errors_without_type_names() {
     assert_eq!(
         error.allowed,
         Some(vec![
+            "terrain_class".to_string(),
+            "terrain_cargo".to_string(),
+            "terrain_foundation".to_string(),
+            "terrain_tools".to_string(),
             "vision".to_string(),
             "id".to_string(),
             "name".to_string(),
