@@ -550,6 +550,9 @@ fn operating_view(world: &World) -> Option<OperatingView> {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AuditState {
+    /// Immutable authored cap needed to validate ordinary construction admission.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub construction_limit: Option<u16>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub raw_repairs: Vec<super::repair::RepairAuditRow>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -1480,6 +1483,9 @@ pub fn audit_state(world: &mut World) -> AuditState {
     };
     let m3 = super::views_m3::m3_audit_state(world);
     AuditState {
+        construction_limit: world
+            .get_resource::<super::construction::ConstructionLimit>()
+            .map(|limit| limit.0),
         raw_repairs: super::repair::audit_rows(world),
         raw_operating_holds: super::operating::holds(world),
         raw_operating: super::power::audit_state(world),
