@@ -831,3 +831,30 @@ fn first_unaffordable_resource_follows_authored_cost_order() {
     assert_eq!(job_done(&app, factory), 0);
     assert_eq!(credits(&mut app), 0);
 }
+
+#[test]
+fn charge_over_time_alone_installs_exact_work_metadata() {
+    let mut f = Fixture::new();
+    f.catalog
+        .resources
+        .retain(|_, row| row.kind == ResourceKind::Balance);
+    let mut app = f.app();
+    let factory = unit_id(&app, "factory");
+    queue(&mut app, factory, "train");
+    app.update();
+    assert!(
+        view(&app).operating.is_some(),
+        "COT must not depend on unrelated supply or income definitions"
+    );
+    assert_eq!(job_done(&app, factory), 0);
+    app.update();
+    assert_eq!(credits(&mut app), 993);
+    assert_eq!(
+        view(&app)
+            .units
+            .iter()
+            .filter(|row| row.content_id == cid("product").to_string())
+            .count(),
+        1
+    );
+}
