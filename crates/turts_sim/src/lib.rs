@@ -14,6 +14,7 @@ pub mod movement;
 pub mod orders;
 pub mod outcome;
 pub mod plugin;
+pub mod receipts;
 pub mod registry;
 pub mod rules_adapter;
 pub mod slots;

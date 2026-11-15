@@ -384,6 +384,12 @@ pub(crate) fn apply_order(
         };
         match result {
             Ok(job_id) => {
+                if let Some(job) = job_id
+                    && let Some(mut receipts) =
+                        world.get_resource_mut::<crate::receipts::CommandWorkReceipts>()
+                {
+                    receipts.record(slot, seq, *unit_id, job);
+                }
                 if first_job_id.is_none() {
                     first_job_id = job_id;
                 }
