@@ -923,6 +923,7 @@ fn request_resync(
 pub fn ingest_messages(
     mut welcomes: Query<(Entity, &mut MessageReceiver<Welcome>)>,
     mut snapshots: Query<(Entity, &mut MessageReceiver<Snapshot>)>,
+    transactions: Option<Res<crate::visibility_ingest::StateTransactions>>,
     mut deltas: Query<(Entity, &mut MessageReceiver<WorldDelta>)>,
     mut acks: Query<(Entity, &mut MessageReceiver<CommandAck>)>,
     mut order_results: Query<(Entity, &mut MessageReceiver<OrderResult>)>,
@@ -962,6 +963,10 @@ pub fn ingest_messages(
         }
     }
     for (entity, mut receiver) in &mut snapshots {
+        if transactions.as_ref().is_some_and(|state| state.restricted) {
+            receiver.receive().for_each(drop);
+            continue;
+        }
         if !is_current_attempt_at(attempt.as_deref(), entity, real_now_secs) {
             receiver.receive().for_each(drop);
             continue;
@@ -981,6 +986,10 @@ pub fn ingest_messages(
         }
     }
     for (entity, mut receiver) in &mut deltas {
+        if transactions.as_ref().is_some_and(|state| state.restricted) {
+            receiver.receive().for_each(drop);
+            continue;
+        }
         if !is_current_attempt_at(attempt.as_deref(), entity, real_now_secs) {
             receiver.receive().for_each(drop);
             continue;
@@ -1076,7 +1085,7 @@ pub fn ingest_messages(
     }
 }
 
-fn is_current_attempt_at(
+pub(crate) fn is_current_attempt_at(
     attempt: Option<&crate::rejoin::RejoinController>,
     entity: Entity,
     real_now_secs: f64,

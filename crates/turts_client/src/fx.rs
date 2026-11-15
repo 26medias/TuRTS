@@ -121,6 +121,28 @@ pub fn update_combat(
     let (Some(replica), Some(acquired)) = (state.replica.as_ref(), acquired) else {
         return;
     };
+    if replica.knowledge.is_some() {
+        let known = |id: &u32| {
+            replica.units.contains_key(id)
+                || replica
+                    .event_units
+                    .iter()
+                    .any(|row| row.unit.unit_id.0 == *id)
+        };
+        fx.actors.retain(|id, _| known(id));
+        fx.displayed_health
+            .retain(|id, _| replica.units.contains_key(id));
+        fx.health_tick
+            .retain(|id, _| replica.units.contains_key(id));
+        fx.held_health
+            .retain(|id, _| replica.units.contains_key(id));
+        fx.impacts.retain(|impact| known(&impact.target));
+        fx.death_at.retain(|id, _| known(id));
+        fx.model_remove_at.retain(|id, _| known(id));
+        fx.flashes.retain(|id, _| known(id));
+        fx.loops.retain(|(id, _), _| replica.units.contains_key(id));
+        fx.work_phase.retain(|id, _| replica.units.contains_key(id));
+    }
     let session = state.welcome.map(|w| w.match_id);
     let terminal = replica
         .match_state()
@@ -194,6 +216,15 @@ pub fn update_combat(
                 height,
             },
         );
+    }
+    // Authorized event endpoints can disappear before the completed state.
+    for observation in &replica.event_units {
+        let unit = &observation.unit;
+        fx.actors.entry(unit.unit_id.0).or_insert_with(|| Actor {
+            content: unit.content_id.clone(),
+            position: world_to_scene(unit.pos),
+            height: 1.6,
+        });
     }
     let destroyed_ticks: HashMap<_, _> = events
         .raw

@@ -41,6 +41,8 @@ mod scenario;
 pub mod ui_shared;
 pub mod visuals;
 pub mod visibility;
+pub mod visibility_ingest;
+pub mod visibility_present;
 pub mod volume_settings;
 pub mod widgets;
 
@@ -119,6 +121,7 @@ impl Plugin for ClientPlugin {
             .insert_resource(ClientOpts(opts))
             .init_resource::<IngestCounters>()
             .init_resource::<ReplicaState>()
+            .init_resource::<crate::visibility_ingest::StateTransactions>()
             .init_resource::<CommandResults>()
             .init_resource::<JoinState>()
             .init_resource::<crate::rejoin::RejoinController>()
@@ -138,6 +141,7 @@ impl Plugin for ClientPlugin {
                 receive_rejection,
                 crate::lobby::receive_states,
                 ingest_messages,
+                crate::visibility_ingest::receive_transactions,
             )
                 .chain()
                 .after(MessageSystems::Receive),
@@ -344,7 +348,7 @@ pub fn build_app(opts: ClientOptions) -> App {
         persist::PersistPlugin,
     ));
     if !headless {
-        app.add_plugins(UnitRenderPlugin);
+        app.add_plugins((UnitRenderPlugin, crate::visibility_present::VisibilityPresentationPlugin));
     }
     app
 }
