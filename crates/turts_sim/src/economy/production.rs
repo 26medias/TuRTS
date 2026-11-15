@@ -1420,6 +1420,7 @@ mod m3_disabled_legacy_producer_tests {
             .unwrap();
         let resolved_unit =
             |id: turts_mod_api::ContentId, name: &str, radius, producer, movement| ResolvedUnit {
+                repairer: None,
                 consumes: Vec::new(),
                 income: None,
                 provides: Vec::new(),

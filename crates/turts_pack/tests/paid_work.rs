@@ -777,3 +777,57 @@ fn missing_paid_refund_destination_refuses_manual_cancellation_atomically() {
     app.update();
     assert_eq!(health(&app, site), prior_health);
 }
+
+#[test]
+fn zero_difference_ticks_advance_without_money_and_stop_at_first_positive_charge() {
+    let mut f = Fixture::new();
+    f.ticks("train", 20);
+    f.ticks("build_relay", 20);
+    for name in ["train", "build_relay"] {
+        f.catalog.production.get_mut(&cid(name)).unwrap().costs[0].amount = 1;
+    }
+    f.map.slot_economy[0].balances[0].amount = 0;
+    let mut app = f.app();
+    let factory = unit_id(&app, "factory");
+    let builder = unit_id(&app, "builder");
+    let site = build(&mut app, builder, "build_relay", 30., 8.);
+    queue(&mut app, factory, "train");
+    for _ in 0..20 {
+        app.update();
+    }
+    assert_eq!(job_done(&app, factory), 19);
+    assert_eq!(view(&app).construction.sites[&site].done, 19);
+    let initial_health = health(&app, site);
+    app.update();
+    assert_eq!(job_done(&app, factory), 19);
+    assert_eq!(health(&app, site), initial_health);
+    assert_eq!(credits(&mut app), 0);
+    assert_eq!(
+        funding(&mut app, factory).waiting_for_funds,
+        Some(cid("credits"))
+    );
+}
+
+#[test]
+fn first_unaffordable_resource_follows_authored_cost_order() {
+    let mut f = Fixture::new();
+    mixed_costs(&mut f, 200, 4, 4, 0);
+    f.map.slot_economy[0].balances[0].amount = 0;
+    f.catalog
+        .production
+        .get_mut(&cid("train"))
+        .unwrap()
+        .costs
+        .reverse();
+    let mut app = f.app();
+    let factory = unit_id(&app, "factory");
+    queue(&mut app, factory, "train");
+    app.update();
+    app.update();
+    assert_eq!(
+        funding(&mut app, factory).waiting_for_funds,
+        Some(cid("ore"))
+    );
+    assert_eq!(job_done(&app, factory), 0);
+    assert_eq!(credits(&mut app), 0);
+}
