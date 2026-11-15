@@ -34,6 +34,18 @@ fn cell_coordinates(key: u64) -> (i32, i32) {
     ((key >> 32) as u32 as i32, key as u32 as i32)
 }
 
+fn total_order_bits(value: f32) -> u32 {
+    let bits = value.to_bits();
+    if bits & 0x8000_0000 != 0 {
+        !bits
+    } else {
+        bits ^ 0x8000_0000
+    }
+}
+fn spatial_key(position: Vec2) -> u64 {
+    (u64::from(total_order_bits(position.x)) << 32) | u64::from(total_order_bits(position.y))
+}
+
 /// Relative margin on the query box of `within`, times max(1, reach).
 const EDGE_MARGIN: f32 = 1e-4;
 
@@ -43,10 +55,12 @@ pub(crate) struct GridPoint {
     pub position: Vec2,
 }
 
-/// Neighbour index with a cell width chosen by the caller. Results are always
-/// sorted by unit id, so hash bucket order cannot affect simulation decisions.
+/// Neighbour index with a cell width chosen by the caller. Ordered query methods
+/// apply a complete canonical sort so hash bucket order cannot affect decisions.
 pub(crate) struct UniformGrid {
     cell_size: f32,
+    // Indexed by point-array position, never by unit identity or cell coordinates.
+    spatial_keys: Vec<u64>,
     cells: HashMap<u64, Vec<usize>, BuildHasherDefault<CellHasher>>,
     #[cfg(test)]
     visited_cells: std::sync::atomic::AtomicUsize,
@@ -57,6 +71,7 @@ impl UniformGrid {
         let cell_size = cell_size.max(f32::EPSILON);
         let mut grid = Self {
             cell_size,
+            spatial_keys: Vec::with_capacity(points.len()),
             cells: HashMap::with_capacity_and_hasher(points.len(), BuildHasherDefault::default()),
             #[cfg(test)]
             visited_cells: std::sync::atomic::AtomicUsize::new(0),
@@ -67,7 +82,15 @@ impl UniformGrid {
         grid
     }
 
+    fn update_spatial_key(&mut self, index: usize, position: Vec2) {
+        if index >= self.spatial_keys.len() {
+            self.spatial_keys.resize(index + 1, 0);
+        }
+        self.spatial_keys[index] = spatial_key(position);
+    }
+
     pub(crate) fn insert(&mut self, index: usize, position: Vec2) {
+        self.update_spatial_key(index, position);
         self.cells
             .entry(cell_key(cell(position, self.cell_size)))
             .or_default()
@@ -75,6 +98,8 @@ impl UniformGrid {
     }
 
     pub(crate) fn move_point(&mut self, index: usize, from: Vec2, to: Vec2) {
+        // Position order can change even when cell membership stays unchanged.
+        self.update_spatial_key(index, to);
         let old_cell = cell_key(cell(from, self.cell_size));
         let new_cell = cell_key(cell(to, self.cell_size));
         if old_cell == new_cell {
@@ -111,6 +136,19 @@ impl UniformGrid {
     pub(crate) fn within(&self, points: &[GridPoint], position: Vec2, reach: f32) -> Vec<usize> {
         let mut found = self.within_unsorted(points, position, reach);
         found.sort_unstable_by_key(|index| (points[*index].id, *index));
+        found
+    }
+
+    /// Exact candidates ordered by x.total_cmp, then y.total_cmp, then index.
+    /// Cached ordering keys follow insert/move_point, including in-cell movement.
+    pub(crate) fn within_spatial(
+        &self,
+        points: &[GridPoint],
+        position: Vec2,
+        reach: f32,
+    ) -> Vec<usize> {
+        let mut found = self.within_unsorted(points, position, reach);
+        found.sort_unstable_by_key(|index| (self.spatial_keys[*index], *index));
         found
     }
 
@@ -314,6 +352,16 @@ mod tests {
         expected.sort_unstable_by_key(|index| (points[*index].id, *index));
         let found = grid.within(points, position, reach);
         assert_eq!(found, expected);
+        let mut spatial = expected.clone();
+        spatial.sort_unstable_by(|a, b| {
+            points[*a]
+                .position
+                .x
+                .total_cmp(&points[*b].position.x)
+                .then(points[*a].position.y.total_cmp(&points[*b].position.y))
+                .then(a.cmp(b))
+        });
+        assert_eq!(grid.within_spatial(points, position, reach), spatial);
         let mut unordered = grid.within_unsorted(points, position, reach);
         unordered.sort_unstable_by_key(|index| (points[*index].id, *index));
         assert_eq!(unordered, found);
@@ -381,6 +429,101 @@ mod tests {
             for y in [i32::MIN, -1, 0, 1, i32::MAX] {
                 assert_eq!(super::cell_coordinates(super::cell_key((x, y))), (x, y));
             }
+        }
+    }
+
+    #[test]
+    fn cached_spatial_order_matches_total_cmp_after_same_cell_moves_and_insertions() {
+        let mut points = vec![
+            GridPoint {
+                id: 99,
+                position: Vec2::new(0.8, 0.2),
+            },
+            GridPoint {
+                id: 0,
+                position: Vec2::new(0.2, 0.8),
+            },
+            GridPoint {
+                id: 99,
+                position: Vec2::new(-0.0, 0.0),
+            },
+            GridPoint {
+                id: 1,
+                position: Vec2::new(0.0, -0.0),
+            },
+            GridPoint {
+                id: 0,
+                position: Vec2::new(0.0, 0.0),
+            },
+        ];
+        let mut grid = UniformGrid::new(&points, 1.0);
+        assert_exact_indices(&grid, &points, Vec2::ZERO, 4.0);
+        for (index, to) in [
+            (0, Vec2::new(0.1, 0.1)),
+            (2, Vec2::new(0.0, -0.0)),
+            (1, Vec2::new(-2.0, 2.0)),
+            (0, Vec2::new(-3.0, -2.0)),
+        ] {
+            let from = points[index].position;
+            points[index].position = to;
+            grid.move_point(index, from, to);
+            assert_exact_indices(&grid, &points, Vec2::ZERO, 4.0);
+        }
+        let index = points.len();
+        points.push(GridPoint {
+            id: u32::MAX,
+            position: Vec2::new(-0.0, -0.0),
+        });
+        grid.insert(index, points[index].position);
+        assert_exact_indices(&grid, &points, Vec2::ZERO, 4.0);
+        assert_eq!(grid.spatial_keys.len(), points.len());
+    }
+
+    #[test]
+    fn packed_spatial_key_has_exact_f32_total_order_for_edge_and_seeded_bits() {
+        let edge_bits = [
+            0,
+            0x8000_0000,
+            1,
+            0x8000_0001,
+            0x007f_ffff,
+            0x807f_ffff,
+            0x7f7f_ffff,
+            0xff7f_ffff,
+            0x7f80_0000,
+            0xff80_0000,
+            0x7f80_0001,
+            0xff80_0001,
+            0x7fc0_0000,
+            0xffc0_0000,
+            u32::MAX,
+        ];
+        for a in edge_bits.map(f32::from_bits) {
+            for b in edge_bits.map(f32::from_bits) {
+                assert_eq!(
+                    super::total_order_bits(a).cmp(&super::total_order_bits(b)),
+                    a.total_cmp(&b)
+                );
+            }
+        }
+        let mut rng = TestRng(0x5a17_8bd1_0011_ff01);
+        for _ in 0..8192 {
+            let a = Vec2::new(
+                f32::from_bits(rng.next() as u32),
+                f32::from_bits(rng.next() as u32),
+            );
+            let b = Vec2::new(
+                f32::from_bits(rng.next() as u32),
+                f32::from_bits(rng.next() as u32),
+            );
+            let expected = a.x.total_cmp(&b.x).then(a.y.total_cmp(&b.y));
+            assert_eq!(super::spatial_key(a).cmp(&super::spatial_key(b)), expected);
+            // Force x ties so y ordering receives the same raw-bit coverage.
+            let tied = Vec2::new(a.x, b.y);
+            assert_eq!(
+                super::spatial_key(a).cmp(&super::spatial_key(tied)),
+                a.y.total_cmp(&b.y)
+            );
         }
     }
 
