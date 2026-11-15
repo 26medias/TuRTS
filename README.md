@@ -53,9 +53,12 @@ The skirmish is its playable test bed. This table tracks delivered capabilities,
 | Public mod bots | Portable profiles, public Rust controllers, bounded observations, exact account coordination, shared command admission, and headless recorded/regenerated replay are implemented. | [SDK15 report](docs/reports/2026-11-15-public-bot-foundation.md). Final Skirmish and Stockyard browser probes pass. BF8 passed at 4.906851 ms p99 before later financial/profile fixes; those fixes were not remeasured. Full human/reference readiness remains open. |
 | Remaining engine scope | Editable terrain, discovery and fog, scripts, utilities, rooms, saves, statistics, and spectator/replay delivery remain open. | These capabilities follow the full project specification. Existing package loading and networking will be reused. |
 
-Latest accepted build: `target/mc-evidence/skirmish-paid-work-prepared` (API 0.2.14; protocol 8).
-SDK15 candidate: `target/mc-evidence/skirmish-public-bots-prepared` (API 0.2.15; protocol 8), sealed from clean source `54a893bc`. Its public Skirmish win and Stockyard browser checks pass. All three cold-play product probes pass; the isolated checker reports PARTIAL-PASS with manual/reference checks open.
-The accepted launcher remains on the SDK14 build above until candidate integration. The full fresh-agent and manual readiness procedure was not repeated.
+Latest accepted build: `target/mc-evidence/skirmish-public-bots-prepared` (API 0.2.15; protocol 8), sealed from clean source `54a893bc`.
+All three local launchers use the frozen `TuRTS-public-bots-play` checkout and this prepared build.
+The normal launcher was started and its populated browser world was captured after the switch.
+The public Skirmish win and Stockyard browser checks pass. All three cold-play product probes pass.
+The isolated checker reports PARTIAL-PASS with manual/reference checks open. The full fresh-agent and manual readiness procedure was not repeated.
+The two-human and Internet modes retain their tested launch flags. Their full matches were not repeated for SDK15.
 See [working rules](AGENTS.md) for parallel delivery, review, and milestone integration.
 
 The older Forge industrial demonstration remains available below. It proves extraction, conveyors, inserters, recipes, research, and ammunition combat through the public mod API. Its two-slot and restart restrictions describe that demonstration.

@@ -73,3 +73,10 @@ The benchmark establishes one local workload on four selected i9-14900K cores. O
 The measured performance pass predates the final financial and strategy corrections.
 Full human/reference cold-play readiness and a full match between two people remain open.
 Root owns the frozen accepted worktree, launcher switch, remaining integration checks, and main merge. Main must not be pushed.
+
+## Accepted launcher
+
+The three global launchers now use the frozen clean source checkout `/home/julien/Projects/TuRTS-public-bots-play` at `54a893bc` and `skirmish-public-bots-prepared`.
+The normal launcher was run under its own Xvfb. Its Chrome used a fresh profile and `--alsa-output-device=null`.
+The populated game world and screenshot are recorded in `final/global-launcher-ready.json` and `final/global-launcher-ready.png`; startup is in `final/global-launcher.log`.
+The two-human and public-host launch flags were retained. Full games in these modes were not repeated for SDK15.
