@@ -1754,6 +1754,8 @@ mod admission_tests {
         catalog.units.insert(
             id.clone(),
             ResolvedUnit {
+                repairer: None,
+
                 consumes: Vec::new(),
                 income: None,
                 provides: Vec::new(),
@@ -2302,6 +2304,8 @@ mod admission_tests {
             .insert(
                 id.clone(),
                 ResolvedUnit {
+                    repairer: None,
+
                     consumes: Vec::new(),
                     income: None,
                     provides: Vec::new(),
@@ -2479,6 +2483,8 @@ mod admission_tests {
         catalog.units.insert(
             id.clone(),
             ResolvedUnit {
+                repairer: None,
+
                 consumes: Vec::new(),
                 income: None,
                 provides: Vec::new(),
@@ -2946,6 +2952,8 @@ mod admission_tests {
             .insert(
                 static_id.clone(),
                 ResolvedUnit {
+                    repairer: None,
+
                     consumes: Vec::new(),
                     income: None,
                     provides: Vec::new(),
@@ -3238,6 +3246,8 @@ mod admission_tests {
             .insert(
                 static_id.clone(),
                 ResolvedUnit {
+                    repairer: None,
+
                     consumes: Vec::new(),
                     income: None,
                     provides: Vec::new(),

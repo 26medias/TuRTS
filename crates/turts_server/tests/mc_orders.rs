@@ -65,6 +65,8 @@ fn audit_catalog() -> ContentCatalog {
             let content_id = ContentId::parse(id).unwrap();
             let shooter = id == "audit:shooter";
             let unit = ResolvedUnit {
+                repairer: None,
+
                 consumes: Vec::new(),
                 income: None,
                 provides: Vec::new(),

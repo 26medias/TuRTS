@@ -347,6 +347,8 @@ fn view_of_two_units() -> WorldView {
 
 fn rate_row(unit: u32, owner: u8, job: Option<u64>) -> RateRecordRow {
     RateRecordRow {
+        production: job.is_none().then(|| turts_mod_api::ContentId::parse("test:build").unwrap()),
+
         unit,
         owner_slot: owner,
         job,

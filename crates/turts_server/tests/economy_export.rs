@@ -94,6 +94,8 @@ fn fixture() -> WorldView {
             remaining: 0,
         }],
         economy: EconomyStateView {
+            repairs: Vec::new(),
+
             balances: vec![
                 balance(0, "acme:ore", 0, 0),
                 balance(1, "secret:crystal", 77, 12),
