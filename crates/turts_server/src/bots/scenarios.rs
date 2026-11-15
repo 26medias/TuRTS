@@ -117,3 +117,96 @@ fn regenerated_presence_pauses_and_retains_pending_state_without_reading_live_se
     }
     assert!(app.world().resource::<BotExecution>().generated.is_empty());
 }
+
+fn live_package(package: &str) -> App {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../mods")
+        .join(package);
+    let archive = PackageArchive::parse(&pack_dir(&root).unwrap()).unwrap();
+    let mut app = turts_sim::headless_app(20);
+    turts_pack::load_package(app.world_mut(), &archive).unwrap();
+    app.insert_resource(ServerCatalog(archive.content().unwrap()));
+    session::install(
+        &mut app,
+        session::Advertised {
+            lockfile_hash: String::new(),
+            tick_hz: 20,
+        },
+    );
+    app.world_mut()
+        .resource_mut::<Slots>()
+        .claim_at(SlotId(0), 7)
+        .unwrap();
+    app.world_mut().spawn(session::Session {
+        last_seq: None,
+        slot: SlotId(0),
+        player_id: 7,
+    });
+    install(
+        &mut app,
+        &[BotConfig {
+            slot: 1,
+            profile: format!("{package}:opponent"),
+            seed: 42,
+        }],
+    )
+    .unwrap();
+    turts_sim::initialize_completed_world(app.world_mut());
+    app
+}
+#[test]
+fn public_balance_and_inventory_profiles_build_gather_produce_and_attack() {
+    use turts_sim::economy::events::EconomyEventKind;
+    for package in ["skirmish", "stockyard"] {
+        let mut app = live_package(package);
+        let mut built = false;
+        let mut gathered = false;
+        let mut produced = false;
+        let mut attacked = false;
+        let mut commands = 0;
+        for _ in 0..4100 {
+            app.update();
+            let view = turts_sim::completed_world(app.world());
+            built |= view
+                .construction
+                .sites
+                .values()
+                .any(|site| site.owner_slot == 1);
+            for event in &turts_sim::committed_tick(app.world()).events {
+                if event.owner_slot != 1 {
+                    continue;
+                }
+                match event.kind {
+                    EconomyEventKind::Extracted { .. } => gathered = true,
+                    EconomyEventKind::ProductionCompleted { .. } => produced = true,
+                    EconomyEventKind::Fired { .. } => attacked = true,
+                    _ => {}
+                }
+            }
+            commands += app.world().resource::<BotExecution>().generated.len();
+            if built && gathered && produced && attacked {
+                break;
+            }
+            if view
+                .match_outcomes
+                .as_ref()
+                .is_some_and(|outcomes| outcomes.end_tick.is_some())
+            {
+                break;
+            }
+        }
+        let view = turts_sim::completed_world(app.world());
+        let host = app.world().resource::<BotHost>();
+        assert!(
+            built && gathered && produced && attacked,
+            "{package}: tick{} built{built} gathered{gathered} produced{produced} attacked{attacked} generated{commands} diagnostic{:?}",
+            view.tick,
+            host.bots[0].last_diagnostic
+        );
+        assert!(
+            commands > 0,
+            "the profile must submit ordinary public orders"
+        );
+        assert!(app.world().resource::<BotExecution>().error.is_none());
+    }
+}
