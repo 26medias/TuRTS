@@ -1,4 +1,15 @@
 use super::*;
+
+#[test]
+fn non_spawn_terrain_transactions_do_not_require_the_scoped_catalog() {
+    let mut fixture = Fixture::new(20, 100, 20);
+    fixture.app.world_mut().resource_scope(
+        |world, _catalog: bevy_ecs::change_detection::Mut<crate::bootstrap::InstalledCatalog>| {
+            let result = crate::economy::transaction::transact(world, |_tx| Ok(()));
+            assert_eq!(result, Ok(()));
+        },
+    );
+}
 use crate::{
     Command, CommandKind, SlotId, UnitOrders, apply_command, headless_app,
     orders::{OrderCommand, OrderTargetSim, QueueMode},

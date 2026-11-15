@@ -1133,12 +1133,18 @@ impl Transaction<'_> {
                 return Err(RejectReason::TargetGone);
             }
         }
-        if let Some(terrain) = self.world.get_resource::<crate::terrain::TerrainState>() {
+        if !self.writes.spawned.is_empty()
+            && let Some(terrain) = self.world.get_resource::<crate::terrain::TerrainState>()
+        {
             let catalog = &self
                 .world
-                .resource::<crate::bootstrap::InstalledCatalog>()
+                .get_resource::<crate::bootstrap::InstalledCatalog>()
+                .ok_or(RejectReason::IntegrityViolation)?
                 .0;
-            let types = self.world.resource::<crate::UnitTypes>();
+            let types = self
+                .world
+                .get_resource::<crate::UnitTypes>()
+                .ok_or(RejectReason::IntegrityViolation)?;
             for spawn in &self.writes.spawned {
                 crate::terrain::support_elevation(
                     terrain,
