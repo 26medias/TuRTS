@@ -624,7 +624,7 @@ fn advance_paid_producer(world: &mut World, producer: u32, owner_slot: u8) {
         return;
     }
     if head.stage == JobStage::Queued {
-        let _ = transaction::transact(world, |tx| {
+        let result = transaction::transact(world, |tx| {
             let mut queues = tx.queues();
             let job = queues
                 .0
@@ -643,6 +643,10 @@ fn advance_paid_producer(world: &mut World, producer: u32, owner_slot: u8) {
             )?;
             Ok(())
         });
+        match result {
+            Err(reason) => super::operating::hold(world, producer, reason),
+            Ok(()) => super::operating::clear_hold(world, producer),
+        }
         return;
     }
     let step = job_step(&head, false, power::rate_factor(world, producer));
