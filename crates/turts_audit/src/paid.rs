@@ -29,6 +29,9 @@ fn event_key(row: &CostLine) -> AccountKey {
 fn sum(rows: &[CostLine]) -> Result<Amounts, String> {
     let mut sums = Amounts::new();
     for row in rows {
+        if row.amount == 0 {
+            continue;
+        }
         let total = sums.entry(event_key(row)).or_default();
         *total = total
             .checked_add(u128::from(row.amount))
@@ -59,16 +62,24 @@ struct Job {
 fn jobs(state: &AuditState) -> Result<BTreeMap<(u32, u64), Job>, String> {
     let mut output = BTreeMap::new();
     for queue in &state.raw_queues {
-        let owner = state
-            .raw_units
-            .iter()
-            .find(|unit| unit.unit_id == queue.producer)
-            .ok_or("paid producer is absent")?
-            .owner_slot;
         for job in &queue.jobs {
+            if state.catalog.as_ref().is_some_and(|catalog| {
+                catalog.recipes.iter().any(|recipe| {
+                    recipe.id == job.recipe && recipe.payment == PaymentPolicy::ChargeOverTime
+                })
+            }) && job.funding.is_none()
+            {
+                return Err("paid-work catalog job omitted its authoritative funding state".into());
+            }
             let Some(funding) = &job.funding else {
                 continue;
             };
+            let owner = state
+                .raw_units
+                .iter()
+                .find(|unit| unit.unit_id == queue.producer)
+                .ok_or("paid producer is absent")?
+                .owner_slot;
             let charged = job
                 .charged
                 .iter()
@@ -112,6 +123,14 @@ fn jobs(state: &AuditState) -> Result<BTreeMap<(u32, u64), Job>, String> {
         }
     }
     for (&unit, site) in &state.economy.construction.sites {
+        if state.catalog.as_ref().is_some_and(|catalog| {
+            catalog.recipes.iter().any(|recipe| {
+                recipe.id == site.recipe && recipe.payment == PaymentPolicy::ChargeOverTime
+            })
+        }) && site.funding.is_none()
+        {
+            return Err("paid site omitted its authoritative funding state".into());
+        }
         let Some(funding) = &site.funding else {
             continue;
         };
@@ -873,6 +892,14 @@ fn validate_refunds(operation: &OperationAudit) -> Result<Amounts, String> {
                 credited,
                 discarded,
             } => {
+                if desired
+                    .iter()
+                    .chain(credited)
+                    .chain(discarded)
+                    .any(|row| row.amount == 0)
+                {
+                    return Err("destruction refund includes a forbidden zero row".into());
+                }
                 let expected = refund_rows(&operation.before, *unit, None, true)?;
                 if sum(&expected)? != sum(desired)? {
                     return Err(

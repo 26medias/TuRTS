@@ -776,6 +776,7 @@ pub fn validate_records(records: &[EconomyLogRecord]) -> Result<(), String> {
                 state,
                 events,
             } => {
+                crate::paid::validate_state(state)?;
                 validate_operating_state(state)?;
                 reconcile_plain_candidate_dispatches(
                     &mut cursor,
