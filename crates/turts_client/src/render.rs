@@ -577,6 +577,9 @@ pub fn sync_units(
                 && at > combat.now
             {
                 let remove_model = animations.get(entity).is_err();
+                if let Some(pose) = combat.authorized_death_pose(unit_id) {
+                    commands.entity(entity).insert(pose);
+                }
                 commands
                     .entity(entity)
                     .remove::<PresentedUnit>()
@@ -593,6 +596,12 @@ pub fn sync_units(
             {
                 animation.dead = true;
                 animation.current = None;
+                if let Some(pose) = combat
+                    .as_deref()
+                    .and_then(|fx| fx.authorized_death_pose(unit_id))
+                {
+                    commands.entity(entity).insert(pose);
+                }
                 let ground_y = shown.get(entity).map_or(0., |(_, _, t)| t.translation.y);
                 let body_serial = if let Some(serial) = serial.as_deref_mut() {
                     serial.0 += 1;

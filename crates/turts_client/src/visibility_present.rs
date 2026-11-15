@@ -126,17 +126,141 @@ fn last_seen_age(current_tick: u32, last_seen_tick: u32, tick_hz: u16) -> String
 fn clear_hidden_bodies(
     mut commands: Commands,
     state: Res<ReplicaState>,
+    fx: Option<Res<crate::fx::CombatPresentation>>,
     bodies: Query<
-        (Entity, &GlobalTransform),
+        (
+            Entity,
+            &GlobalTransform,
+            Option<&crate::fx::AuthorizedDeathPose>,
+        ),
         Or<(
             With<crate::animation::VisualBody>,
             With<crate::fx::PendingDeath>,
         )>,
     >,
 ) {
-    for (entity, transform) in &bodies {
+    for (entity, transform, pose) in &bodies {
+        if let Some(pose) = pose {
+            let valid = fx.as_ref().is_some_and(|fx| {
+                state.replica.is_some()
+                    && pose.epoch == fx.epoch
+                    && pose.until.is_finite()
+                    && pose.until > fx.now
+            });
+            if !valid {
+                commands.entity(entity).despawn();
+            }
+            continue;
+        }
         if !crate::fx::permitted_position(Some(&state), transform.translation()) {
             commands.entity(entity).despawn();
         }
+    }
+}
+
+#[cfg(test)]
+mod death_pose_tests {
+    use super::*;
+    use crate::{
+        animation::{BodySerial, VisualBody},
+        fx::{AuthorizedDeathPose, CombatPresentation, PendingDeath},
+    };
+
+    #[test]
+    fn witnessed_pending_death_survives_fog_then_expires_without_live_identity() {
+        let mut app = App::new();
+        let mut replica = crate::replica::Replica::new(20);
+        replica.knowledge = Some(std::sync::Arc::new(
+            crate::fx::timeline_tests::hidden_knowledge(),
+        ));
+        app.insert_resource(ReplicaState {
+            replica: Some(replica),
+            ..default()
+        })
+        .init_resource::<CombatPresentation>()
+        .init_resource::<BodySerial>()
+        .add_systems(Update, crate::fx::release_deaths)
+        .add_systems(PostUpdate, clear_hidden_bodies);
+        let witnessed = app
+            .world_mut()
+            .spawn((
+                Transform::default(),
+                GlobalTransform::default(),
+                PendingDeath {
+                    at: 0.3,
+                    remove_model: false,
+                },
+                AuthorizedDeathPose {
+                    epoch: 0,
+                    until: 4.8,
+                },
+            ))
+            .id();
+        let unwitnessed = app
+            .world_mut()
+            .spawn((
+                Transform::default(),
+                GlobalTransform::default(),
+                PendingDeath {
+                    at: 0.3,
+                    remove_model: false,
+                },
+            ))
+            .id();
+        app.world_mut().resource_mut::<CombatPresentation>().now = 0.1;
+        app.update();
+        assert!(
+            app.world().get_entity(unwitnessed).is_err(),
+            "ordinary hidden bodies must disappear"
+        );
+        assert!(app.world().get::<PendingDeath>(witnessed).is_some());
+        assert!(
+            app.world()
+                .get::<crate::render::PresentedUnit>(witnessed)
+                .is_none()
+        );
+        let replica = app
+            .world()
+            .resource::<ReplicaState>()
+            .replica
+            .as_ref()
+            .unwrap();
+        assert!(replica.units.is_empty());
+        assert!(replica.healths.is_empty());
+        app.world_mut().resource_mut::<CombatPresentation>().now = 0.3;
+        app.update();
+        assert!(app.world().get::<PendingDeath>(witnessed).is_none());
+        assert!(app.world().get::<VisualBody>(witnessed).is_some());
+        app.world_mut().resource_mut::<CombatPresentation>().now = 4.8;
+        app.update();
+        assert!(app.world().get_entity(witnessed).is_err());
+    }
+
+    #[test]
+    fn a_new_effect_epoch_retires_a_witnessed_body_even_on_observed_ground() {
+        let mut app = App::new();
+        app.insert_resource(ReplicaState {
+            replica: Some(crate::replica::Replica::new(20)),
+            ..default()
+        })
+        .init_resource::<CombatPresentation>()
+        .add_systems(Update, clear_hidden_bodies);
+        let body = app
+            .world_mut()
+            .spawn((
+                GlobalTransform::default(),
+                PendingDeath {
+                    at: 0.3,
+                    remove_model: true,
+                },
+                AuthorizedDeathPose {
+                    epoch: 0,
+                    until: 4.8,
+                },
+            ))
+            .id();
+        app.world_mut().resource_mut::<CombatPresentation>().epoch = 1;
+        app.update();
+        assert!(app.world().get_entity(body).is_err());
     }
 }
