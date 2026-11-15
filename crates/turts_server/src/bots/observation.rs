@@ -1092,6 +1092,8 @@ fn role_matches(role: &turts_mod_api::BotRole, unit: &turts_mod_api::ResolvedUni
             turts_mod_api::Capability::Research => unit.research.is_some(),
             turts_mod_api::Capability::Constructor => unit.constructor.is_some(),
             turts_mod_api::Capability::Repairer => unit.repairer.is_some(),
+            turts_mod_api::Capability::TerrainWorker => !unit.terrain_tools.is_empty(),
+            turts_mod_api::Capability::CargoUnloader => unit.terrain_cargo.is_some(),
         })
 }
 
@@ -1432,6 +1434,7 @@ mod tests {
             remembered_units: [(8, 8.0), (7, 7.0)]
                 .into_iter()
                 .map(|(unit, x)| RememberedUnit {
+                    ground_elevation: None,
                     unit,
                     content: ContentId::parse("fixture:enemy").unwrap(),
                     owner: 1,

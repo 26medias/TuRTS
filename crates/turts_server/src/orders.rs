@@ -84,6 +84,8 @@ pub fn to_sim(
                 .units
                 .iter()
                 .map(|(id, unit)| turts_sim::OrderUnitCapabilitiesAudit {
+                    terrain_worker: !unit.terrain_tools.is_empty(),
+                    cargo_unloader: unit.terrain_cargo.is_some(),
                     unit: id.to_string(),
                     movement: unit.movement.is_some(),
                     weapon: unit.weapon.is_some(),
