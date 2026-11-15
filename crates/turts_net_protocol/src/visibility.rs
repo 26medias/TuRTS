@@ -83,6 +83,9 @@ pub struct StateTransactionCancel {
 pub struct EventUnitObservation {
     pub basis: KnowledgeBasis,
     pub unit: UnitSnapshot,
+    /// Captured contact for this event pose. It is not a persistent live anchor.
+    #[serde(default)]
+    pub ground_elevation: Option<i32>,
 }
 
 /// Serialized as one bounded transaction, then divided into chunks. Box avoids
