@@ -166,3 +166,34 @@ fn invalid_late_record_rejects_coverage_memory_and_live_changes_together() {
     assert!(replica.units.contains_key(&1));
     assert_eq!(replica.last_applied_tick, Some(10));
 }
+
+#[test]
+fn earlier_event_positions_are_accepted_only_for_all_visible_fallback() {
+    for restricted in [false, true] {
+        let (mut replica, stamp, mut payload) = setup();
+        if let StateTransactionPayload::Snapshot {
+            state,
+            knowledge,
+            event_units,
+        } = &mut payload
+        {
+            if !restricted {
+                *knowledge = None;
+            }
+            event_units.push(EventUnitObservation {
+                basis: KnowledgeBasis {
+                    tick: stamp.basis.tick - 1,
+                    ..stamp.basis.clone()
+                },
+                unit: state.units[0].clone(),
+            });
+        }
+        assert_eq!(
+            replica.activate_transaction(&stamp, &payload, Instant::now()),
+            !restricted
+        );
+        if restricted {
+            assert!(replica.last_applied_tick.is_none());
+        }
+    }
+}
