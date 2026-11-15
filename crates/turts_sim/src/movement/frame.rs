@@ -667,7 +667,11 @@ pub fn step_frame_preserving_resting(
                 Vec2::ZERO
             };
             let mut separated = false;
-            let reach = unit.radius + max_radius + 0.05 + max_step;
+            let reach = separation_reach(
+                unit.radius,
+                max_radius,
+                unit.radius + max_radius + 0.05 + max_step,
+            );
             for other_index in grid.nearby(&points, unit.position, reach) {
                 if other_index == index {
                     continue;
@@ -850,7 +854,11 @@ pub fn step_frame_preserving_resting(
 
         let desired = movement_target - position;
         let mut velocity = desired.try_normalize().unwrap_or(Vec2::ZERO) * speed * dt;
-        let reach = unit.radius + max_radius + 0.05 + max_step;
+        let reach = separation_reach(
+            unit.radius,
+            max_radius,
+            unit.radius + max_radius + 0.05 + max_step,
+        );
         let neighbours = grid.nearby(&points, position, reach);
         let mut near_same_group = false;
         let mut separated = false;
@@ -1140,3 +1148,24 @@ pub fn step_frame_preserving_resting(
     outputs.sort_unstable_by_key(|output| output.unit_id);
     outputs
 }
+
+/// These loops read fixed initial body positions. All effects require distance
+/// strictly below `(radius + other.radius) + .05`. Positive finite f32 addition
+/// is monotone, so replacing other.radius by max_radius cannot lower that limit.
+/// The successor keeps a conservative squared-distance broad phase at rounding
+/// boundaries. Taking min with the old reach never introduces a new candidate.
+/// Projection and sweep queries must retain their own wider moving-point bounds.
+pub(super) fn separation_reach(radius: f32, max_radius: f32, old_reach: f32) -> f32 {
+    #[cfg(test)]
+    if LEGACY_SEPARATION_QUERY.with(std::cell::Cell::get) {
+        return old_reach;
+    }
+    old_reach.min((radius + max_radius + 0.05).next_up())
+}
+#[cfg(test)]
+thread_local! {
+    static LEGACY_SEPARATION_QUERY: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+#[cfg(test)]
+#[path = "separation_query_tests.rs"]
+mod separation_query_tests;
