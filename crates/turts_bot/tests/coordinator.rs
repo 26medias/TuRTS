@@ -68,6 +68,7 @@ impl ProposalVerifier for Verifier {
         proposal: &Proposal,
     ) -> Result<VerifiedProposal, ProposalRejection> {
         Ok(VerifiedProposal {
+            fulfillment: Vec::new(),
             members: proposal
                 .actors
                 .iter()
@@ -448,6 +449,178 @@ fn the_pending_account_row_limit_counts_each_members_obligation_not_only_unique_
     ]);
     let out = c.select(0, vec![proposal("group", vec![1, 2])], &v);
     assert_eq!(out.refused[0].reason, ProposalRejection::Budget);
+    assert!(c.tracked_requests().is_empty());
+    assert_eq!(c.next_sequence(), Some(0));
+}
+
+struct ClaimsVerifier {
+    members: Verifier,
+    claims: BTreeMap<String, Vec<FulfillmentClaim>>,
+}
+impl ProposalVerifier for ClaimsVerifier {
+    fn verify(
+        &self,
+        basis: BasisId,
+        proposal: &Proposal,
+    ) -> Result<VerifiedProposal, ProposalRejection> {
+        let mut verified = self.members.verify(basis, proposal)?;
+        verified.fulfillment = self
+            .claims
+            .get(&proposal.task.goal)
+            .cloned()
+            .unwrap_or_default();
+        Ok(verified)
+    }
+}
+fn role(name: &str, observed: u64, cap: Option<u64>) -> FulfillmentClaim {
+    FulfillmentClaim {
+        key: FulfillmentKey::Role(name.into()),
+        observed,
+        cap,
+        contribution: 1,
+    }
+}
+#[test]
+fn opening_and_recovery_do_not_build_the_same_deficit_from_different_builders() {
+    for reversed in [false, true] {
+        let mut c = ready(vec![balance(money(), 100, 0)]);
+        let v = ClaimsVerifier {
+            members: verifier(vec![
+                member(1, 8., vec![amount(money(), 10)]),
+                member(900, 30., vec![amount(money(), 10)]),
+            ]),
+            claims: [
+                ("opening".into(), vec![role("barracks", 0, Some(1))]),
+                ("recovery".into(), vec![role("barracks", 0, Some(1))]),
+            ]
+            .into(),
+        };
+        let mut opening = proposal("opening", vec![1]);
+        opening.task.controller = "opening-controller".into();
+        opening.priority = 10;
+        let mut recovery = proposal("recovery", vec![900]);
+        recovery.task.controller = "recovery-controller".into();
+        recovery.priority = 100;
+        let mut proposals = vec![opening, recovery];
+        if reversed {
+            proposals.reverse();
+        }
+        let out = c.select(0, proposals, &v);
+        assert_eq!(out.commands.len(), 1);
+        assert_eq!(out.commands[0].task.goal, "recovery");
+        assert_eq!(
+            out.refused[0].reason,
+            ProposalRejection::FulfillmentSatisfied(FulfillmentKey::Role("barracks".into()))
+        );
+        assert_eq!(c.tracked_requests().len(), 1);
+    }
+}
+#[test]
+fn incidental_role_contributions_prevent_a_second_copy_for_an_overlapping_role() {
+    let mut c = ready(vec![balance(money(), 100, 0)]);
+    let v = ClaimsVerifier {
+        members: verifier(vec![
+            member(1, 8., vec![amount(money(), 10)]),
+            member(2, 30., vec![amount(money(), 10)]),
+        ]),
+        claims: [
+            (
+                "workers".into(),
+                vec![role("worker", 0, Some(1)), role("builder", 0, None)],
+            ),
+            (
+                "builders".into(),
+                vec![role("worker", 0, None), role("builder", 0, Some(1))],
+            ),
+        ]
+        .into(),
+    };
+    let out = c.select(
+        0,
+        vec![proposal("builders", vec![2]), proposal("workers", vec![1])],
+        &v,
+    );
+    assert_eq!(out.commands.len(), 1);
+    assert_eq!(out.commands[0].task.goal, "workers");
+    assert_eq!(
+        out.refused[0].reason,
+        ProposalRejection::FulfillmentSatisfied(FulfillmentKey::Role("builder".into()))
+    );
+}
+#[test]
+fn incidental_roles_have_no_implicit_cap_and_pending_unapplied_work_still_consumes_its_goal() {
+    let mut c = ready(vec![balance(money(), 100, 0)]);
+    let v = ClaimsVerifier {
+        members: verifier(vec![
+            member(1, 8., vec![amount(money(), 10)]),
+            member(2, 30., vec![amount(money(), 10)]),
+        ]),
+        claims: [
+            (
+                "first".into(),
+                vec![role("worker", 0, Some(1)), role("civilian", 5, None)],
+            ),
+            (
+                "second".into(),
+                vec![role("worker", 0, Some(1)), role("civilian", 5, None)],
+            ),
+        ]
+        .into(),
+    };
+    assert_eq!(
+        c.select(0, vec![proposal("first", vec![1])], &v)
+            .commands
+            .len(),
+        1
+    );
+    c.reconcile(
+        0,
+        &batch(
+            0,
+            vec![balance(money(), 100, 0)],
+            vec![],
+            vec![request(0, 1)],
+        ),
+    )
+    .unwrap();
+    let out = c.select(0, vec![proposal("second", vec![2])], &v);
+    assert!(out.commands.is_empty());
+    assert_eq!(
+        out.refused[0].reason,
+        ProposalRejection::FulfillmentSatisfied(FulfillmentKey::Role("worker".into()))
+    );
+}
+#[test]
+fn inconsistent_observed_fulfillment_refuses_both_baselines_instead_of_preferring_first() {
+    let mut c = ready(vec![]);
+    let v = ClaimsVerifier {
+        members: verifier(vec![member(1, 8., vec![]), member(2, 30., vec![])]),
+        claims: [
+            ("a".into(), vec![role("worker", 0, Some(2))]),
+            ("b".into(), vec![role("worker", 1, Some(2))]),
+        ]
+        .into(),
+    };
+    let out = c.select(0, vec![proposal("a", vec![1]), proposal("b", vec![2])], &v);
+    assert!(out.commands.is_empty());
+    assert_eq!(out.refused.len(), 2);
+    assert!(
+        out.refused
+            .iter()
+            .all(|row| matches!(row.reason, ProposalRejection::InconsistentFulfillment(_)))
+    );
+    assert!(c.tracked_requests().is_empty());
+    assert_eq!(c.next_sequence(), Some(0));
+}
+#[test]
+fn fulfillment_arithmetic_overflow_has_no_partial_allocation() {
+    let mut c = ready(vec![]);
+    let v = ClaimsVerifier {
+        members: verifier(vec![member(1, 8., vec![])]),
+        claims: [("a".into(), vec![role("worker", u64::MAX, None)])].into(),
+    };
+    let out = c.select(0, vec![proposal("a", vec![1])], &v);
+    assert_eq!(out.refused[0].reason, ProposalRejection::ArithmeticOverflow);
     assert!(c.tracked_requests().is_empty());
     assert_eq!(c.next_sequence(), Some(0));
 }
