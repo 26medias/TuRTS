@@ -9,6 +9,10 @@ fn package_app() -> App {
     let mut app = turts_sim::headless_app(20);
     turts_pack::load_package(app.world_mut(), &archive).unwrap();
     app.insert_resource(ServerCatalog(archive.content().unwrap()));
+    app.insert_resource(session::Advertised {
+        lockfile_hash: "0".repeat(64),
+        tick_hz: 20,
+    });
     turts_sim::initialize_completed_world(app.world_mut());
     app
 }
@@ -129,7 +133,7 @@ fn live_package(package: &str) -> App {
     session::install(
         &mut app,
         session::Advertised {
-            lockfile_hash: String::new(),
+            lockfile_hash: "0".repeat(64),
             tick_hz: 20,
         },
     );

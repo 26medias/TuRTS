@@ -133,7 +133,7 @@ fn run() -> Result<(), String> {
     ));
 
     session::install(&mut app, advertised);
-    bots::install(&mut app, &bot_configuration)?;
+    bots::install_with_limits(&mut app, &bot_configuration, cfg.bot_limits)?;
     command_script::install(&mut app, cli.command_script.as_deref())?;
     orderlog::install(&mut app, cli.order_log.as_deref())?;
     outbound::install(&mut app);
@@ -170,6 +170,13 @@ fn run() -> Result<(), String> {
         .and_then(|sink| sink.error.as_ref())
     {
         return Err(format!("economy log evidence failed: {error}"));
+    }
+    if let Some(error) = app
+        .world()
+        .get_resource::<bots::BotExecution>()
+        .and_then(|execution| execution.error.as_ref())
+    {
+        return Err(format!("public bot host failed: {error}"));
     }
     result
 }

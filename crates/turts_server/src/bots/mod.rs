@@ -2,7 +2,13 @@
 mod observation;
 mod projection;
 
-use crate::{actors, config::BotConfig, orders::ServerCatalog, permissions::AllVisible, session};
+use crate::{
+    actors,
+    config::{BotConfig, BotLimitsConfig},
+    orders::ServerCatalog,
+    permissions::AllVisible,
+    session,
+};
 use bevy::prelude::*;
 use observation::{CandidateLease, ObservationVerifier};
 use serde::{Deserialize, Serialize};
@@ -106,6 +112,9 @@ pub(crate) struct BotHost {
     next_basis: u64,
     pub private_projection_scans: u64,
     pub decisions: u64,
+    limits: BotLimitsConfig,
+    installation: turts_audit::ActorInstallation,
+    installation_recorded: bool,
 }
 impl BotHost {
     pub fn actors(&self) -> Vec<BotActor> {
@@ -116,12 +125,29 @@ impl BotHost {
 pub(crate) fn install(app: &mut App, configuration: &[BotConfig]) -> Result<(), String> {
     let mut registry = ControllerRegistry::new();
     turts_bot::controllers::register_stock(&mut registry).map_err(|e| e.to_string())?;
-    install_with_registry(app, configuration, &registry)
+    install_with_registry_and_limits(app, configuration, &registry, BotLimitsConfig::default())
+}
+pub(crate) fn install_with_limits(
+    app: &mut App,
+    configuration: &[BotConfig],
+    limits: BotLimitsConfig,
+) -> Result<(), String> {
+    let mut registry = ControllerRegistry::new();
+    turts_bot::controllers::register_stock(&mut registry).map_err(|e| e.to_string())?;
+    install_with_registry_and_limits(app, configuration, &registry, limits)
 }
 pub(crate) fn install_with_registry(
     app: &mut App,
     configuration: &[BotConfig],
     registry: &ControllerRegistry,
+) -> Result<(), String> {
+    install_with_registry_and_limits(app, configuration, registry, BotLimitsConfig::default())
+}
+fn install_with_registry_and_limits(
+    app: &mut App,
+    configuration: &[BotConfig],
+    registry: &ControllerRegistry,
+    limits: BotLimitsConfig,
 ) -> Result<(), String> {
     if configuration.is_empty() {
         return Ok(());
@@ -133,6 +159,7 @@ pub(crate) fn install_with_registry(
     let hz = app.world().resource::<SimClock>().tick_hz;
     let mut slots = BTreeSet::new();
     let mut bots = Vec::new();
+    let mut installed_bots = Vec::new();
     for (index, config) in configuration.iter().enumerate() {
         let field = format!("bots[{index}]");
         if !slots.insert(config.slot) {
@@ -158,11 +185,28 @@ pub(crate) fn install_with_registry(
             slot: config.slot,
             profile: id,
         };
+        installed_bots.push(turts_audit::ActorBotInstallation {
+            slot: config.slot,
+            profile: actor.profile.clone(),
+            seed: config.seed,
+            profile_hash: turts_audit::actor_profile_hash(&profile)
+                .map_err(|e| format!("{field}.profile: {e}"))?,
+        });
         let controllers = registry
-            .activate(&actor, &profile, config.seed, operator_quota())
+            .activate(
+                &actor,
+                &profile,
+                config.seed,
+                BotQuota {
+                    queries: limits.queries,
+                    candidates: limits.candidates,
+                    rows: limits.rows,
+                    proposals: limits.proposals,
+                },
+            )
             .map_err(|e| format!("{field}.{e}"))?;
         bots.push(BotInstance {
-            coordinator: BotCoordinator::new(actor.clone(), CoordinatorLimits::default()),
+            coordinator: BotCoordinator::new(actor.clone(), coordinator_limits(limits)),
             actor,
             profile,
             controllers,
@@ -173,6 +217,18 @@ pub(crate) fn install_with_registry(
             last_diagnostic: None,
         });
     }
+    let installation = turts_audit::ActorInstallation {
+        locked_package_hash: app
+            .world()
+            .get_resource::<session::Advertised>()
+            .ok_or("bot installation requires a locked package advertisement")?
+            .lockfile_hash
+            .clone(),
+        engine_api: turts_mod_api::ENGINE_API_VERSION.to_string(),
+        protocol: u32::from(turts_net_protocol::NET_PROTOCOL_VERSION),
+        bots: installed_bots,
+        limits: artifact_limits(limits)?,
+    };
     actors::install_bot_actors(
         app.world_mut(),
         &bots.iter().map(|b| b.actor.clone()).collect::<Vec<_>>(),
@@ -184,6 +240,9 @@ pub(crate) fn install_with_registry(
         next_basis: 0,
         private_projection_scans: 0,
         decisions: 0,
+        limits,
+        installation,
+        installation_recorded: false,
     });
     app.add_systems(
         FixedPreUpdate,
@@ -194,6 +253,33 @@ pub(crate) fn install_with_registry(
     );
     Ok(())
 }
+fn artifact_limits(limits: BotLimitsConfig) -> Result<turts_audit::ActorOperatorLimits, String> {
+    Ok(turts_audit::ActorOperatorLimits {
+        queries: limits.queries,
+        candidates: limits.candidates,
+        rows: limits.rows,
+        proposals: limits.proposals,
+        commands: limits.commands,
+        affected_units: limits.affected_units,
+        pending_requests: limits.pending_requests,
+        pending_accounts: limits.pending_accounts,
+        projection_rows: u64::try_from(limits.projection_rows)
+            .map_err(|_| "bot projection limit does not fit the replay artifact")?,
+        lease_steps: 8,
+        page_rows: 64,
+        cursor_records: 1024,
+    })
+}
+
+fn coordinator_limits(limits: BotLimitsConfig) -> CoordinatorLimits {
+    CoordinatorLimits {
+        commands: limits.commands,
+        affected_units: limits.affected_units,
+        pending_requests: limits.pending_requests,
+        pending_accounts: limits.pending_accounts,
+    }
+}
+
 fn diagnose(bot: &mut BotInstance, message: String) {
     if bot.last_diagnostic.as_ref() != Some(&message) {
         eprintln!("turts_server: bot slot {}: {message}", bot.actor.slot);
@@ -239,6 +325,16 @@ fn drive_inner(world: &mut World, host: &mut BotHost, execution: &mut BotExecuti
     if execution.mode == BotExecutionMode::RecordedCommands {
         return;
     }
+    if !host.installation_recorded {
+        if let Err(error) = actors::record_installation(
+            world,
+            turts_audit::ActorLogRecord::Installation(host.installation.clone()),
+        ) {
+            execution.error = Some(error);
+            return;
+        }
+        host.installation_recorded = true;
+    }
     let tick = world.resource::<Tick>().0;
     if execution.last_scheduler_tick == Some(tick) {
         return;
@@ -255,6 +351,24 @@ fn drive_inner(world: &mut World, host: &mut BotHost, execution: &mut BotExecuti
             return;
         }
     };
+    let phase = if input.ended {
+        turts_audit::ActorPhase::Ended
+    } else if input.running {
+        turts_audit::ActorPhase::Running
+    } else {
+        turts_audit::ActorPhase::Waiting
+    };
+    if let Err(error) = actors::record_lifecycle(
+        world,
+        turts_audit::ActorLogRecord::Lifecycle {
+            tick,
+            humans_present: input.human_present,
+            phase,
+        },
+    ) {
+        execution.error = Some(error);
+        return;
+    }
     if execution
         .input_trace
         .last()
@@ -302,6 +416,10 @@ fn drive_inner(world: &mut World, host: &mut BotHost, execution: &mut BotExecuti
             continue;
         }
         let view = turts_sim::completed_world(world);
+        if projection::source_rows(view) > host.limits.projection_rows {
+            diagnose(bot, "observation host row limit reached".into());
+            continue;
+        }
         let size = world.resource::<turts_sim::MapBounds>().size;
         let projected = projection::project(
             view,
@@ -355,7 +473,7 @@ fn drive_inner(world: &mut World, host: &mut BotHost, execution: &mut BotExecuti
                 phase: MatchPhase::Running,
                 profile: &bot.profile,
                 quota: controller.quota,
-                limits: CoordinatorLimits::default(),
+                limits: coordinator_limits(host.limits),
                 reconciliation: &batch,
                 role_counts: &counts,
                 supply: &supply,
@@ -363,7 +481,7 @@ fn drive_inner(world: &mut World, host: &mut BotHost, execution: &mut BotExecuti
             let mut buffer = ProposalBuffer::new(
                 &controller.key,
                 controller.quota.proposals,
-                CoordinatorLimits::default().affected_units,
+                host.limits.affected_units,
             );
             controller.controller.step(
                 &frame,

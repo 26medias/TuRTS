@@ -147,3 +147,11 @@ impl EconomyLogRecord {
         }
     }
 }
+
+/// Hash the validated resolved profile with the encoding used by trusted replay.
+pub fn actor_profile_hash(profile: &turts_mod_api::BotDef) -> Result<String, serde_json::Error> {
+    use sha2::{Digest, Sha256};
+    let bytes = serde_json::to_vec(profile)?;
+    let digest = Sha256::digest(bytes);
+    Ok(digest.iter().map(|byte| format!("{byte:02x}")).collect())
+}
