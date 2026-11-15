@@ -1867,6 +1867,9 @@ fn expected_order_refusal(
         turts_mod_api::Behaviour::SetEnabled(_) => capability.is_some_and(|entry| entry.toggleable),
         turts_mod_api::Behaviour::SetRally => capability.is_some_and(|entry| entry.producer),
         turts_mod_api::Behaviour::Construct => crate::paid::has_constructor(before, unit_id),
+        turts_mod_api::Behaviour::TerrainWork | turts_mod_api::Behaviour::UnloadCargo => {
+            return Err("terrain orders require the terrain replay model; the legacy operation validator cannot certify them".into());
+        }
         turts_mod_api::Behaviour::CancelConstruction
         | turts_mod_api::Behaviour::Repair
         | turts_mod_api::Behaviour::Surrender => false,
@@ -3198,6 +3201,10 @@ fn validate_order_policy(command: &CommandAudit) -> Result<(), String> {
         turts_mod_api::Behaviour::Construct => {
             policy.target == turts_mod_api::TargetKind::ContentAtPoint
         }
+        turts_mod_api::Behaviour::TerrainWork => {
+            policy.target == turts_mod_api::TargetKind::TerrainDesignation
+        }
+        turts_mod_api::Behaviour::UnloadCargo => policy.target == turts_mod_api::TargetKind::Unit,
         turts_mod_api::Behaviour::CancelConstruction
         | turts_mod_api::Behaviour::Repair
         | turts_mod_api::Behaviour::Surrender => false,
@@ -3576,6 +3583,8 @@ fn validate_order_operation(
         }
         turts_mod_api::Behaviour::CancelConstruction
         | turts_mod_api::Behaviour::Repair
+        | turts_mod_api::Behaviour::TerrainWork
+        | turts_mod_api::Behaviour::UnloadCargo
         | turts_mod_api::Behaviour::Surrender => {
             return Err(format!(
                 "accepted order operation {} uses the behaviour {:?}, which has no replay rule yet",
