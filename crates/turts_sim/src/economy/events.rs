@@ -166,6 +166,8 @@ pub enum RecordStateRow {
 /// producer when `job` is `Some`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RateRecordRow {
+    /// The exact construction recipe for site records; absent for ordinary jobs.
+    pub production: Option<ContentId>,
     pub unit: u32,
     pub owner_slot: u8,
     pub job: Option<u64>,
@@ -218,6 +220,8 @@ pub enum EffectRow {
 
 #[derive(Resource, Debug, Clone, Default, PartialEq)]
 pub struct CommittedTick {
+    pub repairs: Vec<super::repair::RepairRow>,
+    pub repairs_cleared: Vec<(u32, u8)>,
     pub match_outcomes: Option<crate::outcome::MatchOutcomes>,
     pub tick: u32,
     pub spawned: Vec<UnitState>,

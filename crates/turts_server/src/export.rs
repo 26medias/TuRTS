@@ -135,6 +135,11 @@ pub fn snapshot_for(view: &WorldView, slot: SlotId) -> wire::Snapshot {
                 .iter()
                 .filter(|row| row.owner_slot == slot.0)
                 .map(|row| wire::SiteProgress {
+                    production: row
+                        .production
+                        .as_ref()
+                        .expect("site progress carries its validated recipe")
+                        .to_string(),
                     unit: wire::UnitId(row.unit),
                     progress: export_jobs::rate_record(row),
                 })
