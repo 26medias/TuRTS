@@ -307,7 +307,8 @@ fn t1x_audit_copy_with_mod_runtime_is_red() {
 
 /// The names that the `turts_rules` rows of `scripts/boundary.sh` forbid, in the script order:
 /// every other workspace crate, `wgpu` and `winit`. The `bevy*` crates have their own row.
-const RULES_FORBIDDEN: [&str; 14] = [
+const RULES_FORBIDDEN: [&str; 15] = [
+    "turts_bot",
     "turts_audit",
     "turts_checks",
     "turts_client",
