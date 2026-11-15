@@ -20,7 +20,9 @@ pub fn validate_bots(
     let mut result = BTreeMap::new();
     for (file, bot) in sources {
         let id = local_id(origin, &file, &bot.id)?;
-        if result.contains_key(&id)
+        if catalog.bots.contains_key(&id)
+            || catalog.source_files.contains_key(&id)
+            || result.contains_key(&id)
             || catalog.units.contains_key(&id)
             || catalog.production.contains_key(&id)
             || catalog.resources.contains_key(&id)

@@ -120,6 +120,9 @@ pub struct ObservedRequestEffect {
     pub request: RequestKey,
     pub effect_watermark: Watermark,
     pub refused: bool,
+    /// An accepted held construction request exists, but its actual site/job is not placed yet.
+    #[serde(default)]
+    pub pending_placement: bool,
     /// Cumulative paid and current reservation rows, each at this same basis.
     pub paid: Vec<AccountAmount>,
     pub reserved: Vec<AccountAmount>,
@@ -131,6 +134,9 @@ pub struct ReconcileBatch {
     pub watermark: Watermark,
     pub accounts: Vec<AccountObservation>,
     pub included: Vec<ObservedRequestEffect>,
+    /// Explicit proof that these pending requests have no effects in this basis yet.
+    #[serde(default)]
+    pub unapplied: Vec<RequestKey>,
     /// False forbids both account advancement and new spending decisions.
     pub complete: bool,
 }
@@ -167,6 +173,8 @@ pub struct BotOrder {
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Proposal {
+    /// The retained permitted candidate basis that produced this intention.
+    pub source_basis: BasisId,
     pub task: TaskKey,
     pub actors: Vec<UnitId>,
     pub order: BotOrder,

@@ -27,6 +27,7 @@ fn controller() -> StockController {
         key: "policy".into(),
         policy: Policy::Economy,
         scans: vec![],
+        basis: None,
         placement_steps: Default::default(),
     }
 }
@@ -81,6 +82,7 @@ fn run(
     };
     let frame = BotFrame {
         basis: 1,
+        accounting_basis: 1,
         completed_tick: 1,
         scheduler_tick: 1,
         active_ticks: 20,
@@ -115,6 +117,12 @@ fn page(data: QueryData, state: PageState) -> Result<QueryPage, QueryError> {
 }
 struct Pages(VecDeque<Result<QueryPage, QueryError>>);
 impl BotQueries for Pages {
+    fn pin_basis(&mut self, _: BasisId) -> Result<(), QueryError> {
+        Ok(())
+    }
+    fn release_basis(&mut self, _: BasisId) -> Result<(), QueryError> {
+        Ok(())
+    }
     fn query(&mut self, _: Query, _: Option<QueryCursor>, _: u32) -> Result<QueryPage, QueryError> {
         self.0.pop_front().expect("unexpected query")
     }

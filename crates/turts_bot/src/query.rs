@@ -149,6 +149,10 @@ pub enum QueryError {
 /// Every examined count and cursor describes permitted candidates only.
 /// Private projection scans are accounted by the host, outside public metadata.
 pub trait BotQueries {
+    /// Retain this candidate basis across query calls and scheduled steps for this controller.
+    fn pin_basis(&mut self, basis: BasisId) -> Result<(), QueryError>;
+    /// Release only when the complete selection is consumed or explicitly abandoned.
+    fn release_basis(&mut self, basis: BasisId) -> Result<(), QueryError>;
     fn query(
         &mut self,
         query: Query,

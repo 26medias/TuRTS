@@ -38,7 +38,10 @@ impl Default for CoordinatorLimits {
     }
 }
 pub struct BotFrame<'a> {
+    /// Candidate basis shared by every query in a retained decision.
     pub basis: BasisId,
+    /// Fresh complete accounting basis, independent of a retained candidate lease.
+    pub accounting_basis: BasisId,
     pub completed_tick: u32,
     pub scheduler_tick: u32,
     pub active_ticks: u64,

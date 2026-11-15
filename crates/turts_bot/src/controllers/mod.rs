@@ -45,6 +45,7 @@ impl ControllerFactory for StockFactory {
             key: init.instance.key.clone(),
             policy: self.0,
             scans: Vec::new(),
+            basis: None,
             placement_steps: std::collections::BTreeMap::new(),
         }))
     }
@@ -60,6 +61,7 @@ struct StockController {
     key: String,
     policy: Policy,
     scans: Vec<Scan>,
+    basis: Option<BasisId>,
     placement_steps: std::collections::BTreeMap<(u32, String), usize>,
 }
 impl StockController {
@@ -161,8 +163,8 @@ impl StockController {
         order: BotOrder,
         out: &mut dyn ProposalSink,
     ) {
-        let _ = frame;
         let _ = out.propose(Proposal {
+            source_basis: self.basis.unwrap_or(frame.basis),
             task: TaskKey::new(&self.key, goal, "desired"),
             actors: vec![actor.unit],
             order,
@@ -347,6 +349,7 @@ impl StockController {
                     }
                     if let Some(order) = self.order(frame, order, BotTarget::Node(node.node)) {
                         let _ = out.propose(Proposal {
+                            source_basis: self.basis.unwrap_or(frame.basis),
                             task: TaskKey::new(
                                 &self.key,
                                 &goal.key,
@@ -440,6 +443,7 @@ impl StockController {
             };
             if let Some(order) = self.order(frame, binding, target) {
                 let _ = out.propose(Proposal {
+                    source_basis: self.basis.unwrap_or(frame.basis),
                     task: TaskKey::new(&self.key, &rule.key, "squad"),
                     actors: units
                         .iter()
@@ -467,6 +471,14 @@ impl BotController for StockController {
         queries: &mut dyn BotQueries,
         out: &mut dyn ProposalSink,
     ) {
+        let basis = self.basis.unwrap_or(frame.basis);
+        if queries.pin_basis(basis).is_err() {
+            self.scans.clear();
+            self.placement_steps.clear();
+            self.basis = None;
+            return;
+        }
+        self.basis = Some(basis);
         match self.policy {
             Policy::Opening => {
                 for (rank, goal) in frame.profile.knowledge.opening.clone().iter().enumerate() {
@@ -505,6 +517,10 @@ impl BotController for StockController {
                 }
             }
             Policy::Squads => self.squads(frame, queries, out),
+        }
+        if self.scans.is_empty() {
+            let _ = queries.release_basis(basis);
+            self.basis = None;
         }
     }
 }
