@@ -94,6 +94,7 @@ pub fn validate_manifest(m: &Manifest) -> Result<(), ModError> {
         ("exports.production", &m.exports.production),
         ("exports.recipes", &m.exports.recipes),
         ("exports.technologies", &m.exports.technologies),
+        ("exports.bots", &m.exports.bots),
     ];
     for (field, paths) in exports {
         for path in paths {
