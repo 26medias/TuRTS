@@ -315,10 +315,30 @@ pub struct LeaveMatch;
 /// The text of `JoinRejected` for a `Hello` after the end of the match (design 6.8).
 pub const REASON_MATCH_OVER: &str = "The match is over";
 
+/// Protocol 8: an absolute owner-only repair action, keyed by its source.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RepairRecord {
+    pub repairer: UnitId,
+    pub target: UnitId,
+    pub state: RepairState,
+}
+
+/// Working describes the active in-range action; authoritative diagnostics can hold it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum RepairState {
+    Approaching,
+    Working,
+    WaitingForFunds(ContentRef),
+}
+
 /// The records of protocol 5 that ride the delta next to `unit_orders`. The writers of every
 /// field except `orders_cleared` are empty at the lane-0 exit; a feature lane fills its own.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct DeltaRecords {
+    #[serde(default)]
+    pub repairs: Vec<RepairRecord>,
+    #[serde(default)]
+    pub repairs_cleared: Vec<UnitId>,
     /// Sites that completed in this tick (design 6.8, "Site existence and footprint").
     pub sites_completed: Vec<UnitId>,
     pub sites: Vec<SiteProgress>,
@@ -341,6 +361,8 @@ pub struct DeltaRecords {
 /// a delta, `match_state: None` means "no change".
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct SnapshotRecords {
+    #[serde(default)]
+    pub repairs: Vec<RepairRecord>,
     pub sites: Vec<SiteProgress>,
     pub jobs: Vec<JobProgress>,
     pub construction_queues: Vec<ConstructionQueue>,

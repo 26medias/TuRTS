@@ -119,6 +119,9 @@ pub struct Order {
 /// Orders currently assigned to one unit.
 #[derive(Component, Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct UnitOrders {
+    /// Explicit Stop suppresses automatic repair until an accepted non-Stop player order.
+    #[serde(default, skip_serializing_if = "repair_not_stopped")]
+    pub repair_stopped: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub acquired: Option<AcquiredTarget>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -126,6 +129,10 @@ pub struct UnitOrders {
     pub current: Option<Order>,
     pub queue: VecDeque<Order>,
     pub last_failure: Option<OrderFailure>,
+}
+
+fn repair_not_stopped(stopped: &bool) -> bool {
+    !*stopped
 }
 
 /// Implicit combat intent. It is part of the authoritative order audit, not a player command.

@@ -281,6 +281,9 @@ pub enum StatField {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub enum PrimaryField {
+    RepairState,
+    RepairTargetName,
+    RepairResourceName,
     /// API 0.2.12: effective own-weapon damage, type, and additive bonus rows.
     WeaponDetails,
     Name,
@@ -350,6 +353,7 @@ pub enum Source {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub enum Predicate {
+    RepairStateIs(RepairStateKind),
     SelectionEmpty,
     SelectionNotEmpty,
     SelectionSingle,
@@ -372,6 +376,15 @@ pub enum Predicate {
     /// API 0.2.4, row H25: true when `Value::SoundState` reads `Sound: on`. Use it to style the
     /// switch (for example one widget with `SoundOn` and one with `Not(SoundOn)`).
     SoundOn,
+}
+
+/// API 0.2.14: owner repair states for mod-authored predicates.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub enum RepairStateKind {
+    Approaching,
+    Working,
+    WaitingForFunds,
 }
 
 /// API 0.2.4, row H10.

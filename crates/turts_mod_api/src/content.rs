@@ -100,6 +100,8 @@ pub struct ResolvedUnit {
     pub drop_off: Option<ResolvedDropOff>,
     pub producer: Option<ResolvedProducer>,
     pub constructor: Option<ResolvedConstructor>,
+    /// API 0.2.14: validated repair definition with qualified Balance references.
+    pub repairer: Option<RepairerDef>,
     pub placement: Option<SitePlacementDef>,
     pub build_area: Option<f32>,
     pub output_inventory: Option<ResolvedInventory>,

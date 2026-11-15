@@ -35,9 +35,9 @@ pub use interface::{
     CameraDef, CameraStart, Dimension, Direction, Fill, FloatTextStyle, GuidePage, HintCondition,
     HintDef, HintKind, HintTarget, IconField, InterfaceDef, ItemField, LabelShow, LabelStyle,
     LightDef, LineStyle, OutcomeKind, OutcomeReasonKind, OwnUnitState,
-    Placement as WidgetPlacement, PlacementStyle, Predicate, PrimaryField, Primitive, Size,
-    SoundWhen, Source, StatField, SupplySide, TextAlign, TextValue, TooltipStyle, UnitPresentation,
-    Value, Widget, WorldPoint, WorldStyle,
+    Placement as WidgetPlacement, PlacementStyle, Predicate, PrimaryField, Primitive,
+    RepairStateKind, Size, SoundWhen, Source, StatField, SupplySide, TextAlign, TextValue,
+    TooltipStyle, UnitPresentation, Value, Widget, WorldPoint, WorldStyle,
 };
 pub use lock::{LockEntry, Lockfile};
 pub use orders::{
@@ -65,12 +65,12 @@ pub use schema::{
 pub use written::Written;
 
 /// Version of the engine API that this crate defines.
-pub const ENGINE_API_VERSION: &str = "0.2.13";
+pub const ENGINE_API_VERSION: &str = "0.2.14";
 
 /// Engine API versions released by the project, in ascending order.
 pub const RELEASED_ENGINE_APIS: &[&str] = &[
     "0.1.0", "0.2.0", "0.2.1", "0.2.2", "0.2.3", "0.2.4", "0.2.5", "0.2.6", "0.2.7", "0.2.8",
-    "0.2.9", "0.2.10", "0.2.11", "0.2.12", "0.2.13",
+    "0.2.9", "0.2.10", "0.2.11", "0.2.12", "0.2.13", "0.2.14",
 ];
 
 /// The number of player slots of a match, which is the number of seats that the lobby offers
@@ -96,8 +96,8 @@ mod tests {
 
     #[test]
     fn current_release_and_historical_versions_are_stable() {
-        assert_eq!(ENGINE_API_VERSION, "0.2.13");
-        assert_eq!(RELEASED_ENGINE_APIS.len(), 15);
+        assert_eq!(ENGINE_API_VERSION, "0.2.14");
+        assert_eq!(RELEASED_ENGINE_APIS.len(), 16);
         assert_eq!(RELEASED_ENGINE_APIS[4], "0.2.3");
     }
 
