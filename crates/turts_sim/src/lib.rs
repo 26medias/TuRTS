@@ -20,6 +20,7 @@ pub mod rules_adapter;
 pub mod slots;
 pub mod unit_index;
 pub mod world;
+pub mod visibility;
 
 use economy::GatherOrder;
 use economy::ledger::Inventory;

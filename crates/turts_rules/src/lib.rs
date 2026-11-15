@@ -18,6 +18,7 @@ pub mod placement;
 pub mod progress;
 pub mod relation;
 pub mod supply;
+pub mod visibility;
 
 /// A ratio `numerator / denominator` whose denominator is not 0 (the `Ratio` of the mod
 /// schema, with the zero denominator made impossible).
