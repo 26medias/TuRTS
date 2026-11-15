@@ -53,15 +53,15 @@ const text=(id,y,value,visible='[]')=>`(id:"${id}",at:Some((anchor:TopLeft,offse
 const button=(id,y,name,action,visible='[PrimaryOwned]')=>`(id:"${id}",at:Some((anchor:TopLeft,offset:(16.0,${y}.0),pivot:None)),size:(w:Px(294.0),h:Px(28.0)),visible:${visible},widget:Button(icon:None,label:Some(Literal("${name}")),action:Order("paid:${action}"),hotkey_label:false))`;
 const widgets=[
  '(id:"backdrop",at:Some((anchor:TopLeft,offset:(6.0,6.0),pivot:None)),size:(w:Px(310.0),h:Px(690.0)),layer:-1,widget:Box(fill:Some(Colour("#10251c")),border:None,children:[]))',
- text('credits',12,'Format("Credits: {0}",[Balance("paid:credits")])'),text('name',42,'Bind(SelectionPrimary(Name))','[SelectionNotEmpty]'),
+ text('credits',12,'Format("Credits: {0}",[Balance("paid:credits")])'),text('name',42,'Format("{0}: {1}/{2}",[SelectionPrimary(Name),SelectionPrimary(Health),SelectionPrimary(MaxHealth)])','[SelectionNotEmpty]'),
  text('repair_state',72,'Bind(SelectionPrimary(RepairState))','[PrimaryHasValue(RepairState)]'),
  text('repair_target',102,'Bind(SelectionPrimary(RepairTargetName))','[PrimaryHasValue(RepairTargetName)]'),
  text('repair_resource',132,'Bind(SelectionPrimary(RepairResourceName))','[PrimaryHasValue(RepairResourceName)]'),
  text('repair_wait',162,'Literal("Repair needs funds")','[RepairStateIs(WaitingForFunds)]'),
  button('stop',198,'Stop','stop'),button('cancel',232,'Cancel site','cancel_site'),button('remove',266,'Remove','remove'),
  '(id:"build_menu",at:Some((anchor:TopLeft,offset:(16.0,306.0),pivot:None)),size:(w:Px(294.0),h:Px(100.0)),visible:[PrimaryOwned],widget:List(source:BuildMenu,direction:Vertical,gap:4,max_items:3,item:(id:"build_item",size:(w:Fill,h:Px(28.0)),widget:Button(icon:None,label:Some(Item(Name)),action:Item(Action),hotkey_label:false))))',
- '(id:"work",at:Some((anchor:TopLeft,offset:(16.0,420.0),pivot:None)),size:(w:Px(294.0),h:Px(80.0)),visible:[PrimaryOwned],widget:List(source:ProductionQueue,direction:Vertical,gap:4,max_items:2,item:(id:"work_row",size:(w:Fill,h:Px(28.0)),widget:Text(text:Format("Work: {0} {1} Paid {2} Refund {3}",[Item(Progress),Item(State),Item(Paid),Item(Refund)]),font:None,size:12,colour:"#ffffff",align:Left,wrap:false))))',
- '(id:"sites",at:Some((anchor:TopLeft,offset:(16.0,510.0),pivot:None)),size:(w:Px(294.0),h:Px(80.0)),widget:List(source:Sites,direction:Vertical,gap:4,max_items:2,item:(id:"site_row",size:(w:Fill,h:Px(28.0)),widget:Text(text:Format("Site: {0} {1} Paid {2} Refund {3}",[Item(Progress),Item(State),Item(Paid),Item(Refund)]),font:None,size:12,colour:"#ffffff",align:Left,wrap:false))))',
+ '(id:"work",at:Some((anchor:TopLeft,offset:(16.0,420.0),pivot:None)),size:(w:Px(294.0),h:Px(80.0)),visible:[PrimaryOwned],widget:List(source:ProductionQueue,direction:Vertical,gap:4,max_items:1,item:(id:"work_row",size:(w:Fill,h:Px(72.0)),widget:Text(text:Format("Work: {0}\\n{1}\\nPaid {2}; refund {3}",[Item(Progress),Item(State),Item(Paid),Item(Refund)]),font:None,size:12,colour:"#ffffff",align:Left,wrap:false))))',
+ '(id:"sites",at:Some((anchor:TopLeft,offset:(16.0,510.0),pivot:None)),size:(w:Px(294.0),h:Px(120.0)),widget:List(source:Sites,direction:Vertical,gap:4,max_items:2,item:(id:"site_row",size:(w:Fill,h:Px(56.0)),widget:Text(text:Format("Site: {0}\\n{1}\\nPaid {2}; refund {3}",[Item(Progress),Item(State),Item(Paid),Item(Refund)]),font:None,size:12,colour:"#ffffff",align:Left,wrap:false))))',
 ];
 write('interface/hud.ron',`(id:"paid_hud",root:[${widgets.join(',')}],tooltip_style:(background:"#000000",colour:"#ffffff",font:None,size:12),cursors:{},camera:(pitch:0.7,yaw:0.0,field_of_view:60.0,minimum:10.0,maximum:100.0,start:OwnedCentre,height:36.0,margin:0.0,pan_speed:100.0,edge_band:false),light:None,slot_colours:["#0072B2","#E69F00"],world:(ground:"#243b2c",grid:"#354b3c",selection:"#ffffff",health:"#00ff00",range:"#ffffff",show_range:true,tooltip:(background:"#000000",colour:"#ffffff",font:None,size:12),health_bar:(width:32,height:4,background:"#000000",health:"#00ff00")),alerts:[],reasons:{},units:{},selection_priority:[],guide:[])`);
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
@@ -97,6 +97,8 @@ function project(scene,pos){const m=scene.clip_from_world,c=[0,1,2,3].map(r=>[..
   result.initial=await wait(s=>s.debug.slot===0&&s.scene.models?.length===4&&s.scene.models.every(x=>x.ready)&&health(s,3)===180,'one ordinary enemy shot');
   if(balance(result.initial)!==3||widget(result.initial,'credits')?.text!=='Credits: 3')throw Error('initial displayed balance mismatch');
   await page.mouse.click(640,360);
+  await select(3);
+  await shot('ordinary-damage',await wait(s=>widget(s,'name')?.text==='Damaged workshop: 180/200','visible ordinary damage'));
   await build('Build Paid wall',24,14);
   const first=await wait(s=>world(s).progress.sites.some(x=>waiting(x.rate)),'paid site funding stall');
   const wallId=world(first).progress.sites.find(x=>waiting(x.rate)).unit;
