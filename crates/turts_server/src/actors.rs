@@ -27,6 +27,8 @@ pub(crate) struct BotActorState {
     pub acknowledged: Option<Watermark>,
     pub requests: BTreeMap<RequestKey, TrackedRequest>,
     pub pending_limit: usize,
+    /// The last complete basis is retained, but cannot fund new decisions while stale.
+    pub publication_error: Option<String>,
 }
 
 #[derive(Resource)]
@@ -116,6 +118,7 @@ pub(crate) fn configure_actor_limits(world: &mut World, prepared: PreparedActorL
     for entry in book.entries.values_mut() {
         entry.pending_limit = prepared.member_limit;
         entry.published = prepared.initial.get(&entry.actor).cloned();
+        entry.publication_error = None;
     }
 }
 #[derive(Resource)]
@@ -194,6 +197,7 @@ pub(crate) fn install_bot_actors(world: &mut World, actors: &[BotActor]) -> Resu
                 acknowledged: None,
                 requests: BTreeMap::new(),
                 pending_limit: DEFAULT_PENDING_MEMBERS,
+                publication_error: None,
             },
         );
     }
@@ -232,6 +236,9 @@ pub(crate) fn stage_bot_command(
         .entries
         .get_mut(&command.actor.slot)
         .ok_or(CommandRejectReason::NotOwner)?;
+    if entry.publication_error.is_some() {
+        return Err(CommandRejectReason::RateLimited);
+    }
     if entry.last_seq.is_some_and(|last| command.sequence <= last)
         || entry
             .requests
@@ -276,12 +283,20 @@ pub(crate) fn actor_reconciliation(
     world: &World,
     actor: &BotActor,
 ) -> Result<ReconcileBatch, String> {
-    world
+    let entry = world
         .get_resource::<BotActors>()
         .and_then(|book| book.entries.get(&actor.slot))
         .filter(|entry| entry.actor == *actor)
-        .and_then(|entry| entry.published.clone())
-        .ok_or_else(|| "no completed actor accounting basis is available".to_owned())
+        .ok_or("unknown bot actor")?;
+    if let Some(error) = &entry.publication_error {
+        return Err(format!(
+            "bot accounting publication is awaiting a fresh complete basis: {error}"
+        ));
+    }
+    entry
+        .published
+        .clone()
+        .ok_or_else(|| "no completed actor accounting basis is available".into())
 }
 
 pub(crate) fn actor_results(world: &World, actor: &BotActor) -> Vec<ActorResult> {
@@ -314,6 +329,9 @@ pub(crate) fn acknowledge(
         .get_mut(&actor.slot)
         .filter(|entry| entry.actor == *actor)
         .ok_or("unknown bot actor")?;
+    if entry.publication_error.is_some() {
+        return Err("cannot acknowledge a stale blocked accounting publication".into());
+    }
     let batch = entry
         .published
         .as_ref()
@@ -439,6 +457,17 @@ pub(crate) fn dispatch_staged(world: &mut World) {
     let tick = world.resource::<turts_sim::Tick>().0;
     let hz = world.resource::<crate::session::Advertised>().tick_hz;
     for command in staged {
+        if world
+            .resource::<BotActors>()
+            .entries
+            .get(&command.actor.slot)
+            .is_some_and(|entry| entry.publication_error.is_some())
+        {
+            // Already staged work stays bounded by the existing request limits.
+            // A temporary publication failure must not silently lose its result.
+            world.resource_mut::<BotActors>().staged.push_back(command);
+            continue;
+        }
         let identity = ActorLogIdentity::Bot {
             profile: command.actor.profile.clone(),
             slot: command.actor.slot,
@@ -667,7 +696,15 @@ pub(crate) fn publish_completed(world: &mut World) {
                 completed_tick: tick,
                 revision: u64::from(tick),
             };
-            entry.published = Some(crate::actor_accounting::build_batch(
+            crate::actor_accounting::capture_receipts(
+                view,
+                committed,
+                catalog,
+                &entry.actor,
+                &mut entry.requests,
+                watermark,
+            )?;
+            match crate::actor_accounting::build_batch(
                 view,
                 committed,
                 catalog,
@@ -675,7 +712,27 @@ pub(crate) fn publish_completed(world: &mut World) {
                 &mut entry.requests,
                 watermark,
                 row_limit,
-            )?);
+            ) {
+                Ok(batch) => {
+                    entry.published = Some(batch);
+                    if entry.publication_error.take().is_some() {
+                        eprintln!(
+                            "turts_server: bot slot {} accounting publication restored",
+                            entry.actor.slot
+                        );
+                    }
+                }
+                Err(error) if error == crate::actor_accounting::ROW_LIMIT_EXCEEDED => {
+                    if entry.publication_error.as_ref() != Some(&error) {
+                        eprintln!(
+                            "turts_server: bot slot {} accounting publication held: {error}",
+                            entry.actor.slot
+                        );
+                    }
+                    entry.publication_error = Some(error);
+                }
+                Err(error) => return Err(error),
+            }
         }
         book.last_published_tick = Some(tick);
         Ok::<(), String>(())
