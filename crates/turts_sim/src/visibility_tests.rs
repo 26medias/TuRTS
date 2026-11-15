@@ -614,3 +614,71 @@ fn an_unfinished_site_contributes_sight_only_after_actual_completion() {
             .unit_permitted(0, 2)
     );
 }
+
+#[test]
+fn legacy_gather_rejects_hidden_and_absent_nodes_with_the_same_reason() {
+    let mut app = scene_with(false, |_, map| {
+        map.nodes.push(turts_mod_api::NodePlacement {
+            node: "cedar:grove".into(),
+            pos: p(40.0, 40.0),
+            remaining: 100,
+        })
+    });
+    for node in [1, 999] {
+        let result = apply_command(
+            app.world_mut(),
+            &Command {
+                slot: SlotId(0),
+                seq: node,
+                kind: CommandKind::Gather {
+                    unit_id: 1,
+                    node_id: crate::NodeId(node),
+                },
+            },
+        );
+        assert_eq!(result.outcome, Err(crate::RejectReason::TargetInvalid));
+    }
+    assert_eq!(
+        app.world().resource::<crate::SurfaceNodes>().0[0].remaining,
+        100
+    );
+}
+
+#[test]
+fn autonomous_extraction_waits_for_permitted_node_knowledge() {
+    let mut app = scene_with(false, |catalog, map| {
+        let drill = catalog.units.get_mut(&id("worker")).unwrap();
+        drill.vision = None;
+        drill.movement = None;
+        drill.gatherer = None;
+        drill.extractor = Some(turts_mod_api::ExtractorDef {
+            per_second: 20,
+            interaction_range: 3.0,
+        });
+        catalog.units.get_mut(&id("other")).unwrap().vision = Some(VisionDef { radius: 4.0 });
+        map.placements[1].owner_slot = 0;
+        map.nodes.push(turts_mod_api::NodePlacement {
+            node: "cedar:grove".into(),
+            pos: p(8.0, 10.0),
+            remaining: 100,
+        });
+    });
+    run(&mut app, 40);
+    assert!(
+        !basis(app.world(), ObservationPhase::Completed)
+            .unwrap()
+            .node_permitted(0, 1)
+    );
+    assert_eq!(
+        app.world().resource::<crate::SurfaceNodes>().0[0].remaining,
+        100
+    );
+    move_to(&mut app, 0, 2, 9.0, 1);
+    run(&mut app, 200);
+    assert!(
+        basis(app.world(), ObservationPhase::Completed)
+            .unwrap()
+            .node_permitted(0, 1)
+    );
+    assert!(app.world().resource::<crate::SurfaceNodes>().0[0].remaining < 100);
+}
