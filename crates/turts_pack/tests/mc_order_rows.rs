@@ -454,6 +454,8 @@ fn command(
         .units
         .iter()
         .map(|(unit_id, unit)| OrderUnitCapabilitiesAudit {
+            terrain_worker: !unit.terrain_tools.is_empty(),
+            cargo_unloader: unit.terrain_cargo.is_some(),
             unit: unit_id.to_string(),
             movement: unit.movement.is_some(),
             weapon: unit.weapon.is_some(),
