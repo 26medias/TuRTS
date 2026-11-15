@@ -180,6 +180,12 @@ fn account_rows(
         .filter(|unit| unit.owner_slot == actor.slot)
         .map(|unit| (unit.unit_id, unit))
         .collect::<BTreeMap<_, _>>();
+    let main_inventories = view
+        .inventories
+        .iter()
+        .filter(|row| row.owner_slot == actor.slot)
+        .map(|row| row.unit)
+        .collect::<BTreeSet<_>>();
     // Only a present, accepted inventory creates known-zero item accounts. A
     // removed constructor's original endpoint remains absent, never recreated.
     for unit in owned.values() {
@@ -189,11 +195,7 @@ fn account_rows(
             .get(&id)
             .ok_or("own unit definition is absent from the installed catalog")?;
         if let Some(inventory) = &definition.inventory {
-            if view
-                .inventories
-                .iter()
-                .any(|row| row.unit == unit.unit_id && row.owner_slot == actor.slot)
-            {
+            if main_inventories.contains(&unit.unit_id) {
                 for resource in &inventory.accepts {
                     insert_account(
                         &mut rows,
@@ -623,6 +625,7 @@ fn prepare_effect(
             cost.amount,
         )
     }))?;
+    validate_admission_metadata(tracked, &work)?;
     validate_paid_work(&work, &declared)?;
     // Exact own enabled/held state is from this completed basis, not the live ECS.
     if !work.state.terminal() && view.m3.disabled.contains(&identity.unit) {
@@ -670,6 +673,29 @@ fn check_funding_buffer(
     add_amounts(&mut accounted, &event_amounts(&funding.pending_charges)?)?;
     if &accounted != paid {
         return Err("live cumulative paid rows differ from flushed plus pending debits".into());
+    }
+    Ok(())
+}
+fn validate_admission_metadata(
+    tracked: &TrackedRequest,
+    work: &WorkObservation,
+) -> Result<(), String> {
+    if let Some(admitted) = &tracked.admitted_work {
+        if admitted.payment != work.payment
+            || admitted.total != work.total
+            || admitted.done > work.done
+            || admitted.done > admitted.total
+        {
+            return Err(
+                "completed work differs from its exact admission policy or progress".into(),
+            );
+        }
+        let paid = snapshot_amounts(&work.paid)?;
+        for (key, amount) in reservation_amounts(&admitted.paid)? {
+            if paid.get(&key).copied().unwrap_or(0) < amount {
+                return Err("completed work lost an actual admission debit".into());
+            }
+        }
     }
     Ok(())
 }
@@ -786,6 +812,7 @@ fn terminal_work(
             WorkState::Failed
         },
     };
+    validate_admission_metadata(tracked, &work)?;
     validate_paid_work(&work, &declared)?;
     Ok(ObservedRequestEffect::observed_work(
         key.clone(),
