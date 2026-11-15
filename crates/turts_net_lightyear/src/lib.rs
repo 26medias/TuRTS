@@ -8,7 +8,7 @@ pub mod protocol_plugin;
 
 use core::time::Duration;
 
-pub use channels::{ReliableChannel, StateChannel};
+pub use channels::{KnowledgeChannel, ReliableChannel, StateChannel};
 pub use protocol_plugin::ProtocolPlugin;
 
 /// The length of one simulation tick for a tick rate in hertz.
