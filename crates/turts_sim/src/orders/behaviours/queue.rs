@@ -52,7 +52,9 @@ pub(in crate::orders) fn start_order(
     crate::visibility::validate_target(world, slot.0, &order.target)?;
     match (order.behaviour, &order.target) {
         (Behaviour::TerrainWork, OrderTargetSim::TerrainWork { .. }) => {
-            crate::terrain::work::validate_designation(world, unit, &order.target)
+            crate::terrain::work::validate_designation(world, unit, &order.target)?;
+            crate::terrain::work::begin_order(world, unit, order);
+            Ok(())
         }
         (Behaviour::UnloadCargo, OrderTargetSim::Unit(_)) => {
             crate::terrain::cargo::validate_order(world, unit, &order.target)

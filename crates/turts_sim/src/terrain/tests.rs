@@ -1121,3 +1121,129 @@ fn paired_unseen_ridge_worlds_plan_and_report_equally_until_physical_contact() {
         "contact does not grant a neighboring cell's height/material"
     );
 }
+
+#[test]
+fn append_unload_preserves_nonzero_work_and_fraction_then_resumes_exactly_once() {
+    let mut fixture = Fixture::new(401, 5, 1000);
+    fixture.work("dig", rect(3, 1, 1), 990, QueueMode::Replace);
+    fixture.tick();
+    let before = fixture
+        .app
+        .world()
+        .resource::<work::TerrainWorkRuntime>()
+        .units[&fixture.worker]
+        .clone();
+    assert!(before.done > 0 && before.carry > 0);
+    assert_eq!(fixture.ore(fixture.worker), 5);
+    let original = fixture
+        .app
+        .world()
+        .get::<crate::orders::UnitOrders>(
+            crate::unit_entity(fixture.app.world(), fixture.worker).unwrap(),
+        )
+        .unwrap()
+        .current
+        .clone();
+    fixture.command(
+        Behaviour::UnloadCargo,
+        OrderTargetSim::Unit(fixture.depot),
+        QueueMode::Append,
+    );
+    let mut suspended_ticks = 0;
+    for _ in 0..150 {
+        fixture.tick();
+        if pause::is_suspended(fixture.app.world(), fixture.worker) {
+            suspended_ticks += 1;
+            let actual = &fixture
+                .app
+                .world()
+                .resource::<work::TerrainWorkRuntime>()
+                .units[&fixture.worker];
+            assert_eq!(
+                actual, &before,
+                "utility must not earn, lose or replace work/carry"
+            );
+            let orders = fixture
+                .app
+                .world()
+                .get::<crate::orders::UnitOrders>(
+                    crate::unit_entity(fixture.app.world(), fixture.worker).unwrap(),
+                )
+                .unwrap();
+            assert_eq!(orders.queue.front(), original.as_ref());
+            assert_eq!(orders.queue.len(), 1);
+        }
+        if fixture.height(3, 1) == 990 {
+            break;
+        }
+    }
+    assert!(suspended_ticks > 0);
+    assert_eq!(fixture.height(3, 1), 990);
+    assert_eq!(fixture.ore(fixture.depot), 5);
+    assert_eq!(fixture.ore(fixture.worker), 5);
+    assert!(!pause::has_record(fixture.app.world(), fixture.worker));
+    fixture.tick(); // Ordinary order completion advances at the next queue boundary.
+    assert!(
+        !fixture
+            .app
+            .world()
+            .resource::<work::TerrainWorkRuntime>()
+            .units
+            .contains_key(&fixture.worker)
+    );
+}
+
+#[test]
+fn active_and_suspended_work_cancel_on_ownership_loss_and_explicit_stop_or_replace() {
+    for suspended in [false, true] {
+        for action in 0..3 {
+            let mut fixture = Fixture::new(401, 5, 1000);
+            fixture.work("dig", rect(3, 1, 1), 990, QueueMode::Replace);
+            fixture.tick();
+            if suspended {
+                fixture.command(
+                    Behaviour::UnloadCargo,
+                    OrderTargetSim::Unit(fixture.depot),
+                    QueueMode::Append,
+                );
+                fixture.tick();
+                assert!(pause::is_suspended(fixture.app.world(), fixture.worker));
+            }
+            let height = fixture.height(3, 1);
+            let entity = crate::unit_entity(fixture.app.world(), fixture.worker).unwrap();
+            match action {
+                0 => {
+                    fixture
+                        .app
+                        .world_mut()
+                        .entity_mut(entity)
+                        .insert(crate::Owner(SlotId(1)));
+                }
+                1 => fixture.command(Behaviour::Stop, OrderTargetSim::None, QueueMode::Replace),
+                _ => fixture.command(
+                    Behaviour::UnloadCargo,
+                    OrderTargetSim::Unit(fixture.depot),
+                    QueueMode::Replace,
+                ),
+            }
+            fixture.tick();
+            assert!(!pause::has_record(fixture.app.world(), fixture.worker));
+            assert!(
+                !fixture
+                    .app
+                    .world()
+                    .resource::<work::TerrainWorkRuntime>()
+                    .units
+                    .contains_key(&fixture.worker)
+            );
+            for _ in 0..5 {
+                fixture.tick();
+            }
+            assert_eq!(
+                fixture.height(3, 1),
+                height,
+                "old authority or canceled work must never resume"
+            );
+        }
+    }
+}

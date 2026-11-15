@@ -115,6 +115,25 @@ pub(crate) fn cancel(world: &mut World, unit: u32) {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct TerrainPauseAudit {
+    pub unit: u32,
+    pub owner: SlotId,
+    pub work: Order,
+}
+pub(super) fn audit(world: &World) -> Vec<TerrainPauseAudit> {
+    world
+        .get_resource::<TerrainWorkPauses>()
+        .into_iter()
+        .flat_map(|pauses| pauses.units.iter())
+        .map(|(unit, saved)| TerrainPauseAudit {
+            unit: *unit,
+            owner: saved.owner,
+            work: saved.work.clone(),
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -168,6 +187,7 @@ mod tests {
             .id();
         world.flush();
         let progress = WorkState {
+            owner: SlotId(1),
             order: work(),
             cell: Some(TerrainCell { x: 2, y: 3 }),
             done: 17,

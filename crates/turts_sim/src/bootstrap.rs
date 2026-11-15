@@ -721,6 +721,7 @@ pub fn install_package(world: &mut World, staged: StagedPackage) {
     world.remove_resource::<crate::terrain::phase::TerrainPhases>();
     world.remove_resource::<crate::terrain::history::TerrainHistories>();
     world.remove_resource::<crate::terrain::work::TerrainWorkRuntime>();
+    world.remove_resource::<crate::terrain::pause::TerrainWorkPauses>();
     world.remove_resource::<crate::terrain::cargo::CargoRuntime>();
     if let Some(terrain) = staged.terrain {
         world.insert_resource(terrain);

@@ -1236,6 +1236,25 @@ fn apply_unit_order(
                 }
                 _ => unreachable!(),
             }
+            // Explicit append-unload interrupts this exact work order. It does not
+            // reconstruct the designation or reset partial work and fractional carry.
+            if command.queue == QueueMode::Append
+                && order.behaviour == Behaviour::UnloadCargo
+                && let Some(work) = world
+                    .get::<UnitOrders>(entity)
+                    .and_then(|orders| orders.current.as_ref())
+                    .filter(|current| current.behaviour == Behaviour::TerrainWork)
+                    .cloned()
+            {
+                crate::terrain::pause::suspend(world, unit_id, &work)?;
+                clear_motion(world, slot, entity, unit_id);
+                clear_gather(world, unit_id);
+                edit_unit_orders(world, entity, |orders| {
+                    orders.queue.push_front(work);
+                    orders.current = Some(order.clone());
+                });
+                return Ok(None);
+            }
             let active = world
                 .get::<UnitOrders>(entity)
                 .is_some_and(|orders| orders.current.is_some())
@@ -1263,10 +1282,13 @@ fn apply_unit_order(
                     world,
                     entity,
                     UnitOrders {
-                        current: Some(order),
+                        current: Some(order.clone()),
                         ..Default::default()
                     },
                 );
+                if order.behaviour == Behaviour::TerrainWork {
+                    crate::terrain::work::begin_order(world, unit_id, &order);
+                }
             }
             Ok(None)
         }
@@ -1280,8 +1302,17 @@ pub(crate) fn clear_replaced_movement(
     entity: bevy_ecs::entity::Entity,
     unit_id: u32,
 ) {
-    crate::terrain::navigation::order_changed(world, unit_id);
     crate::terrain::work::order_changed(world, unit_id);
+    clear_motion(world, slot, entity, unit_id);
+}
+
+pub(super) fn clear_motion(
+    world: &mut World,
+    slot: SlotId,
+    entity: bevy_ecs::entity::Entity,
+    unit_id: u32,
+) {
+    crate::terrain::navigation::order_changed(world, unit_id);
     crate::terrain::cargo::order_changed(world, unit_id);
     edit_unit_orders(world, entity, |orders| orders.acquired = None);
     world

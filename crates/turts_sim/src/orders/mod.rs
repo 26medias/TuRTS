@@ -239,7 +239,11 @@ pub(crate) fn finish_terrain_order(world: &mut bevy_ecs::world::World, unit: u32
     };
     crate::economy::transaction::capture_unit_order_operation(world, unit, |world| {
         writer::edit_unit_orders(world, entity, |orders| orders.current = None);
-        apply::clear_replaced_movement(world, slot, entity, unit);
+        if crate::terrain::pause::has_pending_resume(world, unit) {
+            apply::clear_motion(world, slot, entity, unit);
+        } else {
+            apply::clear_replaced_movement(world, slot, entity, unit);
+        }
         behaviours::queue::start_next_queued_order(world, slot, entity, unit);
     });
 }

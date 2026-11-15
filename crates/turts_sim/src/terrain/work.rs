@@ -33,6 +33,7 @@ pub enum TerrainWorkWait {
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub(crate) struct WorkState {
+    pub(crate) owner: crate::SlotId,
     pub(crate) order: Order,
     pub(crate) cell: Option<TerrainCell>,
     pub(crate) done: u64,
@@ -135,10 +136,38 @@ pub(crate) fn validate_designation(
     Ok(())
 }
 pub(crate) fn order_changed(world: &mut World, unit: u32) {
+    super::pause::cancel(world, unit);
     if let Some(mut runtime) = world.get_resource_mut::<TerrainWorkRuntime>() {
         runtime.units.remove(&unit);
         runtime.claims.retain(|_, owner| *owner != unit);
     }
+}
+/// Capture authority when an order starts, before a later ownership change.
+pub(crate) fn begin_order(world: &mut World, unit: u32, order: &Order) {
+    if super::pause::consume_resume(world, unit) {
+        return;
+    }
+    let Some(owner) = unit_entity(world, unit)
+        .and_then(|entity| world.get::<Owner>(entity))
+        .map(|owner| owner.0)
+    else {
+        return;
+    };
+    store(
+        world,
+        unit,
+        WorkState {
+            owner,
+            order: order.clone(),
+            cell: None,
+            done: 0,
+            carry: 0,
+            banked: false,
+            required: None,
+            wait: TerrainWorkWait::Unknown,
+            source_revision: None,
+        },
+    );
 }
 fn store(world: &mut World, unit: u32, state: WorkState) {
     world.init_resource::<TerrainWorkRuntime>();
@@ -278,6 +307,38 @@ pub(crate) fn run(world: &mut World) {
         return;
     }
     world.init_resource::<TerrainWorkRuntime>();
+    // A suspended order retains its one progress row and claim, but earns no work.
+    let invalid = world
+        .resource::<TerrainWorkRuntime>()
+        .units
+        .iter()
+        .filter_map(|(unit, state)| {
+            let owner = unit_entity(world, *unit)
+                .and_then(|entity| world.get::<Owner>(entity))
+                .map(|owner| owner.0);
+            let dead = world
+                .get_resource::<crate::economy::combat::Healths>()
+                .and_then(|health| health.0.get(unit))
+                .is_some_and(|health| *health == 0);
+            (owner != Some(state.owner)
+                || dead
+                || (super::pause::has_record(world, *unit)
+                    && !super::pause::is_suspended(world, *unit)
+                    && !super::pause::has_pending_resume(world, *unit)))
+            .then_some(*unit)
+        })
+        .collect::<Vec<_>>();
+    for unit in invalid {
+        order_changed(world, unit);
+        if let Some(entity) = unit_entity(world, unit) {
+            crate::economy::transaction::capture_unit_order_operation(world, unit, |world| {
+                crate::orders::writer::edit_unit_orders(world, entity, |orders| {
+                    orders.current = None;
+                    orders.queue.clear();
+                });
+            });
+        }
+    }
     let orders = world
         .iter_entities()
         .filter_map(|entity| {
@@ -286,14 +347,25 @@ pub(crate) fn run(world: &mut World) {
             (order.behaviour == Behaviour::TerrainWork).then(|| (unit, order.clone()))
         })
         .collect::<Vec<_>>();
-    let active = orders
+    let mut retained = orders
         .iter()
         .map(|(unit, _)| *unit)
         .collect::<BTreeSet<_>>();
+    retained.extend(
+        world
+            .resource::<TerrainWorkRuntime>()
+            .units
+            .keys()
+            .filter(|unit| {
+                super::pause::is_suspended(world, **unit)
+                    || super::pause::has_pending_resume(world, **unit)
+            })
+            .copied(),
+    );
     {
         let mut runtime = world.resource_mut::<TerrainWorkRuntime>();
-        runtime.units.retain(|unit, _| active.contains(unit));
-        runtime.claims.retain(|_, unit| active.contains(unit));
+        runtime.units.retain(|unit, _| retained.contains(unit));
+        runtime.claims.retain(|_, unit| retained.contains(unit));
     }
     let mut candidates = Vec::new();
     for (unit, order) in orders {
@@ -309,6 +381,10 @@ pub(crate) fn run(world: &mut World) {
             .filter(|state| state.order == order)
             .cloned()
             .unwrap_or(WorkState {
+                owner: world
+                    .get::<Owner>(unit_entity(world, unit).unwrap())
+                    .unwrap()
+                    .0,
                 order: order.clone(),
                 cell: None,
                 done: 0,

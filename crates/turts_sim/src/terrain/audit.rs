@@ -22,6 +22,7 @@ pub struct TerrainColumnAudit {
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct TerrainWorkAudit {
+    pub owner: crate::SlotId,
     pub unit: u32,
     pub order: crate::Order,
     pub cell: Option<TerrainCell>,
@@ -49,6 +50,7 @@ pub struct TerrainAudit {
     pub columns_state: Vec<TerrainColumnAudit>,
     pub work: Vec<TerrainWorkAudit>,
     pub claims: Vec<TerrainClaimAudit>,
+    pub paused: Vec<super::pause::TerrainPauseAudit>,
 }
 /// Explicit privileged inspection. Seed provenance belongs to the private host replay header.
 pub fn privileged_audit(world: &World) -> Option<TerrainAudit> {
@@ -99,6 +101,7 @@ pub fn privileged_audit(world: &World) -> Option<TerrainAudit> {
         .into_iter()
         .flat_map(|runtime| runtime.units.iter())
         .map(|(&unit, state)| TerrainWorkAudit {
+            owner: state.owner,
             unit,
             order: state.order.clone(),
             cell: state.cell,
@@ -129,5 +132,6 @@ pub fn privileged_audit(world: &World) -> Option<TerrainAudit> {
         columns_state,
         work,
         claims,
+        paused: super::pause::audit(world),
     })
 }
