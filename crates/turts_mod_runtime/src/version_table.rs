@@ -213,6 +213,7 @@ const fn variant_0_2_14(name: &'static str) -> VersionTableRow {
 /// detection kind that its design row names, and nowhere else. The order is the order of the
 /// first refusal when one package has several problems.
 pub(crate) const VERSION_TABLE: &[VersionTableRow] = &[
+    raw("exports.bots", "0.2.15", RawGroup::Manifest, &["exports", "bots"]),
     variant_0_2_14("PrimaryField::RepairState"),
     variant_0_2_14("PrimaryField::RepairTargetName"),
     variant_0_2_14("PrimaryField::RepairResourceName"),

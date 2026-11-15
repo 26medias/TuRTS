@@ -186,6 +186,11 @@ impl PackageArchive {
         self.parse_exports("exports.match", &self.manifest.exports.match_files)
     }
 
+    /// Portable bot profiles. Factory availability is checked only by host activation.
+    pub fn bots(&self) -> Result<Vec<(String, turts_mod_api::BotDef)>, ModError> {
+        self.parse_exports("exports.bots", &self.manifest.exports.bots)
+    }
+
     /// Parse and resolve all gameplay content. Presentation files are never read here.
     pub fn content(&self) -> Result<ContentCatalog, ModError> {
         // The version table speaks first: the RAW rows need only the raw documents. A package
@@ -305,6 +310,7 @@ impl PackageArchive {
         }
         catalog.combat = combat.into_iter().next().map(|(_, table)| table);
         crate::content_m3::validate_m3(&self.manifest, &catalog)?;
+        catalog.bots = crate::bots::validate_bots(&origin, self.bots()?, &catalog)?;
         Ok(catalog)
     }
 

@@ -23,3 +23,5 @@ mod variants;
 mod version_table;
 
 mod effects;
+
+pub mod bots;

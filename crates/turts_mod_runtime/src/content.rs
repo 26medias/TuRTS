@@ -139,6 +139,7 @@ fn validate_content_m2(
 ) -> Result<ContentCatalog, ModError> {
     let mut all_ids = BTreeSet::new();
     let mut catalog = ContentCatalog {
+        bots: BTreeMap::new(),
         combat: None,
         resources: BTreeMap::new(),
         units: BTreeMap::new(),
