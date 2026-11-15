@@ -2729,3 +2729,22 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+mod repair_toggle_tests {
+    use super::*;
+
+    #[test]
+    fn a_repairer_without_other_work_capabilities_can_be_manually_toggled() {
+        let catalog = crate::widgets::tests::repair_catalog::catalog();
+        let mut unit = catalog.units[&ContentId::parse("skirmish:engineer").unwrap()].clone();
+        unit.constructor = None;
+        let mut order = catalog.orders.values().next().unwrap().clone();
+        for enabled in [false, true] {
+            order.behaviour = Behaviour::SetEnabled(enabled);
+            assert!(capability_matches(&order, &unit));
+        }
+        unit.repairer = None;
+        assert!(!capability_matches(&order, &unit));
+    }
+}
