@@ -488,6 +488,9 @@ impl Transaction<'_> {
             .world
             .contains_resource::<super::power::OperatingResources>()
             && self.writes.operating_activations.is_empty()
+            && !self
+                .world
+                .contains_resource::<super::operating::OperatingHolds>()
         {
             return BTreeSet::new();
         }
@@ -918,6 +921,7 @@ impl Transaction<'_> {
             world.insert_resource(EconomyLedger::default());
         }
         for unit in deactivate {
+            super::operating::clear_hold(world, unit);
             super::power::remove_active(world, unit);
             super::income::on_remove(world, unit);
         }
@@ -1007,6 +1011,7 @@ impl Transaction<'_> {
                 .push(spawn.state);
         }
         for activation in writes.operating_activations {
+            super::operating::clear_hold(world, activation.unit);
             super::power::commit_activate(world, activation.unit, activation.supply);
             super::income::on_activate(world, activation.unit, activation.income);
         }
