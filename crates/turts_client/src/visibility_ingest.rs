@@ -53,7 +53,9 @@ fn expected_map(
         .iter()
         .find(|archive| archive.manifest.id == root)?;
     let maps = archive.maps().ok()?;
-    let (_, map) = maps.first()?;
+    let [(_, map)] = maps.as_slice() else {
+        return None;
+    };
     Some(turts_mod_api::ContentId::new(&archive.id(), &map.id))
 }
 

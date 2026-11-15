@@ -298,3 +298,73 @@ fn observed_killing_hit_remains_available_for_alerts_in_atomic_views() {
         assert!(!replica.units.contains_key(&1));
     }
 }
+
+#[path = "support/visibility_stockpile.rs"]
+mod visibility_stockpile;
+
+#[test]
+fn renamed_inventory_construction_package_uses_the_same_public_sight_provider() {
+    let archive = visibility_stockpile::renamed_package();
+    let catalog = archive.content().unwrap();
+    assert!(
+        catalog
+            .units
+            .values()
+            .any(|unit| unit.constructor.is_some())
+    );
+    assert!(
+        catalog
+            .units
+            .values()
+            .any(|unit| unit.producer.is_some() && unit.inventory.is_some())
+    );
+    assert_eq!(
+        archive.maps().unwrap()[0]
+            .1
+            .visibility
+            .as_ref()
+            .unwrap()
+            .sharing,
+        VisionSharing::Team
+    );
+    let mut app = turts_sim::headless_app(20);
+    turts_pack::load_package(app.world_mut(), &archive).unwrap();
+    turts_sim::visibility::initialize_context(app.world_mut(), 17, &[3, 3]).unwrap();
+    turts_sim::initialize_completed_world(app.world_mut());
+    let world = turts_sim::completed_world(app.world());
+    assert!(
+        world
+            .units
+            .iter()
+            .all(|unit| unit.content_id.starts_with("visibility_stockpile:"))
+    );
+    assert!(
+        world
+            .inventories
+            .iter()
+            .any(|inventory| inventory.owner_slot == 0 && !inventory.items.is_empty())
+    );
+    assert!(
+        world
+            .inventories
+            .iter()
+            .any(|inventory| inventory.owner_slot == 1 && !inventory.items.is_empty())
+    );
+    assert!(world.queues.iter().any(|queue| queue.owner_slot == 0));
+    assert!(world.queues.iter().any(|queue| queue.owner_slot == 1));
+    let foreign_builder = world
+        .units
+        .iter()
+        .find(|unit| unit.owner_slot == 1 && unit.content_id == "visibility_stockpile:builder")
+        .unwrap();
+    let basis = turts_sim::visibility::basis(app.world(), ObservationPhase::Completed).unwrap();
+    let knowledge = basis.knowledge(0).unwrap();
+    assert_eq!(
+        knowledge.basis.map,
+        ContentId::parse("visibility_stockpile:field").unwrap()
+    );
+    assert_eq!(knowledge.basis.match_id, 17);
+    assert_eq!(knowledge.basis.tick, 0);
+    assert!(basis.unit_permitted(0, foreign_builder.unit_id));
+    assert!(turts_client::visibility::valid_snapshot(&knowledge));
+}
