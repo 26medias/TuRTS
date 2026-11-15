@@ -2,7 +2,7 @@
 
 use turts_rules::Ratio;
 use turts_rules::supply::{
-    WhenShort, combined_rate, is_short, rate_factor, start_allowed, weapon_enabled,
+    WhenShort, combined_rate, is_short, minimum_rate, rate_factor, start_allowed, weapon_enabled,
 };
 
 fn half() -> Ratio {
@@ -49,9 +49,7 @@ fn block_start_stops_new_jobs_only_while_short() {
 }
 
 #[test]
-fn several_short_resources_have_no_silent_answer() {
-    // The design does not define how two short resources combine (MP1 has one). One active
-    // `Rate` gives its ratio; none gives 1/1; two or more give no value.
+fn several_short_resources_use_the_smallest_active_rate() {
     let third = Ratio::new(1, 3).expect("denominator above 0");
     let rate_half = WhenShort::Rate(half());
     let rate_third = WhenShort::Rate(third);
@@ -68,8 +66,23 @@ fn several_short_resources_have_no_silent_answer() {
     );
     assert_eq!(
         combined_rate(&[(rate_half, true), (rate_third, true)]),
-        None
+        Some(third)
     );
-    // Two short resources with the same ratio are still refused: the rule is not defined.
-    assert_eq!(combined_rate(&[(rate_half, true), (rate_half, true)]), None);
+    assert_eq!(
+        combined_rate(&[(rate_half, true), (rate_half, true)]),
+        Some(half())
+    );
+    assert_eq!(
+        combined_rate(&[(rate_third, true), (rate_half, true)]),
+        Some(third)
+    );
+}
+
+#[test]
+fn fraction_comparison_preserves_differences_beyond_float_precision() {
+    let smaller = Ratio::new(u64::MAX - 2, u64::MAX - 1).unwrap();
+    let larger = Ratio::new(u64::MAX - 1, u64::MAX).unwrap();
+    assert_eq!(minimum_rate(smaller, larger), smaller);
+    assert_eq!(minimum_rate(larger, smaller), smaller);
+    assert_eq!(minimum_rate(Ratio::ZERO, smaller), Ratio::ZERO);
 }

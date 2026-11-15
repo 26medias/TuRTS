@@ -29,18 +29,28 @@ pub fn rate_factor(when_short: Option<WhenShort>, short: bool) -> Ratio {
 
 /// The rate of a capability that has several `when_short` entries.
 ///
-/// The design does not say how two short supply resources combine (MP1 has one supply
-/// resource). One active `Rate` gives its ratio; none gives 1/1; two or more active `Rate`
-/// entries give `None`, so a mod with two cannot get a silent answer.
+/// The smallest active rate wins. No active constraint gives the full rate.
+/// The `Option` return shape is retained for existing callers; the defined composition
+/// always produces `Some`.
 pub fn combined_rate(entries: &[(WhenShort, bool)]) -> Option<Ratio> {
-    let mut active = entries.iter().filter_map(|(effect, short)| match effect {
-        WhenShort::Rate(ratio) if *short => Some(*ratio),
-        _ => None,
-    });
-    match (active.next(), active.next()) {
-        (None, _) => Some(Ratio::ONE),
-        (Some(ratio), None) => Some(ratio),
-        (Some(_), Some(_)) => None,
+    Some(
+        entries
+            .iter()
+            .fold(Ratio::ONE, |rate, (effect, short)| match effect {
+                WhenShort::Rate(other) if *short => minimum_rate(rate, *other),
+                _ => rate,
+            }),
+    )
+}
+
+/// Select the smaller fraction without rounding or overflowing a `u64` product.
+pub fn minimum_rate(left: Ratio, right: Ratio) -> Ratio {
+    if u128::from(left.numerator()) * u128::from(right.denominator())
+        <= u128::from(right.numerator()) * u128::from(left.denominator())
+    {
+        left
+    } else {
+        right
     }
 }
 
