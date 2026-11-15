@@ -682,3 +682,35 @@ fn autonomous_extraction_waits_for_permitted_node_knowledge() {
     );
     assert!(app.world().resource::<crate::SurfaceNodes>().0[0].remaining < 100);
 }
+
+#[test]
+fn queued_attack_rechecks_visibility_when_the_prior_point_move_finishes() {
+    let mut app = scene_with(true, |_, map| map.placements[1].pos = p(10.0, 10.0));
+    move_to(&mut app, 0, 1, 22.0, 1);
+    attack(&mut app, crate::QueueMode::Append, 2);
+    let entity = crate::unit_entity(app.world(), 1).unwrap();
+    assert_eq!(
+        app.world()
+            .get::<crate::UnitOrders>(entity)
+            .unwrap()
+            .queue
+            .len(),
+        1
+    );
+    run(&mut app, 200);
+    let orders = app.world().get::<crate::UnitOrders>(entity).unwrap();
+    assert!(orders.current.is_none() && orders.queue.is_empty());
+    assert_eq!(
+        orders.last_failure.as_ref().map(|failure| failure.reason),
+        Some(crate::RejectReason::TargetInvalid)
+    );
+    assert!(
+        app.world()
+            .get::<crate::Position>(entity)
+            .unwrap()
+            .0
+            .distance(Vec2::new(22.0, 8.0))
+            < 0.01
+    );
+    assert!(crate::unit_entity(app.world(), 2).is_some());
+}
