@@ -9,6 +9,7 @@ pub mod proposals;
 pub mod query;
 pub mod registry;
 pub mod seed;
+pub mod selection;
 pub mod types;
 
 pub use budget::{BudgetDimension, BudgetExceeded, BudgetUsage, DecisionBudget};
@@ -22,3 +23,5 @@ pub use proposals::*;
 pub use registry::*;
 
 pub use coordinator::*;
+
+pub use selection::*;
