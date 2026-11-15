@@ -224,6 +224,8 @@ mod tests {
         catalog.units.insert(
             unit_id.clone(),
             ResolvedUnit {
+                repairer: None,
+
                 consumes: Vec::new(),
                 income: None,
                 provides: Vec::new(),

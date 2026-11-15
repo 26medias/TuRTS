@@ -64,7 +64,7 @@ pub struct RecordStore {
     /// The sites: units with `UnitSnapshot.site` that have not completed. Public.
     sites: BTreeSet<u32>,
     /// The progress of each own site, by site unit.
-    site_progress: BTreeMap<u32, RateRecord>,
+    site_progress: BTreeMap<u32, SiteProgress>,
     /// The held `Construct` orders of each own constructor, by constructor. Never empty.
     construction_queues: BTreeMap<u32, Vec<HeldOrder>>,
     /// The supply of each own (slot, resource).
@@ -106,7 +106,7 @@ pub(crate) struct StoreStep {
     removed: Vec<u32>,
     sites_added: Vec<u32>,
     sites_completed: Vec<u32>,
-    site_progress: Vec<(u32, RateRecord)>,
+    site_progress: Vec<(u32, SiteProgress)>,
     /// Each producer whose `QueueState` the delta replaces, with the jobs that it holds now.
     queue_jobs: Vec<(u32, Vec<u64>)>,
     job_progress: Vec<((u32, u64), RateRecord)>,
@@ -134,7 +134,13 @@ impl RecordStore {
 
     /// The progress record of an own site.
     pub fn site_progress(&self, unit: u32) -> Option<&RateRecord> {
-        self.site_progress.get(&unit)
+        self.site_progress.get(&unit).map(|record| &record.progress)
+    }
+
+    pub fn site_production(&self, unit: u32) -> Option<&str> {
+        self.site_progress
+            .get(&unit)
+            .map(|record| record.production.as_str())
     }
 
     /// The held construction orders of an own constructor. Empty when it holds none.
@@ -369,7 +375,7 @@ fn site_progress_rows(
     removed: &HashSet<u32>,
     is_site: impl Fn(u32) -> bool,
     records: &[SiteProgress],
-) -> Option<Vec<(u32, RateRecord)>> {
+) -> Option<Vec<(u32, SiteProgress)>> {
     if !unique(records, |record| record.unit.0) {
         return None;
     }
@@ -379,7 +385,12 @@ fn site_progress_rows(
         if !own_unit(context, units, removed, unit) || !is_site(unit) {
             return None;
         }
-        rows.push((unit, record.progress.clone()));
+        let production = ContentId::parse(&record.production).ok()?;
+        let recipe = context.content.catalog.production.get(&production)?;
+        if units.get(&unit)?.content_id != recipe.output_unit.to_string() {
+            return None;
+        }
+        rows.push((unit, record.clone()));
     }
     Some(rows)
 }

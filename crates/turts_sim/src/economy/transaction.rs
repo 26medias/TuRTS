@@ -1999,6 +1999,8 @@ mod raw_audit_capture_tests {
             7,
             vec![
                 ProductionJob {
+                    funding: None,
+
                     id: JobId(11),
                     recipe: ContentId::parse("probe:unit").unwrap(),
                     stage: JobStage::Running,
@@ -2014,6 +2016,8 @@ mod raw_audit_capture_tests {
                     }),
                 },
                 ProductionJob {
+                    funding: None,
+
                     id: JobId(12),
                     recipe: ContentId::parse("probe:other").unwrap(),
                     stage: JobStage::OutputBlocked,
@@ -2034,6 +2038,8 @@ mod raw_audit_capture_tests {
         queues.0.insert(
             900,
             vec![ProductionJob {
+                funding: None,
+
                 id: JobId(13),
                 recipe: ContentId::parse("probe:orphan").unwrap(),
                 stage: JobStage::Queued,
@@ -2091,6 +2097,8 @@ mod raw_audit_capture_tests {
         queues.0.insert(
             7,
             vec![ProductionJob {
+                funding: None,
+
                 id: JobId(1),
                 recipe: ContentId::parse("probe:unit").unwrap(),
                 stage: JobStage::Queued,
@@ -2858,6 +2866,8 @@ mod operating_transaction_tests {
 
     fn fixture() -> (bevy_app::App, ResolvedUnit) {
         let definition = ResolvedUnit {
+            repairer: None,
+
             id: id("test:generator"),
             name: "Generator".into(),
             footprint: Footprint::Circle { radius: 0.5 },

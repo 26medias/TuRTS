@@ -129,8 +129,8 @@ mod tests {
             row(5, 6, 0, RepairStatus::Approaching),
             row(7, 8, 0, RepairStatus::Approaching),
         ];
-        let units = [unit(1, 0), unit(3, 1), unit(5, 0), unit(9, 0)];
-        let (actions, cleared) = changes(&rows, &[3, 7, 9, 20], &[6, 7], &units, SlotId(0));
+        let units = [unit(1, 0), unit(3, 1), unit(5, 0), unit(9, 0), unit(11, 1)];
+        let (actions, cleared) = changes(&rows, &[11, 7, 9, 20], &[6, 7], &units, SlotId(0));
         assert_eq!(
             actions,
             vec![RepairRecord {
@@ -140,7 +140,7 @@ mod tests {
             }]
         );
         assert_eq!(cleared, vec![UnitId(9)]);
-        let (actions, cleared) = changes(&rows, &[3, 7, 9, 20], &[6, 7], &units, SlotId(1));
+        let (actions, cleared) = changes(&rows, &[11, 7, 9, 20], &[6, 7], &units, SlotId(1));
         assert_eq!(
             actions,
             vec![RepairRecord {
@@ -149,6 +149,6 @@ mod tests {
                 state: RepairState::Working,
             }]
         );
-        assert_eq!(cleared, vec![UnitId(3)]);
+        assert_eq!(cleared, vec![UnitId(11)]);
     }
 }

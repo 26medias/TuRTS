@@ -2801,3 +2801,119 @@ fn browser_pixel_wheel_keeps_intermediate_zoom_levels() {
         "Five notches must retain useful intermediate views"
     );
 }
+
+#[path = "../../tests/support/repair_catalog.rs"]
+mod repair_catalog;
+
+#[test]
+fn repair_adapter_uses_health_completion_relation_and_authored_class_filters() {
+    use crate::replica::{Replica, ReplicaContext, SnapshotOutcome};
+    use turts_net_protocol::{HealthRecord, SlotId, Snapshot, UnitSnapshot};
+    for (health, site, foreign, allowed_class, expected) in [
+        (199, false, false, true, true),
+        (200, false, false, true, false),
+        (0, false, false, true, false),
+        (199, true, false, true, false),
+        (199, false, true, true, false),
+        (199, false, false, false, false),
+    ] {
+        let mut content = crate::content::ClientContent {
+            catalog: repair_catalog::catalog(),
+            ..Default::default()
+        };
+        let engineer = ContentId::parse("skirmish:engineer").unwrap();
+        let target = ContentId::parse("skirmish:barracks").unwrap();
+        content
+            .catalog
+            .units
+            .get_mut(&target)
+            .unwrap()
+            .health
+            .as_mut()
+            .unwrap()
+            .max = 200;
+        if !allowed_class {
+            content
+                .catalog
+                .units
+                .get_mut(&engineer)
+                .unwrap()
+                .repairer
+                .as_mut()
+                .unwrap()
+                .classes = vec!["skirmish:unmatched".into()];
+        }
+        let mut replica = Replica::new(20);
+        replica.set_context(ReplicaContext::new(content.clone(), 0));
+        let snapshot = Snapshot {
+            tick: 1,
+            units: vec![
+                UnitSnapshot {
+                    unit_id: UnitId(1),
+                    content_id: engineer.to_string(),
+                    owner_slot: SlotId(0),
+                    pos: Pos { x: 4.0, y: 4.0 },
+                    site: false,
+                    facing: None,
+                },
+                UnitSnapshot {
+                    unit_id: UnitId(2),
+                    content_id: target.to_string(),
+                    owner_slot: SlotId(u8::from(foreign)),
+                    pos: Pos { x: 12.0, y: 4.0 },
+                    site,
+                    facing: None,
+                },
+            ],
+            healths: vec![
+                HealthRecord {
+                    unit: UnitId(1),
+                    current: 60,
+                },
+                HealthRecord {
+                    unit: UnitId(2),
+                    current: health,
+                },
+            ],
+            ..Default::default()
+        };
+        assert_eq!(
+            replica.apply_snapshot(&snapshot, bevy::platform::time::Instant::now()),
+            SnapshotOutcome::Applied { replayed: 0 }
+        );
+        let state = ReplicaState {
+            replica: Some(replica),
+            welcome: Some(WelcomeInfo {
+                slot: 0,
+                tick: 1,
+                tick_hz: 20,
+                match_id: 1,
+            }),
+            content: Some(content),
+            config: Default::default(),
+            match_start: None,
+            reorder_grace_override: None,
+        };
+        let world = frame_world(
+            &state,
+            None,
+            &Presented::default(),
+            content_index(&state, None),
+            &CorePreferences::default(),
+            CameraOptions::default(),
+            facts::OwnerFacts::default(),
+        )
+        .unwrap();
+        assert!(world.units[0].capabilities.contains(&Capability::Repairer));
+        assert!(
+            world.units[0]
+                .capabilities
+                .contains(&Capability::Constructor)
+        );
+        assert_eq!(
+            world.can_repair(&world.units[0], &world.units[1]),
+            expected,
+            "health {health}, site {site}, foreign {foreign}, allowed class {allowed_class}"
+        );
+    }
+}

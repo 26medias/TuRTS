@@ -616,6 +616,8 @@ mod operating_tests {
     }
     fn definition(name: &str) -> turts_mod_api::ResolvedUnit {
         turts_mod_api::ResolvedUnit {
+            repairer: None,
+
             id: cid(name),
             name: name.into(),
             footprint: Footprint::Circle { radius: 0.5 },

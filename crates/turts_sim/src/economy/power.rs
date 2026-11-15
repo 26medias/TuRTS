@@ -122,7 +122,7 @@ pub(crate) fn has_operating_resources(catalog: &ContentCatalog) -> bool {
             !unit.provides.is_empty() || !unit.consumes.is_empty() || unit.income.is_some()
         })
         || catalog
-            .productions
+            .production
             .values()
             .any(|production| production.payment == turts_mod_api::PaymentPolicy::ChargeOverTime)
 }
@@ -714,6 +714,8 @@ mod tests {
     }
     fn unit(name: &str) -> ResolvedUnit {
         ResolvedUnit {
+            repairer: None,
+
             acquire: None,
             armour: None,
             id: id(name),
@@ -877,6 +879,8 @@ mod tests {
         world.resource_mut::<ConstructionState>().sites.insert(
             3,
             super::super::construction::Site {
+                funding: None,
+
                 constructor_when_short: Vec::new(),
 
                 constructor: 1,

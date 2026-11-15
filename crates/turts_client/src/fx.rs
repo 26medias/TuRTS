@@ -925,6 +925,7 @@ mod timeline_tests {
             drop_off: None,
             producer: None,
             constructor: None,
+            repairer: None,
             placement: None,
             build_area: None,
             output_inventory: None,

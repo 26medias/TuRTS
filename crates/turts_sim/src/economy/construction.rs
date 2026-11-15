@@ -51,6 +51,17 @@ pub struct Site {
     pub constructor_when_short: Vec<turts_mod_api::WhenShort>,
 }
 
+impl Site {
+    /// Read-only original payment endpoints for independent accounting validation.
+    pub fn charged_rows(&self) -> Vec<super::views::ReservationLineView> {
+        self.charged
+            .iter()
+            .cloned()
+            .map(super::views::reservation_line_view)
+            .collect()
+    }
+}
+
 #[derive(Resource, Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct ConstructionState {
     pub sites: BTreeMap<u32, Site>,

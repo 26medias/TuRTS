@@ -382,8 +382,8 @@ fn hover_context(
 ) -> String {
     let own_selection = selection
         .iter()
-        .filter_map(|id| replica.units.get(id))
-        .filter(|unit| unit.owner_slot == slot)
+        .filter_map(|id| replica.units.get(id).map(|unit| (*id, unit)))
+        .filter(|(_, unit)| unit.owner_slot == slot)
         .collect::<Vec<_>>();
     if own_selection.is_empty() {
         return if matches!(hover, Hover::Unit { owner, .. } if owner == slot) {
@@ -394,7 +394,10 @@ fn hover_context(
     }
     for rule in &content.order_rules.smart {
         let target_kind = rule.target;
-        for selected in &own_selection {
+        for (selected_id, selected) in &own_selection {
+            if rule.needs == turts_mod_api::Capability::Repairer && replica.is_site(*selected_id) {
+                continue;
+            }
             let Some(definition) = ContentId::parse(&selected.content_id)
                 .ok()
                 .and_then(|id| content.catalog.units.get(&id))
@@ -443,8 +446,10 @@ fn hover_context(
                         && matches!(order.target, TargetKind::Point | TargetKind::PointOrUnit)
                 }
                 turts_mod_api::SmartTarget::Content => false,
-                // API 0.2.4 (row O6): a repair cursor is `UI2-HUD`; until then it is no match.
-                turts_mod_api::SmartTarget::OwnDamaged => false,
+                turts_mod_api::SmartTarget::OwnDamaged => {
+                    order.behaviour == turts_mod_api::Behaviour::Repair
+                        && order.target == TargetKind::Unit
+                }
             };
             if !compatible {
                 continue;
@@ -453,6 +458,7 @@ fn hover_context(
                 turts_mod_api::Behaviour::Move => "move".into(),
                 turts_mod_api::Behaviour::Attack => "attack".into(),
                 turts_mod_api::Behaviour::Gather => "gather".into(),
+                turts_mod_api::Behaviour::Repair => "repair".into(),
                 _ => "default".into(),
             };
         }
@@ -472,7 +478,13 @@ fn actor_target_kinds(
     use turts_mod_api::SmartTarget;
     match hover {
         Hover::Ground => vec![SmartTarget::Ground],
-        Hover::Unit { owner, .. } if owner == slot => vec![SmartTarget::OwnUnit],
+        Hover::Unit { id, owner } if owner == slot => {
+            if repair_target_valid(definition, id, owner, replica, content, slot) {
+                vec![SmartTarget::OwnDamaged, SmartTarget::OwnUnit]
+            } else {
+                vec![SmartTarget::OwnUnit]
+            }
+        }
         Hover::Unit { id, owner } => {
             let weapon_target = definition.weapon.as_ref().is_some_and(|weapon| {
                 let relation_matches =
@@ -525,9 +537,8 @@ fn has_capability(
         turts_mod_api::Capability::Gatherer => unit.gatherer.is_some(),
         turts_mod_api::Capability::Producer => unit.producer.is_some(),
         turts_mod_api::Capability::Research => unit.research.is_some(),
-        // API 0.2.4 (row O6): the resolved unit has no constructor or repairer yet
-        // (`L-CON1`, `L-REP` add them); no unit has the capability until then.
-        turts_mod_api::Capability::Constructor | turts_mod_api::Capability::Repairer => false,
+        turts_mod_api::Capability::Constructor => unit.constructor.is_some(),
+        turts_mod_api::Capability::Repairer => unit.repairer.is_some(),
     }
 }
 
@@ -632,13 +643,63 @@ fn order_capability(order: &OrderDef, unit: &turts_mod_api::ResolvedUnit) -> boo
                 || unit.constructor.is_some()
                 || unit.weapon.is_some()
         }
-        Behaviour::Stop | Behaviour::Hold => unit.movement.is_some() || unit.weapon.is_some(),
-        // API 0.2.4: no unit is capable of a new behaviour until its lane builds it.
-        Behaviour::Construct
-        | Behaviour::CancelConstruction
-        | Behaviour::Repair
-        | Behaviour::Surrender => false,
+        Behaviour::Stop => {
+            unit.movement.is_some()
+                || unit.weapon.is_some()
+                || unit.constructor.is_some()
+                || unit.repairer.is_some()
+        }
+        Behaviour::Hold => unit.movement.is_some() || unit.weapon.is_some(),
+        Behaviour::Construct => unit.constructor.is_some(),
+        Behaviour::CancelConstruction => unit.placement.is_some(),
+        Behaviour::Repair => unit.repairer.is_some(),
+        Behaviour::Surrender => false,
     }
+}
+
+/// Mirrors public repair eligibility for cursor feedback. The server still validates orders.
+fn repair_target_valid(
+    actor: &turts_mod_api::ResolvedUnit,
+    target_id: u32,
+    target_owner: u8,
+    replica: &Replica,
+    content: &crate::content::ClientContent,
+    slot: u8,
+) -> bool {
+    let Some(repairer) = actor.repairer.as_ref() else {
+        return false;
+    };
+    if replica.is_site(target_id)
+        || !crate::relation::holds_own_team(repairer.targets.slots, slot, target_owner)
+    {
+        return false;
+    }
+    let Some(target) = replica
+        .units
+        .get(&target_id)
+        .and_then(|unit| ContentId::parse(&unit.content_id).ok())
+        .and_then(|id| content.catalog.units.get(&id))
+    else {
+        return false;
+    };
+    let Some(max) = target.health.as_ref().map(|health| health.max) else {
+        return false;
+    };
+    let Some(current) = replica
+        .healths
+        .iter()
+        .find(|health| health.unit.0 == target_id)
+        .map(|health| health.current)
+    else {
+        return false;
+    };
+    current > 0
+        && current < max
+        && (repairer.classes.is_empty()
+            || target
+                .armour
+                .as_ref()
+                .is_some_and(|armour| repairer.classes.contains(&armour.class)))
 }
 
 fn order_unit_target_relation(
@@ -656,6 +717,21 @@ fn order_unit_target_relation(
         .is_none_or(|target| target.owner_slot != target_owner)
     {
         return false;
+    }
+    if order.behaviour == turts_mod_api::Behaviour::Repair {
+        return selection
+            .iter()
+            .filter(|id| !replica.is_site(**id))
+            .filter_map(|id| replica.units.get(id))
+            .filter(|unit| {
+                unit.owner_slot == slot
+                    && (order.units.is_empty() || order.units.contains(&unit.content_id))
+            })
+            .filter_map(|unit| ContentId::parse(&unit.content_id).ok())
+            .filter_map(|id| content.catalog.units.get(&id))
+            .any(|unit| {
+                repair_target_valid(unit, target_id, target_owner, replica, content, slot)
+            });
     }
     if order.behaviour != turts_mod_api::Behaviour::Attack {
         return true;
@@ -1174,6 +1250,7 @@ mod tests {
             acquire: None,
             armour: None,
             constructor: None,
+            repairer: None,
             placement: None,
             build_area: None,
             id,
@@ -1206,5 +1283,92 @@ mod tests {
             CursorIcon::Custom(CustomCursor::Image(image)) => (image.handle.id(), image.hotspot),
             other => panic!("expected applied custom cursor, found {other:?}"),
         }
+    }
+}
+
+#[cfg(test)]
+mod repair_cursor_tests {
+    use super::*;
+    use crate::{
+        content::ClientContent,
+        replica::{ReplicaContext, SnapshotOutcome},
+    };
+    use turts_net_protocol::{HealthRecord, Pos, SlotId, Snapshot, UnitId, UnitSnapshot};
+
+    #[test]
+    fn own_damaged_cursor_requires_real_repair_capability_and_damaged_complete_target() {
+        let content = ClientContent {
+            catalog: crate::widgets::tests::repair_catalog::catalog(),
+            ..Default::default()
+        };
+        let engineer = &content.catalog.units[&ContentId::parse("skirmish:engineer").unwrap()];
+        let maximum = content.catalog.units[&ContentId::parse("skirmish:barracks").unwrap()]
+            .health
+            .as_ref()
+            .unwrap()
+            .max;
+        let mut replica = Replica::new(20);
+        replica.set_context(ReplicaContext::new(content.clone(), 0));
+        let snapshot = Snapshot {
+            tick: 1,
+            units: vec![UnitSnapshot {
+                unit_id: UnitId(2),
+                content_id: "skirmish:barracks".into(),
+                owner_slot: SlotId(0),
+                pos: Pos { x: 12.0, y: 12.0 },
+                site: false,
+                facing: None,
+            }],
+            healths: vec![HealthRecord {
+                unit: UnitId(2),
+                current: maximum - 1,
+            }],
+            ..Default::default()
+        };
+        assert_eq!(
+            replica.apply_snapshot(&snapshot, bevy::platform::time::Instant::now()),
+            SnapshotOutcome::Applied { replayed: 0 }
+        );
+        assert!(has_capability(
+            turts_mod_api::Capability::Constructor,
+            engineer
+        ));
+        assert!(has_capability(
+            turts_mod_api::Capability::Repairer,
+            engineer
+        ));
+        let hover = Hover::Unit { id: 2, owner: 0 };
+        assert!(
+            actor_target_kinds(hover, engineer, &replica, &content, 0)
+                .contains(&turts_mod_api::SmartTarget::OwnDamaged)
+        );
+        let mut ordinary = engineer.clone();
+        ordinary.repairer = None;
+        assert!(
+            !actor_target_kinds(hover, &ordinary, &replica, &content, 0)
+                .contains(&turts_mod_api::SmartTarget::OwnDamaged)
+        );
+        let mut full = snapshot.clone();
+        full.tick = 2;
+        full.healths[0].current = maximum;
+        assert_eq!(
+            replica.apply_snapshot(&full, bevy::platform::time::Instant::now()),
+            SnapshotOutcome::Applied { replayed: 0 }
+        );
+        assert_eq!(
+            actor_target_kinds(hover, engineer, &replica, &content, 0),
+            vec![turts_mod_api::SmartTarget::OwnUnit]
+        );
+        let mut dead = full;
+        dead.tick = 3;
+        dead.healths[0].current = 0;
+        assert_eq!(
+            replica.apply_snapshot(&dead, bevy::platform::time::Instant::now()),
+            SnapshotOutcome::Applied { replayed: 0 }
+        );
+        assert_eq!(
+            actor_target_kinds(hover, engineer, &replica, &content, 0),
+            vec![turts_mod_api::SmartTarget::OwnUnit]
+        );
     }
 }

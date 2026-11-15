@@ -906,6 +906,8 @@ mod tests {
         let drone_id = ContentId::parse("forge:drone").unwrap();
         let shell = ContentId::parse("forge:shell").unwrap();
         let drone = ResolvedUnit {
+            repairer: None,
+
             consumes: Vec::new(),
             income: None,
             provides: Vec::new(),
@@ -1099,6 +1101,8 @@ mod tests {
         catalog.units.insert(
             producer_id.clone(),
             ResolvedUnit {
+                repairer: None,
+
                 consumes: Vec::new(),
                 income: None,
                 provides: Vec::new(),
@@ -1135,6 +1139,8 @@ mod tests {
         catalog.units.insert(
             output_id.clone(),
             ResolvedUnit {
+                repairer: None,
+
                 consumes: Vec::new(),
                 income: None,
                 provides: Vec::new(),

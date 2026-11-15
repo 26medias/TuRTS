@@ -31,6 +31,7 @@ pub struct TestWorld {
     pub map_size: Option<Vec2>,
     pub producible: Vec<(UnitId, String)>,
     pub jobs: Vec<(UnitId, JobId)>,
+    pub repairable: Vec<(UnitId, UnitId)>,
 }
 
 impl Default for TestWorld {
@@ -132,6 +133,7 @@ impl Default for TestWorld {
             map_size: Some(vec2(64.0, 64.0)),
             producible: Vec::new(),
             jobs: Vec::new(),
+            repairable: Vec::new(),
         }
     }
 }
@@ -183,6 +185,9 @@ impl WorldView for TestWorld {
     }
     fn has_job(&self, unit: &UnitView, job: JobId) -> bool {
         self.jobs.contains(&(unit.id, job))
+    }
+    fn can_repair(&self, unit: &UnitView, target: &UnitView) -> bool {
+        self.repairable.contains(&(unit.id, target.id))
     }
     fn can_weapon_target(&self, unit: &UnitView, target: &UnitView) -> bool {
         unit.capabilities.contains(&Capability::Weapon) && target.owner_slot != unit.owner_slot
