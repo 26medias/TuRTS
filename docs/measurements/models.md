@@ -511,3 +511,24 @@ This single sample is not a statistical speed guarantee. High p95 remains 50 ms.
 Preview measurements show no improvement. No retained-memory reduction is claimed.
 All three final cold-player probes and the actual launcher pass.
 Review and limits: `docs/reports/2026-11-14-presentation-payload-sharing.md`.
+
+## Damage release: three infantry types, 2026-11-14
+Runtime source: `1968b580`. API 0.2.12; protocol 7.
+The workload uses the shipped environment and ground. All actors remain visible and take damage.
+The 400-unit mix has 134 Warriors, 134 Swordsmen, and 132 Crossbowmen.
+The 2,000-unit mix has 668 Warriors, 666 Swordsmen, and 666 Crossbowmen.
+Timing samples run without competing native builds. Each scene samples state every 500 ms.
+| Scene | Quality | FPS | p50 ms | p95 ms | WASM high-water MiB |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 400 units | High | 59.50 | 16.70 | 16.80 | 210.94 |
+| 400 units | Low | 59.50 | 16.70 | 16.70 | 186.94 |
+| 2,000 units | High | 28.81 | 33.30 | 50.10 | 405.62 |
+| 2,000 units | Low | 40.27 | 16.70 | 33.40 | 361.50 |
+| 400 units, camera pan | High | 59.30 | 16.70 | 16.80 | 210.69 |
+| 400 units, camera pan | Low | 59.60 | 16.70 | 16.80 | 186.81 |
+
+High 400 clears the required 30 FPS floor. High 2,000 remains below 30 FPS.
+This three-type workload differs from the earlier two-type workload. These samples do not establish a matched regression.
+No quality or detail was reduced. GPU process RSS and other hardware were not measured.
+Evidence: `target/mc-evidence/damage-system/final/summary.md` and the three measurement folders beneath it.
+All final scripted player probes, the ordinary win, and the independent foundation review pass.

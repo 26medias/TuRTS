@@ -1,7 +1,7 @@
 # Damage, armour, and two combat units
 
-Status: implementation and native checks pass. Release acceptance is still open.
-This report describes the current damage branch. It does not certify the final release build.
+Status: delivered. Every DM acceptance row passes, including the final release browser checks.
+Runtime source: `1968b5809c8909905a188572ca2c9a6a7fceff29`.
 
 Evidence root: `/home/julien/Projects/TuRTS/target/mc-evidence/damage-system/`.
 All evidence paths below are relative to that directory.
@@ -42,8 +42,7 @@ Static portraits come from the supplied models. The source meshes were not regen
 
 ## Acceptance evidence
 
-“PASS” below applies to the executed native check or preview check named in the row.
-Preview browser results still need confirmation on the final release build.
+“PASS” applies to the executed check named in each row. Browser rows use the final optimized release.
 
 | Row | Result and evidence |
 | --- | --- |
@@ -56,10 +55,10 @@ Preview browser results still need confirmation on the final release build.
 | DM6 | PASS. Two matching bonus rows add. An unmatched row adds nothing. Overflow preserves health and ammunition. `sim-pipeline-checked.log`; `native-final/native-checked.log`. |
 | DM7 | PASS. Actionable refusal cases and sparse/default cases pass. Five complete style packages pass the actual pack CLI with exit 0. `native-final/runtime-final.log`; `styles-complete/result.json` and its five style logs. |
 | DM8 | PASS. Two runs produce identical health at every tick with a type table, curve, and actual completed armour upgrade. `modifier-determinism.log`; `native-final/native-checked.log`. |
-| DM9 | PASS on preview. Mouse-driven research changes an existing Warrior from armour 2 to 3. A later-trained Warrior shows 3. An unarmoured lab has no armour row. Enemy armour stays hidden. `research-browser/result.json` and screenshots in that folder. Final-release rerun pending. |
-| DM10 | PASS on preview. Mouse input trains a Warrior and builds a tower. Walking, melee damage, attack animation, and a tower shot are recorded. The unfinished tower has no active weapon. `preview-loop/result.json` and screenshots. Training took 6,501 ms; construction took 15,117 ms. Final-release rerun pending. |
+| DM9 | PASS. Real research changes existing Warrior armour 2 to 3. A later-trained Warrior has 3. Unarmoured and enemy rows are absent. `final/research/result.json` and screenshots. |
+| DM10 | PASS. Mouse input trains a Warrior, builds a tower, moves into melee, and draws an enemy into tower fire. Walking, attack animation, and damage pass. Training takes 6,494 ms; tower completion takes 15,186 ms. `final/combat-loop/result.json` and screenshots. |
 | DM11 | PASS. All 25 battle rows pass with the proposed starting statistics. No balance tuning was needed. `native-final/balance.json`; `native-final/pack-presentation-balance-final.log`. See the table below. |
-| DM12 | Preview normal-stat win PASS: `win-browser/result.json`, `win-browser/enemy-warrior-and-tower.png`, and `win-browser/terminal.png`. Victory appears at 154.332 seconds. Three Villagers fund eight Swordsmen through timber deliveries. The enemy has its normally funded Warrior and completed 400-health tower before the fight. The player castle retains 1,000 health. Final-release win and the three cold probes remain pending. |
+| DM12 | PASS. Final normal match reaches visible Victory at 154.652 seconds. Three Villagers fund eight Swordsmen through real timber deliveries. The enemy has a paid Warrior and completed 400-health tower before battle. The player castle keeps 1,000 health. `final/win/result.json`, `final/win/terminal.png`, `final/win/enemy-warrior-and-tower.png`. All three scripted probes pass: `final/cold-1280/probe-first-click.json`, `final/cold-1024/probe-first-click.json`, `final/cold-buttons/probe-buttons.json`. |
 | DM13 | PASS. `docs/modding/damage.md` documents the rule and five game styles. Tests read all 14 worked-hit rows and five kill-count rows directly from that page. `documented-cases.log`; `native-final/native-checked.log`. |
 
 Acquisition checks also pass for chase/return, zero leash, static towers, blocked-target replacement, and manual order priority.
@@ -112,22 +111,37 @@ Commands, exit codes, and limits are in `native-final/summary.json` and `native-
 The client and web suite passes **686 tests**, with **5 existing ignored tests**: `client-final.log`.
 Those ignored tests were not executed. These results do not replace browser acceptance.
 
-The browser evidence above uses the diagnostic preview distribution.
-Each driver uses its own fresh Chrome profile, null ALSA output, and a separate Xvfb display.
-The completed preview drivers record profile removal. The CEO's browser and system sound settings were not used.
+The optimized release is sealed at `target/mc-evidence/skirmish-damage-prepared`.
+Its package validates. Strict workspace Clippy passes for all targets: `clippy-final-5.log`.
+Format and boundary checks pass: `format-final.log`, `boundary-final.log`.
+The audit suite passes 68 tests: `audit-final.log`. Checker tests pass 61: `checks-final.log`.
+Repaired obsolete checker fixtures for armour modifiers, schema defaults, and engine-owned sound actions.
 
-The following delivery checks are still pending:
+One independent foundation review passes with no material defect: `review/review.md`.
+It runs rules, simulation, protocol, server, package, balance, and reduced-impact checks.
+Its independent export regression proves nonlexical armour completion order and both recipients' privacy.
+The regression is retained on `codex/damage-export-regression` at `970b0a2b`.
+No second review runs.
 
-- The sealed release build and final package validation.
-- Final strict Clippy after the reported lint fixes.
-- Detailed-model GPU measurements at 400 and 2,000 units, including Warrior content and the 400-unit camera pan.
-- Final-release DM9 and DM10 browser confirmation.
-- All three final cold-play probes and the normal-stat full win required by DM12.
-- One independent foundation review that runs code, followed by fixes for its findings.
-- The global launcher starting the accepted final build.
+All six GPU rows retain every actor, damage every actor, and pass shared-skin and environment checks.
+High 400 reaches 59.50 FPS; High 400 with camera pan reaches 59.30 FPS.
+High 2,000 reaches 28.81 FPS; Low reaches 40.27 FPS. This remains a performance limit.
+The new workload mixes Warriors, Swordsmen, and Crossbowmen. Earlier two-type results are not a matched comparison.
+No model detail, animation, effect count, or quality threshold was reduced.
+Full measurements: `final/summary.md` and `docs/measurements/models.md`.
 
-No release performance result, final cold-play result, full-win result, or independent-review approval is claimed in this draft.
-No CEO play request is made.
+The final browser batch runs once under one GPU lock. All scripted checks pass.
+The runner exits 0 with unchanged source: `../damage-final-checks-run/receipt.json`.
+The lock reports no survivors: `../damage-final-checks-run/lock-receipt.json`.
+Every test Chrome uses a fresh profile and null ALSA output. Completed profiles are removed.
+The CEO's Chrome and system sound are untouched.
+
+The full blind-player session, manual readiness review, reference-red probes, human multiplayer match,
+and other-hardware measurements were not repeated. The combined checker correctly says PARTIAL-PASS.
+Existing ignored native tests remain unexecuted. GPU process RSS was not measured.
+All three launchers select this release. Actual single-player launcher verification is recorded in `launcher/result.json`.
+Two-human and public-host launchers are updated but were not rerun for this milestone.
+The launcher uses the frozen runtime checkout at `1968b580`; later documentation and regression commits do not change that build.
 
 ## Spec corrections and parked scope
 

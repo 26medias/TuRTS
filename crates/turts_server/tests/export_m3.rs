@@ -494,3 +494,40 @@ fn delta_filters_belt_pieces_by_authoritative_owner() {
         vec![wire::UnitId(80)]
     );
 }
+
+// Independent foundation review: completion order must survive snapshot and delta export,
+// while another slot's armour technologies remain private.
+#[test]
+fn armour_completion_order_is_private_and_preserved_in_snapshot_and_delta() {
+    let mut view = mixed_owner_view();
+    let row = |slot, name: &str, ordinal| RawResearchAudit {
+        slot,
+        technology: turts_mod_api::ContentId::parse(name).unwrap(),
+        armour_ordinal: ordinal,
+    };
+    view.m3.research = vec![
+        row(0, "forge:a_type_row", Some(2)),
+        row(0, "forge:m_unrelated", None),
+        row(0, "forge:z_flat_first", Some(0)),
+        row(1, "forge:enemy_secret", Some(1)),
+    ];
+    let mut batch = test_batch(9);
+    batch.research = view.m3.research.clone();
+    for records in [
+        export::snapshot_for(&view, SlotId(0)).research,
+        export::delta_for(&batch, &view, SlotId(0)).research,
+    ] {
+        assert_eq!(records.len(), 1, "research must contain only the recipient slot");
+        assert_eq!(records[0].slot, wire::SlotId(0));
+        assert_eq!(
+            records[0].armour_order,
+            ["forge:z_flat_first", "forge:a_type_row"],
+            "armour completion order must survive export without leaking enemy upgrades"
+        );
+        assert_eq!(records[0].completed.len(), 3);
+        assert!(!records[0].completed.iter().any(|id| id.contains("enemy")));
+    }
+    let enemy = export::snapshot_for(&view, SlotId(1));
+    assert_eq!(enemy.research.len(), 1);
+    assert_eq!(enemy.research[0].armour_order, ["forge:enemy_secret"]);
+}

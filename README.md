@@ -9,7 +9,7 @@
 
 TuRTS is a mod-first real-time strategy engine built with Rust and Bevy. It has a browser WebAssembly client, a native client, and an authoritative headless server. Game content is delivered as packages through the public mod API.
 
-**Current playable demo: a medieval fantasy skirmish against the computer.** Build Barracks, harvest timber, train Villagers, Crossbowmen, and Swordsmen, set rally points, fight, and reach Victory or Defeat. New skirmish starts another match. The browser build includes models, textures, team colours, graphics quality, pointer-centred zoom, walking and work animations, shot animation, construction rise, falling bodies, combat effects, attack warnings, a minimap, wider grass, a map boundary, distance haze, antialiasing, dirt clearings, and soft timber paths.
+**Current playable demo: a medieval fantasy skirmish against the computer.** Build Barracks and Guard towers, harvest timber, train Villagers, Crossbowmen, Swordsmen, and Warriors, set rally points, fight, and reach Victory or Defeat. New skirmish starts another match. The browser build includes models, textures, team colours, graphics quality, pointer-centred zoom, walking and work animations, shot animation, construction rise, falling bodies, combat effects, attack warnings, a minimap, wider grass, a map boundary, distance haze, antialiasing, dirt clearings, and soft timber paths.
 
 The local tested launcher is:
 
@@ -17,7 +17,7 @@ The local tested launcher is:
 bash target/mc-evidence/play-skirmish.sh
 ```
 
-[Rendering measurements](docs/measurements/models.md) record about 59 FPS for 400 fighting units on the local RTX 3080. The 2,000-unit stress battle reaches about 33 FPS High and 39 FPS Low. Hit sparks now appear above the armour. Selecting a unit shows its portrait, name, and health.
+[Rendering measurements](docs/measurements/models.md) record about 59 FPS for 400 fighting units on the local RTX 3080. The new three-type 2,000-unit stress battle reaches about 29 FPS High and 40 FPS Low. Hit sparks now appear above the armour. Selecting a unit shows its portrait, name, health, and own armour. A tooltip shows its weapon damage.
 
 That launcher uses prepared local artifacts. To build from source, use `bash scripts/skirmish-play.sh --prepare /absolute/path/to/prepared`, then `bash scripts/skirmish-play.sh --prepared /absolute/path/to/prepared --silent`. Test browsers must use a fresh profile and `--alsa-output-device=null`.
 
@@ -32,7 +32,7 @@ From a source-built prepared folder, use `python3 -I -B scripts/skirmish_share.p
 Full local two-browser matches and public HTTPS/WSS orders pass scripted checks.
 Fast reload keeps the same army and slot. Human games wait in a ready lobby with colour choices and a cancellable three-second countdown.
 A full match played by two people and the full MP1 roster remain open.
-The computer now trains a paid mixed army of Crossbowmen and Swordsmen. It does not complete the general MP2 bot framework.
+The computer now trains a paid mixed army of Crossbowmen, Swordsmen, and Warriors, and builds a Guard tower. It does not complete the general MP2 bot framework.
 Terrain, fog, broader lifecycle features, and large-scale performance remain later work.
 
 ## Engine progress
@@ -46,13 +46,13 @@ The skirmish is its playable test bed. This table tracks delivered capabilities,
 | Playable skirmish | Building, harvesting, paid mixed armies, rally points, Victory, Defeat, and restart pass browser checks. | [Normal-stat win and loss report](docs/reports/2026-11-14-full-skirmish.md). Full game content remains open. |
 | Human multiplayer | Two browser clients, public HTTPS/WSS hosting, ready lobby, colour selection, and reload recovery pass scripted checks. | [Two-player report](docs/reports/2026-11-14-two-player-skirmish.md), [lobby report](docs/reports/2026-11-14-ready-lobby.md), [rejoin report](docs/reports/2026-11-14-fast-rejoin.md). A full match between two people remains unverified. |
 | Presentation | Models, animations, effects, minimap, ground blending, and selected-unit portraits and health are delivered. | [Ground report](docs/reports/2026-11-14-ground-blending.md), [selection report](docs/reports/2026-11-14-unit-selection-panel.md). Custom shader support remains open. |
-| Browser performance | The measured release reaches 58.70 FPS at 400 units and 33.15 FPS at 2,000 units on High. | [Measurements and independent review](docs/reports/2026-11-14-presentation-payload-sharing.md). One local RTX 3080 host; 2,000-unit p95 is 50 ms. Worst-case engine scale remains open. |
-| Damage system | Implementation is in progress on a separate branch. It is not included in this milestone. | Remaining acceptance, final release checks, and independent review must pass before integration. |
+| Browser performance | The release reaches 59.50 FPS at 400 units and 28.81 FPS at 2,000 units on High. | [Current measurements](docs/measurements/models.md). The new workload includes Warriors. Low reaches 40.27 FPS at 2,000 units. One local host; larger-scale performance remains open. |
+| Damage system | Type tables, bonuses, optional armour curves, owner armour upgrades, automatic acquisition, Warriors, and Guard towers pass acceptance. | [Acceptance, independent review, and normal win](docs/reports/2026-11-14-damage-system.md). API 0.2.12; protocol 7. The default game has no research lab yet. |
 | Remaining engine scope | Public mod bots, editable terrain, discovery and fog, scripts, utilities, rooms, saves, and spectator/replay delivery remain open. | These capabilities follow the full project specification. Existing package loading and networking will be reused. |
 
-Latest accepted build: `target/mc-evidence/skirmish-selection-panel-prepared`.
+Latest accepted build: `target/mc-evidence/skirmish-damage-prepared`.
 All three scripted player probes pass for this build.
-The full fresh-agent and manual readiness procedure was not repeated for the selection panel.
+The full fresh-agent and manual readiness procedure was not repeated for this milestone.
 See [working rules](AGENTS.md) for parallel delivery, review, and milestone integration.
 
 The older Forge industrial demonstration remains available below. It proves extraction, conveyors, inserters, recipes, research, and ammunition combat through the public mod API. Its two-slot and restart restrictions describe that demonstration.
