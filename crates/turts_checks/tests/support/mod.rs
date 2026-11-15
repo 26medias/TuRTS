@@ -323,6 +323,7 @@ pub fn derive_tokens(root: &Path) -> Result<TokenCatalog, ScanError> {
     // Keep only known generic spellings that occur in the parsed data. Full ids and paths are never exempt.
     for (word, reason, identifiers_only) in [
         ("field", "map id is an ordinary source identifier", false),
+        ("builder", "generic Rust builder-pattern identifier", true),
         ("Item", "resource kind is a common Rust type word", false),
         ("Balance", "resource kind is a common Rust type word", false),
         ("Move", "engine behaviour name", false),
