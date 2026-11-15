@@ -144,7 +144,48 @@ struct Source {
     owner: u8,
     position: WorldPos,
     radius: f32,
-    cells: Vec<u32>,
+    cells: Option<Vec<u32>>,
+}
+/// Private optimization storage. Exhaustion changes work, never sight or gameplay rules.
+pub const MAX_CACHED_SOURCE_CELL_BYTES: usize = 8 * 1024 * 1024;
+fn cached_source_cells(
+    grid: Grid,
+    position: WorldPos,
+    radius: f32,
+    remaining_bytes: usize,
+) -> Option<Vec<u32>> {
+    let limit = remaining_bytes / std::mem::size_of::<u32>();
+    if limit == 0 {
+        return None;
+    }
+    let mut cells = Some(Vec::<u32>::new());
+    grid.circle(point(position), radius, |cell| {
+        let Some(buffer) = &mut cells else {
+            return;
+        };
+        if buffer.len() == limit {
+            cells = None;
+            return;
+        }
+        if buffer.len() == buffer.capacity() {
+            let capacity = buffer.capacity().saturating_mul(2).max(4).min(limit);
+            if buffer.try_reserve_exact(capacity - buffer.len()).is_err()
+                || buffer.capacity() > limit
+            {
+                cells = None;
+                return;
+            }
+        }
+        buffer.push(cell);
+    });
+    cells
+}
+impl Source {
+    fn cached_bytes(&self) -> usize {
+        self.cells
+            .as_ref()
+            .map_or(0, |cells| cells.capacity() * std::mem::size_of::<u32>())
+    }
 }
 #[derive(Debug, Clone, Default)]
 struct SlotMemory {
@@ -179,6 +220,7 @@ pub struct VisibilityState {
     teams: Vec<u8>,
     coverage: Vec<Coverage>,
     sources: BTreeMap<u32, Source>,
+    source_cache_bytes: usize,
     memories: Vec<SlotMemory>,
     start: Arc<VisibilityBasis>,
     tactical: Arc<VisibilityBasis>,
@@ -260,6 +302,7 @@ pub fn prepare(
         teams: teams.to_vec(),
         coverage,
         sources: BTreeMap::new(),
+        source_cache_bytes: 0,
         memories: vec![SlotMemory::default(); usize::from(SLOT_COUNT)],
         start: empty(ObservationPhase::Start),
         tactical: empty(ObservationPhase::Tactical),
@@ -271,6 +314,10 @@ pub fn prepare(
     })
 }
 impl VisibilityState {
+    /// Retained cell-index optimization storage. Geometry fallback remains exact when full.
+    pub fn cached_source_cell_bytes(&self) -> usize {
+        self.source_cache_bytes
+    }
     pub fn phase(&self, phase: ObservationPhase) -> Arc<VisibilityBasis> {
         Arc::clone(match phase {
             ObservationPhase::Start => &self.start,
@@ -293,8 +340,8 @@ impl VisibilityState {
                 continue;
             }
             let coverage = &mut self.coverage[usize::from(viewer)];
-            for cell in &source.cells {
-                let count = &mut coverage.counts[*cell as usize];
+            let mut adjust = |cell: u32| {
+                let count = &mut coverage.counts[cell as usize];
                 // A live source has one allocator-unique unit identity. Coverage
                 // counts cannot exceed the number of representable unit IDs.
                 if add {
@@ -303,14 +350,21 @@ impl VisibilityState {
                     *count -= 1;
                 }
                 let observed = Arc::make_mut(&mut coverage.observed);
-                let flag = 1 << (*cell % 8);
-                let byte = *cell as usize / 8;
+                let flag = 1 << (cell % 8);
+                let byte = cell as usize / 8;
                 if *count > 0 {
                     observed[byte] |= flag;
                     Arc::make_mut(&mut coverage.explored)[byte] |= flag;
                 } else {
                     observed[byte] &= !flag;
                 }
+            };
+            if let Some(cells) = &source.cells {
+                for cell in cells {
+                    adjust(*cell);
+                }
+            } else {
+                rule_grid(self.grid).circle(point(source.position), source.radius, adjust);
             }
         }
     }
@@ -338,6 +392,7 @@ impl VisibilityState {
             .collect::<Vec<_>>();
         for id in removed {
             if let Some(source) = self.sources.remove(&id) {
+                self.source_cache_bytes -= source.cached_bytes();
                 self.adjust_source(&source, false);
             }
         }
@@ -348,16 +403,22 @@ impl VisibilityState {
                 continue;
             }
             if let Some(old) = self.sources.remove(&id) {
+                self.source_cache_bytes -= old.cached_bytes();
                 self.adjust_source(&old, false);
             }
-            let mut cells = Vec::new();
-            rule_grid(self.grid).circle(point(position), radius, |cell| cells.push(cell));
+            let cells = cached_source_cells(
+                rule_grid(self.grid),
+                position,
+                radius,
+                MAX_CACHED_SOURCE_CELL_BYTES - self.source_cache_bytes,
+            );
             let source = Source {
                 owner,
                 position,
                 radius,
                 cells,
             };
+            self.source_cache_bytes += source.cached_bytes();
             self.adjust_source(&source, true);
             self.sources.insert(id, source);
         }
@@ -698,4 +759,111 @@ pub fn event_units(world: &World, viewer: u8) -> Vec<EventUnitFact> {
                 .collect()
         })
         .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod source_cache_tests {
+    use super::*;
+    #[test]
+    fn aggregate_large_circle_cache_is_bounded_and_streaming_preserves_exact_counts() {
+        let definition = VisibilityDef {
+            cell_size: 1.0,
+            sharing: VisionSharing::OwnSlot,
+            memory_limit: None,
+        };
+        let grid = VisibilityGrid {
+            size: WorldPos {
+                x: 1024.0,
+                y: 1024.0,
+            },
+            cell_size: 1.0,
+            columns: 1024,
+            rows: 1024,
+        };
+        let mut state = prepare(
+            1,
+            ContentId::parse("fixture:large").unwrap(),
+            &definition,
+            grid,
+            &[0, 1],
+        )
+        .unwrap();
+        let source = |id| (id, 0, WorldPos { x: 512.0, y: 512.0 }, f32::MAX);
+        state.update(
+            1,
+            ObservationPhase::Completed,
+            vec![],
+            vec![],
+            vec![source(1), source(2), source(3)],
+        );
+        assert!(state.cached_source_cell_bytes() <= MAX_CACHED_SOURCE_CELL_BYTES);
+        assert_eq!(
+            state
+                .sources
+                .values()
+                .filter(|source| source.cells.is_some())
+                .count(),
+            2
+        );
+        assert!(
+            state.sources[&3].cells.is_none(),
+            "the third million-cell circle must stream instead of allocating another4MiB"
+        );
+        assert!(state.coverage[0].counts.iter().all(|count| *count == 3));
+        assert!(
+            state
+                .completed
+                .knowledge(0)
+                .unwrap()
+                .observed
+                .iter()
+                .all(|byte| *byte == 255)
+        );
+        state.update(
+            2,
+            ObservationPhase::Completed,
+            vec![],
+            vec![],
+            vec![source(1), source(2)],
+        );
+        assert!(
+            state.coverage[0].counts.iter().all(|count| *count == 2),
+            "removing an uncached source uses the same exact geometry"
+        );
+        state.update(
+            3,
+            ObservationPhase::Completed,
+            vec![],
+            vec![],
+            vec![source(2), source(4)],
+        );
+        assert!(
+            state.sources[&4].cells.is_some(),
+            "released cache capacity can serve a later source"
+        );
+        assert!(state.cached_source_cell_bytes() <= MAX_CACHED_SOURCE_CELL_BYTES);
+        assert!(state.coverage[0].counts.iter().all(|count| *count == 2));
+        state.update(4, ObservationPhase::Completed, vec![], vec![], vec![]);
+        assert_eq!(state.cached_source_cell_bytes(), 0);
+        assert!(state.coverage[0].counts.iter().all(|count| *count == 0));
+        assert!(
+            state
+                .completed
+                .knowledge(0)
+                .unwrap()
+                .explored
+                .iter()
+                .all(|byte| *byte == 255)
+        );
+    }
+    #[test]
+    fn insufficient_cache_capacity_uses_no_partial_circle_and_keeps_one_shared_geometry() {
+        let grid = Grid::checked(16.0, 16.0, 1.0).unwrap();
+        let position = WorldPos { x: 8.0, y: 8.0 };
+        assert!(cached_source_cells(grid, position, 6.0, 16).is_none());
+        let cached = cached_source_cells(grid, position, 6.0, 4096).unwrap();
+        let mut streamed = vec![];
+        grid.circle(point(position), 6.0, |cell| streamed.push(cell));
+        assert_eq!(cached, streamed);
+    }
 }
