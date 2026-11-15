@@ -287,6 +287,13 @@ fn fixture(bots: bool) -> (App, serde_json::Value) {
         let mut definition = output_template.clone();
         definition.id = output.clone();
         catalog.units.insert(output.clone(), definition);
+        for order in catalog
+            .orders
+            .values_mut()
+            .filter(|order| order.units.contains(&"stockyard:soldier".to_owned()))
+        {
+            order.units.push(output.to_string());
+        }
         let mut definition = recipe_template.clone();
         definition.id = recipe.clone();
         definition.output_unit = output.clone();
