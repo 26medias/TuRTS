@@ -2221,8 +2221,7 @@ fn operating_supply_hud_tracks_accepted_owner_totals_and_explicit_zero_baselines
     }
 }
 
-#[path = "../../tests/support/repair_catalog.rs"]
-pub(super) mod repair_catalog;
+pub(super) use crate::repair_test_catalog as repair_catalog;
 
 #[test]
 fn repair_hud_uses_owner_actions_and_clears_stale_names() {

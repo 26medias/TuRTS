@@ -2802,8 +2802,7 @@ fn browser_pixel_wheel_keeps_intermediate_zoom_levels() {
     );
 }
 
-#[path = "../../tests/support/repair_catalog.rs"]
-mod repair_catalog;
+use crate::repair_test_catalog as repair_catalog;
 
 #[test]
 fn repair_adapter_uses_health_completion_relation_and_authored_class_filters() {

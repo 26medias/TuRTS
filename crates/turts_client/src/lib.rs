@@ -349,6 +349,10 @@ pub fn build_app(opts: ClientOptions) -> App {
 }
 
 #[cfg(test)]
+#[path = "../tests/support/repair_catalog.rs"]
+pub(crate) mod repair_test_catalog;
+
+#[cfg(test)]
 mod produce_hook_observation_tests {
     use super::drive_produce_hook;
     use crate::commands::ClientCommand;
