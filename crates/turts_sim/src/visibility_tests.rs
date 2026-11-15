@@ -714,3 +714,91 @@ fn queued_attack_rechecks_visibility_when_the_prior_point_move_finishes() {
     );
     assert!(crate::unit_entity(app.world(), 2).is_some());
 }
+
+#[test]
+fn recorded_commands_reproduce_every_phase_of_permitted_knowledge() {
+    let commands = [
+        (
+            0,
+            Command {
+                slot: SlotId(0),
+                seq: 1,
+                kind: CommandKind::MoveTo {
+                    unit_ids: vec![1],
+                    target: Vec2::new(22.0, 8.0),
+                },
+            },
+        ),
+        (
+            160,
+            Command {
+                slot: SlotId(0),
+                seq: 2,
+                kind: CommandKind::MoveTo {
+                    unit_ids: vec![1],
+                    target: Vec2::new(8.0, 8.0),
+                },
+            },
+        ),
+        (
+            320,
+            Command {
+                slot: SlotId(1),
+                seq: 1,
+                kind: CommandKind::MoveTo {
+                    unit_ids: vec![2],
+                    target: Vec2::new(40.0, 8.0),
+                },
+            },
+        ),
+        (
+            480,
+            Command {
+                slot: SlotId(0),
+                seq: 3,
+                kind: CommandKind::MoveTo {
+                    unit_ids: vec![1],
+                    target: Vec2::new(24.0, 8.0),
+                },
+            },
+        ),
+    ];
+    let replay = || {
+        let mut app = scene(false);
+        let mut evidence = Vec::new();
+        let mut ever_visible = false;
+        let mut ever_remembered = false;
+        for tick in 0..660 {
+            let mut results = Vec::new();
+            for (_, command) in commands.iter().filter(|(at, _)| *at == tick) {
+                let result = apply_command(app.world_mut(), command);
+                assert!(result.outcome.is_ok());
+                results.push(serde_json::to_value(result).unwrap());
+            }
+            app.update();
+            let mut phases = Vec::new();
+            for phase in [
+                ObservationPhase::Start,
+                ObservationPhase::Tactical,
+                ObservationPhase::Completed,
+            ] {
+                let basis = basis(app.world(), phase).unwrap();
+                ever_visible |= basis.unit_permitted(0, 2);
+                let knowledge = basis.knowledge(0).unwrap();
+                ever_remembered |= !knowledge.remembered_units.is_empty();
+                phases.push(serde_json::to_value(knowledge).unwrap());
+            }
+            evidence.push((results, phases));
+        }
+        assert!(
+            ever_visible && ever_remembered,
+            "the command tape must cross real sight boundaries"
+        );
+        evidence
+    };
+    assert_eq!(
+        replay(),
+        replay(),
+        "the same commands must reproduce each phase, mask, memory, and result"
+    );
+}
