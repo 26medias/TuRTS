@@ -683,6 +683,9 @@ fn production_queue(context: SourceContext<'_>) -> SourceData {
                 job_name(context, &job.recipe)
             };
             item.set(ItemField::Name, name);
+            if let Some(record) = context.replica.job_progress(selected, job.id.0) {
+                hud::set_work_state(&mut item, record, context);
+            }
             item.set(
                 ItemField::Progress,
                 if job.duration_ticks == 0 {
