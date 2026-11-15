@@ -204,7 +204,7 @@ fn incomplete_pages_never_choose_a_prefix_and_resume_on_the_pinned_cursor() {
         panic!("complete scan")
     };
     assert_eq!(unique_first(rows).unwrap().unit, 99);
-    assert!(policy.scans.is_empty());
+    assert!(policy.scans[0].complete.is_some());
 }
 #[test]
 fn expired_selection_discards_its_prefix_without_proposing() {
@@ -243,4 +243,17 @@ fn factory_registration_is_profile_independent_and_rejects_unhandled_config() {
             .field_path,
         "config"
     );
+}
+
+#[test]
+fn completed_queries_remain_cached_while_a_later_selection_is_incomplete() {
+    let mut policy = controller();
+    let query = Query::Units(UnitQuery::own(vec![]));
+    let mut q = Pages(VecDeque::from([page(
+        QueryData::Units(vec![unit(1, 0., 0.)]),
+        PageState::Complete,
+    )]));
+    assert!(policy.collect(query.clone(), &mut q).is_some());
+    let mut no_queries = Pages(VecDeque::new());
+    assert!(policy.collect(query, &mut no_queries).is_some());
 }
