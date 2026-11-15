@@ -377,6 +377,33 @@ fn cumulative_paid_producer_and_site_streams_and_coherent_tampering() {
                 .find(|job| !job.charged.is_empty())
                 .unwrap();
             job.charged[0].amount += 1;
+            let changed = job.id;
+            job.funding.as_mut().unwrap().pending_charges[0].amount += 1;
+            operation
+                .after
+                .economy
+                .queues
+                .iter_mut()
+                .flat_map(|queue| &mut queue.jobs)
+                .find(|job| job.id == changed)
+                .unwrap()
+                .charged[0]
+                .amount += 1;
+            operation
+                .after
+                .economy
+                .operating
+                .as_mut()
+                .unwrap()
+                .jobs
+                .iter_mut()
+                .find(|job| job.unit == 1 && job.job == changed)
+                .unwrap()
+                .funding
+                .as_mut()
+                .unwrap()
+                .pending_charges[0]
+                .amount += 1;
             if let Some(balance) = operation
                 .after
                 .economy
@@ -386,7 +413,11 @@ fn cumulative_paid_producer_and_site_streams_and_coherent_tampering() {
             {
                 balance.on_hand -= 1;
             }
-            assert!(validate_records(&bad).unwrap_err().contains("paid-work"));
+            assert!(
+                validate_records(&bad)
+                    .unwrap_err()
+                    .contains("cumulative catalog floors")
+            );
         }
     }
 }
@@ -652,6 +683,25 @@ fn paid_wait_income_recovery_and_hold_hysteresis_are_independently_replayed() {
         .held_since_tick
         .as_mut()
         .unwrap() += 1;
+    let changed = job.id;
+    let mirror = operation
+        .after
+        .economy
+        .operating
+        .as_mut()
+        .unwrap()
+        .jobs
+        .iter_mut()
+        .find(|job| job.unit == 1 && job.job == changed)
+        .unwrap();
+    *mirror
+        .funding
+        .as_mut()
+        .unwrap()
+        .held_since_tick
+        .as_mut()
+        .unwrap() += 1;
+    mirror.held_since_tick += 1;
     assert!(
         validate_records(&bad)
             .unwrap_err()

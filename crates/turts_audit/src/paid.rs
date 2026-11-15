@@ -105,6 +105,51 @@ fn jobs(state: &AuditState) -> Result<BTreeMap<(u32, u64), Job>, String> {
                 .map_or((job.elapsed_ticks, job.duration_ticks), |row| {
                     (row.done, row.total)
                 });
+            if let Some(view) = &state.economy.operating {
+                let row = view
+                    .jobs
+                    .iter()
+                    .find(|row| row.unit == queue.producer && row.job == job.id)
+                    .ok_or("paid-work exact counter row missing")?;
+                if view.rate_q == 0
+                    || row.done / view.rate_q != job.elapsed_ticks
+                    || job.duration_ticks.checked_mul(view.rate_q) != Some(row.total)
+                    || row.funding.as_ref() != Some(funding)
+                {
+                    return Err(
+                        "paid-work exact counters or hold/recovery funding mirrors differ".into(),
+                    );
+                }
+            }
+            let public = state
+                .economy
+                .queues
+                .iter()
+                .find(|row| row.producer == queue.producer)
+                .and_then(|row| row.jobs.iter().find(|row| row.id == job.id))
+                .ok_or("paid-work public job is missing")?;
+            let public_charged = job
+                .charged
+                .iter()
+                .map(|row| turts_sim::CostView {
+                    source: match row.endpoint {
+                        ReservationEndpointView::Slot(_) => CostSource::SlotBalance,
+                        ReservationEndpointView::Inventory(_)
+                        | ReservationEndpointView::Output(_) => CostSource::ProducerInventory,
+                    },
+                    resource: row.resource.clone(),
+                    amount: row.amount,
+                })
+                .collect::<Vec<_>>();
+            if public.charged != public_charged
+                || public.elapsed_ticks != job.elapsed_ticks
+                || public.duration_ticks != job.duration_ticks
+                || public.stage != job.stage
+            {
+                return Err(
+                    "paid-work public job differs from authoritative charged/progress state".into(),
+                );
+            }
             output.insert(
                 (queue.producer, job.id),
                 Job {
