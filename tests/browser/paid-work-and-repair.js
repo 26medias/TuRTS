@@ -132,10 +132,13 @@ function project(scene,pos){const m=scene.clip_from_world,c=[0,1,2,3].map(r=>[..
   if(widget(result['repair-funds'],'repair_resource')?.text!=='Credits')throw Error('repair resource name');
   const damage=health(result['repair-funds'],3);
   await shot('repair-healed',await wait(s=>health(s,3)>damage,'income pays real repair',15000));
+  await select(4);const foreign=await read();
+  if(!world(foreign).repairs.some(x=>x.repairer===2))throw Error('privacy probe requires an active own repair action');
+  if(widget(foreign,'repair_state')||widget(foreign,'repair_target')||widget(foreign,'repair_resource'))throw Error('foreign selection leaked repair fields');
+  await shot('repair-foreign-selection',foreign);
   await select(2);await click('Stop');
   await shot('repair-stopped',await wait(s=>!world(s).repairs.some(x=>x.repairer===2)&&!widget(s,'repair_state')&&!widget(s,'repair_target')&&!widget(s,'repair_resource'),'repair status cleared'));
-  await select(4);const foreign=await read();if(widget(foreign,'repair_state')||widget(foreign,'repair_target')||widget(foreign,'repair_resource'))throw Error('foreign selection leaked repair fields');
-  if(widget(foreign,'credits')?.text!==`Credits: ${balance(foreign)}`)throw Error('displayed credits mismatch');
+  const final=await read();if(widget(final,'credits')?.text!==`Credits: ${balance(final)}`)throw Error('displayed credits mismatch');
   result.status='PASS';console.log(JSON.stringify({status:result.status,wallId,damage,healed:health(result['repair-healed'],3)}));
  }catch(e){result.status='FAIL';result.error=String(e.stack||e);if(read)try{result.failure=await read();}catch{}if(page)try{await page.screenshot({path:out+'/failure.png'});}catch{}console.error(e);process.exitCode=1;}
  finally{if(context)await context.close();if(server&&server.exitCode===null){const end=new Promise(r=>server.once('exit',r));server.kill('SIGTERM');await end;}if(profile)fs.rmSync(profile,{recursive:true,force:true});result.profile_removed=!profile||!fs.existsSync(profile);save();}
