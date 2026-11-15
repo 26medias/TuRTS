@@ -180,6 +180,8 @@ pub(crate) fn project(
             (def.research.is_some(), Capability::Research),
             (def.constructor.is_some(), Capability::Constructor),
             (def.repairer.is_some(), Capability::Repairer),
+            (!def.terrain_tools.is_empty(), Capability::TerrainWorker),
+            (def.terrain_cargo.is_some(), Capability::CargoUnloader),
         ]
         .into_iter()
         .filter_map(|(yes, c)| yes.then_some(c))
@@ -201,6 +203,11 @@ pub(crate) fn project(
             capabilities,
             health,
             site: view.construction.sites.contains_key(&unit.unit_id),
+            ground_elevation: view.terrain.as_ref().and_then(|phase| {
+                phase
+                    .ground_anchor(slot, unit.unit_id)
+                    .map(|contact| contact.elevation)
+            }),
             own,
         });
     }
@@ -460,6 +467,7 @@ pub(crate) fn project(
             complete: permissions.area_observed(slot, area),
         },
         catalog,
+        terrain: view.terrain.clone(),
     };
     basis.index();
     Projection {
@@ -495,6 +503,15 @@ fn target(value: &UnitOrderTargetView) -> BotTarget {
         UnitOrderTargetView::ContentAtPoint { content, point } => BotTarget::ContentAtPoint {
             content: content.clone(),
             point: *point,
+        },
+        UnitOrderTargetView::TerrainWork {
+            tool,
+            cells,
+            target_elevation,
+        } => BotTarget::TerrainWork {
+            tool: tool.clone(),
+            cells: *cells,
+            target_elevation: *target_elevation,
         },
     }
 }

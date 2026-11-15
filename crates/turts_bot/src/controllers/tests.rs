@@ -7,6 +7,7 @@ fn id(s: &str) -> ContentId {
 }
 fn unit(unit: u32, x: f32, y: f32) -> UnitObservation {
     UnitObservation {
+        ground_elevation: None,
         unit,
         owner_slot: 0,
         content: id("fixture:worker"),
