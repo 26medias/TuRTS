@@ -76,6 +76,7 @@ struct BotInstance {
     next_basis: u64,
     lease: Option<CandidateLease>,
     last_diagnostic: Option<String>,
+    last_failure_step: Option<u64>,
 }
 #[derive(Default)]
 struct ActiveClock {
@@ -216,6 +217,7 @@ fn install_with_registry_and_limits(
             next_basis: 0,
             lease: None,
             last_diagnostic: None,
+            last_failure_step: None,
         });
     }
     let installation = turts_audit::ActorInstallation {
@@ -281,6 +283,7 @@ fn coordinator_limits(limits: BotLimitsConfig) -> CoordinatorLimits {
 }
 
 fn diagnose(bot: &mut BotInstance, message: String) {
+    bot.last_failure_step = Some(bot.decision_step);
     if bot.last_diagnostic.as_ref() != Some(&message) {
         eprintln!("turts_server: bot slot {}: {message}", bot.actor.slot);
         bot.last_diagnostic = Some(message);
@@ -464,7 +467,10 @@ fn drive_inner(world: &mut World, host: &mut BotHost, execution: &mut BotExecuti
                 consumed: s.consumed,
             })
             .collect::<Vec<_>>();
-        let lease = bot.lease.as_mut().expect("candidate basis installed above");
+        let Some(lease) = bot.lease.as_mut() else {
+            diagnose(bot, "candidate observation basis is missing".into());
+            continue;
+        };
         let mut proposals = Vec::new();
         for controller in &mut bot.controllers {
             let frame = BotFrame {
@@ -514,13 +520,12 @@ fn drive_inner(world: &mut World, host: &mut BotHost, execution: &mut BotExecuti
             world,
             &bot.actor,
             batch.watermark,
-            &bot.coordinator
-                .pending()
-                .iter()
-                .map(|p| p.request.clone())
-                .collect::<Vec<_>>(),
+            &bot.coordinator.tracked_requests(),
         ) {
             diagnose(bot, error)
+        }
+        if bot.last_failure_step != Some(bot.decision_step) {
+            bot.last_diagnostic = None;
         }
     }
 }
