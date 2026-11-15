@@ -138,7 +138,9 @@ struct Candidate {
     healths: Vec<HealthRecord>,
     research: Vec<ResearchRecord>,
     unit_orders: HashMap<u32, UnitOrderRecord>,
-    health_trace: std::collections::BTreeMap<u32, Vec<HealthTraceEntry>>,
+    health_append: Vec<(u32, HealthTraceEntry)>,
+    health_latest: HashMap<u32, u64>,
+    health_forget: HashSet<u32>,
     tick: u32,
 }
 
@@ -428,18 +430,20 @@ impl Replica {
                 ..
             } => {
                 let hidden: HashSet<_> = delta.hidden_units.iter().copied().collect();
-                candidate.health_trace.retain(|id, _| !hidden.contains(id));
+                candidate.health_forget.extend(hidden);
             }
             StateTransactionPayload::Snapshot {
                 knowledge: Some(_), ..
             } => {
-                candidate.health_trace.retain(|id, _| {
-                    candidate.units.contains_key(id)
-                        || self
-                            .units
-                            .get(id)
-                            .is_none_or(|unit| unit.owner_slot == context.slot)
-                });
+                candidate
+                    .health_forget
+                    .extend(self.health_trace.keys().copied().filter(|id| {
+                        !candidate.units.contains_key(id)
+                            && self
+                                .units
+                                .get(id)
+                                .is_some_and(|unit| unit.owner_slot != context.slot)
+                    }));
             }
             _ => {}
         }
@@ -484,15 +488,7 @@ impl Replica {
         // Fixed candidates, store steps, stamps, and small hash tables.
         budget.bytes(64 * 1024)?;
         budget.value(payload)?;
-        // Snapshot staging also clones the bounded health history before replacing its rows.
-        for history in self.health_trace.values() {
-            budget.bytes(
-                history
-                    .len()
-                    .checked_mul(std::mem::size_of::<HealthTraceEntry>() * 4 + 64)
-                    .ok_or(Limit)?,
-            )?;
-        }
+        // Health histories stay borrowed during staging. New append/forget rows are covered by the payload budget.
         if matches!(payload, StateTransactionPayload::Patch { .. }) {
             let table =
                 |capacity: usize, row: usize| capacity.checked_mul(row * 4 + 64).ok_or(Limit);
@@ -972,7 +968,9 @@ impl Replica {
             healths: Vec::new(),
             research: snapshot.research.clone(),
             unit_orders: HashMap::new(),
-            health_trace: self.health_trace.clone(),
+            health_append: Vec::new(),
+            health_latest: HashMap::new(),
+            health_forget: HashSet::new(),
             tick: snapshot.tick,
         };
         candidate.unit_orders =
@@ -988,8 +986,14 @@ impl Replica {
             &candidate.units,
             &candidate.nodes,
             &candidate.economy,
-        ) || !valid_m3_records(context, &candidate.units, &candidate.nodes, &candidate)
-            || !apply_health_records(context, snapshot.tick, &snapshot.healths, &mut candidate)
+        ) || !valid_m3_records(context, &candidate.units, &candidate.nodes, candidate.m3())
+            || !apply_health_records(
+                context,
+                snapshot.tick,
+                &snapshot.healths,
+                &self.health_trace,
+                &mut candidate,
+            )
         {
             return None;
         }
@@ -1008,7 +1012,9 @@ impl Replica {
             healths: self.healths.clone(),
             research: self.research.clone(),
             unit_orders: self.unit_orders.clone(),
-            health_trace: self.health_trace.clone(),
+            health_append: Vec::new(),
+            health_latest: HashMap::new(),
+            health_forget: HashSet::new(),
             tick,
         }
     }
@@ -1094,7 +1100,13 @@ impl Replica {
             next.nodes.insert(node.id, node.clone());
         }
         if !validate_delta_m3(context, &next.units, &next.nodes, delta, &removed)
-            || !apply_health_records(context, delta.tick, &delta.healths, &mut next)
+            || !apply_health_records(
+                context,
+                delta.tick,
+                &delta.healths,
+                &self.health_trace,
+                &mut next,
+            )
             || !merge_economy(&mut next.economy, &delta.economy)
             || !merge_m3_records(&mut next, delta)
         {
@@ -1140,7 +1152,7 @@ impl Replica {
             next.unit_orders.remove(id);
         }
         if !valid_economy(context, &next.units, &next.nodes, &next.economy)
-            || !valid_m3_records(context, &next.units, &next.nodes, &next)
+            || !valid_m3_records(context, &next.units, &next.nodes, next.m3())
         {
             return None;
         }
@@ -1163,7 +1175,21 @@ impl Replica {
             StoreUpdate::Replace(staged) => self.store = staged,
             StoreUpdate::Step(step) => self.store.apply(step),
         }
-        self.health_trace = candidate.health_trace;
+        for (id, entry) in candidate.health_append {
+            let history = self.health_trace.entry(id).or_default();
+            if history
+                .last()
+                .is_none_or(|last| last.current != entry.current)
+            {
+                history.push(entry);
+                if history.len() > HEALTH_TRACE_WINDOW {
+                    history.drain(..history.len() - HEALTH_TRACE_WINDOW);
+                }
+            }
+        }
+        for id in candidate.health_forget {
+            self.health_trace.remove(&id);
+        }
         self.last_applied_tick = Some(candidate.tick);
         self.latest_receipt = Some(now);
         while self.units.values().any(|unit| {
@@ -1937,37 +1963,19 @@ fn validate_delta_m3(
     {
         return false;
     }
-    let mut candidate = Candidate {
-        units: units.clone(),
-        nodes: nodes.clone(),
-        economy: empty_economy(),
-        belts: vec![],
-        inserters: vec![],
-        extractors: vec![],
-        weapons: vec![],
-        healths: vec![],
-        research: vec![],
-        unit_orders: HashMap::new(),
-        health_trace: Default::default(),
-        tick: delta.tick,
-    };
-    candidate.belts = delta.belts.clone();
-    candidate.inserters = delta.inserters.clone();
-    candidate.extractors = delta.extractors.clone();
-    candidate.weapons = delta.weapons.clone();
-    candidate.research = delta.research.clone();
-    let changes_unique = unique_by(&delta.belts, |record| record.piece.0)
-        && unique_by(&delta.inserters, |record| record.unit.0)
-        && unique_by(&delta.extractors, |record| record.unit.0)
-        && unique_by(&delta.weapons, |record| record.unit.0)
-        && unique_by(&delta.healths, |record| record.unit.0)
-        && unique_by(&delta.research, |record| record.slot.0);
-    changes_unique
-        && valid_m3_records(context, &candidate.units, &candidate.nodes, &candidate)
-        && delta
-            .healths
-            .iter()
-            .all(|record| valid_health(context, &candidate.units, record))
+    valid_m3_records(
+        context,
+        units,
+        nodes,
+        M3Records {
+            belts: &delta.belts,
+            inserters: &delta.inserters,
+            extractors: &delta.extractors,
+            weapons: &delta.weapons,
+            healths: &delta.healths,
+            research: &delta.research,
+        },
+    )
 }
 
 fn unique_by<T, K: Eq + std::hash::Hash>(records: &[T], key: impl Fn(&T) -> K) -> bool {
@@ -2003,6 +2011,7 @@ fn apply_health_records(
     context: &ReplicaContext,
     tick: u32,
     changes: &[HealthRecord],
+    base_history: &BTreeMap<u32, Vec<HealthTraceEntry>>,
     candidate: &mut Candidate,
 ) -> bool {
     if !unique_by(changes, |record| record.unit.0)
@@ -2014,39 +2023,70 @@ fn apply_health_records(
         return false;
     }
     for record in changes {
-        let history = candidate.health_trace.entry(record.unit.0).or_default();
-        if history
-            .last()
-            .is_none_or(|last| last.current != record.current)
-        {
-            history.push(HealthTraceEntry {
-                tick,
-                current: record.current,
+        let previous = candidate
+            .health_latest
+            .get(&record.unit.0)
+            .copied()
+            .or_else(|| {
+                base_history
+                    .get(&record.unit.0)
+                    .and_then(|history| history.last())
+                    .map(|entry| entry.current)
             });
-            if history.len() > HEALTH_TRACE_WINDOW {
-                history.drain(..history.len() - HEALTH_TRACE_WINDOW);
-            }
+        if previous != Some(record.current) {
+            candidate.health_append.push((
+                record.unit.0,
+                HealthTraceEntry {
+                    tick,
+                    current: record.current,
+                },
+            ));
+            candidate
+                .health_latest
+                .insert(record.unit.0, record.current);
         }
     }
     true
+}
+
+#[derive(Clone, Copy)]
+struct M3Records<'a> {
+    belts: &'a [BeltPieceRecord],
+    inserters: &'a [InserterRecord],
+    extractors: &'a [ExtractorRecord],
+    weapons: &'a [WeaponRecord],
+    healths: &'a [HealthRecord],
+    research: &'a [ResearchRecord],
+}
+impl Candidate {
+    fn m3(&self) -> M3Records<'_> {
+        M3Records {
+            belts: &self.belts,
+            inserters: &self.inserters,
+            extractors: &self.extractors,
+            weapons: &self.weapons,
+            healths: &self.healths,
+            research: &self.research,
+        }
+    }
 }
 
 fn valid_m3_records(
     context: &ReplicaContext,
     units: &HashMap<u32, UnitReplica>,
     nodes: &HashMap<NodeId, NodeState>,
-    candidate: &Candidate,
+    candidate: M3Records<'_>,
 ) -> bool {
-    if !unique_by(&candidate.belts, |record| record.piece.0)
-        || !unique_by(&candidate.inserters, |record| record.unit.0)
-        || !unique_by(&candidate.extractors, |record| record.unit.0)
-        || !unique_by(&candidate.weapons, |record| record.unit.0)
-        || !unique_by(&candidate.healths, |record| record.unit.0)
-        || !unique_by(&candidate.research, |record| record.slot.0)
+    if !unique_by(candidate.belts, |record| record.piece.0)
+        || !unique_by(candidate.inserters, |record| record.unit.0)
+        || !unique_by(candidate.extractors, |record| record.unit.0)
+        || !unique_by(candidate.weapons, |record| record.unit.0)
+        || !unique_by(candidate.healths, |record| record.unit.0)
+        || !unique_by(candidate.research, |record| record.slot.0)
     {
         return false;
     }
-    for record in &candidate.belts {
+    for record in candidate.belts {
         let Some(definition) = unit_definition(context, units, record.piece.0, true)
             .and_then(|unit| unit.conveyor.as_ref())
         else {
@@ -2068,7 +2108,7 @@ fn valid_m3_records(
             return false;
         }
     }
-    for record in &candidate.inserters {
+    for record in candidate.inserters {
         let Some(unit_def) = unit_definition(context, units, record.unit.0, true)
             .filter(|unit| unit.inserter.is_some())
         else {
@@ -2093,7 +2133,7 @@ fn valid_m3_records(
         }
         let _ = unit_def;
     }
-    for record in &candidate.extractors {
+    for record in candidate.extractors {
         let Some(unit_def) = unit_definition(context, units, record.unit.0, true)
             .filter(|unit| unit.extractor.is_some())
         else {
@@ -2112,7 +2152,7 @@ fn valid_m3_records(
             return false;
         }
     }
-    for record in &candidate.weapons {
+    for record in candidate.weapons {
         if unit_definition(context, units, record.unit.0, true)
             .is_none_or(|unit| unit.weapon.is_none())
             || record
@@ -2122,12 +2162,12 @@ fn valid_m3_records(
             return false;
         }
     }
-    for record in &candidate.healths {
+    for record in candidate.healths {
         if !valid_health(context, units, record) {
             return false;
         }
     }
-    for record in &candidate.research {
+    for record in candidate.research {
         if record.slot.0 != context.slot {
             return false;
         }

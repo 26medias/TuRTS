@@ -368,3 +368,28 @@ fn renamed_inventory_construction_package_uses_the_same_public_sight_provider() 
     assert!(basis.unit_permitted(0, foreign_builder.unit_id));
     assert!(turts_client::visibility::valid_snapshot(&knowledge));
 }
+
+#[test]
+fn position_only_atomic_patch_keeps_existing_health_history_allocation() {
+    let (mut replica, stamp, payload) = setup();
+    assert!(replica.activate_transaction(&stamp, &payload, Instant::now()));
+    let history = replica.health_trace[&1].as_ptr();
+    let (stamp, mut payload) = hidden_patch(&stamp);
+    if let StateTransactionPayload::Patch {
+        state, knowledge, ..
+    } = &mut payload
+    {
+        let knowledge = knowledge.as_mut().unwrap();
+        knowledge.coverage.clear();
+        knowledge.hidden_units.clear();
+        knowledge.remembered_units.clear();
+        state.positions.push(UnitDelta {
+            unit_id: UnitId(1),
+            pos: Pos { x: 5.5, y: 1. },
+        });
+    }
+    assert!(replica.activate_transaction(&stamp, &payload, Instant::now()));
+    assert_eq!(replica.health_trace[&1].as_ptr(), history);
+    assert_eq!(replica.health_trace[&1].last().unwrap().current, 100);
+    assert_eq!(replica.units[&1].samples.back().unwrap().1.x, 5.5);
+}
