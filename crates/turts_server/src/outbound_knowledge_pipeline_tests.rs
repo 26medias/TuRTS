@@ -322,6 +322,7 @@ impl Harness {
                 // pump clock. Align ONLY newly enqueued timestamps, not deadlines
                 // or already-started work, so both sides use the same test clock.
                 let enqueued_at = self.epoch + Duration::from_millis(self.now_ms);
+                let sender = &mut *sender;
                 for pending in sender.pending.iter_mut().chain(sender.patches.iter_mut()) {
                     if pending.encoded.begin().stamp.transaction_id > previous_id {
                         assert!(pending.started.is_none());
