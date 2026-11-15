@@ -11,6 +11,7 @@ use turts_sim::{economy::events::EconomyEventKind, install_package, stage_packag
 
 const PHASES: usize = 1000;
 const WARMUP: usize = 100;
+const MAX_WARMUP: usize = 180;
 const BASELINE: usize = 100;
 const HEALTH: u64 = 1_000_000_000_000;
 const INVENTORY: u64 = 10_000_000;
@@ -42,6 +43,7 @@ struct Meter {
     seen_decisions: u64,
     groups: usize,
     warmup: usize,
+    warmup_locked: bool,
     target: usize,
     baseline: bool,
     extracted: u64,
@@ -65,6 +67,7 @@ impl Meter {
             seen_decisions: 0,
             groups: 0,
             warmup,
+            warmup_locked: baseline,
             target,
             baseline,
             extracted: 0,
@@ -104,7 +107,7 @@ fn finish_pre(world: &mut World) {
     };
     meter.seen_decisions = decision;
     if new_group {
-        if meter.groups > meter.warmup && !meter.complete() {
+        if meter.warmup_locked && meter.groups > meter.warmup && !meter.complete() {
             let finished = std::mem::take(&mut meter.current);
             meter.samples.push(finished);
         } else {
@@ -135,16 +138,7 @@ fn finish_tick(world: &mut World) {
             _ => (gathered, shots),
         },
     );
-    let production = turts_sim::completed_world(world)
-        .operating
-        .as_ref()
-        .map_or(0, |operating| {
-            operating
-                .jobs
-                .iter()
-                .filter(|job| job.funding.is_some() && job.done > 0)
-                .count()
-        }) as u64;
+    let production = active_cot_world(world) as u64;
     let commands = world
         .get_resource::<BotExecution>()
         .map_or(0, |execution| execution.generated.len()) as u64;
@@ -155,7 +149,7 @@ fn finish_tick(world: &mut World) {
     let start = meter.whole.take().unwrap();
     meter.current.full_tick_ns += u64::try_from(finished.duration_since(start).as_nanos()).unwrap();
     meter.current.ticks += 1;
-    if meter.groups > meter.warmup && !meter.complete() {
+    if meter.warmup_locked && meter.groups > meter.warmup && !meter.complete() {
         meter.measured_extracted += events.0;
         meter.measured_shots += events.1;
     }
@@ -165,6 +159,22 @@ fn finish_tick(world: &mut World) {
     meter.commands += commands;
     meter.min_units = meter.min_units.min(count);
     meter.max_units = meter.max_units.max(count);
+    if !meter.baseline
+        && !meter.warmup_locked
+        && meter.groups >= WARMUP
+        && workload_ready(production as usize, meter.extracted, meter.shots)
+    {
+        meter.warmup = meter.groups;
+        meter.warmup_locked = true;
+        eprintln!(
+            "BF8_WORKLOAD_READY {}",
+            serde_json::json!({"actual_warmup_intervals":meter.warmup,"active_cot_jobs":production,"gathered":meter.extracted,"shots":meter.shots})
+        );
+    }
+    assert!(
+        meter.baseline || meter.warmup_locked || meter.groups <= MAX_WARMUP,
+        "BF8 workload never reached readiness within180intervals"
+    );
 }
 fn install_meter(app: &mut App, baseline: bool) {
     app.insert_resource(Meter::new(
@@ -554,7 +564,7 @@ fn run(mut app: App) -> (serde_json::Value, u64) {
     );
     let total = percentiles(meter.samples.iter().map(Sample::phase_ns));
     let p99 = total["p99_ns"].as_u64().unwrap();
-    let result = serde_json::json!({"complete_bot_phase":total,"host_plus_common_admission_and_command_apply":percentiles(meter.samples.iter().map(|s|s.host_admission_ns)),"all_deferred_receipt_publication":percentiles(meter.samples.iter().map(|s|s.publication_ns)),"participant_results":percentiles(meter.samples.iter().map(|s|s.participant_results_ns)),"full_simulation_intervals":percentiles(meter.samples.iter().map(|s|s.full_tick_ns)),"counters":{"ticks":app.world().resource::<Tick>().0,"groups":meter.groups,"gathered_items":meter.extracted,"measured_gathered_items":meter.measured_extracted,"measured_shots":meter.measured_shots,"shots":meter.shots,"cot_job_ticks":meter.production_ticks,"commands":meter.commands,"min_units":meter.min_units,"max_units":meter.max_units,"decisions":app.world().get_resource::<BotHost>().map_or(0,|host|host.decisions),"private_projection_rows":app.world().get_resource::<BotHost>().map_or(0,|host|host.private_projection_scans)}});
+    let result = serde_json::json!({"actual_warmup_intervals":meter.warmup,"minimum_warmup_intervals":WARMUP,"complete_bot_phase":total,"host_plus_common_admission_and_command_apply":percentiles(meter.samples.iter().map(|s|s.host_admission_ns)),"all_deferred_receipt_publication":percentiles(meter.samples.iter().map(|s|s.publication_ns)),"participant_results":percentiles(meter.samples.iter().map(|s|s.participant_results_ns)),"full_simulation_intervals":percentiles(meter.samples.iter().map(|s|s.full_tick_ns)),"counters":{"ticks":app.world().resource::<Tick>().0,"groups":meter.groups,"gathered_items":meter.extracted,"measured_gathered_items":meter.measured_extracted,"measured_shots":meter.measured_shots,"shots":meter.shots,"cot_job_ticks":meter.production_ticks,"commands":meter.commands,"min_units":meter.min_units,"max_units":meter.max_units,"decisions":app.world().get_resource::<BotHost>().map_or(0,|host|host.decisions),"private_projection_rows":app.world().get_resource::<BotHost>().map_or(0,|host|host.private_projection_scans)}});
     if !meter.baseline {
         assert!(
             meter.measured_extracted > 0
@@ -612,7 +622,7 @@ fn bf8_two_bots_1000_units_complete_phase_budget() {
     let (baseline, _) = run(baseline);
     let (bots, definition) = fixture(true);
     let (measured, p99) = run(bots);
-    let report = serde_json::json!({"acceptance":"BF8","selected_logical_cpus":affinity,"tick_hz":20,"decision_ms":1000,"active_phases":PHASES,"warmup_phases":WARMUP,"baseline_intervals":BASELINE,"budget_ns":5_000_000,"phase_definition":"sum host, shared admission, ordinary command apply, all per-tick receipt publication and participant result work across each 20-tick interval; no baseline subtraction","baseline_definition":"same authored 1000-unit boot and gathering start orders, no bot host or automatic production","baseline_without_bots":baseline,"bots":measured,"workload":definition});
+    let report = serde_json::json!({"acceptance":"BF8","selected_logical_cpus":affinity,"tick_hz":20,"decision_ms":1000,"active_phases":PHASES,"minimum_warmup_phases":WARMUP,"actual_warmup_phases":measured["actual_warmup_intervals"],"baseline_intervals":BASELINE,"budget_ns":5_000_000,"phase_definition":"sum host, shared admission, ordinary command apply, all per-tick receipt publication and participant result work across each 20-tick interval; no baseline subtraction","baseline_definition":"same authored 1000-unit boot and gathering start orders, no bot host or automatic production","baseline_without_bots":baseline,"bots":measured,"workload":definition});
     println!(
         "BF8_MEASUREMENT {}",
         serde_json::to_string(&report).unwrap()
@@ -631,8 +641,14 @@ fn bf8_two_bots_1000_units_complete_phase_budget() {
     );
 }
 
+fn workload_ready(jobs: usize, items: u64, shots: u64) -> bool {
+    jobs == 100 && items > 0 && shots > 0
+}
 fn active_cot(app: &App) -> usize {
-    turts_sim::completed_world(app.world())
+    active_cot_world(app.world())
+}
+fn active_cot_world(world: &World) -> usize {
+    turts_sim::completed_world(world)
         .operating
         .as_ref()
         .unwrap()
@@ -641,6 +657,7 @@ fn active_cot(app: &App) -> usize {
         .filter(|job| job.funding.is_some() && job.done > 0 && job.done < job.total)
         .count()
 }
+
 #[test]
 #[ignore = "short release workload preflight before the BF8 pinned performance run"]
 fn bf8_workload_preflight_admits_all_factories_and_keeps_collection_and_combat_active() {
@@ -667,7 +684,7 @@ fn bf8_workload_preflight_admits_all_factories_and_keeps_collection_and_combat_a
                 serde_json::json!({"intervals":meter.groups,"active_cot_jobs":jobs,"gathered":meter.extracted,"shots":meter.shots})
             );
         }
-        if ready.is_none() && jobs == 100 && meter.extracted > 0 && meter.shots > 0 {
+        if ready.is_none() && workload_ready(jobs, meter.extracted, meter.shots) {
             ready = Some((meter.groups, meter.extracted, meter.shots));
         }
         if let Some((interval, items, shots)) = ready {
