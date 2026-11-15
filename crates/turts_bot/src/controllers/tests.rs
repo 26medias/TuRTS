@@ -1,3 +1,4 @@
+#![cfg(test)]
 use super::*;
 use std::collections::VecDeque;
 use turts_mod_api::{BotGoal, BotKnowledge, BotOrderBinding, BotQuota, BotRole, BotStartWhen};

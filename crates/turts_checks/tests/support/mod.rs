@@ -108,6 +108,7 @@ pub fn derive_tokens(root: &Path) -> Result<TokenCatalog, ScanError> {
             ("match-export", &a.manifest.exports.match_files),
             ("combat-export", &a.manifest.exports.combat),
             ("visual-effect-export", &a.manifest.exports.visual_effects),
+            ("bot-export", &a.manifest.exports.bots),
         ] {
             for path in xs {
                 exports.insert(path.clone());
@@ -161,6 +162,18 @@ pub fn derive_tokens(root: &Path) -> Result<TokenCatalog, ScanError> {
         );
         for (path, d) in a.units().map_err(|e| pkgerr(&dir, e))? {
             add_unit(&mut c, &p, &path, &d);
+        }
+        for (path, definition) in a.bots().map_err(|e| pkgerr(&dir, e))? {
+            // Qualified profile IDs identify content. Local keys can be ordinary
+            // framework terms, such as opening or opponent.
+            add(
+                &mut c,
+                &p,
+                "bot-profile",
+                &path,
+                "id",
+                &format!("{p}:{}", definition.id),
+            );
         }
         for (path, d) in a.orders().map_err(|e| pkgerr(&dir, e))? {
             add_id(&mut c, &p, &path, "id", &d.id, "order");
@@ -554,6 +567,9 @@ pub fn scan_rust(roots: &[PathBuf], c: &TokenCatalog) -> Result<Vec<Hit>, ScanEr
     for p in fslist {
         let s = fs::read_to_string(&p).map_err(|e| ScanError::Io(p.clone(), e))?;
         let f = syn::parse_file(&s).map_err(|e| ScanError::Rust(p.clone(), e.to_string()))?;
+        if !production_attrs(&f.attrs) {
+            continue;
+        }
         let mut v = Scanner {
             catalog: c,
             path: &p,
