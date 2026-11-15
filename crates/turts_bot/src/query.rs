@@ -13,11 +13,33 @@ pub struct UnitObservation {
     pub capabilities: Vec<Capability>,
     pub health: Option<(u64, u64)>,
     pub site: bool,
+    /// Present only for this bot's own units. Enemy orders/enable state are private.
+    pub own: Option<OwnUnitObservation>,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum OwnActivity {
+    Idle,
+    Pending,
+    Moving,
+    Attacking,
+    Holding,
+    Gathering,
+    Working,
+    Blocked,
+}
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct OwnUnitObservation {
+    pub enabled: bool,
+    pub activity: OwnActivity,
+    pub current_order: Option<BotOrder>,
+    pub queued_orders: u32,
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct NodeObservation {
     pub node: NodeId,
     pub content: ContentId,
+    /// Public item definition produced by this node, not private geology.
+    pub item: ContentId,
     pub position: WorldPos,
     pub radius: f32,
     pub remaining: u64,
