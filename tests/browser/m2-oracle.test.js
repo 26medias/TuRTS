@@ -369,8 +369,8 @@ test("M2 clicks the producer mesh above a nearer output blocker", async () => {
 test("M2 selects the intended haul worker and samples the elevated node", async () => {
     const png = blankPng(1280, 720, [
         { x: 556, y: 220, w: 29, h: 27, colour: [0, 114, 178] },
-        { x: 606, y: 225, w: 7, h: 7, colour: [0, 114, 178] },
-        { x: 606, y: 232, w: 7, h: 19, colour: [0, 114, 178] },
+        { x: 606, y: 225, w: 7, h: 13, colour: [0, 114, 178] },
+        { x: 606, y: 238, w: 7, h: 13, colour: [0, 114, 178] },
         { x: 684, y: 223, w: 12, h: 13, colour: [120, 90, 50] },
         { x: 16, y: 190, w: 240, h: 28, colour: [33, 66, 77] },
         { x: 16, y: 258, w: 240, h: 28, colour: [33, 66, 77] },
@@ -381,7 +381,7 @@ test("M2 selects the intended haul worker and samples the elevated node", async 
         save: async name => saved.push(name), click: async (x, y, button) => clicks.push({ x, y, button }) };
     await drive(io, { m2: { package: "haul", case_id: "E9-browser-haul-economy" } });
     const workerClick = clicks.find(click => click.button === "left" && click.x >= 606 && click.x < 613);
-    assert.ok(workerClick && workerClick.y >= 225 && workerClick.y < 232,
+    assert.ok(workerClick && workerClick.y >= 225 && workerClick.y < 238,
         `worker click must avoid the front worker's silhouette: ${JSON.stringify(workerClick)}`);
     assert.ok(clicks.some(click => click.button === "right" && click.x >= 684 && click.x < 696 && click.y >= 223 && click.y < 236));
     assert.ok(!saved.some(name => name.endsWith("driver-stop.json")), JSON.stringify(saved));

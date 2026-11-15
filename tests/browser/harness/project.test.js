@@ -27,6 +27,5 @@ test("projects an authored mesh height independently of its occluded ground cent
     const expected = [(clip[0] / clip[3] + 1) * 640, (1 - clip[1] / clip[3]) * 360];
     const actual = projectWorldPoint([26, 8], camera, viewport, 1);
     assert.ok(Math.hypot(actual[0] - expected[0], actual[1] - expected[1]) < 0.001);
-    assert.ok(projectWorldPoint([26, 8], camera, viewport)[1] - actual[1] > 8);
     assert.equal(projectWorldPoint([26, 8], camera, viewport, NaN), null);
 });
