@@ -1239,4 +1239,46 @@ mod tests {
             Vec2::new(4.0, 12.0)
         );
     }
+    #[test]
+    fn independent_review_clock_and_charge_overflow_hold_without_mutation() {
+        for clock_overflow in [true, false] {
+            let mut app = app(
+                &[
+                    (1, "repairer", 0, Vec2::new(8.0, 8.0)),
+                    (3, "target", 0, Vec2::new(10.0, 8.0)),
+                ],
+                u64::MAX,
+            );
+            if !clock_overflow {
+                let mut catalog = app.world_mut().resource_mut::<InstalledCatalog>();
+                let repair = catalog
+                    .0
+                    .units
+                    .get_mut(&id("repairer"))
+                    .unwrap()
+                    .repairer
+                    .as_mut()
+                    .unwrap();
+                repair.rate_per_second = u64::MAX;
+                repair.cost[0].amount = u64::MAX;
+            }
+            begin_action(app.world_mut(), 1, 3, true, RepairStatus::Working).unwrap();
+            let mut before = source_state(app.world(), 1);
+            if clock_overflow {
+                before.action.as_mut().unwrap().elapsed = u64::MAX;
+                save_state(app.world_mut(), 1, before.clone()).unwrap();
+            }
+            run_repair(app.world_mut());
+            let after = source_state(app.world(), 1);
+            assert_eq!(after.action, before.action);
+            assert_eq!(after.remainders, before.remainders);
+            assert_eq!(hp(&app, 3), 10);
+            assert_eq!(funds(&app), u64::MAX);
+            assert_eq!(
+                after.hold.as_ref().unwrap().reason,
+                RejectReason::ArithmeticOverflow
+            );
+            assert_eq!(status_rows(app.world())[0].state, RepairStatus::Working);
+        }
+    }
 }
