@@ -709,3 +709,299 @@ pub(crate) fn run_repair(world: &mut World) {
         heal_source(world, *source, repairer);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::super::ledger::{Account, EconomyLedger};
+    use super::*;
+    use turts_mod_api::{
+        ContentCatalog, Footprint, HealthDef, MovementDef, RepairCost, ResourceDef, ResourceKind,
+        SlotRelation, TargetFilter,
+    };
+    fn id(local: &str) -> ContentId {
+        ContentId::parse(&format!("test:{local}")).unwrap()
+    }
+    fn unit(local: &str) -> ResolvedUnit {
+        ResolvedUnit {
+            id: id(local),
+            name: local.into(),
+            footprint: Footprint::Circle { radius: 0.5 },
+            acquire: None,
+            armour: None,
+            movement: None,
+            inventory: None,
+            gatherer: None,
+            drop_off: None,
+            producer: None,
+            constructor: None,
+            repairer: None,
+            placement: None,
+            build_area: None,
+            output_inventory: None,
+            extractor: None,
+            conveyor: None,
+            inserter: None,
+            machine: None,
+            research: None,
+            health: None,
+            weapon: None,
+            removal: None,
+            provides: vec![],
+            consumes: vec![],
+            income: None,
+        }
+    }
+    fn app(placements: &[(u32, &str, u8, Vec2)], funds: u64) -> bevy_app::App {
+        let mut source = unit("repairer");
+        source.movement = Some(MovementDef { speed: 4.0 });
+        source.repairer = Some(RepairerDef {
+            rate_per_second: 20,
+            reach: 3.0,
+            cost: vec![RepairCost {
+                resource: id("credits").to_string(),
+                amount: 1,
+                per_health: 1,
+            }],
+            targets: TargetFilter {
+                slots: SlotRelation::Same,
+            },
+            classes: vec![],
+            auto_range: Some(12.0),
+        });
+        let mut target = unit("target");
+        target.health = Some(HealthDef { max: 100 });
+        let catalog = ContentCatalog {
+            combat: None,
+            resources: [(
+                id("credits"),
+                ResourceDef {
+                    id: "credits".into(),
+                    name: "credits".into(),
+                    unit_name: String::new(),
+                    kind: ResourceKind::Balance,
+                },
+            )]
+            .into(),
+            units: [source, target]
+                .into_iter()
+                .map(|unit| (unit.id.clone(), unit))
+                .collect(),
+            nodes: BTreeMap::new(),
+            production: BTreeMap::new(),
+            recipes: BTreeMap::new(),
+            technologies: BTreeMap::new(),
+            orders: BTreeMap::new(),
+            order_queue_depths: BTreeMap::new(),
+            source_files: BTreeMap::new(),
+        };
+        let types = UnitTypes::from_catalog(&catalog, &UnitTypes::default()).unwrap();
+        let mut app = crate::headless_app(20);
+        let world = app.world_mut();
+        let mut healths = Healths::default();
+        for &(unit_id, kind, owner, position) in placements {
+            let type_id = types.find(&id(kind).to_string()).unwrap();
+            world.spawn((
+                UnitId(unit_id),
+                UnitType(type_id),
+                Owner(crate::SlotId(owner)),
+                Position(position),
+                UnitOrders::default(),
+            ));
+            if kind == "target" {
+                healths.0.insert(unit_id, 10);
+            }
+        }
+        world.insert_resource(types);
+        world.insert_resource(InstalledCatalog(catalog));
+        world.insert_resource(healths);
+        world.insert_resource(ConstructionState::default());
+        world.insert_resource(crate::world::MapBounds {
+            size: Vec2::splat(64.0),
+        });
+        let mut ledger = EconomyLedger::default();
+        ledger.balances.insert(
+            (0, id("credits")),
+            Account {
+                on_hand: funds,
+                reserved: 0,
+            },
+        );
+        world.insert_resource(ledger);
+        app
+    }
+    fn hp(app: &bevy_app::App, target: u32) -> u64 {
+        app.world().resource::<Healths>().0[&target]
+    }
+    fn funds(app: &bevy_app::App) -> u64 {
+        app.world().resource::<EconomyLedger>().balances[&(0, id("credits"))].on_hand
+    }
+
+    #[test]
+    fn physical_source_priority_survives_reversed_id_order() {
+        for (left, right) in [(1, 2), (2, 1)] {
+            let mut app = app(
+                &[
+                    (left, "repairer", 0, Vec2::new(8.0, 8.0)),
+                    (right, "repairer", 0, Vec2::new(10.0, 6.0)),
+                    (3, "target", 0, Vec2::new(10.0, 8.0)),
+                ],
+                1,
+            );
+            run_repair(app.world_mut());
+            assert_eq!(hp(&app, 3), 11);
+            assert_eq!(funds(&app), 0);
+            let rows = status_rows(app.world());
+            assert_eq!(
+                rows.iter().find(|row| row.repairer == left).unwrap().state,
+                RepairStatus::Working
+            );
+            assert_eq!(
+                rows.iter().find(|row| row.repairer == right).unwrap().state,
+                RepairStatus::WaitingForFunds(id("credits"))
+            );
+        }
+    }
+
+    #[test]
+    fn coincident_target_tie_does_not_acquire_by_identity() {
+        let mut app = app(
+            &[
+                (1, "repairer", 0, Vec2::new(8.0, 8.0)),
+                (3, "target", 0, Vec2::new(10.0, 8.0)),
+                (4, "target", 0, Vec2::new(10.0, 8.0)),
+            ],
+            100,
+        );
+        run_repair(app.world_mut());
+        assert!(!active_action(app.world(), 1));
+        assert!(status_rows(app.world()).is_empty());
+        assert_eq!((hp(&app, 3), hp(&app, 4), funds(&app)), (10, 10, 100));
+    }
+
+    #[test]
+    fn coincident_sources_hold_without_payment_and_project_working() {
+        let mut app = app(
+            &[
+                (1, "repairer", 0, Vec2::new(8.0, 8.0)),
+                (2, "repairer", 0, Vec2::new(8.0, 8.0)),
+                (3, "target", 0, Vec2::new(10.0, 8.0)),
+            ],
+            100,
+        );
+        run_repair(app.world_mut());
+        assert_eq!((hp(&app, 3), funds(&app)), (10, 100));
+        assert!(
+            status_rows(app.world())
+                .iter()
+                .all(|row| row.state == RepairStatus::Working)
+        );
+        let rows = audit_rows(app.world());
+        assert_eq!(rows.len(), 2);
+        assert!(rows.iter().all(
+            |row| row.hold.as_ref().unwrap().reason == RejectReason::Blocked
+                && row.action.as_ref().unwrap().elapsed == 0
+        ));
+    }
+
+    #[test]
+    fn arithmetic_hold_does_not_mutate_health_clock_or_balance() {
+        let mut app = app(
+            &[
+                (1, "repairer", 0, Vec2::new(8.0, 8.0)),
+                (3, "target", 0, Vec2::new(10.0, 8.0)),
+            ],
+            100,
+        );
+        let state = RepairUnitState {
+            action: Some(RepairAction {
+                target: 3,
+                automatic: true,
+                elapsed: u64::MAX,
+                state: RepairStatus::Working,
+            }),
+            ..Default::default()
+        };
+        let mut runtime = RepairRuntime::default();
+        runtime.units.insert(1, state);
+        app.world_mut().insert_resource(runtime);
+        run_repair(app.world_mut());
+        assert_eq!((hp(&app, 3), funds(&app)), (10, 100));
+        let rows = audit_rows(app.world());
+        assert_eq!(rows[0].action.as_ref().unwrap().elapsed, u64::MAX);
+        assert_eq!(
+            rows[0].hold.as_ref().unwrap().reason,
+            RejectReason::ArithmeticOverflow
+        );
+        assert_eq!(status_rows(app.world())[0].state, RepairStatus::Working);
+    }
+
+    #[test]
+    fn manual_validation_rejects_foreign_full_dead_missing_and_unfinished_targets() {
+        let mut app = app(
+            &[
+                (1, "repairer", 0, Vec2::new(8.0, 8.0)),
+                (3, "target", 0, Vec2::new(10.0, 8.0)),
+                (4, "target", 1, Vec2::new(20.0, 8.0)),
+            ],
+            100,
+        );
+        assert!(validate_order(app.world(), 1, 3).is_ok());
+        assert_eq!(
+            validate_order(app.world(), 1, 4),
+            Err(RejectReason::TargetInvalid)
+        );
+        assert_eq!(
+            validate_order(app.world(), 1, 999),
+            Err(RejectReason::TargetGone)
+        );
+        app.world_mut().resource_mut::<Healths>().0.insert(3, 100);
+        assert_eq!(
+            validate_order(app.world(), 1, 3),
+            Err(RejectReason::TargetInvalid)
+        );
+        app.world_mut().resource_mut::<Healths>().0.insert(3, 0);
+        assert_eq!(
+            validate_order(app.world(), 1, 3),
+            Err(RejectReason::TargetInvalid)
+        );
+        app.world_mut().resource_mut::<Healths>().0.insert(3, 10);
+        let site = serde_json::from_value(serde_json::json!({ "constructor": 1, "owner_slot": 0, "recipe": "test:site", "job": 1, "done": 0, "total": 10, "charged": [] })).unwrap();
+        app.world_mut()
+            .resource_mut::<ConstructionState>()
+            .sites
+            .insert(3, site);
+        assert_eq!(
+            validate_order(app.world(), 1, 3),
+            Err(RejectReason::TargetInvalid)
+        );
+    }
+
+    #[test]
+    fn replacing_an_action_preserves_debt_and_removal_clears_only_its_sources() {
+        let mut app = app(
+            &[
+                (1, "repairer", 0, Vec2::new(8.0, 8.0)),
+                (3, "target", 0, Vec2::new(10.0, 8.0)),
+            ],
+            100,
+        );
+        run_repair(app.world_mut());
+        app.world_mut()
+            .resource_mut::<RepairRuntime>()
+            .units
+            .get_mut(&1)
+            .unwrap()
+            .remainders
+            .insert(id("credits"), 3);
+        order_changed(app.world_mut(), 1);
+        let state = source_state(app.world(), 1);
+        assert!(state.action.is_none());
+        assert_eq!(state.remainders[&id("credits")], 3);
+        run_repair(app.world_mut());
+        remove_unit(app.world_mut(), 3);
+        assert!(!active_action(app.world(), 1));
+        assert_eq!(source_state(app.world(), 1).remainders[&id("credits")], 3);
+        remove_unit(app.world_mut(), 1);
+        assert!(audit_rows(app.world()).is_empty());
+    }
+}
