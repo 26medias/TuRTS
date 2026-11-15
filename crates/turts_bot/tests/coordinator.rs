@@ -434,3 +434,20 @@ fn malformed_verified_members_have_no_partial_pending_or_sequence_writes() {
     assert_eq!(c.next_sequence(), Some(0));
     assert!(c.pending().is_empty());
 }
+
+#[test]
+fn the_pending_account_row_limit_counts_each_members_obligation_not_only_unique_resources() {
+    let mut limits = CoordinatorLimits::default();
+    limits.pending_accounts = 1;
+    let mut c = BotCoordinator::new(actor(), limits);
+    c.reconcile(0, &batch(0, vec![balance(money(), 20, 0)], vec![], vec![]))
+        .unwrap();
+    let v = verifier(vec![
+        member(1, 8., vec![amount(money(), 10)]),
+        member(2, 30., vec![amount(money(), 10)]),
+    ]);
+    let out = c.select(0, vec![proposal("group", vec![1, 2])], &v);
+    assert_eq!(out.refused[0].reason, ProposalRejection::Budget);
+    assert!(c.tracked_requests().is_empty());
+    assert_eq!(c.next_sequence(), Some(0));
+}

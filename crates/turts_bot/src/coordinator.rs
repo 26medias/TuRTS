@@ -83,6 +83,10 @@ impl BotCoordinator {
     pub fn actor(&self) -> &BotActor {
         &self.actor
     }
+    /// Receipt keys still needed after reconciliation and command emission.
+    pub fn tracked_requests(&self) -> Vec<RequestKey> {
+        self.pending.keys().cloned().collect()
+    }
     pub fn pending(&self) -> Vec<PendingCommitment> {
         self.pending.values().cloned().collect()
     }
@@ -245,6 +249,9 @@ impl BotCoordinator {
                     || effect.work.is_some()
                     || effect.pending_placement)
             {
+                return Err(ReconcileError::InvalidEffect);
+            }
+            if effect.pending_placement && effect.work.is_some() {
                 return Err(ReconcileError::InvalidEffect);
             }
             if let Some(work) = &effect.work {
@@ -442,16 +449,20 @@ impl BotCoordinator {
             .ok_or(ProposalRejection::SequenceExhausted)?;
         let mut required = BTreeMap::<SpendKey, u128>::new();
         let mut touched_accounts = BTreeSet::new();
-        let mut pending_accounts = BTreeSet::new();
+        let mut pending_account_rows = 0_usize;
         for entry in self.pending.values() {
+            pending_account_rows = pending_account_rows
+                .checked_add(entry.declared.len())
+                .ok_or(ProposalRejection::Budget)?;
             for amount in &entry.unpaid {
-                pending_accounts.insert(amount.account.clone());
                 *required.entry(amount.account.clone()).or_default() += u128::from(amount.amount);
             }
         }
         for member in &verified.members {
+            pending_account_rows = pending_account_rows
+                .checked_add(member.costs.len())
+                .ok_or(ProposalRejection::Budget)?;
             for amount in &member.costs {
-                pending_accounts.insert(amount.account.clone());
                 touched_accounts.insert(amount.account.clone());
                 let old = required.entry(amount.account.clone()).or_default();
                 *old = old
@@ -459,7 +470,7 @@ impl BotCoordinator {
                     .ok_or(ProposalRejection::ArithmeticOverflow)?;
             }
         }
-        if pending_accounts.len() > self.limits.pending_accounts as usize {
+        if pending_account_rows > self.limits.pending_accounts as usize {
             return Err(ProposalRejection::Budget);
         }
         for (account, amount) in required {
