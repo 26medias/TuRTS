@@ -168,6 +168,43 @@ fn operating_income_and_supply_replay_real_recorded_stream() {
         })
         .collect();
     assert_eq!(credits, vec![(21, 3), (21, 3), (42, 3), (42, 3)]);
+    let balance = |state: &turts_sim::AuditState| {
+        state
+            .economy
+            .balances
+            .iter()
+            .find(|row| row.slot == 0 && row.resource.to_string() == "cedar:credits")
+            .unwrap()
+            .on_hand
+    };
+    assert_eq!(balance(initial), 0);
+    let final_state = records
+        .iter()
+        .rev()
+        .find_map(|record| {
+            if let EconomyLogRecord::Tick { state, .. } = record {
+                Some(state)
+            } else {
+                None
+            }
+        })
+        .unwrap();
+    assert_eq!(
+        balance(final_state),
+        12,
+        "four real income credits reach the balance"
+    );
+    assert!(
+        !records.iter().any(|record| {
+            matches!(record, EconomyLogRecord::Operation(operation)
+            if operation.events.iter().any(|event| matches!(event.kind,
+                EconomyEventKind::Converted { .. } | EconomyEventKind::Extracted { .. }
+                | EconomyEventKind::Stored { .. })))
+        }),
+        "passive income must not emit conversion, extraction, or storage events"
+    );
+    // Gathered accounting and its HUD source are not implemented yet. This
+    // checks the real ledger and event boundary, not an invented accumulator.
     validate_records(&records).unwrap();
     assert_eq!(
         serde_json::to_value(&records).unwrap(),
