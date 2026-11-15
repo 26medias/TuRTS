@@ -339,7 +339,9 @@ fn renamed_archive() -> PackageArchive {
 }
 
 fn allocated_profile(archive: &PackageArchive, map: turts_mod_api::MapDef) -> App {
-    let catalog = archive.content().unwrap();
+    allocated_catalog(archive.content().unwrap(), map)
+}
+fn allocated_catalog(catalog: turts_mod_api::ContentCatalog, map: turts_mod_api::MapDef) -> App {
     let mut app = turts_sim::headless_app(20);
     let staged = turts_sim::stage_package(
         app.world(),
@@ -477,4 +479,225 @@ fn real_allocator_inversion_preserves_public_profile_physical_choices() {
     )
     .expect_err("coincident sources must be refused before allocation");
     assert!(error.to_string().contains("overlap"), "{error}");
+}
+
+#[test]
+fn ordinary_enemy_weapon_losses_interrupt_opening_and_restore_worker_and_supply_once() {
+    use turts_net_protocol::{OrderEnvelope, OrderTarget, PlayerCommand, QueueMode, UnitId};
+    use turts_sim::{AuditTrail, economy::events::EconomyEventKind};
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../mods/stockyard");
+    let archive = PackageArchive::parse(&pack_dir(&root).unwrap()).unwrap();
+    let mut catalog = archive.content().unwrap();
+    let mut raider = catalog.units[&ContentId::parse("stockyard:soldier").unwrap()].clone();
+    raider.id = ContentId::parse("stockyard:raider").unwrap();
+    raider.health.as_mut().unwrap().max = 1_000_000;
+    raider.weapon.as_mut().unwrap().damage = 10_000;
+    raider.acquire = None;
+    for order in catalog
+        .orders
+        .values_mut()
+        .filter(|order| order.units.contains(&"stockyard:soldier".to_owned()))
+    {
+        order.units.push(raider.id.to_string());
+    }
+    catalog.units.insert(raider.id.clone(), raider);
+    let mut map = archive.maps().unwrap().remove(0).1;
+    map.placements
+        .iter_mut()
+        .find(|unit| unit.owner_slot == 0 && unit.unit == "stockyard:soldier")
+        .unwrap()
+        .unit = "stockyard:raider".into();
+    let mut extra = map
+        .placements
+        .iter()
+        .find(|unit| unit.owner_slot == 1 && unit.unit == "stockyard:tower")
+        .unwrap()
+        .clone();
+    extra.pos = turts_mod_api::WorldPos { x: 58., y: 36. };
+    map.placements.push(extra);
+    let mut app = allocated_catalog(catalog, map);
+    let initial = turts_sim::completed_world(app.world()).clone();
+    let worker = initial
+        .units
+        .iter()
+        .find(|unit| unit.owner_slot == 1 && unit.content_id == "stockyard:worker")
+        .unwrap()
+        .unit_id;
+    let mut victims = vec![worker];
+    victims.extend(
+        initial
+            .units
+            .iter()
+            .filter(|unit| unit.owner_slot == 1 && unit.content_id == "stockyard:tower")
+            .map(|unit| unit.unit_id),
+    );
+    assert_eq!(victims.len(), 3);
+    let attacker = initial
+        .units
+        .iter()
+        .find(|unit| unit.content_id == "stockyard:raider")
+        .unwrap()
+        .unit_id;
+    let connection = app
+        .world_mut()
+        .query_filtered::<Entity, With<session::Session>>()
+        .single(app.world())
+        .unwrap();
+    let directory = std::env::var_os("TURTS_BOT_EVIDENCE_DIR")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| {
+            std::env::temp_dir().join(format!("turts-public-bot-host-{}", std::process::id()))
+        });
+    std::fs::create_dir_all(&directory).unwrap();
+    let path = directory.join("ordinary-worker-provider-loss.jsonl");
+    app.world_mut().resource_mut::<AuditTrail>().enable();
+    let state = turts_sim::audit_state(app.world_mut());
+    let sink = crate::economylog::EconomyLogSink::create(
+        &path,
+        app.world().resource::<AuditTrail>(),
+        state,
+    )
+    .unwrap();
+    app.insert_resource(sink);
+    app.add_systems(
+        FixedLast,
+        crate::economylog::capture_completed_tick.after(session::ParticipantTraceComplete),
+    );
+    let attack = |app: &mut App, index: usize| {
+        app.world_mut()
+            .resource_mut::<session::StagedPlayerCommands>()
+            .0
+            .push_back(session::StagedPlayerCommand {
+                connection,
+                slot: SlotId(0),
+                envelope: PlayerCommand {
+                    seq: index as u32 + 1,
+                    order: OrderEnvelope {
+                        order: "stockyard:order_attack".into(),
+                        units: vec![UnitId(attacker)],
+                        target: OrderTarget::Unit(UnitId(victims[index])),
+                        queue: QueueMode::Replace,
+                        group: 0,
+                    },
+                },
+            })
+    };
+    attack(&mut app, 0);
+    let mut destroyed = 0;
+    let mut hits = std::collections::BTreeSet::new();
+    let mut recovery = BTreeMap::<String, usize>::new();
+    let mut worker_absent = false;
+    let mut supply_below_target = false;
+    let mut restored = false;
+    let mut loss_ticks = Vec::new();
+    for _ in 0..2400 {
+        app.update();
+        let view = turts_sim::completed_world(app.world());
+        for event in &turts_sim::committed_tick(app.world()).events {
+            if let EconomyEventKind::Fired { weapon, target, .. } = event.kind {
+                if weapon == attacker && victims.contains(&target) {
+                    hits.insert(target);
+                }
+            }
+        }
+        for command in &app.world().resource::<BotExecution>().generated {
+            if ["restore_beds", "recover_worker"].contains(&command.task.goal.as_str()) {
+                *recovery.entry(command.task.goal.clone()).or_default() += 1;
+                assert_eq!(
+                    recovery[&command.task.goal], 1,
+                    "pending paid recovery cannot be submitted twice"
+                );
+            }
+        }
+        let owned_workers = view
+            .units
+            .iter()
+            .filter(|unit| unit.owner_slot == 1 && unit.content_id == "stockyard:worker")
+            .count();
+        worker_absent |= owned_workers == 0;
+        let spare = view
+            .operating
+            .as_ref()
+            .and_then(|operating| {
+                operating
+                    .supply
+                    .iter()
+                    .find(|row| row.slot == 1 && row.resource.to_string() == "stockyard:beds")
+            })
+            .map_or(0, |row| row.provided.saturating_sub(row.consumed));
+        supply_below_target |= spare < 4;
+        let pending = app.world().resource::<BotHost>().bots[0]
+            .coordinator
+            .pending();
+        let mut task_members = std::collections::BTreeSet::new();
+        let mut works = std::collections::BTreeSet::new();
+        for commitment in pending {
+            assert!(
+                task_members.insert((commitment.task.clone(), commitment.request.unit)),
+                "duplicate task allocation for one actor"
+            );
+            if let Some(work) = commitment.work {
+                assert!(
+                    works.insert(work),
+                    "the same authoritative COT work cannot be counted twice"
+                );
+            }
+        }
+        if destroyed < victims.len()
+            && !view
+                .units
+                .iter()
+                .any(|unit| unit.unit_id == victims[destroyed])
+        {
+            loss_ticks.push(view.tick);
+            destroyed += 1;
+            if destroyed < victims.len() {
+                attack(&mut app, destroyed);
+            }
+        }
+        let view = turts_sim::completed_world(app.world());
+        if destroyed == 3
+            && worker_absent
+            && supply_below_target
+            && owned_workers >= 1
+            && spare >= 4
+            && recovery.get("recover_worker") == Some(&1)
+            && recovery.get("restore_beds") == Some(&1)
+        {
+            assert!(view.units.iter().any(|unit| unit.owner_slot == 1
+                && unit.content_id == "stockyard:worker"
+                && unit.unit_id != worker));
+            assert!(view.units.iter().any(|unit| unit.owner_slot == 1
+                && unit.content_id == "stockyard:tower"
+                && !victims.contains(&unit.unit_id)));
+            assert!(
+                owned_workers < 6,
+                "optional opening worker expansion is still unfinished when recovery succeeds"
+            );
+            restored = true;
+            break;
+        }
+    }
+    assert!(
+        restored,
+        "ordinary losses did not trigger both recoveries: destroyed{destroyed} worker_absent{worker_absent} supply_short{supply_below_target} recovery{recovery:?}"
+    );
+    assert_eq!(
+        hits.len(),
+        3,
+        "every lost unit must have a real ordinary enemy shot witness"
+    );
+    assert!(
+        app.world()
+            .resource::<crate::economylog::EconomyLogSink>()
+            .error
+            .is_none()
+    );
+    drop(app);
+    let records = turts_audit::read_jsonl_file(&path).unwrap();
+    turts_audit::validate_records(&records).unwrap();
+    println!(
+        "BF4_RECOVERY {}",
+        serde_json::json!({"evidence":path,"ordinary_enemy_loss_ticks":loss_ticks,"recovery_submissions":recovery,"duplicates":0,"optional_opening_still_pending":true})
+    );
 }
