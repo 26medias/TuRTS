@@ -147,7 +147,6 @@ fn gcd(mut a: u128, mut b: u128) -> u128 {
 }
 impl Q {
     const ZERO: Self = Self { n: 0, d: 1 };
-    const ONE: Self = Self { n: 1, d: 1 };
     fn new(mut n: i128, mut d: i128) -> ResultQ {
         if d == 0 {
             return Err(Error::Arithmetic);
@@ -158,9 +157,6 @@ impl Q {
         }
         let g = i128::try_from(gcd(n.unsigned_abs(), d as u128)).map_err(|_| Error::Arithmetic)?;
         Ok(Self { n: n / g, d: d / g })
-    }
-    fn int(n: i128) -> Self {
-        Self { n, d: 1 }
     }
     fn float(value: f64) -> ResultQ {
         if !value.is_finite() {
@@ -830,7 +826,13 @@ fn face_hit(
         if origin[axis].cmp(plane)? != Ordering::Equal {
             return Ok(None);
         }
-        Q::ZERO
+        // A coplanar ray can enter a finite face after its origin. The
+        // first slab intersection, rather than t=0, is its actual nearest hit.
+        let Some((entry, _)) = ray_interval(&origin, &direction, &low, &high, Q::ZERO, None)?
+        else {
+            return Ok(None);
+        };
+        entry
     } else {
         plane.sub(origin[axis])?.div(direction[axis])?
     };
@@ -1493,6 +1495,67 @@ mod tests {
                 assert_eq!(hit.position.z, f64::from(expected) * 0.25);
                 assert_eq!(hit.parameter, (4.0 - f64::from(expected) * 0.25) / 2.0);
             }
+        }
+    }
+
+    #[test]
+    fn coplanar_ray_enters_a_finite_top_face_at_its_first_in_bounds_point() {
+        let g = grid();
+        let hit = g
+            .ray_hit(
+                &|_| Some(0),
+                Ray {
+                    origin: Point3 {
+                        x: -1.0,
+                        y: 2.5,
+                        z: 0.0,
+                    },
+                    direction: Point3 {
+                        x: 1.0,
+                        y: 0.0,
+                        z: 0.0,
+                    },
+                },
+                &mut budget(),
+            )
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            (hit.cell, hit.face, hit.parameter),
+            (Cell { x: 0, y: 2 }, Face::Top, 1.0)
+        );
+        assert_eq!(
+            hit.position,
+            Point3 {
+                x: 0.0,
+                y: 2.5,
+                z: 0.0
+            }
+        );
+    }
+
+    #[test]
+    fn widened_f32_flat_sweeps_preserve_continuous_poses_without_arithmetic_stalls() {
+        let g = grid();
+        let mut seed = 0x6a09_e667_f3bc_c909u64;
+        for _ in 0..64 {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            let x = 1.0f32 + (seed as u32 % 5000) as f32 / 1000.0;
+            let y = 1.0f32 + ((seed >> 32) as u32 % 5000) as f32 / 1000.0;
+            let from = p(f64::from(x), f64::from(y));
+            let to = p(f64::from(x + 0.125), f64::from(y - 0.0625));
+            let result = g.sweep(
+                &|_| Some(0),
+                from,
+                to,
+                f64::from(0.55f32),
+                profile(0),
+                &mut budget(),
+            );
+            assert_eq!(result.result, Ok(()), "from {from:?} to {to:?}: {result:?}");
+            assert_eq!(result.numerator, result.denominator);
         }
     }
 
