@@ -7,6 +7,8 @@ use turts_sim::economy::construction::{ConstructionLimit, ConstructionState, con
 use turts_sim::*;
 #[path = "../../turts_server/src/export.rs"]
 mod export;
+#[path = "../../turts_server/src/permissions.rs"]
+mod permissions;
 fn cid(local: &str) -> ContentId {
     ContentId::parse(&format!("build:{local}")).unwrap()
 }

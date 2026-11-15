@@ -10,6 +10,8 @@ use turts_net_protocol::Outcome;
 use turts_sim::{Command, CommandKind, SlotId, apply_command, committed_tick, completed_world};
 #[path = "../../turts_server/src/export.rs"]
 mod export;
+#[path = "../../turts_server/src/permissions.rs"]
+mod permissions;
 
 fn tick(app: &mut App) {
     app.world_mut().run_schedule(FixedPreUpdate);

@@ -1,6 +1,8 @@
 //! Real boot, publication, and owner projection of operating-resource supply.
 #[path = "../src/export.rs"]
 mod export;
+#[path = "../src/permissions.rs"]
+mod permissions;
 
 use std::path::Path;
 use turts_mod_api::{

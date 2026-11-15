@@ -4,6 +4,8 @@ use std::path::Path;
 
 #[path = "../src/export.rs"]
 mod export;
+#[path = "../src/permissions.rs"]
+mod permissions;
 
 use turts_mod_runtime::archive::PackageArchive;
 use turts_mod_runtime::pack::pack_dir;

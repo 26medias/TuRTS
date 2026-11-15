@@ -12,6 +12,8 @@ mod boot;
 
 #[path = "../src/export.rs"]
 mod export;
+#[path = "../src/permissions.rs"]
+mod permissions;
 
 #[allow(dead_code)]
 #[path = "../src/synthetic.rs"]
