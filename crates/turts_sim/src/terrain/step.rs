@@ -447,7 +447,9 @@ pub(crate) fn affordable_steps(
             return 0;
         };
         let remaining = u128::from(inventory.capacity).saturating_sub(used);
-        count = count.min(u64::try_from(remaining / inventory_total).unwrap_or(u64::MAX));
+        count = count.min(
+            u64::try_from(remaining.checked_div(inventory_total).unwrap_or(0)).unwrap_or(u64::MAX),
+        );
     }
     u32::try_from(count).unwrap_or(0)
 }

@@ -49,12 +49,11 @@ pub(crate) fn validate_order(
     {
         return Err(RejectReason::NotOwner);
     }
-    if let Some(healths) = world.get_resource::<crate::economy::combat::Healths>() {
-        if healths.0.get(&actor).is_some_and(|health| *health == 0)
-            || healths.0.get(receiver).is_some_and(|health| *health == 0)
-        {
-            return Err(RejectReason::TargetGone);
-        }
+    if let Some(healths) = world.get_resource::<crate::economy::combat::Healths>()
+        && (healths.0.get(&actor).is_some_and(|health| *health == 0)
+            || healths.0.get(receiver).is_some_and(|health| *health == 0))
+    {
+        return Err(RejectReason::TargetGone);
     }
     if !definition(world, actor).is_some_and(|unit| unit.terrain_cargo.is_some()) {
         return Err(RejectReason::MissingCapability);

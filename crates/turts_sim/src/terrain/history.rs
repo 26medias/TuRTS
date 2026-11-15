@@ -320,11 +320,12 @@ pub(super) fn capture(world: &mut World, phase: ObservationPhase) -> Option<Capt
     }
     let tick = world.get_resource::<crate::Tick>().map_or(0, |tick| tick.0);
     for viewer in 0..turts_mod_api::SLOT_COUNT {
-        if permissions.is_none() && viewer > 0 {
-            if let Some(first) = history.slots.get(&0).cloned() {
-                history.slots.insert(viewer, first);
-                continue;
-            }
+        if permissions.is_none()
+            && viewer > 0
+            && let Some(first) = history.slots.get(&0).cloned()
+        {
+            history.slots.insert(viewer, first);
+            continue;
         }
         let slot = history.slots.entry(viewer).or_insert_with(|| {
             let empty = Arc::new(MemoryChunk::default());

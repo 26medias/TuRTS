@@ -325,19 +325,18 @@ fn validate_links(
                 partial,
             )?;
         }
-        if let Some(cargo) = unit.terrain_cargo {
-            if cargo.unload_per_second == 0
+        if let Some(cargo) = unit.terrain_cargo
+            && (cargo.unload_per_second == 0
                 || !cargo.interaction_range.is_finite()
                 || cargo.interaction_range < 0.0
-                || unit.inventory.is_none()
-            {
-                return Err(error(
-                    origin,
-                    file,
-                    "terrain_cargo",
-                    "requires an inventory, positive unload rate and finite nonnegative reach",
-                ));
-            }
+                || unit.inventory.is_none())
+        {
+            return Err(error(
+                origin,
+                file,
+                "terrain_cargo",
+                "requires an inventory, positive unload rate and finite nonnegative reach",
+            ));
         }
         let mut seen = BTreeSet::new();
         for id in &unit.terrain_tools {
