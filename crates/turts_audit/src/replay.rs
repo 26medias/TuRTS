@@ -9848,6 +9848,11 @@ mod tests {
             resource_kinds: vec![],
             nodes: vec![],
             units: vec![CatalogUnitAudit {
+                provides: Vec::new(),
+                consumes: Vec::new(),
+                income: None,
+                producer_when_short: Vec::new(),
+                weapon_when_short: Vec::new(),
                 acquire: None,
                 armour: None,
                 weapon_bonus: Vec::new(),
@@ -11666,6 +11671,11 @@ mod tests {
                 radius: 2.0,
             }],
             units: vec![CatalogUnitAudit {
+                provides: Vec::new(),
+                consumes: Vec::new(),
+                income: None,
+                producer_when_short: Vec::new(),
+                weapon_when_short: Vec::new(),
                 acquire: None,
                 armour: None,
                 weapon_bonus: Vec::new(),
@@ -17415,6 +17425,11 @@ mod tests {
                 radius: 0.5,
             });
             let catalog_unit = turts_sim::economy::views::CatalogUnitAudit {
+                provides: Vec::new(),
+                consumes: Vec::new(),
+                income: None,
+                producer_when_short: Vec::new(),
+                weapon_when_short: Vec::new(),
                 acquire: None,
                 armour: None,
                 weapon_bonus: Vec::new(),
@@ -18402,6 +18417,11 @@ mod tests {
                 radius: 2.0,
             }],
             units: vec![turts_sim::economy::views::CatalogUnitAudit {
+                provides: Vec::new(),
+                consumes: Vec::new(),
+                income: None,
+                producer_when_short: Vec::new(),
+                weapon_when_short: Vec::new(),
                 acquire: None,
                 armour: None,
                 weapon_bonus: Vec::new(),
