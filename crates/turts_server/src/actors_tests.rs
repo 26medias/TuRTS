@@ -288,8 +288,34 @@ fn a_real_weapon_kill_after_the_first_cot_step_keeps_its_exact_terminal_debit() 
         attack.fire = Some(FirePolicy::InRange);
         attack.engage = Some(EngagePolicy::None);
         attack.units = vec![];
-        catalog.orders.insert(id("order_attack"), attack);
+        catalog.orders.insert(id("order_attack"), attack.clone());
+        let mut hold = attack;
+        hold.id = "order_hold_fire".into();
+        hold.behaviour = Behaviour::Hold;
+        hold.target = TargetKind::None;
+        hold.fire = Some(FirePolicy::Never);
+        catalog.orders.insert(id("order_hold_fire"), hold);
     });
+    let hold = PlayerCommand {
+        seq: 98,
+        order: OrderEnvelope {
+            order: id("order_hold_fire").to_string(),
+            units: vec![turts_net_protocol::UnitId(5)],
+            target: OrderTarget::None,
+            queue: turts_net_protocol::QueueMode::Replace,
+            group: 0,
+        },
+    };
+    let commands = crate::orders::to_sim(
+        SlotId(1),
+        &hold,
+        &app.world().resource::<crate::orders::ServerCatalog>().0,
+    )
+    .unwrap();
+    app.world_mut()
+        .resource_mut::<turts_sim::CommandQueue>()
+        .0
+        .extend(commands);
     stage_bot_command(
         app.world_mut(),
         command(1, vec![1], "order_produce", BotTarget::Content(id("hire"))),
@@ -481,7 +507,8 @@ fn an_automatic_held_site_can_place_and_complete_before_its_first_publication() 
         turts_sim::completed_world(app.world())
             .construction
             .held
-            .is_empty()
+            .values()
+            .all(Vec::is_empty)
     );
     let terminal = &turts_sim::committed_tick(app.world()).terminal_work[0];
     assert!(terminal.construction);
