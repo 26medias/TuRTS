@@ -268,6 +268,7 @@ fn poll_connecting(
             WebSocketIo {
                 rx_packet_b2f: next.frontend.rx_packet_b2f,
                 tx_packet_f2b: next.frontend.tx_packet_f2b,
+                send_budget: next.frontend.send_budget,
                 tx_user_dc: Some(next.frontend.tx_user_dc),
             },
             Connected { rx_dc_reason },
