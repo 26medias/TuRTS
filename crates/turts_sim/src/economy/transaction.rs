@@ -514,12 +514,20 @@ impl Transaction<'_> {
             return Ok(());
         }
         // An operating creation cannot silently bypass the caller's common admission pass.
+        let sites = self.writes.construction.as_ref().or_else(|| {
+            self.world
+                .get_resource::<super::construction::ConstructionState>()
+        });
         for unit in self.writes.spawned.iter().map(|spawn| spawn.id).chain(
             self.writes
                 .completed_buildings
                 .iter()
                 .map(|(unit, _)| *unit),
         ) {
+            // A placed site contributes only after its completion transaction removes this row.
+            if sites.is_some_and(|state| state.sites.contains_key(&unit)) {
+                continue;
+            }
             let (_, definition) = self.operating_target(unit)?;
             if (!definition.provides.is_empty()
                 || !definition.consumes.is_empty()
@@ -592,24 +600,23 @@ impl Transaction<'_> {
             if sites.is_some_and(|state| state.sites.contains_key(&unit)) {
                 return Err(RejectReason::IntegrityViolation);
             }
-            let health =
-                if let Some(spawn) = self.writes.spawned.iter().find(|spawn| spawn.id == unit) {
-                    spawn.capability_rows.health
-                } else if let Some((_, rows)) = self
-                    .writes
+            let health = if let Some(health) = self.writes.healths.get(&unit) {
+                *health
+            } else if let Some(spawn) = self.writes.spawned.iter().find(|spawn| spawn.id == unit) {
+                spawn.capability_rows.health
+            } else {
+                self.writes
                     .completed_buildings
                     .iter()
                     .find(|(id, _)| *id == unit)
-                {
-                    rows.health
-                } else if let Some(health) = self.writes.healths.get(&unit) {
-                    *health
-                } else {
-                    self.world
-                        .get_resource::<super::combat::Healths>()
-                        .and_then(|healths| healths.0.get(&unit))
-                        .copied()
-                };
+                    .and_then(|(_, rows)| rows.health)
+                    .or_else(|| {
+                        self.world
+                            .get_resource::<super::combat::Healths>()
+                            .and_then(|healths| healths.0.get(&unit))
+                            .copied()
+                    })
+            };
             if health == Some(0) {
                 return Err(RejectReason::IntegrityViolation);
             }
