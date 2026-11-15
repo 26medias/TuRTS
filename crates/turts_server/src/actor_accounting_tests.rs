@@ -559,7 +559,7 @@ fn same_tick_completion_and_destruction_keep_exact_actual_paid_and_terminal_stat
         (0, TerminalWorkState::Cancelled),
     ] {
         let catalog = catalog();
-        let view = view(1);
+        let basis_view = view(1);
         let (key, tracked) = finalized_request(1, 1, 5);
         let mut requests = BTreeMap::from([(key.clone(), tracked)]);
         let paid = if done == 0 {
@@ -595,7 +595,7 @@ fn same_tick_completion_and_destruction_keep_exact_actual_paid_and_terminal_stat
                 },
             });
         }
-        let result = batch(&view, &committed, &catalog, &mut requests).unwrap();
+        let result = batch(&basis_view, &committed, &catalog, &mut requests).unwrap();
         let effect = &result.included[0];
         let work = effect.work.as_ref().unwrap();
         assert!(effect.terminal);
@@ -611,7 +611,7 @@ fn same_tick_completion_and_destruction_keep_exact_actual_paid_and_terminal_stat
         );
         assert_eq!(effect.paid.iter().map(|row| row.amount).sum::<u64>(), done);
         let later = batch(
-            &super::tests::view(2),
+            &view(2),
             &CommittedTick {
                 tick: 2,
                 ..Default::default()
