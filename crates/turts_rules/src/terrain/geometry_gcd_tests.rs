@@ -146,3 +146,52 @@ fn exact_gcd_microbenchmark() {
         );
     }
 }
+
+// Preserve the complete former normalization sequence, including its refusal
+// order for negative denominators and signed overflow.
+fn division_normalize(mut n: i128, mut d: i128) -> Result<Q, super::Error> {
+    use super::Error;
+    if d == 0 {
+        return Err(Error::Arithmetic);
+    }
+    if d < 0 {
+        n = n.checked_neg().ok_or(Error::Arithmetic)?;
+        d = d.checked_neg().ok_or(Error::Arithmetic)?;
+    }
+    let g =
+        i128::try_from(euclidean(n.unsigned_abs(), d as u128)).map_err(|_| Error::Arithmetic)?;
+    Ok(Q { n: n / g, d: d / g })
+}
+
+#[test]
+fn rational_normalization_preserves_signed_boundaries_and_refusal_order() {
+    let mut edges = vec![i128::MIN, i128::MAX, -1, 0, 1];
+    for bit in 0..127 {
+        let power = 1i128 << bit;
+        for value in [power - 1, power, power + 1] {
+            edges.extend([value, -value]);
+        }
+    }
+    edges.sort_unstable();
+    edges.dedup();
+    for &n in &edges {
+        for &d in &edges {
+            assert_eq!(Q::new(n, d), division_normalize(n, d), "{n}/{d}");
+        }
+    }
+}
+
+#[test]
+fn rational_normalization_matches_division_for_full_width_and_dyadic_inputs() {
+    let mut seed = 0x561e_903c_72ab_4df1;
+    for _ in 0..32_768 {
+        let n = wide(&mut seed) as i128;
+        let d = wide(&mut seed) as i128;
+        assert_eq!(Q::new(n, d), division_normalize(n, d));
+        let shift = (next(&mut seed) % 127) as u32;
+        let d = 1i128 << shift;
+        for numerator in [n, n >> shift << shift, 0, i128::MIN] {
+            assert_eq!(Q::new(numerator, d), division_normalize(numerator, d));
+        }
+    }
+}

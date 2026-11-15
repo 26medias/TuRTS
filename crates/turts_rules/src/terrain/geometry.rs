@@ -261,7 +261,25 @@ impl Q {
             n = n.checked_neg().ok_or(Error::Arithmetic)?;
             d = d.checked_neg().ok_or(Error::Arithmetic)?;
         }
+        if n == 0 {
+            return Ok(Self::ZERO);
+        }
+        if d == 1 {
+            return Ok(Self { n, d });
+        }
         let g = i128::try_from(gcd(n.unsigned_abs(), d as u128)).map_err(|_| Error::Arithmetic)?;
+        if g == 1 {
+            return Ok(Self { n, d });
+        }
+        if (g as u128).is_power_of_two() {
+            // GCD divides both operands exactly. Arithmetic shift therefore
+            // equals signed division, including for negative numerators.
+            let shift = g.trailing_zeros();
+            return Ok(Self {
+                n: n >> shift,
+                d: d >> shift,
+            });
+        }
         Ok(Self { n: n / g, d: d / g })
     }
     fn float(value: f64) -> ResultQ {
