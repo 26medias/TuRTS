@@ -533,3 +533,142 @@ fn mandatory_balance_refund_credits_only_real_headroom_and_still_kills() {
     assert_eq!(sum(&credited, EventSource::Slot(0), "credits"), 2);
     assert_eq!(sum(&discarded, EventSource::Slot(0), "credits"), 8);
 }
+
+#[test]
+fn surviving_inventory_refund_is_all_or_discard_and_manual_cancel_stays_atomic() {
+    let mut f = Fixture::new();
+    f.stock("builder", 20, 6, 6);
+    f.stock("store", 100, 20, 0);
+    let recipe = f.catalog.production.get_mut(&cid("build")).unwrap();
+    recipe.duration_ms = 100;
+    recipe.costs = vec![
+        cost("ore", 6, CostSource::ProducerInventory),
+        cost("gold", 6, CostSource::ProducerInventory),
+    ];
+    let mut app = f.app();
+    let builder = id(&app, "builder");
+    let store = id(&app, "store");
+    let site = build(&mut app, builder, 30.);
+    app.update();
+    assert_eq!(stock(&mut app, builder, "ore"), 3);
+    assert_eq!(stock(&mut app, builder, "gold"), 3);
+    enabled(&mut app, builder, 0, false);
+    transaction::inventory_transfer(app.world_mut(), SlotId(0), store, builder, cid("ore"), 11)
+        .unwrap();
+    let before = live(&mut app).construction.sites[&site].clone();
+    assert_eq!(
+        construction::cancel_site(app.world_mut(), SlotId(0), site),
+        Err(RejectReason::RefundDestinationFull)
+    );
+    assert_eq!(live(&mut app).construction.sites[&site], before);
+    kill(&mut app, site);
+    assert_eq!(stock(&mut app, builder, "ore"), 14);
+    assert_eq!(stock(&mut app, builder, "gold"), 3);
+    assert_eq!(balance(&mut app), 100);
+    let (desired, credited, discarded) = refunds_for(&app, site);
+    assert!(credited.is_empty());
+    for name in ["ore", "gold"] {
+        assert_eq!(sum(&desired, EventSource::Inventory(builder), name), 3);
+        assert_eq!(sum(&discarded, EventSource::Inventory(builder), name), 3);
+    }
+    once(&mut app);
+}
+
+#[test]
+fn destroyed_original_inventory_is_discarded_without_crediting_its_dying_owner() {
+    let mut f = Fixture::new();
+    f.stock("factory", 20, 10, 0);
+    let recipe = f.catalog.production.get_mut(&cid("train")).unwrap();
+    recipe.duration_ms = 300;
+    recipe.costs = vec![
+        cost("credits", 12, CostSource::SlotBalance),
+        cost("ore", 12, CostSource::ProducerInventory),
+    ];
+    let mut app = f.app();
+    let factory = id(&app, "factory");
+    queue(&mut app, factory, "train");
+    app.update();
+    app.update();
+    assert_eq!(balance(&mut app), 98);
+    assert_eq!(stock(&mut app, factory, "ore"), 8);
+    kill(&mut app, factory);
+    assert_eq!(balance(&mut app), 100);
+    assert!(
+        !live(&mut app)
+            .inventories
+            .iter()
+            .any(|row| row.unit == factory)
+    );
+    let (desired, credited, discarded) = refunds_for(&app, factory);
+    assert_eq!(sum(&desired, EventSource::Slot(0), "credits"), 4);
+    assert_eq!(sum(&credited, EventSource::Slot(0), "credits"), 4);
+    assert_eq!(sum(&desired, EventSource::Inventory(factory), "ore"), 4);
+    assert_eq!(sum(&credited, EventSource::Inventory(factory), "ore"), 0);
+    assert_eq!(sum(&discarded, EventSource::Inventory(factory), "ore"), 4);
+    once(&mut app);
+}
+
+#[test]
+fn missing_constructor_inventory_discards_site_refund_but_keeps_balance_refund() {
+    let mut f = Fixture::new();
+    f.stock("builder", 20, 10, 0);
+    let recipe = f.catalog.production.get_mut(&cid("build")).unwrap();
+    recipe.duration_ms = 200;
+    recipe.costs = vec![
+        cost("credits", 8, CostSource::SlotBalance),
+        cost("ore", 8, CostSource::ProducerInventory),
+    ];
+    let mut app = f.app();
+    let builder = id(&app, "builder");
+    let site = build(&mut app, builder, 30.);
+    app.update();
+    assert_eq!(balance(&mut app), 98);
+    kill(&mut app, builder);
+    assert_eq!(balance(&mut app), 96);
+    assert_eq!(live(&mut app).construction.sites[&site].done, 2);
+    kill(&mut app, site);
+    assert_eq!(balance(&mut app), 100);
+    let (desired, credited, discarded) = refunds_for(&app, site);
+    assert_eq!(sum(&desired, EventSource::Slot(0), "credits"), 4);
+    assert_eq!(sum(&credited, EventSource::Slot(0), "credits"), 4);
+    assert_eq!(sum(&desired, EventSource::Inventory(builder), "ore"), 4);
+    assert_eq!(sum(&discarded, EventSource::Inventory(builder), "ore"), 4);
+    once(&mut app);
+}
+
+#[test]
+fn constructor_kill_drops_held_requests_but_its_paid_sites_continue() {
+    let mut f = Fixture::new();
+    let recipe = f.catalog.production.get_mut(&cid("build")).unwrap();
+    recipe.duration_ms = 5000;
+    recipe.costs[0].amount = 100;
+    let mut app = f.app();
+    let builder = id(&app, "builder");
+    let site = build(&mut app, builder, 30.);
+    assert_eq!(
+        construction::construct(
+            app.world_mut(),
+            SlotId(0),
+            builder,
+            cid("build"),
+            Vec2::new(34., 24.)
+        )
+        .unwrap(),
+        None
+    );
+    app.update();
+    assert_eq!(balance(&mut app), 99);
+    assert_eq!(live(&mut app).construction.held[&builder].len(), 1);
+    kill(&mut app, builder);
+    assert!(!live(&mut app).construction.held.contains_key(&builder));
+    assert_eq!(live(&mut app).construction.sites[&site].done, 2);
+    assert_eq!(balance(&mut app), 98);
+    app.update();
+    assert_eq!(live(&mut app).construction.sites[&site].done, 3);
+    assert_eq!(balance(&mut app), 97);
+    assert_eq!(
+        live(&mut app).construction.sites.len(),
+        1,
+        "the removed constructor cannot place its old held request"
+    );
+}
