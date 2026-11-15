@@ -133,7 +133,7 @@ fn run() -> Result<(), String> {
     ));
 
     session::install(&mut app, advertised);
-    bots::install(&mut app, &bot_configuration)?;
+    bots::install_with_limits(&mut app, &bot_configuration, cfg.bot_limits)?;
     command_script::install(&mut app, cli.command_script.as_deref())?;
     orderlog::install(&mut app, cli.order_log.as_deref())?;
     outbound::install(&mut app);

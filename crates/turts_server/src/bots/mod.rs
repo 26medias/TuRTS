@@ -2,7 +2,13 @@
 mod observation;
 mod projection;
 
-use crate::{actors, config::BotConfig, orders::ServerCatalog, permissions::AllVisible, session};
+use crate::{
+    actors,
+    config::{BotConfig, BotLimitsConfig},
+    orders::ServerCatalog,
+    permissions::AllVisible,
+    session,
+};
 use bevy::prelude::*;
 use observation::{CandidateLease, ObservationVerifier};
 use serde::{Deserialize, Serialize};
@@ -106,6 +112,7 @@ pub(crate) struct BotHost {
     next_basis: u64,
     pub private_projection_scans: u64,
     pub decisions: u64,
+    limits: BotLimitsConfig,
 }
 impl BotHost {
     pub fn actors(&self) -> Vec<BotActor> {
@@ -116,12 +123,29 @@ impl BotHost {
 pub(crate) fn install(app: &mut App, configuration: &[BotConfig]) -> Result<(), String> {
     let mut registry = ControllerRegistry::new();
     turts_bot::controllers::register_stock(&mut registry).map_err(|e| e.to_string())?;
-    install_with_registry(app, configuration, &registry)
+    install_with_registry_and_limits(app, configuration, &registry, BotLimitsConfig::default())
+}
+pub(crate) fn install_with_limits(
+    app: &mut App,
+    configuration: &[BotConfig],
+    limits: BotLimitsConfig,
+) -> Result<(), String> {
+    let mut registry = ControllerRegistry::new();
+    turts_bot::controllers::register_stock(&mut registry).map_err(|e| e.to_string())?;
+    install_with_registry_and_limits(app, configuration, &registry, limits)
 }
 pub(crate) fn install_with_registry(
     app: &mut App,
     configuration: &[BotConfig],
     registry: &ControllerRegistry,
+) -> Result<(), String> {
+    install_with_registry_and_limits(app, configuration, registry, BotLimitsConfig::default())
+}
+fn install_with_registry_and_limits(
+    app: &mut App,
+    configuration: &[BotConfig],
+    registry: &ControllerRegistry,
+    limits: BotLimitsConfig,
 ) -> Result<(), String> {
     if configuration.is_empty() {
         return Ok(());
@@ -159,10 +183,20 @@ pub(crate) fn install_with_registry(
             profile: id,
         };
         let controllers = registry
-            .activate(&actor, &profile, config.seed, operator_quota())
+            .activate(
+                &actor,
+                &profile,
+                config.seed,
+                BotQuota {
+                    queries: limits.queries,
+                    candidates: limits.candidates,
+                    rows: limits.rows,
+                    proposals: limits.proposals,
+                },
+            )
             .map_err(|e| format!("{field}.{e}"))?;
         bots.push(BotInstance {
-            coordinator: BotCoordinator::new(actor.clone(), CoordinatorLimits::default()),
+            coordinator: BotCoordinator::new(actor.clone(), coordinator_limits(limits)),
             actor,
             profile,
             controllers,
@@ -184,6 +218,7 @@ pub(crate) fn install_with_registry(
         next_basis: 0,
         private_projection_scans: 0,
         decisions: 0,
+        limits,
     });
     app.add_systems(
         FixedPreUpdate,
@@ -194,6 +229,15 @@ pub(crate) fn install_with_registry(
     );
     Ok(())
 }
+fn coordinator_limits(limits: BotLimitsConfig) -> CoordinatorLimits {
+    CoordinatorLimits {
+        commands: limits.commands,
+        affected_units: limits.affected_units,
+        pending_requests: limits.pending_requests,
+        pending_accounts: limits.pending_accounts,
+    }
+}
+
 fn diagnose(bot: &mut BotInstance, message: String) {
     if bot.last_diagnostic.as_ref() != Some(&message) {
         eprintln!("turts_server: bot slot {}: {message}", bot.actor.slot);
@@ -320,6 +364,10 @@ fn drive_inner(world: &mut World, host: &mut BotHost, execution: &mut BotExecuti
             continue;
         }
         let view = turts_sim::completed_world(world);
+        if projection::source_rows(view) > host.limits.projection_rows {
+            diagnose(bot, "observation host row limit reached".into());
+            continue;
+        }
         let size = world.resource::<turts_sim::MapBounds>().size;
         let projected = projection::project(
             view,
@@ -373,7 +421,7 @@ fn drive_inner(world: &mut World, host: &mut BotHost, execution: &mut BotExecuti
                 phase: MatchPhase::Running,
                 profile: &bot.profile,
                 quota: controller.quota,
-                limits: CoordinatorLimits::default(),
+                limits: coordinator_limits(host.limits),
                 reconciliation: &batch,
                 role_counts: &counts,
                 supply: &supply,
@@ -381,7 +429,7 @@ fn drive_inner(world: &mut World, host: &mut BotHost, execution: &mut BotExecuti
             let mut buffer = ProposalBuffer::new(
                 &controller.key,
                 controller.quota.proposals,
-                CoordinatorLimits::default().affected_units,
+                host.limits.affected_units,
             );
             controller.controller.step(
                 &frame,

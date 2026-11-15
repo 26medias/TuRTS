@@ -18,7 +18,7 @@ usage: turts_server <server.ron> [options]
 Run the headless authoritative server. It loads the game package that server.ron names,
 serves the package to clients over HTTP, and runs the match over WebSocket.
 
-server.ron is one RON record. Every field is required, except static_dir, start_policy, and bots:
+server.ron is one RON record. Every field is required, except static_dir, start_policy, bots, and bot_limits:
   game_package  Path of the package archive that turts-pack wrote.
   http_listen   Address of the HTTP listener, for example \"127.0.0.1:7000\".
   ws_listen     Address of the WebSocket listener, for example \"127.0.0.1:7001\".
@@ -27,6 +27,7 @@ server.ron is one RON record. Every field is required, except static_dir, start_
   tick_hz       Simulation ticks per second. It must be above 0.
   static_dir    A folder that the HTTP listener also serves, for the browser page.
   bots          Optional list of (slot, profile, seed) public bot selections.
+  bot_limits    Optional decision limits and projection_rows host ceiling; engine defaults apply.
   start_policy  Optional override: Immediate, AllSeated, or AllSeatedReady with countdown_secs.
 
 HTTP endpoints (GET):
@@ -89,6 +90,8 @@ pub struct HostConfig {
     /// Explicit public profiles. Loading a package does not activate its profiles.
     #[serde(default)]
     pub bots: Vec<BotConfig>,
+    #[serde(default)]
+    pub bot_limits: BotLimitsConfig,
 }
 
 /// One explicitly selected bot actor. The seed does not use connection or wall time.
@@ -98,6 +101,36 @@ pub struct BotConfig {
     pub slot: u8,
     pub profile: String,
     pub seed: u64,
+}
+
+/// Operator limits. Controller quotas must fit the selected decision limits.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct BotLimitsConfig {
+    pub queries: u32,
+    pub candidates: u32,
+    pub rows: u32,
+    pub proposals: u32,
+    pub commands: u32,
+    pub affected_units: u32,
+    pub pending_requests: u32,
+    pub pending_accounts: u32,
+    pub projection_rows: usize,
+}
+impl Default for BotLimitsConfig {
+    fn default() -> Self {
+        Self {
+            queries: 32,
+            candidates: 4096,
+            rows: 1024,
+            proposals: 32,
+            commands: 8,
+            affected_units: 256,
+            pending_requests: 64,
+            pending_accounts: 512,
+            projection_rows: 65536,
+        }
+    }
 }
 
 impl HostConfig {

@@ -48,6 +48,7 @@ fn config(package: &Path) -> HostConfig {
         tick_hz: 20,
         static_dir: None,
         start_policy: None,
+        bot_limits: Default::default(),
         bots: vec![],
     }
 }

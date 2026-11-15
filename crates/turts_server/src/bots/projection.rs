@@ -17,6 +17,22 @@ pub(crate) struct Projection {
     /// Private host work is charged separately. It never enters QueryPage metadata.
     pub private_scanned: usize,
 }
+pub(crate) fn source_rows(view: &WorldView) -> usize {
+    [
+        view.units.len(),
+        view.nodes.len(),
+        view.economy.balances.len(),
+        view.economy.inventories.len(),
+        view.economy.queues.len(),
+        view.construction.sites.len(),
+        view.unit_orders.len(),
+        view.m3.raw_healths.len(),
+        view.m3.raw_output_inventories.len(),
+        view.construction.held.values().map(Vec::len).sum(),
+    ]
+    .into_iter()
+    .fold(0usize, usize::saturating_add)
+}
 pub(crate) fn project(
     view: &WorldView,
     slot: u8,
@@ -393,12 +409,7 @@ pub(crate) fn project(
     basis.index();
     Projection {
         basis,
-        private_scanned: view.units.len()
-            + view.nodes.len()
-            + view.economy.balances.len()
-            + view.economy.inventories.len()
-            + view.economy.queues.len()
-            + view.construction.sites.len(),
+        private_scanned: source_rows(view),
     }
 }
 fn costs(slot: u8, actor: u32, rows: &[CostView]) -> Vec<AccountAmount> {
