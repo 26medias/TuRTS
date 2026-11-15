@@ -17,6 +17,8 @@ mod export_visibility;
 pub use export_visibility::PermittedBaseline;
 #[path = "export_observation.rs"]
 mod export_observation;
+#[path = "export_permitted.rs"]
+mod export_permitted;
 pub use export_observation::{ObservationChanged, ObservationHistory};
 
 pub fn snapshot_for_with_permissions(
@@ -71,22 +73,39 @@ use turts_sim::{
 /// Build a snapshot from an already-permitted completed view. Live transport applies the shared
 /// permission provider first. Direct full-world use is only valid for AllVisible.
 pub fn snapshot_for(view: &WorldView, slot: SlotId) -> wire::Snapshot {
-    snapshot_projected(view, slot)
+    snapshot_projected(view, slot, None)
 }
 
-fn snapshot_projected(view: &WorldView, slot: SlotId) -> wire::Snapshot {
+pub(super) fn snapshot_permitted(
+    view: &WorldView,
+    slot: SlotId,
+    policy: &dyn crate::permissions::ObservationPermissions,
+) -> wire::Snapshot {
+    export_permitted::snapshot(view, slot, policy)
+}
+fn snapshot_projected(
+    view: &WorldView,
+    slot: SlotId,
+    permitted: Option<&export_permitted::Geometry>,
+) -> wire::Snapshot {
     wire::Snapshot {
         tick: view.tick,
         units: view
             .units
             .iter()
+            .filter(|unit| permitted.is_none_or(|p| p.unit(unit.unit_id)))
             .map(|unit| {
                 let mut snapshot = unit_snapshot(unit);
                 snapshot.site = view.construction.sites.contains_key(&unit.unit_id);
                 snapshot
             })
             .collect(),
-        nodes: view.nodes.iter().map(node_state).collect(),
+        nodes: view
+            .nodes
+            .iter()
+            .filter(|node| permitted.is_none_or(|p| p.node(node.id.0)))
+            .map(node_state)
+            .collect(),
         economy: wire::EconomyState {
             balances: view
                 .economy
@@ -151,7 +170,13 @@ fn snapshot_projected(view: &WorldView, slot: SlotId) -> wire::Snapshot {
             .filter(|record| owner_of(view, record.unit) == Some(slot.0))
             .map(|record| weapon_state(record, view.tick, view))
             .collect(),
-        healths: view.m3.raw_healths.iter().map(health_state).collect(),
+        healths: view
+            .m3
+            .raw_healths
+            .iter()
+            .filter(|row| permitted.is_none_or(|p| p.unit(row.unit)))
+            .map(health_state)
+            .collect(),
         research: research_records(&view.m3.research, Some(slot)),
         unit_orders: view
             .unit_orders

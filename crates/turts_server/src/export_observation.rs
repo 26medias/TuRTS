@@ -290,7 +290,8 @@ mod tests {
         assert!(history.baseline.is_none());
         assert_eq!(
             postcard::to_vec::<_, 16384>(&snapshot).unwrap(),
-            postcard::to_vec::<_, 16384>(&super::super::snapshot_projected(&view, slot)).unwrap()
+            postcard::to_vec::<_, 16384>(&super::super::snapshot_projected(&view, slot, None))
+                .unwrap()
         );
         let (changed, _) = delta(
             &batch,
