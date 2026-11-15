@@ -12,6 +12,7 @@ turts_mod_api = { path = "../turts_mod_api" }
 bevy = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+postcard = { workspace = true }
 
 [dev-dependencies]
 bevy_app = { workspace = true }
