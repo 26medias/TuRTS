@@ -72,6 +72,7 @@ fn run(
         profile: id("fixture:opponent"),
     };
     let batch = ReconcileBatch {
+        unapplied: vec![],
         watermark: Watermark {
             completed_tick: 1,
             revision: 1,
