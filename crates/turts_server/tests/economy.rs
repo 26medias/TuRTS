@@ -1801,7 +1801,34 @@ fn owner_unit_orders_from_audit(
                 .find(|orders| orders.unit_id == unit.unit_id)
                 .map(|orders| orders.orders.clone())
                 .unwrap_or_default();
-            let owns_order_component = !orders.eq(&turts_sim::UnitOrders::default())
+            // AuditState omits derived WorldView order rows. Reconstruct the
+            // producer's default from its captured definition, position and map.
+            let producer = state.catalog.as_ref().is_some_and(|catalog| {
+                catalog.units.iter().any(|definition| {
+                    definition.id.to_string() == unit_type.content_id
+                        && definition.producer.is_some()
+                })
+            });
+            let rally = producer.then(|| {
+                let point = orders.rally.unwrap_or_else(|| {
+                    let bounds = state
+                        .bounds
+                        .as_ref()
+                        .expect("producer rally has map bounds");
+                    let origin = turts_sim::Vec2::new(unit.pos.x, unit.pos.y);
+                    let centre = turts_sim::Vec2::new(bounds.x, bounds.y) * 0.5;
+                    let direction = (centre - origin)
+                        .try_normalize()
+                        .unwrap_or(turts_sim::Vec2::Y);
+                    origin + direction * (unit_type.radius + 4.0)
+                });
+                wire::RallyTarget::Point(wire::Pos {
+                    x: point.x,
+                    y: point.y,
+                })
+            });
+            let owns_order_component = producer
+                || !orders.eq(&turts_sim::UnitOrders::default())
                 || state.catalog.as_ref().is_some_and(|catalog| {
                     catalog.order_definitions.iter().any(|definition| {
                         definition.unit_capabilities.iter().any(|capability| {
@@ -1848,7 +1875,7 @@ fn owner_unit_orders_from_audit(
                         reason: reject_reason(failure.reason),
                         tick: failure.tick,
                     }),
-                rally: None,
+                rally,
             })
         })
         .collect()
