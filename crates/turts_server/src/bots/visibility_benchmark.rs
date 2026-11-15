@@ -721,6 +721,9 @@ impl Harness {
                 peer.max_retained = peer.max_retained.max(peer.assembler.retained_bytes());
             }
             peer.max_retained = peer.max_retained.max(peer.assembler.retained_bytes());
+            // Server memory accounting is a harness probe, not client service.
+            peer_batches[usize::from(peer.slot)] =
+                peer_started.elapsed().as_nanos() as u64 + shared_transport_ns;
             peer.max_server_retained = peer.max_server_retained.max(
                 self.app
                     .world()
@@ -728,8 +731,6 @@ impl Harness {
                     .unwrap()
                     .benchmark_retained(),
             );
-            peer_batches[usize::from(peer.slot)] =
-                peer_started.elapsed().as_nanos() as u64 + shared_transport_ns;
         }
         let mut cpu = self.app.world_mut().resource_mut::<Cpu>();
         cpu.client_ns += started.elapsed().as_nanos() as u64;
@@ -782,21 +783,28 @@ impl Harness {
     fn flush_to(&mut self, tick: u32) {
         for _ in 0..2048 {
             self.update(0);
-            if self.peers.iter().all(|p| {
-                p.latest == tick
-                    && p.assembler.active().is_some()
-                    && self
-                        .app
-                        .world()
-                        .get::<crate::outbound::knowledge::KnowledgeSender>(p.server)
-                        .unwrap()
-                        .active_stamp()
-                        == p.assembler.active()
-            }) {
+            if self.drained_to(tick) {
                 return;
             }
         }
         panic!("atomic publication did not drain to tick{tick}");
+    }
+    fn drained_to(&self, tick: u32) -> bool {
+        self.peers.iter().all(|peer| {
+            let sender = self
+                .app
+                .world()
+                .get::<crate::outbound::knowledge::KnowledgeSender>(peer.server)
+                .unwrap();
+            peer.latest == tick
+                && peer.assembler.active().is_some()
+                && sender.active_stamp() == peer.assembler.active()
+                && sender.benchmark_drained()
+                && [peer.server, peer.client].iter().all(|entity| {
+                    let link = self.app.world().get::<Link>(*entity).unwrap();
+                    link.recv.len() == 0 && link.send.len() == 0
+                })
+        })
     }
 }
 
@@ -1007,17 +1015,19 @@ impl Harness {
                     .collect::<Vec<_>>();
                 for _ in 0..2048 {
                     self.update(0);
-                    if self.peers.iter().zip(&old).all(|(p, id)| {
-                        p.latest == tick
-                            && p.assembler.active().unwrap().transaction_id > *id
-                            && self
-                                .app
-                                .world()
-                                .get::<crate::outbound::knowledge::KnowledgeSender>(p.server)
-                                .unwrap()
-                                .active_stamp()
-                                == p.assembler.active()
-                    }) {
+                    if self.drained_to(tick)
+                        && self.peers.iter().zip(&old).all(|(p, id)| {
+                            p.latest == tick
+                                && p.assembler.active().unwrap().transaction_id > *id
+                                && self
+                                    .app
+                                    .world()
+                                    .get::<crate::outbound::knowledge::KnowledgeSender>(p.server)
+                                    .unwrap()
+                                    .active_stamp()
+                                    == p.assembler.active()
+                        })
+                    {
                         break;
                     }
                 }
@@ -1031,13 +1041,7 @@ impl Harness {
                     "full resync did not finish"
                 );
                 assert!(
-                    self.peers.iter().all(|p| self
-                        .app
-                        .world()
-                        .get::<crate::outbound::knowledge::KnowledgeSender>(p.server)
-                        .unwrap()
-                        .active_stamp()
-                        == p.assembler.active()),
+                    self.drained_to(tick),
                     "resync activation ACK tail must be charged in this interval"
                 );
             }

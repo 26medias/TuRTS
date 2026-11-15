@@ -65,6 +65,10 @@ impl KnowledgeSender {
     pub(crate) fn benchmark_retained(&self) -> usize {
         self.retained()
     }
+    #[cfg(test)]
+    pub(crate) fn benchmark_drained(&self) -> bool {
+        self.pending.is_none() && self.patches.is_empty() && self.outstanding.is_empty()
+    }
     fn retained(&self) -> usize {
         let map_heap = |basis: &turts_mod_api::KnowledgeBasis| {
             basis
