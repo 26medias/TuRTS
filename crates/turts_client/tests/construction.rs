@@ -477,3 +477,264 @@ fn construction_lifecycle_deltas_and_rejoin_work_for_both_owners() {
         }
     }
 }
+
+fn construction_command(
+    behaviour: Behaviour,
+    target_kind: TargetKind,
+    target: OrderTargetSim,
+) -> Command {
+    Command {
+        slot: SlotId(0),
+        seq: 1,
+        kind: CommandKind::Order(Box::new(OrderCommand {
+            order: cid(if behaviour == Behaviour::Stop {
+                "stop"
+            } else {
+                "construct"
+            }),
+            behaviour,
+            target_kind,
+            policy: None,
+            units: vec![1],
+            target,
+            queue: QueueMode::Replace,
+            group: 0,
+            allowed_units: vec![],
+            queue_depth: 16,
+        })),
+    }
+}
+
+fn two_sites_and_one_held(duration: u64) -> App {
+    let mut app = fixture(PaymentPolicy::ChargeOnQueue, |catalog, _| {
+        catalog
+            .production
+            .get_mut(&cid("build_tower"))
+            .unwrap()
+            .duration_ms = duration;
+        let base = catalog.units.get_mut(&cid("base")).unwrap();
+        base.constructor.as_mut().unwrap().concurrent_sites = 2;
+        base.removal = Some(RemovalDef {
+            by_command: true,
+            contents: ContentsPolicy::Destroy,
+        });
+        for (local, behaviour, target) in [
+            (
+                "construct",
+                Behaviour::Construct,
+                TargetKind::ContentAtPoint,
+            ),
+            ("stop", Behaviour::Stop, TargetKind::None),
+        ] {
+            catalog.orders.insert(
+                cid(local),
+                OrderDef {
+                    id: local.into(),
+                    name: local.into(),
+                    behaviour,
+                    target,
+                    fire: None,
+                    engage: None,
+                    icon: String::new(),
+                    hotkey: String::new(),
+                    cursor: None,
+                    card: None,
+                    units: vec![cid("base").to_string()],
+                    description: String::new(),
+                },
+            );
+        }
+    });
+    initialize_completed_world(app.world_mut());
+    for x in [16.0, 20.0, 24.0] {
+        app.world_mut()
+            .resource_mut::<CommandQueue>()
+            .0
+            .push_back(construction_command(
+                Behaviour::Construct,
+                TargetKind::ContentAtPoint,
+                OrderTargetSim::ContentAtPoint {
+                    content: cid("build_tower"),
+                    point: Vec2::new(x, 10.0),
+                },
+            ));
+    }
+    tick(&mut app);
+    assert_eq!(
+        app.world().resource::<ConstructionState>().held[&1].len(),
+        1
+    );
+    app
+}
+
+fn replica_with_held_snapshot(app: &App) -> turts_client::replica::Replica {
+    use turts_client::{
+        content::ClientContent,
+        replica::{Replica, ReplicaContext, SnapshotOutcome},
+    };
+    let mut replica = Replica::new(20);
+    replica.set_context(ReplicaContext::new(
+        ClientContent {
+            catalog: app
+                .world()
+                .resource::<turts_sim::bootstrap::InstalledCatalog>()
+                .0
+                .clone(),
+            ..Default::default()
+        },
+        0,
+    ));
+    let snapshot = export::snapshot_for(completed_world(app.world()), SlotId(0));
+    assert!(matches!(
+        replica.apply_snapshot(&snapshot, bevy::platform::time::Instant::now()),
+        SnapshotOutcome::Applied { .. }
+    ));
+    assert_eq!(replica.construction_queue(1).len(), 1);
+    replica
+}
+
+fn apply_construction_delta(
+    app: &App,
+    replica: &mut turts_client::replica::Replica,
+) -> turts_net_protocol::messages::WorldDelta {
+    use turts_client::replica::DeltaOutcome;
+    let delta = export::delta_for(
+        committed_tick(app.world()),
+        completed_world(app.world()),
+        SlotId(0),
+    );
+    assert_eq!(
+        replica.apply_delta(&delta, bevy::platform::time::Instant::now()),
+        DeltaOutcome::Applied
+    );
+    delta
+}
+
+#[test]
+fn accepted_static_constructor_stop_publishes_empty_held_queue_once_and_keeps_sites() {
+    let mut app = two_sites_and_one_held(100_000);
+    let mut replica = replica_with_held_snapshot(&app);
+    let sites = app
+        .world()
+        .resource::<ConstructionState>()
+        .sites
+        .keys()
+        .copied()
+        .collect::<Vec<_>>();
+    assert_eq!(sites.len(), 2);
+    app.world_mut()
+        .resource_mut::<CommandQueue>()
+        .0
+        .push_back(construction_command(
+            Behaviour::Stop,
+            TargetKind::None,
+            OrderTargetSim::None,
+        ));
+    tick(&mut app);
+    let result = &app.world().resource::<CommandResults>().0[0];
+    assert!(result.outcome.is_ok(), "{result:?}");
+    assert_eq!(result.units.accepted, vec![1]);
+    assert!(
+        !app.world()
+            .resource::<ConstructionState>()
+            .held
+            .contains_key(&1),
+        "authority clears the held request"
+    );
+    assert_eq!(
+        app.world()
+            .resource::<ConstructionState>()
+            .sites
+            .keys()
+            .copied()
+            .collect::<Vec<_>>(),
+        sites
+    );
+    let delta = apply_construction_delta(&app, &mut replica);
+    assert_eq!(delta.records.construction_queues.len(), 1);
+    assert_eq!(delta.records.construction_queues[0].constructor.0, 1);
+    assert!(delta.records.construction_queues[0].orders.is_empty());
+    assert!(
+        replica.construction_queue(1).is_empty(),
+        "delta clears the old client list"
+    );
+    assert!(
+        export::snapshot_for(completed_world(app.world()), SlotId(0))
+            .records
+            .construction_queues
+            .is_empty(),
+        "fresh baseline has no stale request"
+    );
+    assert!(
+        export::delta_for(
+            committed_tick(app.world()),
+            completed_world(app.world()),
+            SlotId(1)
+        )
+        .records
+        .construction_queues
+        .is_empty(),
+        "foreign slot receives no private queue row"
+    );
+    tick(&mut app);
+    let next = apply_construction_delta(&app, &mut replica);
+    assert!(
+        next.records.construction_queues.is_empty(),
+        "empty replacement is sent once"
+    );
+}
+
+#[test]
+fn automatic_placement_publishes_the_last_held_request_clear_once() {
+    let mut app = two_sites_and_one_held(50);
+    let mut replica = replica_with_held_snapshot(&app);
+    assert!(app.world().resource::<ConstructionState>().sites.is_empty());
+    tick(&mut app);
+    let delta = apply_construction_delta(&app, &mut replica);
+    assert_eq!(delta.records.construction_queues.len(), 1);
+    assert!(delta.records.construction_queues[0].orders.is_empty());
+    assert!(replica.construction_queue(1).is_empty());
+    assert_eq!(
+        completed_world(app.world()).units.len(),
+        4,
+        "all three held/placed requests became buildings"
+    );
+    tick(&mut app);
+    assert!(
+        apply_construction_delta(&app, &mut replica)
+            .records
+            .construction_queues
+            .is_empty()
+    );
+}
+
+#[test]
+fn constructor_removal_clears_held_queue_only_through_removed_record() {
+    let mut app = two_sites_and_one_held(100_000);
+    let mut replica = replica_with_held_snapshot(&app);
+    app.world_mut()
+        .resource_mut::<CommandQueue>()
+        .0
+        .push_back(Command {
+            slot: SlotId(0),
+            seq: 9,
+            kind: CommandKind::Remove { unit_id: 1 },
+        });
+    tick(&mut app);
+    assert!(
+        app.world().resource::<CommandResults>().0[0]
+            .outcome
+            .is_ok()
+    );
+    let delta = apply_construction_delta(&app, &mut replica);
+    assert!(delta.removed.iter().any(|id| id.0 == 1));
+    assert!(
+        delta
+            .records
+            .construction_queues
+            .iter()
+            .all(|row| row.constructor.0 != 1)
+    );
+    assert!(replica.construction_queue(1).is_empty());
+    assert_eq!(app.world().resource::<ConstructionState>().sites.len(), 2);
+}
