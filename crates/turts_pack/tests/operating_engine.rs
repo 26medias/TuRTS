@@ -303,7 +303,7 @@ fn health(app: &App, unit: u32) -> u64 {
         .unwrap()
         .current
 }
-fn raw_job<'a>(state: &'a AuditState, factory: u32) -> &'a turts_sim::economy::views::RawJobAudit {
+fn raw_job(state: &AuditState, factory: u32) -> &turts_sim::economy::views::RawJobAudit {
     &state
         .raw_queues
         .iter()

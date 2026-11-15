@@ -375,11 +375,11 @@ fn advance_producer(world: &mut World, producer: u32) {
                         )) >= job.total
             })
             .map(|job| job.recipe.clone());
-        if let Some(recipe) = ready {
-            if let Err(reason) = prepare_output_activation(world, producer, &recipe) {
-                super::operating::hold(world, producer, reason);
-                return;
-            }
+        if let Some(recipe) = ready
+            && let Err(reason) = prepare_output_activation(world, producer, &recipe)
+        {
+            super::operating::hold(world, producer, reason);
+            return;
         }
         super::operating::clear_hold(world, producer);
     }

@@ -301,6 +301,7 @@ pub(crate) fn run_research(world: &mut World) {
         else {
             continue;
         };
+        let rate = super::power::rate_for(world, station, super::power::WorkCapability::Research);
         let _ = transaction::transact(world, |tx| {
             tx.mark_m3();
             let mut queues = tx.queues();
@@ -334,7 +335,7 @@ pub(crate) fn run_research(world: &mut World) {
             let step = super::production::job_step_per_tick(
                 head.stage,
                 frozen,
-                super::power::full_rate(),
+                rate,
                 head.total.checked_div(head.duration_ticks).unwrap_or(1),
             )
             .unwrap_or(0);

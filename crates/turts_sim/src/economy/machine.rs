@@ -54,6 +54,7 @@ pub(crate) fn run_machines(world: &mut World) {
             continue;
         };
         let q = super::power::rate_q(world);
+        let rate = super::power::rate_for(world, machine, super::power::WorkCapability::Machine);
         let status = machine_status(world, machine);
         let _ = transaction::transact(world, |tx| {
             tx.mark_m3();
@@ -101,7 +102,7 @@ pub(crate) fn run_machines(world: &mut World) {
             let step = super::production::job_step_per_tick(
                 job.stage,
                 frozen,
-                super::power::full_rate(),
+                rate,
                 job.total.checked_div(job.duration_ticks).unwrap_or(1),
             )
             .unwrap_or(0);

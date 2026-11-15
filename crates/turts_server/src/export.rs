@@ -167,7 +167,6 @@ pub fn snapshot_for(view: &WorldView, slot: SlotId) -> wire::Snapshot {
                 view.tick,
                 view,
             ),
-            ..Default::default()
         },
     }
 }

@@ -12,11 +12,15 @@ use turts_mod_api::{
 use turts_rules::Ratio;
 
 use crate::{
-    Owner, RejectReason, Slots, UnitId, UnitType, bootstrap::InstalledCatalog, registry::UnitTypes,
+    Owner, RejectReason, UnitType, bootstrap::InstalledCatalog, registry::UnitTypes,
     unit_index::unit_entity,
 };
 
-use super::{combat::Healths, construction::ConstructionState, events::SupplyRow};
+use super::events::SupplyRow;
+#[cfg(test)]
+use super::{combat::Healths, construction::ConstructionState};
+#[cfg(test)]
+use crate::{Slots, UnitId};
 
 type AccountKey = (u8, ContentId);
 
@@ -277,11 +281,11 @@ impl OperatingResources {
                 total.consumed -= removed.consumed;
             }
         }
-        if let Some((resource, amount)) = contribution.income {
-            if let Some(total) = self.live_income.get_mut(&(contribution.slot, resource)) {
-                assert!(*total >= amount);
-                *total -= amount;
-            }
+        if let Some((resource, amount)) = contribution.income
+            && let Some(total) = self.live_income.get_mut(&(contribution.slot, resource))
+        {
+            assert!(*total >= amount);
+            *total -= amount;
         }
     }
 
@@ -290,6 +294,7 @@ impl OperatingResources {
         self.effects.clone_from(&self.live_supply);
     }
 
+    #[cfg(test)]
     pub(crate) fn income_amount(&self, slot: u8, resource: &ContentId) -> u64 {
         self.live_income
             .get(&(slot, resource.clone()))
@@ -391,6 +396,7 @@ pub(crate) fn catalog_rate_q(catalog: &ContentCatalog) -> Result<u64, ModError> 
 
 /// Validate all initial contributions before installing any operating state.
 /// Call after package entities and health rows exist, and before the first published snapshot.
+#[cfg(test)]
 pub(crate) fn initialize(world: &mut World) -> Result<(), RejectReason> {
     let Some(catalog) = world.get_resource::<InstalledCatalog>() else {
         return Ok(());
@@ -737,7 +743,7 @@ mod tests {
             counts: SupplyCounts::Completed,
         };
         let resources = [
-            ("test:power", supply.clone()),
+            ("test:power", supply),
             ("test:capacity", supply),
             ("test:credits", ResourceKind::Balance),
         ]

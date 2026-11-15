@@ -390,7 +390,6 @@ fn publish_completed_tick(world: &mut World) {
         ),
         site_progress: crate::economy::construction::progress_rows(&completed),
         construction_queues: crate::economy::construction::queue_rows(&completed),
-        ..Default::default()
     };
     world.insert_resource(batch);
     world.insert_resource(CompletedWorld(completed));
