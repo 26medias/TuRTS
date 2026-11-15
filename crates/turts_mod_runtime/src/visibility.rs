@@ -59,7 +59,7 @@ pub fn validate_visibility(
         })?;
     // Reserve eight masks per slot for start/tactical/completed current/explored
     // bases and staging. The simulation must stay within this validated bound.
-    let bytes = cells
+    cells
         .checked_add(7)
         .map(|cells| cells / 8)
         .and_then(|bytes| bytes.checked_mul(8))
@@ -73,7 +73,6 @@ pub fn validate_visibility(
                 "slot coverage storage exceeds 64 MiB",
             )
         })?;
-    let _ = bytes;
     Ok(Some(VisibilityGrid {
         size: turts_mod_api::WorldPos {
             x: map.size.x,

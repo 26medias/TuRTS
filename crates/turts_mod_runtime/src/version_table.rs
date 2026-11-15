@@ -1149,6 +1149,33 @@ mod tests {
     }
 
     #[test]
+    fn visibility_fields_require_api16_even_when_explicitly_none() {
+        use super::support::raw_for;
+        let rows = VERSION_TABLE
+            .iter()
+            .filter(|row| row.since_api == "0.2.16")
+            .collect::<Vec<_>>();
+        assert_eq!(rows.len(), 2);
+        for row in rows {
+            let single = std::slice::from_ref(row);
+            let (manifest, raw) = raw_for(row, "^0.2.15", true);
+            let error = check_version_table(&manifest, None, &raw, single).unwrap_err();
+            assert!(
+                error.to_string().contains("needs engine api 0.2.16"),
+                "{error}"
+            );
+            assert!(
+                error.to_string().contains(&format!("f.ron: {}", row.name)),
+                "{error}"
+            );
+            let (manifest, raw) = raw_for(row, "^0.2.16", true);
+            check_version_table(&manifest, None, &raw, single).unwrap();
+            let (manifest, raw) = raw_for(row, "^0.2.15", false);
+            check_version_table(&manifest, None, &raw, single).unwrap();
+        }
+    }
+
+    #[test]
     fn operating_raw_fields_require_the_first_supported_engine() {
         use super::support::raw_for;
         let mut tested = 0;
