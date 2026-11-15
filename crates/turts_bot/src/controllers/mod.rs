@@ -23,7 +23,7 @@ pub fn register_stock(registry: &mut ControllerRegistry) -> Result<(), FactoryEr
         ("squads", Policy::Squads),
     ] {
         registry.register(
-            ContentId::parse(&format!("turts:{name}")).expect("stock factory identifier"),
+            ContentId::parse(&format!("engine:{name}")).expect("stock factory identifier"),
             Arc::new(StockFactory(policy)),
         )?;
     }
@@ -45,6 +45,7 @@ impl ControllerFactory for StockFactory {
             key: init.instance.key.clone(),
             policy: self.0,
             scans: Vec::new(),
+            placement_steps: std::collections::BTreeMap::new(),
         }))
     }
 }
@@ -59,6 +60,7 @@ struct StockController {
     key: String,
     policy: Policy,
     scans: Vec<Scan>,
+    placement_steps: std::collections::BTreeMap<(u32, String), usize>,
 }
 impl StockController {
     /// Never select a prefix. Incomplete pages retain their exact immutable-basis cursor.
@@ -192,7 +194,7 @@ impl StockController {
             return;
         };
         // Physical order is semantic. Exact coincident sources acquire neither action.
-        let Some(actor) = unique_first(actors) else {
+        let Some(actor) = unique_first(actors.into_iter().filter(idle).collect()) else {
             return;
         };
         let Ok(content) = ContentId::parse(&recipe.recipe) else {
@@ -220,33 +222,43 @@ impl StockController {
         let production = ContentId::parse(&recipe.recipe).ok()?;
         // This is a geometric search, not game knowledge. Public advice checks footprint,
         // authored build areas, nodes, and permitted occupancy before an ordinary request.
-        for ring in 1..=4 {
-            for (x, y) in [
-                (1., 0.),
-                (0., 1.),
-                (-1., 0.),
-                (0., -1.),
-                (1., 1.),
-                (-1., 1.),
-                (-1., -1.),
-                (1., -1.),
-            ] {
-                let distance = actor.radius + 3.0 * ring as f32;
-                let point = WorldPos {
-                    x: actor.position.x + x * distance,
-                    y: actor.position.y + y * distance,
-                };
-                let query = Query::Placement(PlacementQuery {
-                    actor: actor.unit,
-                    production: production.clone(),
-                    point,
-                });
-                match self.collect(query, queries) {
-                    Some(QueryData::Placement(Advice::Known(PlacementAdvice::Allowed))) => {
-                        return Some(point);
-                    }
-                    None => return None,
-                    _ => {}
+        let key = (actor.unit, recipe.key.clone());
+        let mut step = self.placement_steps.get(&key).copied().unwrap_or(0);
+        let offsets = [
+            (1., 0.),
+            (0., 1.),
+            (-1., 0.),
+            (0., -1.),
+            (1., 1.),
+            (-1., 1.),
+            (-1., -1.),
+            (1., -1.),
+        ];
+        for _ in 0..32 {
+            let ring = step / 8 + 1;
+            let (x, y) = offsets[step % 8];
+            let distance = actor.radius + 3.0 * ring as f32;
+            let point = WorldPos {
+                x: actor.position.x + x * distance,
+                y: actor.position.y + y * distance,
+            };
+            let query = Query::Placement(PlacementQuery {
+                actor: actor.unit,
+                production: production.clone(),
+                point,
+            });
+            match self.collect(query, queries) {
+                Some(QueryData::Placement(Advice::Known(PlacementAdvice::Allowed))) => {
+                    self.placement_steps.remove(&key);
+                    return Some(point);
+                }
+                None => {
+                    self.placement_steps.insert(key, step);
+                    return None;
+                }
+                _ => {
+                    step = (step + 1) % 32;
+                    self.placement_steps.insert(key.clone(), step);
                 }
             }
         }
@@ -279,7 +291,7 @@ impl StockController {
             BotGoalAction::EnsureSupply {
                 resource,
                 amount,
-                provider_role: _,
+                provider_role,
                 recipe,
             } => {
                 let Ok(resource) = ContentId::parse(resource) else {
@@ -288,6 +300,13 @@ impl StockController {
                 let Some(supply) = frame.supply.iter().find(|s| s.resource == resource) else {
                     return;
                 };
+                if frame
+                    .role_counts
+                    .iter()
+                    .any(|r| &r.role == provider_role && r.pending > 0)
+                {
+                    return;
+                }
                 if supply.provided.saturating_sub(supply.consumed) < *amount {
                     self.build(frame, &goal.key, rank, goal.priority, recipe, queries, out);
                 }
@@ -313,7 +332,7 @@ impl StockController {
                 ) else {
                     return;
                 };
-                for (i, actor) in units.iter().enumerate() {
+                for (i, actor) in units.iter().filter(|u| idle(u)).enumerate() {
                     let mut nodes = nodes.iter().filter(|n| n.remaining > 0).collect::<Vec<_>>();
                     nodes.sort_by(|a, b| {
                         distance(actor.position, a.position)
@@ -493,9 +512,17 @@ fn unique_first(mut rows: Vec<UnitObservation>) -> Option<UnitObservation> {
     let first = rows.first()?;
     if rows
         .get(1)
-        .is_some_and(|other| other.position == first.position && other.content == first.content)
+        .is_some_and(|other| other.position == first.position)
     {
         return None;
     }
     rows.into_iter().next()
+}
+
+fn idle(unit: &UnitObservation) -> bool {
+    unit.own.as_ref().is_some_and(|own| {
+        own.enabled
+            && own.queued_orders == 0
+            && matches!(own.activity, OwnActivity::Idle | OwnActivity::Blocked)
+    })
 }
