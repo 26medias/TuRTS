@@ -352,6 +352,15 @@ fn begin_action(
         .as_ref()
         .filter(|action| action.target == target && action.automatic == automatic)
         .map_or(0, |action| action.elapsed);
+    let status = state
+        .action
+        .as_ref()
+        .filter(|action| action.target == target && action.automatic == automatic)
+        .filter(|action| {
+            status == RepairStatus::Working
+                && matches!(action.state, RepairStatus::WaitingForFunds(_))
+        })
+        .map_or(status, |action| action.state.clone());
     state.action = Some(RepairAction {
         target,
         automatic,
@@ -415,8 +424,13 @@ fn hold(world: &mut World, source: u32, reason: RejectReason) {
             reason,
             since_tick: tick,
         });
-        let _ = save_state(world, source, state);
     }
+    if let Some(action) = state.action.as_mut()
+        && matches!(action.state, RepairStatus::WaitingForFunds(_))
+    {
+        action.state = RepairStatus::Working;
+    }
+    let _ = save_state(world, source, state);
 }
 
 fn heal_source(world: &mut World, source: u32, repairer: &RepairerDef) {
@@ -921,7 +935,7 @@ mod tests {
                 target: 3,
                 automatic: true,
                 elapsed: u64::MAX,
-                state: RepairStatus::Working,
+                state: RepairStatus::WaitingForFunds(id("credits")),
             }),
             ..Default::default()
         };
