@@ -217,6 +217,7 @@ impl TerrainPhase {
             .and_then(|memory| memory.get(chunk))
             .map_or(0, |chunk| chunk.geometry_revision)
     }
+    #[cfg(test)]
     pub(crate) fn chunk_for(&self, cell: Cell) -> Option<usize> {
         self.location(TerrainCell {
             x: cell.x,
