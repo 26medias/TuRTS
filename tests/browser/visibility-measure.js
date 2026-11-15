@@ -5,7 +5,8 @@ const [prepared,fixtures,output]=process.argv.slice(2);
 if(!output)throw Error('Usage: visibility-measure.js PREPARED VISIBILITY_FIXTURES OUTPUT');
 fs.mkdirSync(output,{recursive:false});
 const metadata=JSON.parse(fs.readFileSync(path.join(fixtures,'fixtures.json')));
-const result={status:'RUNNING',fixtures:metadata,rows:[],commands:[]};
+const skip=new Set((process.env.TURTS_VISIBILITY_SKIP||'').split(',').filter(Boolean));
+const result={status:'RUNNING',fixtures:metadata,rows:[],commands:[],skipped_rows:[]};
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const save=()=>fs.writeFileSync(path.join(output,'result.json'),JSON.stringify(result,null,2));
 (async()=>{let xvfb;try{
@@ -14,6 +15,7 @@ const save=()=>fs.writeFileSync(path.join(output,'result.json'),JSON.stringify(r
  const display=await new Promise((resolve,reject)=>{let text='';xvfb.stdio[3].on('data',data=>{text+=data;if(text.includes('\n'))resolve(':'+text.trim())});xvfb.once('error',reject);xvfb.once('exit',code=>reject(Error('Xvfb exited '+code)))});
  result.display=display;
  for(const fixture of metadata.cases)for(const zoom of fixture.zooms){
+  if(skip.has(fixture.case+'-'+zoom)){result.skipped_rows.push(fixture.case+'-'+zoom);save();continue;}
   const rowOutput=path.join(output,fixture.case+'-'+zoom);
   const argv=[path.join(__dirname,'effects-measure.js'),prepared,path.join(fixtures,fixture.case),rowOutput];
   const env={...process.env,DISPLAY:display,TURTS_EFFECT_SCENE:'battle400',TURTS_EFFECT_QUALITY:'high',TURTS_EFFECT_MIXED:'1',TURTS_SHARED_SKIN_CHECK:'1',TURTS_ENVIRONMENT_CHECK:'1',TURTS_EFFECT_ZOOM:zoom,TURTS_VISIBILITY_MODE:fixture.mode};
@@ -27,7 +29,7 @@ const save=()=>fs.writeFileSync(path.join(output,'result.json'),JSON.stringify(r
   if(exit!==0||row.status!=='PASS')throw Error(fixture.case+' '+zoom+' failed: '+row.status);
   if(row.rows.length!==1||row.rows[0].quality!=='high'||row.rows[0].fps<30)throw Error('SV7 High30FPS floor failed');
  }
- result.status='PASS';console.log('PASS SV7 browser matrix: fog, equivalent AllVisible, concentrated AllVisible; normal/near/far High');
+ if(!result.rows.length)throw Error('No SV7 rows selected');result.status='PASS';console.log('PASS SV7 selected rows: '+result.rows.length+'; explicitly skipped: '+result.skipped_rows.length);
 }catch(error){result.status='FAIL';result.error=String(error.stack||error);process.exitCode=1;console.error(error)}
 finally{
  if(xvfb&&xvfb.exitCode===null){const stopped=new Promise(resolve=>xvfb.once('exit',resolve));xvfb.kill('SIGTERM');await Promise.race([stopped,sleep(2000)]);if(xvfb.exitCode===null&&xvfb.signalCode===null){xvfb.kill('SIGKILL');await stopped}}

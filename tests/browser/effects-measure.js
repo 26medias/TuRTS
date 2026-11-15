@@ -15,6 +15,25 @@ function cameraHeight(scene){
  }
  return a[1][3];
 }
+function sharedDrawCosts(scene,fixture){
+ const assets=fs.readFileSync(fixture+'/assets/assets.ron','utf8'),costs={};
+ for(const match of assets.matchAll(/\(id:\s*"([^"]+)",\s*path:\s*"([^"]+\.glb)"\)/g)){
+  const bytes=fs.readFileSync(fixture+'/'+match[2]),length=bytes.readUInt32LE(12);
+  if(bytes.readUInt32LE(0)!==0x46546c67||bytes.readUInt32LE(16)!==0x4e4f534a)throw Error('invalid GLB for skin guard');
+  const gltf=JSON.parse(bytes.subarray(20,20+length).toString('utf8'));
+  costs[match[1]]=new Set(gltf.meshes.flatMap(mesh=>mesh.primitives.map(primitive=>primitive.material))).size;
+ }
+ const actors={};
+ for(const model of scene.models){
+  if(model.unit_id==null)continue;
+  const cost=costs[model.asset.split(':').pop()];
+  if(!cost||model.quality!=='high'||model.level!==0||!model.ready)throw Error('SV7 changed detailed High model quality');
+  actors[model.unit_id]=cost;
+ }
+ const expected=Object.values(actors).reduce((sum,cost)=>sum+cost,0);
+ if(Object.keys(actors).length!==400||scene.shared_skins.shared_draws!==expected||scene.shared_skins.ordinary_draws!==0)throw Error('normal-view shared draws do not match accepted asset material groups');
+ return actors;
+}
 function beginPan(page){
  let stopped=false,failure;
  const done=(async()=>{while(!stopped)for(const key of ['ArrowRight','ArrowLeft']){if(stopped)break;await page.keyboard.down(key);try{await sleep(180)}finally{await page.keyboard.up(key)}}})().catch(error=>{failure=error});
@@ -34,6 +53,7 @@ await page.mouse.click(640,360);const adapter=await page.evaluate(async()=>{cons
 await page.evaluate(name=>new Promise((resolve,reject)=>{const end=performance.now()+60000;function frame(){const s=JSON.parse(turts_scene());const buildingsReady=name!=='burning200'||(s.units.length===210&&Array.from({length:10},(_,i)=>s.effects?.combat?.health?.[String(201+i)]).every(h=>h>0&&h<1000000));if(buildingsReady&&s.effects?.pool?.active>0&&s.animations.filter(a=>(/2H_Ranged|1H_Melee/.test(a.clip||''))).length>=200)return resolve();if(performance.now()>end)return reject(Error('no sustained shooting'));requestAnimationFrame(frame);}frame();}),name);await sleep(5000);
 const beforeZoom=await read();
 if(visibilityMode&&beforeZoom.animations.filter(a=>a.visible&&!a.dead).length!==count)throw Error('SV7 normal view did not show all400 actors before zoom');
+const actorDrawCosts=visibilityMode?sharedDrawCosts(beforeZoom,fixtures+'/'+name):null;
 if(zoom!=='normal'){
  await page.mouse.move(640,360);
  for(let i=0;i<4;i++){await page.mouse.wheel(0,zoom==='near'?-10000:10000);await sleep(100)}
@@ -53,7 +73,7 @@ if(process.env.TURTS_ENVIRONMENT_CHECK==='1'){
 await page.screenshot({path:out+'/'+name+'-'+quality+'.png'});
 let cpuSession;if(process.env.TURTS_CPU_PROFILE==='1'){cpuSession=await context.newCDPSession(page);await cpuSession.send('Profiler.enable');await cpuSession.send('Profiler.setSamplingInterval',{interval:1000});await cpuSession.send('Profiler.start');}
 const stopPan=process.env.TURTS_EFFECT_PAN==='1'?beginPan(page):async()=>{};let sample;
-const pollEveryFrame=process.env.TURTS_EFFECT_SCENE_POLL==='frame';try{sample=await page.evaluate(pollEveryFrame=>new Promise(resolve=>{let first,last,high=0;const frames=[],states=[];function f(now){const sampleDue=states.length===0||now-states[states.length-1].at>=500;const s=sampleDue||pollEveryFrame?JSON.parse(turts_scene()):null;high=Math.max(high,turts_memory_bytes());if(first===undefined)first=now;if(last!==undefined)frames.push(now-last);last=now;if(sampleDue)states.push({at:now,crowd:s.crowd_poses,shared_skins:s.shared_skins,draw_meshes:s.draw_meshes,changed_unit_roots:s.changed_unit_roots,changed_local_unit_roots:s.changed_local_unit_roots,visible:s.animations.filter(a=>a.visible&&!a.dead).length,clip_from_world:s.clip_from_world,shooting:s.animations.filter(a=>(/2H_Ranged|1H_Melee/.test(a.clip||''))).length,melee:s.animations.filter(a=>a.clip?.includes('1H_Melee')).length,ranged:s.animations.filter(a=>a.clip?.includes('2H_Ranged')).length,effects:s.effects,bodies:s.body_count,units:s.units.length});if(now-first>=10000)return resolve({frames,states,wasm_high_water:high});requestAnimationFrame(f);}requestAnimationFrame(f);}),pollEveryFrame);}finally{await stopPan()}
+const pollEveryFrame=process.env.TURTS_EFFECT_SCENE_POLL==='frame';try{sample=await page.evaluate(({pollEveryFrame,actorDrawCosts})=>new Promise(resolve=>{let first,last,high=0;const frames=[],states=[];function f(now){const sampleDue=states.length===0||now-states[states.length-1].at>=500;const s=sampleDue||pollEveryFrame?JSON.parse(turts_scene()):null;high=Math.max(high,turts_memory_bytes());if(first===undefined)first=now;if(last!==undefined)frames.push(now-last);last=now;if(sampleDue)states.push({at:now,crowd:s.crowd_poses,shared_skins:s.shared_skins,draw_meshes:s.draw_meshes,changed_unit_roots:s.changed_unit_roots,changed_local_unit_roots:s.changed_local_unit_roots,visible:s.animations.filter(a=>a.visible&&!a.dead).length,expected_visible_shared_draws:actorDrawCosts?s.animations.filter(a=>a.visible&&!a.dead).reduce((n,a)=>n+actorDrawCosts[a.unit_id],0):null,expected_offscreen_ordinary_draws:actorDrawCosts?s.animations.filter(a=>!a.visible&&!a.dead).reduce((n,a)=>n+actorDrawCosts[a.unit_id],0):null,clip_from_world:s.clip_from_world,shooting:s.animations.filter(a=>(/2H_Ranged|1H_Melee/.test(a.clip||''))).length,melee:s.animations.filter(a=>a.clip?.includes('1H_Melee')).length,ranged:s.animations.filter(a=>a.clip?.includes('2H_Ranged')).length,effects:s.effects,bodies:s.body_count,units:s.units.length});if(now-first>=10000)return resolve({frames,states,wasm_high_water:high});requestAnimationFrame(f);}requestAnimationFrame(f);}),{pollEveryFrame,actorDrawCosts});}finally{await stopPan()}
 if(cpuSession){const profile=await cpuSession.send('Profiler.stop');fs.writeFileSync(out+'/'+name+'-'+quality+'.cpuprofile',JSON.stringify(profile.profile));await cpuSession.detach();}
 const sorted=[...sample.frames].sort((a,b)=>a-b),pct=p=>sorted[Math.floor((sorted.length-1)*p)];const fps=1000*sample.frames.length/sample.frames.reduce((a,b)=>a+b,0);const row={scene:name,quality,controls,zoom,camera_height,visibility,normal_view_visible:beforeZoom.animations.filter(a=>a.visible&&!a.dead).length,scene_sampling_interval_ms:pollEveryFrame?0:500,environment,panning:process.env.TURTS_EFFECT_PAN==='1',units:count,fps,p50_ms:pct(.5),p95_ms:pct(.95),wasm_high_water_bytes:sample.wasm_high_water,adapter,states:sample.states,frames_ms:sample.frames,errors};if(row.panning&&new Set(row.states.map(state=>JSON.stringify(state.clip_from_world))).size<2)throw Error('Arrow inputs did not pan the camera');result.rows.push(row);save();console.log(`${name} ${quality}: ${fps.toFixed(2)} FPS p95 ${row.p95_ms.toFixed(2)} ms`);
 await context.close();context=null;fs.rmSync(profile,{recursive:true,force:true});server.kill('SIGTERM');await new Promise(r=>server.once('exit',r));server=null;
@@ -71,5 +91,6 @@ if(process.env.TURTS_EFFECT_MIXED==='1'){
  save();
  if(row.states.some(s=>s.units!==count||(zoom==='normal'&&s.visible!==count))||ids.length!==count||row.damaged_units!==count||!row.states.some(s=>s.melee===expectedMix.melee&&s.ranged===expectedMix.ranged))throw Error('mixed combat stopped dealing damage or lost a visible actor');
 }else if(row.states.some(s=>s.shooting<(name==='burning200'?200:count)*.95))throw Error('combat row stopped shooting '+name);
-if(process.env.TURTS_SHARED_SKIN_CHECK==='1'&&row.states.some(s=>!s.shared_skins||s.shared_skins.shared_draws<(zoom==='normal'?count:s.visible)*2||s.shared_skins.ordinary_draws!==0||s.shared_skins.palettes<1||s.shared_skins.matrices>65536))throw Error('shared skin path or bounded palette missing');
+if(process.env.TURTS_SHARED_SKIN_CHECK==='1'&&row.states.some(s=>!s.shared_skins||!s.shared_skins.enabled||s.shared_skins.palettes<1||s.shared_skins.matrices>65536||
+ (actorDrawCosts?(s.shared_skins.shared_draws!==s.expected_visible_shared_draws||s.shared_skins.ordinary_draws!==(zoom==='normal'?0:s.expected_offscreen_ordinary_draws)):(s.shared_skins.shared_draws<count*2||s.shared_skins.ordinary_draws!==0))))throw Error('onscreen shared skin coverage or bounded palette missing');
 }if(!result.rows.length)throw Error('no benchmark scene selected');result.status='PASS';save();}catch(e){result.status='FAIL';result.error=String(e.stack||e);save();console.error(e);process.exitCode=1;}finally{if(context)await context.close();if(server){server.kill('SIGTERM');await new Promise(r=>server.once('exit',r));}if(profile)fs.rmSync(profile,{recursive:true,force:true});}})();
