@@ -385,7 +385,7 @@ fn publish_completed_tick(world: &mut World) {
         .filter(|row| {
             !current_repairs.contains_key(&row.repairer) && !removed.contains(&row.repairer)
         })
-        .map(|row| (row.repairer, row.owner_slot))
+        .map(|row| row.repairer)
         .collect();
     let batch = CommittedTick {
         repairs,
