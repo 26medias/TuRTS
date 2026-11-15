@@ -405,9 +405,14 @@ pub(crate) fn run(world: &mut World) {
     let mut occupancy = step::Occupancy::capture(world);
     for (unit, order) in orders {
         let Some(cell) = selected_cell(world, unit, &order) else {
+            let may_create_or_remove_body = unit_entity(world, unit)
+                .and_then(|entity| world.get::<UnitOrders>(entity))
+                .is_some_and(|orders| !orders.queue.is_empty());
             order_changed(world, unit);
             crate::orders::finish_terrain_order(world, unit);
-            occupancy = step::Occupancy::capture(world);
+            if may_create_or_remove_body {
+                occupancy = step::Occupancy::capture(world);
+            }
             continue;
         };
         let mut state = world
