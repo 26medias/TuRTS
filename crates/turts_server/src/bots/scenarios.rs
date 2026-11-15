@@ -142,6 +142,7 @@ pub(super) fn live_package_with_guard(package: &str, guard: Option<BotStartWhen>
             .unwrap()
             .start_when = guard;
     }
+    app.init_resource::<crate::stats::Stats>();
     session::install(
         &mut app,
         session::Advertised {
