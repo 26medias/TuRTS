@@ -198,7 +198,10 @@ impl ReplicaContext {
             .catalog
             .units
             .keys()
-            .map(|id| (id.to_string(), id.clone()))
+            .filter_map(|id| {
+                let name = id.to_string();
+                (ContentId::parse(&name).ok().as_ref() == Some(id)).then(|| (name, id.clone()))
+            })
             .collect();
         Self {
             content,
