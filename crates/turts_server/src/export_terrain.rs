@@ -190,6 +190,7 @@ fn work_wait(wait: &turts_sim::terrain::TerrainWorkWait) -> Option<TerrainWorkWa
         Sim::Contested => TerrainWorkWait::Contested,
         Sim::Budget => TerrainWorkWait::Paused,
         Sim::Invalid => TerrainWorkWait::Invalid,
+        Sim::Unloading => TerrainWorkWait::Unloading,
     })
 }
 

@@ -216,6 +216,11 @@ mod tests {
         suspend(&mut world, 17, &work()).unwrap();
         install_utility(&mut world, entity);
         assert!(is_suspended(&world, 17));
+        let visible = super::super::work::rows_for(&world, 1);
+        assert_eq!(visible[0].wait, TerrainWorkWait::Unloading);
+        assert_eq!(visible[0].completed_work, progress.done);
+        assert_eq!(visible[0].current_cell, progress.cell);
+        assert_eq!(visible[0].required_work, progress.required);
         assert!(!consume_resume(&mut world, 17));
         assert_eq!(world.resource::<TerrainWorkRuntime>().units[&17], progress);
         {
@@ -229,6 +234,10 @@ mod tests {
             orders.current = orders.queue.pop_front();
         }
         assert!(consume_resume(&mut world, 17));
+        assert_eq!(
+            super::super::work::rows_for(&world, 1)[0].wait,
+            progress.wait
+        );
         assert!(!consume_resume(&mut world, 17));
         assert_eq!(world.resource::<TerrainWorkRuntime>().units[&17], progress);
         assert_eq!(

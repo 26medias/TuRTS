@@ -30,6 +30,7 @@ pub enum TerrainWorkWait {
     Contested,
     Budget,
     Invalid,
+    Unloading,
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub(crate) struct WorkState {
@@ -696,7 +697,11 @@ pub fn rows_for(world: &World, owner: u8) -> Vec<TerrainWorkView> {
                     .required
                     .map_or(0, |required| state.done.min(required)),
                 required_work: state.required,
-                wait: state.wait.clone(),
+                wait: if super::pause::is_suspended(world, unit) {
+                    TerrainWorkWait::Unloading
+                } else {
+                    state.wait.clone()
+                },
             })
         })
         .collect()
