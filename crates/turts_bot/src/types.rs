@@ -228,3 +228,54 @@ pub struct EmittedCommand {
     pub units: Vec<UnitId>,
     pub order: BotOrder,
 }
+
+impl ReconcileBatch {
+    /// Initial complete account basis, before this coordinator emits any requests.
+    pub fn initial(watermark: Watermark, accounts: Vec<AccountObservation>) -> Self {
+        Self {
+            watermark,
+            accounts,
+            included: Vec::new(),
+            unapplied: Vec::new(),
+            complete: true,
+        }
+    }
+}
+impl ObservedRequestEffect {
+    pub fn refusal(request: RequestKey, admission: Watermark) -> Self {
+        Self {
+            request,
+            effect_watermark: admission,
+            refused: true,
+            pending_placement: false,
+            paid: Vec::new(),
+            reserved: Vec::new(),
+            work: None,
+            terminal: true,
+        }
+    }
+    pub fn held_placement(request: RequestKey, admission: Watermark) -> Self {
+        Self {
+            request,
+            effect_watermark: admission,
+            refused: false,
+            pending_placement: true,
+            paid: Vec::new(),
+            reserved: Vec::new(),
+            work: None,
+            terminal: false,
+        }
+    }
+    pub fn observed_work(request: RequestKey, admission: Watermark, work: WorkObservation) -> Self {
+        Self {
+            request,
+            effect_watermark: admission,
+            refused: false,
+            pending_placement: false,
+            paid: work.paid.clone(),
+            reserved: work.reserved.clone(),
+            terminal: work.state.terminal(),
+            work: Some(work),
+        }
+    }
+}

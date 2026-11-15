@@ -60,3 +60,45 @@ impl ProposalSink for ProposalBuffer {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use turts_mod_api::ContentId;
+    fn proposal(unit: u32) -> Proposal {
+        Proposal {
+            source_basis: 0,
+            task: TaskKey::new("controller", "goal", "0"),
+            actors: vec![unit],
+            order: BotOrder {
+                content: ContentId::parse("test:order").unwrap(),
+                target: BotTarget::None,
+                queue: BotQueueMode::Replace,
+                group: 0,
+            },
+            priority: 1,
+            goal_order: 0,
+        }
+    }
+    #[test]
+    fn duplicate_tasks_remove_both_candidates_instead_of_keeping_the_first_actor() {
+        for actors in [[1, 900], [900, 1]] {
+            let mut sink = ProposalBuffer::new("controller", 3, 1);
+            sink.propose(proposal(actors[0])).unwrap();
+            assert_eq!(
+                sink.propose(proposal(actors[1])),
+                Err(ProposalRejection::DuplicateTask)
+            );
+            assert!(sink.into_proposals().is_empty());
+        }
+    }
+    #[test]
+    fn invalid_attempts_use_the_declared_proposal_budget() {
+        let mut sink = ProposalBuffer::new("controller", 1, 1);
+        let mut invalid = proposal(1);
+        invalid.task.controller = "other".into();
+        assert_eq!(sink.propose(invalid), Err(ProposalRejection::InvalidTask));
+        assert_eq!(sink.propose(proposal(1)), Err(ProposalRejection::Budget));
+        assert!(sink.into_proposals().is_empty());
+    }
+}
