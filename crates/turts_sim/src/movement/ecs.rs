@@ -5,7 +5,7 @@ use bevy_ecs::world::World;
 use bevy_math::Vec2;
 use bevy_time::{Fixed, Time};
 
-use super::frame::{MovementFrame, step_frame_preserving_resting};
+use super::frame::MovementFrame;
 use super::plain::PlainMoveProgress;
 use super::{MoveProgress, MovementPools, PhysicalEscape};
 use crate::registry::UnitTypes;
@@ -73,11 +73,17 @@ pub(crate) fn integrate_movement(world: &mut World) {
                 .then_some(*unit_id)
         })
         .collect();
-    let outputs = step_frame_preserving_resting(&frame, delta, &preserve_resting_units);
+    let (outputs, terrain_waiting) =
+        crate::terrain::navigation::step(world, &frame, delta, &preserve_resting_units);
     #[cfg(feature = "test-probes")]
     super::probe::store_frame_flags(world, &outputs);
-    for ((_, entity, _), output) in units.into_iter().zip(outputs) {
+    for ((id, entity, _), output) in units.into_iter().zip(outputs) {
         let mut entity_mut = world.entity_mut(entity);
+        if terrain_waiting.contains(&id) {
+            entity_mut.insert(crate::terrain::navigation::TerrainMotionWait);
+        } else {
+            entity_mut.remove::<crate::terrain::navigation::TerrainMotionWait>();
+        }
         if let Some(target) = output.target {
             entity_mut.insert(MoveTarget(target));
         } else {

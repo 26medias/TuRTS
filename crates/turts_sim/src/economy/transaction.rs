@@ -1076,6 +1076,16 @@ impl Transaction<'_> {
                             cell: crate::terrain::step::api_cell(edit.cell),
                             elevation: edit.column.surface(),
                             material: material.clone(),
+                            provenance: edit.column.exposed().map(|exposed| {
+                                match exposed.provenance {
+                                    turts_rules::terrain::material::Provenance::Natural => {
+                                        turts_mod_api::TerrainProvenance::Natural
+                                    }
+                                    turts_rules::terrain::material::Provenance::NoYield => {
+                                        turts_mod_api::TerrainProvenance::Placed
+                                    }
+                                }
+                            }),
                         },
                         observed_tick: tick,
                     },
@@ -1291,6 +1301,7 @@ impl Transaction<'_> {
         }
         for removal in writes.removed {
             super::repair::remove_unit(world, removal.unit);
+            crate::terrain::navigation::order_changed(world, removal.unit);
             crate::terrain::work::order_changed(world, removal.unit);
             crate::terrain::cargo::order_changed(world, removal.unit);
             if let Some(mut identities) =

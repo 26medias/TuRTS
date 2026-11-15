@@ -1280,6 +1280,7 @@ pub(crate) fn clear_replaced_movement(
     entity: bevy_ecs::entity::Entity,
     unit_id: u32,
 ) {
+    crate::terrain::navigation::order_changed(world, unit_id);
     crate::terrain::work::order_changed(world, unit_id);
     crate::terrain::cargo::order_changed(world, unit_id);
     edit_unit_orders(world, entity, |orders| orders.acquired = None);

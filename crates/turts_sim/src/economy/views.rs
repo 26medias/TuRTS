@@ -663,8 +663,11 @@ pub struct EconomyChangesView {
     pub queues: Vec<QueueView>,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct WorldView {
+    /// Immutable transport cache. Privileged AuditState.raw_terrain owns authoritative equality.
+    #[serde(skip)]
+    pub terrain: Option<std::sync::Arc<crate::terrain::TerrainPhase>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub operating: Option<OperatingView>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -687,6 +690,56 @@ pub struct WorldView {
     pub economy: EconomyStateView,
 }
 
+impl PartialEq for WorldView {
+    fn eq(&self, other: &Self) -> bool {
+        // Exhaustive destructuring makes a new serialized field a compile error here.
+        let Self {
+            terrain: _,
+            operating,
+            match_outcomes,
+            construction,
+            tick,
+            m3,
+            units,
+            nodes,
+            unit_orders,
+            economy,
+        } = self;
+        let Self {
+            terrain: _,
+            operating: other_operating,
+            match_outcomes: other_outcomes,
+            construction: other_construction,
+            tick: other_tick,
+            m3: other_m3,
+            units: other_units,
+            nodes: other_nodes,
+            unit_orders: other_orders,
+            economy: other_economy,
+        } = other;
+        (
+            operating,
+            match_outcomes,
+            construction,
+            tick,
+            m3,
+            units,
+            nodes,
+            unit_orders,
+            economy,
+        ) == (
+            other_operating,
+            other_outcomes,
+            other_construction,
+            other_tick,
+            other_m3,
+            other_units,
+            other_nodes,
+            other_orders,
+            other_economy,
+        )
+    }
+}
 impl std::ops::Deref for WorldView {
     type Target = EconomyStateView;
     fn deref(&self) -> &Self::Target {
@@ -742,6 +795,9 @@ pub fn world_view(world: &mut World) -> WorldView {
                         progress.activity == crate::movement::MovementActivity::Blocked
                     })
                 || entity.get::<crate::movement::PhysicalEscape>().is_some();
+            let terrain_waiting = entity
+                .get::<crate::terrain::navigation::TerrainMotionWait>()
+                .is_some();
             let fresh_blocked =
                 entity
                     .get::<crate::movement::MoveProgress>()
@@ -768,7 +824,7 @@ pub fn world_view(world: &mut World) -> WorldView {
             let Some(orders) = entity.get::<crate::orders::UnitOrders>() else {
                 let activity = if pending {
                     UnitOrderActivityView::Pending
-                } else if blocked {
+                } else if terrain_waiting || blocked {
                     UnitOrderActivityView::Blocked
                 } else if active_gather {
                     UnitOrderActivityView::Gathering
@@ -791,7 +847,7 @@ pub fn world_view(world: &mut World) -> WorldView {
             };
             let activity = if pending {
                 UnitOrderActivityView::Pending
-            } else if physically_escaping || fresh_blocked {
+            } else if terrain_waiting || physically_escaping || fresh_blocked {
                 UnitOrderActivityView::Blocked
             } else if let Some(current) = &orders.current {
                 match current.behaviour {
@@ -801,7 +857,9 @@ pub fn world_view(world: &mut World) -> WorldView {
                     turts_mod_api::Behaviour::Move => UnitOrderActivityView::Pending,
                     turts_mod_api::Behaviour::Attack => UnitOrderActivityView::Attacking,
                     turts_mod_api::Behaviour::Hold => UnitOrderActivityView::Holding,
-                    turts_mod_api::Behaviour::Gather => UnitOrderActivityView::Gathering,
+                    turts_mod_api::Behaviour::Gather
+                    | turts_mod_api::Behaviour::TerrainWork
+                    | turts_mod_api::Behaviour::UnloadCargo => UnitOrderActivityView::Gathering,
                     _ => UnitOrderActivityView::Pending,
                 }
             } else if !orders.queue.is_empty() {
@@ -846,6 +904,8 @@ pub fn world_view(world: &mut World) -> WorldView {
     unit_orders.sort_by_key(|record| record.unit_id);
     let m3 = super::views_m3::m3_world_view(world);
     let mut view = WorldView {
+        terrain: crate::terrain::phase(world, turts_mod_api::ObservationPhase::Completed)
+            .filter(|phase| phase.tick() == tick),
         economy: EconomyStateView {
             repairs: super::repair::status_rows(world),
             ..EconomyStateView::default()

@@ -717,6 +717,8 @@ pub fn stage_package_with_terrain(
 pub fn install_package(world: &mut World, staged: StagedPackage) {
     world.insert_resource(InstalledMapIdentity(staged.map_identity));
     world.remove_resource::<crate::terrain::TerrainState>();
+    world.remove_resource::<crate::terrain::navigation::TerrainNavigation>();
+    world.remove_resource::<crate::terrain::phase::TerrainPhases>();
     world.remove_resource::<crate::terrain::work::TerrainWorkRuntime>();
     world.remove_resource::<crate::terrain::cargo::CargoRuntime>();
     if let Some(terrain) = staged.terrain {
@@ -782,6 +784,7 @@ pub fn install_package(world: &mut World, staged: StagedPackage) {
     for (id, clock) in staged.income_clocks {
         income::on_activate(world, id, Some(clock));
     }
+    crate::terrain::phase::initialize_phases(world);
 }
 
 #[cfg(test)]

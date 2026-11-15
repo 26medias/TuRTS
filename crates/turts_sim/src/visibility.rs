@@ -842,6 +842,7 @@ fn refresh(world: &mut World, phase: ObservationPhase) {
         .get_resource::<VisibilityState>()
         .is_some_and(|state| state.context_finalized)
     {
+        crate::terrain::phase::capture_phase(world, phase);
         return;
     }
     let (units, sources) = capture_units(world);
@@ -868,6 +869,7 @@ fn refresh(world: &mut World, phase: ObservationPhase) {
     world
         .resource_mut::<VisibilityState>()
         .update(tick, phase, units, nodes, sources);
+    crate::terrain::phase::capture_phase(world, phase);
 }
 /// Finalize the real match identity and installed teams before initial publication.
 /// Match ID zero is reserved for explicitly initialized headless diagnostics.

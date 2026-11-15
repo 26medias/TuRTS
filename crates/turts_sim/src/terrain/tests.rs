@@ -394,3 +394,99 @@ fn cancellation_discards_only_uncommitted_work_and_same_context_keeps_natural_de
             .is_none()
     );
 }
+
+#[test]
+fn immutable_phase_surface_and_world_sidecar_never_read_later_columns_or_serialize_truth() {
+    let mut fixture = Fixture::new(20, 100, 20);
+    fixture.work("dig", rect(3, 1, 1), 17, QueueMode::Replace);
+    fixture.tick();
+    let tactical = phase(fixture.app.world(), ObservationPhase::Tactical).unwrap();
+    let completed = phase(fixture.app.world(), ObservationPhase::Completed).unwrap();
+    let cell = TerrainCell { x: 3, y: 1 };
+    assert_eq!(tactical.observe_cell(0, cell).unwrap().elevation, 20);
+    assert_eq!(completed.observe_cell(0, cell).unwrap().elevation, 19);
+    assert_eq!(
+        completed.observe_cell(0, cell).unwrap().provenance,
+        Some(TerrainProvenance::Natural)
+    );
+    let world_view = crate::world_view(fixture.app.world_mut());
+    assert!(std::sync::Arc::ptr_eq(
+        world_view.terrain.as_ref().unwrap(),
+        &completed
+    ));
+    fixture.tick();
+    assert_eq!(fixture.height(3, 1), 18);
+    assert_eq!(tactical.observe_cell(0, cell).unwrap().elevation, 20);
+    assert_eq!(completed.observe_cell(0, cell).unwrap().elevation, 19);
+    assert_eq!(
+        world_view
+            .terrain
+            .as_ref()
+            .unwrap()
+            .observe_cell(0, cell)
+            .unwrap()
+            .elevation,
+        19
+    );
+    let json = serde_json::to_value(&world_view).unwrap();
+    assert!(
+        json.get("terrain").is_none(),
+        "the immutable cache must never serialize unprojected top surfaces"
+    );
+    let decoded: crate::WorldView = serde_json::from_value(json).unwrap();
+    assert!(decoded.terrain.is_none());
+    assert_eq!(
+        decoded, world_view,
+        "the skipped sidecar is not authoritative state"
+    );
+    let audit = crate::audit_state(fixture.app.world_mut());
+    assert!(audit.raw_terrain.is_some());
+    let decoded: crate::AuditState =
+        serde_json::from_slice(&serde_json::to_vec(&audit).unwrap()).unwrap();
+    assert_eq!(
+        decoded, audit,
+        "private raw terrain remains part of authoritative equality"
+    );
+    let debug = format!("{completed:?}");
+    assert!(
+        !debug.contains("stone")
+            && !debug.contains("elevations")
+            && !debug.contains("private_seed")
+    );
+}
+#[test]
+fn unknown_surface_has_no_material_work_or_foreign_anchor_but_own_contact_remains() {
+    let mut fixture = Fixture::new(20, 100, 20);
+    let state = crate::visibility::prepare(
+        77,
+        id("terrain_fixture"),
+        &VisibilityDef {
+            cell_size: 2.0,
+            sharing: VisionSharing::OwnSlot,
+            memory_limit: None,
+        },
+        VisibilityGrid {
+            size: WorldPos { x: 8.0, y: 8.0 },
+            cell_size: 2.0,
+            columns: 4,
+            rows: 4,
+        },
+        &[0, 1],
+    )
+    .unwrap();
+    fixture.app.world_mut().insert_resource(state);
+    crate::visibility::initialize_context(fixture.app.world_mut(), 77, &[0, 1]).unwrap();
+    let old = phase(fixture.app.world(), ObservationPhase::Completed).unwrap();
+    assert!(old.observe_cell(0, TerrainCell { x: 3, y: 1 }).is_none());
+    assert_eq!(old.ground_anchor(0, fixture.worker).unwrap().elevation, 20);
+    assert!(old.ground_anchor(1, fixture.worker).is_none());
+    fixture.work("dig", rect(3, 1, 1), 17, QueueMode::Replace);
+    fixture.tick();
+    assert_eq!(fixture.height(3, 1), 20);
+    let completed = phase(fixture.app.world(), ObservationPhase::Completed).unwrap();
+    let row = completed.work_for(0).next().unwrap();
+    assert_eq!(row.wait, TerrainWorkWait::Unknown);
+    assert_eq!(row.required_work, None);
+    assert_eq!(row.completed_work, 0);
+    assert_eq!(completed.work_for(1).count(), 0);
+}

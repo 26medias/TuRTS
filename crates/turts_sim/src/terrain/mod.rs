@@ -1,6 +1,12 @@
 //! Authoritative terrain. Selected geology is private; callers must request permitted facts.
 mod audit;
+pub(crate) mod phase;
+pub use phase::{TerrainGroundObservation, TerrainPhase, phase};
 pub(crate) mod cargo;
+pub(crate) mod navigation;
+pub use navigation::{
+    NavigationDiagnostics, privileged_diagnostics as privileged_navigation_diagnostics,
+};
 mod state;
 pub use audit::{TerrainAudit, privileged_audit};
 pub(crate) mod step;
@@ -20,30 +26,16 @@ pub struct TerrainObservedCell {
     pub cell: turts_mod_api::TerrainCell,
     pub elevation: i32,
     pub material: Option<turts_mod_api::ContentId>,
+    pub provenance: Option<turts_mod_api::TerrainProvenance>,
 }
 /// Only a current full-cell observation exposes elevation/material. No hidden revision escapes.
 pub fn observe_cell(
     world: &bevy_ecs::world::World,
     viewer: u8,
     cell: turts_mod_api::TerrainCell,
-    phase: turts_mod_api::ObservationPhase,
+    phase_kind: turts_mod_api::ObservationPhase,
 ) -> Option<TerrainObservedCell> {
-    let terrain = world.get_resource::<TerrainState>()?;
-    let coordinate = state::cell(cell);
-    let index = terrain.index(coordinate)?;
-    if !step::observed(world, viewer, terrain, coordinate, phase) {
-        return None;
-    }
-    let column = &terrain.columns[index];
-    let material = column
-        .exposed()
-        .and_then(|exposed| terrain.material(exposed.material))
-        .cloned();
-    Some(TerrainObservedCell {
-        cell,
-        elevation: column.surface(),
-        material,
-    })
+    phase(world, phase_kind)?.observe_cell(viewer, cell)
 }
 /// Physical support fact. Permission adapters must authorize the unit before exporting it.
 /// Phase capture stores this value in immutable sight/event rows and in remembered units.

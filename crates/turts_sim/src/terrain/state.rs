@@ -1,6 +1,6 @@
 use bevy_ecs::prelude::Resource;
 use std::{collections::BTreeMap, fmt, sync::Arc};
-use turts_mod_api::{ContentCatalog, ContentId, ResolvedTerrainDef, TerrainCell};
+use turts_mod_api::{ContentCatalog, ContentId, ResolvedTerrainDef};
 use turts_rules::terrain::{
     generation::{self, DatumBand, Geology, WeightedMaterial},
     geometry::{self, Cell, Grid, Surface},
@@ -28,20 +28,87 @@ pub enum TerrainError {
     Generation(generation::Error),
 }
 /// Private retained surface cache. A shared chunk never includes buried intervals or seed.
-#[derive(Clone)]
-struct SurfaceChunk {
-    revision: u64,
-    elevations: Vec<i32>,
+#[derive(Clone, PartialEq, Eq)]
+pub(super) struct SurfaceChunk {
+    pub(super) revision: u64,
+    minimum: i32,
+    maximum: i32,
+    pub(super) elevations: Vec<i32>,
+    pub(super) materials: Vec<Option<u32>>,
+    pub(super) provenance: Vec<Option<turts_mod_api::TerrainProvenance>>,
+}
+const CHUNKS_PER_PAGE: usize = 1024;
+/// Two-level COW table: an edit copies at most two public pointer pages plus its one chunk.
+#[derive(Clone, PartialEq, Eq)]
+pub(super) struct ChunkTable {
+    pages: Arc<Vec<Arc<Vec<Arc<SurfaceChunk>>>>>,
+    len: usize,
+}
+impl ChunkTable {
+    fn new(chunks: Vec<Arc<SurfaceChunk>>) -> Result<Self, TerrainError> {
+        let len = chunks.len();
+        let mut pages = Vec::new();
+        pages
+            .try_reserve_exact(len.div_ceil(CHUNKS_PER_PAGE))
+            .map_err(|_| TerrainError::Allocation)?;
+        let mut source = chunks.into_iter();
+        while source.len() > 0 {
+            pages.push(Arc::new(source.by_ref().take(CHUNKS_PER_PAGE).collect()));
+        }
+        Ok(Self {
+            pages: Arc::new(pages),
+            len,
+        })
+    }
+    pub(super) fn get(&self, index: usize) -> Option<&Arc<SurfaceChunk>> {
+        self.pages
+            .get(index / CHUNKS_PER_PAGE)?
+            .get(index % CHUNKS_PER_PAGE)
+    }
+    fn len(&self) -> usize {
+        self.len
+    }
+    fn replaced(&self, index: usize, value: Arc<SurfaceChunk>) -> Result<Self, TerrainError> {
+        let page_index = index / CHUNKS_PER_PAGE;
+        let source = self
+            .pages
+            .get(page_index)
+            .ok_or(TerrainError::InvalidGrid)?;
+        let mut page = Vec::new();
+        page.try_reserve_exact(source.len())
+            .map_err(|_| TerrainError::Allocation)?;
+        page.extend(source.iter().cloned());
+        *page
+            .get_mut(index % CHUNKS_PER_PAGE)
+            .ok_or(TerrainError::InvalidGrid)? = value;
+        let mut pages = Vec::new();
+        pages
+            .try_reserve_exact(self.pages.len())
+            .map_err(|_| TerrainError::Allocation)?;
+        pages.extend(self.pages.iter().cloned());
+        pages[page_index] = Arc::new(page);
+        Ok(Self {
+            pages: Arc::new(pages),
+            len: self.len,
+        })
+    }
+}
+impl std::ops::Index<usize> for ChunkTable {
+    type Output = Arc<SurfaceChunk>;
+    fn index(&self, index: usize) -> &Self::Output {
+        self.get(index).expect("validated public chunk index")
+    }
 }
 #[derive(Resource)]
 pub(crate) struct TerrainState {
     pub(crate) grid: Grid,
     pub(crate) prism: Prism,
-    chunk_width: u32,
-    chunk_columns: u32,
+    pub(super) chunk_width: u32,
+    pub(super) chunk_columns: u32,
     pub(crate) columns: Vec<Column>,
-    pub(crate) materials: Vec<ContentId>,
-    chunks: Vec<Arc<SurfaceChunk>>,
+    pub(crate) materials: Arc<[ContentId]>,
+    pub(super) chunks: ChunkTable,
+    table_revision: u64,
     dirty_chunks: Vec<bool>,
     pub(crate) step_observations: BTreeMap<(u8, Cell), super::TerrainSurfaceWitness>,
 }
@@ -62,7 +129,9 @@ pub(crate) struct PreparedCellEdit {
     pub(crate) column: Column,
     chunk_index: usize,
     expected_chunk_revision: u64,
-    chunk: Arc<SurfaceChunk>,
+    table: ChunkTable,
+    expected_table_revision: u64,
+    next_table_revision: u64,
 }
 impl Surface for TerrainState {
     fn elevation(&self, cell: Cell) -> Option<i32> {
@@ -113,6 +182,27 @@ impl TerrainState {
             .map_err(|_| TerrainError::Allocation)?;
         elevations.extend_from_slice(&previous.elevations);
         elevations[offset] = column.surface();
+        let mut materials = Vec::new();
+        materials
+            .try_reserve_exact(previous.materials.len())
+            .map_err(|_| TerrainError::Allocation)?;
+        materials.extend_from_slice(&previous.materials);
+        materials[offset] = column.exposed().map(|exposed| exposed.material);
+        let mut provenance = Vec::new();
+        provenance
+            .try_reserve_exact(previous.provenance.len())
+            .map_err(|_| TerrainError::Allocation)?;
+        provenance.extend_from_slice(&previous.provenance);
+        provenance[offset] = column.exposed().map(|exposed| match exposed.provenance {
+            material::Provenance::Natural => turts_mod_api::TerrainProvenance::Natural,
+            material::Provenance::NoYield => turts_mod_api::TerrainProvenance::Placed,
+        });
+
+        let next_table_revision = self
+            .table_revision
+            .checked_add(1)
+            .ok_or(TerrainError::Material(material::Error::ArithmeticOverflow))?;
+
         Ok(PreparedCellEdit {
             index,
             cell,
@@ -120,16 +210,35 @@ impl TerrainState {
             column,
             chunk_index,
             expected_chunk_revision: previous.revision,
-            chunk: Arc::new(SurfaceChunk {
-                revision,
-                elevations,
-            }),
+            expected_table_revision: self.table_revision,
+            next_table_revision,
+            table: self.chunks.replaced(
+                chunk_index,
+                Arc::new(SurfaceChunk {
+                    revision,
+                    minimum: elevations
+                        .iter()
+                        .copied()
+                        .min()
+                        .ok_or(TerrainError::InvalidGrid)?,
+                    maximum: elevations
+                        .iter()
+                        .copied()
+                        .max()
+                        .ok_or(TerrainError::InvalidGrid)?,
+                    elevations,
+                    materials,
+                    provenance,
+                }),
+            )?,
         })
     }
     pub(crate) fn validates(&self, edit: &PreparedCellEdit) -> bool {
-        self.columns
-            .get(edit.index)
-            .is_some_and(|column| column.revision() == edit.expected_revision)
+        self.table_revision == edit.expected_table_revision
+            && self
+                .columns
+                .get(edit.index)
+                .is_some_and(|column| column.revision() == edit.expected_revision)
             && self
                 .chunks
                 .get(edit.chunk_index)
@@ -138,7 +247,8 @@ impl TerrainState {
     pub(crate) fn apply_prevalidated(&mut self, edit: PreparedCellEdit) {
         debug_assert!(self.validates(&edit));
         self.columns[edit.index] = edit.column;
-        self.chunks[edit.chunk_index] = edit.chunk;
+        self.chunks = edit.table;
+        self.table_revision = edit.next_table_revision;
         self.dirty_chunks[edit.chunk_index] = true;
     }
     pub(crate) fn material(&self, key: u32) -> Option<&ContentId> {
@@ -149,6 +259,38 @@ impl TerrainState {
             .binary_search(id)
             .ok()
             .and_then(|index| u32::try_from(index).ok())
+    }
+    pub(crate) fn lease_valid(&self, lease: &BTreeMap<usize, u64>) -> bool {
+        lease.iter().all(|(index, revision)| {
+            self.chunks
+                .get(*index)
+                .is_some_and(|chunk| chunk.revision == *revision)
+        })
+    }
+    /// Every returned chunk is read by this rectangle certificate, so edits elsewhere do not
+    /// invalidate it. The bounds come from exact endpoint disk support, not rounded poses.
+    pub(crate) fn rectangle_certificate(
+        &self,
+        minimum: Cell,
+        maximum: Cell,
+        lease: &mut BTreeMap<usize, u64>,
+    ) -> bool {
+        let mut height = None;
+        let mut flat = true;
+        for cy in minimum.y / self.chunk_width..=maximum.y / self.chunk_width {
+            for cx in minimum.x / self.chunk_width..=maximum.x / self.chunk_width {
+                let index =
+                    (u64::from(cy) * u64::from(self.chunk_columns) + u64::from(cx)) as usize;
+                let Some(chunk) = self.chunks.get(index) else {
+                    return false;
+                };
+                lease.insert(index, chunk.revision);
+                flat &= chunk.minimum == chunk.maximum
+                    && height.is_none_or(|height| height == chunk.minimum);
+                height = Some(chunk.minimum);
+            }
+        }
+        flat
     }
     pub(crate) fn changed_chunks(&self) -> usize {
         self.dirty_chunks.iter().filter(|dirty| **dirty).count()
@@ -308,17 +450,37 @@ pub(crate) fn prepare(
                         .map_err(|_| TerrainError::InvalidGrid)?,
                 )
                 .map_err(|_| TerrainError::Allocation)?;
+            let mut top_materials = Vec::new();
+            top_materials
+                .try_reserve_exact(elevations.capacity())
+                .map_err(|_| TerrainError::Allocation)?;
             for y in y0..y0 + height {
                 for x in x0..x0 + width {
                     let index =
                         usize::try_from(u64::from(y) * u64::from(grid.columns) + u64::from(x))
                             .map_err(|_| TerrainError::InvalidGrid)?;
                     elevations.push(initial[index]);
+                    top_materials.push(columns[index].exposed().map(|exposed| exposed.material));
                 }
             }
             chunks.push(Arc::new(SurfaceChunk {
                 revision: 0,
+                minimum: elevations
+                    .iter()
+                    .copied()
+                    .min()
+                    .ok_or(TerrainError::InvalidGrid)?,
+                maximum: elevations
+                    .iter()
+                    .copied()
+                    .max()
+                    .ok_or(TerrainError::InvalidGrid)?,
                 elevations,
+                provenance: top_materials
+                    .iter()
+                    .map(|key| key.map(|_| turts_mod_api::TerrainProvenance::Natural))
+                    .collect(),
+                materials: top_materials,
             }));
         }
     }
@@ -334,16 +496,10 @@ pub(crate) fn prepare(
         chunk_width: definition.chunk_width,
         chunk_columns,
         columns,
-        materials,
+        materials: materials.into(),
         dirty_chunks: vec![false; chunk_count],
-        chunks,
+        chunks: ChunkTable::new(chunks)?,
+        table_revision: 0,
         step_observations: BTreeMap::new(),
     })
-}
-
-pub(crate) fn cell(cell: TerrainCell) -> Cell {
-    Cell {
-        x: cell.x,
-        y: cell.y,
-    }
 }
