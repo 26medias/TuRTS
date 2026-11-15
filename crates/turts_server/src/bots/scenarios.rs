@@ -656,14 +656,14 @@ fn ordinary_enemy_weapon_losses_restore_worker_and_supply_without_overlapping_pa
         app.update();
         let view = turts_sim::completed_world(app.world());
         for event in &turts_sim::committed_tick(app.world()).events {
-            if let EconomyEventKind::Fired { weapon, target, .. } = event.kind {
-                if weapon == attacker {
-                    assert!(
-                        victims.contains(&target),
-                        "controlled ordinary attack hit unintended unit {target}"
-                    );
-                    hits.insert(target);
-                }
+            if let EconomyEventKind::Fired { weapon, target, .. } = event.kind
+                && weapon == attacker
+            {
+                assert!(
+                    victims.contains(&target),
+                    "controlled ordinary attack hit unintended unit {target}"
+                );
+                hits.insert(target);
             }
         }
         for command in &app.world().resource::<BotExecution>().generated {
