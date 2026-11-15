@@ -1184,6 +1184,16 @@ fn queued_repair_rechecks_sight_after_real_movement_before_healing() {
     for absent in [false, true] {
         let mut app = repair_scene(false, p(10.0, 10.0));
         move_to(&mut app, 0, 1, 22.0, 1);
+        // Activate the ordinary move before appending. A newly admitted legacy
+        // move still has a deferred reservation at command acceptance.
+        run(&mut app, 1);
+        let actor = crate::unit_entity(app.world(), 1).unwrap();
+        assert!(app.world().get::<crate::world::MoveTarget>(actor).is_some());
+        assert!(
+            basis(app.world(), ObservationPhase::Completed)
+                .unwrap()
+                .unit_permitted(0, 2)
+        );
         apply_command(
             app.world_mut(),
             &repair_command(2, crate::QueueMode::Append, 2),
@@ -1207,12 +1217,27 @@ fn queued_repair_rechecks_sight_after_real_movement_before_healing() {
                 .0
                 .remove(&2);
         }
-        run(&mut app, 200);
+        let mut refusal = None;
+        for _ in 0..200 {
+            run(&mut app, 1);
+            let orders = app.world().get::<crate::UnitOrders>(actor).unwrap();
+            if let Some(failure) = &orders.last_failure {
+                refusal = Some(failure.reason);
+            }
+            if !absent {
+                assert_eq!(
+                    app.world().resource::<crate::economy::combat::Healths>().0[&2],
+                    10,
+                    "a repair behind a move must never heal before or after hidden activation"
+                );
+            }
+        }
         let orders = app.world().get::<crate::UnitOrders>(actor).unwrap();
         assert!(orders.current.is_none() && orders.queue.is_empty());
         assert_eq!(
-            orders.last_failure.as_ref().map(|failure| failure.reason),
-            Some(crate::RejectReason::TargetInvalid)
+            refusal,
+            Some(crate::RejectReason::TargetInvalid),
+            "queued activation must record its generic refusal on a real tick"
         );
         if !absent {
             assert_eq!(
