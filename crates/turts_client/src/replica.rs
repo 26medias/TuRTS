@@ -332,7 +332,11 @@ impl Replica {
                 let mut delta = state.as_ref().clone();
                 let mut current = self.candidate_at(state.base_tick);
                 if let Some(knowledge) = knowledge {
-                    if knowledge
+                    if knowledge.hidden_units.iter().any(|id| {
+                        self.units
+                            .get(id)
+                            .is_some_and(|unit| unit.owner_slot == context.slot)
+                    }) || knowledge
                         .hidden_units
                         .iter()
                         .any(|id| delta.removed.contains(&UnitId(*id)))

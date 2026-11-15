@@ -70,6 +70,7 @@ pub fn valid_snapshot(knowledge: &KnowledgeSnapshot) -> bool {
     let mut nodes = HashSet::new();
     knowledge.remembered_units.iter().all(|row| {
         units.insert(row.unit)
+            && row.owner != knowledge.viewer
             && row.last_seen_tick <= knowledge.basis.tick
             && position_state(knowledge, row.position)
                 .is_some_and(|state| state != FogCell::Observed)
