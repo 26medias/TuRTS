@@ -402,6 +402,7 @@ fn validate_content_m2(
                     recipes,
                     queue_capacity: x.queue_capacity,
                     spawn_offsets: x.spawn_offsets,
+                    when_short: x.when_short,
                 })
             })
             .transpose()?;
@@ -446,6 +447,9 @@ fn validate_content_m2(
                 health: None,
                 weapon: None,
                 removal: None,
+                provides: value.provides,
+                consumes: value.consumes,
+                income: value.income,
             },
         );
     }

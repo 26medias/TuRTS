@@ -152,6 +152,7 @@ pub(crate) fn resolve_content_m3(
                     damage: weapon.damage,
                     ammo,
                     targets: weapon.targets,
+                    when_short: weapon.when_short.clone(),
                 })
             })
             .transpose()?;
