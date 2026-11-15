@@ -210,6 +210,9 @@ fn public_two_human_scouting_fixture_loads_through_the_normal_engine() {
     );
     let mut app = turts_sim::headless_app(20);
     turts_pack::load_package(app.world_mut(), &archive).unwrap();
+    assert!(turts_sim::completed_world(app.world()).units.is_empty());
+    turts_sim::visibility::initialize_context(app.world_mut(), 7, &[0, 1]).unwrap();
+    turts_sim::initialize_completed_world(app.world_mut());
     let world = turts_sim::completed_world(app.world());
     assert_eq!(world.units.len(), 2);
     assert_eq!(world.nodes.len(), 1);
