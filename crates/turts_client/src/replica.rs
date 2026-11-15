@@ -389,7 +389,12 @@ impl Replica {
         if event_units.iter().any(|row| {
             row.basis.match_id != stamp.basis.match_id
                 || row.basis.map != stamp.basis.map
-                || row.basis.tick != stamp.basis.tick
+                || if knowledge.is_some() {
+                    row.basis.tick != stamp.basis.tick
+                } else {
+                    row.basis.tick > stamp.basis.tick
+                        || row.basis.phase != turts_mod_api::ObservationPhase::Completed
+                }
                 || !valid_unit(context, &row.unit)
                 || !transient.insert(row.unit.unit_id.0)
         }) {
