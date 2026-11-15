@@ -11,7 +11,7 @@ pub fn visuals_by_content(archives: &[PackageArchive]) -> Result<HashMap<String,
     let mut defined: BTreeMap<String, (String, &'static str)> = BTreeMap::new();
     for archive in archives {
         let package = archive.id();
-        let catalog = archive.content()?;
+        let catalog = archive.content_for_catalog()?;
         for id in catalog.units.keys() {
             defined.insert(id.to_string(), (package.0.clone(), "unit"));
         }
