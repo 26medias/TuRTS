@@ -202,6 +202,9 @@ fn validate_content_m2(
                 MAX_FOOTPRINT_RADIUS,
             )?,
         }
+        if let Some(vision) = &value.vision {
+            check_finite_positive(origin, &file, "vision.radius", vision.radius, false)?;
+        }
         if let Some(m) = &value.movement {
             check_finite_positive_at_most(
                 origin,
@@ -411,6 +414,7 @@ fn validate_content_m2(
         catalog.units.insert(
             id.clone(),
             ResolvedUnit {
+                vision: value.vision,
                 repairer: value
                     .repairer
                     .map(|mut repairer| {

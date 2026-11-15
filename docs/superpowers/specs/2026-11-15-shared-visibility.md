@@ -1,6 +1,6 @@
 # Shared visibility and remembered sightings
 
-Status: Anvil spec findings incorporated. Await the same reviewer's plan review before implementation.
+Status: Anvil spec and plan reviews approved. One reviewer completed one spec turn and one plan turn.
 Baseline: SDK15 candidate `a96cbaeb`. Its BF8/BF9 acceptance is separate from this milestone.
 Public authoring API: `0.2.16`. Network protocol: `9`.
 Review budget: one Codex reviewer for the spec, then the same reviewer for the plan.
@@ -60,7 +60,7 @@ Coverage is slot knowledge. It is not a camera-distance filter.
 Own units and own private economy remain available offscreen and outside current coverage.
 An unseen allied unit does not become public merely because it is allied in OwnSlot mode.
 
-A remembered unit contains its ID, content, owner, position, facing, site status, and `last_seen_tick`.
+A remembered unit contains its ID, content, owner, position, last public facing when available, site status, and `last_seen_tick`.
 Those values come only from its last permitted observation. Remembered units carry no current health or private economy.
 Surface-node memory similarly retains only last observed public identity, position, and resource state, with its tick.
 Stale node resource state is explicitly marked remembered. It is not an extraction promise.

@@ -1,6 +1,6 @@
 # Shared visibility implementation plan
 
-Status: proposed for the same Anvil reviewer after incorporation of gate1 findings.
+Status: Anvil spec and plan reviews approved. The same reviewer completed both turns.
 Spec: `docs/superpowers/specs/2026-11-15-shared-visibility.md`.
 Baseline: SDK15 candidate `a96cbaeb`. SDK15 acceptance remains independent.
 Budget: the existing one reviewer performs this plan review. No extra spec-review round or per-task reviews.
