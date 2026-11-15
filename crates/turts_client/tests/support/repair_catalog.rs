@@ -16,6 +16,10 @@ pub fn catalog() -> ContentCatalog {
             engineer.name = "Engineer".into();
             engineer.gatherer = None;
             engineer.inventory = None;
+            engineer.constructor = catalog.units[&ContentId::parse("skirmish:base").unwrap()]
+                .constructor
+                .clone();
+            engineer.build_area = Some(16.0);
             engineer.placement =
                 catalog.units[&ContentId::parse("skirmish:barracks").unwrap()].placement;
             engineer.repairer = Some(RepairerDef {
