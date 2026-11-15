@@ -530,64 +530,90 @@ impl BotQueries for PermittedQueries<'_> {
                     n,
                 )
             }
-            Query::RememberedUnits => {
-                let rows = basis
+            Query::RememberedUnits(filter) => {
+                validate_radius(filter.center, filter.radius)?;
+                let source = basis
                     .knowledge
                     .as_ref()
                     .map_or(&[][..], |knowledge| knowledge.remembered_units.as_slice());
-                let n = max_rows
-                    .min(max_scan)
-                    .min(rows.len().saturating_sub(offset));
-                examined = n;
-                end = offset + n;
-                if end < rows.len() && end > 0 {
+                let mut rows = vec![];
+                for row in source.iter().skip(offset) {
+                    if examined >= max_scan || rows.len() >= max_rows {
+                        break;
+                    }
+                    examined += 1;
+                    end += 1;
+                    if basis.relation(row.owner, filter.relation)
+                        && (filter.content.is_empty() || filter.content.contains(&row.content))
+                        && within(row.position, filter.center, filter.radius)
+                    {
+                        rows.push(row.clone());
+                    }
+                }
+                if end < source.len() && end > 0 {
                     tied = physical(
-                        rows[end - 1].position,
-                        &rows[end - 1].content,
-                        rows[end].position,
-                        &rows[end].content,
+                        source[end - 1].position,
+                        &source[end - 1].content,
+                        source[end].position,
+                        &source[end].content,
                     ) == Ordering::Equal;
                 }
+                let count = rows.len();
                 (
                     QueryData::RememberedUnits(RememberedRows {
-                        rows: rows[offset.min(rows.len())..end].to_vec(),
+                        rows,
                         retention_truncated: basis
                             .knowledge
                             .as_ref()
                             .is_some_and(|knowledge| knowledge.retention_truncated),
                     }),
-                    rows.len(),
-                    n,
+                    source.len(),
+                    count,
                 )
             }
-            Query::RememberedNodes => {
-                let rows = basis
+            Query::RememberedNodes(filter) => {
+                validate_radius(filter.center, filter.radius)?;
+                let source = basis
                     .knowledge
                     .as_ref()
                     .map_or(&[][..], |knowledge| knowledge.remembered_nodes.as_slice());
-                let n = max_rows
-                    .min(max_scan)
-                    .min(rows.len().saturating_sub(offset));
-                examined = n;
-                end = offset + n;
-                if end < rows.len() && end > 0 {
+                let mut rows = vec![];
+                for row in source.iter().skip(offset) {
+                    if examined >= max_scan || rows.len() >= max_rows {
+                        break;
+                    }
+                    examined += 1;
+                    end += 1;
+                    if (filter.resources.is_empty()
+                        || basis
+                            .catalog
+                            .nodes
+                            .get(&row.content)
+                            .is_some_and(|definition| filter.resources.contains(&definition.item)))
+                        && within(row.position, filter.center, filter.radius)
+                    {
+                        rows.push(row.clone());
+                    }
+                }
+                if end < source.len() && end > 0 {
                     tied = physical(
-                        rows[end - 1].position,
-                        &rows[end - 1].content,
-                        rows[end].position,
-                        &rows[end].content,
+                        source[end - 1].position,
+                        &source[end - 1].content,
+                        source[end].position,
+                        &source[end].content,
                     ) == Ordering::Equal;
                 }
+                let count = rows.len();
                 (
                     QueryData::RememberedNodes(RememberedRows {
-                        rows: rows[offset.min(rows.len())..end].to_vec(),
+                        rows,
                         retention_truncated: basis
                             .knowledge
                             .as_ref()
                             .is_some_and(|knowledge| knowledge.retention_truncated),
                     }),
-                    rows.len(),
-                    n,
+                    source.len(),
+                    count,
                 )
             }
             Query::Placement(request) => {
@@ -1323,7 +1349,18 @@ mod tests {
                 proposals: 0,
             },
         );
-        let first = q.query(Query::RememberedUnits, None, 1).unwrap();
+        let first = q
+            .query(
+                Query::RememberedUnits(UnitQuery {
+                    relation: turts_mod_api::SlotRelation::Any,
+                    content: vec![],
+                    center: None,
+                    radius: None,
+                }),
+                None,
+                1,
+            )
+            .unwrap();
         assert_eq!(first.coverage, Coverage::Complete);
         assert_eq!(first.usage.candidates, 1);
         assert_eq!(first.completed_tick, 5);
@@ -1336,7 +1373,18 @@ mod tests {
         let PageState::More(cursor) = first.state else {
             panic!()
         };
-        let second = q.query(Query::RememberedUnits, Some(cursor), 1).unwrap();
+        let second = q
+            .query(
+                Query::RememberedUnits(UnitQuery {
+                    relation: turts_mod_api::SlotRelation::Any,
+                    content: vec![],
+                    center: None,
+                    radius: None,
+                }),
+                Some(cursor),
+                1,
+            )
+            .unwrap();
         let QueryData::RememberedUnits(second_rows) = second.data else {
             panic!()
         };

@@ -85,8 +85,8 @@ pub enum Query {
     LookupUnit(UnitId),
     Accounts(Vec<SpendKey>),
     Works,
-    RememberedUnits,
-    RememberedNodes,
+    RememberedUnits(UnitQuery),
+    RememberedNodes(NodeQuery),
     Placement(PlacementQuery),
     Affordability(AffordabilityQuery),
 }
