@@ -1181,78 +1181,108 @@ fn explicit_and_queued_repair_refuse_hidden_and_absent_targets_identically() {
 
 #[test]
 fn queued_repair_rechecks_sight_after_real_movement_before_healing() {
-    for absent in [false, true] {
-        let mut app = repair_scene(false, p(10.0, 10.0));
-        move_to(&mut app, 0, 1, 22.0, 1);
-        // Activate the ordinary move before appending. A newly admitted legacy
-        // move still has a deferred reservation at command acceptance.
-        run(&mut app, 1);
-        let actor = crate::unit_entity(app.world(), 1).unwrap();
-        assert!(app.world().get::<crate::world::MoveTarget>(actor).is_some());
-        assert!(
-            basis(app.world(), ObservationPhase::Completed)
-                .unwrap()
-                .unit_permitted(0, 2)
-        );
-        apply_command(
-            app.world_mut(),
-            &repair_command(2, crate::QueueMode::Append, 2),
-        )
-        .outcome
-        .unwrap();
-        let actor = crate::unit_entity(app.world(), 1).unwrap();
-        assert_eq!(
-            app.world()
-                .get::<crate::UnitOrders>(actor)
-                .unwrap()
-                .queue
-                .len(),
-            1
-        );
-        if absent {
-            let target = crate::unit_entity(app.world(), 2).unwrap();
-            app.world_mut().despawn(target);
-            app.world_mut()
-                .resource_mut::<crate::economy::combat::Healths>()
-                .0
-                .remove(&2);
-        }
-        let mut refusal = None;
-        for _ in 0..200 {
-            run(&mut app, 1);
-            let orders = app.world().get::<crate::UnitOrders>(actor).unwrap();
-            if let Some(failure) = &orders.last_failure {
-                refusal = Some(failure.reason);
+    for modern_move in [false, true] {
+        for absent in [false, true] {
+            let mut app = repair_scene(false, p(10.0, 10.0));
+            if modern_move {
+                apply_command(
+                    app.world_mut(),
+                    &Command {
+                        slot: SlotId(0),
+                        seq: 1,
+                        kind: CommandKind::Order(Box::new(crate::orders::OrderCommand {
+                            order: id("move"),
+                            behaviour: turts_mod_api::Behaviour::Move,
+                            target_kind: turts_mod_api::TargetKind::Point,
+                            policy: None,
+                            units: vec![1],
+                            target: crate::orders::OrderTargetSim::Point(Vec2::new(22.0, 8.0)),
+                            queue: crate::QueueMode::Replace,
+                            group: 0,
+                            allowed_units: vec![],
+                            queue_depth: 16,
+                        })),
+                    },
+                )
+                .outcome
+                .unwrap();
+            } else {
+                move_to(&mut app, 0, 1, 22.0, 1);
             }
+            // Activate the ordinary move before appending. A newly admitted legacy
+            // move still has a deferred reservation at command acceptance.
+            run(&mut app, 1);
+            let actor = crate::unit_entity(app.world(), 1).unwrap();
+            assert!(app.world().get::<crate::world::MoveTarget>(actor).is_some());
+            assert!(
+                basis(app.world(), ObservationPhase::Completed)
+                    .unwrap()
+                    .unit_permitted(0, 2)
+            );
+            apply_command(
+                app.world_mut(),
+                &repair_command(2, crate::QueueMode::Append, 2),
+            )
+            .outcome
+            .unwrap();
+            let actor = crate::unit_entity(app.world(), 1).unwrap();
+            assert_eq!(
+                app.world()
+                    .get::<crate::UnitOrders>(actor)
+                    .unwrap()
+                    .queue
+                    .len(),
+                1
+            );
+            assert!(
+                app.world().get::<crate::world::MoveTarget>(actor).is_some(),
+                "appending repair must preserve the admitted player move"
+            );
+            if absent {
+                let target = crate::unit_entity(app.world(), 2).unwrap();
+                app.world_mut().despawn(target);
+                app.world_mut()
+                    .resource_mut::<crate::economy::combat::Healths>()
+                    .0
+                    .remove(&2);
+            }
+            let mut refusal = None;
+            for _ in 0..200 {
+                run(&mut app, 1);
+                let orders = app.world().get::<crate::UnitOrders>(actor).unwrap();
+                if let Some(failure) = &orders.last_failure {
+                    refusal = Some(failure.reason);
+                }
+                if !absent {
+                    assert_eq!(
+                        app.world().resource::<crate::economy::combat::Healths>().0[&2],
+                        10,
+                        "a repair behind a move must never heal before or after hidden activation"
+                    );
+                }
+            }
+            let orders = app.world().get::<crate::UnitOrders>(actor).unwrap();
+            assert!(orders.current.is_none() && orders.queue.is_empty());
+            assert_eq!(
+                refusal,
+                Some(crate::RejectReason::TargetInvalid),
+                "queued activation must record its generic refusal on a real tick"
+            );
             if !absent {
                 assert_eq!(
                     app.world().resource::<crate::economy::combat::Healths>().0[&2],
-                    10,
-                    "a repair behind a move must never heal before or after hidden activation"
+                    10
                 );
             }
-        }
-        let orders = app.world().get::<crate::UnitOrders>(actor).unwrap();
-        assert!(orders.current.is_none() && orders.queue.is_empty());
-        assert_eq!(
-            refusal,
-            Some(crate::RejectReason::TargetInvalid),
-            "queued activation must record its generic refusal on a real tick"
-        );
-        if !absent {
-            assert_eq!(
-                app.world().resource::<crate::economy::combat::Healths>().0[&2],
-                10
+            assert!(
+                app.world()
+                    .get::<crate::Position>(actor)
+                    .unwrap()
+                    .0
+                    .distance(Vec2::new(22.0, 8.0))
+                    < 0.01
             );
         }
-        assert!(
-            app.world()
-                .get::<crate::Position>(actor)
-                .unwrap()
-                .0
-                .distance(Vec2::new(22.0, 8.0))
-                < 0.01
-        );
     }
 }
 
