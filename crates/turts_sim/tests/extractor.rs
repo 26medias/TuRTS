@@ -15,6 +15,7 @@ fn extractor_runs_in_fixed_extract_set() {
     let drill_id = ContentId::parse("probe:drill").unwrap();
     let node_id = ContentId::parse("probe:deposit").unwrap();
     let drill = ResolvedUnit {
+        vision: None,
         repairer: None,
 
         consumes: Vec::new(),
@@ -81,6 +82,7 @@ fn extractor_runs_in_fixed_extract_set() {
         source_files: BTreeMap::new(),
     };
     let map = MapDef {
+        visibility: None,
         environment: None,
         ground: None,
         id: "field".into(),

@@ -617,6 +617,7 @@ mod operating_tests {
     }
     fn definition(name: &str) -> turts_mod_api::ResolvedUnit {
         turts_mod_api::ResolvedUnit {
+            vision: None,
             repairer: None,
 
             id: cid(name),
@@ -736,6 +737,7 @@ mod operating_tests {
         let map = SourceDef {
             file: "maps/field.ron".into(),
             value: MapDef {
+                visibility: None,
                 id: "field".into(),
                 size: MapSize { x: 40.0, y: 30.0 },
                 placements: vec![

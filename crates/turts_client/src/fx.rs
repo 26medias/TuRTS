@@ -910,6 +910,7 @@ mod timeline_tests {
     fn fx5_damage_thresholds_start_and_stop_the_authored_loops() {
         let mut app = app();
         let unit = turts_mod_api::ResolvedUnit {
+            vision: None,
             consumes: Vec::new(),
             income: None,
             provides: Vec::new(),

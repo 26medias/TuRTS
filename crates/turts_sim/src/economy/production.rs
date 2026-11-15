@@ -1372,6 +1372,7 @@ mod m3_disabled_legacy_producer_tests {
             .register_unit_type(
                 &package,
                 UnitDef {
+                    vision: None,
                     id: "producer".into(),
                     name: "Producer".into(),
                     footprint: Footprint::Circle { radius: 0.5 },
@@ -1406,6 +1407,7 @@ mod m3_disabled_legacy_producer_tests {
             .register_unit_type(
                 &package,
                 UnitDef {
+                    vision: None,
                     id: "product".into(),
                     name: "Product".into(),
                     footprint: Footprint::Circle { radius: 0.25 },
@@ -1438,6 +1440,7 @@ mod m3_disabled_legacy_producer_tests {
             .unwrap();
         let resolved_unit =
             |id: turts_mod_api::ContentId, name: &str, radius, producer, movement| ResolvedUnit {
+                vision: None,
                 repairer: None,
                 consumes: Vec::new(),
                 income: None,
@@ -1642,6 +1645,7 @@ mod m3_disabled_legacy_producer_tests {
         let mut app = exit_app();
         let package = PackageId::parse("wall").unwrap();
         let wall = UnitDef {
+            vision: None,
             id: "wall".into(),
             name: "Producer".into(),
             footprint: Footprint::Circle { radius: 20.0 },

@@ -1773,6 +1773,7 @@ mod admission_tests {
             .register_unit_type(
                 &package,
                 UnitDef {
+                    vision: None,
                     id: "producer".into(),
                     name: "Producer".into(),
                     footprint: Footprint::Circle { radius: 1.0 },
@@ -1825,6 +1826,7 @@ mod admission_tests {
         catalog.units.insert(
             id.clone(),
             ResolvedUnit {
+                vision: None,
                 repairer: None,
 
                 consumes: Vec::new(),
@@ -2335,6 +2337,7 @@ mod admission_tests {
             .register_unit_type(
                 &package,
                 UnitDef {
+                    vision: None,
                     id: "lab".into(),
                     name: "Lab".into(),
                     footprint: Footprint::Circle { radius: 1.0 },
@@ -2376,6 +2379,7 @@ mod admission_tests {
             .insert(
                 id.clone(),
                 ResolvedUnit {
+                    vision: None,
                     repairer: None,
 
                     consumes: Vec::new(),
@@ -2504,6 +2508,7 @@ mod admission_tests {
             .register_unit_type(
                 &package,
                 UnitDef {
+                    vision: None,
                     id: "producer".into(),
                     name: "Producer".into(),
                     footprint: Footprint::Circle { radius: 1.0 },
@@ -2556,6 +2561,7 @@ mod admission_tests {
         catalog.units.insert(
             id.clone(),
             ResolvedUnit {
+                vision: None,
                 repairer: None,
 
                 consumes: Vec::new(),
@@ -2987,6 +2993,7 @@ mod admission_tests {
             .register_unit_type(
                 &PackageId::parse("test").unwrap(),
                 UnitDef {
+                    vision: None,
                     id: "static".into(),
                     name: "Static".into(),
                     footprint: Footprint::Circle { radius: 1.0 },
@@ -3025,6 +3032,7 @@ mod admission_tests {
             .insert(
                 static_id.clone(),
                 ResolvedUnit {
+                    vision: None,
                     repairer: None,
 
                     consumes: Vec::new(),
@@ -3291,6 +3299,7 @@ mod admission_tests {
             .register_unit_type(
                 &PackageId::parse("test").unwrap(),
                 UnitDef {
+                    vision: None,
                     id: "static".into(),
                     name: "Static".into(),
                     footprint: Footprint::Circle { radius: 1.0 },
@@ -3329,6 +3338,7 @@ mod admission_tests {
             .insert(
                 static_id.clone(),
                 ResolvedUnit {
+                    vision: None,
                     repairer: None,
 
                     consumes: Vec::new(),

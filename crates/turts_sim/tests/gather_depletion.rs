@@ -42,6 +42,7 @@ fn id(local: &str) -> ContentId {
 
 fn unit(local: &str, radius: f32) -> ResolvedUnit {
     ResolvedUnit {
+        vision: None,
         repairer: None,
 
         consumes: Vec::new(),
@@ -219,6 +220,7 @@ fn app_with(node_stock: u64, units: &[Vec2]) -> bevy_app::App {
     let mut placements = vec![placement("depot", DEPOT_POS)];
     placements.extend(units.iter().map(|at| placement("worker", *at)));
     let map = MapDef {
+        visibility: None,
         environment: None,
         ground: None,
         id: "strip".into(),

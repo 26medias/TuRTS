@@ -1221,6 +1221,7 @@ mod tests {
 
     fn unit(id: &str, health: Option<u64>) -> ResolvedUnit {
         ResolvedUnit {
+            vision: None,
             repairer: None,
 
             consumes: Vec::new(),
@@ -1335,6 +1336,7 @@ mod tests {
             source_files: BTreeMap::new(),
         };
         let map = MapDef {
+            visibility: None,
             environment: None,
             ground: None,
             id: "combat_fixture:map".into(),
@@ -3539,6 +3541,7 @@ mod tests {
             source_files: BTreeMap::from([(cid(WEAPON), "units/weapon.ron".into())]),
         };
         let map = MapDef {
+            visibility: None,
             environment: None,
             ground: None,
             id: "combat_fixture:map".into(),

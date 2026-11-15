@@ -65,6 +65,7 @@ fn audit_catalog() -> ContentCatalog {
             let content_id = ContentId::parse(id).unwrap();
             let shooter = id == "audit:shooter";
             let unit = ResolvedUnit {
+                vision: None,
                 repairer: None,
 
                 consumes: Vec::new(),
@@ -167,6 +168,7 @@ fn audit_fixture_at_enemy(
     enemy_position: WorldPos,
 ) -> (bevy_app::App, ContentCatalog) {
     let map = MapDef {
+        visibility: None,
         environment: None,
         ground: None,
         id: "audit:field".into(),
@@ -819,6 +821,7 @@ fn point_attack_switches_to_another_eligible_target_and_strictly_replays() {
         .unwrap()
         .max = 1;
     let map = MapDef {
+        visibility: None,
         environment: None,
         ground: None,
         id: "audit:target-switch-field".into(),

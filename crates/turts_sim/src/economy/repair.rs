@@ -750,6 +750,7 @@ mod tests {
     }
     fn unit(local: &str) -> ResolvedUnit {
         ResolvedUnit {
+            vision: None,
             id: id(local),
             name: local.into(),
             footprint: Footprint::Circle { radius: 0.5 },

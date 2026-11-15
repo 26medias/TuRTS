@@ -947,6 +947,7 @@ mod tests {
     fn fixture(policy: PaymentPolicy) -> App {
         let mut app = crate::headless_app(20);
         let tower = ResolvedUnit {
+            vision: None,
             repairer: None,
             consumes: Vec::new(),
             income: None,
@@ -1058,6 +1059,7 @@ mod tests {
             source_files: BTreeMap::new(),
         };
         let map = MapDef {
+            visibility: None,
             environment: None,
             ground: None,
             id: "field".into(),

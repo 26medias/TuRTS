@@ -714,6 +714,7 @@ mod tests {
     }
     fn unit(name: &str) -> ResolvedUnit {
         ResolvedUnit {
+            vision: None,
             repairer: None,
 
             acquire: None,

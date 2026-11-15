@@ -162,6 +162,7 @@ mod tests {
             .register_unit_type(
                 &package,
                 UnitDef {
+                    vision: None,
                     id: "fixture".into(),
                     name: "Fixture".into(),
                     footprint: Footprint::Circle { radius: 0.5 },
@@ -227,6 +228,7 @@ mod tests {
         catalog.units.insert(
             unit_id.clone(),
             ResolvedUnit {
+                vision: None,
                 repairer: None,
 
                 consumes: Vec::new(),

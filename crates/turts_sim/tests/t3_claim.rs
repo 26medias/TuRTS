@@ -11,6 +11,7 @@ fn app_with_one_unit() -> bevy_app::App {
     let mut app = headless_app(20);
     let origin = PackageId("fixture_pkg".to_string());
     let def = UnitDef {
+        vision: None,
         id: "walker".to_string(),
         name: "Walker".to_string(),
         movement: Some(turts_mod_api::MovementDef { speed: 3.0 }),
@@ -44,6 +45,7 @@ fn app_with_one_unit() -> bevy_app::App {
         .register_unit_type(&origin, def)
         .unwrap();
     let map = MapDef {
+        visibility: None,
         environment: None,
         ground: None,
         id: "field".to_string(),

@@ -2957,6 +2957,7 @@ mod operating_transaction_tests {
 
     fn fixture() -> (bevy_app::App, ResolvedUnit) {
         let definition = ResolvedUnit {
+            vision: None,
             repairer: None,
 
             id: id("test:generator"),

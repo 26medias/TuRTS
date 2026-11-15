@@ -15,6 +15,7 @@ fn app_with_units(positions: &[(f32, f32)]) -> bevy_app::App {
     let mut app = headless_app(20);
     let origin = PackageId(ORIGIN.to_string());
     let def = UnitDef {
+        vision: None,
         id: "walker".to_string(),
         name: "Walker".to_string(),
         movement: Some(turts_mod_api::MovementDef { speed: 3.0 }),
@@ -48,6 +49,7 @@ fn app_with_units(positions: &[(f32, f32)]) -> bevy_app::App {
         .register_unit_type(&origin, def)
         .unwrap();
     let map = MapDef {
+        visibility: None,
         environment: None,
         ground: None,
         id: "field".to_string(),
@@ -167,6 +169,7 @@ fn second_load_map_continues_unit_ids() {
     let mut app = app_with_units(&[(8.0, 8.0), (20.0, 20.0)]);
     let origin = PackageId(ORIGIN.to_string());
     let map = MapDef {
+        visibility: None,
         environment: None,
         ground: None,
         id: "extra".to_string(),

@@ -42,6 +42,7 @@ impl GeometricField {
 
 fn plain_unit(id: &str) -> ResolvedUnit {
     ResolvedUnit {
+        vision: None,
         repairer: None,
 
         consumes: Vec::new(),
@@ -80,6 +81,7 @@ fn catalog(field: GeometricField, value: f32) -> ContentCatalog {
     let id = ContentId::parse(field.id()).unwrap();
     let ore = ContentId::parse("probe:ore").unwrap();
     let unit = ResolvedUnit {
+        vision: None,
         repairer: None,
 
         consumes: Vec::new(),
@@ -177,6 +179,7 @@ fn catalog(field: GeometricField, value: f32) -> ContentCatalog {
 
 fn map(field: GeometricField, placed: bool) -> MapDef {
     MapDef {
+        visibility: None,
         environment: None,
         ground: None,
         id: "field".into(),

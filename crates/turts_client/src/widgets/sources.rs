@@ -1492,6 +1492,7 @@ mod tests {
 
     fn resolved_unit(id: &str, movement: Option<MovementDef>) -> turts_mod_api::ResolvedUnit {
         turts_mod_api::ResolvedUnit {
+            vision: None,
             consumes: Vec::new(),
             income: None,
             provides: Vec::new(),

@@ -74,6 +74,7 @@ fn run_with_removal(remove: bool) -> Vec<EconomyLogRecord> {
         start_order: None,
     };
     let map = MapDef {
+        visibility: None,
         environment: None,
         id: "income".into(),
         size: MapSize { x: 48., y: 32. },

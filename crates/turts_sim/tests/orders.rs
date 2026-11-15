@@ -22,6 +22,7 @@ fn app_with_units(mobile: usize, static_units: usize, foreign: usize) -> bevy_ap
             .register_unit_type(
                 &origin,
                 UnitDef {
+                    vision: None,
                     id: id.into(),
                     name: id.into(),
                     movement: movement.map(|speed| turts_mod_api::MovementDef { speed }),
@@ -78,6 +79,7 @@ fn app_with_units(mobile: usize, static_units: usize, foreign: usize) -> bevy_ap
         app.world_mut(),
         &origin,
         &MapDef {
+            visibility: None,
             environment: None,
             ground: None,
             id: "field".into(),

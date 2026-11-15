@@ -236,6 +236,7 @@ fn installed_logger_tracks_real_failed_then_appended_move_to_completion() {
         .register_unit_type(
             &package,
             UnitDef {
+                vision: None,
                 id: "walker".into(),
                 name: "walker".into(),
                 movement: Some(turts_mod_api::MovementDef { speed: 3.0 }),
@@ -270,6 +271,7 @@ fn installed_logger_tracks_real_failed_then_appended_move_to_completion() {
         app.world_mut(),
         &package,
         &MapDef {
+            visibility: None,
             environment: None,
             ground: None,
             id: "field".into(),
