@@ -54,10 +54,22 @@ pub fn receive_transactions(
     let mut refused = Vec::new();
     for (entity, mut receiver) in &mut cancels {
         for cancel in receiver.receive() {
-            if current(entity)
-                && transactions.connection == Some(entity)
-                && let Some(assembler) = transactions.assembler.as_mut()
+            if !current(entity) || welcome.is_none_or(|w| w.match_id != cancel.stamp.basis.match_id)
             {
+                continue;
+            }
+            // Control traffic can outrun the first ordered state frame.
+            // Establish the single map context before retiring that stamp.
+            if transactions.connection != Some(entity) {
+                transactions.assembler = Some(StateTransactionAssembler::new(
+                    cancel.stamp.basis.match_id,
+                    cancel.stamp.basis.map.clone(),
+                    MAX_STATE_CHUNK_BYTES,
+                ));
+                transactions.connection = Some(entity);
+            }
+            transactions.restricted = true;
+            if let Some(assembler) = transactions.assembler.as_mut() {
                 assembler.cancel(&cancel.stamp);
             }
         }
