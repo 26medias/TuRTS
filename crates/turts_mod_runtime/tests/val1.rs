@@ -110,7 +110,7 @@ fn content_refuses_the_package_val1_only_as_unbuilt() {
         &[(
             "manifest.ron",
             r#"engine_api: "^0.2.4""#,
-            r#"engine_api: "^0.2.9""#,
+            r#"engine_api: "^0.2.13""#,
         )],
         &[],
     )
@@ -118,7 +118,7 @@ fn content_refuses_the_package_val1_only_as_unbuilt() {
     .unwrap_err();
     assert_eq!(
         error.to_string(),
-        "val1/units/power_station.ron: provides: `provides` is not built in this engine build; leave it out until an engine build supports it"
+        "val1/production/build_power_station.ron: cancel_refunds.destroyed: `cancel_refunds.destroyed` is not built in this engine build; leave it out until an engine build supports it"
     );
 }
 

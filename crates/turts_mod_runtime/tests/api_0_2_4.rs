@@ -66,6 +66,33 @@ fn archive(engine_api: &str, case: &Case) -> PackageArchive {
     for (file, text) in case.adds {
         files.insert((*file).to_string(), text.as_bytes().to_vec());
     }
+    if [
+        "AlertTrigger::SupplyShort",
+        "AlertTrigger::SupplyRestored",
+        "Value::Supply",
+        "Predicate::SupplyShort",
+    ]
+    .contains(&case.feature)
+        && engine_api == "^0.2.13"
+    {
+        let manifest = String::from_utf8(files[MANIFEST].clone()).unwrap();
+        files.insert(
+            MANIFEST.into(),
+            manifest
+                .replace(
+                    "resources: [\"resources/wood.ron\"],",
+                    "resources: [\"resources/wood.ron\", \"resources/power.ron\"],",
+                )
+                .into_bytes(),
+        );
+        files.insert("resources/power.ron".into(), b"(id: \"power\", name: \"Power\", unit_name: \"amps\", kind: Supply(scope: Slot, counts: Completed))".to_vec());
+        let hud = String::from_utf8(files[HUD].clone()).unwrap();
+        files.insert(
+            HUD.into(),
+            hud.replace("\"cedar:wood\"", "\"cedar:power\"")
+                .into_bytes(),
+        );
+    }
     PackageArchive::parse(&pack_files(&files).expect("pack in memory")).expect("package parses")
 }
 
@@ -89,6 +116,35 @@ fn check(case: &Case) {
     } else {
         format!(" (written in {}: {})", case.file, case.path)
     };
+    if [
+        "provides",
+        "consumes",
+        "producer.when_short",
+        "constructor.when_short",
+        "weapon.when_short",
+        "income",
+        "kind: Supply",
+        "AlertTrigger::SupplyShort",
+        "AlertTrigger::SupplyRestored",
+        "Value::Supply",
+        "Predicate::SupplyShort",
+    ]
+    .contains(&case.feature)
+    {
+        for requirement in ["^0.2.3", "^0.2.4", "^0.2.12"] {
+            let error = refusal(&archive(requirement, case), case.feature);
+            assert_eq!(
+                error.to_string(),
+                format!(
+                    "cedar/manifest.ron: engine_api: `{}` needs engine api 0.2.13; `{requirement}` admits 0.2.12{written_in}",
+                    case.feature
+                )
+            );
+        }
+        load(&archive("^0.2.13", case))
+            .unwrap_or_else(|error| panic!("{} now ships: {error}", case.feature));
+        return;
+    }
     let error = refusal(&archive("^0.2.3", case), case.feature);
     assert_eq!(
         error.to_string(),
@@ -263,11 +319,18 @@ raw_case!(
     "L-PWR",
     WORKER,
     "weapon.when_short",
-    &[(
-        WORKER,
-        WORKER_TAIL,
-        "drop_off: None, producer: None, weapon: Some((range: 1.0, cooldown_ms: 1, damage: 1, ammo: None, targets: (slots: Other), when_short: [])),"
-    )]
+    &[
+        (
+            WORKER,
+            WORKER_TAIL,
+            "drop_off: None, producer: None, weapon: Some((range: 1.0, cooldown_ms: 1, damage: 1, ammo: None, targets: (slots: Other), when_short: [])),"
+        ),
+        (
+            WORKER,
+            "gatherer: Some((items: [\"cedar:wood\"], gather_per_second: 5,\n        unload_per_second: 10, interaction_range: 0.5)),",
+            "gatherer: None,"
+        )
+    ]
 );
 raw_case!(
     u6_producer_when_short,
@@ -736,6 +799,12 @@ trigger_case!(
     "UI-ALERT"
 );
 trigger_case!(
+    h4_supply_restored,
+    r#"SupplyRestored("cedar:wood")"#,
+    "AlertTrigger::SupplyRestored",
+    ""
+);
+trigger_case!(
     h4_gatherer_idle,
     "GathererIdle(5.0)",
     "AlertTrigger::GathererIdle",
@@ -947,9 +1016,9 @@ fn a_package_with_no_new_feature_is_accepted_at_both_requirements() {
 /// that requires `^0.2.3` still accepts the engine.
 #[test]
 fn the_engine_api_retains_0_2_4_and_adds_0_2_5() {
-    assert_eq!(ENGINE_API_VERSION, "0.2.12");
-    assert_eq!(RELEASED_ENGINE_APIS.last(), Some(&"0.2.12"));
-    assert_eq!(RELEASED_ENGINE_APIS.len(), 14);
+    assert_eq!(ENGINE_API_VERSION, "0.2.13");
+    assert_eq!(RELEASED_ENGINE_APIS.last(), Some(&"0.2.13"));
+    assert_eq!(RELEASED_ENGINE_APIS.len(), 15);
 }
 
 /// The order rules keep their `rally` list on the way through the archive reader (the raw rules
