@@ -1,6 +1,6 @@
 # Paid work and repair
 
-Status: gate 1 findings incorporated; awaiting the same reviewer's plan gate. No implementation approval yet.
+Status: Anvil spec and plan reviews approved. Both final clarifications are incorporated.
 Baseline: operating resources at `4eb91f1c`; MP1 design sections 6.4, 6.5, and public schema rows P1, K5, O2, R1.
 Public contract: engine API `0.2.14`, network protocol `8`. Older protocol peers fail compatibility before state admission.
 
@@ -132,6 +132,9 @@ An exact source tie is held without an ID fallback.
 
 Publish exact scaled job/site counters, actual charged amounts, per-tick funding state, and stable hold timestamps to their owner.
 Do not expose another slot's balances, costs paid, repair charge remainders, or funding state.
+Arithmetic or exact-source-tie holds keep an in-range action in Working status.
+WaitingForFunds names only a real unaffordable Balance resource.
+Typed authoritative diagnostics explain arithmetic/source holds; no owner-visible wire reason is promised.
 Add `RepairRecord { repairer: UnitId, target: UnitId, state: RepairState }` in the existing transport-free record module.
 Freeze `RepairState::{Approaching, Working, WaitingForFunds(ContentRef)}`; the payload is the missing Balance resource.
 Add `SnapshotRecords.repairs: Vec<RepairRecord>` as the complete owner-only set keyed by repairer.
