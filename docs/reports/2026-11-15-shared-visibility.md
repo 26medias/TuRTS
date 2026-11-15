@@ -1,6 +1,6 @@
 # Shared visibility acceptance
 
-Status: implementation and focused native checks are in progress. This milestone is not accepted.
+Status: native acceptance and independent foundation review pass. Final browser acceptance remains open.
 SDK15 remains the playable build on main. Tested main commits are pushed under standing CEO approval.
 
 ## Scope
@@ -28,9 +28,10 @@ The subdirectory `shared-visibility/` holds independent review logs.
 
 ## Independent review
 
-The whole-feature review remains open for the final performance and activation changes.
+The independent foundation review passes with no unresolved material finding.
 Current evidence: `shared-visibility/review.md`.
 The reviewer ran 4 export checks, 1 real human wire check, 16 simulation checks, and 5 outbound checks.
+The final independent release execution also passes 409 simulation, 3 delayed-ACK pipeline, 8 protocol assembly, and 7 export tests.
 Four exact vendored socket tests also pass, including cancellation of a blocked write and byte-permit release.
 The vendor test originally failed to compile because its assertion called Display on an error without that trait.
 The assertion now matches the explicit cancellation reason and passes.
@@ -84,3 +85,19 @@ The regression requires no healing on every intervening tick, a real refusal, an
 The complete simulation suite passes 407 tests: `shared-visibility-sim-predicate-tests.log`.
 Additional raw API package gating, paginated/private query metadata, and reversed real-wire peer-order checks pass.
 Evidence: `shared-visibility-api16-authored-tests.log`, `shared-visibility-query-metadata-tests.log`, and `shared-visibility-viewer-order-tests.log`.
+
+## Final native candidate
+
+`shared-visibility/final-native.log` passes 2,924 workspace tests, with 47 ignored measurements/process cases.
+Strict workspace Clippy, formatting, the WASM check, probe-neutral hashes, and production boundary checks pass.
+The 21 tooling commands pass. The updated AllVisible browser-oracle unit checks pass all 46 tests.
+The full process acceptance cases pass, including lossy transport, killing health zero without resync, reorder/stall, both HD1 commands, and the current clean native reference.
+Evidence: `final-clippy.log`, `final-format.log`, `final-wasm-check.log`, `final-probe-neutral.log`, `final-boundary.log`, `final-tooling/`, and `final-process-acceptance/` under `shared-visibility/`.
+
+The final 1,000-interval native performance campaign passes all three modes and 60,000 measured server ticks.
+Full-server p99 is 33.226 ms with fog, 33.028 ms in equivalent AllVisible, and 33.544 ms with concentrated units.
+Both native clients pass every timing limit. See `docs/measurements/shared-visibility.md` for raw evidence and limits.
+The final browser build, nine High-detail camera cases, and cold player probes remain unverified.
+
+An obsolete HD1 cache check expected the old wrapper marker. It now verifies both current native and host markers.
+Completed debug test executables were removed after their processes ended. This freed 13.84 GiB without removing evidence or shared libraries.
