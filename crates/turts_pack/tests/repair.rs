@@ -142,7 +142,7 @@ impl Fixture {
                     hotkey: String::new(),
                     cursor: None,
                     card: None,
-                    units: vec![cid("repairer").to_string(), cid("second").to_string()],
+                    units: vec![],
                     description: String::new(),
                 },
             )
