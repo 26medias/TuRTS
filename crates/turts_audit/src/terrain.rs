@@ -100,6 +100,16 @@ fn validate_state(state: &AuditState) -> Result<(), String> {
         return Ok(());
     };
     let catalog = state.catalog.as_ref().ok_or("terrain catalog missing")?;
+    if state.unit_orders.iter().any(|orders| {
+        orders
+            .orders
+            .current
+            .as_ref()
+            .is_some_and(|order| order.behaviour == Behaviour::UnloadCargo)
+    }) {
+        return Err("terrain unload timing model is not implemented yet".into());
+    }
+
     if terrain.length_scale == 0
         || terrain.cell_width == 0
         || terrain.elevation_step == 0
@@ -173,6 +183,9 @@ fn validate_state(state: &AuditState) -> Result<(), String> {
         {
             return Err("terrain runtime has non-work order".into());
         }
+        if target_refusal(state, row.unit, &row.order.target, false)?.is_some() {
+            return Err("terrain runtime designation is not valid for its actor/map".into());
+        }
         let paused = terrain.paused.iter().find(|pause| pause.unit == row.unit);
         let current = work_order(state, row.unit);
         if current != Some(&row.order)
@@ -193,6 +206,18 @@ fn validate_state(state: &AuditState) -> Result<(), String> {
             );
         }
     }
+    for orders in &state.unit_orders {
+        if let Some(order) = orders
+            .orders
+            .current
+            .as_ref()
+            .filter(|order| order.behaviour == Behaviour::TerrainWork)
+            && !terrain.work.iter().any(|row| row.unit == orders.unit_id)
+            && !order_complete(state, order)?
+        {
+            return Err("live terrain order lost its partial work state".into());
+        }
+    }
     let mut claims = BTreeSet::new();
     for claim in &terrain.claims {
         if !claims.insert((claim.cell.x, claim.cell.y))
@@ -204,7 +229,23 @@ fn validate_state(state: &AuditState) -> Result<(), String> {
             return Err("terrain claim has no unique matching work cell".into());
         }
     }
+    let mut paused_units = BTreeSet::new();
     for pause in &terrain.paused {
+        if !paused_units.insert(pause.unit)
+            || !state
+                .unit_orders
+                .iter()
+                .find(|row| row.unit_id == pause.unit)
+                .is_some_and(|row| {
+                    row.orders
+                        .current
+                        .as_ref()
+                        .is_some_and(|order| order.behaviour == Behaviour::UnloadCargo)
+                        && row.orders.queue.front() == Some(&pause.work)
+                })
+        {
+            return Err("terrain pause guard has no exact active utility/resume queue".into());
+        }
         if !terrain.work.iter().any(|row| {
             row.unit == pause.unit && row.owner == pause.owner && row.order == pause.work
         }) {
@@ -225,12 +266,12 @@ fn same_columns(before: &TerrainAudit, after: &TerrainAudit) -> bool {
 }
 #[derive(Default)]
 struct Credits {
-    paid: BTreeSet<(u32, u32)>,
+    paid: BTreeMap<u32, u32>,
 }
 impl Credits {
     fn earned(&mut self, state: &AuditState, row: &TerrainWorkAudit) -> Result<(u64, u64), String> {
         let tick = state.economy.tick;
-        if !self.paid.insert((tick, row.unit)) {
+        if self.paid.insert(row.unit, tick) == Some(tick) {
             return Ok((0, row.carry));
         }
         let OrderTargetSim::TerrainWork { tool, .. } = &row.order.target else {
@@ -273,7 +314,7 @@ impl Credits {
             let Some(prior) = old.work.iter().find(|row| {
                 row.unit == next.unit && row.owner == next.owner && row.order == next.order
             }) else {
-                if next.done != 0 || next.carry != 0 {
+                if next.done != 0 || next.carry != 0 || next.banked {
                     return Err("new terrain order starts with fabricated work".into());
                 }
                 continue;
@@ -286,10 +327,22 @@ impl Credits {
             if suspended {
                 return Err("suspended terrain order changed progress/carry".into());
             }
+            if !prior.banked && next.banked {
+                return Err("terrain created banked work without a committed step".into());
+            }
             if next.done == 0
                 && next.carry == 0
                 && (!prior.banked
-                    && (prior.cell != next.cell || prior.source_revision != next.source_revision))
+                    && (prior.cell != next.cell
+                        || next
+                            .cell
+                            .and_then(|cell| {
+                                new.columns_state.iter().find(|column| column.cell == cell)
+                            })
+                            .is_some_and(|column| {
+                                next.source_revision == Some(column.revision)
+                                    && prior.source_revision != Some(column.revision)
+                            })))
             {
                 continue;
             }
@@ -415,6 +468,12 @@ fn step(operation: &OperationAudit, credits: &mut Credits) -> Result<bool, Strin
         .iter()
         .find(|actor| actor.unit_id == *unit)
         .ok_or("terrain step actor absent")?;
+    if event.owner_slot != actor.owner_slot
+        || event.tick != operation.before.economy.tick
+        || Some(event.ordinal) != operation.before.next_event_ordinal
+    {
+        return Err("terrain event owner/tick/ordinal differs from authoritative operation".into());
+    }
     let runtime = raw
         .work
         .iter()
@@ -468,6 +527,38 @@ fn step(operation: &OperationAudit, credits: &mut Credits) -> Result<bool, Strin
         .iter()
         .position(|column| column.cell == *cell)
         .ok_or("terrain step cell absent")?;
+    let actor_definition = definition(&operation.before, *unit)?;
+    let width = f64::from(raw.cell_width) / f64::from(raw.length_scale);
+    let distance_to_cell = |position: turts_mod_api::WorldPos| {
+        let dx = f64::from(position.x)
+            - f64::from(position.x).clamp(f64::from(cell.x) * width, f64::from(cell.x + 1) * width);
+        let dy = f64::from(position.y)
+            - f64::from(position.y).clamp(f64::from(cell.y) * width, f64::from(cell.y + 1) * width);
+        dx * dx + dy * dy
+    };
+    let reach = f64::from(tool.reach) + f64::from(actor_definition.radius);
+    if distance_to_cell(actor.pos) > reach * reach {
+        return Err("terrain step is outside authored tool reach".into());
+    }
+    for body in &operation.before.raw_units {
+        let radius = f64::from(definition(&operation.before, body.unit_id)?.radius);
+        if distance_to_cell(body.pos) < radius * radius {
+            return Err("terrain step edits an occupied body/foundation footprint".into());
+        }
+    }
+    for node in &operation.before.nodes {
+        let radius = f64::from(
+            catalog
+                .nodes
+                .iter()
+                .find(|definition| definition.id == node.content_id)
+                .ok_or("terrain blocker node definition missing")?
+                .radius,
+        );
+        if distance_to_cell(node.pos) < radius * radius {
+            return Err("terrain step edits an occupied node footprint".into());
+        }
+    }
     let column = &raw.columns_state[index];
     if *before != column.surface || before == after {
         return Err("terrain step start/size differs from current surface".into());
@@ -676,4 +767,102 @@ pub(crate) fn has_capability(state: &AuditState, unit: u32, cargo: bool) -> bool
             !unit.terrain_tools.is_empty()
         }
     })
+}
+
+pub(crate) fn order_complete(state: &AuditState, order: &turts_sim::Order) -> Result<bool, String> {
+    let OrderTargetSim::TerrainWork {
+        tool,
+        cells,
+        target_elevation,
+    } = &order.target
+    else {
+        return Ok(false);
+    };
+    let raw = terrain(state)?;
+    let catalog = state.catalog.as_ref().ok_or("terrain catalog missing")?;
+    let tool = catalog
+        .terrain_tools
+        .iter()
+        .find(|row| row.id == tool.to_string())
+        .ok_or("terrain tool missing")?;
+    Ok((cells.min.y..cells.max.y).all(|y| {
+        (cells.min.x..cells.max.x).all(|x| {
+            raw.columns_state
+                .iter()
+                .find(|row| row.cell.x == x && row.cell.y == y)
+                .is_some_and(|column| match tool.operation {
+                    TerrainOperation::Excavate => column.surface <= *target_elevation,
+                    TerrainOperation::Fill { .. } => column.surface >= *target_elevation,
+                })
+        })
+    }))
+}
+pub(crate) fn target_refusal(
+    state: &AuditState,
+    unit: u32,
+    target: &OrderTargetSim,
+    cargo: bool,
+) -> Result<Option<turts_sim::RejectReason>, String> {
+    use turts_sim::RejectReason as R;
+    if cargo {
+        let OrderTargetSim::Unit(depot) = target else {
+            return Ok(Some(R::TargetInvalid));
+        };
+        if *depot == unit {
+            return Ok(Some(R::TargetInvalid));
+        }
+        let Some(source) = state.raw_units.iter().find(|row| row.unit_id == unit) else {
+            return Ok(Some(R::UnknownUnit));
+        };
+        let Some(receiver) = state.raw_units.iter().find(|row| row.unit_id == *depot) else {
+            return Ok(Some(R::TargetGone));
+        };
+        if source.owner_slot != receiver.owner_slot {
+            return Ok(Some(R::NotOwner));
+        }
+        if state
+            .raw_healths
+            .iter()
+            .any(|row| (row.unit == unit || row.unit == *depot) && row.current == 0)
+        {
+            return Ok(Some(R::TargetGone));
+        }
+        if definition(state, *depot)?.drop_off.is_empty() {
+            return Ok(Some(R::TargetInvalid));
+        }
+        return Ok(None);
+    }
+    let OrderTargetSim::TerrainWork {
+        tool,
+        cells,
+        target_elevation,
+    } = target
+    else {
+        return Ok(Some(R::TargetInvalid));
+    };
+    let Some(raw) = state.raw_terrain.as_ref() else {
+        return Ok(Some(R::NotApplicable));
+    };
+    if cells.min.x >= cells.max.x
+        || cells.min.y >= cells.max.y
+        || cells.max.x > raw.columns
+        || cells.max.y > raw.rows
+        || u64::from(cells.max.x - cells.min.x) * u64::from(cells.max.y - cells.min.y) > 256
+        || *target_elevation < raw.floor
+        || *target_elevation > raw.ceiling
+    {
+        return Ok(Some(R::TargetInvalid));
+    }
+    if !definition(state, unit)?.terrain_tools.contains(tool)
+        || !state
+            .catalog
+            .as_ref()
+            .ok_or("terrain catalog missing")?
+            .terrain_tools
+            .iter()
+            .any(|row| row.id == tool.to_string())
+    {
+        return Ok(Some(R::MissingCapability));
+    }
+    Ok(None)
 }

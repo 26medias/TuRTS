@@ -1845,6 +1845,8 @@ fn expected_order_refusal(
             capability.is_some_and(|entry| entry.movement || entry.weapon)
                 || crate::paid::has_repairer(before, unit_id)
                 || crate::paid::has_constructor(before, unit_id)
+                || crate::terrain::has_capability(before, unit_id, false)
+                || crate::terrain::has_capability(before, unit_id, true)
         }
         turts_mod_api::Behaviour::Attack => match &order.target {
             turts_sim::OrderTargetSim::Unit(_) => capability.is_some_and(|entry| entry.weapon),
@@ -1942,6 +1944,12 @@ fn expected_order_refusal(
         }
     }
     match (&order.behaviour, &order.target) {
+        (turts_mod_api::Behaviour::TerrainWork, _) => {
+            return crate::terrain::target_refusal(before, unit_id, &order.target, false);
+        }
+        (turts_mod_api::Behaviour::UnloadCargo, _) => {
+            return crate::terrain::target_refusal(before, unit_id, &order.target, true);
+        }
         (
             turts_mod_api::Behaviour::Construct,
             turts_sim::OrderTargetSim::ContentAtPoint { content, point },
@@ -3809,6 +3817,54 @@ fn validate_automatic_order_operation(
     let tick = operation.before.economy.tick;
     let mut expected = operation.before.clone();
     let current = orders_before.current.clone();
+    if current.as_ref().is_some_and(|order| {
+        matches!(
+            order.behaviour,
+            turts_mod_api::Behaviour::TerrainWork | turts_mod_api::Behaviour::UnloadCargo
+        )
+    }) {
+        if operation.before == operation.after {
+            return Ok(());
+        }
+        let complete = match current.as_ref().unwrap().behaviour {
+            turts_mod_api::Behaviour::TerrainWork => {
+                crate::terrain::order_complete(&operation.before, current.as_ref().unwrap())?
+            }
+            turts_mod_api::Behaviour::UnloadCargo => operation
+                .before
+                .economy
+                .inventories
+                .iter()
+                .find(|inventory| inventory.unit == unit_id)
+                .is_some_and(|inventory| {
+                    inventory
+                        .items
+                        .iter()
+                        .all(|item| item.on_hand == item.reserved)
+                }),
+            _ => false,
+        };
+        if complete {
+            orders_after.current = None;
+            set_audit_move_target(&mut expected, unit_id, None)?;
+            expected
+                .movement_progress
+                .retain(|row| row.unit_id != unit_id);
+            expected
+                .plain_movement_progress
+                .retain(|row| row.unit_id != unit_id);
+            expected
+                .pending_movement_orders
+                .cancel_units(actor.owner_slot, &[unit_id]);
+            start_next_audited_order_if_not_pending(&mut expected, unit_id, &mut orders_after)?;
+            store_audited_unit_orders(&mut expected, unit_id, orders_after);
+            crate::terrain::reconcile_verified(&mut expected, &operation.after);
+            if !operation.events.is_empty() || expected != operation.after {
+                return Err("terrain completion differs from ordinary queue transition".into());
+            }
+            return Ok(());
+        }
+    }
     let actor_target_before = raw_move_target(&operation.before, unit_id);
     let actor_target_after = raw_move_target(&operation.after, unit_id);
     // A legal body can stop after projection fails in a crowded cohort. The
@@ -6490,6 +6546,27 @@ fn start_next_audited_order(
             .find(|unit| unit.unit_id == unit_id)
             .ok_or_else(|| format!("queued order starts on absent unit {unit_id}"))?;
         match (next.behaviour, &next.target) {
+            (
+                turts_mod_api::Behaviour::TerrainWork,
+                turts_sim::OrderTargetSim::TerrainWork { .. },
+            )
+            | (turts_mod_api::Behaviour::UnloadCargo, turts_sim::OrderTargetSim::Unit(_)) => {
+                if let Some(reason) = crate::terrain::target_refusal(
+                    state,
+                    unit_id,
+                    &next.target,
+                    next.behaviour == turts_mod_api::Behaviour::UnloadCargo,
+                )? {
+                    orders.current = None;
+                    orders.last_failure = Some(turts_sim::OrderFailure {
+                        order: next.order,
+                        reason,
+                        tick: state.economy.tick,
+                    });
+                    continue;
+                }
+                return Ok(());
+            }
             (turts_mod_api::Behaviour::Move, turts_sim::OrderTargetSim::Point(point)) => {
                 state
                     .movement_progress
