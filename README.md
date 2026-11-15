@@ -42,16 +42,17 @@ The skirmish is its playable test bed. This table tracks delivered capabilities,
 
 | Capability | Verified progress | Evidence and remaining work |
 | --- | --- | --- |
-| Core simulation and mod content | Authoritative simulation, package loading, gathering, production, logistics, research, and combat are implemented. | Forge and Skirmish exercise these systems. Repair and incremental payment remain open. |
+| Core simulation and mod content | Authoritative simulation, package loading, gathering, production, logistics, research, and combat are implemented. | Forge and Skirmish exercise these systems. Incremental payment, repair, cancellation, and safe destruction refunds pass native and browser acceptance. |
 | Playable skirmish | Building, harvesting, paid mixed armies, rally points, Victory, Defeat, and restart pass browser checks. | [Normal-stat win and loss report](docs/reports/2026-11-14-full-skirmish.md). Full game content remains open. |
 | Human multiplayer | Two browser clients, public HTTPS/WSS hosting, ready lobby, colour selection, and reload recovery pass scripted checks. | [Two-player report](docs/reports/2026-11-14-two-player-skirmish.md), [lobby report](docs/reports/2026-11-14-ready-lobby.md), [rejoin report](docs/reports/2026-11-14-fast-rejoin.md). A full match between two people remains unverified. |
 | Presentation | Models, animations, effects, minimap, ground blending, and selected-unit portraits and health are delivered. | [Ground report](docs/reports/2026-11-14-ground-blending.md), [selection report](docs/reports/2026-11-14-unit-selection-panel.md). Custom shader support remains open. |
-| Browser performance | The release reaches 59.40 FPS at 400 units on High. The last 2,000-unit High check reached 28.81 FPS. | [Current measurements](docs/measurements/models.md). The new workload includes Warriors. Low reaches 40.27 FPS at 2,000 units. One local host; larger-scale performance remains open. |
+| Browser performance | The release reaches 59.20 FPS at 400 units on High. The last 2,000-unit High check reached 28.81 FPS. | [Current measurements](docs/measurements/models.md). The new workload includes Warriors. Low reaches 40.27 FPS at 2,000 units. One local host; larger-scale performance remains open. |
 | Damage system | Type tables, bonuses, optional armour curves, owner armour upgrades, automatic acquisition, Warriors, and Guard towers pass acceptance. | [Acceptance, independent review, and normal win](docs/reports/2026-11-14-damage-system.md). API 0.2.12; protocol 7. An independent test checks upgrade order and privacy in snapshots and deltas. The default game has no research lab yet. |
 | Operating resources | Mod-defined slot supply, exact shortage rates, weapon Disable, and periodic income pass native and browser checks. | [Acceptance and limits](docs/reports/2026-11-15-operating-resources.md). API 0.2.13; protocol 7. The default Skirmish balance stays unchanged. Gathered accounting and its display remain open; a future counter test must exclude periodic income. |
+| Paid work and repair | Exact incremental payment, construction cancellation, safe destruction refunds, and manual/automatic repair pass feature tests and the full browser fixture. | [Acceptance progress](docs/reports/2026-11-15-paid-work-and-repair.md). API 0.2.14; protocol 8. Acceptance and independent foundation review pass. Research ChargeOverTime and individual held-request cancellation remain open. |
 | Remaining engine scope | Public mod bots, editable terrain, discovery and fog, scripts, utilities, rooms, saves, statistics, and spectator/replay delivery remain open. | These capabilities follow the full project specification. Existing package loading and networking will be reused. |
 
-Latest accepted build: `target/mc-evidence/skirmish-operating-prepared`.
+Latest accepted build: `target/mc-evidence/skirmish-paid-work-prepared` (API 0.2.14; protocol 8).
 All three scripted player probes pass for this build.
 The full fresh-agent and manual readiness procedure was not repeated for this milestone.
 See [working rules](AGENTS.md) for parallel delivery, review, and milestone integration.
