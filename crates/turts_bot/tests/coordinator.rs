@@ -438,8 +438,10 @@ fn malformed_verified_members_have_no_partial_pending_or_sequence_writes() {
 
 #[test]
 fn the_pending_account_row_limit_counts_each_members_obligation_not_only_unique_resources() {
-    let mut limits = CoordinatorLimits::default();
-    limits.pending_accounts = 1;
+    let limits = CoordinatorLimits {
+        pending_accounts: 1,
+        ..Default::default()
+    };
     let mut c = BotCoordinator::new(actor(), limits);
     c.reconcile(0, &batch(0, vec![balance(money(), 20, 0)], vec![], vec![]))
         .unwrap();
