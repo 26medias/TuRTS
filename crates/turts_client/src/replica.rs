@@ -1864,10 +1864,9 @@ fn valid_economy(
 }
 
 fn merge_economy(current: &mut EconomyState, changes: &EconomyChanges) -> bool {
-    let mut staged = current.clone();
-    if !replace_keyed(&mut staged.balances, &changes.balances, |record| {
+    if !replace_keyed(&mut current.balances, &changes.balances, |record| {
         record.resource.clone()
-    }) || !replace_keyed(&mut staged.inventories, &changes.inventories, |record| {
+    }) || !replace_keyed(&mut current.inventories, &changes.inventories, |record| {
         (
             record.unit.0,
             match record.port {
@@ -1875,14 +1874,13 @@ fn merge_economy(current: &mut EconomyState, changes: &EconomyChanges) -> bool {
                 InventoryPort::Output => 1u8,
             },
         )
-    }) || !replace_keyed(&mut staged.orders, &changes.orders, |record| record.unit.0)
-        || !replace_keyed(&mut staged.queues, &changes.queues, |record| {
+    }) || !replace_keyed(&mut current.orders, &changes.orders, |record| record.unit.0)
+        || !replace_keyed(&mut current.queues, &changes.queues, |record| {
             record.producer.0
         })
     {
         return false;
     }
-    *current = staged;
     true
 }
 
@@ -1892,19 +1890,27 @@ pub(crate) fn replace_keyed<T: Clone, K: Eq + std::hash::Hash>(
     changes: &[T],
     key: impl Fn(&T) -> K,
 ) -> bool {
-    let mut seen = HashSet::new();
-    if !changes.iter().all(|record| seen.insert(key(record))) {
-        return false;
+    if changes.is_empty() {
+        return true;
     }
-    for change in changes {
-        let change_key = key(change);
-        if let Some(index) = current
-            .iter()
-            .position(|existing| key(existing) == change_key)
-        {
-            current[index] = change.clone();
-        } else {
-            current.push(change.clone());
+    let mut pending = HashMap::with_capacity(changes.len());
+    for (index, change) in changes.iter().enumerate() {
+        if pending.insert(key(change), index).is_some() {
+            return false;
+        }
+    }
+    // Preserve the existing row order and append newly seen keys in wire order.
+    for existing in current.iter_mut() {
+        if let Some(index) = pending.remove(&key(existing)) {
+            *existing = changes[index].clone();
+        }
+    }
+    if !pending.is_empty() {
+        current.reserve(pending.len());
+        for change in changes {
+            if pending.remove(&key(change)).is_some() {
+                current.push(change.clone());
+            }
         }
     }
     true
