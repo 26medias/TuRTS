@@ -62,12 +62,37 @@ impl KnowledgeSender {
         self.active.as_ref()
     }
     fn retained(&self) -> usize {
+        let map_heap = |basis: &turts_mod_api::KnowledgeBasis| {
+            basis
+                .map
+                .package
+                .0
+                .capacity()
+                .saturating_add(basis.map.local.capacity())
+        };
         self.tip
             .retained_bytes()
+            .saturating_add(std::mem::size_of::<Self>())
+            .saturating_add(map_heap(&self.context))
+            .saturating_add(
+                self.active
+                    .as_ref()
+                    .map_or(0, |stamp| map_heap(&stamp.basis)),
+            )
+            .saturating_add(
+                self.restarts
+                    .capacity()
+                    .saturating_mul(std::mem::size_of::<Instant>()),
+            )
+            .saturating_add(
+                self.patches
+                    .capacity()
+                    .saturating_mul(std::mem::size_of::<EncodedStateTransaction>()),
+            )
             .saturating_add(
                 self.pending
                     .as_ref()
-                    .map_or(0, |p| p.encoded.retained_bytes() + FRAME_LIMIT),
+                    .map_or(0, |p| p.encoded.retained_bytes() + 2 * FRAME_LIMIT),
             )
             .saturating_add(self.patch_bytes)
             .saturating_add(self.outstanding.saturating_mul(COPY_RESERVE_PER_FRAME))
@@ -288,6 +313,13 @@ pub fn queue_tick(world: &mut World, entity: Entity, slot: SlotId) -> Result<boo
                 .map_err(|e| format!("Cannot encode permitted patch: {e:?}"))?;
             if sender.pending.is_none() {
                 sender.pending = Some(Pending::new(encoded, Instant::now()));
+            } else if sender.patch_bytes.saturating_add(encoded.retained_bytes())
+                > MAX_POST_BASE_PATCH_BYTES as usize
+            {
+                drop(encoded);
+                let cancel = sender.cancel(StateTransactionCancelReason::BufferLimit);
+                emit_cancel(world, entity, cancel);
+                sender.restart(Instant::now())?;
             } else {
                 sender.patch_bytes += encoded.retained_bytes();
                 sender.patches.push_back(encoded);
