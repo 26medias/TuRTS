@@ -1327,7 +1327,7 @@ mod source_cache_tests {
 mod all_visible_terrain_event_tests {
     use super::*;
     use crate::{Owner, Position, SlotId, Tick, UnitId, UnitType, UnitTypes};
-    use turts_mod_api::{ContentCatalog, ResolvedTerrainDef};
+    use turts_mod_api::ResolvedTerrainDef;
     use turts_mod_runtime::{archive::PackageArchive, pack::pack_dir};
 
     fn scene() -> (World, turts_mod_api::UnitTypeId) {
@@ -1339,7 +1339,7 @@ mod all_visible_terrain_event_tests {
         let types = UnitTypes::from_catalog(&catalog, &UnitTypes::default()).unwrap();
         let kind = types.find("base:command_center").unwrap();
         let terrain = crate::terrain::prepare(
-            &ContentCatalog::default(),
+            &catalog,
             &ResolvedTerrainDef {
                 length_scale: 1,
                 cell_width: 1,

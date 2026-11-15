@@ -1124,8 +1124,10 @@ fn paired_unseen_ridge_worlds_plan_and_report_equally_until_physical_contact() {
 
 #[test]
 fn append_unload_preserves_nonzero_work_and_fraction_then_resumes_exactly_once() {
-    let mut fixture = Fixture::new(401, 5, 1000);
-    fixture.work("dig", rect(3, 1, 1), 990, QueueMode::Replace);
+    let mut fixture = Fixture::configured(401, 5, 1000, |_, map| {
+        map.placements[1].pos = WorldPos { x: 5.5, y: 4.5 };
+    });
+    fixture.work("dig", rect(3, 1, 2), 990, QueueMode::Replace);
     fixture.tick();
     let before = fixture
         .app
@@ -1182,7 +1184,13 @@ fn append_unload_preserves_nonzero_work_and_fraction_then_resumes_exactly_once()
     assert_eq!(fixture.ore(fixture.depot), 5);
     assert_eq!(fixture.ore(fixture.worker), 5);
     assert!(!pause::has_record(fixture.app.world(), fixture.worker));
-    fixture.tick(); // Ordinary order completion advances at the next queue boundary.
+    assert_eq!(
+        fixture.height(4, 1),
+        1000,
+        "resuming must finish the original cell before the now-nearer cell"
+    );
+    fixture.command(Behaviour::Stop, OrderTargetSim::None, QueueMode::Replace);
+    fixture.tick();
     assert!(
         !fixture
             .app
@@ -1389,8 +1397,18 @@ fn production_skips_a_cliff_straddling_exit_and_commits_the_next_supported_exit(
         id("build_harvester"),
     )
     .unwrap();
-    for _ in 0..4 {
+    for _ in 0..16 {
         fixture.tick();
+        if fixture
+            .app
+            .world()
+            .iter_entities()
+            .filter(|entity| entity.contains::<crate::UnitId>())
+            .count()
+            > 2
+        {
+            break;
+        }
     }
     let outputs = fixture
         .app
@@ -1447,6 +1465,9 @@ fn construction_rejects_cliff_straddling_foundation_before_charge_and_allocator_
             when_short: vec![],
         });
     });
+    fixture
+        .app
+        .insert_resource(crate::economy::construction::ConstructionLimit(2));
     let before = crate::audit_state(fixture.app.world_mut());
     assert_eq!(
         crate::economy::construction::construct(

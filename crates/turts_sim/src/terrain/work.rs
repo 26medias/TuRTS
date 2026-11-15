@@ -218,6 +218,30 @@ fn selected_cell(world: &World, unit: u32, order: &Order) -> Option<Cell> {
         .terrain_tools
         .get(tool)?
         .operation;
+    // A paused designation resumes its current prism even if unloading moved the actor
+    // closer to another cell. Physical position must not erase earned partial work.
+    if let Some(cell) = world
+        .get_resource::<TerrainWorkRuntime>()
+        .and_then(|runtime| runtime.units.get(&unit))
+        .filter(|state| state.order == *order)
+        .and_then(|state| state.cell)
+    {
+        let cell = Cell {
+            x: cell.x,
+            y: cell.y,
+        };
+        if !step::observed(world, owner, terrain, cell, ObservationPhase::Tactical) {
+            return Some(cell);
+        }
+        let height = terrain.elevation(cell)?;
+        let finished = match operation {
+            turts_mod_api::ResolvedTerrainOperation::Excavate => height <= *target_elevation,
+            turts_mod_api::ResolvedTerrainOperation::Fill { .. } => height >= *target_elevation,
+        };
+        if !finished {
+            return Some(cell);
+        }
+    }
     let mut cells_ranked = Vec::new();
     let width = f64::from(terrain.grid.cell_width) / f64::from(terrain.grid.length_scale);
     for y in cells.min.y..cells.max.y {
