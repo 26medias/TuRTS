@@ -3,6 +3,7 @@
 Status: Anvil spec and plan approved by the same reviewer. Each needed one turn and one focused recheck.
 The rechecks closed material accounting, geological coverage, permitted previews, and shared terrain geometry.
 Pure dependency-free rules may start in isolation while SDK16 acceptance runs. Engine integration waits for that acceptance.
+Isolated API type drafts may also proceed. Do not enable their exports, schema fields, version floor or engine consumers before the common contract checkpoint.
 Dependency: accept, merge, and push SDK16 before engine/API/protocol integration. Merge that accepted source before the dependent simulation/transport/browser lanes.
 The pure geometry and conservation kernel does not depend on the pending SDK16 checks. Prepare it now without sharing compiled targets or changing the accepted build.
 Root owns integration. Use three implementation lanes after the common contract compiles.
