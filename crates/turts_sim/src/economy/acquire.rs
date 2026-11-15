@@ -171,6 +171,8 @@ pub(crate) fn run_acquire(world: &mut World) {
         let reach = |target: &Actor| mode.centre_reach(range, actor.radius, target.radius);
         let valid = |target: &Actor| {
             target.alive
+                && crate::visibility::active_basis(world)
+                    .is_none_or(|basis| basis.unit_permitted(actor.owner, target.id))
                 && target.id != actor.id
                 && crate::rules_adapter::holds_own_team(relation, actor.owner, target.owner)
                 && target.position.distance_squared(home) <= (acquire.leash + reach(target)).powi(2)

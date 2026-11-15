@@ -467,6 +467,11 @@ fn choose_target(
 ) -> Option<u32> {
     let healths = &world.resource::<Healths>().0;
     let matches = |id: u32| {
+        if crate::visibility::active_basis(world)
+            .is_some_and(|basis| !basis.unit_permitted(parameters.owner, id))
+        {
+            return None;
+        }
         let health = healths.get(&id)?;
         if *health == 0 {
             return None;

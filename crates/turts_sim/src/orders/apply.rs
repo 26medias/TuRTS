@@ -699,6 +699,7 @@ fn validate_member(
     {
         return Err(R::NotApplicable);
     }
+    crate::visibility::validate_target(world, slot.0, &command.target)?;
     validate_target(world, command)?;
     Ok(entity)
 }

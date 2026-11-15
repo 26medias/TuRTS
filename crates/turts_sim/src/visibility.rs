@@ -172,6 +172,7 @@ pub struct PreparedEventUnit {
 #[derive(Resource, Debug, Clone)]
 pub struct VisibilityState {
     definition: VisibilityDef,
+    context_finalized: bool,
     grid: VisibilityGrid,
     match_id: u64,
     map: ContentId,
@@ -252,6 +253,7 @@ pub fn prepare(
     };
     Ok(VisibilityState {
         definition: definition.clone(),
+        context_finalized: false,
         grid,
         match_id,
         map: map.clone(),
@@ -383,6 +385,7 @@ impl VisibilityState {
                 truncated: false,
             });
         }
+        let previous = self.phase(self.active);
         for viewer in 0..SLOT_COUNT {
             let memory = &mut self.memories[usize::from(viewer)];
             for unit in next
@@ -407,48 +410,87 @@ impl VisibilityState {
             memory.nodes.retain(|id, (old, _)| {
                 next.node_permitted(viewer, *id) || !next.point_observed(viewer, old.position)
             });
-            let mut stale_units = memory
+            // Keep current observation storage separate from bounded stale memory.
+            // Select the oldest timestamp group in one sort, never by subject ID.
+            let mut stale = memory
                 .units
-                .values()
-                .filter(|(unit, _)| !next.unit_permitted(viewer, unit.unit))
-                .map(|(unit, tick)| unit.remembered(*tick))
-                .collect::<Vec<_>>();
-            let mut stale_nodes = memory
-                .nodes
-                .values()
-                .filter(|(node, _)| !next.node_permitted(viewer, node.node))
-                .map(|(node, tick)| node.remembered(*tick))
+                .iter()
+                .filter(|(id, _)| !next.unit_permitted(viewer, **id))
+                .map(|(id, (_, tick))| (*tick, true, *id))
+                .chain(
+                    memory
+                        .nodes
+                        .iter()
+                        .filter(|(id, _)| !next.node_permitted(viewer, **id))
+                        .map(|(id, (_, tick))| (*tick, false, *id)),
+                )
                 .collect::<Vec<_>>();
             let limit = self.definition.effective_memory_limit() as usize;
-            while stale_units.len() + stale_nodes.len() > limit {
-                let oldest = stale_units
-                    .iter()
-                    .map(|row| row.last_seen_tick)
-                    .chain(stale_nodes.iter().map(|row| row.last_seen_tick))
-                    .min();
-                let Some(oldest) = oldest else {
-                    break;
-                };
+            if stale.len() > limit {
+                stale.sort_unstable_by_key(|row| row.0);
+                let cutoff = stale[stale.len() - limit - 1].0;
                 memory.truncated = true;
-                stale_units.retain(|row| {
-                    if row.last_seen_tick == oldest {
-                        memory.units.remove(&row.unit);
-                        false
+                for (_, unit, id) in stale.iter().copied().take_while(|row| row.0 <= cutoff) {
+                    if unit {
+                        memory.units.remove(&id);
                     } else {
-                        true
+                        memory.nodes.remove(&id);
                     }
-                });
-                stale_nodes.retain(|row| {
-                    if row.last_seen_tick == oldest {
-                        memory.nodes.remove(&row.node);
-                        false
-                    } else {
-                        true
-                    }
-                });
+                }
             }
-            next.slots[usize::from(viewer)].units = stale_units.into();
-            next.slots[usize::from(viewer)].nodes = stale_nodes.into();
+            let previous = &previous.slots[usize::from(viewer)];
+            let units = || {
+                memory
+                    .units
+                    .values()
+                    .filter(|(unit, _)| !next.unit_permitted(viewer, unit.unit))
+            };
+            let same_units = units().count() == previous.units.len()
+                && units()
+                    .zip(previous.units.iter())
+                    .all(|((unit, tick), old)| {
+                        unit.unit == old.unit
+                            && unit.content.as_ref() == &old.content
+                            && unit.owner == old.owner
+                            && unit.position == old.position
+                            && unit.facing == old.facing
+                            && unit.site == old.site
+                            && *tick == old.last_seen_tick
+                    });
+            let stale_units = if same_units {
+                Arc::clone(&previous.units)
+            } else {
+                units()
+                    .map(|(unit, tick)| unit.remembered(*tick))
+                    .collect::<Vec<_>>()
+                    .into()
+            };
+            let nodes = || {
+                memory
+                    .nodes
+                    .values()
+                    .filter(|(node, _)| !next.node_permitted(viewer, node.node))
+            };
+            let same_nodes = nodes().count() == previous.nodes.len()
+                && nodes()
+                    .zip(previous.nodes.iter())
+                    .all(|((node, tick), old)| {
+                        node.node == old.node
+                            && node.content.as_ref() == &old.content
+                            && node.position == old.position
+                            && node.remaining == old.remaining
+                            && *tick == old.last_seen_tick
+                    });
+            let stale_nodes = if same_nodes {
+                Arc::clone(&previous.nodes)
+            } else {
+                nodes()
+                    .map(|(node, tick)| node.remembered(*tick))
+                    .collect::<Vec<_>>()
+                    .into()
+            };
+            next.slots[usize::from(viewer)].units = stale_units;
+            next.slots[usize::from(viewer)].nodes = stale_nodes;
             next.slots[usize::from(viewer)].truncated = memory.truncated;
         }
         self.active = phase;
@@ -472,6 +514,35 @@ pub fn unit_permitted(world: &World, viewer: u8, unit: u32, phase: ObservationPh
 }
 pub fn node_permitted(world: &World, viewer: u8, node: u32, phase: ObservationPhase) -> bool {
     basis(world, phase).is_none_or(|basis| basis.node_permitted(viewer, node))
+}
+
+/// Current simulation action basis. None is explicit AllVisible only.
+pub fn active_basis(world: &World) -> Option<&VisibilityBasis> {
+    let state = world.get_resource::<VisibilityState>()?;
+    Some(match state.active {
+        ObservationPhase::Start => &state.start,
+        ObservationPhase::Tactical => &state.tactical,
+        ObservationPhase::Completed => &state.completed,
+    })
+}
+pub(crate) fn validate_target(
+    world: &World,
+    viewer: u8,
+    target: &crate::orders::OrderTargetSim,
+) -> Result<(), crate::RejectReason> {
+    let Some(basis) = active_basis(world) else {
+        return Ok(());
+    };
+    let permitted = match target {
+        crate::orders::OrderTargetSim::Unit(id) => basis.unit_permitted(viewer, *id),
+        crate::orders::OrderTargetSim::Node(id) => basis.node_permitted(viewer, id.0),
+        _ => true,
+    };
+    if permitted {
+        Ok(())
+    } else {
+        Err(crate::RejectReason::TargetInvalid)
+    }
 }
 
 fn capture_units(world: &World) -> (Vec<VisibleUnit>, Vec<(u32, u8, WorldPos, f32)>) {
@@ -536,7 +607,10 @@ fn capture_units(world: &World) -> (Vec<VisibleUnit>, Vec<(u32, u8, WorldPos, f3
     (units, sources)
 }
 fn refresh(world: &mut World, phase: ObservationPhase) {
-    if !world.contains_resource::<VisibilityState>() {
+    if !world
+        .get_resource::<VisibilityState>()
+        .is_some_and(|state| state.context_finalized)
+    {
         return;
     }
     let (units, sources) = capture_units(world);
@@ -564,6 +638,49 @@ fn refresh(world: &mut World, phase: ObservationPhase) {
         .resource_mut::<VisibilityState>()
         .update(tick, phase, units, nodes, sources);
 }
+/// Finalize the real match identity and installed teams before initial publication.
+/// Match ID zero is reserved for explicitly initialized headless diagnostics.
+/// A server must use its real room match ID. Later context changes are refused.
+pub fn initialize_context(world: &mut World, match_id: u64, teams: &[u8]) -> Result<(), String> {
+    if world
+        .get_resource::<crate::Tick>()
+        .is_some_and(|tick| tick.0 != 0)
+    {
+        return Err("sight context can only be finalized at tick zero".into());
+    }
+    if teams.len() > usize::from(SLOT_COUNT) {
+        return Err("sight context contains too many slot teams".into());
+    }
+    let Some(state) = world.get_resource::<VisibilityState>() else {
+        return Ok(());
+    };
+    if state.context_finalized {
+        return if state.match_id == match_id && state.teams == teams {
+            Ok(())
+        } else {
+            Err("sight match context is already finalized".into())
+        };
+    }
+    let mut prepared = prepare(
+        match_id,
+        state.map.clone(),
+        &state.definition,
+        state.grid,
+        teams,
+    )?;
+    prepared.context_finalized = true;
+    world.insert_resource(prepared);
+    initialize(world);
+    Ok(())
+}
+/// AllVisible is ready without a restricted context. Restricted placeholders are
+/// fail closed; the host must finalize them before publication or bot setup.
+pub fn context_ready(world: &World) -> bool {
+    world
+        .get_resource::<VisibilityState>()
+        .is_none_or(|state| state.context_finalized)
+}
+
 pub fn initialize(world: &mut World) {
     refresh_start(world);
     refresh_tactical(world);
@@ -651,3 +768,7 @@ pub fn event_units(world: &World, viewer: u8) -> Vec<EventUnitFact> {
         })
         .unwrap_or_default()
 }
+
+#[cfg(test)]
+#[path = "visibility_tests.rs"]
+mod tests;
