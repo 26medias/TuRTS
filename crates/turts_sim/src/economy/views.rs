@@ -305,6 +305,12 @@ pub struct DurationAudit {
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CatalogAudit {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub terrain_materials: Vec<turts_mod_api::TerrainMaterialDef>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub terrain_tools: Vec<turts_mod_api::TerrainToolDef>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub terrain_movement_classes: Vec<turts_mod_api::TerrainMovementClassDef>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub combat: Option<turts_mod_api::CombatDef>,
     pub resource_kinds: Vec<(ContentId, ResourceKind)>,
@@ -339,6 +345,14 @@ pub struct CatalogNodeAudit {
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CatalogUnitAudit {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub terrain_tools: Vec<ContentId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub terrain_cargo: Option<turts_mod_api::TerrainCargoDef>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub terrain_class: Option<ContentId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub terrain_foundation: Option<turts_mod_api::TerrainFoundation>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub health_max: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1277,6 +1291,71 @@ pub fn audit_state(world: &mut World) -> AuditState {
         .map(|installed| {
             let c = &installed.0;
             CatalogAudit {
+                terrain_materials: c
+                    .terrain_materials
+                    .values()
+                    .map(|row| turts_mod_api::TerrainMaterialDef {
+                        id: row.id.to_string(),
+                        name: row.name.clone(),
+                        surface_color: row.surface_color.clone(),
+                        hardness: row.hardness,
+                        work_per_world_cube: row.work_per_world_cube,
+                        natural_outputs: row
+                            .natural_outputs
+                            .iter()
+                            .map(|rate| turts_mod_api::TerrainResourceRate {
+                                resource: rate.resource.to_string(),
+                                per_world_cube: rate.per_world_cube,
+                            })
+                            .collect(),
+                        fill_inputs: row
+                            .fill_inputs
+                            .iter()
+                            .map(|rate| turts_mod_api::TerrainResourceRate {
+                                resource: rate.resource.to_string(),
+                                per_world_cube: rate.per_world_cube,
+                            })
+                            .collect(),
+                        placed_removal: row.placed_removal,
+                    })
+                    .collect(),
+                terrain_tools: c
+                    .terrain_tools
+                    .values()
+                    .map(|row| turts_mod_api::TerrainToolDef {
+                        id: row.id.to_string(),
+                        name: row.name.clone(),
+                        operation: match &row.operation {
+                            turts_mod_api::ResolvedTerrainOperation::Excavate => {
+                                turts_mod_api::TerrainOperation::Excavate
+                            }
+                            turts_mod_api::ResolvedTerrainOperation::Fill { material } => {
+                                turts_mod_api::TerrainOperation::Fill {
+                                    material: material.to_string(),
+                                }
+                            }
+                        },
+                        work_per_second: row.work_per_second,
+                        reach: row.reach,
+                        allowed_materials: row
+                            .allowed_materials
+                            .iter()
+                            .map(ToString::to_string)
+                            .collect(),
+                        max_hardness: row.max_hardness,
+                        output_destination: row.output_destination,
+                    })
+                    .collect(),
+                terrain_movement_classes: c
+                    .terrain_movement_classes
+                    .values()
+                    .map(|row| turts_mod_api::TerrainMovementClassDef {
+                        id: row.id.to_string(),
+                        name: row.name.clone(),
+                        max_step: row.max_step,
+                        max_grade: row.max_grade,
+                    })
+                    .collect(),
                 combat: c.combat.clone(),
                 resource_kinds: c
                     .resources
@@ -1296,6 +1375,10 @@ pub fn audit_state(world: &mut World) -> AuditState {
                     .units
                     .iter()
                     .map(|(id, d)| CatalogUnitAudit {
+                        terrain_tools: d.terrain_tools.clone(),
+                        terrain_cargo: d.terrain_cargo,
+                        terrain_class: d.terrain_class.clone(),
+                        terrain_foundation: d.terrain_foundation,
                         health_max: (c.units.values().any(|unit| {
                             unit.repairer.is_some()
                                 || unit.constructor.is_some()
