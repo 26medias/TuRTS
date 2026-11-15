@@ -1061,6 +1061,8 @@ mod tests {
             trainer.inventory.as_mut().unwrap().capacity = 20;
             trainer.research = None;
             trainer.producer = Some(turts_mod_api::ResolvedProducer {
+                when_short: Vec::new(),
+
                 recipes: vec![train.clone()],
                 queue_capacity: 2,
                 spawn_offsets: vec![WorldPos { x: 2.5, y: 0. }],

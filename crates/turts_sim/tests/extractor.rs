@@ -15,6 +15,10 @@ fn extractor_runs_in_fixed_extract_set() {
     let drill_id = ContentId::parse("probe:drill").unwrap();
     let node_id = ContentId::parse("probe:deposit").unwrap();
     let drill = ResolvedUnit {
+        consumes: Vec::new(),
+        income: None,
+        provides: Vec::new(),
+
         acquire: None,
         armour: None,
         constructor: None,

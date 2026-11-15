@@ -1760,6 +1760,10 @@ mod admission_tests {
         catalog.units.insert(
             id.clone(),
             ResolvedUnit {
+                consumes: Vec::new(),
+                income: None,
+                provides: Vec::new(),
+
                 acquire: None,
                 armour: None,
                 constructor: None,
@@ -1773,6 +1777,8 @@ mod admission_tests {
                 gatherer: None,
                 drop_off: None,
                 producer: Some(ResolvedProducer {
+                    when_short: Vec::new(),
+
                     recipes: vec![],
                     queue_capacity: 1,
                     spawn_offsets: vec![],
@@ -2302,6 +2308,10 @@ mod admission_tests {
             .insert(
                 id.clone(),
                 ResolvedUnit {
+                    consumes: Vec::new(),
+                    income: None,
+                    provides: Vec::new(),
+
                     acquire: None,
                     armour: None,
                     constructor: None,
@@ -2475,6 +2485,10 @@ mod admission_tests {
         catalog.units.insert(
             id.clone(),
             ResolvedUnit {
+                consumes: Vec::new(),
+                income: None,
+                provides: Vec::new(),
+
                 acquire: None,
                 armour: None,
                 constructor: None,
@@ -2488,6 +2502,8 @@ mod admission_tests {
                 gatherer: None,
                 drop_off: None,
                 producer: Some(ResolvedProducer {
+                    when_short: Vec::new(),
+
                     recipes: vec![],
                     queue_capacity: 1,
                     spawn_offsets: vec![],
@@ -2936,6 +2952,10 @@ mod admission_tests {
             .insert(
                 static_id.clone(),
                 ResolvedUnit {
+                    consumes: Vec::new(),
+                    income: None,
+                    provides: Vec::new(),
+
                     acquire: None,
                     armour: None,
                     constructor: None,
@@ -3224,6 +3244,10 @@ mod admission_tests {
             .insert(
                 static_id.clone(),
                 ResolvedUnit {
+                    consumes: Vec::new(),
+                    income: None,
+                    provides: Vec::new(),
+
                     acquire: None,
                     armour: None,
                     constructor: None,

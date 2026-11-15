@@ -65,6 +65,10 @@ fn audit_catalog() -> ContentCatalog {
             let content_id = ContentId::parse(id).unwrap();
             let shooter = id == "audit:shooter";
             let unit = ResolvedUnit {
+                consumes: Vec::new(),
+                income: None,
+                provides: Vec::new(),
+
                 acquire: None,
                 armour: None,
                 constructor: None,
@@ -86,6 +90,8 @@ fn audit_catalog() -> ContentCatalog {
                 research: None,
                 health: Some(HealthDef { max: 60 }),
                 weapon: shooter.then_some(ResolvedWeapon {
+                    when_short: Vec::new(),
+
                     bonus: Vec::new(),
                     damage_type: None,
                     range: 3.0,
