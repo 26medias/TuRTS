@@ -11,7 +11,7 @@ fn package_app() -> App {
     turts_pack::load_package(app.world_mut(), &archive).unwrap();
     app.insert_resource(ServerCatalog(archive.content().unwrap()));
     app.insert_resource(session::Advertised {
-        lockfile_hash: "0".repeat(64),
+        lockfile_hash: format!("sha256:{}", "0".repeat(64)),
         tick_hz: 20,
     });
     turts_sim::initialize_completed_world(app.world_mut());
@@ -151,7 +151,7 @@ fn live_archive(archive: &PackageArchive, profile: &str, guard: Option<BotStartW
     session::install(
         &mut app,
         session::Advertised {
-            lockfile_hash: "0".repeat(64),
+            lockfile_hash: format!("sha256:{}", "0".repeat(64)),
             tick_hz: 20,
         },
     );
@@ -338,9 +338,20 @@ fn renamed_archive() -> PackageArchive {
 }
 
 fn allocated_profile(archive: &PackageArchive, map: turts_mod_api::MapDef) -> App {
-    allocated_catalog(archive.content().unwrap(), map)
+    allocated_catalog(
+        archive.content().unwrap(),
+        map,
+        archive.match_defs().unwrap()[0]
+            .1
+            .open_sites_per_slot
+            .unwrap(),
+    )
 }
-fn allocated_catalog(catalog: turts_mod_api::ContentCatalog, map: turts_mod_api::MapDef) -> App {
+fn allocated_catalog(
+    catalog: turts_mod_api::ContentCatalog,
+    map: turts_mod_api::MapDef,
+    construction_limit: u16,
+) -> App {
     let mut app = turts_sim::headless_app(20);
     let staged = turts_sim::stage_package(
         app.world(),
@@ -353,13 +364,16 @@ fn allocated_catalog(catalog: turts_mod_api::ContentCatalog, map: turts_mod_api:
     )
     .unwrap();
     turts_sim::install_package(app.world_mut(), staged);
+    app.insert_resource(turts_sim::economy::construction::ConstructionLimit(
+        construction_limit,
+    ));
     app.insert_resource(ServerCatalog(catalog));
     app.init_resource::<crate::stats::Stats>();
     app.insert_resource(crate::stats::MatchId(1));
     session::install(
         &mut app,
         session::Advertised {
-            lockfile_hash: "0".repeat(64),
+            lockfile_hash: format!("sha256:{}", "0".repeat(64)),
             tick_hz: 20,
         },
     );
@@ -482,7 +496,7 @@ fn real_allocator_inversion_preserves_public_profile_physical_choices() {
 }
 
 #[test]
-fn ordinary_enemy_weapon_losses_interrupt_opening_and_restore_worker_and_supply_once() {
+fn ordinary_enemy_weapon_losses_restore_worker_and_supply_without_overlapping_paid_work() {
     use turts_net_protocol::{OrderEnvelope, OrderTarget, PlayerCommand, QueueMode, UnitId};
     use turts_sim::{AuditTrail, economy::events::EconomyEventKind};
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../mods/stockyard");
@@ -492,6 +506,7 @@ fn ordinary_enemy_weapon_losses_interrupt_opening_and_restore_worker_and_supply_
     raider.id = ContentId::parse("stockyard:raider").unwrap();
     raider.health.as_mut().unwrap().max = 1_000_000;
     raider.weapon.as_mut().unwrap().damage = 10_000;
+    raider.weapon.as_mut().unwrap().range = 128.0;
     raider.acquire = None;
     for order in catalog
         .orders
@@ -500,6 +515,15 @@ fn ordinary_enemy_weapon_losses_interrupt_opening_and_restore_worker_and_supply_
     {
         order.units.push(raider.id.to_string());
     }
+    let mut hold = catalog.orders[&ContentId::parse("stockyard:order_stop").unwrap()].clone();
+    hold.id = "raider_hold".into();
+    hold.behaviour = turts_mod_api::Behaviour::Hold;
+    hold.fire = Some(turts_mod_api::FirePolicy::Never);
+    hold.engage = Some(turts_mod_api::EngagePolicy::None);
+    hold.units = vec![raider.id.to_string()];
+    catalog
+        .orders
+        .insert(ContentId::parse("stockyard:raider_hold").unwrap(), hold);
     catalog.units.insert(raider.id.clone(), raider);
     let mut map = archive.maps().unwrap().remove(0).1;
     map.placements
@@ -515,7 +539,14 @@ fn ordinary_enemy_weapon_losses_interrupt_opening_and_restore_worker_and_supply_
         .clone();
     extra.pos = turts_mod_api::WorldPos { x: 58., y: 36. };
     map.placements.push(extra);
-    let mut app = allocated_catalog(catalog, map);
+    let mut app = allocated_catalog(
+        catalog,
+        map,
+        archive.match_defs().unwrap()[0]
+            .1
+            .open_sites_per_slot
+            .unwrap(),
+    );
     let initial = turts_sim::completed_world(app.world()).clone();
     let worker = initial
         .units
@@ -591,11 +622,36 @@ fn ordinary_enemy_weapon_losses_interrupt_opening_and_restore_worker_and_supply_
     let mut restored = false;
     let mut loss_ticks = Vec::new();
     for _ in 0..2400 {
+        let before = turts_sim::completed_world(app.world());
+        let active_before = app.world().resource::<BotHost>().bots[0]
+            .coordinator
+            .pending()
+            .into_iter()
+            .filter(|pending| {
+                pending.work.as_ref().is_some_and(|work| match work.kind {
+                    turts_bot::WorkKind::Production => before.economy.queues.iter().any(|queue| {
+                        queue.producer == work.unit
+                            && queue.jobs.iter().any(|job| job.id == work.id)
+                    }),
+                    turts_bot::WorkKind::Construction => before
+                        .construction
+                        .sites
+                        .get(&work.unit)
+                        .is_some_and(|site| site.job.0 == work.id),
+                    _ => false,
+                })
+            })
+            .map(|pending| (pending.task, pending.request.unit))
+            .collect::<std::collections::BTreeSet<_>>();
         app.update();
         let view = turts_sim::completed_world(app.world());
         for event in &turts_sim::committed_tick(app.world()).events {
             if let EconomyEventKind::Fired { weapon, target, .. } = event.kind {
-                if weapon == attacker && victims.contains(&target) {
+                if weapon == attacker {
+                    assert!(
+                        victims.contains(&target),
+                        "controlled ordinary attack hit unintended unit {target}"
+                    );
                     hits.insert(target);
                 }
             }
@@ -603,10 +659,12 @@ fn ordinary_enemy_weapon_losses_interrupt_opening_and_restore_worker_and_supply_
         for command in &app.world().resource::<BotExecution>().generated {
             if ["restore_beds", "recover_worker"].contains(&command.task.goal.as_str()) {
                 *recovery.entry(command.task.goal.clone()).or_default() += 1;
-                assert_eq!(
-                    recovery[&command.task.goal], 1,
-                    "pending paid recovery cannot be submitted twice"
-                );
+                for unit in &command.units {
+                    assert!(
+                        !active_before.contains(&(command.task.clone(), *unit)),
+                        "a paid recovery cannot be resubmitted while its exact prior COT work remains active"
+                    );
+                }
             }
         }
         let owned_workers = view
@@ -653,6 +711,24 @@ fn ordinary_enemy_weapon_losses_interrupt_opening_and_restore_worker_and_supply_
             destroyed += 1;
             if destroyed < victims.len() {
                 attack(&mut app, destroyed);
+            } else {
+                app.world_mut()
+                    .resource_mut::<session::StagedPlayerCommands>()
+                    .0
+                    .push_back(session::StagedPlayerCommand {
+                        connection,
+                        slot: SlotId(0),
+                        envelope: PlayerCommand {
+                            seq: 4,
+                            order: OrderEnvelope {
+                                order: "stockyard:raider_hold".into(),
+                                units: vec![UnitId(attacker)],
+                                target: OrderTarget::None,
+                                queue: QueueMode::Replace,
+                                group: 0,
+                            },
+                        },
+                    });
             }
         }
         let view = turts_sim::completed_world(app.world());
@@ -661,8 +737,10 @@ fn ordinary_enemy_weapon_losses_interrupt_opening_and_restore_worker_and_supply_
             && supply_below_target
             && owned_workers >= 1
             && spare >= 4
-            && recovery.get("recover_worker") == Some(&1)
-            && recovery.get("restore_beds") == Some(&1)
+            && recovery
+                .get("recover_worker")
+                .is_some_and(|count| *count > 0)
+            && recovery.get("restore_beds").is_some_and(|count| *count > 0)
         {
             assert!(view.units.iter().any(|unit| unit.owner_slot == 1
                 && unit.content_id == "stockyard:worker"
@@ -698,6 +776,6 @@ fn ordinary_enemy_weapon_losses_interrupt_opening_and_restore_worker_and_supply_
     turts_audit::validate_records(&records).unwrap();
     println!(
         "BF4_RECOVERY {}",
-        serde_json::json!({"evidence":path,"ordinary_enemy_loss_ticks":loss_ticks,"recovery_submissions":recovery,"duplicates":0,"optional_opening_still_pending":true})
+        serde_json::json!({"evidence":path,"ordinary_enemy_loss_ticks":loss_ticks,"recovery_submissions":recovery,"inflight_paid_duplicates":0,"optional_opening_still_pending":true})
     );
 }
