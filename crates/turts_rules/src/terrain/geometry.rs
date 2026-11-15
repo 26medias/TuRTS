@@ -939,6 +939,14 @@ impl Grid {
         ray: Ray,
         budget: &mut Budget,
     ) -> Result<Option<RayHit>, Error> {
+        self.ray_hit_impl::<true>(surface, ray, budget)
+    }
+    fn ray_hit_impl<const PRUNE: bool>(
+        &self,
+        surface: &impl Surface,
+        ray: Ray,
+        budget: &mut Budget,
+    ) -> Result<Option<RayHit>, Error> {
         self.valid()?;
         let origin = [
             Q::float(ray.origin.x)?,
@@ -954,10 +962,46 @@ impl Grid {
             return Err(Error::Invalid);
         }
         let (floor, ceiling) = (self.height(self.floor)?, self.height(self.ceiling)?);
+        let (first_x, last_x, first_y, last_y) = if PRUNE {
+            // Every legal surface lies inside these PUBLIC height bounds. Clip
+            // the ray once, then inspect only the XY extent of that segment.
+            // This does not query a hidden cell to choose its candidate set.
+            let Some((enter, leave)) = ray_interval(
+                &origin,
+                &direction,
+                &[Q::ZERO, Q::ZERO, floor],
+                &[self.axis(self.columns)?, self.axis(self.rows)?, ceiling],
+                Q::ZERO,
+                None,
+            )?
+            else {
+                return Ok(None);
+            };
+            let leave = leave.ok_or(Error::Arithmetic)?;
+            let range = |axis: usize, count: u32| -> Result<(u32, u32), Error> {
+                let a = origin[axis].add(direction[axis].mul(enter)?)?;
+                let b = origin[axis].add(direction[axis].mul(leave)?)?;
+                let low = a.min(b)?.div(self.axis(1)?)?;
+                let high = a.max(b)?.div(self.axis(1)?)?;
+                let mut first = u32::try_from(low.n / low.d).map_err(|_| Error::Arithmetic)?;
+                // Closed face contacts include the cell on either side of an
+                // exact grid boundary. Preserve the existing wall/top ties.
+                if low.n % low.d == 0 && first > 0 {
+                    first -= 1;
+                }
+                let last = u32::try_from(high.n / high.d).map_err(|_| Error::Arithmetic)?;
+                Ok((first.min(count - 1), last.min(count - 1)))
+            };
+            let (first_x, last_x) = range(0, self.columns)?;
+            let (first_y, last_y) = range(1, self.rows)?;
+            (first_x, last_x, first_y, last_y)
+        } else {
+            (0, self.columns - 1, 0, self.rows - 1)
+        };
         let mut best: Option<ExactHit> = None;
         let mut unknown: Option<(Q, Cell)> = None;
-        for y in 0..self.rows {
-            for x in 0..self.columns {
+        for y in first_y..=last_y {
+            for x in first_x..=last_x {
                 budget.take()?;
                 let cell = Cell { x, y };
                 let r = self.rect(cell)?;
@@ -1096,6 +1140,94 @@ impl Grid {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn bounded_ray_candidates_match_the_original_full_scan_with_unknowns_and_ties() {
+        let terrain = grid();
+        for pattern in 0..4 {
+            for unknown in [false, true] {
+                let surface = |cell: Cell| {
+                    if unknown && (cell.x + 2 * cell.y) % 7 == 0 {
+                        return None;
+                    }
+                    Some(match pattern {
+                        0 => 0,
+                        1 => (cell.x % 4) as i32,
+                        2 => ((cell.x + cell.y) % 5) as i32 - 2,
+                        _ => {
+                            if cell.x == 3 && cell.y < 5 {
+                                8
+                            } else {
+                                -4
+                            }
+                        }
+                    })
+                };
+                for (x, y, z) in [
+                    (-1.0, 2.0, 8.0),
+                    (0.0, 0.0, 0.0),
+                    (3.0, 3.0, 8.0),
+                    (3.0, 3.0, -2.0),
+                    (8.0, 8.0, 2.0),
+                    (9.0, 4.0, 1.0),
+                    (2.5, 4.5, 0.0),
+                ] {
+                    for dx in [-1.0, 0.0, 1.0] {
+                        for dy in [-1.0, 0.0, 1.0] {
+                            for dz in [-1.0, 0.0, 1.0] {
+                                let ray = Ray {
+                                    origin: Point3 { x, y, z },
+                                    direction: Point3 {
+                                        x: dx,
+                                        y: dy,
+                                        z: dz,
+                                    },
+                                };
+                                let actual = terrain.ray_hit(&surface, ray, &mut budget());
+                                let expected =
+                                    terrain.ray_hit_impl::<false>(&surface, ray, &mut budget());
+                                assert_eq!(
+                                    actual, expected,
+                                    "pattern={pattern},unknown={unknown},ray={ray:?}"
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn camera_ray_uses_public_height_bounds_without_visiting_the_entire_map() {
+        let terrain = Grid::checked(128, 128, 1000, 1000, 250, -8, 8).unwrap();
+        let ray = Ray {
+            origin: Point3 {
+                x: 32.0,
+                y: 16.0,
+                z: 66.0,
+            },
+            direction: Point3 {
+                x: 0.25,
+                y: 0.5,
+                z: -1.0,
+            },
+        };
+        let mut small = Budget::new(100);
+        let hit = terrain
+            .ray_hit(&|_| Some(0), ray, &mut small)
+            .unwrap()
+            .unwrap();
+        assert_eq!(hit.elevation, 0);
+        let mut full = budget();
+        assert_eq!(
+            Some(hit),
+            terrain
+                .ray_hit_impl::<false>(&|_| Some(0), ray, &mut full)
+                .unwrap()
+        );
+        assert!(1_000_000 - full.remaining() >= 128 * 128);
+    }
+
     #[test]
     fn complete_cell_observation_matches_independent_positive_area_integer_oracle() {
         for width in 1..=4 {
