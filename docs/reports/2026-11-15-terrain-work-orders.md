@@ -13,13 +13,13 @@ Paths below are relative to that root. Earlier failed logs remain beside the pas
 
 | Row | Current evidence | Remaining checks |
 | --- | --- | --- |
-| TW1 | `terrain-work-orders/terrain-tool-source-first.log`; `terrain-client-anchor-current-final.log`; `terrain-work-orders/server-terrain-backend-final.log`. | Complete workspace and process compatibility campaign. |
-| TW2 | `terrain-work-orders/sim/sim-lib-lifecycle-final.log`; atomic real-package transport in `terrain-work-orders/server-terrain-backend-final.log`. | Independent conservation audit and final assembled regression run. |
-| TW3 | `terrain-work-orders/sim/navigation-pause-final.log`; real allocator inversion and established-claim tests in the simulation suite. | Independent replay certification and final workload conservation. |
+| TW1 | Public schema/runtime checks, the native compatibility campaign and process acceptance pass. See the logs below. | Final browser staging of both public packages. |
+| TW2 | Lifecycle, atomic transport and nine independent audit cases pass. See `terrain-work-orders/review.md`. | Final workload conservation and browser unloading. |
+| TW3 | Physical claim, allocator inversion, same-seed replay and retained-order audit checks pass. | Final frozen workload and browser scenarios. |
 | TW4 | `terrain-work-orders/sim/navigation-pause-final.log`; `terrain-work-orders/pure-kernel-ray-pruning.log`; client interaction and package tests. | Real browser passage, rover, height picking and local rendering checks. |
-| TW5 | Twelve focused terrain checks in `terrain-work-orders/server-terrain-backend-final.log`; thirteen export checks in `terrain-work-orders/server-export-backend-final.log`; client atomic package checks in `terrain-client-anchor-current-final.log`. | Independent whole-feature review, HTTP/provenance inspection and final caps/resync campaign. |
+| TW5 | Independent review, real HTTP privacy, atomic export, memory caps and process resync checks pass. See `terrain-work-orders/review.md` and process logs. | Final browser transport and cold-play checks. |
 | TW6 | Browser drivers are prepared. Native interaction and client checks pass. | Real pointer/key scenarios for both packages, both zoom extremes and final cold-play probes. |
-| TW7 | Frozen driver and exact workload are committed before timing. | Native preflight, full timed workload and three 400-unit High-detail browser camera cases. |
+| TW7 | Functionality preflight passes. The first warmed diagnostic exceeds the server p99 limit. See the measurements below. | Optimize, run the full frozen workload and run three 400-unit High-detail browser camera cases. |
 
 The focused client run passes 423 library tests, eight shared-visibility tests and two real-package tests.
 The simulation checkpoint passes 439 library tests, with one ignored measurement.
@@ -46,7 +46,32 @@ All 21 tooling commands pass, including the focused recheck of a stale browser m
 Evidence: `terrain-work-orders/final-clippy-clean.log`, `terrain-work-orders/final-format-clean.log`,
 `terrain-work-orders/final-wasm-check.log`, `terrain-work-orders/final-boundary.log`,
 `terrain-work-orders/final-probe-neutral.log` and `terrain-work-orders/final-tooling/exits.json`.
-Process acceptance is running. Warmed performance acceptance remains pending.
+Process acceptance passes across the original campaign and its scoped continuation.
+Only the failed E9 snapshot oracle and the remaining rows were rerun.
+Evidence: `terrain-work-orders/final-process-acceptance.log`,
+`terrain-work-orders/final-process-acceptance-continued.log` and `terrain-work-orders/final-process-acceptance/`.
+These compatibility checks precede the exact arithmetic optimization below.
+Full warmed performance acceptance remains pending.
+
+## Warmed diagnostic and exact arithmetic
+
+The four-configuration diagnostic uses 100 warm-up intervals and ten measured intervals per configuration.
+Server p99 is 51.56–52.63 ms, above the unchanged 40 ms limit. Both clients pass every timing bound.
+The diagnostic completes all functional checks. It does not replace the 1,000-interval acceptance run.
+Evidence: `terrain-work-orders/tw7-warm-diagnostic.json` and its metadata file.
+
+A 35-second diagnostic profile identifies 128-bit remainder operations as the largest sampled cost.
+The exact rational GCD now uses power-of-two shortcuts and binary reduction.
+All 45 pure rules tests pass, including differential checks against the old division-based algorithm.
+The integrated simulation terrain filter passes 26 tests. Strict Clippy passes for the changed rules crate.
+Evidence: `terrain-work-orders/gcd-full-rules.log`, `terrain-work-orders/gcd-differential.log`,
+`terrain-work-orders/gcd-sim-terrain.log` and `terrain-work-orders/gcd-clippy.log`.
+
+The pinned isolated microbenchmark records 15 alternating samples per input family.
+Median speedup is 22.678× for terrain-style dyadic inputs and 1.636× for full-width integer inputs.
+Evidence: `terrain-work-orders/gcd-microbenchmark.log`.
+This is a helper measurement. The optimized whole-service timing and final browser build remain unverified.
+The independent feature review above precedes this arithmetic optimization.
 
 ## Integration findings
 
