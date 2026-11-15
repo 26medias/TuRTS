@@ -745,6 +745,7 @@ fn capability_matches(order: &turts_mod_api::OrderDef, unit: &turts_mod_api::Res
                 || unit.machine.is_some()
                 || unit.research.is_some()
                 || unit.producer.is_some()
+                || unit.constructor.is_some()
                 || unit.weapon.is_some()
         }
         Behaviour::Stop => {
