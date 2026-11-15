@@ -25,6 +25,12 @@ pub struct EconomyEvent {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum EconomyEventKind {
+    /// Paid-work buffer flush. Intermediate debits remain in authoritative job/site state.
+    ProgressCharged {
+        unit: u32,
+        job: u64,
+        charged: Vec<CostLine>,
+    },
     Extracted {
         node: u32,
         cargo: u32,
@@ -105,8 +111,12 @@ pub enum EconomyEventKind {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum RemoveCause {
+    /// The site running refund already committed in this removal transaction.
+    CancelledConstruction,
     Removed,
-    Killed { by: u32 },
+    Killed {
+        by: u32,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
