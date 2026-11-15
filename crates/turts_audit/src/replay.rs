@@ -107,6 +107,7 @@ pub fn validate_records(records: &[EconomyLogRecord]) -> Result<(), String> {
         return Err("economy log contains more than one Initial record".into());
     }
 
+    crate::terrain::validate_records(records)?;
     validate_actor_records(records, initial)?;
     crate::paid::validate_published_state(initial)?;
     validate_operating_state(initial)?;
@@ -1867,8 +1868,11 @@ fn expected_order_refusal(
         turts_mod_api::Behaviour::SetEnabled(_) => capability.is_some_and(|entry| entry.toggleable),
         turts_mod_api::Behaviour::SetRally => capability.is_some_and(|entry| entry.producer),
         turts_mod_api::Behaviour::Construct => crate::paid::has_constructor(before, unit_id),
-        turts_mod_api::Behaviour::TerrainWork | turts_mod_api::Behaviour::UnloadCargo => {
-            return Err("terrain orders require the terrain replay model; the legacy operation validator cannot certify them".into());
+        turts_mod_api::Behaviour::TerrainWork => {
+            crate::terrain::has_capability(before, unit_id, false)
+        }
+        turts_mod_api::Behaviour::UnloadCargo => {
+            crate::terrain::has_capability(before, unit_id, true)
         }
         turts_mod_api::Behaviour::CancelConstruction
         | turts_mod_api::Behaviour::Repair
@@ -1899,6 +1903,10 @@ fn expected_order_refusal(
         | (turts_mod_api::TargetKind::Job, turts_sim::OrderTargetSim::Job(_))
         | (turts_mod_api::TargetKind::Content, turts_sim::OrderTargetSim::Content(_))
         | (turts_mod_api::TargetKind::None, turts_sim::OrderTargetSim::None)
+        | (
+            turts_mod_api::TargetKind::TerrainDesignation,
+            turts_sim::OrderTargetSim::TerrainWork { .. },
+        )
         | (
             turts_mod_api::TargetKind::ContentAtPoint,
             turts_sim::OrderTargetSim::ContentAtPoint { .. },
@@ -3581,10 +3589,40 @@ fn validate_order_operation(
         turts_mod_api::Behaviour::Construct => {
             unreachable!("Construct uses its complete independent state model")
         }
+        turts_mod_api::Behaviour::TerrainWork | turts_mod_api::Behaviour::UnloadCargo => {
+            let active = before_orders.current.is_some()
+                || before_target.is_some()
+                || operation
+                    .before
+                    .pending_movement_orders
+                    .pending_member_counts
+                    .contains_key(&unit_id);
+            if order.queue == turts_sim::QueueMode::Append && active {
+                if order.behaviour == turts_mod_api::Behaviour::UnloadCargo
+                    && before_orders.current.as_ref().is_some_and(|current| {
+                        current.behaviour == turts_mod_api::Behaviour::TerrainWork
+                    })
+                {
+                    expected_orders.queue.push_front(
+                        expected_orders
+                            .current
+                            .replace(order_record(order))
+                            .unwrap(),
+                    );
+                    expected_target = None;
+                } else {
+                    expected_orders.queue.push_back(order_record(order));
+                }
+            } else {
+                expected_orders = turts_sim::UnitOrders {
+                    current: Some(order_record(order)),
+                    ..Default::default()
+                };
+                expected_target = None;
+            }
+        }
         turts_mod_api::Behaviour::CancelConstruction
         | turts_mod_api::Behaviour::Repair
-        | turts_mod_api::Behaviour::TerrainWork
-        | turts_mod_api::Behaviour::UnloadCargo
         | turts_mod_api::Behaviour::Surrender => {
             return Err(format!(
                 "accepted order operation {} uses the behaviour {:?}, which has no replay rule yet",
@@ -8904,7 +8942,9 @@ fn validate_clock_continuity(
     current: &AuditState,
     label: &str,
 ) -> Result<(), String> {
-    if previous == current {
+    let mut previous = previous.clone();
+    crate::terrain::reconcile_verified(&mut previous, current);
+    if previous == *current {
         return Ok(());
     }
     let Some(next_tick) = previous.economy.tick.checked_add(1) else {
@@ -9691,6 +9731,7 @@ fn validate_movement_transition(previous: &AuditState, current: &AuditState) -> 
             .ok_or_else(|| format!("movement removed world unit {}", expected_unit.unit_id))?;
         expected_unit.pos = bevy::math::Vec2::new(raw.pos.x, raw.pos.y);
     }
+    crate::terrain::reconcile_verified(&mut expected, current);
     if expected != *current {
         let left = serde_json::to_value(&expected).map_err(|error| error.to_string())?;
         let right = serde_json::to_value(current).map_err(|error| error.to_string())?;
@@ -9744,6 +9785,7 @@ fn validate_tick_state(
     expected.economy.construction.completed.clear();
     expected.pending_events.clear();
     expected.next_event_ordinal = Some(0);
+    crate::terrain::reconcile_verified(&mut expected, state);
     if movement_pending {
         validate_movement_transition(&expected, state)?;
     } else if expected != *state {
@@ -9993,6 +10035,8 @@ mod tests {
                         toggleable,
                     )| {
                         turts_sim::OrderUnitCapabilitiesAudit {
+                            terrain_worker: false,
+                            cargo_unloader: false,
                             unit: unit.into(),
                             movement,
                             weapon,
@@ -10039,6 +10083,9 @@ mod tests {
                 before
                     .catalog
                     .get_or_insert_with(|| turts_sim::economy::views::CatalogAudit {
+                        terrain_materials: Vec::new(),
+                        terrain_tools: Vec::new(),
+                        terrain_movement_classes: Vec::new(),
                         combat: None,
                         resource_kinds: vec![],
                         nodes: vec![],
@@ -10261,6 +10308,10 @@ mod tests {
             .register_unit_type(
                 &package,
                 UnitDef {
+                    terrain_tools: Vec::new(),
+                    terrain_cargo: None,
+                    terrain_class: None,
+                    terrain_foundation: None,
                     vision: None,
                     id: "walker".into(),
                     name: "Walker".into(),
@@ -10295,6 +10346,9 @@ mod tests {
         let unit_id = turts_mod_api::ContentId::new(&package, "walker");
         let move_id = turts_mod_api::ContentId::new(&package, "move");
         let mut catalog = ContentCatalog {
+            terrain_materials: Default::default(),
+            terrain_tools: Default::default(),
+            terrain_movement_classes: Default::default(),
             bots: Default::default(),
             combat: None,
             resources: BTreeMap::new(),
@@ -10310,6 +10364,10 @@ mod tests {
         catalog.units.insert(
             unit_id.clone(),
             ResolvedUnit {
+                terrain_tools: Vec::new(),
+                terrain_cargo: None,
+                terrain_class: None,
+                terrain_foundation: None,
                 vision: None,
                 repairer: None,
 
@@ -10557,6 +10615,10 @@ mod tests {
             .register_unit_type(
                 &PackageId::parse("fixture").unwrap(),
                 UnitDef {
+                    terrain_tools: Vec::new(),
+                    terrain_cargo: None,
+                    terrain_class: None,
+                    terrain_foundation: None,
                     vision: None,
                     id: "walker".into(),
                     name: "Walker".into(),
@@ -10659,6 +10721,10 @@ mod tests {
             .register_unit_type(
                 &PackageId::parse("fixture").unwrap(),
                 UnitDef {
+                    terrain_tools: Vec::new(),
+                    terrain_cargo: None,
+                    terrain_class: None,
+                    terrain_foundation: None,
                     vision: None,
                     id: "walker".into(),
                     name: "Walker".into(),
@@ -10759,6 +10825,9 @@ mod tests {
         let worker = ContentId::new(&package, "worker");
         let gather = ContentId::new(&package, "gather");
         let mut catalog = ContentCatalog {
+            terrain_materials: Default::default(),
+            terrain_tools: Default::default(),
+            terrain_movement_classes: Default::default(),
             bots: Default::default(),
             combat: None,
             resources: BTreeMap::from([(
@@ -10773,6 +10842,10 @@ mod tests {
             units: BTreeMap::from([(
                 worker.clone(),
                 ResolvedUnit {
+                    terrain_tools: Vec::new(),
+                    terrain_cargo: None,
+                    terrain_class: None,
+                    terrain_foundation: None,
                     vision: None,
                     repairer: None,
 
@@ -10850,6 +10923,10 @@ mod tests {
         catalog.units.insert(
             depot.clone(),
             ResolvedUnit {
+                terrain_tools: Vec::new(),
+                terrain_cargo: None,
+                terrain_class: None,
+                terrain_foundation: None,
                 vision: None,
                 repairer: None,
 
@@ -10890,6 +10967,7 @@ mod tests {
             },
         );
         let map = MapDef {
+            terrain: None,
             visibility: None,
             environment: None,
             ground: None,
@@ -11005,6 +11083,9 @@ mod tests {
         let move_order = ContentId::new(&package, "move");
         let hold_order = ContentId::new(&package, "hold");
         let catalog = ContentCatalog {
+            terrain_materials: Default::default(),
+            terrain_tools: Default::default(),
+            terrain_movement_classes: Default::default(),
             bots: Default::default(),
             combat: None,
             resources: BTreeMap::from([(
@@ -11019,6 +11100,10 @@ mod tests {
             units: BTreeMap::from([(
                 worker.clone(),
                 ResolvedUnit {
+                    terrain_tools: Vec::new(),
+                    terrain_cargo: None,
+                    terrain_class: None,
+                    terrain_foundation: None,
                     vision: None,
                     repairer: None,
 
@@ -11127,6 +11212,7 @@ mod tests {
             source_files: BTreeMap::new(),
         };
         let map = MapDef {
+            terrain: None,
             visibility: None,
             environment: None,
             ground: None,
@@ -11493,10 +11579,17 @@ mod tests {
         state.unit_types[0].content_id = producer_id.to_string();
         state.units[0].content_id = producer_id.to_string();
         state.catalog = Some(CatalogAudit {
+            terrain_materials: Vec::new(),
+            terrain_tools: Vec::new(),
+            terrain_movement_classes: Vec::new(),
             combat: None,
             resource_kinds: vec![],
             nodes: vec![],
             units: vec![CatalogUnitAudit {
+                terrain_tools: Vec::new(),
+                terrain_cargo: None,
+                terrain_class: None,
+                terrain_foundation: None,
                 health_max: None,
                 repairer: None,
 
@@ -11644,6 +11737,8 @@ mod tests {
                     units: vec![],
                     queue_depth: 16,
                     unit_capabilities: vec![turts_sim::OrderUnitCapabilitiesAudit {
+                        terrain_worker: false,
+                        cargo_unloader: false,
                         unit: "fixture:walker".into(),
                         movement: true,
                         weapon: false,
@@ -11908,6 +12003,9 @@ mod tests {
         let worker = ContentId::new(&package, "worker");
         let remove = ContentId::new(&package, "remove");
         let catalog = ContentCatalog {
+            terrain_materials: Default::default(),
+            terrain_tools: Default::default(),
+            terrain_movement_classes: Default::default(),
             bots: Default::default(),
             combat: None,
             resources: BTreeMap::from([
@@ -11933,6 +12031,10 @@ mod tests {
             units: BTreeMap::from([(
                 worker.clone(),
                 ResolvedUnit {
+                    terrain_tools: Vec::new(),
+                    terrain_cargo: None,
+                    terrain_class: None,
+                    terrain_foundation: None,
                     vision: None,
                     repairer: None,
 
@@ -11998,6 +12100,7 @@ mod tests {
             source_files: BTreeMap::new(),
         };
         let map = MapDef {
+            terrain: None,
             visibility: None,
             environment: None,
             ground: None,
@@ -12138,6 +12241,9 @@ mod tests {
             denominator: 2,
         };
         let catalog = ContentCatalog {
+            terrain_materials: Default::default(),
+            terrain_tools: Default::default(),
+            terrain_movement_classes: Default::default(),
             bots: Default::default(),
             combat: None,
             resources: BTreeMap::from([
@@ -12163,6 +12269,10 @@ mod tests {
             units: BTreeMap::from([(
                 machine.clone(),
                 ResolvedUnit {
+                    terrain_tools: Vec::new(),
+                    terrain_cargo: None,
+                    terrain_class: None,
+                    terrain_foundation: None,
                     vision: None,
                     repairer: None,
 
@@ -12246,6 +12356,7 @@ mod tests {
             source_files: BTreeMap::new(),
         };
         let map = MapDef {
+            terrain: None,
             visibility: None,
             environment: None,
             ground: None,
@@ -12425,6 +12536,9 @@ mod tests {
             destroyed: turts_mod_api::RefundRatio::ZERO,
         };
         let catalog = ContentCatalog {
+            terrain_materials: Default::default(),
+            terrain_tools: Default::default(),
+            terrain_movement_classes: Default::default(),
             bots: Default::default(),
             combat: None,
             resources: BTreeMap::from([
@@ -12450,6 +12564,10 @@ mod tests {
             units: BTreeMap::from([(
                 producer.clone(),
                 ResolvedUnit {
+                    terrain_tools: Vec::new(),
+                    terrain_cargo: None,
+                    terrain_class: None,
+                    terrain_foundation: None,
                     vision: None,
                     repairer: None,
 
@@ -12553,6 +12671,7 @@ mod tests {
             source_files: BTreeMap::new(),
         };
         let map = MapDef {
+            terrain: None,
             visibility: None,
             environment: None,
             ground: None,
@@ -12674,6 +12793,9 @@ mod tests {
         let enable = ContentId::new(&package, "enable");
         let disable = ContentId::new(&package, "disable");
         let catalog = ContentCatalog {
+            terrain_materials: Default::default(),
+            terrain_tools: Default::default(),
+            terrain_movement_classes: Default::default(),
             bots: Default::default(),
             combat: None,
             resources: BTreeMap::from([(
@@ -12688,6 +12810,10 @@ mod tests {
             units: BTreeMap::from([(
                 drill.clone(),
                 ResolvedUnit {
+                    terrain_tools: Vec::new(),
+                    terrain_cargo: None,
+                    terrain_class: None,
+                    terrain_foundation: None,
                     vision: None,
                     repairer: None,
 
@@ -12777,6 +12903,7 @@ mod tests {
             source_files: BTreeMap::new(),
         };
         let map = MapDef {
+            terrain: None,
             visibility: None,
             environment: None,
             ground: None,
@@ -12841,6 +12968,9 @@ mod tests {
             denominator: 2,
         };
         let catalog = ContentCatalog {
+            terrain_materials: Default::default(),
+            terrain_tools: Default::default(),
+            terrain_movement_classes: Default::default(),
             bots: Default::default(),
             combat: None,
             resources: BTreeMap::from([(
@@ -12855,6 +12985,10 @@ mod tests {
             units: BTreeMap::from([(
                 lab.clone(),
                 ResolvedUnit {
+                    terrain_tools: Vec::new(),
+                    terrain_cargo: None,
+                    terrain_class: None,
+                    terrain_foundation: None,
                     vision: None,
                     repairer: None,
 
@@ -12988,6 +13122,7 @@ mod tests {
             source_files: BTreeMap::new(),
         };
         let map = MapDef {
+            terrain: None,
             visibility: None,
             environment: None,
             ground: None,
@@ -13250,6 +13385,9 @@ mod tests {
         let order_id = turts_mod_api::ContentId::parse("fixture:move").unwrap();
         let mut before = one_moving_unit_state();
         before.catalog = Some(turts_sim::economy::views::CatalogAudit {
+            terrain_materials: Vec::new(),
+            terrain_tools: Vec::new(),
+            terrain_movement_classes: Vec::new(),
             combat: None,
             resource_kinds: vec![],
             nodes: vec![],
@@ -13264,6 +13402,8 @@ mod tests {
                 units: vec![],
                 queue_depth: 16,
                 unit_capabilities: vec![turts_sim::OrderUnitCapabilitiesAudit {
+                    terrain_worker: false,
+                    cargo_unloader: false,
                     unit: "fixture:walker".into(),
                     movement: true,
                     weapon: false,
@@ -13342,6 +13482,9 @@ mod tests {
         let item = turts_mod_api::ContentId::parse("fixture:item").unwrap();
         let mut before = one_moving_unit_state();
         before.catalog = Some(CatalogAudit {
+            terrain_materials: Vec::new(),
+            terrain_tools: Vec::new(),
+            terrain_movement_classes: Vec::new(),
             combat: None,
             resource_kinds: vec![],
             nodes: vec![CatalogNodeAudit {
@@ -13350,6 +13493,10 @@ mod tests {
                 radius: 2.0,
             }],
             units: vec![CatalogUnitAudit {
+                terrain_tools: Vec::new(),
+                terrain_cargo: None,
+                terrain_class: None,
+                terrain_foundation: None,
                 health_max: None,
                 repairer: None,
 
@@ -13394,6 +13541,8 @@ mod tests {
                 units: vec![],
                 queue_depth: 16,
                 unit_capabilities: vec![turts_sim::OrderUnitCapabilitiesAudit {
+                    terrain_worker: false,
+                    cargo_unloader: false,
                     unit: "fixture:walker".into(),
                     movement: true,
                     weapon: false,
@@ -14092,6 +14241,10 @@ mod tests {
             .register_unit_type(
                 &package,
                 UnitDef {
+                    terrain_tools: Vec::new(),
+                    terrain_cargo: None,
+                    terrain_class: None,
+                    terrain_foundation: None,
                     vision: None,
                     id: "walker".into(),
                     name: "Walker".into(),
@@ -14127,6 +14280,9 @@ mod tests {
         let move_content = turts_mod_api::ContentId::new(&package, "move");
         let hold_content = turts_mod_api::ContentId::new(&package, "hold");
         let mut catalog = ContentCatalog {
+            terrain_materials: Default::default(),
+            terrain_tools: Default::default(),
+            terrain_movement_classes: Default::default(),
             bots: Default::default(),
             combat: None,
             resources: BTreeMap::new(),
@@ -14142,6 +14298,10 @@ mod tests {
         catalog.units.insert(
             unit_content.clone(),
             ResolvedUnit {
+                terrain_tools: Vec::new(),
+                terrain_cargo: None,
+                terrain_class: None,
+                terrain_foundation: None,
                 vision: None,
                 repairer: None,
 
@@ -14452,6 +14612,10 @@ mod tests {
             .register_unit_type(
                 &PackageId::parse("fixture").unwrap(),
                 UnitDef {
+                    terrain_tools: Vec::new(),
+                    terrain_cargo: None,
+                    terrain_class: None,
+                    terrain_foundation: None,
                     vision: None,
                     id: "walker".into(),
                     name: "Walker".into(),
@@ -14548,6 +14712,10 @@ mod tests {
             .register_unit_type(
                 &package,
                 UnitDef {
+                    terrain_tools: Vec::new(),
+                    terrain_cargo: None,
+                    terrain_class: None,
+                    terrain_foundation: None,
                     vision: None,
                     id: "walker".into(),
                     name: "Walker".into(),
@@ -14583,6 +14751,9 @@ mod tests {
         let move_order = turts_mod_api::ContentId::new(&package, "move");
         let hold_order = turts_mod_api::ContentId::new(&package, "hold");
         let mut catalog = ContentCatalog {
+            terrain_materials: Default::default(),
+            terrain_tools: Default::default(),
+            terrain_movement_classes: Default::default(),
             bots: Default::default(),
             combat: None,
             resources: BTreeMap::new(),
@@ -14598,6 +14769,10 @@ mod tests {
         catalog.units.insert(
             unit_id.clone(),
             ResolvedUnit {
+                terrain_tools: Vec::new(),
+                terrain_cargo: None,
+                terrain_class: None,
+                terrain_foundation: None,
                 vision: None,
                 repairer: None,
 
@@ -15736,6 +15911,10 @@ mod tests {
             (large.clone(), "Large", 0.8_f32),
         ] {
             let resolved = ResolvedUnit {
+                terrain_tools: Vec::new(),
+                terrain_cargo: None,
+                terrain_class: None,
+                terrain_foundation: None,
                 vision: None,
                 repairer: None,
 
@@ -15797,6 +15976,9 @@ mod tests {
             description: String::new(),
         };
         let catalog = ContentCatalog {
+            terrain_materials: Default::default(),
+            terrain_tools: Default::default(),
+            terrain_movement_classes: Default::default(),
             bots: Default::default(),
             combat: None,
             resources: BTreeMap::new(),
@@ -15810,6 +15992,7 @@ mod tests {
             source_files: BTreeMap::new(),
         };
         let map = MapDef {
+            terrain: None,
             visibility: None,
             environment: None,
             ground: None,
@@ -17953,6 +18136,8 @@ mod tests {
                     units: vec![],
                     queue_depth: 16,
                     unit_capabilities: vec![turts_sim::OrderUnitCapabilitiesAudit {
+                        terrain_worker: false,
+                        cargo_unloader: false,
                         unit: "fixture:walker".into(),
                         movement: true,
                         weapon: false,
@@ -19129,6 +19314,10 @@ mod tests {
                 radius: 0.5,
             });
             let catalog_unit = turts_sim::economy::views::CatalogUnitAudit {
+                terrain_tools: Vec::new(),
+                terrain_cargo: None,
+                terrain_class: None,
+                terrain_foundation: None,
                 health_max: None,
                 repairer: None,
 
@@ -19986,6 +20175,9 @@ mod tests {
         let order_id = ContentId::parse("fixture:move").unwrap();
         let unit_id = ContentId::parse("fixture:walker").unwrap();
         let mut catalog = ContentCatalog {
+            terrain_materials: Default::default(),
+            terrain_tools: Default::default(),
+            terrain_movement_classes: Default::default(),
             bots: Default::default(),
             combat: None,
             resources: BTreeMap::new(),
@@ -20001,6 +20193,10 @@ mod tests {
         catalog.units.insert(
             unit_id.clone(),
             turts_mod_api::ResolvedUnit {
+                terrain_tools: Vec::new(),
+                terrain_cargo: None,
+                terrain_class: None,
+                terrain_foundation: None,
                 vision: None,
                 repairer: None,
 
@@ -20120,6 +20316,9 @@ mod tests {
         let node_content = turts_mod_api::ContentId::parse("fixture:node").unwrap();
         let item = turts_mod_api::ContentId::parse("fixture:item").unwrap();
         gather_before.catalog = Some(turts_sim::economy::views::CatalogAudit {
+            terrain_materials: Vec::new(),
+            terrain_tools: Vec::new(),
+            terrain_movement_classes: Vec::new(),
             combat: None,
             resource_kinds: vec![],
             nodes: vec![turts_sim::economy::views::CatalogNodeAudit {
@@ -20128,6 +20327,10 @@ mod tests {
                 radius: 2.0,
             }],
             units: vec![turts_sim::economy::views::CatalogUnitAudit {
+                terrain_tools: Vec::new(),
+                terrain_cargo: None,
+                terrain_class: None,
+                terrain_foundation: None,
                 health_max: None,
                 repairer: None,
 
@@ -20915,6 +21118,10 @@ mod tests {
             .register_unit_type(
                 &PackageId("test".into()),
                 UnitDef {
+                    terrain_tools: Vec::new(),
+                    terrain_cargo: None,
+                    terrain_class: None,
+                    terrain_foundation: None,
                     vision: None,
                     id: "walker".into(),
                     name: "Walker".into(),
@@ -20949,6 +21156,9 @@ mod tests {
         let unit_id = turts_mod_api::ContentId::parse("test:walker").unwrap();
         let order_id = turts_mod_api::ContentId::parse("test:move").unwrap();
         let mut catalog = turts_mod_api::ContentCatalog {
+            terrain_materials: Default::default(),
+            terrain_tools: Default::default(),
+            terrain_movement_classes: Default::default(),
             bots: Default::default(),
             combat: None,
             resources: std::collections::BTreeMap::new(),
@@ -20964,6 +21174,10 @@ mod tests {
         catalog.units.insert(
             unit_id.clone(),
             turts_mod_api::ResolvedUnit {
+                terrain_tools: Vec::new(),
+                terrain_cargo: None,
+                terrain_class: None,
+                terrain_foundation: None,
                 vision: None,
                 repairer: None,
 
@@ -21048,6 +21262,8 @@ mod tests {
                     units: vec![],
                     queue_depth: 16,
                     unit_capabilities: vec![turts_sim::OrderUnitCapabilitiesAudit {
+                        terrain_worker: false,
+                        cargo_unloader: false,
                         unit: "test:walker".into(),
                         movement: true,
                         weapon: false,

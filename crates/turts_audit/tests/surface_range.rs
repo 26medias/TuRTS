@@ -48,6 +48,7 @@ fn run(attack_move: bool) -> Vec<EconomyLogRecord> {
         start_order: None,
     };
     let map = MapDef {
+        terrain: None,
         visibility: None,
         environment: None,
         id: "field".into(),
