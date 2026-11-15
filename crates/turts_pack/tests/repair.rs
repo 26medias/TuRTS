@@ -210,7 +210,7 @@ fn id(app: &App, local: &str) -> u32 {
 fn health(app: &mut App, target: u32) -> u64 {
     turts_sim::world_view(app.world_mut())
         .m3
-        .healths
+        .raw_healths
         .iter()
         .find(|row| row.unit == target)
         .unwrap()
@@ -417,6 +417,7 @@ fn unaffordable_multi_cost_repair_is_atomic_and_income_resumes_it() {
     payer.name = "payer".into();
     payer.repairer = None;
     payer.movement = None;
+    payer.health = Some(HealthDef { max: 100 });
     payer.income = Some(IncomeDef {
         resource: cid("gold").to_string(),
         amount: 2,

@@ -989,6 +989,17 @@ mod tests {
             ],
             100,
         );
+        app.world_mut()
+            .resource_mut::<InstalledCatalog>()
+            .0
+            .units
+            .get_mut(&id("repairer"))
+            .unwrap()
+            .repairer
+            .as_mut()
+            .unwrap()
+            .cost[0]
+            .per_health = 4;
         run_repair(app.world_mut());
         app.world_mut()
             .resource_mut::<RepairRuntime>()
@@ -1001,7 +1012,7 @@ mod tests {
         let state = source_state(app.world(), 1);
         assert!(state.action.is_none());
         assert_eq!(state.remainders[&id("credits")], 3);
-        run_repair(app.world_mut());
+        begin_action(app.world_mut(), 1, 3, true, RepairStatus::Working).unwrap();
         remove_unit(app.world_mut(), 3);
         assert!(!active_action(app.world(), 1));
         assert_eq!(source_state(app.world(), 1).remainders[&id("credits")], 3);
