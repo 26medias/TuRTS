@@ -1825,3 +1825,70 @@ fn site_refund_uses_its_authoritative_recipe_and_rejects_unknown_or_wrong_output
         assert_eq!(replica.economy.balances[0].on_hand, 500);
     }
 }
+
+#[test]
+fn paid_over_time_build_and_train_menus_do_not_require_the_full_price_upfront() {
+    use turts_client::widgets::sources::{CoreFeed, SourceContext, read_source};
+    use turts_mod_api::{ContentId, ItemField, PaymentPolicy, Source};
+    let _guard = serial();
+    let mut content = content();
+    for id in ["base:build_command_center", "base:train_rifleman"] {
+        content
+            .catalog
+            .production
+            .get_mut(&ContentId::parse(id).unwrap())
+            .unwrap()
+            .payment = PaymentPolicy::ChargeOverTime;
+    }
+    let mut replica = Replica::new(20);
+    replica.set_context(ReplicaContext::new(content.clone(), 0));
+    let mut first = snapshot(10);
+    first.economy.balances[0].on_hand = 0;
+    first.economy.queues[0].jobs.clear();
+    first.records.jobs.clear();
+    applied(&mut replica, &first);
+    let groups = BTreeMap::new();
+    let bindings = BTreeMap::new();
+    let input_map = turts_mod_api::InputMapDef {
+        actions: vec![],
+        engine_overrides: vec![],
+    };
+    let context = SourceContext {
+        binding_labels: None,
+        replica: &replica,
+        content: &content,
+        selection: &[CONSTRUCTOR],
+        owner_slot: 0,
+        interface: None,
+        interface_package: Some("base"),
+        control_groups: &groups,
+        alerts: &[],
+        bindings: &bindings,
+        input_map: &input_map,
+        guide: &[],
+        guide_open: false,
+        sound_on: false,
+        last_notice: None,
+        core: CoreFeed::empty(),
+    };
+    let build = read_source(&Source::BuildMenu, context);
+    assert_eq!(build.items.len(), 1);
+    assert_eq!(
+        build.items[0].get(ItemField::Enabled),
+        Some(&serde_json::json!(true))
+    );
+    let production = read_source(
+        &Source::BuildMenu,
+        SourceContext {
+            selection: &[OWN],
+            ..context
+        },
+    );
+    let recipe = &content.catalog.production[&ContentId::parse("base:train_rifleman").unwrap()];
+    let paid = production
+        .items
+        .iter()
+        .find(|row| row.get(ItemField::Name) == Some(&serde_json::json!(recipe.name)))
+        .unwrap();
+    assert_eq!(paid.get(ItemField::Enabled), Some(&serde_json::json!(true)));
+}

@@ -641,6 +641,7 @@ fn order_capability(order: &OrderDef, unit: &turts_mod_api::ResolvedUnit) -> boo
                 || unit.research.is_some()
                 || unit.producer.is_some()
                 || unit.constructor.is_some()
+                || unit.repairer.is_some()
                 || unit.weapon.is_some()
         }
         Behaviour::Stop => {
@@ -1289,6 +1290,21 @@ mod tests {
 #[cfg(test)]
 mod repair_cursor_tests {
     use super::*;
+
+    #[test]
+    fn manual_repairer_toggle_cursor_matches_command_card_eligibility() {
+        let catalog = crate::widgets::tests::repair_catalog::catalog();
+        let mut unit = catalog.units[&ContentId::parse("skirmish:engineer").unwrap()].clone();
+        unit.constructor = None;
+        let mut order = catalog.orders.values().next().unwrap().clone();
+        for enabled in [false, true] {
+            order.behaviour = turts_mod_api::Behaviour::SetEnabled(enabled);
+            assert!(order_capability(&order, &unit));
+        }
+        unit.repairer = None;
+        assert!(!order_capability(&order, &unit));
+    }
+
     use crate::{
         content::ClientContent,
         replica::{ReplicaContext, SnapshotOutcome},

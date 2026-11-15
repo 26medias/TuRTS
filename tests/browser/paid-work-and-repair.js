@@ -18,7 +18,7 @@ write('units/workshop.ron',`(id:"workshop",name:"Workshop",footprint:Circle(radi
  health:Some((max:500)),removal:Some((by_command:true,contents:Destroy)))`);
 const placement=',placement:Some((gap:1.5,node_clearance:0.0,in_build_area:true,site_health:(numerator:1,denominator:4)))';
 write('units/wall.ron',basic('wall','Paid wall',placement));
-write('units/mint.ron',basic('mint','Mint',placement+',income:Some((resource:"paid:credits",amount:20,period_ms:1000))'));
+write('units/mint.ron',basic('mint','Mint',placement+',income:Some((resource:"paid:credits",amount:20,period_ms:1000))',2.0));
 write('units/trainee.ron','(id:"trainee",name:"Paid trainee",footprint:Circle(radius:0.5),movement:Some((speed:3.5)),inventory:None,gatherer:None,drop_off:None,producer:None,health:Some((max:60)),removal:Some((by_command:true,contents:Destroy)))');
 write('units/engineer.ron','(id:"engineer",name:"Engineer",footprint:Circle(radius:0.5),movement:Some((speed:3.5)),inventory:None,gatherer:None,drop_off:None,producer:None,repairer:Some((rate_per_second:1,reach:0.5,cost:[(resource:"paid:credits",amount:100,per_health:1)],targets:(slots:Same),classes:[],auto_range:None)),health:Some((max:60)),removal:Some((by_command:true,contents:Destroy)))');
 write('units/target.ron',basic('target','Damaged workshop'));
