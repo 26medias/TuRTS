@@ -45,6 +45,7 @@ pub(crate) struct BotExecution {
     pub generated: Vec<EmittedCommand>,
     pub input_trace: Vec<LifecycleInput>,
     pub error: Option<String>,
+    last_scheduler_tick: Option<u32>,
 }
 impl Default for BotExecution {
     fn default() -> Self {
@@ -54,6 +55,7 @@ impl Default for BotExecution {
             generated: Vec::new(),
             input_trace: Vec::new(),
             error: None,
+            last_scheduler_tick: None,
         }
     }
 }
@@ -186,6 +188,7 @@ pub(crate) fn install_with_registry(
     app.add_systems(
         FixedPreUpdate,
         drive
+            .after(SimSet::Construction)
             .before(session::admit_player_commands)
             .before(SimSet::Commands),
     );
@@ -237,6 +240,14 @@ fn drive_inner(world: &mut World, host: &mut BotHost, execution: &mut BotExecuti
         return;
     }
     let tick = world.resource::<Tick>().0;
+    if execution.last_scheduler_tick == Some(tick) {
+        return;
+    }
+    execution.last_scheduler_tick = Some(tick);
+    // These are one-tick publication buffers. The trusted log consumes them every completed tick.
+    // They never retain an unbounded match history inside a live bot instance.
+    execution.generated.clear();
+    execution.input_trace.clear();
     let input = match lifecycle(world, execution, tick) {
         Ok(input) => input,
         Err(error) => {
@@ -447,3 +458,6 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+mod scenarios;
