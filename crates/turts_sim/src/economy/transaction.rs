@@ -946,13 +946,13 @@ impl Transaction<'_> {
     fn commit(self) -> Result<(), RejectReason> {
         self.preflight()?;
         for (&source, state) in &self.writes.repairs {
-            if unit_entity(self.world, source).is_none()
+            if crate::unit_index::unit_entity(self.world, source).is_none()
                 || self.writes.removed.iter().any(|row| row.unit == source)
             {
                 return Err(RejectReason::IntegrityViolation);
             }
             if let Some(action) = &state.action
-                && (unit_entity(self.world, action.target).is_none()
+                && (crate::unit_index::unit_entity(self.world, action.target).is_none()
                     || self
                         .writes
                         .removed
