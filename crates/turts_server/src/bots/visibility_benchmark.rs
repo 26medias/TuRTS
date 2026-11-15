@@ -192,7 +192,7 @@ fn authored_fixture(fog: bool, concentrated: bool) -> Fixture {
         "map":map,"fog":fog,"concentrated":concentrated,"health":HEALTH,"radius":0.3,
         "speed":100,"source_radius":12,"weapon_range":10,"weapon_cooldown_ms":100,
         "inventory_capacity":1_000_000_000u64,"gather_range":16,"cleared_supply_and_income":true,"cot_duration_ms":LONG_WORK_MS,
-        "cot_balance_cost":50_000,"route_x":[32,80],"route_switch_ticks":10,
+        "cot_balance_cost":50_000,"public_query_controllers":["sv7-units","sv7-economy"],"public_quota_per_controller":{"queries":32,"candidates":4096,"rows":1024,"proposals":32},"route_x":[32,80],"route_switch_ticks":10,
         "mix_per_slot":{"sight_movers":100,"armed_movers":150,"static_combatants":100,"gatherers":100,"producers":50}});
     Fixture {
         catalog,
@@ -801,9 +801,7 @@ impl Harness {
                 )
                 .unwrap();
             let mut lease = observation::CandidateLease::new(basis, u64::from(view.tick));
-            let mut queries = lease.queries("sv7-public", operator_quota());
-            queries.pin_basis(u64::from(view.tick)).unwrap();
-            let mut requested = vec![
+            let requested = vec![
                 Query::Units(UnitQuery::own(vec![])),
                 Query::RememberedUnits(UnitQuery {
                     relation: turts_mod_api::SlotRelation::Enemy,
@@ -827,25 +825,32 @@ impl Harness {
                     center: None,
                     radius: None,
                 }),
-                Query::Works,
             ];
             // Public account queries accept at most64 keys. The complete private
             // reconciliation above remains one atomic batch, never key-chunked.
-            requested.extend(keys.chunks(64).map(|keys| Query::Accounts(keys.to_vec())));
-            for query in requested {
-                let mut cursor = None;
-                loop {
-                    let page = queries
-                        .query(query.clone(), cursor, 64)
-                        .unwrap_or_else(|error| panic!("public SV7 query {query:?}: {error:?}"));
-                    match page.state {
-                        PageState::More(next) => cursor = Some(next),
-                        PageState::Complete => break,
-                        PageState::UnresolvedTie(_) => panic!("frozen query physical tie"),
+            let mut financial = vec![Query::Works];
+            financial.extend(keys.chunks(64).map(|keys| Query::Accounts(keys.to_vec())));
+            for (controller, requested) in [("sv7-units", requested), ("sv7-economy", financial)] {
+                let mut queries = lease.queries(controller, operator_quota());
+                queries.pin_basis(u64::from(view.tick)).unwrap();
+                for query in requested {
+                    let mut cursor = None;
+                    loop {
+                        let page =
+                            queries
+                                .query(query.clone(), cursor, 64)
+                                .unwrap_or_else(|error| {
+                                    panic!("public SV7 query {query:?}: {error:?}")
+                                });
+                        match page.state {
+                            PageState::More(next) => cursor = Some(next),
+                            PageState::Complete => break,
+                            PageState::UnresolvedTie(_) => panic!("frozen query physical tie"),
+                        }
                     }
                 }
+                queries.release_basis(u64::from(view.tick)).unwrap();
             }
-            queries.release_basis(u64::from(view.tick)).unwrap();
             std::hint::black_box(coordinator);
         }
         charge_server(self.app.world_mut(), 5, started);
