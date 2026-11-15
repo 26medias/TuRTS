@@ -318,6 +318,10 @@ fn dynamic_list_values_refresh_without_replacing_button_entities() {
     content.catalog.units.insert(
         id.clone(),
         turts_mod_api::ResolvedUnit {
+            consumes: Vec::new(),
+            income: None,
+            provides: Vec::new(),
+
             acquire: None,
             armour: None,
             constructor: None,
@@ -611,6 +615,10 @@ fn grid_item_tooltips_inherit_context_and_template_tooltips_override_it() {
     content.catalog.units.insert(
         worker_id.clone(),
         turts_mod_api::ResolvedUnit {
+            consumes: Vec::new(),
+            income: None,
+            provides: Vec::new(),
+
             acquire: None,
             armour: None,
             constructor: None,

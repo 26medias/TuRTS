@@ -1451,6 +1451,10 @@ mod tests {
 
     fn resolved_unit(id: &str, movement: Option<MovementDef>) -> turts_mod_api::ResolvedUnit {
         turts_mod_api::ResolvedUnit {
+            consumes: Vec::new(),
+            income: None,
+            provides: Vec::new(),
+
             acquire: None,
             armour: None,
             constructor: None,
@@ -1931,6 +1935,8 @@ mod tests {
         let mut content = ClientContent::default();
         let mut turret = resolved_unit("muster:turret", None);
         turret.weapon = Some(turts_mod_api::ResolvedWeapon {
+            when_short: Vec::new(),
+
             bonus: Vec::new(),
             damage_type: None,
             range: 8.0,
@@ -2221,6 +2227,8 @@ mod tests {
         let mut static_weapon = mobile.clone();
         static_weapon.movement = None;
         static_weapon.weapon = Some(turts_mod_api::ResolvedWeapon {
+            when_short: Vec::new(),
+
             bonus: Vec::new(),
             damage_type: None,
             range: 5.0,
@@ -2435,6 +2443,8 @@ mod tests {
         let mut content = ClientContent::default();
         let mut producer = resolved_unit("muster:producer", None);
         producer.producer = Some(turts_mod_api::ResolvedProducer {
+            when_short: Vec::new(),
+
             recipes: vec![recipe_id.clone()],
             queue_capacity: 1,
             spawn_offsets: vec![],

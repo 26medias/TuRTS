@@ -23,6 +23,10 @@ fn balance(app: &App) -> u64 {
 fn fixture(policy: PaymentPolicy, mutate: impl FnOnce(&mut ContentCatalog, &mut MapDef)) -> App {
     let mut app = turts_sim::headless_app(20);
     let tower = ResolvedUnit {
+        consumes: Vec::new(),
+        income: None,
+        provides: Vec::new(),
+
         acquire: None,
         armour: None,
         id: cid("tower"),
@@ -33,6 +37,8 @@ fn fixture(policy: PaymentPolicy, mutate: impl FnOnce(&mut ContentCatalog, &mut 
         gatherer: None,
         drop_off: None,
         producer: Some(ResolvedProducer {
+            when_short: Vec::new(),
+
             recipes: vec![cid("train")],
             queue_capacity: 2,
             spawn_offsets: vec![WorldPos { x: 3.0, y: 0.0 }],
@@ -313,6 +319,8 @@ fn a_completed_building_with_a_queued_job_can_be_destroyed() {
             let mut enemy = catalog.units[&cid("soldier")].clone();
             enemy.id = cid("enemy");
             enemy.weapon = Some(ResolvedWeapon {
+                when_short: Vec::new(),
+
                 bonus: Vec::new(),
                 damage_type: None,
                 range: 10.0,

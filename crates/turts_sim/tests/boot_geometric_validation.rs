@@ -42,6 +42,10 @@ impl GeometricField {
 
 fn plain_unit(id: &str) -> ResolvedUnit {
     ResolvedUnit {
+        consumes: Vec::new(),
+        income: None,
+        provides: Vec::new(),
+
         acquire: None,
         armour: None,
         constructor: None,
@@ -74,6 +78,10 @@ fn catalog(field: GeometricField, value: f32) -> ContentCatalog {
     let id = ContentId::parse(field.id()).unwrap();
     let ore = ContentId::parse("probe:ore").unwrap();
     let unit = ResolvedUnit {
+        consumes: Vec::new(),
+        income: None,
+        provides: Vec::new(),
+
         acquire: None,
         armour: None,
         constructor: None,
@@ -105,6 +113,8 @@ fn catalog(field: GeometricField, value: f32) -> ContentCatalog {
         research: None,
         health: None,
         weapon: matches!(field, GeometricField::Weapon).then_some(ResolvedWeapon {
+            when_short: Vec::new(),
+
             bonus: Vec::new(),
             damage_type: None,
             range: value,

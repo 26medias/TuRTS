@@ -8394,6 +8394,10 @@ mod tests {
         catalog.units.insert(
             unit_id.clone(),
             ResolvedUnit {
+                consumes: Vec::new(),
+                income: None,
+                provides: Vec::new(),
+
                 acquire: None,
                 armour: None,
                 constructor: None,
@@ -8847,6 +8851,10 @@ mod tests {
             units: BTreeMap::from([(
                 worker.clone(),
                 ResolvedUnit {
+                    consumes: Vec::new(),
+                    income: None,
+                    provides: Vec::new(),
+
                     acquire: None,
                     armour: None,
                     constructor: None,
@@ -8917,6 +8925,10 @@ mod tests {
         catalog.units.insert(
             depot.clone(),
             ResolvedUnit {
+                consumes: Vec::new(),
+                income: None,
+                provides: Vec::new(),
+
                 acquire: None,
                 armour: None,
                 constructor: None,
@@ -9077,6 +9089,10 @@ mod tests {
             units: BTreeMap::from([(
                 worker.clone(),
                 ResolvedUnit {
+                    consumes: Vec::new(),
+                    income: None,
+                    provides: Vec::new(),
+
                     acquire: None,
                     armour: None,
                     constructor: None,
@@ -9972,6 +9988,10 @@ mod tests {
             units: BTreeMap::from([(
                 worker.clone(),
                 ResolvedUnit {
+                    consumes: Vec::new(),
+                    income: None,
+                    provides: Vec::new(),
+
                     acquire: None,
                     armour: None,
                     constructor: None,
@@ -10193,6 +10213,10 @@ mod tests {
             units: BTreeMap::from([(
                 machine.clone(),
                 ResolvedUnit {
+                    consumes: Vec::new(),
+                    income: None,
+                    provides: Vec::new(),
+
                     acquire: None,
                     armour: None,
                     constructor: None,
@@ -10471,6 +10495,10 @@ mod tests {
             units: BTreeMap::from([(
                 producer.clone(),
                 ResolvedUnit {
+                    consumes: Vec::new(),
+                    income: None,
+                    provides: Vec::new(),
+
                     acquire: None,
                     armour: None,
                     constructor: None,
@@ -10484,6 +10512,8 @@ mod tests {
                     gatherer: None,
                     drop_off: None,
                     producer: Some(ResolvedProducer {
+                        when_short: Vec::new(),
+
                         recipes: vec![recipe.clone()],
                         queue_capacity: 2,
                         spawn_offsets: vec![],
@@ -10698,6 +10728,10 @@ mod tests {
             units: BTreeMap::from([(
                 drill.clone(),
                 ResolvedUnit {
+                    consumes: Vec::new(),
+                    income: None,
+                    provides: Vec::new(),
+
                     acquire: None,
                     armour: None,
                     constructor: None,
@@ -10856,6 +10890,10 @@ mod tests {
             units: BTreeMap::from([(
                 lab.clone(),
                 ResolvedUnit {
+                    consumes: Vec::new(),
+                    income: None,
+                    provides: Vec::new(),
+
                     acquire: None,
                     armour: None,
                     constructor: None,
@@ -12125,6 +12163,10 @@ mod tests {
         catalog.units.insert(
             unit_content.clone(),
             ResolvedUnit {
+                consumes: Vec::new(),
+                income: None,
+                provides: Vec::new(),
+
                 acquire: None,
                 armour: None,
                 constructor: None,
@@ -12569,6 +12611,10 @@ mod tests {
         catalog.units.insert(
             unit_id.clone(),
             ResolvedUnit {
+                consumes: Vec::new(),
+                income: None,
+                provides: Vec::new(),
+
                 acquire: None,
                 armour: None,
                 constructor: None,
@@ -13700,6 +13746,10 @@ mod tests {
             (large.clone(), "Large", 0.8_f32),
         ] {
             let resolved = ResolvedUnit {
+                consumes: Vec::new(),
+                income: None,
+                provides: Vec::new(),
+
                 acquire: None,
                 armour: None,
                 constructor: None,
@@ -17943,6 +17993,10 @@ mod tests {
         catalog.units.insert(
             unit_id.clone(),
             turts_mod_api::ResolvedUnit {
+                consumes: Vec::new(),
+                income: None,
+                provides: Vec::new(),
+
                 acquire: None,
                 armour: None,
                 constructor: None,
@@ -18882,6 +18936,10 @@ mod tests {
         catalog.units.insert(
             unit_id.clone(),
             turts_mod_api::ResolvedUnit {
+                consumes: Vec::new(),
+                income: None,
+                provides: Vec::new(),
+
                 acquire: None,
                 armour: None,
                 constructor: None,

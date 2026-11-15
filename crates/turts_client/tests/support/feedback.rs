@@ -104,6 +104,10 @@ pub fn alert_state() -> (ReplicaState, AcquiredPackages) {
     content.catalog.units.insert(
         station_id.clone(),
         ResolvedUnit {
+            consumes: Vec::new(),
+            income: None,
+            provides: Vec::new(),
+
             acquire: None,
             armour: None,
             constructor: None,

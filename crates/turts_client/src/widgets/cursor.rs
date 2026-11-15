@@ -1166,6 +1166,10 @@ mod tests {
 
     fn resolved_gatherer(id: ContentId, item: ContentId) -> turts_mod_api::ResolvedUnit {
         turts_mod_api::ResolvedUnit {
+            consumes: Vec::new(),
+            income: None,
+            provides: Vec::new(),
+
             acquire: None,
             armour: None,
             constructor: None,

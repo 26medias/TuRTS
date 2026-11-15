@@ -910,6 +910,10 @@ mod timeline_tests {
     fn fx5_damage_thresholds_start_and_stop_the_authored_loops() {
         let mut app = app();
         let unit = turts_mod_api::ResolvedUnit {
+            consumes: Vec::new(),
+            income: None,
+            provides: Vec::new(),
+
             acquire: None,
             armour: None,
             id: turts_mod_api::ContentId::parse("test:soldier").unwrap(),
