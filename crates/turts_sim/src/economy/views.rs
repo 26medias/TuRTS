@@ -1217,10 +1217,13 @@ pub fn audit_state(world: &mut World) -> AuditState {
                     .units
                     .iter()
                     .map(|(id, d)| CatalogUnitAudit {
-                        health_max: (c.units.values().any(|unit| unit.repairer.is_some())
-                            || c.production.values().any(|production| {
-                                production.payment == turts_mod_api::PaymentPolicy::ChargeOverTime
-                            }))
+                        health_max: (c.units.values().any(|unit| {
+                            unit.repairer.is_some()
+                                || unit.constructor.is_some()
+                                || unit.placement.is_some()
+                        }) || c.production.values().any(|production| {
+                            production.payment == turts_mod_api::PaymentPolicy::ChargeOverTime
+                        }))
                         .then(|| d.health.as_ref().map(|health| health.max))
                         .flatten(),
                         repairer: d.repairer.clone(),
