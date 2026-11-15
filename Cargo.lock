@@ -8790,6 +8790,7 @@ dependencies = [
  "turts_net_lightyear",
  "turts_net_protocol",
  "turts_pack",
+ "turts_rules",
  "turts_sim",
  "ureq",
 ]
