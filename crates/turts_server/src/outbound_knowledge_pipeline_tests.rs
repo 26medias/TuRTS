@@ -17,6 +17,118 @@ const WARMUP_TICKS: u32 = 100;
 const MEASURED_TICKS: u32 = 1200;
 const FINAL_TICK: u32 = WARMUP_TICKS + MEASURED_TICKS;
 
+#[derive(Resource, Default)]
+struct CapturedFrames {
+    frames: BTreeMap<Entity, Vec<StateTransactionFrame>>,
+    cancels: BTreeMap<Entity, Vec<StateTransactionCancel>>,
+}
+fn capture_frames(
+    mut frames: Query<(Entity, &mut MessageReceiver<StateTransactionFrame>)>,
+    mut cancels: Query<(Entity, &mut MessageReceiver<StateTransactionCancel>)>,
+    mut captured: ResMut<CapturedFrames>,
+) {
+    for (entity, mut receiver) in &mut frames {
+        captured
+            .frames
+            .entry(entity)
+            .or_default()
+            .extend(receiver.receive());
+    }
+    for (entity, mut receiver) in &mut cancels {
+        if captured.frames.contains_key(&entity) {
+            captured
+                .cancels
+                .entry(entity)
+                .or_default()
+                .extend(receiver.receive());
+        }
+    }
+}
+#[derive(Resource, Clone, Copy)]
+struct PumpClock {
+    epoch: Instant,
+    now: Instant,
+}
+#[derive(Default)]
+struct PumpReport {
+    transport_acks: Vec<u16>,
+    issued: BTreeSet<u16>,
+    first_sent: Vec<(u64, u64)>,
+    age_ms: u64,
+    backlog: usize,
+    error: Option<String>,
+}
+#[derive(Resource, Default)]
+struct PumpReports(BTreeMap<Entity, PumpReport>);
+#[derive(Resource, Default)]
+struct StoppedPeers(BTreeSet<Entity>);
+fn pump_in_production_schedule(world: &mut World) {
+    let clock = *world.resource::<PumpClock>();
+    let entities = world
+        .iter_entities()
+        .filter(|entity| entity.contains::<KnowledgeSender>())
+        .map(|entity| entity.id())
+        .collect::<Vec<_>>();
+    for entity in entities {
+        if world.resource::<StoppedPeers>().0.contains(&entity) {
+            continue;
+        }
+        let mut sender = world.entity_mut(entity).take::<KnowledgeSender>().unwrap();
+        let old_ids = sender.outstanding.clone();
+        let transport_acks = world
+            .get::<Transport>(entity)
+            .unwrap()
+            .channel_send(lightyear::transport::channel::ChannelKind::of::<
+                KnowledgeChannel,
+            >())
+            .unwrap()
+            .message_acks()
+            .iter()
+            .map(|id| id.0)
+            .collect::<Vec<_>>();
+        let error = pump_one(world, entity, &mut sender, clock.now).err();
+        for id in old_ids.difference(&sender.outstanding) {
+            assert!(
+                transport_acks.contains(id),
+                "only actual transport MessageIds release frame credit"
+            );
+        }
+        let first_sent = sender
+            .pending
+            .iter()
+            .chain(sender.patches.iter())
+            .filter_map(|pending| {
+                pending.started.map(|started| {
+                    (
+                        pending.encoded.begin().stamp.transaction_id,
+                        started.duration_since(clock.epoch).as_millis() as u64,
+                    )
+                })
+            })
+            .collect();
+        let age_ms = sender.pending.as_ref().map_or(0, |pending| {
+            clock
+                .now
+                .saturating_duration_since(pending.started.unwrap_or(pending.created))
+                .as_millis() as u64
+        });
+        assert!(sender.retained() <= MAX_PENDING_STATE_BYTES as usize);
+        let report = PumpReport {
+            transport_acks,
+            issued: sender.outstanding.clone(),
+            first_sent,
+            age_ms,
+            backlog: sender.patch_bytes,
+            error,
+        };
+        world.entity_mut(entity).insert(sender);
+        if report.error.is_some() {
+            world.resource_mut::<StoppedPeers>().0.insert(entity);
+        }
+        world.resource_mut::<PumpReports>().0.insert(entity, report);
+    }
+}
+
 struct Peer {
     client: Entity,
     server: Entity,
@@ -26,6 +138,7 @@ struct Peer {
     first_sent_ms: BTreeMap<u64, u64>,
     activation_acks: VecDeque<(u64, StateTransactionAck)>,
     transport_acks: Vec<(u64, u16)>,
+    cancellations: Vec<(u64, u64, String)>,
     issued_messages: BTreeSet<u16>,
     max_batch: usize,
     max_age_ms: u64,
@@ -42,6 +155,8 @@ struct Harness {
     packets: VecDeque<(u64, Entity, Vec<u8>)>,
     rtt_ms: u64,
     burst_at_ms: Option<u64>,
+    retain_received_frames: bool,
+    retained_frames: Vec<StateTransactionFrame>,
 }
 fn position(unit: u32, tick: u32) -> bevy::math::Vec2 {
     let motion = if unit <= 500 {
@@ -80,6 +195,14 @@ impl Harness {
             tick_duration: Duration::from_millis(TICK_MS),
         });
         app.add_plugins(turts_net_lightyear::ProtocolPlugin);
+        app.init_resource::<CapturedFrames>()
+            .init_resource::<PumpReports>()
+            .init_resource::<StoppedPeers>();
+        app.add_systems(PreUpdate, capture_frames.after(MessageSystems::Receive));
+        app.add_systems(
+            PostUpdate,
+            pump_in_production_schedule.before(MessageSystems::Send),
+        );
         app.finish();
         app.cleanup();
         app.insert_resource(bevy::time::TimeUpdateStrategy::ManualDuration(
@@ -150,6 +273,7 @@ impl Harness {
                     first_sent_ms: BTreeMap::new(),
                     activation_acks: VecDeque::new(),
                     transport_acks: vec![],
+                    cancellations: vec![],
                     issued_messages: BTreeSet::new(),
                     max_batch: 0,
                     max_age_ms: 0,
@@ -168,6 +292,8 @@ impl Harness {
             packets: VecDeque::new(),
             rtt_ms,
             burst_at_ms: None,
+            retain_received_frames: false,
+            retained_frames: vec![],
         }
     }
     fn enqueue_tick(&mut self, tick: u32) {
@@ -180,7 +306,29 @@ impl Harness {
         });
         for peer in &self.peers {
             if peer.restart_error.is_none() {
+                let previous_id = self
+                    .app
+                    .world()
+                    .get::<KnowledgeSender>(peer.server)
+                    .unwrap()
+                    .next_id;
                 assert!(queue_tick(self.app.world_mut(), peer.server, SlotId(0)).unwrap());
+                let mut sender = self
+                    .app
+                    .world_mut()
+                    .get_mut::<KnowledgeSender>(peer.server)
+                    .unwrap();
+                // Public enqueue uses Instant::now(). This test advances a virtual
+                // pump clock. Align ONLY newly enqueued timestamps, not deadlines
+                // or already-started work, so both sides use the same test clock.
+                let enqueued_at = self.epoch + Duration::from_millis(self.now_ms);
+                let sender = &mut *sender;
+                for pending in sender.pending.iter_mut().chain(sender.patches.iter_mut()) {
+                    if pending.encoded.begin().stamp.transaction_id > previous_id {
+                        assert!(pending.started.is_none());
+                        pending.created = enqueued_at;
+                    }
+                }
             }
         }
     }
@@ -213,84 +361,57 @@ impl Harness {
                     .unwrap()
                     .send::<ReliableChannel>(ack);
             }
-            if peer.restart_error.is_some() {
-                continue;
-            }
-            let mut sender = self
-                .app
-                .world_mut()
-                .entity_mut(peer.server)
-                .take::<KnowledgeSender>()
-                .unwrap();
-            let old_ids = sender.outstanding.clone();
-            let transport_acks = self
-                .app
-                .world()
-                .get::<Transport>(peer.server)
-                .unwrap()
-                .channel_send(lightyear::transport::channel::ChannelKind::of::<
-                    KnowledgeChannel,
-                >())
-                .unwrap()
-                .message_acks()
-                .iter()
-                .map(|id| id.0)
-                .collect::<Vec<_>>();
-            for id in &transport_acks {
-                peer.transport_acks.push((self.now_ms, *id));
-            }
-            if let Err(error) = pump_one(self.app.world_mut(), peer.server, &mut sender, now) {
-                peer.restart_error = Some(error);
-            }
-            for id in old_ids.difference(&sender.outstanding) {
-                assert!(
-                    transport_acks.contains(id),
-                    "only actual transport MessageIds release frame credit"
-                );
-            }
-            peer.issued_messages
-                .extend(sender.outstanding.iter().copied());
-            for pending in sender.pending.iter().chain(sender.patches.iter()) {
-                if let Some(started) = pending.started {
-                    peer.first_sent_ms
-                        .entry(pending.encoded.begin().stamp.transaction_id)
-                        .or_insert(started.duration_since(self.epoch).as_millis() as u64);
-                }
-            }
-            if self.now_ms >= u64::from(WARMUP_TICKS) * TICK_MS {
-                if let Some(pending) = &sender.pending {
-                    let age = now
-                        .saturating_duration_since(pending.started.unwrap_or(pending.created))
-                        .as_millis() as u64;
-                    peer.max_age_ms = peer.max_age_ms.max(age);
-                }
-                peer.max_backlog = peer.max_backlog.max(sender.patch_bytes);
-                peer.first_measured_backlog
-                    .get_or_insert(sender.patch_bytes);
-                peer.last_measured_backlog = sender.patch_bytes;
-            }
-            assert!(sender.retained() <= MAX_PENDING_STATE_BYTES as usize);
-            self.app.world_mut().entity_mut(peer.server).insert(sender);
         }
+        self.app.insert_resource(PumpClock {
+            epoch: self.epoch,
+            now,
+        });
         self.app.update();
         for peer in &mut self.peers {
-            let cancels = self
+            let report = self
                 .app
                 .world_mut()
-                .get_mut::<MessageReceiver<StateTransactionCancel>>(peer.client)
-                .unwrap()
-                .receive()
-                .collect::<Vec<_>>();
+                .resource_mut::<PumpReports>()
+                .0
+                .remove(&peer.server)
+                .unwrap_or_default();
+            peer.transport_acks.extend(
+                report
+                    .transport_acks
+                    .into_iter()
+                    .map(|id| (self.now_ms, id)),
+            );
+            peer.issued_messages.extend(report.issued);
+            for (id, sent) in report.first_sent {
+                peer.first_sent_ms.entry(id).or_insert(sent);
+            }
+            if let Some(error) = report.error {
+                peer.restart_error = Some(error);
+            }
+            if self.now_ms >= u64::from(WARMUP_TICKS) * TICK_MS {
+                peer.max_age_ms = peer.max_age_ms.max(report.age_ms);
+                peer.max_backlog = peer.max_backlog.max(report.backlog);
+                peer.first_measured_backlog.get_or_insert(report.backlog);
+                peer.last_measured_backlog = report.backlog;
+            }
+            let (cancels, frames) = {
+                let mut captured = self.app.world_mut().resource_mut::<CapturedFrames>();
+                (
+                    captured.cancels.remove(&peer.client).unwrap_or_default(),
+                    captured.frames.remove(&peer.client).unwrap_or_default(),
+                )
+            };
             for cancel in cancels {
+                peer.cancellations.push((
+                    self.now_ms,
+                    cancel.stamp.transaction_id,
+                    format!("{:?}", cancel.reason),
+                ));
                 peer.assembler.cancel(&cancel.stamp);
             }
-            let frames = self
-                .app
-                .world_mut()
-                .get_mut::<MessageReceiver<StateTransactionFrame>>(peer.client)
-                .unwrap()
-                .receive()
-                .collect::<Vec<_>>();
+            if self.retain_received_frames {
+                self.retained_frames.extend(frames.iter().cloned());
+            }
             let mut activations = 0;
             for frame in frames {
                 assert!(frame.encoded_bytes().unwrap() <= FRAME_LIMIT);
@@ -362,7 +483,7 @@ impl Harness {
                             .burst_at_ms
                             .is_some_and(|at| self.now_ms >= at && self.now_ms < at + TICK_MS)
                     {
-                        due = self.burst_at_ms.unwrap() + TICK_MS;
+                        due = self.burst_at_ms.unwrap() + TICK_MS + STEP_MS;
                     }
                     self.packets.push_back((due, to, packet.to_vec()));
                 }
@@ -373,14 +494,14 @@ impl Harness {
     fn evidence(&self, label: &str) {
         let rows = self.peers.iter().enumerate().map(|(index, peer)| serde_json::json!({
             "peer": index, "activation_ticks": peer.activations, "actual_transport_message_acks": peer.transport_acks,
-            "actual_issued_message_ids": peer.issued_messages, "max_transactions_in_one_client_update": peer.max_batch,
+            "actual_issued_message_ids": peer.issued_messages, "cancellations": peer.cancellations, "max_transactions_in_one_client_update": peer.max_batch,
             "max_unacknowledged_age_ms": peer.max_age_ms, "max_encoded_successor_bytes": peer.max_backlog,
             "first_measured_backlog_bytes": peer.first_measured_backlog, "final_backlog_bytes": peer.last_measured_backlog,
             "restart_error": peer.restart_error,
         })).collect::<Vec<_>>();
         let report = serde_json::json!({"label": label, "activation_ack_rtt_ms": self.rtt_ms, "application_step_ms": STEP_MS,
             "sender_hz": 20, "snapshot_units": 1000, "position_updates_per_tick": 500, "warmup_ticks": WARMUP_TICKS,
-            "measured_ticks": MEASURED_TICKS, "one_delivery_burst_ms": TICK_MS, "peers": rows});
+            "measured_ticks": MEASURED_TICKS, "one_delivery_burst_ms": self.burst_at_ms.map_or(0, |_| TICK_MS), "peers": rows});
         if let Some(directory) = std::env::var_os("TURTS_VISIBILITY_PIPELINE_EVIDENCE") {
             let directory = std::path::PathBuf::from(directory);
             std::fs::create_dir_all(&directory).unwrap();
@@ -421,7 +542,18 @@ fn frozen_20hz_pipeline_preserves_every_tick_at_50_and_100_ms_activation_ack_rtt
         }
         let peer = &harness.peers[0];
         harness.evidence(&format!("pipeline-rtt-{rtt_ms}"));
-        assert_eq!(peer.activations, (0..=FINAL_TICK).collect::<Vec<_>>());
+        assert_eq!(
+            peer.activations.len(),
+            FINAL_TICK as usize + 1,
+            "all movement ticks must activate"
+        );
+        assert!(
+            peer.activations
+                .iter()
+                .enumerate()
+                .all(|(index, tick)| index as u32 == *tick),
+            "activation ticks must be exact-once and ordered"
+        );
         assert!(peer.max_batch >= 2);
         assert!(peer.restart_error.is_none());
         assert!(peer.max_age_ms <= 1000);
@@ -465,7 +597,14 @@ fn a_nonreturning_viewer_restarts_and_disconnects_without_stalling_the_healthy_v
             .is_some_and(|reason| reason.contains("three times"))
     );
     assert!(harness.peers[1].restart_error.is_none());
-    assert_eq!(harness.peers[1].activations, (0..=320).collect::<Vec<_>>());
+    assert_eq!(harness.peers[1].activations.len(), 321);
+    assert!(
+        harness.peers[1]
+            .activations
+            .iter()
+            .enumerate()
+            .all(|(index, tick)| index as u32 == *tick)
+    );
     let healthy = harness
         .app
         .world()
@@ -480,4 +619,135 @@ fn a_nonreturning_viewer_restarts_and_disconnects_without_stalling_the_healthy_v
         .unwrap();
     assert_eq!(slow.outstanding.len(), WINDOW);
     assert!(slow.retained() <= MAX_PENDING_STATE_BYTES as usize);
+}
+
+#[test]
+fn superseded_sent_suffix_keeps_credit_and_cannot_reactivate_after_replacement() {
+    let mut harness = Harness::new(100, 1);
+    for _ in 0..60 {
+        harness.step(None);
+    }
+    let server = harness.peers[0].server;
+    let client = harness.peers[0].client;
+    assert!(
+        harness
+            .app
+            .world()
+            .get::<KnowledgeSender>(server)
+            .unwrap()
+            .pending
+            .is_none()
+    );
+    harness.enqueue_tick(1);
+    harness.enqueue_tick(2);
+    harness.step(None);
+    let (old_stamps, old_credits) = {
+        let sender = harness.app.world().get::<KnowledgeSender>(server).unwrap();
+        let stamps = sender
+            .pending
+            .iter()
+            .chain(sender.patches.iter())
+            .map(|pending| {
+                assert!(
+                    pending.end_sent,
+                    "both successors must really be submitted before cancellation"
+                );
+                pending.encoded.begin().stamp.clone()
+            })
+            .collect::<Vec<_>>();
+        (stamps, sender.outstanding.clone())
+    };
+    assert_eq!(old_stamps.len(), 2);
+    assert!(!old_credits.is_empty());
+    let watermark = old_stamps.last().unwrap().transaction_id;
+    assert!(queue_full(harness.app.world_mut(), server, SlotId(0)).unwrap());
+    {
+        let mut sender = harness
+            .app
+            .world_mut()
+            .get_mut::<KnowledgeSender>(server)
+            .unwrap();
+        assert_eq!(
+            sender.outstanding, old_credits,
+            "logical cancellation must not release submitted reliable copies"
+        );
+        for old in &old_stamps {
+            assert!(
+                !sender.acknowledge(old),
+                "old activation ACK cannot advance replacement"
+            );
+        }
+    }
+    harness.retain_received_frames = true;
+    for _ in 0..100 {
+        harness.step(None);
+    }
+    harness.retain_received_frames = false;
+    let active = harness
+        .app
+        .world()
+        .get::<KnowledgeSender>(server)
+        .unwrap()
+        .active_stamp()
+        .unwrap()
+        .clone();
+    assert!(active.transaction_id > watermark);
+    assert_eq!(active.basis.tick, 2);
+    let old_frames = harness
+        .retained_frames
+        .iter()
+        .filter(|frame| {
+            let stamp = match frame {
+                StateTransactionFrame::Begin(x) => &x.stamp,
+                StateTransactionFrame::Chunk(x) => &x.stamp,
+                StateTransactionFrame::End(x) => &x.stamp,
+            };
+            stamp.transaction_id <= watermark
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    assert!(
+        !old_frames.is_empty(),
+        "capture actual retired frames from the real receiver"
+    );
+    let previous_activations = harness.peers[0].activations.clone();
+    let mut late_message_ids = Vec::new();
+    // Deliver the old application stamps again through NEW reliable message identities.
+    // This proves application retirement instead of merely relying on packet deduplication.
+    for frame in old_frames {
+        let id = send_frame(harness.app.world_mut(), server, &frame).unwrap();
+        assert!(
+            harness
+                .app
+                .world_mut()
+                .get_mut::<KnowledgeSender>(server)
+                .unwrap()
+                .outstanding
+                .insert(id)
+        );
+        late_message_ids.push(id);
+    }
+    for stamp in old_stamps {
+        harness
+            .app
+            .world_mut()
+            .get_mut::<MessageSender<StateTransactionAck>>(client)
+            .unwrap()
+            .send::<ReliableChannel>(StateTransactionAck { stamp });
+    }
+    for _ in 0..100 {
+        harness.step(None);
+    }
+    harness.evidence("retired-suffix-after-replacement");
+    assert_eq!(harness.peers[0].activations, previous_activations);
+    assert_eq!(harness.peers[0].replica.last_applied_tick, Some(2));
+    let sender = harness.app.world().get::<KnowledgeSender>(server).unwrap();
+    assert_eq!(sender.active_stamp(), Some(&active));
+    assert!(sender.outstanding.is_empty());
+    assert!(late_message_ids.iter().all(|id| {
+        harness.peers[0]
+            .transport_acks
+            .iter()
+            .any(|(_, ack)| ack == id)
+    }));
 }

@@ -66,6 +66,15 @@ pub enum SimSet {
     Collect,
 }
 
+/// Stable ordering anchors around completed sight, inside the Collect set.
+/// These markers add no systems or state. Hosts can bracket the sight phase
+/// without including earlier input collection or later full-world publication.
+#[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum CompletedVisibilityBoundary {
+    Before,
+    After,
+}
+
 /// Adds the simulation to an app that has `bevy_time::TimePlugin`. `MapBounds` is not inserted
 /// here: `load_map` inserts it.
 pub struct SimPlugin {
@@ -235,10 +244,13 @@ impl Plugin for SimPlugin {
             .add_systems(
                 FixedPostUpdate,
                 (
-                    collect_changes,
-                    crate::orders::writer::collect_order_inputs,
-                    publish_completed_tick,
-                    crate::economy::transaction::finish_tick_audit,
+                    collect_changes.in_set(CompletedVisibilityBoundary::Before),
+                    crate::orders::writer::collect_order_inputs
+                        .in_set(CompletedVisibilityBoundary::Before),
+                    crate::visibility::refresh_completed,
+                    publish_completed_tick.in_set(CompletedVisibilityBoundary::After),
+                    crate::economy::transaction::finish_tick_audit
+                        .in_set(CompletedVisibilityBoundary::After),
                 )
                     .chain()
                     .in_set(SimSet::Collect)
@@ -270,7 +282,6 @@ fn not_stopped(stopped: Option<Res<MatchStopped>>) -> bool {
 }
 
 fn publish_completed_tick(world: &mut World) {
-    crate::visibility::refresh_completed(world);
     let tick = world.resource::<Tick>().0;
     let changed = world.resource::<ChangedThisTick>().0.clone();
     let mut completed = world_view(world);
