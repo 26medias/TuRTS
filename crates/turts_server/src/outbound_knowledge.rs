@@ -109,7 +109,7 @@ impl KnowledgeSender {
             .saturating_add(size)
             > MAX_PENDING_STATE_BYTES as usize
         {
-            return Err("A permitted state exceeds the64MiB connection budget".into());
+            return Err("The permitted game state exceeds the 64 MiB connection budget".into());
         }
         let encoded = encode_snapshot(
             stamp,
@@ -129,7 +129,7 @@ impl KnowledgeSender {
         }
         self.restarts.push_back(now);
         if self.restarts.len() >= MAX_STATE_RESTARTS as usize {
-            return Err("State transfer restarted three times in30seconds".into());
+            return Err("State transfer restarted three times in 30 seconds".into());
         }
         self.full(now)
     }
@@ -329,7 +329,7 @@ fn pump_one(
         sender.restart(now)?;
     }
     if sender.retained() > MAX_PENDING_STATE_BYTES as usize {
-        return Err("State transfer exceeds64MiB retained budget".into());
+        return Err("State transfer exceeds the 64 MiB retained budget".into());
     }
     let mut first_kind = None;
     for _ in 0..FRAMES_PER_PUMP {
@@ -573,7 +573,7 @@ mod tests {
                 site: false,
             });
         assert!(sender.tip.retained_bytes() >= MAX_PENDING_STATE_BYTES as usize);
-        assert!(sender.full(now).unwrap_err().contains("64MiB"));
+        assert!(sender.full(now).unwrap_err().contains("64 MiB"));
         assert!(sender.pending.is_none());
     }
 }
