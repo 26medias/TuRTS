@@ -261,6 +261,7 @@ fn shot_fails_when_event_ammo_zero() {
         ordinal: 1,
         owner_slot: 0,
         kind: EconomyEventKind::Fired {
+            reduced: false,
             weapon: 7,
             target: 9,
             item: Some(cid("forge:shell")),
@@ -314,6 +315,7 @@ fn dmg_fails_on_wrong_damage() {
         ordinal: 1,
         owner_slot: 0,
         kind: EconomyEventKind::Fired {
+            reduced: false,
             weapon: 7,
             target: 9,
             item: Some(cid("forge:shell")),

@@ -201,6 +201,7 @@ mod tests {
             )
             .unwrap();
         let mut catalog = ContentCatalog {
+            combat: None,
             resources: BTreeMap::from([(
                 ore.clone(),
                 ResourceDef {
@@ -222,6 +223,8 @@ mod tests {
         catalog.units.insert(
             unit_id.clone(),
             ResolvedUnit {
+                acquire: None,
+                armour: None,
                 constructor: None,
                 placement: None,
                 build_area: None,

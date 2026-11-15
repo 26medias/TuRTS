@@ -446,10 +446,8 @@ impl Pack {
             for (field, list, kind) in [
                 ("damage_types", &table.damage_types, "damage type"),
                 ("armour_classes", &table.armour_classes, "armour class"),
+                ("tags", &table.tags, "armour tag"),
             ] {
-                if list.is_empty() {
-                    return Err(self.fail(file, field, "needs at least 1 entry"));
-                }
                 let mut seen = BTreeSet::new();
                 for (index, id) in list.iter().enumerate() {
                     let path = format!("{field}[{index}]");
@@ -499,17 +497,72 @@ impl Pack {
                     ));
                 }
             }
-            for damage in &types {
-                for armour in &classes {
-                    if !pairs.contains(&(damage.as_str(), armour.as_str())) {
-                        return Err(self.fail(
-                            file,
-                            "cells",
-                            format!("no cell for damage `{damage}` and armour `{armour}`"),
-                        ));
-                    }
-                }
+            self.damage_curve(file, table.curve)?;
+        }
+        Ok(())
+    }
+
+    fn armour_names(&self) -> Vec<String> {
+        let mut names = self.armour_classes();
+        names.extend(
+            self.combat
+                .iter()
+                .flat_map(|(_, table)| table.tags.iter().map(|id| self.qualified(id))),
+        );
+        names.sort();
+        names.dedup();
+        names
+    }
+
+    fn damage_curve(&self, file: &str, curve: turts_mod_api::ArmourCurve) -> Result<(), ModError> {
+        use turts_mod_api::ArmourCurve;
+        match curve {
+            ArmourCurve::None => Ok(()),
+            ArmourCurve::Ratio { k } if k.denominator > 0 && k.numerator > 0 => Ok(()),
+            ArmourCurve::Ratio { .. } => Err(self.fail(file, "curve.k", "must be a positive ratio with a denominator above 0; use curve: Ratio(k: (numerator: 50, denominator: 3))")),
+            ArmourCurve::Percent { per_point, cap } if per_point.denominator > 0 && cap.denominator > 0 && cap.numerator < cap.denominator => Ok(()),
+            ArmourCurve::Percent { .. } => Err(self.fail(file, "curve", "Percent needs per_point and cap ratios with denominators above 0, and cap below 1; use cap: (numerator: 3, denominator: 4)")),
+        }
+    }
+
+    fn armour_fields(&self, file: &str, armour: &turts_mod_api::ArmourDef) -> Result<(), ModError> {
+        let tags = self
+            .combat
+            .iter()
+            .flat_map(|(_, table)| table.tags.iter().map(|id| self.qualified(id)))
+            .collect::<Vec<_>>();
+        let mut seen = BTreeSet::new();
+        for (index, tag) in armour.tags.iter().enumerate() {
+            self.lookup(
+                file,
+                &format!("armour.tags[{index}]"),
+                "armour tag",
+                tag,
+                &tags,
+            )?;
+            if !seen.insert(tag) {
+                return Err(self.fail(file, "armour.tags", format!("duplicate tag `{tag}`")));
             }
+        }
+        let mut seen = BTreeSet::new();
+        for (index, (damage, _)) in armour.flat_by_type.iter().enumerate() {
+            self.lookup(
+                file,
+                &format!("armour.flat_by_type[{index}]"),
+                "damage type",
+                damage,
+                &self.damage_types(),
+            )?;
+            if !seen.insert(damage) {
+                return Err(self.fail(
+                    file,
+                    "armour.flat_by_type",
+                    format!("duplicate damage type `{damage}`"),
+                ));
+            }
+        }
+        if armour.points > 0 && !self.combat.iter().any(|(_, table)| !table.curve.is_none()) {
+            return Err(self.fail(file, "armour.points", format!("is {}, but combat.ron has no curve. Add curve: Ratio(k: (numerator: 50, denominator: 3)), or use armour.flat for a subtraction for each hit", armour.points)));
         }
         Ok(())
     }
@@ -534,6 +587,17 @@ impl Pack {
     // ---- U, K1 to K3, R1: the fields of a unit ----
 
     fn units_group(&self) -> Result<(), ModError> {
+        for (file, technology) in &self.technologies {
+            for (index, effect) in technology.effects.iter().enumerate() {
+                if let turts_mod_api::EffectDef::ArmourModifier { stat, .. } = effect {
+                    match stat {
+                        turts_mod_api::ArmourStat::Points if !self.combat.iter().any(|(_, table)| !table.curve.is_none()) => return Err(self.fail(file, &format!("effects[{index}].stat"), "Points needs a combat curve. Add curve: Ratio(k: (numerator: 50, denominator: 3)), or use Flat")),
+                        turts_mod_api::ArmourStat::FlatByType(damage) => { self.lookup(file, &format!("effects[{index}].stat.FlatByType"), "damage type", damage, &self.damage_types())?; },
+                        _ => {},
+                    }
+                }
+            }
+        }
         let has_table = !self.combat.is_empty();
         let classes = self.armour_classes();
         let types = self.damage_types();
@@ -548,12 +612,7 @@ impl Pack {
                     &armour.class,
                     &classes,
                 )?;
-            } else if has_table && unit.health.is_some() {
-                return Err(self.fail(
-                    file,
-                    "armour",
-                    "a unit with `health` needs an armour class, because the package declares a damage table",
-                ));
+                self.armour_fields(file, armour)?;
             }
             if let Some(weapon) = &unit.weapon {
                 match &weapon.damage_type {
@@ -567,14 +626,17 @@ impl Pack {
                             "the package declares no damage table",
                         ));
                     }
-                    None if has_table => {
-                        return Err(self.fail(
-                            file,
-                            "weapon.damage_type",
-                            "a weapon needs a damage type, because the package declares a damage table",
-                        ));
-                    }
                     None => {}
+                }
+                let names = self.armour_names();
+                for (index, bonus) in weapon.bonus.iter().enumerate() {
+                    self.lookup(
+                        file,
+                        &format!("weapon.bonus[{index}].against"),
+                        "armour class or tag",
+                        &bonus.against,
+                        &names,
+                    )?;
                 }
                 // T3: a weapon damage of 0 packs for the edition 0.2.3 and is refused from 0.2.4.
                 if weapon.damage == 0 {

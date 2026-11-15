@@ -24,6 +24,8 @@ use crate::{
 #[derive(Resource, Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct ResearchState {
     pub(crate) completed: BTreeSet<(u8, ContentId)>,
+    /// Armour effects retain completion order: a new per-type row captures flat at that time.
+    pub(crate) armour_order: Vec<(u8, ContentId)>,
 }
 
 /// Unit ids whose toggleable capabilities are disabled.
@@ -52,7 +54,10 @@ pub(crate) fn modifier(
                 unit,
                 stat: effect_stat,
                 add,
-            } = effect;
+            } = effect
+            else {
+                continue;
+            };
             if unit == unit_def && *effect_stat == stat {
                 sum = sum
                     .checked_add(u128::from(*add))
@@ -61,6 +66,27 @@ pub(crate) fn modifier(
         }
     }
     u64::try_from(sum).map_err(|_| RejectReason::ArithmeticOverflow)
+}
+
+/// Effective armour for every current or future unit of this slot and type.
+pub(crate) fn effective_armour(
+    research: &ResearchState,
+    catalog: &ContentCatalog,
+    slot: u8,
+    unit: &ContentId,
+) -> Result<Option<turts_mod_api::ArmourDef>, RejectReason> {
+    turts_mod_api::armour::armour_for(
+        catalog,
+        unit,
+        research
+            .armour_order
+            .iter()
+            .filter(|(owner, technology)| {
+                *owner == slot && research.completed.contains(&(*owner, technology.clone()))
+            })
+            .map(|(_, technology)| technology),
+    )
+    .map_err(|_| RejectReason::ArithmeticOverflow)
 }
 
 /// Queue research after ownership and capability checks, using production's payment primitives.
@@ -450,6 +476,14 @@ mod tests {
     }
 
     fn app_with_research(tick_hz: u16, shells_per_lab: u64) -> bevy_app::App {
+        app_with_research_config(tick_hz, shells_per_lab, |_, _| {})
+    }
+
+    fn app_with_research_config(
+        tick_hz: u16,
+        shells_per_lab: u64,
+        configure: impl FnOnce(&mut ContentCatalog, &mut MapDef),
+    ) -> bevy_app::App {
         let lab = cid("research_fixture:lab");
         let second_lab = cid("research_fixture:second_lab");
         let shell = cid("research_fixture:shell");
@@ -457,6 +491,8 @@ mod tests {
         let second_technology = cid("research_fixture:second");
         let turret = cid("research_fixture:turret");
         let station = |id: ContentId, name: &str| ResolvedUnit {
+            acquire: None,
+            armour: None,
             constructor: None,
             placement: None,
             build_area: None,
@@ -484,7 +520,8 @@ mod tests {
             weapon: None,
             removal: None,
         };
-        let catalog = ContentCatalog {
+        let mut catalog = ContentCatalog {
+            combat: None,
             resources: BTreeMap::from([(
                 shell.clone(),
                 ResourceDef {
@@ -503,6 +540,8 @@ mod tests {
                 (
                     turret.clone(),
                     ResolvedUnit {
+                        acquire: None,
+                        armour: None,
                         constructor: None,
                         placement: None,
                         build_area: None,
@@ -605,7 +644,7 @@ mod tests {
             order_queue_depths: std::collections::BTreeMap::new(),
             source_files: BTreeMap::new(),
         };
-        let map = MapDef {
+        let mut map = MapDef {
             environment: None,
             ground: None,
             id: "test_map".into(),
@@ -618,6 +657,8 @@ mod tests {
             slot_economy: vec![],
             belts: vec![],
         };
+        configure(&mut catalog, &mut map);
+        let initial_queues = map.placements.len();
         let mut app = headless_app(tick_hz);
         let staged = stage_package(
             app.world(),
@@ -645,7 +686,10 @@ mod tests {
                     },
                 );
         }
-        assert_eq!(app.world().resource::<ProductionQueues>().0.len(), 2);
+        assert_eq!(
+            app.world().resource::<ProductionQueues>().0.len(),
+            initial_queues
+        );
         app
     }
 
@@ -986,6 +1030,190 @@ mod tests {
         let account = &app.world().resource::<EconomyLedger>().inventories[&1].items[&shell];
         assert_eq!((account.on_hand, account.reserved), (5, 0));
         assert!(app.world().resource::<ProductionQueues>().0[&1].is_empty());
+    }
+
+    #[test]
+    fn armour_research_updates_existing_and_later_trained_units_only_for_its_slot() {
+        let lab = cid("research_fixture:lab");
+        let train = cid("research_fixture:train_lab");
+        let mut app = app_with_research_config(20, 15, |catalog, map| {
+            let refund = catalog.technologies[&cid("research_fixture:first")].cancel_refunds;
+            let definition = catalog.units.get_mut(&lab).unwrap();
+            definition.inventory.as_mut().unwrap().capacity = 20;
+            definition.movement = Some(turts_mod_api::MovementDef { speed: 1. });
+            definition.armour = Some(turts_mod_api::ArmourDef {
+                class: "research_fixture:heavy".into(),
+                flat: 2,
+                tags: vec![],
+                points: 0,
+                flat_by_type: vec![],
+            });
+            let trainer = catalog
+                .units
+                .get_mut(&cid("research_fixture:second_lab"))
+                .unwrap();
+            trainer.inventory.as_mut().unwrap().capacity = 20;
+            trainer.research = None;
+            trainer.producer = Some(turts_mod_api::ResolvedProducer {
+                recipes: vec![train.clone()],
+                queue_capacity: 2,
+                spawn_offsets: vec![WorldPos { x: 2.5, y: 0. }],
+            });
+            catalog.production.insert(
+                train.clone(),
+                turts_mod_api::ResolvedProduction {
+                    id: train.clone(),
+                    name: "Train lab".into(),
+                    output_unit: lab.clone(),
+                    duration_ms: 100,
+                    costs: vec![],
+                    payment: turts_mod_api::PaymentPolicy::ChargeOnQueue,
+                    cancel_refunds: refund,
+                },
+            );
+            let technology = catalog
+                .technologies
+                .get_mut(&cid("research_fixture:first"))
+                .unwrap();
+            technology.duration_ms = 100;
+            technology.effects = vec![ResolvedEffect::ArmourModifier {
+                unit: lab.clone(),
+                stat: turts_mod_api::ArmourStat::Flat,
+                add: 1,
+            }];
+            catalog.combat = Some(turts_mod_api::CombatDef {
+                damage_types: vec!["pierce".into()],
+                armour_classes: vec!["heavy".into()],
+                tags: vec![],
+                curve: turts_mod_api::ArmourCurve::None,
+                cells: vec![],
+                minimum: 1,
+            });
+            let later = cid("research_fixture:after");
+            let mut last = catalog.technologies[&cid("research_fixture:first")].clone();
+            last.id = later.clone();
+            last.prerequisites = vec![cid("research_fixture:second")];
+            last.effects = vec![ResolvedEffect::ArmourModifier {
+                unit: lab.clone(),
+                stat: turts_mod_api::ArmourStat::Flat,
+                add: 4,
+            }];
+            catalog.technologies.insert(later.clone(), last);
+            catalog
+                .units
+                .get_mut(&lab)
+                .unwrap()
+                .research
+                .as_mut()
+                .unwrap()
+                .technologies
+                .push(later);
+            let second = catalog
+                .technologies
+                .get_mut(&cid("research_fixture:second"))
+                .unwrap();
+            second.duration_ms = 100;
+            second.effects = vec![ResolvedEffect::ArmourModifier {
+                unit: lab.clone(),
+                stat: turts_mod_api::ArmourStat::FlatByType("research_fixture:pierce".into()),
+                add: 2,
+            }];
+            let mut other = placement("research_fixture:lab", 26.);
+            other.owner_slot = 1;
+            map.placements.push(other);
+        });
+        produce(&mut app, 1, "research_fixture:first", 1).unwrap();
+        for _ in 0..10 {
+            app.update();
+        }
+        assert!(
+            app.world()
+                .resource::<ResearchState>()
+                .completed
+                .contains(&(0, cid("research_fixture:first")))
+        );
+        produce(&mut app, 2, "research_fixture:train_lab", 2).unwrap();
+        for _ in 0..10 {
+            app.update();
+        }
+        let catalog = &app
+            .world()
+            .resource::<crate::bootstrap::InstalledCatalog>()
+            .0;
+        let research = app.world().resource::<ResearchState>();
+        let mut checked = Vec::new();
+        for entity in app.world().iter_entities() {
+            let (Some(id), Some(kind), Some(owner)) = (
+                entity.get::<crate::UnitId>(),
+                entity.get::<crate::UnitType>(),
+                entity.get::<crate::Owner>(),
+            ) else {
+                continue;
+            };
+            if app
+                .world()
+                .resource::<crate::registry::UnitTypes>()
+                .get(kind.0)
+                .unwrap()
+                .content_id
+                != lab.to_string()
+            {
+                continue;
+            }
+            let armour = super::effective_armour(research, catalog, owner.0.0, &lab)
+                .unwrap()
+                .unwrap();
+            assert_eq!(
+                armour.flat,
+                if owner.0.0 == 0 { 3 } else { 2 },
+                "unit {} slot {}",
+                id.0,
+                owner.0.0
+            );
+            checked.push((id.0, owner.0.0));
+        }
+        assert!(
+            checked.contains(&(1, 0))
+                && checked.contains(&(3, 1))
+                && checked.iter().any(|(id, slot)| *id > 3 && *slot == 0),
+            "existing, other slot, and trained unit required: {checked:?}"
+        );
+        assert_eq!(catalog.units[&lab].armour.as_ref().unwrap().flat, 2);
+        produce(&mut app, 1, "research_fixture:second", 3).unwrap();
+        for _ in 0..10 {
+            app.update();
+        }
+        produce(&mut app, 1, "research_fixture:after", 4).unwrap();
+        for _ in 0..10 {
+            app.update();
+        }
+        let catalog = &app
+            .world()
+            .resource::<crate::bootstrap::InstalledCatalog>()
+            .0;
+        let research = app.world().resource::<ResearchState>();
+        for slot in [0, 1] {
+            let armour = super::effective_armour(research, catalog, slot, &lab)
+                .unwrap()
+                .unwrap();
+            assert_eq!(armour.flat, if slot == 0 { 7 } else { 2 });
+            assert_eq!(
+                armour
+                    .flat_by_type
+                    .iter()
+                    .find(|(kind, _)| kind == "research_fixture:pierce")
+                    .map(|(_, value)| *value),
+                if slot == 0 { Some(5) } else { None }
+            );
+        }
+        assert_eq!(
+            research
+                .armour_order
+                .iter()
+                .map(|(_, id)| id.local.as_str())
+                .collect::<Vec<_>>(),
+            ["first", "second", "after"]
+        );
     }
 
     #[test]

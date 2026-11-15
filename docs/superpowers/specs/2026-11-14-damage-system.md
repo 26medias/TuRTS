@@ -310,3 +310,19 @@ The default game already has Swordsmen. Keep them as a separate unit. Include th
 The damage table is optional. Missing class, damage type, or cell uses the default stated in section 4.2. Remove old pack checks that demand a full table or armour on every health-bearing unit.
 The CEO forbids a unit ID from deciding a visible result. For equal-distance target selection, use target coordinates before any internal identity.
 One independent review runs the acceptance checks after the build. No planted-fault registry, receipt ledger, new gate, or second review pass is required.
+
+The existing combat phase resolves shots sequentially. Its previous weapon order also used unit IDs.
+Use physical coordinates for that order, as for equal-distance target selection.
+Record any old stream change from this correction to the CEO's standing rule.
+This does not add simultaneous fire or alter weapon cooldowns.
+The owner-only research record gains armour completion order. The HUD uses the same effective-armour helper as the server.
+Enemy armour stays absent because that player's research is private.
+Fired gains one reduced-hit flag. Protocol version 7 rejects older peers. API additions use version 0.2.12.
+
+For the balance table, use five rotations of the same legal formation, with start anchors 12 units apart.
+All actors use their shipped idle acquisition and weapon rules. No damage or health override is permitted.
+For the Barracks row, TTK starts at the first actual hit. Record full elapsed time too.
+This separates the weapon-role check from approach time. Do not change this timing basis after reading the results.
+Default Crossbowmen adopt TargetSurface. All three infantry types use acquisition 14 and leash 18.
+The Warrior uses visual scale 0.875 to fit the supplied model's animated bounds. Its measured walk stride is recorded with the evidence.
+Role captions stay parked: that interface field has no client implementation. The panel already shows the name, armour, and weapon details.

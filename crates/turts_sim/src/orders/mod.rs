@@ -120,10 +120,21 @@ pub struct Order {
 #[derive(Component, Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct UnitOrders {
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub acquired: Option<AcquiredTarget>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rally: Option<Vec2>,
     pub current: Option<Order>,
     pub queue: VecDeque<Order>,
     pub last_failure: Option<OrderFailure>,
+}
+
+/// Implicit combat intent. It is part of the authoritative order audit, not a player command.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct AcquiredTarget {
+    #[serde(with = "crate::command::vec2_bits")]
+    pub home: Vec2,
+    pub target: u32,
+    pub returning: bool,
 }
 
 /// The last accepted order failure, retained for the owner-facing projection.

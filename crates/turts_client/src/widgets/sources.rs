@@ -241,6 +241,7 @@ fn primary_value(field: PrimaryField, context: SourceContext<'_>) -> serde_json:
         .find(|record| record.unit == UnitId(*id))
         .map(|record| record.current);
     match field {
+        PrimaryField::WeaponDetails => unit_hud::primary_weapon_details(context),
         PrimaryField::Name => {
             serde_json::json!(definition.map_or(unit.content_id.as_str(), |def| def.name.as_str()))
         }
@@ -1450,6 +1451,8 @@ mod tests {
 
     fn resolved_unit(id: &str, movement: Option<MovementDef>) -> turts_mod_api::ResolvedUnit {
         turts_mod_api::ResolvedUnit {
+            acquire: None,
+            armour: None,
             constructor: None,
             placement: None,
             build_area: None,
@@ -1928,6 +1931,8 @@ mod tests {
         let mut content = ClientContent::default();
         let mut turret = resolved_unit("muster:turret", None);
         turret.weapon = Some(turts_mod_api::ResolvedWeapon {
+            bonus: Vec::new(),
+            damage_type: None,
             range: 8.0,
             range_mode: turts_mod_api::WeaponRangeMode::Centre,
             cooldown_ms: 1000,
@@ -2216,6 +2221,8 @@ mod tests {
         let mut static_weapon = mobile.clone();
         static_weapon.movement = None;
         static_weapon.weapon = Some(turts_mod_api::ResolvedWeapon {
+            bonus: Vec::new(),
+            damage_type: None,
             range: 5.0,
             range_mode: turts_mod_api::WeaponRangeMode::Centre,
             cooldown_ms: 1000,

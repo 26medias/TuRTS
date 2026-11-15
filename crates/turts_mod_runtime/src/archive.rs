@@ -294,6 +294,16 @@ impl PackageArchive {
         // checks of the feature are already in force. A test reaches them while the line stands
         // through `check_api_0_2_4`.
         self.check_api_0_2_4()?;
+        let combat = self.combat_defs()?;
+        if combat.len() > 1 {
+            return Err(crate::content::error(
+                &origin,
+                "mod.ron",
+                "exports.combat",
+                "at most one damage table per package",
+            ));
+        }
+        catalog.combat = combat.into_iter().next().map(|(_, table)| table);
         crate::content_m3::validate_m3(&self.manifest, &catalog)?;
         Ok(catalog)
     }

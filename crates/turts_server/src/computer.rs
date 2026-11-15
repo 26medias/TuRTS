@@ -229,7 +229,7 @@ fn decide_inner(world: &mut World, bot: &mut ComputerPlayer) {
         }
     }
 
-    // Build one military factory. Every candidate still passes the ordinary placement rules.
+    // Build one military factory and one static defence through ordinary placement rules.
     if let Some(constructor) = definition(&catalog, base).and_then(|def| def.constructor.as_ref()) {
         for recipe in constructor
             .buildings
@@ -239,7 +239,7 @@ fn decide_inner(world: &mut World, bot: &mut ComputerPlayer) {
             let Some(output) = catalog.units.get(&recipe.output_unit) else {
                 continue;
             };
-            if !output.producer.as_ref().is_some_and(|producer| {
+            let factory = output.producer.as_ref().is_some_and(|producer| {
                 producer
                     .recipes
                     .iter()
@@ -250,13 +250,15 @@ fn decide_inner(world: &mut World, bot: &mut ComputerPlayer) {
                             .get(&recipe.output_unit)
                             .is_some_and(|def| def.weapon.is_some() && def.movement.is_some())
                     })
-            }) {
+            });
+            let defence = output.weapon.is_some() && output.movement.is_none();
+            if !factory && !defence {
                 continue;
             }
             if view.units.iter().any(|unit| {
                 unit.owner_slot == bot.slot && unit.content_id == recipe.output_unit.to_string()
             }) {
-                break;
+                continue;
             }
             let forward = (enemy_base.pos - base.pos).normalize_or_zero();
             let side = Vec2::new(-forward.y, forward.x);
@@ -480,6 +482,8 @@ mod tests {
         let mut saw_harvest = false;
         let mut max_soldiers = 1;
         let mut max_swordsmen = 0;
+        let mut max_warriors = 0;
+        let mut saw_tower = false;
         for _ in 0..12_000 {
             tick(&mut app);
             let view = turts_sim::completed_world(app.world());
@@ -502,6 +506,17 @@ mod tests {
                     .filter(|unit| unit.owner_slot == 1 && unit.content_id == "skirmish:swordsman")
                     .count(),
             );
+            max_warriors = max_warriors.max(
+                view.units
+                    .iter()
+                    .filter(|unit| unit.owner_slot == 1 && unit.content_id == "skirmish:warrior")
+                    .count(),
+            );
+            saw_tower |= view.units.iter().any(|unit| {
+                unit.owner_slot == 1
+                    && unit.content_id == "skirmish:tower"
+                    && !view.construction.sites.contains_key(&unit.unit_id)
+            });
             if app.world().resource::<MatchOutcomes>().end_tick.is_some() {
                 break;
             }
@@ -516,6 +531,10 @@ mod tests {
         assert!(
             max_soldiers >= 2 && max_swordsmen >= 2,
             "the opponent did not fund a mixed army from timber deliveries: {max_soldiers} crossbowmen, {max_swordsmen} swordsmen"
+        );
+        assert!(
+            max_warriors >= 1 && saw_tower,
+            "the computer must fund Warriors and one completed tower"
         );
         let result = app.world().resource::<MatchOutcomes>();
         println!(

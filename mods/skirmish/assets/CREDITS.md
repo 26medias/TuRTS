@@ -39,3 +39,12 @@ The source directory must contain `Knight.glb`. The original license is in `targ
 No source mesh or texture changes. The blue material identifies the portrait only; world models retain slot colours.
 Render with `blender -b -t 4 -P scripts/art/render_skirmish_portraits.py -- mods/skirmish`.
 The script uses an orthographic camera, transparent background, area lights, and 24 Cycles samples.
+
+## Warrior and Guard tower (2026-11-14)
+
+`warrior.glb` and `warrior_anim.glb` use the Barbarian from KayKit Adventurers Character Pack 1.0 by Kay Lousberg (CC0 1.0).
+Source: https://github.com/KayKit-Game-Assets/KayKit-Character-Pack-Adventures-1.0 .
+`tower.glb` uses Watch Tower by Quaternius (CC0 1.0), https://poly.pizza/m/cMxuj2gt7D .
+These are the supplied files from `target/mc-evidence/art/skirmish-fantasy/`. Their meshes and textures are unchanged.
+Their preparation script and licence notes are in that directory's README.md, CREDITS.md, and source/prep2.py.
+Warrior and tower portraits are static renders of these same models, with the same licence.

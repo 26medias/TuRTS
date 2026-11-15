@@ -139,6 +139,7 @@ fn validate_content_m2(
 ) -> Result<ContentCatalog, ModError> {
     let mut all_ids = BTreeSet::new();
     let mut catalog = ContentCatalog {
+        combat: None,
         resources: BTreeMap::new(),
         units: BTreeMap::new(),
         nodes: BTreeMap::new(),
@@ -408,6 +409,8 @@ fn validate_content_m2(
         catalog.units.insert(
             id.clone(),
             ResolvedUnit {
+                armour: value.armour.clone(),
+                acquire: value.acquire,
                 constructor: value
                     .constructor
                     .map(|constructor| {

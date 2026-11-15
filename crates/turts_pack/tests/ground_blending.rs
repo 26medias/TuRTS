@@ -31,12 +31,7 @@ fn files() -> BTreeMap<String, Vec<u8>> {
 #[test]
 fn ground_layer_does_not_change_a_moving_and_harvesting_match() {
     let mut files = files();
-    let text = String::from_utf8(files["manifest.ron"].clone()).unwrap();
-    let manifest: turts_mod_api::Manifest = ron::from_str(&text).unwrap();
-    files.insert(
-        "manifest.ron".into(),
-        text.replace(&manifest.engine_api, "^0.2.11").into_bytes(),
-    );
+    // Compare identical current packages. API version floors have separate runtime tests.
     let mut map: MapDef =
         ron::from_str(std::str::from_utf8(&files["maps/field.ron"]).unwrap()).unwrap();
     let overlay = map.ground.as_ref().unwrap().overlay.clone();

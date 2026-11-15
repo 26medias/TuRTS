@@ -110,6 +110,11 @@ pub struct RawHealthAudit {
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum CatalogEffectAudit {
+    ArmourModifier {
+        unit: ContentId,
+        stat: turts_mod_api::ArmourStat,
+        add: u64,
+    },
     WeaponModifier {
         unit: ContentId,
         stat: WeaponStat,
@@ -190,6 +195,13 @@ pub fn catalog_technology_audits(catalog: &ContentCatalog) -> Vec<CatalogTechnol
                 .effects
                 .iter()
                 .map(|effect| match effect {
+                    ResolvedEffect::ArmourModifier { unit, stat, add } => {
+                        CatalogEffectAudit::ArmourModifier {
+                            unit: unit.clone(),
+                            stat: stat.clone(),
+                            add: *add,
+                        }
+                    }
                     ResolvedEffect::WeaponModifier { unit, stat, add } => {
                         CatalogEffectAudit::WeaponModifier {
                             unit: unit.clone(),
@@ -289,6 +301,8 @@ pub fn m3_changes(before: &M3AuditState, after: &M3AuditState) -> M3AuditChanges
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RawResearchAudit {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub armour_ordinal: Option<u64>,
     pub slot: u8,
     pub technology: ContentId,
 }
@@ -507,6 +521,11 @@ pub fn m3_audit_state(world: &World) -> M3AuditState {
             .completed
             .iter()
             .map(|(slot, technology)| RawResearchAudit {
+                armour_ordinal: rows
+                    .armour_order
+                    .iter()
+                    .position(|entry| entry == &(*slot, technology.clone()))
+                    .map(|index| index as u64),
                 slot: *slot,
                 technology: technology.clone(),
             })

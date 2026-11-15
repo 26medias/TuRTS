@@ -1,1 +1,1 @@
-(id: "order_attack", name: "Attack", behaviour: Attack, target: Unit, fire: None, engage: None, icon: "icon_order_move", hotkey: "key_attack", cursor: None, card: None, units: ["skirmish:soldier", "skirmish:swordsman"], description: "Attack.")
+(id: "order_attack", name: "Attack", behaviour: Attack, target: Unit, fire: None, engage: None, icon: "icon_order_move", hotkey: "key_attack", cursor: None, card: None, units: ["skirmish:soldier", "skirmish:swordsman", "skirmish:warrior", "skirmish:tower"], description: "Attack.")

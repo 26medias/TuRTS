@@ -16,6 +16,7 @@ impl Default for ClientContent {
     fn default() -> Self {
         Self {
             catalog: ContentCatalog {
+                combat: None,
                 resources: Default::default(),
                 units: Default::default(),
                 nodes: Default::default(),
@@ -46,6 +47,7 @@ impl ClientContent {
     pub fn from_archives(archives: &[PackageArchive]) -> Result<Self, ModError> {
         let shapes = visuals_by_content(archives)?;
         let mut catalog = ContentCatalog {
+            combat: None,
             resources: Default::default(),
             units: Default::default(),
             nodes: Default::default(),
@@ -69,6 +71,15 @@ impl ClientContent {
         let mut camera = None;
         for archive in archives {
             let part = archive.content()?;
+            if let Some(table) = part.combat
+                && catalog.combat.replace(table).is_some()
+            {
+                return Err(ModError::new(
+                    &archive.id().0,
+                    "exports.combat",
+                    "a match can have only one damage table",
+                ));
+            }
             for (id, value) in part.resources {
                 if catalog.resources.insert(id.clone(), value).is_some() {
                     return Err(ModError::new(

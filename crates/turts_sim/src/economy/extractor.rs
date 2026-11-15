@@ -171,6 +171,8 @@ mod tests {
             accepts: vec![ore.clone()],
         };
         let drill = ResolvedUnit {
+            acquire: None,
+            armour: None,
             constructor: None,
             placement: None,
             build_area: None,
@@ -196,6 +198,7 @@ mod tests {
             removal: None,
         };
         let catalog = ContentCatalog {
+            combat: None,
             resources: BTreeMap::from([(
                 ore.clone(),
                 ResourceDef {

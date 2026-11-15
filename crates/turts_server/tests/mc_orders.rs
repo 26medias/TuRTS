@@ -65,6 +65,8 @@ fn audit_catalog() -> ContentCatalog {
             let content_id = ContentId::parse(id).unwrap();
             let shooter = id == "audit:shooter";
             let unit = ResolvedUnit {
+                acquire: None,
+                armour: None,
                 constructor: None,
                 placement: None,
                 build_area: None,
@@ -84,6 +86,8 @@ fn audit_catalog() -> ContentCatalog {
                 research: None,
                 health: Some(HealthDef { max: 60 }),
                 weapon: shooter.then_some(ResolvedWeapon {
+                    bonus: Vec::new(),
+                    damage_type: None,
                     range: 3.0,
                     range_mode: turts_mod_api::WeaponRangeMode::Centre,
                     cooldown_ms: 0,
@@ -122,6 +126,7 @@ fn audit_catalog() -> ContentCatalog {
         )
     };
     ContentCatalog {
+        combat: None,
         resources: BTreeMap::new(),
         units,
         nodes: BTreeMap::new(),

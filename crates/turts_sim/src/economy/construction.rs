@@ -571,6 +571,8 @@ mod tests {
     fn fixture(policy: PaymentPolicy) -> App {
         let mut app = crate::headless_app(20);
         let tower = ResolvedUnit {
+            acquire: None,
+            armour: None,
             id: cid("tower"),
             name: "Tower".into(),
             footprint: Footprint::Circle { radius: 1.0 },
@@ -645,6 +647,7 @@ mod tests {
             cancel_refunds: refunds,
         };
         let catalog = ContentCatalog {
+            combat: None,
             resources: BTreeMap::from([(
                 cid("credits"),
                 ResourceDef {

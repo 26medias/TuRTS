@@ -489,6 +489,8 @@ mod tests {
         let ore = cid("machine_fixture:ore");
         let part = cid("machine_fixture:part");
         let definition = ResolvedUnit {
+            acquire: None,
+            armour: None,
             constructor: None,
             placement: None,
             build_area: None,
@@ -564,6 +566,7 @@ mod tests {
             })
             .collect();
         let catalog = ContentCatalog {
+            combat: None,
             resources,
             units: BTreeMap::from([(machine_id, definition)]),
             nodes: BTreeMap::new(),

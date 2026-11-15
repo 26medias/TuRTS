@@ -1,0 +1,6 @@
+(id: "warrior", name: "Warrior", footprint: Circle(radius: 0.6), movement: Some((speed: 3.6)),
+ inventory: None, gatherer: None, drop_off: None, producer: None,
+ health: Some((max: 160)), armour: Some((class: "skirmish:heavy", flat: 2)),
+ acquire: Some((range: 14.0, leash: 18.0)),
+ weapon: Some((range: 1.2, range_mode: TargetSurface, cooldown_ms: 900, damage: 20, damage_type: Some("skirmish:blade"), ammo: None, targets: (slots: Enemy))),
+ removal: Some((by_command: true, contents: Destroy)))

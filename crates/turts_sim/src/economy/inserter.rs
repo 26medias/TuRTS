@@ -516,6 +516,8 @@ mod tests {
         conveyor: Option<ResolvedConveyor>,
     ) -> ResolvedUnit {
         ResolvedUnit {
+            acquire: None,
+            armour: None,
             constructor: None,
             placement: None,
             build_area: None,
@@ -621,6 +623,7 @@ mod tests {
             }),
         );
         let catalog = ContentCatalog {
+            combat: None,
             resources: BTreeMap::from([
                 (
                     ore.clone(),

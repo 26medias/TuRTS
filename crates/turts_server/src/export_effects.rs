@@ -23,10 +23,12 @@ pub(super) fn effects(batch: &CommittedTick, slot: SlotId) -> Vec<wire::Effect> 
                 unit,
                 target,
                 weapon,
+                reduced,
             } => Some(wire::Effect::Fired {
                 unit: wire::UnitId(*unit),
                 target: wire::UnitId(*target),
                 weapon: *weapon,
+                reduced: *reduced,
             }),
             EffectRow::Destroyed { unit } => Some(wire::Effect::Destroyed {
                 unit: wire::UnitId(*unit),

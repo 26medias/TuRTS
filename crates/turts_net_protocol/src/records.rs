@@ -118,6 +118,7 @@ pub enum Effect {
         unit: UnitId,
         target: UnitId,
         weapon: u8,
+        reduced: bool,
     },
     Destroyed {
         unit: UnitId,

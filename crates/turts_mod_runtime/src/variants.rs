@@ -441,6 +441,7 @@ impl InterfaceWalk<'_> {
 
     fn primary_field(&mut self, field: PrimaryField, path: &str) {
         let name = match field {
+            PrimaryField::WeaponDetails => Some("PrimaryField::WeaponDetails"),
             PrimaryField::Activity => Some("PrimaryField::Activity"),
             PrimaryField::Cargo => Some("PrimaryField::Cargo"),
             PrimaryField::Armour => Some("PrimaryField::Armour"),

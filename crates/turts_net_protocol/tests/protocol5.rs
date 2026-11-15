@@ -1,5 +1,5 @@
-//! L0-WIRE: the shapes of protocol 5 (design 6.7.13 and 6.8): every new record round-trips in
-//! postcard, the version is 5 and version 4 is old, and no record holds a bevy or library type.
+//! Legacy protocol 5 records keep their shape in the current protocol.
+//! Every record round-trips in postcard, and protocol version 4 remains old.
 
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -16,8 +16,8 @@ where
 }
 
 #[test]
-fn the_protocol_version_is_6() {
-    assert_eq!(NET_PROTOCOL_VERSION, 6);
+fn the_protocol_version_is_7() {
+    assert_eq!(NET_PROTOCOL_VERSION, 7);
 }
 
 #[test]
@@ -159,6 +159,7 @@ fn the_record_list_round_trips() {
         orders_cleared: vec![UnitId(9)],
         effects: vec![
             Effect::Fired {
+                reduced: true,
                 unit: UnitId(1),
                 target: UnitId(2),
                 weapon: 0,

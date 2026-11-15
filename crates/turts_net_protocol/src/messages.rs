@@ -391,6 +391,9 @@ pub struct HealthRecord {
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ResearchRecord {
+    /// Only armour-effect technologies, in authority completion order. Owner only.
+    #[serde(default)]
+    pub armour_order: Vec<ContentRef>,
     pub slot: SlotId,
     pub completed: Vec<ContentRef>,
 }

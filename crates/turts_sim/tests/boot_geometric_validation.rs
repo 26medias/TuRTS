@@ -42,6 +42,8 @@ impl GeometricField {
 
 fn plain_unit(id: &str) -> ResolvedUnit {
     ResolvedUnit {
+        acquire: None,
+        armour: None,
         constructor: None,
         placement: None,
         build_area: None,
@@ -72,6 +74,8 @@ fn catalog(field: GeometricField, value: f32) -> ContentCatalog {
     let id = ContentId::parse(field.id()).unwrap();
     let ore = ContentId::parse("probe:ore").unwrap();
     let unit = ResolvedUnit {
+        acquire: None,
+        armour: None,
         constructor: None,
         placement: None,
         build_area: None,
@@ -101,6 +105,8 @@ fn catalog(field: GeometricField, value: f32) -> ContentCatalog {
         research: None,
         health: None,
         weapon: matches!(field, GeometricField::Weapon).then_some(ResolvedWeapon {
+            bonus: Vec::new(),
+            damage_type: None,
             range: value,
             range_mode: turts_mod_api::WeaponRangeMode::Centre,
             cooldown_ms: 250,
@@ -124,6 +130,7 @@ fn catalog(field: GeometricField, value: f32) -> ContentCatalog {
         );
     }
     ContentCatalog {
+        combat: None,
         resources: BTreeMap::from([(
             ore.clone(),
             ResourceDef {

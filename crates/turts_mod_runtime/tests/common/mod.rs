@@ -29,6 +29,9 @@ pub fn read_files(dir: &Path) -> BTreeMap<String, Vec<u8>> {
     }
     let mut out = BTreeMap::new();
     walk(dir, dir, &mut out);
+    if dir.file_name().and_then(|name| name.to_str()) == Some("skirmish") {
+        without_damage_content(&mut out);
+    }
     // These fixtures test older, isolated contracts. A case adds environment or a ground overlay explicitly when needed.
     // Shipped-package checks use the package directory directly.
     if let Some(bytes) = out.get("manifest.ron") {
@@ -48,6 +51,64 @@ pub fn read_files(dir: &Path) -> BTreeMap<String, Vec<u8>> {
     }
     as_edition_0_2_3(&mut out);
     out
+}
+
+/// Keep legacy feature fixtures independent of the shipped damage-system content.
+/// The actual damage acceptance tests read their complete packages separately.
+pub fn without_damage_content(files: &mut BTreeMap<String, Vec<u8>>) {
+    for group in ["units", "production", "visuals"] {
+        for name in ["warrior", "tower"] {
+            let path = format!("{group}/{name}.ron");
+            files.remove(&path);
+            let manifest = String::from_utf8(files["manifest.ron"].clone()).unwrap();
+            let reference = format!(", \"{path}\"");
+            assert!(
+                manifest.contains(&reference),
+                "missing damage export {path}"
+            );
+            files.insert(
+                "manifest.ron".into(),
+                manifest.replace(&reference, "").into_bytes(),
+            );
+        }
+    }
+    for (path, bytes) in files.iter_mut() {
+        if !path.ends_with(".ron") {
+            continue;
+        }
+        let mut text = String::from_utf8(bytes.clone()).unwrap();
+        text = text.replace("  combat: [\"combat.ron\"],\n", "");
+        for reference in ["warrior", "tower", "train_warrior", "build_tower"] {
+            text = text.replace(&format!(", \"skirmish:{reference}\""), "");
+            text = text.replace(&format!(",\"skirmish:{reference}\""), "");
+        }
+        if path.starts_with("units/") {
+            for class in ["light", "heavy", "structure"] {
+                text = text.replace(
+                    &format!(", armour: Some((class: \"skirmish:{class}\", flat: 0))"),
+                    "",
+                );
+            }
+            text = text.replace(", acquire: Some((range: 14.0, leash: 18.0))", "");
+            text = text.replace(", damage_type: Some(\"skirmish:pierce\")", "");
+            text = text.replace(", damage_type: Some(\"skirmish:blade\")", "");
+            text = text.replace(", range_mode: TargetSurface", "");
+        }
+        if path == "interface/hud.ron" {
+            text = text
+                .lines()
+                .filter(|line| {
+                    !line.contains("id: \"selection_armour\"")
+                        && !line.contains("\"skirmish:warrior\":")
+                        && !line.contains("\"skirmish:tower\":")
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            text = text.replace("SelectionPrimary(WeaponDetails)", "SelectionPrimary(Name)");
+        }
+        *bytes = text.into_bytes();
+    }
+    files.remove("combat.ron");
 }
 
 /// The shipped packages place the sound switch of API 0.2.4, row H25, so they need `^0.2.4`. The

@@ -457,7 +457,22 @@ pub(crate) fn validate_m3(manifest: &Manifest, catalog: &ContentCatalog) -> Resu
             .map(String::as_str)
             .unwrap_or("content");
         for (index, effect) in tech.effects.iter().enumerate() {
-            let ResolvedEffect::WeaponModifier { unit, .. } = effect;
+            let ResolvedEffect::WeaponModifier { unit, .. } = effect else {
+                if let ResolvedEffect::ArmourModifier { unit, .. } = effect
+                    && !catalog
+                        .units
+                        .get(unit)
+                        .is_some_and(|definition| definition.armour.is_some())
+                {
+                    return Err(error(
+                        &origin,
+                        file,
+                        &format!("effects[{index}].unit"),
+                        "armour modifier target must name a unit with armour",
+                    ));
+                }
+                continue;
+            };
             if !catalog
                 .units
                 .get(unit)

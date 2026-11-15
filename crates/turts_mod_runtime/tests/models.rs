@@ -1,4 +1,5 @@
 //! MD4: real package refusals for model contract violations, plus animated input acceptance.
+mod common;
 use serde_json::{Value, json};
 use std::{collections::BTreeMap, path::Path};
 use turts_mod_runtime::{
@@ -59,6 +60,7 @@ fn files() -> BTreeMap<String, Vec<u8>> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../mods/skirmish");
     let mut files = BTreeMap::new();
     read(&root, &root, &mut files);
+    common::without_damage_content(&mut files);
     // Keep the model fixture on its declared edition, without later map presentation.
     let mut map: turts_mod_api::MapDef =
         ron::from_str(std::str::from_utf8(&files["maps/field.ron"]).unwrap()).unwrap();

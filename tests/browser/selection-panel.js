@@ -8,6 +8,12 @@ if (!out) throw Error('PREPARED OUTPUT');
 fs.mkdirSync(out, {recursive:true});
 const fixture = out + '/fixture';
 fs.cpSync(prepared + '/pack/skirmish', fixture, {recursive:true});
+// Keep this panel fixture idle. Its combat check starts with a real attack order below.
+for(const name of fs.readdirSync(fixture+'/units').filter(name=>name.endsWith('.ron'))) {
+ const path=fixture+'/units/'+name;
+ fs.writeFileSync(path,fs.readFileSync(path,'utf8').replace(/,\s*acquire:\s*Some\(\([^)]*\)\)/g,''));
+}
+
 const kinds = ['base','worker','soldier','barracks','swordsman','base'];
 const positions = [[10,24],[14,20],[14,28],[20,24],[20,28],[30,28]];
 const placements = kinds.map((kind,i)=>`(unit:"skirmish:${kind}",owner_slot:${i===5?1:0},pos:(x:${positions[i][0]}.0,y:${positions[i][1]}.0),contents:[])`);

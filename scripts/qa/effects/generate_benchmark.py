@@ -8,7 +8,9 @@ parser.add_argument('--units',type=int,nargs='+',help='Requested actor counts, i
 parser.add_argument('--package',type=Path,help='Source package; defaults to ROOT/mods/skirmish')
 parser.add_argument('--presentation',type=Path,help='RON field fragment from the map_presentation example')
 parser.add_argument('--mixed',action='store_true',help='Mixed melee and ranged pairs with shipped weapon reach')
+parser.add_argument('--warrior-mix',action='store_true',help='Include Warriors in the mixed infantry workload')
 args=parser.parse_args();root=args.root.resolve();out=args.output.resolve();out.mkdir(parents=True,exist_ok=True)
+if args.warrior_mix and not args.mixed: parser.error('--warrior-mix requires --mixed')
 scenes=[('battle200',100,0),('burning200',100,10),('battle400',200,0),('battle800',400,0)]
 if args.units and 2000 in args.units: scenes.append(('battle2000',1000,0))
 presentation=args.presentation.read_text() if args.presentation else ''
@@ -27,6 +29,7 @@ for name,side,burning in scenes:
             x=2+i%cols*1.4+slot*offset;y=2+i//cols*1.4
             kind='soldier'
             if args.mixed: x=2+i%cols*3+slot*1.7; kind='swordsman' if i%2==0 else 'soldier'
+            if args.warrior_mix: kind=['warrior','swordsman','soldier'][i%3]
             placements.append(f'(unit:"skirmish:{kind}",owner_slot:{slot},pos:(x:{x:.5f},y:{y:.5f}),contents:[])')
             commands.append({'tick':400 if burning else 30,'slot':slot,'envelope':{'order':'skirmish:order_attack','units':[slot*side+i+1],'target':{'Unit':(1-slot)*side+i+1},'queue':'Replace','group':0}})
     for i in range(burning):
@@ -42,6 +45,8 @@ for name,side,burning in scenes:
     (package/'units/soldier.ron').write_text(text)
     if args.mixed:
         path=package/'units/swordsman.ron';path.write_text(path.read_text().replace('max: 300','max: 1000000'))
+    if args.warrior_mix:
+        path=package/'units/warrior.ron';path.write_text(path.read_text().replace('max: 160','max: 1000000'))
     # Isolate the render workload: high building health prevents incidental target changes
     # from killing a building. The damage thresholds are 1/1 in this fixture only.
     # The separate gameplay acceptance probe checks the shipped 1/2 and 1/4 thresholds.

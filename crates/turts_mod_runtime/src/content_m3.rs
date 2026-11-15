@@ -146,6 +146,8 @@ pub(crate) fn resolve_content_m3(
                     })
                     .transpose()?;
                 Ok(ResolvedWeapon {
+                    damage_type: weapon.damage_type.clone(),
+                    bonus: weapon.bonus.clone(),
                     range: weapon.range,
                     range_mode: weapon.range_mode,
                     cooldown_ms: weapon.cooldown_ms,
@@ -226,6 +228,18 @@ pub(crate) fn resolve_content_m3(
             .iter()
             .enumerate()
             .map(|(index, effect)| match effect {
+                EffectDef::ArmourModifier { unit, stat, add } => {
+                    Ok(ResolvedEffect::ArmourModifier {
+                        unit: resolve_one(
+                            origin,
+                            &src.file,
+                            &format!("effects[{index}].unit"),
+                            unit,
+                        )?,
+                        stat: stat.clone(),
+                        add: *add,
+                    })
+                }
                 EffectDef::WeaponModifier { unit, stat, add } => {
                     Ok(ResolvedEffect::WeaponModifier {
                         unit: resolve_one(

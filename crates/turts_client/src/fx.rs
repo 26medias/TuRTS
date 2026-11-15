@@ -209,7 +209,13 @@ pub fn update_combat(
         .collect();
     let mut health_releases: HashMap<(u32, u32), (f64, u64)> = HashMap::new();
     for event in &events.raw {
-        let Effect::Fired { unit, target, .. } = event.effect else {
+        let Effect::Fired {
+            unit,
+            target,
+            reduced,
+            ..
+        } = event.effect
+        else {
             continue;
         };
         let (Some(shooter), Some(victim)) = (
@@ -260,8 +266,22 @@ pub fn update_combat(
             hit: package
                 .effect_visuals
                 .get(&victim.content)
-                .and_then(|r| r.hit.clone())
-                .or_else(|| refs.and_then(|r| r.hit.clone())),
+                .and_then(|refs| {
+                    if reduced {
+                        refs.hit_reduced.clone().or_else(|| refs.hit.clone())
+                    } else {
+                        refs.hit.clone()
+                    }
+                })
+                .or_else(|| {
+                    refs.and_then(|refs| {
+                        if reduced {
+                            refs.hit_reduced.clone().or_else(|| refs.hit.clone())
+                        } else {
+                            refs.hit.clone()
+                        }
+                    })
+                }),
             position: end,
             health: None,
         });
@@ -685,6 +705,7 @@ mod timeline_tests {
             sequence: 1,
             tick: 1,
             effect: Effect::Fired {
+                reduced: false,
                 unit: UnitId(1),
                 target: UnitId(2),
                 weapon: 0,
@@ -699,6 +720,51 @@ mod timeline_tests {
             .advance_by(Duration::from_millis(millis));
         app.update();
     }
+
+    #[test]
+    fn reduced_impacts_use_the_victim_effect_and_keep_normal_hit_fallbacks() {
+        for (reduced, victim_reduced, victim_hit, expected) in [
+            (true, true, true, "test:victim_reduced"),
+            (false, true, true, "test:victim_hit"),
+            (true, false, true, "test:victim_hit"),
+            (true, false, false, "test:shooter_reduced"),
+            (false, false, false, "test:shooter_hit"),
+        ] {
+            let mut app = app();
+            {
+                let mut acquired = app.world_mut().resource_mut::<AcquiredPackages>();
+                let visuals = &mut acquired.0.presentation.effect_visuals;
+                let shooter = visuals.get_mut("test:soldier").unwrap();
+                shooter.hit = Some("test:shooter_hit".into());
+                shooter.hit_reduced = Some("test:shooter_reduced".into());
+                visuals.insert(
+                    "test:victim".into(),
+                    turts_mod_api::VisualEffectRefs {
+                        hit: victim_hit.then(|| "test:victim_hit".into()),
+                        hit_reduced: victim_reduced.then(|| "test:victim_reduced".into()),
+                        ..Default::default()
+                    },
+                );
+            }
+            app.world_mut().resource_mut::<Presented>().units[1].content_id = "test:victim".into();
+            app.world_mut().resource_mut::<VisualEvents>().raw =
+                vec![crate::replica::VisualEvent {
+                    sequence: 1,
+                    tick: 1,
+                    effect: Effect::Fired {
+                        reduced,
+                        unit: UnitId(1),
+                        target: UnitId(2),
+                        weapon: 0,
+                    },
+                }];
+            app.update();
+            let fx = app.world().resource::<CombatPresentation>();
+            assert_eq!(fx.impacts.len(), 1);
+            assert_eq!(fx.impacts[0].hit.as_deref(), Some(expected));
+        }
+    }
+
     #[test]
     fn melee_without_projectile_emits_no_bolt_and_releases_health_immediately() {
         let mut app = app();
@@ -806,6 +872,7 @@ mod timeline_tests {
                 sequence: 1,
                 tick: 1,
                 effect: Effect::Fired {
+                    reduced: false,
                     unit: UnitId(1),
                     target: UnitId(2),
                     weapon: 0,
@@ -815,6 +882,7 @@ mod timeline_tests {
                 sequence: 2,
                 tick: 1,
                 effect: Effect::Fired {
+                    reduced: false,
                     unit: UnitId(3),
                     target: UnitId(2),
                     weapon: 0,
@@ -842,6 +910,8 @@ mod timeline_tests {
     fn fx5_damage_thresholds_start_and_stop_the_authored_loops() {
         let mut app = app();
         let unit = turts_mod_api::ResolvedUnit {
+            acquire: None,
+            armour: None,
             id: turts_mod_api::ContentId::parse("test:soldier").unwrap(),
             name: "Target".into(),
             footprint: turts_mod_api::Footprint::Circle { radius: 1. },

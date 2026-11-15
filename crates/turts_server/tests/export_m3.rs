@@ -141,10 +141,12 @@ fn delta_for_slot1_has_healths_and_removed_only() {
     let mut view = mixed_owner_view();
     view.m3.research = vec![
         RawResearchAudit {
+            armour_ordinal: None,
             slot: 0,
             technology: turts_mod_api::ContentId::parse("forge:hardened_shells").unwrap(),
         },
         RawResearchAudit {
+            armour_ordinal: None,
             slot: 1,
             technology: turts_mod_api::ContentId::parse("forge:hardened_shells").unwrap(),
         },
@@ -196,6 +198,7 @@ fn delta_for_slot1_has_healths_and_removed_only() {
         }],
     }];
     batch.research = vec![RawResearchAudit {
+        armour_ordinal: None,
         slot: 0,
         technology: turts_mod_api::ContentId::parse("forge:hardened_shells").unwrap(),
     }];

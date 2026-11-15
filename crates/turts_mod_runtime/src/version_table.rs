@@ -163,10 +163,72 @@ const fn variant_0_2_4(name: &'static str) -> VersionTableRow {
     }
 }
 
+fn weapon_details(manifest: &Manifest, content: &ParsedMcContent) -> bool {
+    variants::collect(manifest, content)
+        .iter()
+        .any(|used| used.name == "PrimaryField::WeaponDetails")
+}
+fn target_surface(_: &Manifest, content: &ParsedMcContent) -> bool {
+    content.units.iter().any(|(_, unit)| {
+        unit.weapon.as_ref().is_some_and(|weapon| {
+            weapon.range_mode == turts_mod_api::WeaponRangeMode::TargetSurface
+        })
+    })
+}
+fn armour_modifier(_: &Manifest, content: &ParsedMcContent) -> bool {
+    content.technologies.iter().any(|(_, technology)| {
+        technology
+            .effects
+            .iter()
+            .any(|effect| matches!(effect, turts_mod_api::EffectDef::ArmourModifier { .. }))
+    })
+}
+
 /// Add one row for each new feature of a released API. A later API adds its rows here with the
 /// detection kind that its design row names, and nowhere else. The order is the order of the
 /// first refusal when one package has several problems.
 pub(crate) const VERSION_TABLE: &[VersionTableRow] = &[
+    VersionTableRow {
+        name: "PrimaryField::WeaponDetails",
+        detect: Detect::Parsed(weapon_details),
+        since_api: "0.2.12",
+    },
+    VersionTableRow {
+        name: "TargetSurface",
+        detect: Detect::Parsed(target_surface),
+        since_api: "0.2.12",
+    },
+    VersionTableRow {
+        name: "ArmourModifier",
+        detect: Detect::Parsed(armour_modifier),
+        since_api: "0.2.12",
+    },
+    raw(
+        "weapon.bonus",
+        "0.2.12",
+        RawGroup::Units,
+        &["weapon", "bonus"],
+    ),
+    raw(
+        "armour.tags",
+        "0.2.12",
+        RawGroup::Units,
+        &["armour", "tags"],
+    ),
+    raw(
+        "armour.points",
+        "0.2.12",
+        RawGroup::Units,
+        &["armour", "points"],
+    ),
+    raw(
+        "armour.flat_by_type",
+        "0.2.12",
+        RawGroup::Units,
+        &["armour", "flat_by_type"],
+    ),
+    raw("combat.tags", "0.2.12", RawGroup::Combat, &["tags"]),
+    raw("combat.curve", "0.2.12", RawGroup::Combat, &["curve"]),
     VersionTableRow {
         name: "AllSeated",
         detect: Detect::Variant("AllSeated"),

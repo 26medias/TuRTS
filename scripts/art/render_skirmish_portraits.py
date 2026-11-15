@@ -6,8 +6,9 @@ from pathlib import Path
 import bpy
 from mathutils import Vector
 
-root = Path(sys.argv[-1]).resolve()
-for name in ('base', 'barracks', 'worker', 'soldier', 'swordsman'):
+root = Path(sys.argv[sys.argv.index('--') + 1]).resolve()
+names = sys.argv[sys.argv.index('--') + 2:] or ['base', 'barracks', 'worker', 'soldier', 'swordsman', 'warrior', 'tower']
+for name in names:
     bpy.ops.wm.read_factory_settings(use_empty=True)
     bpy.ops.import_scene.gltf(filepath=str(root / 'assets/models' / (name + '.glb')))
     scene = bpy.context.scene

@@ -768,6 +768,7 @@ mod tests {
         let first = ContentId::parse("forge:vein_a").unwrap();
         let second = ContentId::parse("forge:vein_b").unwrap();
         let catalog = ContentCatalog {
+            combat: None,
             resources: BTreeMap::from([(
                 ore.clone(),
                 ResourceDef {
@@ -879,6 +880,7 @@ mod tests {
 
     fn empty_catalog() -> ContentCatalog {
         ContentCatalog {
+            combat: None,
             resources: BTreeMap::new(),
             units: BTreeMap::new(),
             nodes: BTreeMap::new(),
@@ -904,6 +906,8 @@ mod tests {
         let drone_id = ContentId::parse("forge:drone").unwrap();
         let shell = ContentId::parse("forge:shell").unwrap();
         let drone = ResolvedUnit {
+            acquire: None,
+            armour: None,
             constructor: None,
             placement: None,
             build_area: None,
@@ -935,6 +939,7 @@ mod tests {
             removal: None,
         };
         ContentCatalog {
+            combat: None,
             resources: BTreeMap::from([(
                 shell.clone(),
                 ResourceDef {
@@ -1091,6 +1096,8 @@ mod tests {
         catalog.units.insert(
             producer_id.clone(),
             ResolvedUnit {
+                acquire: None,
+                armour: None,
                 constructor: None,
                 placement: None,
                 build_area: None,
@@ -1120,6 +1127,8 @@ mod tests {
         catalog.units.insert(
             output_id.clone(),
             ResolvedUnit {
+                acquire: None,
+                armour: None,
                 constructor: None,
                 placement: None,
                 build_area: None,

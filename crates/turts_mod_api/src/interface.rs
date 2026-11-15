@@ -281,6 +281,8 @@ pub enum StatField {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub enum PrimaryField {
+    /// API 0.2.12: effective own-weapon damage, type, and additive bonus rows.
+    WeaponDetails,
     Name,
     Icon,
     Portrait,

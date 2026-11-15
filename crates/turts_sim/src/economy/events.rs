@@ -89,6 +89,8 @@ pub enum EconomyEventKind {
         ammo: u64,
         damage: u64,
         applied: u64,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        reduced: bool,
     },
     EnabledChanged {
         unit: u32,
@@ -186,6 +188,7 @@ pub enum EffectRow {
         unit: u32,
         target: u32,
         weapon: u8,
+        reduced: bool,
     },
     Destroyed {
         unit: u32,
@@ -313,10 +316,16 @@ pub(crate) fn visual_effects(events: &[EconomyEvent]) -> Vec<EffectRow> {
     events
         .iter()
         .filter_map(|event| match &event.kind {
-            EconomyEventKind::Fired { weapon, target, .. } => Some(EffectRow::Fired {
+            EconomyEventKind::Fired {
+                weapon,
+                target,
+                reduced,
+                ..
+            } => Some(EffectRow::Fired {
                 unit: *weapon,
                 target: *target,
                 weapon: 0,
+                reduced: *reduced,
             }),
             EconomyEventKind::Destroyed { unit, .. } => Some(EffectRow::Destroyed { unit: *unit }),
             _ => None,
@@ -335,6 +344,7 @@ mod visual_effect_tests {
                 ordinal: 0,
                 owner_slot: 0,
                 kind: EconomyEventKind::Fired {
+                    reduced: false,
                     weapon: 7,
                     target: 9,
                     item: None,
@@ -358,6 +368,7 @@ mod visual_effect_tests {
             visual_effects(&events),
             vec![
                 EffectRow::Fired {
+                    reduced: false,
                     unit: 7,
                     target: 9,
                     weapon: 0

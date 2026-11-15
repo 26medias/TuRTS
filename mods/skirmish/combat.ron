@@ -1,0 +1,11 @@
+(
+ damage_types: ["pierce", "blade"], armour_classes: ["light", "heavy", "structure"], minimum: 1,
+ cells: [
+  (damage: "skirmish:pierce", armour: "skirmish:light", ratio: (numerator: 1, denominator: 1)),
+  (damage: "skirmish:pierce", armour: "skirmish:heavy", ratio: (numerator: 3, denominator: 4)),
+  (damage: "skirmish:pierce", armour: "skirmish:structure", ratio: (numerator: 1, denominator: 4)),
+  (damage: "skirmish:blade", armour: "skirmish:light", ratio: (numerator: 1, denominator: 1)),
+  (damage: "skirmish:blade", armour: "skirmish:heavy", ratio: (numerator: 1, denominator: 1)),
+  (damage: "skirmish:blade", armour: "skirmish:structure", ratio: (numerator: 3, denominator: 4)),
+ ],
+)

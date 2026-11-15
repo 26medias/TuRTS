@@ -843,6 +843,8 @@ mod m3_disabled_legacy_producer_tests {
             .unwrap();
         let resolved_unit =
             |id: turts_mod_api::ContentId, name: &str, radius, producer, movement| ResolvedUnit {
+                acquire: None,
+                armour: None,
                 constructor: None,
                 placement: None,
                 build_area: None,
@@ -865,6 +867,7 @@ mod m3_disabled_legacy_producer_tests {
                 removal: None,
             };
         let mut catalog = ContentCatalog {
+            combat: None,
             resources: BTreeMap::new(),
             units: BTreeMap::new(),
             nodes: BTreeMap::new(),
