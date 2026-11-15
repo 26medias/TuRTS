@@ -1,6 +1,6 @@
 # Paid work and repair implementation plan
 
-Status: draft for the same Anvil reviewer's plan gate. Do not implement before approval.
+Status: approved by the same Anvil reviewer. Both final clarifications are incorporated.
 Spec: `docs/superpowers/specs/2026-11-15-paid-work-and-repair.md`.
 Gate 1 findings: `target/mc-evidence/operating-resources/anvil-paid-spec-review.md` in the main checkout.
 
@@ -70,6 +70,10 @@ Account for source inventory destruction without fabricating new item drops.
 Coalesce charge/refund events and retain raw charged buffers needed to explain every intermediate debit.
 Extend the independent audit checker to derive these changes from definitions and before/after state.
 Do not weaken existing conservation or claim checks to accept new events.
+Root must run independent audit evidence for intermediate paid debits (PW2–PW3),
+cancel/death credits and explicit discards (PW5–PW6), and fractional repair debits/healing (RP2–RP3).
+Each group includes coherent state/event tampering that the auditor must reject.
+Record those streams, commands, and exits under IO3. Operating-resource replay limits do not satisfy these new checks.
 
 ## Repair
 
@@ -94,6 +98,8 @@ Reject duplicate keys, missing endpoints, and foreign sources atomically.
 Expose the exact frozen PrimaryField values and RepairStateIs predicates with mod-authored names and labels.
 Change RateRecord prediction to follow actual state/rate. A Running/Slowed record with held=true must still advance.
 Test postcard round trips and malformed records before the browser probe.
+Assert that arithmetic/source-tie holds project Working, while real unaffordable Balance projects WaitingForFunds.
+Typed audit diagnostics retain the detailed hold cause without promising an owner-visible wire reason.
 
 The client child builds one isolated fixture from existing small assets, without changing Skirmish.
 Create damage through ordinary authored gameplay, such as a hostile fixture weapon with one declared ammunition item.
