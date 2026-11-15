@@ -69,7 +69,7 @@ pub(super) fn step_plain_progress(
     }
     let step_limit = speed * dt;
     let body_occupied = |point: Vec2| {
-        grid.nearby(points, point, unit.radius + max_radius)
+        grid.within_unsorted(points, point, unit.radius + max_radius)
             .into_iter()
             .any(|other_index| {
                 other_index != index
