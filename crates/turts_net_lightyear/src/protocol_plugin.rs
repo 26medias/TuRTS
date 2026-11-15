@@ -28,7 +28,10 @@ impl Plugin for ProtocolPlugin {
         })
         .add_direction(NetworkDirection::ServerToClient);
         app.add_channel::<KnowledgeChannel>(ChannelSettings {
-            mode: ChannelMode::OrderedReliable(ReliableSettings::default()),
+            mode: ChannelMode::OrderedReliable(ReliableSettings {
+                rtt_resend_min_delay: Duration::from_millis(50),
+                ..Default::default()
+            }),
             ..Default::default()
         })
         .add_direction(NetworkDirection::ServerToClient);

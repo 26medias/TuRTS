@@ -1,6 +1,9 @@
 //! Implementation for WebSocket sessions, shared between clients and servers.
 
 pub(crate) mod backend;
+mod send_budget;
+pub use send_budget::MAX_WEBSOCKET_SEND_QUEUE_BYTES;
+use send_budget::{QueuedPacket, SendBudget};
 
 use {
     crate::WebSocketRuntime,
@@ -12,7 +15,6 @@ use {
     bevy_app::prelude::*,
     bevy_ecs::prelude::*,
     bevy_platform::time::Instant,
-    bytes::Bytes,
     core::num::Saturating,
     derive_more::{Display, Error},
     futures::channel::{mpsc, oneshot},
@@ -59,8 +61,17 @@ impl Plugin for WebSocketSessionPlugin {
 #[require(Session::new(Instant::now(), MTU))]
 pub struct WebSocketIo {
     pub(crate) rx_packet_b2f: mpsc::UnboundedReceiver<RecvPacket>,
-    pub(crate) tx_packet_f2b: mpsc::UnboundedSender<Bytes>,
+    pub(crate) tx_packet_f2b: mpsc::UnboundedSender<QueuedPacket>,
+    pub(crate) send_budget: SendBudget,
     pub(crate) tx_user_dc: Option<oneshot::Sender<String>>,
+}
+
+impl WebSocketIo {
+    /// Retained outgoing packet bytes plus bounded queue-entry overhead. Includes
+    /// a native socket write that has not completed yet.
+    pub fn queued_send_bytes(&self) -> usize {
+        self.send_budget.used()
+    }
 }
 
 /// Packet MTU of [`WebSocketIo`] sessions.
@@ -110,6 +121,9 @@ pub enum SessionError {
     /// Failed to send data across the socket.
     #[display("failed to send data")]
     Send(SendError),
+    /// A slow connection exceeded its bounded outgoing packet storage.
+    #[display("outgoing WebSocket queue is full")]
+    SendQueueFull,
 }
 
 impl Drop for WebSocketIo {
@@ -123,7 +137,8 @@ impl Drop for WebSocketIo {
 #[derive(Debug)]
 pub(crate) struct SessionFrontend {
     pub rx_packet_b2f: mpsc::UnboundedReceiver<RecvPacket>,
-    pub tx_packet_f2b: mpsc::UnboundedSender<Bytes>,
+    pub tx_packet_f2b: mpsc::UnboundedSender<QueuedPacket>,
+    pub send_budget: SendBudget,
     pub tx_user_dc: oneshot::Sender<String>,
 }
 
@@ -161,8 +176,8 @@ pub(crate) fn poll(mut sessions: Query<(Entity, &mut Session, &mut WebSocketIo)>
     }
 }
 
-fn flush(mut sessions: Query<(Entity, &mut Session, &WebSocketIo)>) {
-    for (entity, mut session, io) in &mut sessions {
+fn flush(mut sessions: Query<(Entity, &mut Session, &mut WebSocketIo)>) {
+    for (entity, mut session, mut io) in &mut sessions {
         let span = trace_span!("flush", %entity);
         let _span = span.enter();
 
@@ -171,11 +186,17 @@ fn flush(mut sessions: Query<(Entity, &mut Session, &WebSocketIo)>) {
         let mut num_packets = Saturating(0);
         let mut num_bytes = Saturating(0);
         for packet in session.send.drain(..) {
+            let Some(packet) = io.send_budget.packet(packet) else {
+                if let Some(tx) = io.tx_user_dc.take() {
+                    _ = tx.send("outgoing queue limit exceeded".to_owned());
+                }
+                break;
+            };
             num_packets += 1;
             session.stats.packets_sent += 1;
 
-            num_bytes += packet.len();
-            session.stats.bytes_sent += packet.len();
+            num_bytes += packet.payload.len();
+            session.stats.bytes_sent += packet.payload.len();
 
             // handle connection errors in `poll`
             _ = io.tx_packet_f2b.unbounded_send(packet);
