@@ -548,7 +548,7 @@ mod tests {
                 when_short: vec![],
             });
             catalog.units.get_mut(&cid("worker")).unwrap().placement = Some(SitePlacementDef {
-                gap: if node_clearance { 0.0 } else { 10.0 },
+                gap: 0.0,
                 node_clearance: if node_clearance { 10.0 } else { 0.0 },
                 in_build_area: false,
                 site_health: Ratio {
@@ -556,6 +556,19 @@ mod tests {
                     denominator: 1,
                 },
             });
+            if !node_clearance {
+                // The candidate has no gap. Only a different static type expands
+                // the public required region, independently of hidden instances.
+                catalog.units.get_mut(&cid("depot")).unwrap().placement = Some(SitePlacementDef {
+                    gap: 10.0,
+                    node_clearance: 0.0,
+                    in_build_area: false,
+                    site_health: Ratio {
+                        numerator: 1,
+                        denominator: 1,
+                    },
+                });
+            }
             let mut app = turts_sim::headless_app(20);
             let staged = turts_sim::stage_package(
                 app.world(),
@@ -735,5 +748,53 @@ mod tests {
             missing.data,
             QueryData::Lookup(Advice::NotObserved)
         ));
+        // Force a real continuation over the two permitted own rows. Equality of
+        // first pages alone does not prove that hidden rows cannot move cursors.
+        let query = Query::Units(UnitQuery {
+            relation: turts_mod_api::SlotRelation::Any,
+            content: vec![],
+            center: None,
+            radius: None,
+        });
+        let mut continuation = None;
+        let mut pages = 0;
+        loop {
+            let first = a.query(query.clone(), continuation.clone(), 1).unwrap();
+            let second = b.query(query.clone(), continuation.clone(), 1).unwrap();
+            assert_eq!(
+                first, second,
+                "rows, examined candidates and cursor state must agree on every page"
+            );
+            assert_eq!(first.usage.candidates, 1);
+            pages += 1;
+            continuation = match first.state {
+                PageState::More(cursor) | PageState::UnresolvedTie(cursor) => Some(cursor),
+                PageState::Complete => break,
+            };
+        }
+        assert!(pages >= 2, "the fixture must exercise continuation");
+        let tight = turts_mod_api::BotQuota {
+            queries: 3,
+            candidates: 1,
+            rows: 3,
+            proposals: 0,
+        };
+        let mut a = present.queries("tight", tight);
+        let mut b = absent.queries("tight", tight);
+        let first = a.query(query.clone(), None, 64).unwrap();
+        let second = b.query(query.clone(), None, 64).unwrap();
+        assert_eq!(
+            first, second,
+            "candidate exhaustion depends only on permitted rows"
+        );
+        let cursor = match first.state {
+            PageState::More(cursor) | PageState::UnresolvedTie(cursor) => cursor,
+            PageState::Complete => panic!("one candidate cannot complete this fixture"),
+        };
+        assert_eq!(
+            a.query(query.clone(), Some(cursor.clone()), 64),
+            Err(QueryError::Budget)
+        );
+        assert_eq!(b.query(query, Some(cursor), 64), Err(QueryError::Budget));
     }
 }
