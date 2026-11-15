@@ -39,6 +39,10 @@ pub fn receive_transactions(
     mut state: ResMut<ReplicaState>,
     mut selection: Option<ResMut<crate::ui_shared::Selection>>,
     mut presented: ResMut<crate::present::Presented>,
+    mut hooks: ResMut<crate::ingest::IngestHooks>,
+    mut counters: ResMut<crate::ingest::IngestCounters>,
+    options: Res<crate::ClientOpts>,
+    mut witnesses: ResMut<crate::ingest::ReceiptWitnesses>,
     attempt: Option<Res<crate::rejoin::RejoinController>>,
     time: Res<Time<Real>>,
 ) {
@@ -141,10 +145,28 @@ pub fn receive_transactions(
             let staged = transactions.assembler.as_mut().map(|a| a.end(&end));
             match staged {
                 Some(Ok(Some(staged))) => {
+                    crate::ingest::append_raw_world_dto(
+                        options.0.raw_world_log.as_deref(),
+                        "state_transaction",
+                        &staged.payload,
+                    );
+                    let epoch = witnesses.epoch_for(entity.to_bits());
+                    witnesses.record_message(epoch, true);
                     let valid = state.replica.as_mut().is_some_and(|replica| {
                         replica.activate_transaction(&staged.stamp, &staged.payload, Instant::now())
                     });
                     if valid {
+                        match &staged.payload {
+                            StateTransactionPayload::Snapshot { .. } => {
+                                hooks.outstanding_request = false;
+                                counters.snapshots_applied =
+                                    counters.snapshots_applied.saturating_add(1);
+                            }
+                            StateTransactionPayload::Patch { .. } => {
+                                counters.deltas_received =
+                                    counters.deltas_received.saturating_add(1)
+                            }
+                        }
                         // Remove old interpolation and selection in this same schedule step.
                         if let Some(replica) = state.replica.as_ref() {
                             presented
@@ -166,6 +188,8 @@ pub fn receive_transactions(
                             for (target, mut sender) in &mut acknowledgements {
                                 if target == entity {
                                     sender.send::<ReliableChannel>(ack.clone());
+                                    let epoch = witnesses.epoch_for(target.to_bits());
+                                    witnesses.record_message(epoch, true);
                                 }
                             }
                             transactions.activated += 1;

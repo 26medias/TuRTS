@@ -1162,7 +1162,11 @@ mod current_attempt_tests {
 
 /// Append the decoded wire DTO before any replica validation, drop, hold, or owner projection.
 /// This opt-in native test hook is deliberately separate from normal debug/report state.
-fn append_raw_world_dto<T: serde::Serialize>(path: Option<&std::path::Path>, kind: &str, dto: &T) {
+pub(crate) fn append_raw_world_dto<T: serde::Serialize>(
+    path: Option<&std::path::Path>,
+    kind: &str,
+    dto: &T,
+) {
     let Some(path) = path else { return };
     let mut file = std::fs::OpenOptions::new()
         .create(true)
