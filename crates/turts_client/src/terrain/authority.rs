@@ -3,9 +3,7 @@ use super::store::{Authority, Layout};
 use crate::replica::{ReplicaContext, UnitTable};
 use std::cell::RefCell;
 use turts_mod_api::{ContentId, KnowledgeBasis, KnowledgeSnapshot, TerrainCell};
-use turts_net_protocol::{
-    TerrainGroundAnchor, TerrainWorkRecord, TerrainWorkWait, visibility::EventUnitObservation,
-};
+use turts_net_protocol::{TerrainGroundAnchor, TerrainWorkRecord, TerrainWorkWait};
 use turts_rules::terrain::geometry::{Budget, Cell};
 
 pub(crate) struct View<'a, Units: UnitTable> {
@@ -13,7 +11,6 @@ pub(crate) struct View<'a, Units: UnitTable> {
     pub units: &'a Units,
     pub basis: &'a KnowledgeBasis,
     pub knowledge: Option<&'a KnowledgeSnapshot>,
-    pub event_units: &'a [EventUnitObservation],
     pub layout: &'a Layout,
     // All surface validations in a transaction share one public bounded work budget.
     pub budget: RefCell<Budget>,
@@ -64,13 +61,6 @@ impl<Units: UnitTable> Authority for View<'_, Units> {
         if self.units.contains_key(&row.unit.0) {
             return true;
         }
-        if self
-            .event_units
-            .iter()
-            .any(|fact| fact.unit.unit_id == row.unit && row.observed_tick <= fact.basis.tick)
-        {
-            return true;
-        }
         self.knowledge.is_some_and(|knowledge| {
             knowledge.remembered_units.iter().any(|memory| {
                 memory.unit == row.unit.0
@@ -80,10 +70,11 @@ impl<Units: UnitTable> Authority for View<'_, Units> {
         })
     }
     fn required_anchors(&self) -> impl Iterator<Item = u32> {
-        self.units
-            .rows()
-            .map(|(id, _)| id)
-            .chain(self.event_units.iter().map(|fact| fact.unit.unit_id.0))
+        self.units.rows().map(|(id, _)| id).chain(
+            self.knowledge
+                .into_iter()
+                .flat_map(|knowledge| knowledge.remembered_units.iter().map(|memory| memory.unit)),
+        )
     }
     fn work(&self, row: &TerrainWorkRecord) -> bool {
         let Some(unit) = self

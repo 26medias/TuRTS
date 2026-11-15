@@ -1,0 +1,1 @@
+{"slot":0,"worker":"quarry:walker","rover":"quarry:crawler","dig":"quarry:spade","body_pick_height":0.6,"reference":[13.5,7.5,0],"rectangle":[[15.5,7.5,1],[16.5,8.5,1]],"cells":{"min":{"x":15,"y":7},"max":{"x":17,"y":9}},"target_elevation":0,"destination":[23,8,0],"require_unload":true}

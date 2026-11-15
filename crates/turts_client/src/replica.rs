@@ -530,6 +530,7 @@ impl Replica {
                     row.basis.tick > stamp.basis.tick
                         || row.basis.phase != turts_mod_api::ObservationPhase::Completed
                 }
+                || !valid_event_ground(context, row)
                 || !valid_unit(context, &row.unit)
                 || !transient.insert(row.unit.unit_id.0)
         }) {
@@ -557,7 +558,7 @@ impl Replica {
                 StateTransactionPayload::Snapshot {
                     state,
                     knowledge,
-                    event_units,
+                    event_units: _,
                 },
             ) => {
                 let Some(rows) = state.records.terrain.as_ref() else {
@@ -575,7 +576,6 @@ impl Replica {
                     units: &candidate.units,
                     basis: &stamp.basis,
                     knowledge: knowledge.as_ref(),
-                    event_units,
                     layout,
                     budget: std::cell::RefCell::new(turts_rules::terrain::geometry::Budget::new(
                         4_194_304,
@@ -830,6 +830,7 @@ impl Replica {
                     row.basis.tick > stamp.basis.tick
                         || row.basis.phase != turts_mod_api::ObservationPhase::Completed
                 })
+                || !valid_event_ground(context, row)
                 || !valid_unit(context, &row.unit)
                 || !transient.insert(row.unit.unit_id.0)
             {
@@ -899,7 +900,6 @@ impl Replica {
                     units: &final_units,
                     basis: &stamp.basis,
                     knowledge,
-                    event_units,
                     layout,
                     budget: std::cell::RefCell::new(turts_rules::terrain::geometry::Budget::new(
                         4_194_304,
@@ -2959,4 +2959,17 @@ fn valid_known_view(
             .remembered_nodes
             .iter()
             .all(|row| context.content.catalog.nodes.contains_key(&row.content))
+}
+
+fn valid_event_ground(
+    context: &ReplicaContext,
+    event: &turts_net_protocol::visibility::EventUnitObservation,
+) -> bool {
+    match (&context.content.terrain, event.ground_elevation) {
+        (None, None) => true,
+        (Some(terrain), Some(elevation)) => {
+            (terrain.grid.floor..=terrain.grid.ceiling).contains(&elevation)
+        }
+        _ => false,
+    }
 }

@@ -334,14 +334,26 @@ pub fn update_combat(
     // Authorized event endpoints can disappear before the completed state.
     for observation in &replica.event_units {
         let unit = &observation.unit;
-        fx.actors.entry(unit.unit_id.0).or_insert_with(|| Actor {
-            content: unit.content_id.clone(),
-            position: world_to_scene(unit.pos)
-                + Vec3::Y
-                    * crate::terrain::render::live_height(replica.terrain.as_ref(), unit.unit_id.0)
-                        .unwrap_or(0.),
-            height: 1.6,
-        });
+        let height = fx
+            .actors
+            .get(&unit.unit_id.0)
+            .map_or(1.6, |actor| actor.height);
+        fx.actors.insert(
+            unit.unit_id.0,
+            Actor {
+                content: unit.content_id.clone(),
+                position: world_to_scene(unit.pos)
+                    + Vec3::Y
+                        * replica
+                            .terrain
+                            .as_ref()
+                            .zip(observation.ground_elevation)
+                            .map_or(0., |(terrain, elevation)| {
+                                terrain.layout.elevation_height(elevation)
+                            }),
+                height,
+            },
+        );
     }
     let destroyed_ticks: HashMap<_, _> = events
         .raw
@@ -926,7 +938,66 @@ pub(crate) mod timeline_tests {
 
     #[test]
     fn authorized_delayed_impact_survives_final_sight_loss_at_its_captured_pose() {
+        authorized_delayed_impact_at_ground(None);
+    }
+    #[test]
+    fn terrain_event_contact_survives_handle_removal_without_a_persistent_anchor() {
+        authorized_delayed_impact_at_ground(Some(2));
+    }
+    fn authorized_delayed_impact_at_ground(ground: Option<i32>) {
         let mut app = app();
+        if ground.is_some() {
+            use crate::terrain::store::{Authority, Layout, PermittedTerrain};
+            struct Public;
+            impl Authority for Public {
+                fn surface(&self, _: turts_mod_api::TerrainCell, _: u32, _: bool) -> bool {
+                    true
+                }
+                fn anchor(&self, _: &turts_net_protocol::TerrainGroundAnchor) -> bool {
+                    true
+                }
+                fn required_anchors(&self) -> impl Iterator<Item = u32> {
+                    std::iter::empty()
+                }
+                fn work(&self, _: &turts_net_protocol::TerrainWorkRecord) -> bool {
+                    true
+                }
+            }
+            let layout = std::sync::Arc::new(
+                Layout::new(
+                    turts_mod_api::ContentId::parse("test:map").unwrap(),
+                    &turts_mod_api::TerrainDef {
+                        length_scale: 1,
+                        cell_width: 1,
+                        elevation_step: 1,
+                        columns: 64,
+                        rows: 64,
+                        chunk_width: 8,
+                        initial_elevation: 0,
+                        initial_heights: vec![],
+                        floor: -8,
+                        ceiling: 8,
+                        generation: turts_mod_api::TerrainGenerationDef::Version1 { bands: vec![] },
+                    },
+                )
+                .unwrap(),
+            );
+            let terrain = PermittedTerrain::stage_snapshot(
+                layout,
+                &hidden_knowledge().basis,
+                &[],
+                &turts_net_protocol::TerrainSnapshot::default(),
+                &Public,
+                None,
+            )
+            .unwrap();
+            app.world_mut()
+                .resource_mut::<ReplicaState>()
+                .replica
+                .as_mut()
+                .unwrap()
+                .terrain = Some(terrain);
+        }
         app.world_mut()
             .resource_mut::<ReplicaState>()
             .replica
@@ -952,6 +1023,7 @@ pub(crate) mod timeline_tests {
                 .into_iter()
                 .map(
                     |(id, x)| turts_net_protocol::visibility::EventUnitObservation {
+                        ground_elevation: ground,
                         basis: basis.clone(),
                         unit: turts_net_protocol::UnitSnapshot {
                             unit_id: UnitId(id),
@@ -968,6 +1040,24 @@ pub(crate) mod timeline_tests {
         app.world_mut().resource_mut::<Presented>().units.clear();
         shoot(&mut app, 90);
         let captured = app.world().resource::<CombatPresentation>().impacts[0].position;
+        if let Some(elevation) = ground {
+            assert!(
+                (captured.y - elevation as f32 - 0.8).abs() < 0.001,
+                "event must replace the prior cached flat pose: {captured:?}"
+            );
+            assert!(
+                app.world()
+                    .resource::<ReplicaState>()
+                    .replica
+                    .as_ref()
+                    .unwrap()
+                    .terrain
+                    .as_ref()
+                    .unwrap()
+                    .anchors
+                    .is_empty()
+            );
+        }
         {
             let mut state = app.world_mut().resource_mut::<ReplicaState>();
             let replica = state.replica.as_mut().unwrap();

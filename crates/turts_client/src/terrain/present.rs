@@ -9,7 +9,7 @@ use bevy::{
     prelude::*,
     ui_widgets::{Activate, Button, observe},
 };
-use turts_mod_api::{Behaviour, ContentId, ResolvedTerrainOperation, TerrainProvenance};
+use turts_mod_api::{Behaviour, ContentId, ResolvedTerrainOperation};
 use turts_net_protocol::{OrderTarget, TerrainWorkWait};
 
 #[derive(Resource, Default)]
@@ -97,44 +97,53 @@ pub(crate) fn panel(
                     let unknown = preview.cells.iter().filter(|cell| !cell.current).count();
                     text.push_str(&format!("\nTarget level {level} · {} cells · {unknown} Unknown\nDrag a rectangle. Shift queues. Right click cancels.",preview.cells.len()));
                     if let Some(tool) = tool {
-                        match &tool.operation {
-                            ResolvedTerrainOperation::Excavate => {
-                                let placed = preview
-                                    .cells
+                        if let Some(advice) =
+                            super::advice::estimate(terrain, &content.catalog, tool, preview)
+                        {
+                            let amounts = |values: &std::collections::BTreeMap<ContentId, u64>| {
+                                values
                                     .iter()
-                                    .filter(|cell| {
-                                        cell.current
-                                            && cell.elevation > level
-                                            && terrain.surfaces.get(&cell.cell).is_some_and(|s| {
-                                                s.provenance == Some(TerrainProvenance::Placed)
-                                            })
+                                    .map(|(id, amount)| {
+                                        format!(
+                                            "{amount} {}",
+                                            content
+                                                .catalog
+                                                .resources
+                                                .get(id)
+                                                .map_or(id.local.as_str(), |resource| resource
+                                                    .name
+                                                    .as_str())
+                                        )
                                     })
-                                    .count();
-                                if placed > 0 {
-                                    text.push_str(&format!(
-                                        "\n{placed} observed placed surfaces: NoYield"
-                                    ));
-                                }
-                                if preview.cells.iter().any(|cell| {
-                                    cell.current
-                                        && cell.elevation > level
-                                        && terrain.surfaces.get(&cell.cell).is_some_and(|s| {
-                                            s.provenance == Some(TerrainProvenance::Natural)
-                                        })
-                                }) {
-                                    text.push_str("\nNatural output applies only to each observed exposed prism.");
-                                }
+                                    .collect::<Vec<_>>()
+                                    .join(", ")
+                            };
+                            if !advice.inputs.is_empty() {
+                                text.push_str(&format!(
+                                    "\nObserved fill input: {}",
+                                    amounts(&advice.inputs)
+                                ));
                             }
-                            ResolvedTerrainOperation::Fill { material } => {
-                                if let Some(material) =
-                                    content.catalog.terrain_materials.get(material)
-                                {
-                                    text.push_str(&format!(
-                                        "\nFill: {} · placed material has NoYield",
-                                        material.name
-                                    ));
-                                }
+                            if !advice.next_outputs.is_empty() {
+                                text.push_str(&format!(
+                                    "\nNext exposed prism output: {}",
+                                    amounts(&advice.next_outputs)
+                                ));
                             }
+                            if advice.no_yield_prisms > 0 {
+                                text.push_str(&format!(
+                                    "\n{} observed placed prisms: NoYield",
+                                    advice.no_yield_prisms
+                                ));
+                            }
+                            if advice.deeper_unknown {
+                                text.push_str("\nDeeper excavation cost and output: Unknown");
+                            }
+                        } else {
+                            text.push_str("\nCost and output: Unknown");
+                        }
+                        if matches!(tool.operation, ResolvedTerrainOperation::Fill { .. }) {
+                            text.push_str("\nPlaced fill has NoYield");
                         }
                     }
                     if unknown > 0 {
@@ -265,6 +274,7 @@ pub(crate) fn panel(
             ))
             .with_children(|root| {
                 root.spawn((
+                    crate::widgets::primitives::AuthoredWidgetId("terrain_work_status".into()),
                     Text::new(text),
                     TextFont {
                         font_size: bevy::text::FontSize::Px(14.),
@@ -272,9 +282,24 @@ pub(crate) fn panel(
                     },
                     TextColor(Color::WHITE),
                 ));
-                for (label, action) in actions {
+                for (ordinal, (label, action)) in actions.into_iter().enumerate() {
                     root.spawn((
                         Button,
+                        crate::widgets::primitives::AuthoredWidgetId(format!(
+                            "terrain_unload_resume_{ordinal}"
+                        )),
+                        crate::widgets::primitives::WidgetEnabled(true),
+                        crate::widgets::primitives::WidgetButtonAction(
+                            crate::widgets::primitives::WidgetAction::UnloadResume {
+                                match_id: action.identity.0.to_string(),
+                                map: action.identity.1.to_string(),
+                                unit: action.unit.0,
+                                depot: action.depot.0,
+                                unload_order: action.unload_order.clone(),
+                                work_order: action.work_order.clone(),
+                                designation: action.designation.clone(),
+                            },
+                        ),
                         Resume(action),
                         observe(resume),
                         Node {

@@ -250,6 +250,7 @@ pub fn debug_json(world: &World) -> String {
                 nodes.sort_by_key(|node| node["id"].as_u64().unwrap_or_default());
                 json!({
                     "tick": replica.last_applied_tick,
+                    "terrain": terrain_json(replica),
                     "units": units,
         "knowledge": world.get_resource::<ReplicaState>().and_then(|state| state.replica.as_ref()).and_then(|replica| replica.knowledge.as_deref()),
                     "nodes": nodes,
@@ -594,6 +595,7 @@ pub fn report_json(world: &World) -> Value {
         }).collect::<Vec<_>>();
         json!({
             "tick": replica.last_applied_tick,
+                    "terrain": terrain_json(replica),
             "units": units,
         "knowledge": world.get_resource::<ReplicaState>().and_then(|state| state.replica.as_ref()).and_then(|replica| replica.knowledge.as_deref()),
             "nodes": replica.nodes.values().collect::<Vec<_>>(),
@@ -1115,4 +1117,16 @@ mod weapon_debug_tests {
         replica.last_applied_tick = Some(45);
         assert_eq!(weapons_json(&replica)[0]["cooldown"], 0, "never below 0");
     }
+}
+
+/// Diagnostics copy only the already activated public terrain store.
+fn terrain_json(replica: &crate::replica::Replica) -> Option<serde_json::Value> {
+    let terrain = replica.terrain.as_ref()?;
+    Some(serde_json::json!({
+        "basis":terrain.basis,
+        "materials":terrain.materials.as_ref(),
+        "surfaces":terrain.surfaces.values().collect::<Vec<_>>(),
+        "anchors":terrain.anchors.values().collect::<Vec<_>>(),
+        "work":terrain.work.values().collect::<Vec<_>>(),
+    }))
 }

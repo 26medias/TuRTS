@@ -63,8 +63,12 @@ fn terrain_and_resource_snapshot_activation_is_atomic_on_invalid_account() {
         .keys()
         .map(ToString::to_string)
         .collect::<Vec<_>>();
-    let soil =
-        TerrainMaterialId(materials.iter().position(|id| id == "quarry:soil_layer").unwrap() as u32);
+    let soil = TerrainMaterialId(
+        materials
+            .iter()
+            .position(|id| id == "quarry:soil_layer")
+            .unwrap() as u32,
+    );
     let basis = KnowledgeBasis {
         match_id: 12,
         map: ContentId::parse("quarry:field").unwrap(),
@@ -132,15 +136,60 @@ fn terrain_and_resource_snapshot_activation_is_atomic_on_invalid_account() {
         transaction_id: 1,
         parent_transaction_id: None,
     };
+    let event = EventUnitObservation {
+        basis: stamp.basis.clone(),
+        unit: UnitSnapshot {
+            unit_id: UnitId(2),
+            content_id: "quarry:walker".into(),
+            owner_slot: SlotId(1),
+            pos: Pos { x: 15.5, y: 8. },
+            facing: None,
+            site: false,
+        },
+        ground_elevation: None,
+    };
+    assert!(
+        !replica.activate_transaction(
+            &stamp,
+            &StateTransactionPayload::Snapshot {
+                state: Box::new(state.clone()),
+                knowledge: Some(knowledge.clone()),
+                event_units: vec![event.clone()]
+            },
+            Instant::now()
+        ),
+        "opted-in event requires a captured contact"
+    );
+    assert!(replica.terrain.is_none());
+    let mut event = event;
+    event.ground_elevation = Some(9);
+    assert!(
+        !replica.activate_transaction(
+            &stamp,
+            &StateTransactionPayload::Snapshot {
+                state: Box::new(state.clone()),
+                knowledge: Some(knowledge.clone()),
+                event_units: vec![event.clone()]
+            },
+            Instant::now()
+        ),
+        "out of bounds captured contact"
+    );
+    event.ground_elevation = Some(4);
     assert!(replica.activate_transaction(
         &stamp,
         &StateTransactionPayload::Snapshot {
             state: Box::new(state.clone()),
             knowledge: Some(knowledge.clone()),
-            event_units: vec![]
+            event_units: vec![event]
         },
         Instant::now()
     ));
+    assert!(!replica.units.contains_key(&2));
+    assert!(
+        !replica.terrain.as_ref().unwrap().anchors.contains_key(&2),
+        "event contact must not require a persistent anchor"
+    );
     let old = replica.terrain.as_ref().unwrap().geometry.clone();
     state.tick = 11;
     state.economy.inventories[0].items[0].resource = "quarry:missing".into();
