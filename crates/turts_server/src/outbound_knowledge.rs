@@ -9,7 +9,9 @@ use std::{
     collections::VecDeque,
     time::{Duration, Instant},
 };
-use turts_net_lightyear::{KnowledgeChannel, ReliableChannel};
+use turts_net_lightyear::{
+    KNOWLEDGE_FRAME_LIMIT_BYTES as FRAME_LIMIT, KnowledgeChannel, ReliableChannel,
+};
 use turts_net_protocol::{
     MAX_PENDING_STATE_BYTES, MAX_POST_BASE_PATCH_BYTES, MAX_STATE_RESTARTS,
     STATE_RESTART_WINDOW_MS, STATE_TRANSACTION_TIMEOUT_MS, StateTransactionAck,
@@ -20,7 +22,6 @@ use turts_net_protocol::{
     },
 };
 use turts_sim::SlotId;
-const FRAME_LIMIT: usize = 1024;
 const WINDOW: usize = 64;
 const FRAMES_PER_PUMP: usize = 16;
 // Locked bridge cap, plus packet/retry bookkeeping and serialization workspace. Do not borrow it.
