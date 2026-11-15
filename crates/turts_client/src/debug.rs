@@ -249,19 +249,21 @@ pub fn debug_json(world: &World) -> String {
                 let mut nodes: Vec<_> = replica.nodes.values().map(|node| json!(node)).collect();
                 nodes.sort_by_key(|node| node["id"].as_u64().unwrap_or_default());
                 json!({
-                    "tick": replica.last_applied_tick,
-                    "units": units,
-                    "nodes": nodes,
-                    "economy": economy_json(replica),
-                    "belts": replica.belts,
-                    "inserters": replica.inserters,
-                    "extractors": replica.extractors,
-                    "weapons": weapons_json(replica),
-                    "healths": replica.healths,
-                    "unit_orders": unit_orders,
-                    "research": replica.research,
-                    "health_trace": health_trace_json(&replica.health_trace),
-                })
+                        "tick": replica.last_applied_tick,
+                        "units": units,
+                        "nodes": nodes,
+                        "economy": economy_json(replica),
+                "repairs": replica.repairs().collect::<Vec<_>>(),
+                "progress": progress_json(replica),
+                        "belts": replica.belts,
+                        "inserters": replica.inserters,
+                        "extractors": replica.extractors,
+                        "weapons": weapons_json(replica),
+                        "healths": replica.healths,
+                        "unit_orders": unit_orders,
+                        "research": replica.research,
+                        "health_trace": health_trace_json(&replica.health_trace),
+                    })
             })
         })
         .unwrap_or(Value::Null);
@@ -592,6 +594,8 @@ pub fn report_json(world: &World) -> Value {
             "units": units,
             "nodes": replica.nodes.values().collect::<Vec<_>>(),
             "economy": economy_json(replica),
+            "repairs": replica.repairs().collect::<Vec<_>>(),
+            "progress": progress_json(replica),
             "belts": replica.belts,
             "inserters": replica.inserters,
             "extractors": replica.extractors,
@@ -1012,6 +1016,34 @@ mod command_result_json_tests {
 /// The economy of the replica for the debug state. Each job also gets `elapsed_ticks`, derived
 /// from its progress record at the last applied tick (`Replica::job_elapsed_ticks`): the wire
 /// `JobState` has no such field since protocol 5, and the browser oracles (`m2-audit.js`) read it.
+/// Read-only exact progress records and their value at the replica tick.
+fn progress_json(replica: &Replica) -> Value {
+    let sites = replica.sites().filter_map(|unit| {
+        Some(json!({"unit":unit,"rate":replica.site_progress(unit)?,"value":replica.site_value(unit)?}))
+    }).collect::<Vec<_>>();
+    let jobs = replica
+        .economy
+        .queues
+        .iter()
+        .flat_map(|queue| {
+            queue.jobs.iter().filter_map(|job| {
+                Some(json!({"producer":queue.producer.0,"job":job.id.0,
+                "rate":replica.job_progress(queue.producer.0,job.id.0)?,
+                "value":replica.job_value(queue.producer.0,job.id.0)?}))
+            })
+        })
+        .collect::<Vec<_>>();
+    let construction_queues = replica
+        .units
+        .keys()
+        .filter_map(|id| {
+            let orders = replica.construction_queue(*id);
+            (!orders.is_empty()).then(|| json!({"constructor":id,"orders":orders}))
+        })
+        .collect::<Vec<_>>();
+    json!({"sites":sites,"jobs":jobs,"construction_queues":construction_queues})
+}
+
 fn economy_json(replica: &Replica) -> Value {
     let mut value = serde_json::to_value(&replica.economy).unwrap_or(Value::Null);
     if let Some(queues) = value.get_mut("queues").and_then(Value::as_array_mut) {
