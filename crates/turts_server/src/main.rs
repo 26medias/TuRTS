@@ -4,6 +4,8 @@
 mod actor_accounting;
 mod actors;
 mod boot;
+#[cfg(test)]
+mod bot_profile;
 mod bots;
 mod command_script;
 mod computer;
