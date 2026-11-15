@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use super::*;
 use crate::{
     Command, CommandKind, SlotId, Vec2, apply_command, headless_app, install_package, stage_package,
