@@ -82,21 +82,39 @@ impl PermittedBaseline {
         memory::baseline(self)
     }
     pub fn capture(view: &WorldView, slot: SlotId, policy: &dyn ObservationPermissions) -> Self {
-        Self {
-            state: super::snapshot_permitted(view, slot, policy),
-            knowledge: policy.knowledge(slot.0),
-        }
+        Self::capture_checked(view, slot, policy).expect("trusted permitted terrain capture")
     }
-    /// Build the next basis by transferring unchanged live unit names. The old
-    /// basis is consumed for diffing only; it must not be serialized afterward.
-    /// Names of hidden/removed units remain intact for truthful old event handles.
-    pub(crate) fn capture_reusing_metadata(
+    pub fn capture_checked(
+        view: &WorldView,
+        slot: SlotId,
+        policy: &dyn ObservationPermissions,
+    ) -> Result<Self, String> {
+        let terrain = super::export_terrain::snapshot_checked(view, slot, policy)?;
+        let mut state = super::snapshot_permitted(view, slot, policy);
+        state.records.terrain = terrain;
+        Ok(Self {
+            state,
+            knowledge: policy.knowledge(slot.0),
+        })
+    }
+    /// Validate the pinned terrain before transferring any old unit metadata.
+    /// Terrain keeps the old names intact until event-contact validation also succeeds.
+    pub(crate) fn capture_reusing_metadata_checked(
         &mut self,
         view: &WorldView,
         slot: SlotId,
         policy: &dyn ObservationPermissions,
-    ) -> Self {
-        Self {
+    ) -> Result<Self, String> {
+        let terrain = super::export_terrain::snapshot_checked(view, slot, policy)?;
+        if terrain.is_some() || self.state.records.terrain.is_some() {
+            let mut state = super::snapshot_permitted(view, slot, policy);
+            state.records.terrain = terrain;
+            return Ok(Self {
+                state,
+                knowledge: policy.knowledge(slot.0),
+            });
+        }
+        Ok(Self {
             state: super::export_permitted::snapshot_reusing(
                 view,
                 slot,
@@ -104,7 +122,17 @@ impl PermittedBaseline {
                 Some(&mut self.state.units),
             ),
             knowledge: policy.knowledge(slot.0),
-        }
+        })
+    }
+    #[cfg(test)]
+    pub(crate) fn capture_reusing_metadata(
+        &mut self,
+        view: &WorldView,
+        slot: SlotId,
+        policy: &dyn ObservationPermissions,
+    ) -> Self {
+        self.capture_reusing_metadata_checked(view, slot, policy)
+            .expect("trusted permitted terrain metadata capture")
     }
     /// The legacy AllVisible path can retain an earlier truthful public observation for cosmetics.
     /// It never labels that old position as a current phase observation.
@@ -115,6 +143,17 @@ impl PermittedBaseline {
         slot: SlotId,
         context: &turts_mod_api::KnowledgeBasis,
     ) -> StateTransactionPayload {
+        self.all_visible_patch_checked(next, batch, slot, context, &[])
+            .expect("trusted AllVisible event contacts")
+    }
+    pub fn all_visible_patch_checked(
+        &self,
+        next: &Self,
+        batch: &CommittedTick,
+        slot: SlotId,
+        context: &turts_mod_api::KnowledgeBasis,
+        event_facts: &[EventUnitFact],
+    ) -> Result<StateTransactionPayload, String> {
         let StateTransactionPayload::Patch {
             mut state,
             knowledge,
@@ -162,6 +201,13 @@ impl PermittedBaseline {
                     wire::EventUnitObservation {
                         basis,
                         unit: unit.clone(),
+                        ground_elevation: self.state.records.terrain.as_ref().and_then(|terrain| {
+                            terrain
+                                .anchors
+                                .iter()
+                                .find(|anchor| anchor.unit == unit.unit_id)
+                                .map(|anchor| anchor.elevation)
+                        }),
                     },
                 );
             }
@@ -176,12 +222,44 @@ impl PermittedBaseline {
                     wire::EventUnitObservation {
                         basis,
                         unit: super::unit_snapshot(unit),
+                        ground_elevation: None,
                     },
                 );
             }
         }
-        let known =
-            |unit: wire::UnitId| current.contains(&unit.0) || observations.contains_key(&unit.0);
+        let terrain = next.state.records.terrain.is_some() || self.state.records.terrain.is_some();
+        let mut captured = Vec::new();
+        for fact in event_facts {
+            if !references.contains(&fact.unit.unit) || current.contains(&fact.unit.unit) {
+                continue;
+            }
+            if fact.basis.match_id != context.match_id
+                || fact.basis.map != context.map
+                || fact.basis.tick != batch.tick
+            {
+                return Err("terrain event witness has a mismatched match or tick".into());
+            }
+            observations.remove(&fact.unit.unit);
+            captured.push(event_observation(fact));
+        }
+        let captured_ids = captured
+            .iter()
+            .map(|row| row.unit.unit_id.0)
+            .collect::<SortedIds>();
+        let known = |unit: wire::UnitId| {
+            current.contains(&unit.0)
+                || observations.contains_key(&unit.0)
+                || captured_ids.contains(&unit.0)
+        };
+        if terrain
+            && (references.iter().any(|unit| !known(wire::UnitId(*unit)))
+                || observations
+                    .values()
+                    .chain(captured.iter())
+                    .any(|row| row.ground_elevation.is_none()))
+        {
+            return Err("terrain event pose lacks its captured ground contact".into());
+        }
         state.records.effects = effects
             .into_iter()
             .filter(|effect| match effect {
@@ -191,11 +269,29 @@ impl PermittedBaseline {
                 }
             })
             .collect();
-        StateTransactionPayload::Patch {
+        let mut event_units = observations.into_values().collect::<Vec<_>>();
+        event_units.extend(captured);
+        Ok(StateTransactionPayload::Patch {
             state,
             knowledge,
-            event_units: observations.into_values().collect(),
+            event_units,
+        })
+    }
+    pub fn patch_checked(
+        &self,
+        next: &Self,
+        batch: &CommittedTick,
+        slot: SlotId,
+        event_facts: &[EventUnitFact],
+    ) -> Result<StateTransactionPayload, String> {
+        let payload = self.patch(next, batch, slot, event_facts);
+        if next.state.records.terrain.is_some()
+            && let StateTransactionPayload::Patch { event_units, .. } = &payload
+            && event_units.iter().any(|row| row.ground_elevation.is_none())
+        {
+            return Err("permitted terrain event pose lacks its captured ground contact".into());
         }
+        Ok(payload)
     }
     /// Diffs only two already-permitted states. Routine hide/reveal needs no full resync.
     pub fn patch(
@@ -270,7 +366,7 @@ impl PermittedBaseline {
             research: changed(&old.research, &new.research, |row| row.slot.0),
             unit_orders: changed(&old.unit_orders, &new.unit_orders, |row| row.unit.0),
             records: wire::DeltaRecords {
-                terrain: None,
+                terrain: super::export_terrain::delta(&old.records.terrain, &new.records.terrain),
                 repairs: changed(&old.records.repairs, &new.records.repairs, |row| {
                     row.repairer.0
                 }),
@@ -352,20 +448,7 @@ impl PermittedBaseline {
         let event_units = event_facts
             .iter()
             .filter(|fact| !new_units.contains_key(&fact.unit.unit))
-            .map(|fact| wire::EventUnitObservation {
-                basis: fact.basis.clone(),
-                unit: wire::UnitSnapshot {
-                    unit_id: wire::UnitId(fact.unit.unit),
-                    content_id: fact.unit.content.to_string(),
-                    owner_slot: wire::SlotId(fact.unit.owner),
-                    facing: fact.unit.facing,
-                    pos: wire::Pos {
-                        x: fact.unit.position.x,
-                        y: fact.unit.position.y,
-                    },
-                    site: fact.unit.site,
-                },
-            })
+            .map(|fact| event_observation(fact))
             .collect();
         let knowledge = match (&self.knowledge, &next.knowledge) {
             (Some(old), Some(new)) => Some(knowledge_delta(
@@ -384,6 +467,24 @@ impl PermittedBaseline {
         }
     }
 }
+fn event_observation(fact: &EventUnitFact) -> wire::EventUnitObservation {
+    wire::EventUnitObservation {
+        basis: fact.basis.clone(),
+        unit: wire::UnitSnapshot {
+            unit_id: wire::UnitId(fact.unit.unit),
+            content_id: fact.unit.content.to_string(),
+            owner_slot: wire::SlotId(fact.unit.owner),
+            facing: fact.unit.facing,
+            pos: wire::Pos {
+                x: fact.unit.position.x,
+                y: fact.unit.position.y,
+            },
+            site: fact.unit.site,
+        },
+        ground_elevation: fact.unit.ground_elevation,
+    }
+}
+
 fn changed<T: Clone + PartialEq, K: Ord>(old: &[T], new: &[T], key: impl Fn(&T) -> K) -> Vec<T> {
     if new.is_empty() {
         return Vec::new();

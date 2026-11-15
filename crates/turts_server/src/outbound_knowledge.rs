@@ -255,9 +255,18 @@ fn queue_snapshot(
     if !turts_sim::visibility::context_ready(world) {
         return Err("Sight context is not ready for publication".into());
     }
-    let tip =
-        PermittedBaseline::capture(turts_sim::completed_world(world), slot, policy.0.as_ref());
+    if turts_sim::completed_world(world).terrain.is_some()
+        && !turts_sim::visibility::event_units_complete(world)
+    {
+        return Err("Terrain event witness context is incomplete".into());
+    }
+    let tip = PermittedBaseline::capture_checked(
+        turts_sim::completed_world(world),
+        slot,
+        policy.0.as_ref(),
+    )?;
     if tip.knowledge.is_none()
+        && tip.state.records.terrain.is_none()
         && !force
         && world.get::<KnowledgeSender>(entity).is_none()
         && postcard::experimental::serialized_size(&tip.state).map_err(|error| error.to_string())?
@@ -313,11 +322,17 @@ fn queue_snapshot(
     Ok(true)
 }
 pub fn queue_tick(world: &mut World, entity: Entity, slot: SlotId) -> Result<bool, String> {
+    if turts_sim::completed_world(world).terrain.is_some()
+        && !turts_sim::visibility::event_units_complete(world)
+    {
+        return Err("Terrain event witness context is incomplete".into());
+    }
     let Some(mut sender) = world.entity_mut(entity).take::<KnowledgeSender>() else {
         if crate::permissions::completed(world)
             .0
             .knowledge_basis()
             .is_none()
+            && turts_sim::completed_world(world).terrain.is_none()
         {
             return Ok(false);
         }
@@ -330,11 +345,22 @@ pub fn queue_tick(world: &mut World, entity: Entity, slot: SlotId) -> Result<boo
     #[cfg(test)]
     let profile = crate::bot_profile::start();
     let policy = crate::permissions::completed(world);
-    let next = sender.tip.capture_reusing_metadata(
+    let next = sender.tip.capture_reusing_metadata_checked(
         turts_sim::completed_world(world),
         slot,
         policy.0.as_ref(),
-    );
+    )?;
+    if !crate::export::export_terrain::delta_compatible(
+        &sender.tip.state.records.terrain,
+        &next.state.records.terrain,
+    ) {
+        sender.tip = next;
+        let cancel = sender.cancel(StateTransactionCancelReason::Superseded);
+        emit_cancel(world, entity, cancel);
+        sender.restart(Instant::now())?;
+        world.entity_mut(entity).insert(sender);
+        return Ok(true);
+    }
     #[cfg(test)]
     crate::bot_profile::finish("visibility.capture_permitted", profile);
     #[cfg(test)]
@@ -345,16 +371,17 @@ pub fn queue_tick(world: &mut World, entity: Entity, slot: SlotId) -> Result<boo
     #[cfg(test)]
     let profile = crate::bot_profile::start();
     let payload = if sender.tip.knowledge.is_none() && next.knowledge.is_none() {
-        sender.tip.all_visible_patch(
+        sender.tip.all_visible_patch_checked(
             &next,
             turts_sim::committed_tick(world),
             slot,
             &sender.context,
-        )
+            &facts,
+        )?
     } else {
         sender
             .tip
-            .patch(&next, turts_sim::committed_tick(world), slot, &facts)
+            .patch_checked(&next, turts_sim::committed_tick(world), slot, &facts)?
     };
     #[cfg(test)]
     crate::bot_profile::finish("visibility.permitted_diff", profile);

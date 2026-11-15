@@ -10,6 +10,8 @@
 //! ([`weapon_records`]); the site, job and queue writers skip a removed owner.
 
 use turts_mod_api::Cost;
+#[path = "export_terrain.rs"]
+pub(crate) mod export_terrain;
 #[path = "export_visibility.rs"]
 mod export_visibility;
 // Legacy standalone export fixtures include this module without the atomic sender.
