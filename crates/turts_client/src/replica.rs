@@ -96,7 +96,7 @@ impl UnitTable for UnitOverlay<'_> {
         self.base
             .keys()
             .chain(self.spawned.keys())
-            .filter_map(|id| self.get(id).map(|unit| (*id, unit)))
+            .filter_map(move |id| self.get(id).map(|unit| (*id, unit)))
     }
 }
 
@@ -735,7 +735,7 @@ impl Replica {
         {
             return None;
         }
-        let orders_changed = stage_unit_orders(context, &delta.unit_orders, &during)?;
+        let mut orders_changed = stage_unit_orders(context, &delta.unit_orders, &during)?;
         let mut orders_cleared = HashSet::new();
         for id in &delta.records.orders_cleared {
             if during
@@ -748,6 +748,7 @@ impl Replica {
                 return None;
             }
         }
+        orders_changed.retain(|id, _| !removed.contains(id));
         let store = replica_store::stage_delta_step(
             context,
             &self.store,
@@ -879,7 +880,9 @@ impl Replica {
             return false;
         };
         // Validation is complete. No fallible record operation follows this boundary.
-        self.units.retain(|id, _| !patch.removed.contains(id));
+        if !patch.removed.is_empty() {
+            self.units.retain(|id, _| !patch.removed.contains(id));
+        }
         self.units.extend(patch.spawned);
         for (id, position) in patch.positions {
             if let Some(unit) = self.units.get_mut(&id) {
@@ -927,8 +930,10 @@ impl Replica {
         if let Some(value) = patch.research {
             self.research = value;
         }
-        self.unit_orders
-            .retain(|id, _| !patch.removed.contains(id) && !patch.orders_cleared.contains(id));
+        if !patch.removed.is_empty() || !patch.orders_cleared.is_empty() {
+            self.unit_orders
+                .retain(|id, _| !patch.removed.contains(id) && !patch.orders_cleared.contains(id));
+        }
         self.unit_orders.extend(patch.orders_changed);
         self.store.apply(patch.store);
         for (id, entry) in patch.health_append {
