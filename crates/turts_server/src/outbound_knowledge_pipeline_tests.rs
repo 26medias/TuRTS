@@ -154,6 +154,8 @@ struct Harness {
     packets: VecDeque<(u64, Entity, Vec<u8>)>,
     rtt_ms: u64,
     burst_at_ms: Option<u64>,
+    retain_received_frames: bool,
+    retained_frames: Vec<StateTransactionFrame>,
 }
 fn position(unit: u32, tick: u32) -> bevy::math::Vec2 {
     let motion = if unit <= 500 {
@@ -288,6 +290,8 @@ impl Harness {
             packets: VecDeque::new(),
             rtt_ms,
             burst_at_ms: None,
+            retain_received_frames: false,
+            retained_frames: vec![],
         }
     }
     fn enqueue_tick(&mut self, tick: u32) {
@@ -375,6 +379,9 @@ impl Harness {
             };
             for cancel in cancels {
                 peer.assembler.cancel(&cancel.stamp);
+            }
+            if self.retain_received_frames {
+                self.retained_frames.extend(frames.iter().cloned());
             }
             let mut activations = 0;
             for frame in frames {
@@ -583,4 +590,135 @@ fn a_nonreturning_viewer_restarts_and_disconnects_without_stalling_the_healthy_v
         .unwrap();
     assert_eq!(slow.outstanding.len(), WINDOW);
     assert!(slow.retained() <= MAX_PENDING_STATE_BYTES as usize);
+}
+
+#[test]
+fn superseded_sent_suffix_keeps_credit_and_cannot_reactivate_after_replacement() {
+    let mut harness = Harness::new(100, 1);
+    for _ in 0..60 {
+        harness.step(None);
+    }
+    let server = harness.peers[0].server;
+    let client = harness.peers[0].client;
+    assert!(
+        harness
+            .app
+            .world()
+            .get::<KnowledgeSender>(server)
+            .unwrap()
+            .pending
+            .is_none()
+    );
+    harness.enqueue_tick(1);
+    harness.enqueue_tick(2);
+    harness.step(None);
+    let (old_stamps, old_credits) = {
+        let sender = harness.app.world().get::<KnowledgeSender>(server).unwrap();
+        let stamps = sender
+            .pending
+            .iter()
+            .chain(sender.patches.iter())
+            .map(|pending| {
+                assert!(
+                    pending.end_sent,
+                    "both successors must really be submitted before cancellation"
+                );
+                pending.encoded.begin().stamp.clone()
+            })
+            .collect::<Vec<_>>();
+        (stamps, sender.outstanding.clone())
+    };
+    assert_eq!(old_stamps.len(), 2);
+    assert!(!old_credits.is_empty());
+    let watermark = old_stamps.last().unwrap().transaction_id;
+    assert!(queue_full(harness.app.world_mut(), server, SlotId(0)).unwrap());
+    {
+        let mut sender = harness
+            .app
+            .world_mut()
+            .get_mut::<KnowledgeSender>(server)
+            .unwrap();
+        assert_eq!(
+            sender.outstanding, old_credits,
+            "logical cancellation must not release submitted reliable copies"
+        );
+        for old in &old_stamps {
+            assert!(
+                !sender.acknowledge(old),
+                "old activation ACK cannot advance replacement"
+            );
+        }
+    }
+    harness.retain_received_frames = true;
+    for _ in 0..100 {
+        harness.step(None);
+    }
+    harness.retain_received_frames = false;
+    let active = harness
+        .app
+        .world()
+        .get::<KnowledgeSender>(server)
+        .unwrap()
+        .active_stamp()
+        .unwrap()
+        .clone();
+    assert!(active.transaction_id > watermark);
+    assert_eq!(active.basis.tick, 2);
+    let old_frames = harness
+        .retained_frames
+        .iter()
+        .filter(|frame| {
+            let stamp = match frame {
+                StateTransactionFrame::Begin(x) => &x.stamp,
+                StateTransactionFrame::Chunk(x) => &x.stamp,
+                StateTransactionFrame::End(x) => &x.stamp,
+            };
+            stamp.transaction_id <= watermark
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    assert!(
+        !old_frames.is_empty(),
+        "capture actual retired frames from the real receiver"
+    );
+    let previous_activations = harness.peers[0].activations.clone();
+    let mut late_message_ids = Vec::new();
+    // Deliver the old application stamps again through NEW reliable message identities.
+    // This proves application retirement instead of merely relying on packet deduplication.
+    for frame in old_frames {
+        let id = send_frame(harness.app.world_mut(), server, &frame).unwrap();
+        assert!(
+            harness
+                .app
+                .world_mut()
+                .get_mut::<KnowledgeSender>(server)
+                .unwrap()
+                .outstanding
+                .insert(id)
+        );
+        late_message_ids.push(id);
+    }
+    for stamp in old_stamps {
+        harness
+            .app
+            .world_mut()
+            .get_mut::<MessageSender<StateTransactionAck>>(client)
+            .unwrap()
+            .send::<ReliableChannel>(StateTransactionAck { stamp });
+    }
+    for _ in 0..100 {
+        harness.step(None);
+    }
+    harness.evidence("retired-suffix-after-replacement");
+    assert_eq!(harness.peers[0].activations, previous_activations);
+    assert_eq!(harness.peers[0].replica.last_applied_tick, Some(2));
+    let sender = harness.app.world().get::<KnowledgeSender>(server).unwrap();
+    assert_eq!(sender.active_stamp(), Some(&active));
+    assert!(sender.outstanding.is_empty());
+    assert!(late_message_ids.iter().all(|id| {
+        harness.peers[0]
+            .transport_acks
+            .iter()
+            .any(|(_, ack)| ack == id)
+    }));
 }
