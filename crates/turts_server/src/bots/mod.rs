@@ -571,13 +571,20 @@ fn drive_inner(world: &mut World, host: &mut BotHost, execution: &mut BotExecuti
         }
     }
 }
+// Compare the exact Display form without allocating a formatted identifier for each scan.
+fn content_ref_matches(authored: &str, id: &ContentId) -> bool {
+    authored
+        .strip_prefix(id.package.0.as_str())
+        .and_then(|suffix| suffix.strip_prefix(':'))
+        == Some(id.local.as_str())
+}
 fn role_counts(basis: &observation::ObservationBasis, profile: &BotDef) -> Vec<RoleCount> {
     profile
         .knowledge
         .roles
         .iter()
         .map(|role| {
-            let accepts = |id: &ContentId| role.units.iter().any(|s| s == &id.to_string());
+            let accepts = |id: &ContentId| role.units.iter().any(|s| content_ref_matches(s, id));
             RoleCount {
                 role: role.key.clone(),
                 completed: basis
