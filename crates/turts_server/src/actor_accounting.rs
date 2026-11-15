@@ -707,7 +707,7 @@ fn terminal_work(
     let matches = committed
         .terminal_work
         .iter()
-        .filter(|row| row.unit == identity.unit && row.job.0 == identity.id)
+        .filter(|row| row.unit == identity.unit && row.job == identity.id)
         .collect::<Vec<_>>();
     if matches.len() != 1 {
         return Err("terminal work needs one immutable exact completion/removal receipt".into());

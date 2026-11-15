@@ -455,3 +455,207 @@ fn different_original_inventories_remain_independent_and_missing_inventory_is_no
             port: InventoryPort::Main
         }));
 }
+
+#[test]
+fn held_construction_retains_full_debt_then_tracks_a_site_after_constructor_loss() {
+    use turts_sim::{economy::construction::HeldConstruction, receipts::CommandMember};
+    let catalog = catalog();
+    let (key, mut tracked) = request(1, 1);
+    tracked.command.order.target = BotTarget::ContentAtPoint {
+        content: id("paid"),
+        point: turts_mod_api::WorldPos { x: 10.0, y: 10.0 },
+    };
+    tracked.finalize(
+        ActorResult {
+            request: key.clone(),
+            effect_watermark: watermark(1),
+            accepted: true,
+            work: None,
+            reason: None,
+        },
+        None,
+    );
+    let origin = CommandMember {
+        slot: 0,
+        sequence: 1,
+        unit: 1,
+    };
+    let mut first = view(1);
+    first.construction.held.insert(
+        1,
+        vec![HeldConstruction {
+            origin: Some(origin),
+            recipe: id("paid"),
+            point: turts_sim::Vec2::new(10.0, 10.0),
+        }],
+    );
+    let mut requests = BTreeMap::from([(key.clone(), tracked)]);
+    let held = batch(
+        &first,
+        &CommittedTick {
+            tick: 1,
+            ..Default::default()
+        },
+        &catalog,
+        &mut requests,
+    )
+    .unwrap();
+    assert!(held.included[0].pending_placement);
+    assert!(
+        held.included[0].paid.is_empty()
+            && held.included[0].reserved.is_empty()
+            && !held.included[0].terminal
+    );
+    let mut next = view(2);
+    next.units.retain(|unit| unit.unit_id != 1);
+    next.inventories.retain(|inventory| inventory.unit != 1);
+    // Site charged rows are public through serde and the read-only charged_rows accessor.
+    next.construction.sites.insert(100,serde_json::from_value(serde_json::json!({
+        "origin": { "slot": 0, "sequence": 1, "unit": 1 }, "funding": { "pending_charges": [{ "source": {"Inventory": 1}, "resource": id("wood"), "amount": 3 }] },
+        "constructor": 1, "owner_slot": 0, "recipe": id("paid"), "job": 5, "done": 3, "total": 12,
+        "charged": [{ "endpoint": { "Inventory": 1 }, "resource": id("wood"), "amount": 3 }]
+    })).unwrap());
+    let placed = batch(
+        &next,
+        &CommittedTick {
+            tick: 2,
+            ..Default::default()
+        },
+        &catalog,
+        &mut requests,
+    )
+    .unwrap();
+    let work = placed.included[0].work.as_ref().unwrap();
+    assert_eq!(
+        (
+            work.identity.unit,
+            work.identity.id,
+            work.actor_unit,
+            work.done
+        ),
+        (100, 5, 1, 3)
+    );
+    assert_eq!(placed.included[0].effect_watermark, watermark(1));
+    assert!(!placed.included[0].pending_placement);
+    assert_eq!(
+        work.paid[0].account.endpoint,
+        SourceEndpoint::Inventory {
+            unit: 1,
+            port: InventoryPort::Main
+        }
+    );
+    assert!(!placed.accounts.iter().any(|row| row.account.endpoint
+        == SourceEndpoint::Inventory {
+            unit: 1,
+            port: InventoryPort::Main
+        }));
+}
+#[test]
+fn same_tick_completion_and_destruction_keep_exact_actual_paid_and_terminal_state() {
+    use turts_sim::receipts::{TerminalWork, TerminalWorkState};
+    for (done, state) in [
+        (12, TerminalWorkState::Completed),
+        (3, TerminalWorkState::Destroyed),
+        (0, TerminalWorkState::Cancelled),
+    ] {
+        let catalog = catalog();
+        let view = view(1);
+        let (key, tracked) = finalized_request(1, 1, 5);
+        let mut requests = BTreeMap::from([(key.clone(), tracked)]);
+        let paid = if done == 0 {
+            vec![]
+        } else {
+            vec![paid_row(1, done)]
+        };
+        let mut committed = CommittedTick {
+            tick: 1,
+            terminal_work: vec![TerminalWork {
+                unit: 1,
+                job: 5,
+                recipe: id("paid"),
+                construction: false,
+                done,
+                total: 12,
+                payment: Some(PaymentPolicy::ChargeOverTime),
+                paid,
+                reserved: vec![],
+                state,
+            }],
+            ..Default::default()
+        };
+        if done > 0 {
+            committed.events.push(turts_sim::EconomyEvent {
+                tick: 1,
+                ordinal: 0,
+                owner_slot: 0,
+                kind: EconomyEventKind::ProgressCharged {
+                    unit: 1,
+                    job: 5,
+                    charged: vec![event_row(1, done)],
+                },
+            });
+        }
+        let result = batch(&view, &committed, &catalog, &mut requests).unwrap();
+        let effect = &result.included[0];
+        let work = effect.work.as_ref().unwrap();
+        assert!(effect.terminal);
+        assert_eq!(work.done, done);
+        assert_eq!(work.total, 12);
+        assert_eq!(
+            work.state,
+            if state == TerminalWorkState::Completed {
+                WorkState::Finished
+            } else {
+                WorkState::Failed
+            }
+        );
+        assert_eq!(effect.paid.iter().map(|row| row.amount).sum::<u64>(), done);
+        let later = batch(
+            &super::tests::view(2),
+            &CommittedTick {
+                tick: 2,
+                ..Default::default()
+            },
+            &catalog,
+            &mut requests,
+        )
+        .unwrap();
+        assert_eq!(
+            later.included, result.included,
+            "terminal data survives its one-tick source event"
+        );
+    }
+}
+#[test]
+fn cancelled_reserved_work_releases_its_claim_without_inventing_paid_costs() {
+    use turts_sim::receipts::{TerminalWork, TerminalWorkState};
+    let mut catalog = catalog();
+    catalog.production.get_mut(&id("paid")).unwrap().payment = PaymentPolicy::ReserveThenCharge;
+    let (key, mut tracked) = finalized_request(1, 1, 5);
+    let hint = tracked.admitted_work.as_mut().unwrap();
+    hint.payment = Some(PaymentPolicy::ReserveThenCharge);
+    hint.reserved = vec![paid_row(1, 12)];
+    let mut requests = BTreeMap::from([(key, tracked)]);
+    let committed = CommittedTick {
+        tick: 1,
+        terminal_work: vec![TerminalWork {
+            unit: 1,
+            job: 5,
+            recipe: id("paid"),
+            construction: false,
+            done: 0,
+            total: 12,
+            payment: Some(PaymentPolicy::ReserveThenCharge),
+            paid: vec![],
+            reserved: vec![],
+            state: TerminalWorkState::Cancelled,
+        }],
+        ..Default::default()
+    };
+    let result = batch(&view(1), &committed, &catalog, &mut requests).unwrap();
+    assert!(
+        result.included[0].paid.is_empty()
+            && result.included[0].reserved.is_empty()
+            && result.included[0].terminal
+    );
+}
