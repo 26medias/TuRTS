@@ -87,6 +87,7 @@ impl PermittedBaseline {
             &next.state.records.terrain,
         )
     }
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn capture(view: &WorldView, slot: SlotId, policy: &dyn ObservationPermissions) -> Self {
         Self::capture_checked(view, slot, policy).expect("trusted permitted terrain capture")
     }
@@ -130,8 +131,22 @@ impl PermittedBaseline {
             knowledge: policy.knowledge(slot.0),
         })
     }
+    // Standalone export_m3 includes this module and exercises metadata reuse.
+    // The server binary's inline test module does not call this compatibility wrapper.
+    #[cfg(test)]
+    #[allow(dead_code)]
+    pub(crate) fn capture_reusing_metadata(
+        &mut self,
+        view: &WorldView,
+        slot: SlotId,
+        policy: &dyn ObservationPermissions,
+    ) -> Self {
+        self.capture_reusing_metadata_checked(view, slot, policy)
+            .expect("trusted permitted terrain metadata capture")
+    }
     /// The legacy AllVisible path can retain an earlier truthful public observation for cosmetics.
     /// It never labels that old position as a current phase observation.
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn all_visible_patch(
         &self,
         next: &Self,

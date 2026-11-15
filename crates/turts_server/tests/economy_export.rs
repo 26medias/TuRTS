@@ -80,6 +80,7 @@ fn job(id: u64, stage: JobStage, charged: Vec<CostView>, reserved: Vec<CostView>
 }
 fn fixture() -> WorldView {
     WorldView {
+        terrain: None,
         operating: None,
 
         match_outcomes: None,

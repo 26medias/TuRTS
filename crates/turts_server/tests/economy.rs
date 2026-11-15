@@ -1763,6 +1763,15 @@ fn owner_unit_orders_from_audit(
     }
 
     let target = |target: &OrderTargetSim| match target {
+        OrderTargetSim::TerrainWork {
+            tool,
+            cells,
+            target_elevation,
+        } => wire::OrderTarget::TerrainWork(turts_mod_api::TerrainDesignation {
+            tool: tool.to_string(),
+            cells: *cells,
+            target_elevation: *target_elevation,
+        }),
         OrderTargetSim::Invalid => panic!("invalid order target in captured unit state"),
         OrderTargetSim::None => wire::OrderTarget::None,
         OrderTargetSim::Point(point) => wire::OrderTarget::Point(wire::Pos {

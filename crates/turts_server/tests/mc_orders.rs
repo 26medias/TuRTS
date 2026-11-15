@@ -40,6 +40,9 @@ fn target_for(kind: TargetKind) -> OrderTarget {
         TargetKind::Content => OrderTarget::Content("muster:trooper".into()),
         // API 0.2.4: no 0.2.3 package has an order with this target.
         TargetKind::ContentAtPoint => unreachable!("no API 0.2.3 order targets a content point"),
+        TargetKind::TerrainDesignation => {
+            unreachable!("muster's API 0.2.3 fixture declares no terrain designation order")
+        }
     }
 }
 
@@ -55,6 +58,9 @@ fn sim_target_for(kind: TargetKind) -> OrderTargetSim {
         }
         // API 0.2.4: no 0.2.3 package has an order with this target.
         TargetKind::ContentAtPoint => unreachable!("no API 0.2.3 order targets a content point"),
+        TargetKind::TerrainDesignation => {
+            unreachable!("muster's API 0.2.3 fixture declares no terrain designation order")
+        }
     }
 }
 
@@ -260,6 +266,9 @@ fn every_behaviour_has_an_envelope() {
             Behaviour::CancelProduction => 6,
             Behaviour::Remove => 7,
             Behaviour::SetEnabled(_) => 8,
+            Behaviour::TerrainWork | Behaviour::UnloadCargo => {
+                unreachable!("muster's flat API 0.2.3 fixture declares no terrain capabilities")
+            }
             // API 0.2.4: `muster` has no order of the new behaviours.
             Behaviour::Construct
             | Behaviour::CancelConstruction
