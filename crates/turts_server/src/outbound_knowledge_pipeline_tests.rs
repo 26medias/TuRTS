@@ -60,6 +60,8 @@ struct PumpReport {
 }
 #[derive(Resource, Default)]
 struct PumpReports(BTreeMap<Entity, PumpReport>);
+#[derive(Resource, Default)]
+struct StoppedPeers(BTreeSet<Entity>);
 fn pump_in_production_schedule(world: &mut World) {
     let clock = *world.resource::<PumpClock>();
     let entities = world
@@ -68,12 +70,7 @@ fn pump_in_production_schedule(world: &mut World) {
         .map(|entity| entity.id())
         .collect::<Vec<_>>();
     for entity in entities {
-        if world
-            .resource::<PumpReports>()
-            .0
-            .get(&entity)
-            .is_some_and(|report| report.error.is_some())
-        {
+        if world.resource::<StoppedPeers>().0.contains(&entity) {
             continue;
         }
         let mut sender = world.entity_mut(entity).take::<KnowledgeSender>().unwrap();
@@ -125,6 +122,9 @@ fn pump_in_production_schedule(world: &mut World) {
             error,
         };
         world.entity_mut(entity).insert(sender);
+        if report.error.is_some() {
+            world.resource_mut::<StoppedPeers>().0.insert(entity);
+        }
         world.resource_mut::<PumpReports>().0.insert(entity, report);
     }
 }
@@ -193,7 +193,8 @@ impl Harness {
         });
         app.add_plugins(turts_net_lightyear::ProtocolPlugin);
         app.init_resource::<CapturedFrames>()
-            .init_resource::<PumpReports>();
+            .init_resource::<PumpReports>()
+            .init_resource::<StoppedPeers>();
         app.add_systems(PreUpdate, capture_frames.after(MessageSystems::Receive));
         app.add_systems(
             PostUpdate,
