@@ -33,6 +33,8 @@ struct Pending {
     created: Instant,
     started: Option<Instant>,
     end_sent: bool,
+    #[cfg(test)]
+    frames_sent: u64,
 }
 impl Pending {
     fn new(encoded: EncodedStateTransaction, now: Instant) -> Self {
@@ -41,6 +43,8 @@ impl Pending {
             created: now,
             started: None,
             end_sent: false,
+            #[cfg(test)]
+            frames_sent: 0,
         }
     }
 }
@@ -64,6 +68,32 @@ impl KnowledgeSender {
     #[cfg(test)]
     pub(crate) fn benchmark_retained(&self) -> usize {
         self.retained()
+    }
+    #[cfg(test)]
+    pub(crate) fn benchmark_transfer_trace(&self) -> serde_json::Value {
+        serde_json::json!({
+            "tick": self.tip.state.tick,
+            "active": self.active,
+            "outstanding": self.outstanding.len(),
+            "retained_bytes": self.retained(),
+            "pending": self.pending.as_ref().map(|pending| serde_json::json!({
+                "begin": pending.encoded.begin(),
+                "fully_queued": pending.encoded.fully_queued(),
+                "frames_sent": pending.frames_sent,
+                "frames_remaining": (u64::from(pending.encoded.begin().chunk_count) + 2).saturating_sub(pending.frames_sent),
+                "end_sent": pending.end_sent,
+                "elapsed_ms": pending.created.elapsed().as_millis(),
+            })),
+            "queued_patches": self.patches.len(),
+        })
+    }
+    #[cfg(test)]
+    pub(crate) fn benchmark_snapshot_payload(&self) -> turts_net_protocol::StateTransactionPayload {
+        turts_net_protocol::StateTransactionPayload::Snapshot {
+            state: Box::new(self.tip.state.clone()),
+            knowledge: self.tip.knowledge.clone(),
+            event_units: Vec::new(),
+        }
     }
     #[cfg(test)]
     pub(crate) fn benchmark_drained(&self) -> bool {
@@ -548,6 +578,15 @@ fn pump_one(
             >= Duration::from_millis(STATE_TRANSACTION_TIMEOUT_MS)
     });
     if cancelled || timed_out {
+        #[cfg(test)]
+        if std::env::var_os("TURTS_TRANSFER_TRACE_DIR").is_some() {
+            eprintln!(
+                "STATE_TRANSFER_RESTART {}",
+                serde_json::json!({
+                    "cancelled":cancelled,"timed_out":timed_out,"sender":sender.benchmark_transfer_trace(),
+                })
+            );
+        }
         let cancel = sender.cancel(if timed_out {
             StateTransactionCancelReason::TimedOut
         } else {
@@ -583,6 +622,10 @@ fn pump_one(
         };
         target.started.get_or_insert(now);
         let id = send_frame(world, entity, &frame)?;
+        #[cfg(test)]
+        {
+            target.frames_sent += 1;
+        }
         if matches!(frame, StateTransactionFrame::End(_)) {
             target.end_sent = true;
         }

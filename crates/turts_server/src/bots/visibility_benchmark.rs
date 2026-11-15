@@ -832,6 +832,31 @@ impl Harness {
         }
         charge_server(self.app.world_mut(), 6, started);
     }
+    fn trace_update(&self, step_ms: u64, phase: &str) {
+        let Some(directory) =
+            std::env::var_os("TURTS_TRANSFER_TRACE_DIR").map(std::path::PathBuf::from)
+        else {
+            return;
+        };
+        use std::io::Write;
+        std::fs::create_dir_all(&directory).unwrap();
+        let cpu = self.app.world().resource::<Cpu>();
+        let peers = self.peers.iter().map(|peer| serde_json::json!({
+            "slot":peer.slot,"latest":peer.latest,"assembler_retained":peer.assembler.retained_bytes(),
+            "sender":self.app.world().get::<crate::outbound::knowledge::KnowledgeSender>(peer.server)
+                .map(|sender|sender.benchmark_transfer_trace()),
+        })).collect::<Vec<_>>();
+        let row = serde_json::json!({"phase":phase,"actual_tick":completed_world(self.app.world()).tick,
+            "frame_ms":self.frame_ms,"step_ms":step_ms,"full_service_ns":cpu.full_server_service_ns(),
+            "simulation_ns":cpu.simulation_ns,"stages_ns":cpu.stages_ns,"peers":peers});
+        let mut file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(directory.join("updates.jsonl"))
+            .unwrap();
+        serde_json::to_writer(&mut file, &row).unwrap();
+        writeln!(file).unwrap();
+    }
     fn update(&mut self, ms: u64) {
         self.frame_ms += ms;
         self.ack_clock_ms += ms;
@@ -845,21 +870,91 @@ impl Harness {
                 Duration::from_millis(ms),
             ));
         let before = self.app.world().resource::<Cpu>().stages_ns;
+        self.trace_update(ms, "before_app");
         self.app.update();
+        self.trace_update(ms, "after_app");
         let after = self.app.world().resource::<Cpu>().stages_ns;
         // The app contains both endpoints. Charge all shared receive and send
         // work to each client rather than undercount its decoder or ACK sender.
         self.consume(after[7] - before[7] + after[4] - before[4]);
         self.transfer();
+        self.trace_update(ms, "after_receive");
+        if std::env::var_os("TURTS_TRANSFER_TRACE_DIR").is_some()
+            && let Ok(limit) = std::env::var("TURTS_TRANSFER_TRACE_TICKS")
+                .unwrap_or_else(|_| "2".into())
+                .parse::<u32>()
+            && ms > 0
+            && completed_world(self.app.world()).tick >= limit
+        {
+            panic!("diagnostic transfer trace stopped after {limit} ticks");
+        }
     }
     fn flush_to(&mut self, tick: u32) {
-        for _ in 0..2048 {
+        let trace = std::env::var_os("TURTS_TRANSFER_TRACE_DIR").map(std::path::PathBuf::from);
+        if let Some(directory) = &trace {
+            std::fs::create_dir_all(directory).unwrap();
+            for peer in &self.peers {
+                let sender = self
+                    .app
+                    .world()
+                    .get::<crate::outbound::knowledge::KnowledgeSender>(peer.server)
+                    .unwrap();
+                let path = directory.join(format!("first-slot{}-tick{tick}.postcard", peer.slot));
+                if !path.exists() {
+                    let payload = sender.benchmark_snapshot_payload();
+                    let summary = sender.benchmark_transfer_trace();
+                    let stamp =
+                        serde_json::from_value::<turts_net_protocol::StateTransactionStamp>(
+                            summary["pending"]["begin"]["stamp"].clone(),
+                        )
+                        .unwrap();
+                    let mut probe = peer.replica.clone();
+                    let accepted = probe.activate_transaction(
+                        &stamp,
+                        &payload,
+                        bevy::platform::time::Instant::now(),
+                    );
+                    std::fs::write(
+                        directory.join(format!("first-slot{}-tick{tick}-probe.json", peer.slot)),
+                        serde_json::to_vec(
+                            &serde_json::json!({"accepted":accepted,"summary":summary}),
+                        )
+                        .unwrap(),
+                    )
+                    .unwrap();
+                    std::fs::write(
+                        path,
+                        postcard::to_allocvec(&sender.benchmark_snapshot_payload()).unwrap(),
+                    )
+                    .unwrap();
+                    std::fs::write(
+                        directory.join(format!("first-slot{}-tick{tick}.json", peer.slot)),
+                        serde_json::to_vec(&sender.benchmark_snapshot_payload()).unwrap(),
+                    )
+                    .unwrap();
+                }
+            }
+        }
+        for pump in 0..2048 {
             if self.ack_rtt_ms != 0 {
                 self.advance_ack_tail();
             }
             self.update(0);
+            if let Some(directory) = &trace {
+                let rows = self.peers.iter().map(|peer| serde_json::json!({
+                    "slot":peer.slot,"latest":peer.latest,"assembler_retained":peer.assembler.retained_bytes(),
+                    "sender":self.app.world().get::<crate::outbound::knowledge::KnowledgeSender>(peer.server)
+                        .map(|sender|sender.benchmark_transfer_trace()),
+                })).collect::<Vec<_>>();
+                std::fs::write(directory.join(format!("pump-{pump:03}.json")),
+                    serde_json::to_vec(&serde_json::json!({"pump":pump,"target_tick":tick,
+                        "actual_tick":completed_world(self.app.world()).tick,"frame_ms":self.frame_ms,"peers":rows})).unwrap()).unwrap();
+            }
             if self.drained_to(tick) {
                 return;
+            }
+            if trace.is_some() && pump == 31 {
+                panic!("diagnostic transfer trace stopped after32 pumps");
             }
         }
         panic!("atomic publication did not drain to tick{tick}");
