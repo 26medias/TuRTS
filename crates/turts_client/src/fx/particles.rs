@@ -542,7 +542,9 @@ mod batch_tests {
     fn an_authorized_projectile_outlives_sight_but_not_its_flight_or_context() {
         let mut app = App::new();
         let mut replica = crate::replica::Replica::new(20);
-        replica.knowledge = Some(Box::new(crate::fx::tests::hidden_knowledge()));
+        replica.knowledge = Some(std::sync::Arc::new(
+            crate::fx::timeline_tests::hidden_knowledge(),
+        ));
         app.insert_resource(ReplicaState {
             replica: Some(replica),
             ..default()

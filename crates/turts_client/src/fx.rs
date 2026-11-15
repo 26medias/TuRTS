@@ -625,6 +625,7 @@ pub fn update_combat(
                 source: position,
                 target: position,
                 critical: false,
+                authorized_event: false,
                 window,
                 anchor: Some(id),
                 target_unit: None,
@@ -849,7 +850,7 @@ mod timeline_tests {
             .replica
             .as_mut()
             .unwrap()
-            .knowledge = Some(Box::new(hidden_knowledge()));
+            .knowledge = Some(std::sync::Arc::new(hidden_knowledge()));
         app.world_mut()
             .resource_mut::<AcquiredPackages>()
             .0
@@ -930,7 +931,7 @@ mod timeline_tests {
             .replica
             .as_mut()
             .unwrap()
-            .knowledge = Some(Box::new(hidden_knowledge()));
+            .knowledge = Some(std::sync::Arc::new(hidden_knowledge()));
         app.update();
         shoot(&mut app, 90);
         assert_eq!(
@@ -938,16 +939,12 @@ mod timeline_tests {
             1
         );
         let epoch = app.world().resource::<CombatPresentation>().epoch;
-        app.world_mut()
-            .resource_mut::<ReplicaState>()
-            .replica
-            .as_mut()
-            .unwrap()
-            .knowledge
-            .as_mut()
-            .unwrap()
-            .basis
-            .map = turts_mod_api::ContentId::parse("test:other_map").unwrap();
+        {
+            let mut state = app.world_mut().resource_mut::<ReplicaState>();
+            let knowledge = state.replica.as_mut().unwrap().knowledge.as_mut().unwrap();
+            std::sync::Arc::make_mut(knowledge).basis.map =
+                turts_mod_api::ContentId::parse("test:other_map").unwrap();
+        }
         advance(&mut app, 300);
         let fx = app.world().resource::<CombatPresentation>();
         assert_ne!(fx.epoch, epoch);
@@ -1293,7 +1290,7 @@ mod timeline_tests {
             .replica
             .as_mut()
             .unwrap()
-            .knowledge = Some(Box::new(hidden_knowledge()));
+            .knowledge = Some(std::sync::Arc::new(hidden_knowledge()));
         app.update();
         shoot(&mut app, 90);
         let epoch = app.world().resource::<CombatPresentation>().epoch;
@@ -1301,16 +1298,11 @@ mod timeline_tests {
             app.world().resource::<CombatPresentation>().impacts.len(),
             1
         );
-        app.world_mut()
-            .resource_mut::<ReplicaState>()
-            .replica
-            .as_mut()
-            .unwrap()
-            .knowledge
-            .as_mut()
-            .unwrap()
-            .basis
-            .match_id += 1;
+        {
+            let mut state = app.world_mut().resource_mut::<ReplicaState>();
+            let knowledge = state.replica.as_mut().unwrap().knowledge.as_mut().unwrap();
+            std::sync::Arc::make_mut(knowledge).basis.match_id += 1;
+        }
         advance(&mut app, 300);
         let fx = app.world().resource::<CombatPresentation>();
         assert_ne!(fx.epoch, epoch);

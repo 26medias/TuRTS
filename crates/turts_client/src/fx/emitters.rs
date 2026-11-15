@@ -576,7 +576,9 @@ mod tests {
     fn authorized_event_cosmetics_survive_hidden_ground_and_clear_on_context_reset() {
         let mut app = app();
         let mut replica = crate::replica::Replica::new(20);
-        replica.knowledge = Some(Box::new(crate::fx::tests::hidden_knowledge()));
+        replica.knowledge = Some(std::sync::Arc::new(
+            crate::fx::timeline_tests::hidden_knowledge(),
+        ));
         app.insert_resource(ReplicaState {
             replica: Some(replica),
             ..default()
