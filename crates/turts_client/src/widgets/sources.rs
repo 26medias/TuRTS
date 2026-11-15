@@ -488,7 +488,8 @@ fn build_menu(context: SourceContext<'_>) -> SourceData {
                 );
                 let full = context.replica.construction_queue(producer_id).len()
                     >= usize::from(constructor.queue_capacity);
-                let affordable = costs_affordable(context, producer_id, &recipe.costs);
+                let affordable = recipe.payment == turts_mod_api::PaymentPolicy::ChargeOverTime
+                    || costs_affordable(context, producer_id, &recipe.costs);
                 row.set(ItemField::Enabled, !full && affordable);
                 row.set(
                     ItemField::Reason,
@@ -525,7 +526,8 @@ fn build_menu(context: SourceContext<'_>) -> SourceData {
                     .find(|queue| queue.producer.0 == producer_id);
                 let queue_len = queue.map_or(0, |queue| queue.jobs.len());
                 let queue_enabled = queue.is_none_or(|queue| queue.enabled);
-                let affordable = costs_affordable(context, context.selection[0], &recipe.costs);
+                let affordable = recipe.payment == turts_mod_api::PaymentPolicy::ChargeOverTime
+                    || costs_affordable(context, context.selection[0], &recipe.costs);
                 let can_queue = queue_enabled && queue_len < usize::from(producer.queue_capacity);
                 let mut row = ItemData::default();
                 row.set(ItemField::Name, recipe.name.clone());
