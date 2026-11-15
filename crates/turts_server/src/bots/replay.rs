@@ -171,7 +171,10 @@ pub(crate) fn install(
             .before(super::drive)
             .before(session::admit_player_commands),
     );
-    app.add_systems(FixedLast, verify);
+    app.add_systems(
+        FixedLast,
+        verify.after(crate::economylog::capture_completed_tick),
+    );
     Ok(())
 }
 fn prepare(world: &mut World) {
@@ -366,7 +369,10 @@ mod tests {
         let sink =
             EconomyLogSink::create(&path, app.world().resource::<AuditTrail>(), initial).unwrap();
         app.insert_resource(sink);
-        app.add_systems(FixedLast, crate::economylog::capture_completed_tick);
+        app.add_systems(
+            FixedLast,
+            crate::economylog::capture_completed_tick.after(session::ParticipantTraceComplete),
+        );
         path
     }
     #[test]
