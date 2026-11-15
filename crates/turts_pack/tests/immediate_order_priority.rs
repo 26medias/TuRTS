@@ -387,3 +387,66 @@ fn grouped_construction_placement_and_payment_follow_physical_builder_priority()
     }
     assert_eq!(winners, vec![8.0, 8.0]);
 }
+
+#[test]
+fn cot_signed_zero_source_ties_stay_adjacent_and_never_take_shared_funds() {
+    let negative = placement("depot", 0, -0.0);
+    let mut middle = placement("depot", 0, 0.0);
+    middle.pos.y = 4.0;
+    let positive = placement("depot", 0, 0.0);
+    let mut app = prepare(
+        PaymentPolicy::ChargeOverTime,
+        false,
+        vec![negative, middle, positive],
+    );
+    let before = turts_sim::audit_state(app.world_mut());
+    assert!(
+        before
+            .raw_units
+            .iter()
+            .any(|unit| unit.pos.x.is_sign_negative())
+    );
+    let tied = before
+        .raw_units
+        .iter()
+        .filter(|unit| unit.pos.y == 8.0)
+        .map(|unit| unit.unit_id)
+        .collect::<Vec<_>>();
+    for unit in &before.raw_units {
+        turts_sim::economy::production::queue_production(
+            app.world_mut(),
+            SlotId(0),
+            unit.unit_id,
+            id("hire"),
+        )
+        .unwrap();
+    }
+    for _ in 0..3 {
+        app.update();
+    }
+    let after = turts_sim::world_view(app.world_mut());
+    assert_eq!(
+        after
+            .balances
+            .iter()
+            .find(|balance| balance.resource == id("credits"))
+            .unwrap()
+            .on_hand,
+        0,
+        "the unique earlier y=4 source pays"
+    );
+    for unit in tied {
+        let queue = after
+            .queues
+            .iter()
+            .find(|queue| queue.producer == unit)
+            .unwrap();
+        assert_eq!(queue.jobs.len(), 1);
+        assert_eq!(queue.jobs[0].elapsed_ticks, 0);
+        assert_eq!(
+            queue.jobs[0].stage,
+            turts_sim::economy::production::JobStage::Queued
+        );
+        assert!(queue.jobs[0].charged.is_empty());
+    }
+}
