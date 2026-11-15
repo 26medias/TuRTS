@@ -611,11 +611,14 @@ pub(crate) fn run_repair(world: &mut World) {
             }
             continue;
         }
-        let explicit = orders.is_some_and(|orders| {
-            orders.repair_stopped || orders.current.is_some() || !orders.queue.is_empty()
-        }) || world
-            .get_resource::<crate::orders::PendingMovementOrders>()
-            .is_some_and(|pending| pending.pending_member_counts.contains_key(&source))
+        let old = source_state(world, source).action;
+        let explicit = (old.is_none() && world.get::<MoveTarget>(entity).is_some())
+            || orders.is_some_and(|orders| {
+                orders.repair_stopped || orders.current.is_some() || !orders.queue.is_empty()
+            })
+            || world
+                .get_resource::<crate::orders::PendingMovementOrders>()
+                .is_some_and(|pending| pending.pending_member_counts.contains_key(&source))
             || world
                 .get_resource::<super::EconomyOrders>()
                 .and_then(|orders| orders.0.get(&source))
@@ -631,7 +634,6 @@ pub(crate) fn run_repair(world: &mut World) {
             }
             continue;
         }
-        let old = source_state(world, source).action;
         let target = if let Some(action) = old.as_ref() {
             if !action.automatic
                 || !eligible_target(world, source, action.target, &repairer)
