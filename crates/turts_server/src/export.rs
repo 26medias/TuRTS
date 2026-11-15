@@ -10,6 +10,9 @@
 //! ([`weapon_records`]); the site, job and queue writers skip a removed owner.
 
 use turts_mod_api::Cost;
+#[path = "export_visibility.rs"]
+mod export_visibility;
+pub use export_visibility::PermittedBaseline;
 #[path = "export_observation.rs"]
 mod export_observation;
 pub use export_observation::{ObservationChanged, ObservationHistory};

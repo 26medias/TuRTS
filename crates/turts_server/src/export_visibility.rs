@@ -1,0 +1,508 @@
+//! Atomic permitted snapshots and ordinary visibility transitions. No raw truth enters a baseline.
+use super::{export_observation, snapshot_for};
+use crate::permissions::ObservationPermissions;
+use std::collections::{BTreeMap, BTreeSet};
+use turts_mod_api::{CoverageRun, KnowledgeDelta, KnowledgeSnapshot};
+use turts_net_protocol::{self as wire, StateTransactionPayload};
+use turts_sim::{CommittedTick, SlotId, WorldView, visibility::EventUnitFact};
+
+#[derive(Clone)]
+pub struct PermittedBaseline {
+    pub state: wire::Snapshot,
+    pub knowledge: Option<KnowledgeSnapshot>,
+}
+impl PermittedBaseline {
+    pub fn capture(view: &WorldView, slot: SlotId, policy: &dyn ObservationPermissions) -> Self {
+        let projected = export_observation::project_view(view, slot, policy);
+        Self {
+            state: snapshot_for(&projected, slot),
+            knowledge: policy.knowledge(slot.0),
+        }
+    }
+    pub fn snapshot_payload(&self) -> StateTransactionPayload {
+        StateTransactionPayload::Snapshot {
+            state: Box::new(self.state.clone()),
+            knowledge: self.knowledge.clone(),
+            event_units: vec![],
+        }
+    }
+    /// Diffs only two already-permitted states. Routine hide/reveal needs no full resync.
+    pub fn patch(
+        &self,
+        next: &Self,
+        batch: &CommittedTick,
+        slot: SlotId,
+        event_facts: &[EventUnitFact],
+    ) -> StateTransactionPayload {
+        let old = &self.state;
+        let new = &next.state;
+        let old_units = old
+            .units
+            .iter()
+            .map(|u| (u.unit_id.0, u))
+            .collect::<BTreeMap<_, _>>();
+        let new_units = new
+            .units
+            .iter()
+            .map(|u| (u.unit_id.0, u))
+            .collect::<BTreeMap<_, _>>();
+        let witnessed = event_facts
+            .iter()
+            .map(|fact| fact.unit.unit)
+            .collect::<BTreeSet<_>>();
+        let removed = batch
+            .removed
+            .iter()
+            .copied()
+            .filter(|id| old_units.contains_key(id))
+            .filter(|id| {
+                witnessed.contains(id)
+                    || old_units
+                        .get(id)
+                        .is_some_and(|unit| unit.owner_slot.0 == slot.0)
+            })
+            .collect::<BTreeSet<_>>();
+        let mut state = wire::WorldDelta {
+            tick: new.tick,
+            base_tick: old.tick,
+            spawned: new
+                .units
+                .iter()
+                .filter(|unit| !old_units.contains_key(&unit.unit_id.0))
+                .cloned()
+                .collect(),
+            removed: removed.iter().copied().map(wire::UnitId).collect(),
+            positions: new
+                .units
+                .iter()
+                .filter(|unit| {
+                    old_units
+                        .get(&unit.unit_id.0)
+                        .is_some_and(|old| old.pos != unit.pos)
+                })
+                .map(|unit| wire::UnitDelta {
+                    unit_id: unit.unit_id,
+                    pos: unit.pos,
+                })
+                .collect(),
+            nodes: changed(&old.nodes, &new.nodes, |row| row.id.0),
+            economy: wire::EconomyChanges {
+                balances: changed(&old.economy.balances, &new.economy.balances, |row| {
+                    row.resource.clone()
+                }),
+                inventories: changed(&old.economy.inventories, &new.economy.inventories, |row| {
+                    (row.unit.0, row.port == wire::InventoryPort::Output)
+                }),
+                orders: changed(&old.economy.orders, &new.economy.orders, |row| row.unit.0),
+                queues: changed(&old.economy.queues, &new.economy.queues, |row| {
+                    row.producer.0
+                }),
+            },
+            belts: changed(&old.belts, &new.belts, |row| row.piece.0),
+            inserters: changed(&old.inserters, &new.inserters, |row| row.unit.0),
+            extractors: changed(&old.extractors, &new.extractors, |row| row.unit.0),
+            weapons: changed(&old.weapons, &new.weapons, |row| row.unit.0),
+            healths: changed(&old.healths, &new.healths, |row| row.unit.0),
+            research: changed(&old.research, &new.research, |row| row.slot.0),
+            unit_orders: changed(&old.unit_orders, &new.unit_orders, |row| row.unit.0),
+            records: wire::DeltaRecords {
+                repairs: changed(&old.records.repairs, &new.records.repairs, |row| {
+                    row.repairer.0
+                }),
+                repairs_cleared: old
+                    .records
+                    .repairs
+                    .iter()
+                    .filter(|row| {
+                        new_units.contains_key(&row.repairer.0)
+                            && !new
+                                .records
+                                .repairs
+                                .iter()
+                                .any(|new| new.repairer == row.repairer)
+                    })
+                    .map(|row| row.repairer)
+                    .collect(),
+                sites_completed: new
+                    .units
+                    .iter()
+                    .filter(|unit| {
+                        !unit.site && old_units.get(&unit.unit_id.0).is_some_and(|old| old.site)
+                    })
+                    .map(|unit| unit.unit_id)
+                    .collect(),
+                sites: changed(&old.records.sites, &new.records.sites, |row| row.unit.0),
+                jobs: changed(&old.records.jobs, &new.records.jobs, |row| {
+                    (row.producer.0, row.job.0)
+                }),
+                construction_queues: changed(
+                    &old.records.construction_queues,
+                    &new.records.construction_queues,
+                    |row| row.constructor.0,
+                ),
+                supply: changed(&old.records.supply, &new.records.supply, |row| {
+                    (row.slot.0, row.resource.clone())
+                }),
+                orders_cleared: old
+                    .unit_orders
+                    .iter()
+                    .filter(|row| {
+                        new_units.contains_key(&row.unit.0)
+                            && !new.unit_orders.iter().any(|new| new.unit == row.unit)
+                    })
+                    .map(|row| row.unit)
+                    .collect(),
+                effects: super::export_effects::effects(batch, slot),
+                match_state: if old.records.match_state != new.records.match_state {
+                    new.records.match_state.clone()
+                } else {
+                    None
+                },
+            },
+        };
+        // Authorize events with their phase witness, never with the later hidden world position.
+        state.records.effects.retain(|effect| match effect {
+            wire::Effect::Fired { unit, target, .. } => event_facts.iter().any(|source| {
+                source.unit.unit == unit.0
+                    && event_facts
+                        .iter()
+                        .any(|other| other.unit.unit == target.0 && other.basis == source.basis)
+            }),
+            wire::Effect::Destroyed { unit } => witnessed.contains(&unit.0),
+            wire::Effect::Credited { unit, .. } => {
+                new_units.contains_key(&unit.0) || witnessed.contains(&unit.0)
+            }
+        });
+        let event_units = event_facts
+            .iter()
+            .filter(|fact| !new_units.contains_key(&fact.unit.unit))
+            .map(|fact| wire::EventUnitObservation {
+                basis: fact.basis.clone(),
+                unit: wire::UnitSnapshot {
+                    unit_id: wire::UnitId(fact.unit.unit),
+                    content_id: fact.unit.content.to_string(),
+                    owner_slot: wire::SlotId(fact.unit.owner),
+                    facing: fact.unit.facing,
+                    pos: wire::Pos {
+                        x: fact.unit.position.x,
+                        y: fact.unit.position.y,
+                    },
+                    site: fact.unit.site,
+                },
+            })
+            .collect();
+        let knowledge = match (&self.knowledge, &next.knowledge) {
+            (Some(old), Some(new)) => Some(knowledge_delta(
+                old,
+                new,
+                &self.state,
+                &next.state,
+                &removed,
+            )),
+            _ => None,
+        };
+        StateTransactionPayload::Patch {
+            state: Box::new(state),
+            knowledge,
+            event_units,
+        }
+    }
+}
+fn changed<T: Clone + PartialEq, K: Ord>(old: &[T], new: &[T], key: impl Fn(&T) -> K) -> Vec<T> {
+    let old = old
+        .iter()
+        .map(|row| (key(row), row))
+        .collect::<BTreeMap<_, _>>();
+    new.iter()
+        .filter(|row| old.get(&key(row)).copied() != Some(*row))
+        .cloned()
+        .collect()
+}
+fn knowledge_delta(
+    old: &KnowledgeSnapshot,
+    new: &KnowledgeSnapshot,
+    before: &wire::Snapshot,
+    after: &wire::Snapshot,
+    removed: &BTreeSet<u32>,
+) -> KnowledgeDelta {
+    let before_units = before
+        .units
+        .iter()
+        .map(|row| row.unit_id.0)
+        .collect::<BTreeSet<_>>();
+    let after_units = after
+        .units
+        .iter()
+        .map(|row| row.unit_id.0)
+        .collect::<BTreeSet<_>>();
+    let before_nodes = before
+        .nodes
+        .iter()
+        .map(|row| row.id.0)
+        .collect::<BTreeSet<_>>();
+    let after_nodes = after
+        .nodes
+        .iter()
+        .map(|row| row.id.0)
+        .collect::<BTreeSet<_>>();
+    let mut coverage: Vec<CoverageRun> = vec![];
+    for byte in 0..new.observed.len() {
+        if old.observed.get(byte) == new.observed.get(byte)
+            && old.explored.get(byte) == new.explored.get(byte)
+        {
+            continue;
+        }
+        for bit in 0..8 {
+            let cell = (byte * 8 + bit) as u32;
+            if u64::from(cell) >= u64::from(new.grid.columns) * u64::from(new.grid.rows) {
+                break;
+            }
+            let mask = 1 << bit;
+            let observed = new.observed[byte] & mask != 0;
+            let explored = new.explored[byte] & mask != 0;
+            if old.observed.get(byte).is_some_and(|old| old & mask != 0) == observed
+                && old.explored.get(byte).is_some_and(|old| old & mask != 0) == explored
+            {
+                continue;
+            }
+            if let Some(last) = coverage.last_mut()
+                && last.first_cell + last.cell_count == cell
+                && last.observed == observed
+                && last.explored == explored
+            {
+                last.cell_count += 1;
+            } else {
+                coverage.push(CoverageRun {
+                    first_cell: cell,
+                    cell_count: 1,
+                    observed,
+                    explored,
+                });
+            }
+        }
+    }
+    let new_mem_units = new
+        .remembered_units
+        .iter()
+        .map(|row| row.unit)
+        .collect::<BTreeSet<_>>();
+    let new_mem_nodes = new
+        .remembered_nodes
+        .iter()
+        .map(|row| row.node)
+        .collect::<BTreeSet<_>>();
+    KnowledgeDelta {
+        basis: new.basis.clone(),
+        viewer: new.viewer,
+        coverage,
+        hidden_units: before_units
+            .difference(&after_units)
+            .filter(|id| !removed.contains(id))
+            .copied()
+            .collect(),
+        hidden_nodes: before_nodes.difference(&after_nodes).copied().collect(),
+        revealed_units: after_units.difference(&before_units).copied().collect(),
+        revealed_nodes: after_nodes.difference(&before_nodes).copied().collect(),
+        remembered_units: changed(&old.remembered_units, &new.remembered_units, |row| row.unit),
+        remembered_nodes: changed(&old.remembered_nodes, &new.remembered_nodes, |row| row.node),
+        forgotten_units: old
+            .remembered_units
+            .iter()
+            .filter(|row| !new_mem_units.contains(&row.unit))
+            .map(|row| row.unit)
+            .collect(),
+        forgotten_nodes: old
+            .remembered_nodes
+            .iter()
+            .filter(|row| !new_mem_nodes.contains(&row.node))
+            .map(|row| row.node)
+            .collect(),
+        retention_truncated: new.retention_truncated,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+    use turts_mod_api::{ContentId, KnowledgeBasis, ObservationPhase, VisibilityGrid, WorldPos};
+    fn basis(tick: u32) -> KnowledgeBasis {
+        KnowledgeBasis {
+            match_id: 4,
+            map: ContentId::parse("fixture:map").unwrap(),
+            tick,
+            phase: ObservationPhase::Completed,
+        }
+    }
+    fn unit(id: u32) -> wire::UnitSnapshot {
+        wire::UnitSnapshot {
+            unit_id: wire::UnitId(id),
+            content_id: "fixture:unit".into(),
+            owner_slot: wire::SlotId(if id == 1 { 0 } else { 1 }),
+            facing: None,
+            pos: wire::Pos { x: 5.0, y: 5.0 },
+            site: false,
+        }
+    }
+    fn snapshot(tick: u32, enemy: bool) -> PermittedBaseline {
+        let mut state = wire::Snapshot {
+            tick,
+            units: vec![unit(1)],
+            ..Default::default()
+        };
+        if enemy {
+            state.units.push(unit(2));
+            state.healths.push(wire::HealthRecord {
+                unit: wire::UnitId(2),
+                current: 10,
+            });
+        }
+        PermittedBaseline {
+            state,
+            knowledge: Some(KnowledgeSnapshot {
+                basis: basis(tick),
+                viewer: 0,
+                grid: VisibilityGrid {
+                    size: WorldPos { x: 8.0, y: 8.0 },
+                    cell_size: 2.0,
+                    columns: 4,
+                    rows: 4,
+                },
+                observed: vec![0; 2],
+                explored: vec![255; 2],
+                remembered_units: vec![],
+                remembered_nodes: vec![],
+                retention_truncated: false,
+            }),
+        }
+    }
+    fn fact(id: u32, tick: u32) -> EventUnitFact {
+        let mut stamp = basis(tick);
+        stamp.phase = ObservationPhase::Tactical;
+        EventUnitFact {
+            basis: stamp,
+            unit: turts_sim::visibility::VisibleUnit {
+                unit: id,
+                content: Arc::new(ContentId::parse("fixture:unit").unwrap()),
+                owner: if id == 1 { 0 } else { 1 },
+                position: WorldPos { x: 5.0, y: 5.0 },
+                facing: None,
+                site: false,
+            },
+        }
+    }
+    #[test]
+    fn ordinary_hide_and_reveal_are_atomic_differences_without_false_death() {
+        let old = snapshot(1, true);
+        let hidden = snapshot(2, false);
+        let batch = CommittedTick {
+            tick: 2,
+            removed: vec![2],
+            ..Default::default()
+        };
+        let StateTransactionPayload::Patch {
+            state,
+            knowledge: Some(knowledge),
+            ..
+        } = old.patch(&hidden, &batch, SlotId(0), &[])
+        else {
+            panic!()
+        };
+        assert!(state.removed.is_empty());
+        assert_eq!(knowledge.hidden_units, vec![2]);
+        assert!(state.healths.is_empty());
+        let revealed = snapshot(3, true);
+        let StateTransactionPayload::Patch {
+            state,
+            knowledge: Some(knowledge),
+            ..
+        } = hidden.patch(
+            &revealed,
+            &CommittedTick {
+                tick: 3,
+                ..Default::default()
+            },
+            SlotId(0),
+            &[],
+        )
+        else {
+            panic!()
+        };
+        assert_eq!(state.spawned, vec![unit(2)]);
+        assert_eq!(
+            state.healths,
+            vec![wire::HealthRecord {
+                unit: wire::UnitId(2),
+                current: 10
+            }]
+        );
+        assert_eq!(knowledge.revealed_units, vec![2]);
+    }
+    #[test]
+    fn event_phase_authorizes_removed_endpoints_and_transient_deaths() {
+        use turts_sim::economy::events::EffectRow;
+        let old = snapshot(1, true);
+        let next = snapshot(2, false);
+        let batch = CommittedTick {
+            tick: 2,
+            removed: vec![2, 3],
+            effects: vec![
+                EffectRow::Fired {
+                    unit: 2,
+                    target: 1,
+                    weapon: 0,
+                    reduced: false,
+                },
+                EffectRow::Destroyed { unit: 2 },
+                EffectRow::Destroyed { unit: 3 },
+            ],
+            ..Default::default()
+        };
+        let facts = vec![fact(1, 2), fact(2, 2), fact(3, 2)];
+        let StateTransactionPayload::Patch {
+            state,
+            knowledge: Some(knowledge),
+            event_units,
+        } = old.patch(&next, &batch, SlotId(0), &facts)
+        else {
+            panic!()
+        };
+        assert_eq!(state.removed, vec![wire::UnitId(2)]);
+        assert!(knowledge.hidden_units.is_empty());
+        assert_eq!(state.records.effects.len(), 3);
+        assert_eq!(
+            event_units
+                .iter()
+                .map(|row| row.unit.unit_id.0)
+                .collect::<Vec<_>>(),
+            vec![2, 3]
+        );
+        let StateTransactionPayload::Patch { state, .. } = old.patch(&next, &batch, SlotId(0), &[])
+        else {
+            panic!()
+        };
+        assert!(state.records.effects.is_empty());
+        assert!(state.removed.is_empty());
+    }
+    #[test]
+    fn hidden_present_moved_and_destroyed_truth_produces_equal_permitted_patches() {
+        use turts_sim::economy::events::EffectRow;
+        let old = snapshot(1, false);
+        let next = snapshot(2, false);
+        let absent = CommittedTick {
+            tick: 2,
+            ..Default::default()
+        };
+        let hidden = CommittedTick {
+            tick: 2,
+            removed: vec![77],
+            positions: vec![(77, bevy::math::Vec2::new(7.0, 7.0))],
+            effects: vec![EffectRow::Destroyed { unit: 77 }],
+            ..Default::default()
+        };
+        assert_eq!(
+            old.patch(&next, &absent, SlotId(0), &[]),
+            old.patch(&next, &hidden, SlotId(0), &[])
+        );
+    }
+}
