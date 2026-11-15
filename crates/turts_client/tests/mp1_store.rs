@@ -1695,6 +1695,11 @@ fn site_refund_uses_its_authoritative_recipe_and_rejects_unknown_or_wrong_output
         amount: 185,
         source: CostSource::SlotBalance,
     }];
+    first.records.jobs[0].progress.charged = vec![Cost {
+        resource: "base:credits".into(),
+        amount: 40,
+        source: CostSource::SlotBalance,
+    }];
     applied(&mut replica, &first);
     let groups = BTreeMap::new();
     let bindings = BTreeMap::new();
@@ -1741,6 +1746,50 @@ fn site_refund_uses_its_authoritative_recipe_and_rejects_unknown_or_wrong_output
         replica.site_production(SITE),
         Some(alternate.to_string().as_str())
     );
+    let production = read_source(
+        &Source::ProductionQueue,
+        SourceContext {
+            selection: &[OWN],
+            ..context
+        },
+    );
+    assert_eq!(
+        production.items[0].get(ItemField::Paid),
+        Some(&serde_json::json!(format!("40 {credits}")))
+    );
+    let refund = content.catalog.production[&ContentId::parse("base:train_rifleman").unwrap()]
+        .cancel_refunds
+        .running;
+    let amount = 40 * u64::from(refund.numerator) / u64::from(refund.denominator);
+    assert_eq!(
+        production.items[0].get(ItemField::Refund),
+        Some(&serde_json::json!(format!("{amount} {credits}")))
+    );
+    let held = read_source(
+        &Source::ConstructionQueue,
+        SourceContext {
+            selection: &[CONSTRUCTOR],
+            ..context
+        },
+    );
+    assert_eq!(held.items.len(), 2);
+    for row in held.items {
+        assert_eq!(row.get(ItemField::Paid), Some(&serde_json::json!("0")));
+        assert_eq!(row.get(ItemField::Refund), Some(&serde_json::json!("0")));
+        assert!(row.get(ItemField::CancelAction).is_none());
+    }
+    assert!(
+        read_source(
+            &Source::ConstructionQueue,
+            SourceContext {
+                selection: &[ENEMY],
+                ..context
+            }
+        )
+        .items
+        .is_empty()
+    );
+
     for production in ["base:missing".to_owned(), wrong.to_string()] {
         let mut replica = Replica::new(20);
         replica.set_context(ReplicaContext::new(content.clone(), 0));
