@@ -55,6 +55,12 @@ if [ $# -gt 0 ]; then
 fi
 forbid turts_sim $HOST "" bevy_render bevy_winit bevy_pbr turts_mod_runtime
 forbid turts_server $HOST "" bevy_render bevy_winit bevy_pbr
+# Public controllers cannot reach authoritative state, transport, or rendering.
+BOT_FORBIDDEN=(turts_sim turts_server turts_mod_runtime turts_pack turts_audit turts_net_protocol turts_net_lightyear turts_client turts_client_web turts_interaction wgpu winit)
+nobevy turts_bot $HOST ""
+nobevy turts_bot wasm32-unknown-unknown ""
+forbid turts_bot $HOST "" "${BOT_FORBIDDEN[@]}"
+forbid turts_bot wasm32-unknown-unknown "" "${BOT_FORBIDDEN[@]}"
 nobevy turts_mod_api $HOST ""
 nobevy turts_mod_runtime $HOST ""
 nobevy turts_net_protocol $HOST ""
@@ -85,7 +91,7 @@ forbid turts_interaction wasm32-unknown-unknown "" turts_audit
 # workspace crate, no `wgpu`, no `winit`, on host and on wasm32. The list names every other
 # workspace crate; the T1 test `t1x_rules_forbidden_list_is_every_workspace_crate` fails when
 # a crate is added and this list is not.
-RULES_FORBIDDEN=(turts_audit turts_checks turts_client turts_client_web turts_interaction turts_mod_api turts_mod_runtime turts_net_lightyear turts_net_protocol turts_pack turts_server turts_sim wgpu winit)
+RULES_FORBIDDEN=(turts_bot turts_audit turts_checks turts_client turts_client_web turts_interaction turts_mod_api turts_mod_runtime turts_net_lightyear turts_net_protocol turts_pack turts_server turts_sim wgpu winit)
 nobevy turts_rules $HOST ""
 nobevy turts_rules wasm32-unknown-unknown ""
 forbid turts_rules $HOST "" "${RULES_FORBIDDEN[@]}"
