@@ -9,7 +9,7 @@ use std::path::Path;
 
 use bevy::prelude::Resource;
 
-use turts_audit::EconomyLogRecord;
+use turts_audit::{ActorLogRecord, EconomyLogRecord};
 use turts_net_protocol::CommandRejectReason;
 use turts_sim::{AuditState, AuditTrail, CommandAudit, OperationAudit, TickAudit};
 
@@ -100,6 +100,10 @@ impl EconomyLogSink {
         sink.writer.write_initial(trail, initial)?;
         sink.writer.flush()?;
         Ok(sink)
+    }
+
+    pub(crate) fn write_actor(&mut self, record: ActorLogRecord) {
+        self.write_record(EconomyLogRecord::Actor(record));
     }
 
     pub(crate) fn write_claim(&mut self, tick: u32, player_id: u64, slot: u8) {
