@@ -12,6 +12,7 @@ struct ActiveOrderSpan {
     last_unit_id: Option<u32>,
     next_subject_index: usize,
     subjects_with_operations: BTreeSet<u32>,
+    repair_hooks: BTreeSet<u32>,
 }
 
 struct ActiveQueuedCapacityFailureSpan {
@@ -106,7 +107,7 @@ pub fn validate_records(records: &[EconomyLogRecord]) -> Result<(), String> {
         return Err("economy log contains more than one Initial record".into());
     }
 
-    crate::paid::validate_state(initial)?;
+    crate::paid::validate_published_state(initial)?;
     validate_operating_state(initial)?;
     let mut cursor = initial.clone();
     let mut tick_start = initial.clone();
@@ -298,7 +299,15 @@ pub fn validate_records(records: &[EconomyLogRecord]) -> Result<(), String> {
                                     turts_sim::EconomyEventKind::IncomeCredited { .. }
                                 )
                             });
-                        if income {
+                        let before_movement_hold = is_income_hold_operation(operation);
+                        let unchanged_before_movement = operation.before == operation.after
+                            && validate_clock_continuity(
+                                &cursor,
+                                &operation.before,
+                                "unchanged operation",
+                            )
+                            .is_ok();
+                        if income || before_movement_hold || unchanged_before_movement {
                             validate_clock_continuity(
                                 &cursor,
                                 &operation.before,
@@ -434,6 +443,7 @@ pub fn validate_records(records: &[EconomyLogRecord]) -> Result<(), String> {
                                     last_unit_id: None,
                                     next_subject_index: 0,
                                     subjects_with_operations: BTreeSet::new(),
+                                    repair_hooks: BTreeSet::new(),
                                 };
                                 validate_order_operation(&mut span, operation)?;
                                 validate_order_span_end(&span, operation)?;
@@ -449,6 +459,7 @@ pub fn validate_records(records: &[EconomyLogRecord]) -> Result<(), String> {
                                     last_unit_id: None,
                                     next_subject_index: 0,
                                     subjects_with_operations: BTreeSet::new(),
+                                    repair_hooks: BTreeSet::new(),
                                 };
                                 validate_order_operation(&mut span, operation)?;
                                 active_order_command = Some(span);
@@ -793,7 +804,7 @@ pub fn validate_records(records: &[EconomyLogRecord]) -> Result<(), String> {
                 state,
                 events,
             } => {
-                crate::paid::validate_state(state)?;
+                crate::paid::validate_published_state(state)?;
                 validate_operating_state(state)?;
                 reconcile_plain_candidate_dispatches(
                     &mut cursor,
@@ -1201,8 +1212,7 @@ fn expected_order_refusal(
         turts_mod_api::Behaviour::Stop | turts_mod_api::Behaviour::Hold => {
             capability.is_some_and(|entry| entry.movement || entry.weapon)
                 || crate::paid::has_repairer(before, unit_id)
-                || order.behaviour == turts_mod_api::Behaviour::Stop
-                    && crate::paid::has_constructor(before, unit_id)
+                || crate::paid::has_constructor(before, unit_id)
         }
         turts_mod_api::Behaviour::Attack => match &order.target {
             turts_sim::OrderTargetSim::Unit(_) => capability.is_some_and(|entry| entry.weapon),
@@ -2044,6 +2054,22 @@ fn validate_order_operation(
             operation.operation_id
         ));
     }
+    if span.subjects_with_operations.contains(&unit_id)
+        && span
+            .command
+            .result
+            .units
+            .accepted
+            .iter()
+            .all(|unit| span.subjects_with_operations.contains(unit))
+        && span.command.result.units.accepted.contains(&unit_id)
+        && crate::paid::has_repairer(&operation.before, unit_id)
+    {
+        if !span.repair_hooks.insert(unit_id) {
+            return Err("accepted repairer player hook was duplicated".into());
+        }
+        return validate_repair_player_hook(operation, order, unit_id);
+    }
     let mut requested = order.units.clone();
     requested.sort_unstable();
     while span.next_subject_index < requested.len() && requested[span.next_subject_index] < unit_id
@@ -2356,7 +2382,8 @@ fn validate_order_operation(
         }
     }
     if crate::paid::has_repairer(&operation.before, unit_id) {
-        expected_orders.repair_stopped = order.behaviour == turts_mod_api::Behaviour::Stop;
+        // The accepted-player hook is a separate, independently modeled operation.
+        expected_orders.repair_stopped = before_orders.repair_stopped;
     }
     if order.behaviour != turts_mod_api::Behaviour::SetRally
         && order.behaviour != turts_mod_api::Behaviour::Remove
@@ -6818,6 +6845,26 @@ fn validate_order_span_end(
             operation.operation_id
         ));
     }
+    let expected_hooks = span
+        .command
+        .result
+        .units
+        .accepted
+        .iter()
+        .copied()
+        .filter(|unit| {
+            crate::paid::has_repairer(&span.command.before, *unit)
+                && span
+                    .command
+                    .after
+                    .raw_units
+                    .iter()
+                    .any(|row| row.unit_id == *unit)
+        })
+        .collect::<BTreeSet<_>>();
+    if span.repair_hooks != expected_hooks {
+        return Err("accepted player command omitted a repair latch hook".into());
+    }
     let accepted = &span.command.result.units.accepted;
     let refused = &span.command.result.units.refused;
     let mut subjects = BTreeSet::new();
@@ -7324,8 +7371,11 @@ fn validate_command_phase_order(
             let turts_sim::OrderTargetSim::Point(point) = &order.target else {
                 return Err("accepted plain Move has a non-point target".into());
             };
-            if unit_orders_for(&operation.before, *unit_id)
-                != unit_orders_for(&operation.after, *unit_id)
+            let mut expected_orders = unit_orders_for(&operation.before, *unit_id);
+            if crate::paid::has_repairer(&operation.before, *unit_id) {
+                expected_orders.repair_stopped = false;
+            }
+            if expected_orders != unit_orders_for(&operation.after, *unit_id)
                 || raw_move_target(&operation.after, *unit_id)
                     != Some(clamped_audit_point(
                         &operation.before,
@@ -7900,7 +7950,7 @@ fn validate_income_operation(operation: &OperationAudit) -> Result<(), String> {
         .iter()
         .find(|event| matches!(event.kind, EconomyEventKind::IncomeCredited { .. }))
     else {
-        return Ok(());
+        return validate_income_hold_operation(operation);
     };
     let EconomyEventKind::IncomeCredited { balance, .. } = &first.kind else {
         unreachable!()
@@ -19679,4 +19729,148 @@ fn audit_differences(a: &serde_json::Value, b: &serde_json::Value, path: &str) -
         _ if a == b => Vec::new(),
         _ => vec![path.into()],
     }
+}
+
+fn validate_repair_player_hook(
+    operation: &OperationAudit,
+    order: &turts_sim::OrderCommand,
+    unit: u32,
+) -> Result<(), String> {
+    use turts_mod_api::Behaviour;
+    let mut expected = operation.before.clone();
+    let mut orders = unit_orders_for(&expected, unit);
+    orders.repair_stopped = order.behaviour == Behaviour::Stop;
+    store_audited_unit_orders(&mut expected, unit, orders.clone());
+    let replaces = matches!(
+        order.behaviour,
+        Behaviour::Move
+            | Behaviour::Stop
+            | Behaviour::Hold
+            | Behaviour::Attack
+            | Behaviour::Gather
+            | Behaviour::Repair
+    );
+    let manual = expected
+        .raw_repairs
+        .iter()
+        .find(|row| row.repairer == unit)
+        .and_then(|row| row.action.as_ref())
+        .is_some_and(|action| !action.automatic);
+    let current_repair = orders
+        .current
+        .as_ref()
+        .is_some_and(|current| current.behaviour == Behaviour::Repair);
+    if replaces
+        && !(order.queue == turts_sim::QueueMode::Append
+            && order.behaviour != Behaviour::Stop
+            && manual
+            && current_repair)
+    {
+        if order.queue == turts_sim::QueueMode::Append
+            && orders.current.is_none()
+            && !expected
+                .pending_movement_orders
+                .pending_member_counts
+                .contains_key(&unit)
+        {
+            set_audit_move_target(&mut expected, unit, None)?;
+            expected.movement_progress.retain(|row| row.unit_id != unit);
+            expected
+                .plain_movement_progress
+                .retain(|row| row.unit_id != unit);
+        }
+        if let Some(row) = expected
+            .raw_repairs
+            .iter_mut()
+            .find(|row| row.repairer == unit)
+        {
+            row.action = None;
+            row.hold = None;
+        }
+        expected
+            .raw_repairs
+            .retain(|row| row.action.is_some() || row.hold.is_some() || !row.remainders.is_empty());
+        expected.economy.repairs.retain(|row| row.repairer != unit);
+    }
+    if !operation.events.is_empty() || expected != operation.after {
+        return Err(
+            "accepted repair player hook changed state outside its exact latch/action delta".into(),
+        );
+    }
+    Ok(())
+}
+
+fn is_income_hold_operation(operation: &OperationAudit) -> bool {
+    if !operation.events.is_empty()
+        || operation.before.raw_income_clocks == operation.after.raw_income_clocks
+        || operation.before.raw_income_clocks.len() != operation.after.raw_income_clocks.len()
+    {
+        return false;
+    }
+    operation
+        .before
+        .raw_income_clocks
+        .iter()
+        .zip(&operation.after.raw_income_clocks)
+        .all(|(old, next)| {
+            let mut expected = old.clone();
+            expected.held = next.held;
+            expected == *next
+        })
+}
+fn validate_income_hold_operation(operation: &OperationAudit) -> Result<(), String> {
+    if !is_income_hold_operation(operation) {
+        return Ok(());
+    }
+    let before = &operation.before;
+    let mut expected = before.clone();
+    let keys = before
+        .raw_income_clocks
+        .iter()
+        .zip(&operation.after.raw_income_clocks)
+        .filter(|(old, next)| old.held != next.held)
+        .map(|(old, _)| (old.owner_slot, old.resource.clone()))
+        .collect::<BTreeSet<_>>();
+    if keys.len() != 1 {
+        return Err("income hold must concern exactly one due account".into());
+    }
+    let (owner, resource) = keys.into_iter().next().unwrap();
+    let due = before
+        .raw_income_clocks
+        .iter()
+        .filter(|clock| {
+            clock.owner_slot == owner
+                && clock.resource == resource
+                && clock.next_due <= u64::from(before.economy.tick)
+        })
+        .collect::<Vec<_>>();
+    if due.is_empty() {
+        return Err("income hold has no due sources".into());
+    }
+    let total = due
+        .iter()
+        .try_fold(0_u64, |total, clock| total.checked_add(clock.amount))
+        .ok_or("income hold sources exceed admission bound")?;
+    let account = before
+        .economy
+        .balances
+        .iter()
+        .find(|row| row.slot == owner && row.resource == resource)
+        .ok_or("income hold has no balance")?;
+    let ordinal_full = before
+        .next_event_ordinal
+        .and_then(|ordinal| ordinal.checked_add(due.len() as u64))
+        .is_none();
+    if account.on_hand.checked_add(total).is_some() && !ordinal_full {
+        return Err("income hold account can afford its due credit batch".into());
+    }
+    for clock in &mut expected.raw_income_clocks {
+        if clock.owner_slot == owner && clock.resource == resource {
+            clock.held = Some(turts_sim::RejectReason::ArithmeticOverflow);
+        }
+    }
+    if expected != operation.after {
+        return Err("income hold changed state outside its due-account diagnostic".into());
+    }
+    Ok(())
 }

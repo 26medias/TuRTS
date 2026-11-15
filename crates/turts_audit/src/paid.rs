@@ -596,14 +596,12 @@ fn validate_repair_state(state: &AuditState) -> Result<(), String> {
         }
         if let Some(action) = &row.action {
             if action.automatic
-                && state.unit_orders.iter().any(|orders| {
-                    orders.unit_id == row.repairer
-                        && (orders.orders.repair_stopped
-                            || orders.orders.current.is_some()
-                            || !orders.orders.queue.is_empty())
-                })
+                && state
+                    .unit_orders
+                    .iter()
+                    .any(|orders| orders.unit_id == row.repairer && orders.orders.repair_stopped)
             {
-                return Err("automatic repair continued through Stop or explicit work".into());
+                return Err("automatic repair continued through Stop".into());
             }
             if !state
                 .raw_units
@@ -1421,6 +1419,21 @@ pub(crate) fn validate_constructor_stop(
         || accounts(&operation.before) != accounts(&operation.after)
     {
         return Err("Stop must clear only its held construction requests and preserve placed sites, hybrid jobs and accounts".into());
+    }
+    Ok(())
+}
+
+pub(crate) fn validate_published_state(state: &AuditState) -> Result<(), String> {
+    validate_state(state)?;
+    for row in &state.raw_repairs {
+        if row.action.as_ref().is_some_and(|action| action.automatic)
+            && state.unit_orders.iter().any(|orders| {
+                orders.unit_id == row.repairer
+                    && (orders.orders.current.is_some() || !orders.orders.queue.is_empty())
+            })
+        {
+            return Err("automatic repair continued through published explicit work".into());
+        }
     }
     Ok(())
 }
