@@ -133,8 +133,8 @@ fn validate_state(state: &AuditState) -> Result<(), String> {
             }
             top = interval.top;
         }
-        if top != column.initial_surface {
-            return Err("terrain initial natural coverage differs from initial height".into());
+        if top != column.natural_top {
+            return Err("terrain remaining natural coverage differs from depletion cursor".into());
         }
         top = column.natural_top;
         for interval in &column.placed {
@@ -722,6 +722,20 @@ fn step(operation: &OperationAudit, credits: &mut Credits) -> Result<bool, Strin
         }
     } else {
         column.natural_top = *after;
+        // Remaining natural mass is the intersection of each original run with
+        // the not-yet-depleted datum interval. Removed natural mass never returns.
+        column.natural = column
+            .natural
+            .iter()
+            .filter_map(|run| {
+                let top = run.top.min(*after);
+                (top > run.bottom).then(|| TerrainIntervalAudit {
+                    bottom: run.bottom,
+                    top,
+                    material: run.material.clone(),
+                })
+            })
+            .collect();
     }
     column.surface = *after;
     column.revision = column
@@ -743,11 +757,17 @@ fn step(operation: &OperationAudit, credits: &mut Credits) -> Result<bool, Strin
     expected.pending_events.push(event.clone());
     expected.next_event_ordinal = event.ordinal.checked_add(1);
     if expected != operation.after {
-        return Err(
-            "terrain step differs from exact independent column/account/work/event transition"
-                .into(),
-        );
+        return Err(format!(
+            "terrain step {} differs from exact independent transition: {:?}",
+            operation.operation_id,
+            crate::replay::audit_differences(
+                &serde_json::to_value(&expected).map_err(|error| error.to_string())?,
+                &serde_json::to_value(&operation.after).map_err(|error| error.to_string())?,
+                ""
+            )
+        ));
     }
+
     Ok(true)
 }
 /// Run before generic operation validation. This provides the proof used by the
@@ -917,16 +937,6 @@ pub(crate) fn target_refusal(
     Ok(None)
 }
 
-pub(crate) fn automatic_operation(operation: &OperationAudit) -> bool {
-    operation.unit_id.is_some_and(|unit| {
-        work_order(&operation.before, unit).is_some_and(|order| {
-            matches!(
-                order.behaviour,
-                Behaviour::TerrainWork | Behaviour::UnloadCargo
-            )
-        })
-    })
-}
 fn set_cargo_carry(state: &mut AuditState, unit: u32, carry: Option<u64>) {
     let raw = state.raw_terrain.as_mut().unwrap();
     raw.cargo_carries.retain(|(actor, _)| *actor != unit);
@@ -985,7 +995,14 @@ fn cargo(operation: &OperationAudit) -> Result<bool, String> {
     let reach = f64::from(bodies) + f64::from(cargo.interaction_range);
     if dx * dx + dy * dy > reach * reach {
         let target = to + (from - to).normalize_or_zero() * bodies;
-        crate::replay::set_audit_move_target(&mut expected, unit, Some(target))?;
+        crate::replay::set_audit_move_target(
+            &mut expected,
+            unit,
+            Some(turts_mod_api::WorldPos {
+                x: target.x,
+                y: target.y,
+            }),
+        )?;
         if expected != operation.after || !operation.events.is_empty() {
             return Err("cargo approach differs from public depot surface goal".into());
         }

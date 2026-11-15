@@ -9886,7 +9886,11 @@ fn validate_tick_state(
     Ok(())
 }
 
-fn audit_differences(a: &serde_json::Value, b: &serde_json::Value, path: &str) -> Vec<String> {
+pub(super) fn audit_differences(
+    a: &serde_json::Value,
+    b: &serde_json::Value,
+    path: &str,
+) -> Vec<String> {
     match (a, b) {
         (serde_json::Value::Object(a), serde_json::Value::Object(b)) => {
             let keys = a.keys().chain(b.keys()).collect::<BTreeSet<_>>();

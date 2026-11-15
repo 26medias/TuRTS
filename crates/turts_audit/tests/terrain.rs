@@ -30,15 +30,17 @@ impl Fixture {
         // Small public map normalization avoids retaining repeated 768-column snapshots.
         // Definitions still come from the real packaged mod and pass its runtime validator.
         map.size = MapSize { x: 8.0, y: 8.0 };
+        let mut chosen = std::collections::BTreeSet::new();
         map.placements.retain(|row| {
             row.owner_slot == 0
                 && (row.unit == id("walker").to_string() || row.unit == id("depot").to_string())
+                && chosen.insert(row.unit.clone())
         });
         for placement in &mut map.placements {
             placement.pos = if placement.unit == id("walker").to_string() {
                 WorldPos { x: 1.5, y: 1.5 }
             } else {
-                WorldPos { x: 1.5, y: 3.0 }
+                WorldPos { x: 1.5, y: 3.5 }
             };
         }
         let terrain = map.terrain.as_mut().unwrap();
@@ -131,7 +133,7 @@ impl Fixture {
             .world_mut()
             .resource_mut::<CommandQueue>()
             .0
-            .push(command);
+            .push_back(command);
     }
     fn tick(&mut self, records: &mut Vec<EconomyLogRecord>, count: u32) {
         for _ in 0..count {
@@ -301,6 +303,20 @@ fn coherent_terrain_account_yield_depletion_and_revision_tampering_is_rejected()
                     }
                     1 => {
                         column.natural_top = -2;
+                        column.natural = column
+                            .natural
+                            .iter()
+                            .filter_map(|run| {
+                                let top = run.top.min(-2);
+                                (top > run.bottom).then(|| {
+                                    turts_sim::terrain::TerrainIntervalAudit {
+                                        bottom: run.bottom,
+                                        top,
+                                        material: run.material.clone(),
+                                    }
+                                })
+                            })
+                            .collect();
                         if let Some(first) = column.placed.first_mut() {
                             first.bottom = -2;
                         } else {
@@ -402,7 +418,7 @@ fn actual_append_unload_preserves_partial_work_and_carry_in_recorded_stream() {
     let depot = before
         .raw_units
         .iter()
-        .find(|unit| unit.pos == WorldPos { x: 1.5, y: 3.0 })
+        .find(|unit| unit.pos == WorldPos { x: 1.5, y: 3.5 })
         .unwrap()
         .unit_id;
     fixture.order(
