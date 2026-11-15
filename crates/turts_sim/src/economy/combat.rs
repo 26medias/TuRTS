@@ -85,9 +85,7 @@ struct ObservedOwner {
 struct CombatIndex<'a> {
     grid: &'a crate::grid::UniformGrid,
     points: &'a [crate::grid::GridPoint],
-    positions: &'a BTreeMap<u32, bevy_math::Vec2>,
-    owners: &'a BTreeMap<u32, ObservedOwner>,
-    radii: &'a BTreeMap<u32, f32>,
+    targets: &'a [(ObservedOwner, bevy_math::Vec2, f32)],
     max_radius: f32,
 }
 
@@ -146,12 +144,17 @@ pub(crate) fn run_combat(world: &mut World) {
         .filter_map(|unit| unit.weapon.as_ref().map(|weapon| weapon.range))
         .fold(f32::EPSILON, f32::max);
     let grid = crate::grid::UniformGrid::new(&points, cell_size);
+    // Candidate indices already name a point. Resolve immutable phase metadata
+    // once, rather than searching three maps for every weapon/candidate pair.
+    // Health remains a live lookup: an earlier shot can kill a later target.
+    let targets = points
+        .iter()
+        .map(|point| (owners[&point.id], positions[&point.id], radii[&point.id]))
+        .collect::<Vec<_>>();
     let combat_index = CombatIndex {
         grid: &grid,
         points: &points,
-        positions: &positions,
-        owners: &owners,
-        radii: &radii,
+        targets: &targets,
         max_radius,
     };
     let mut weapon_ids = world
@@ -481,8 +484,9 @@ fn choose_target(
     focus: Option<u32>,
 ) -> Option<u32> {
     let healths = &world.resource::<Healths>().0;
-    let matches = |id: u32| {
-        let target = candidates.owners.get(&id)?;
+    let matches = |index: usize| {
+        let id = candidates.points[index].id;
+        let (target, position, radius) = candidates.targets[index];
         let owner = target.slot;
         // One rule for every relation (`turts_rules::relation`); the team of a slot is the slot
         // itself until the match config gives teams.
@@ -502,17 +506,19 @@ fn choose_target(
         if *health == 0 {
             return None;
         }
-        let position = *candidates.positions.get(&id)?;
-        let reach = parameters.range_mode.centre_reach(
-            parameters.range,
-            parameters.radius,
-            *candidates.radii.get(&id)?,
-        );
+        let reach = parameters
+            .range_mode
+            .centre_reach(parameters.range, parameters.radius, radius);
         within_weapon_range(origin, position, reach)
             .then(|| (position.distance_squared(origin), position, id))
     };
     if let Some(focus) = focus
-        && matches(focus).is_some()
+        && candidates
+            .points
+            .binary_search_by_key(&focus, |point| point.id)
+            .ok()
+            .and_then(matches)
+            .is_some()
     {
         return Some(focus);
     }
@@ -528,7 +534,7 @@ fn choose_target(
             ),
         )
         .into_iter()
-        .filter_map(|point_index| matches(candidates.points[point_index].id))
+        .filter_map(matches)
         .min_by(|left, right| {
             left.0
                 .total_cmp(&right.0)

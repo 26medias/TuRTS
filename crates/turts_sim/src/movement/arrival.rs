@@ -427,7 +427,9 @@ pub(super) trait SpatialNeighbors {
 }
 impl SpatialNeighbors for crate::grid::UniformGrid {
     fn nearby(&self, points: &[crate::grid::GridPoint], position: Vec2, reach: f32) -> Vec<usize> {
-        let mut found = self.within(points, position, reach);
+        // This consumer needs spatial order. Avoid an intermediate ID sort;
+        // the complete existing comparator still defines the returned order.
+        let mut found = self.within_unsorted(points, position, reach);
         found.sort_by(|a, b| {
             points[*a]
                 .position
