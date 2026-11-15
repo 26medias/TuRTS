@@ -1,7 +1,7 @@
 //! TW7 frozen terrain workload. Diagnostic runs never replace the 1,000-sample gate.
 #![cfg(test)]
 use super::visibility_benchmark::{self as pipeline, Harness};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use turts_mod_api::*;
 use turts_net_protocol::OrderTarget;
 use turts_sim::{CommittedTick, EconomyEventKind, completed_world};
@@ -195,6 +195,10 @@ fn authored(fog: bool) -> pipeline::Fixture {
         "finite_duration_ticks":22000,"expected_fills_per_worker":1100,"expected_final_item_per_worker":8901,
         "seed_provenance":{"source":"fixed private benchmark input","value":PRIVATE_SEED},
         "activation_ack_rtt_ms":[50,100],"resync_interval":100,"routes":"unchanged SDK16 x32/x80 every10ticks; y32/y96; ridge/tool cells outside routes"});
+    fixture.authored["static_foundation"] = serde_json::json!("ForbidEdit");
+    fixture.authored["changed_cells_per_interval"] = serde_json::json!(100);
+    fixture.authored["changed_chunks_per_interval"] = serde_json::json!(8);
+    fixture.authored["committed_steps_per_interval"] = serde_json::json!(200);
     fixture
 }
 
@@ -321,6 +325,13 @@ impl Workload {
             "all100 real workers must commit each interval"
         );
         assert!(self.interval_steps.values().all(|steps| *steps >= 1));
+        let changed_chunks = self
+            .workers
+            .iter()
+            .filter(|worker| self.interval_steps.contains_key(&worker.unit))
+            .map(|worker| (worker.cell.x / 16, worker.cell.y / 16))
+            .collect::<BTreeSet<_>>();
+        assert_eq!(changed_chunks.len(), 8);
         let view = completed_world(harness.app.world());
         let phase = view.terrain.as_ref().unwrap();
         for worker in &self.workers {
@@ -377,6 +388,7 @@ impl Workload {
         }
         let nav = turts_sim::terrain::privileged_navigation_diagnostics(harness.app.world());
         let result = serde_json::json!({"steps":self.interval_steps,"cumulative_steps":self.steps,
+            "changed_cells":self.interval_steps.len(),"changed_chunks":changed_chunks,
             "local_navigation":{"searches":nav.searches,"cache_hits":nav.cache_hits,"invalidations":nav.invalidations,"solver_retries":nav.solver_retries,"budget_waits":nav.budget_waits}});
         self.interval_steps.clear();
         result
