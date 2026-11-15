@@ -340,7 +340,11 @@ impl StockController {
                 ) else {
                     return;
                 };
-                for (i, actor) in units.iter().filter(|u| idle(u)).enumerate() {
+                let units = ranked_sources(
+                    units.into_iter().filter(idle).collect(),
+                    frame.quota.proposals as usize,
+                );
+                for (i, actor) in units.iter().enumerate() {
                     let mut nodes = nodes.iter().filter(|n| n.remaining > 0).collect::<Vec<_>>();
                     nodes.sort_by(|a, b| {
                         distance(actor.position, a.position)
@@ -451,17 +455,22 @@ impl StockController {
                 let _ = out.propose(Proposal {
                     source_basis: self.basis.unwrap_or(frame.basis),
                     task: TaskKey::new(&self.key, &rule.key, "squad"),
-                    actors: units
-                        .iter()
-                        .filter(|u| {
-                            u.own.as_ref().is_some_and(|own| {
-                                own.enabled
-                                    && own.queued_orders == 0
-                                    && own.current_order.as_ref() != Some(&order)
+                    actors: ranked_sources(
+                        units
+                            .into_iter()
+                            .filter(|u| {
+                                u.own.as_ref().is_some_and(|own| {
+                                    own.enabled
+                                        && own.queued_orders == 0
+                                        && own.current_order.as_ref() != Some(&order)
+                                })
                             })
-                        })
-                        .map(|u| u.unit)
-                        .collect(),
+                            .collect(),
+                        frame.limits.affected_units as usize,
+                    )
+                    .into_iter()
+                    .map(|u| u.unit)
+                    .collect(),
                     order,
                     priority: rule.priority,
                     goal_order: rank as u32,
@@ -562,3 +571,27 @@ fn idle(unit: &UnitObservation) -> bool {
 
 #[cfg(test)]
 mod tests;
+
+/// Select only resolved physical ranks. Coincident sources are refused as a group,
+/// including at the quota boundary. Identity never selects a prefix within a tie.
+fn ranked_sources(mut rows: Vec<UnitObservation>, limit: usize) -> Vec<UnitObservation> {
+    rows.sort_by(|a, b| {
+        a.position
+            .x
+            .total_cmp(&b.position.x)
+            .then_with(|| a.position.y.total_cmp(&b.position.y))
+    });
+    let mut selected = Vec::new();
+    let mut start = 0;
+    while start < rows.len() && selected.len() < limit {
+        let mut end = start + 1;
+        while end < rows.len() && rows[end].position == rows[start].position {
+            end += 1;
+        }
+        if end == start + 1 {
+            selected.push(rows[start].clone());
+        }
+        start = end;
+    }
+    selected
+}

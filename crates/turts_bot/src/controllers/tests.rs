@@ -399,3 +399,23 @@ fn pending_supply_provider_prevents_duplicate_construction_and_loss_replans() {
         BotTarget::ContentAtPoint { .. }
     ));
 }
+
+#[test]
+fn actor_quota_never_chooses_one_coincident_source_by_storage_order() {
+    for rows in [
+        vec![unit(1, 0., 0.), unit(2, 0., 0.), unit(3, 2., 0.)],
+        vec![unit(2, 0., 0.), unit(1, 0., 0.), unit(3, 2., 0.)],
+    ] {
+        let selected = ranked_sources(rows, 1);
+        assert_eq!(selected.len(), 1);
+        assert_eq!(selected[0].unit, 3);
+    }
+}
+#[test]
+fn large_squads_select_within_affected_unit_quota_by_physical_rank() {
+    let rows = (0..300).map(|n| unit(300 - n, n as f32, 0.)).collect();
+    let selected = ranked_sources(rows, 256);
+    assert_eq!(selected.len(), 256);
+    assert_eq!(selected.first().unwrap().unit, 300);
+    assert_eq!(selected.last().unwrap().unit, 45);
+}
