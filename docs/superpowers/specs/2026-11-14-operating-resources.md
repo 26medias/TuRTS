@@ -36,6 +36,9 @@ There is no immediate payment at activation and no income from a site or dead un
 Income follows completion and health. Manual work Disable does not stop this separate capability.
 Removal discards its clock. A later unit starts a new clock, even if the same content type is used.
 Income must not increase the Gathered statistic.
+The Gathered accumulator and its HUD source are not implemented yet.
+This milestone tests the actual balance and event boundary. It does not claim an implemented statistics counter.
+When statistics land, add a regression that proves periodic income leaves Gathered unchanged.
 
 ## Authoritative timing and arithmetic
 
@@ -108,7 +111,7 @@ Game words and labels remain mod data.
 | OR2 | Check exact provided/consumed totals for completed units, sites, manual Disable, completion, spawn, removal, and destruction. Check the pre-command one-tick boundary. |
 | OR3 | A shortage halves producer and constructor progress. Recovery restores full progress without lost fractions or duplicated payment. Two active constraints use the smaller rate. |
 | OR4 | A shortage stops acquisition and firing. Restoration permits firing. A manual Disable remains disabled after restoration. Other slots and unaffected weapons continue. |
-| OR5 | Check periodic income at two tick rates, including 1,050 ms at 20 Hz. Check initial activation, later completion, removal, no site income, and no Gathered statistic increase. |
+| OR5 | Check periodic income at two tick rates, including 1,050 ms at 20 Hz. Check initial activation, later completion, removal, and no site income. In an isolated successful-income stream, verify exact balance credits and IncomeCredited events, with no Converted, Extracted, or Stored events. Gathered accounting remains a future implementation check. |
 | OR6 | Check supply overflow refusal and account income overflow retry. Swap IDs of simultaneous completions at the bound and retain the physical result. Two due payers share one nearly full account while another account succeeds. No partial mutation, wrapping, or duplicated payment is permitted. |
 | OR7 | Two repeated runs produce identical totals, health, progress, balances, and events at every tick. Existing no-supply/no-income operation streams remain equal. |
 | OR8 | Native export and replica tests prove owner privacy, changes to zero, resync, and new-match reset. |

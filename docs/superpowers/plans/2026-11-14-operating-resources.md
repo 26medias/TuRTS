@@ -79,7 +79,8 @@ Use the existing owner-only Credited effect for presentation. No wire variant is
 Retain unpaid due payments when the account is full. Do not add missed periods behind them.
 On success, schedule the next full period from that success tick.
 Remove clocks for missing, unfinished, or nonpositive-health units. Restart on later valid activation.
-Confirm free credits do not feed the Gathered statistics path.
+In an isolated successful-income stream, check exact balance credits and IncomeCredited events without Converted, Extracted, or Stored events.
+The Gathered accumulator and HUD are not implemented. Preserve the normative exclusion and add an actual-counter regression when statistics land.
 Expose one typed overflow-held transition through authoritative diagnostic audit state. Clear it after recovery.
 Use held progress records with per_tick zero. Do not invent command IDs or promise owner-client overflow reason text.
 Do not spam an ignored automatic refusal on every tick.

@@ -1,7 +1,7 @@
 # Operating resources — acceptance draft
 
-Status: preview checks pass. Final release acceptance and independent review remain pending.
-This report maps existing evidence. It does not declare the milestone complete.
+Status: preview checks and independent review pass. Final release acceptance remains pending.
+This report maps executed evidence. Final release checks remain in progress.
 Integration reference: `codex/operating-resources` at `4ed93660`.
 
 Evidence root (E): `/home/julien/Projects/TuRTS/target/mc-evidence/operating-resources/`.
@@ -29,12 +29,12 @@ A full account holds the whole due batch. It does not accumulate missed periods.
 | OR2 | Component and preview PASS. `backend-sim-tests.log`: boot exclusions, declared zeros, manual Disable, spawn, removal, zero health, revival, combat destruction, and immutable tick boundary. `engine/first.log`: mixed producer/site admission and retained-site rules. `audit/removal-stream.jsonl` and `audit/final.log`: real queued removal releases income and supply; effects update next tick. Final release confirmation is pending. |
 | OR3 | Component and preview PASS. `engine/first.log`: exact minimum rates, global Q, fractional recovery, site health, unchanged payment/FIFO, and overflow recovery. `browser-full-checked/result.json`: full work 41/41 ticks; shortage work 30/61 ticks; constructor progress is recorded. Final release browser confirmation is pending. |
 | OR4 | Component and preview PASS for executed checks. `supply/power-callers.log`, `backend-sim-tests.log`, and `browser-full-checked/result.json` cover weapon shortage, restoration, and preserved manual Disable. Owner separation also has export/replica coverage. Final release confirmation is pending. |
-| OR5 | PARTIAL. `income/result.json`, `income/lifecycle/result.json`, `backend-sim-tests.log`, and `audit/stream.jsonl` cover two tick rates, 1,050 ms at 20 Hz, explicit activation, removal/revival, site/dead exclusions, and successful periodic credits. `browser-full-checked/result.json` records balance changes. Gathered has no implemented accumulator: the HUD source is a Null stub and stage-1 match results have empty stats. The distinct IncomeCredited event is tested; an actual Gathered before/after assertion remains unavailable. Later-completion clock timing needs final integrated evidence. |
+| OR5 | Native PASS for the corrected event/account boundary. `income/result.json`, `income/lifecycle/result.json`, `backend-sim-tests.log`, and `audit/stream.jsonl` cover two tick rates, 1,050 ms at 20 Hz, explicit activation, removal/revival, site/dead exclusions, and successful periodic credits. `browser-full-checked/result.json` records balance changes. Gathered has no implemented accumulator: the HUD source is a Null stub and stage-1 match results have empty stats. The distinct IncomeCredited event is tested; The actual stream test checks balance 0 to 12 and no Converted, Extracted, or Stored events. An actual Gathered before/after assertion remains a future statistics requirement. Later-completion clock timing needs final integrated evidence. |
 | OR6 | Component PASS. `income/lifecycle/result.json` covers atomic wrong/stale/reversed grant refusal. `income/result.json` covers two due sources sharing a full account, an unaffected account, retry without backlog, and event-ordinal overflow. `engine/first.log` covers supply/income admission bounds, swapped factory/site IDs with unchanged physical winner, preserved final progress/resources/IDs, and recovery. |
 | OR7 | PARTIAL. `income/result.json` compares repeated clock/account/event states. `audit/final.log` compares repeated real periodic-income streams. Existing no-operating frozen streams still need an operating-integration run; commands are below. This report does not claim equality for unexecuted historical streams. |
 | OR8 | Component PASS. `client/export-checks.log` and `client/export-replica-checks.log` cover real server projections through postcard into replicas: owner privacy, foreign-record refusal, explicit zeros, delta-to-zero, resync, and fresh legacy-match reset. `client/summary.md` records counts and scope. |
 | OR9 | Preview PASS: `browser-full-checked/result.json`, `browser-full-checked.log`, and screenshots in that directory. Real mouse orders remove a provider, build a replacement, restore work, preserve manual weapon Disable, then permit firing. The fixture also checks peer privacy, income, and explicit zero totals. Final release run is pending. Earlier failed/partial attempts remain evidence of fixes; they are not passes. |
-| OR10 | PENDING. `clippy-final.log` records a successful strict workspace Clippy run. `backend-sim-tests.log` records 364 passed and one ignored. `audit/final.log` records 72 passed. Final full gates, compatibility equality, release cold probes, actual launcher, completed independent review, findings closure, and final README update remain pending. Review execution logs alone are not review approval. |
+| OR10 | PENDING. `clippy-final.log` records a successful strict workspace Clippy run. `backend-sim-tests.log` records 364 passed and one ignored. `audit/final.log` records 72 passed. Final full gates, compatibility equality, release cold probes, actual launcher,  and final README update remain pending. `review/review.md` and `review/result.json` record independent approval with no material findings. The review also ran frozen compatibility and two independent Q=6 completion probes. |
 
 ## Audit boundary
 
@@ -72,3 +72,6 @@ OR1 therefore accepts the authored maximum and tests generic converter overflow 
 Network supply, Queued counts, and BlockStart remain reserved and rejected.
 Default Skirmish content stays unchanged; operating behavior is exercised in a separate mod fixture.
 No final-release performance claim is made here. This draft does not authorize a main push.
+
+OR5 was corrected through a narrow two-turn Anvil review: `anvil-stat-clarification.md`.
+It preserves the future Gathered exclusion without treating a Null HUD source as a working counter.
