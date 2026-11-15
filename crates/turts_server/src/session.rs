@@ -843,10 +843,7 @@ pub fn send_snapshots(world: &mut World, mut due: Local<QueryState<Entity, With<
         .filter_map(|entity| {
             let slot = world.get::<Session>(entity).map(|session| session.slot);
             let payload = slot.map(|slot| {
-                let policy = world
-                    .get_resource::<crate::permissions::ObservationPolicy>()
-                    .cloned()
-                    .unwrap_or_default();
+                let policy = crate::permissions::completed(world);
                 let (message, history) = export::snapshot_for_with_permissions(
                     &world.resource::<CompletedWorld>().0,
                     slot,

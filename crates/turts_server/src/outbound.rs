@@ -48,10 +48,7 @@ pub fn send_final_snapshots(world: &mut World) {
         })
         .collect::<Vec<_>>();
     for (entity, slot) in recipients {
-        let policy = world
-            .get_resource::<crate::permissions::ObservationPolicy>()
-            .cloned()
-            .unwrap_or_default();
+        let policy = crate::permissions::completed(world);
         let (snapshot, history) =
             export::snapshot_for_with_permissions(completed_world(world), slot, policy.0.as_ref());
         world.entity_mut(entity).insert(history);
@@ -121,10 +118,7 @@ pub fn send_deltas(world: &mut World) {
     if recipients.is_empty() {
         return;
     }
-    let policy = world
-        .get_resource::<crate::permissions::ObservationPolicy>()
-        .cloned()
-        .unwrap_or_default();
+    let policy = crate::permissions::completed(world);
     for (entity, slot) in recipients {
         let previous = world
             .get::<export::ObservationHistory>(entity)
