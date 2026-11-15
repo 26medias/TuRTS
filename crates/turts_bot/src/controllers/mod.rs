@@ -1,4 +1,5 @@
 //! Game-independent stock policies. All names and thresholds come from BotKnowledge.
+mod squads;
 use crate::*;
 use std::sync::Arc;
 use turts_mod_api::{
@@ -375,106 +376,6 @@ impl StockController {
                         break;
                     }
                 }
-            }
-        }
-    }
-    fn squads(
-        &mut self,
-        frame: &BotFrame<'_>,
-        queries: &mut dyn BotQueries,
-        out: &mut dyn ProposalSink,
-    ) {
-        for (rank, rule) in frame.profile.knowledge.squads.clone().iter().enumerate() {
-            let Some(units) = self.units(frame, &rule.role, queries) else {
-                continue;
-            };
-            if units.len() < rule.min_units as usize {
-                continue;
-            }
-            let Some(anchors) = self.units(frame, &rule.anchor_role, queries) else {
-                continue;
-            };
-            let Some(anchor) = unique_first(anchors) else {
-                continue;
-            };
-            let target_content = rule
-                .target_roles
-                .iter()
-                .flat_map(|name| {
-                    frame
-                        .profile
-                        .knowledge
-                        .roles
-                        .iter()
-                        .filter(move |r| &r.key == name)
-                        .flat_map(|r| r.units.iter())
-                })
-                .filter_map(|s| ContentId::parse(s).ok())
-                .collect();
-            let Some(QueryData::Units(mut targets)) = self.collect(
-                Query::Units(UnitQuery {
-                    relation: SlotRelation::Enemy,
-                    content: target_content,
-                    center: None,
-                    radius: None,
-                }),
-                queries,
-            ) else {
-                continue;
-            };
-            targets.retain(|u| !u.site);
-            targets.sort_by(|a, b| {
-                let da = distance(anchor.position, a.position);
-                let db = distance(anchor.position, b.position);
-                let radius = rule.defend_radius * rule.defend_radius;
-                (da > radius)
-                    .cmp(&(db > radius))
-                    .then_with(|| da.total_cmp(&db))
-            });
-            let target = targets.first();
-            if target.is_some_and(|first| {
-                targets.get(1).is_some_and(|next| {
-                    distance(anchor.position, first.position)
-                        == distance(anchor.position, next.position)
-                })
-            }) {
-                continue;
-            }
-            let (binding, target) = match target {
-                Some(target) => (&rule.attack_order, BotTarget::Unit(target.unit)),
-                None if units.iter().any(|u| {
-                    distance(u.position, anchor.position)
-                        > rule.assemble_radius * rule.assemble_radius
-                }) =>
-                {
-                    (&rule.move_order, BotTarget::Point(anchor.position))
-                }
-                None => continue,
-            };
-            if let Some(order) = self.order(frame, binding, target) {
-                let _ = out.propose(Proposal {
-                    source_basis: self.basis.unwrap_or(frame.basis),
-                    task: TaskKey::new(&self.key, &rule.key, "squad"),
-                    actors: ranked_sources(
-                        units
-                            .into_iter()
-                            .filter(|u| {
-                                u.own.as_ref().is_some_and(|own| {
-                                    own.enabled
-                                        && own.queued_orders == 0
-                                        && own.current_order.as_ref() != Some(&order)
-                                })
-                            })
-                            .collect(),
-                        frame.limits.affected_units as usize,
-                    )
-                    .into_iter()
-                    .map(|u| u.unit)
-                    .collect(),
-                    order,
-                    priority: rule.priority,
-                    goal_order: rank as u32,
-                });
             }
         }
     }
