@@ -81,6 +81,9 @@ pub struct Exports {
     /// API 0.2.4, row A3: files of type `VisualEffectsDef`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub visual_effects: Vec<String>,
+    /// API 0.2.15: portable bot profiles. Loading a profile does not install it.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub bots: Vec<String>,
 }
 
 /// A map that rejects duplicate keys during deserialization.

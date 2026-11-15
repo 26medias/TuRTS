@@ -184,6 +184,8 @@ pub struct ResolvedTechnology {
 /// Fully resolved definitions, keyed by their package-qualified ids.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ContentCatalog {
+    /// Validated profiles with qualified references. Host factories activate separately.
+    pub bots: BTreeMap<ContentId, crate::bots::BotDef>,
     pub combat: Option<CombatDef>,
     pub resources: BTreeMap<ContentId, ResourceDef>,
     pub units: BTreeMap<ContentId, ResolvedUnit>,
