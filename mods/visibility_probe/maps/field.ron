@@ -1,0 +1,8 @@
+(
+ id: "field", size: (x: 64.0, y: 48.0),
+ visibility: Some((cell_size: 2.0, sharing: OwnSlot, memory_limit: Some(65536))),
+ placements: [
+  (unit: "visibility_probe:scout", owner_slot: 0, pos: (x: 8.0, y: 12.0), contents: []),
+  (unit: "visibility_probe:contact", owner_slot: 1, pos: (x: 36.0, y: 12.0), contents: []),
+ ], nodes: [(node: "visibility_probe:deposit", pos: (x: 34.0, y: 16.0), remaining: 100)], slot_economy: [],
+)

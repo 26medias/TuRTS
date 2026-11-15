@@ -197,3 +197,28 @@ fn earlier_event_positions_are_accepted_only_for_all_visible_fallback() {
         }
     }
 }
+
+#[test]
+fn public_two_human_scouting_fixture_loads_through_the_normal_engine() {
+    let root =
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../mods/visibility_probe");
+    let archive = PackageArchive::parse(&pack_dir(&root).unwrap()).unwrap();
+    let maps = archive.maps().unwrap();
+    assert_eq!(
+        maps[0].1.visibility.as_ref().unwrap().sharing,
+        VisionSharing::OwnSlot
+    );
+    let mut app = turts_sim::headless_app(20);
+    turts_pack::load_package(app.world_mut(), &archive).unwrap();
+    let world = turts_sim::completed_world(app.world());
+    assert_eq!(world.units.len(), 2);
+    assert_eq!(world.nodes.len(), 1);
+    assert_eq!(
+        world
+            .units
+            .iter()
+            .map(|unit| unit.owner_slot)
+            .collect::<std::collections::BTreeSet<_>>(),
+        std::collections::BTreeSet::from([0, 1])
+    );
+}

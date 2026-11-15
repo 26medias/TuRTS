@@ -104,6 +104,7 @@ function luminance(image, point) {
         a=await wait(pages[0],s=>s.debug.replicated_world.units.some(row=>row.unit_id===enemyId),'Scout did not observe enemy');
         await capture('01-observed',pages[0],a);
         const oldEnemy=a.debug.replicated_world.units.find(row=>row.unit_id===enemyId);
+        if(scenario.node_content)assert(a.debug.replicated_world.nodes.some(node=>node.content_id===scenario.node_content),'Scout did not observe the public surface node');
         await move(pages[0],scoutId,scenario.withdraw);
         a=await wait(pages[0],s=>{
             const unit=s.debug.replicated_world.units.find(row=>row.unit_id===scoutId);
@@ -113,6 +114,11 @@ function luminance(image, point) {
         const stale=a.debug.knowledge.remembered_units.find(row=>row.unit===enemyId);
         assert(!a.debug.units.some(row=>row.unit_id===enemyId),'Hidden live interpolation survived');
         assert(!a.debug.replicated_world.healths.some(row=>row.unit===enemyId),'Hidden health survived');
+        if(scenario.node_content){
+            const remembered=a.debug.knowledge.remembered_nodes.find(node=>`${node.content.package}:${node.content.local}`===scenario.node_content);
+            assert(remembered&&remembered.remaining===100,'Hidden surface node did not keep its explicitly stale resource state');
+            assert(!a.debug.replicated_world.nodes.some(node=>node.content_id===scenario.node_content),'Hidden surface node remained live');
+        }
         let hidden=await capture('02-remembered',pages[0],a);
         await click(pages[0],project(a.scene,oldEnemy.pos));
         a=await read(pages[0]);

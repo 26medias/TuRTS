@@ -1,0 +1,10 @@
+(
+    id: "visibility_probe", version: "0.1.0", kind: Game, engine_api: "^0.2.16", dependencies: {},
+    exports: (
+        units: ["units/scout.ron", "units/contact.ron"], maps: ["maps/field.ron"],
+        visuals: ["visuals/scout.ron", "visuals/contact.ron", "visuals/deposit.ron"],
+        resources: ["resources/ore.ron"], nodes: ["nodes/deposit.ron"], production: [],
+        orders: ["orders/order_move.ron", "orders/order_stop.ron", "orders/rules.ron"],
+        input: ["input/bindings.ron"], assets: ["assets/assets.ron"], interface: ["interface/hud.ron"],
+    ), context: Shared, capabilities: [], license: "LicenseRef-TBD",
+)
