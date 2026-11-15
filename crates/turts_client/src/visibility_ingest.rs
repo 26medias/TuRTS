@@ -22,6 +22,7 @@ pub struct StateTransactions {
     early_heap: usize,
     early_entity: Option<Entity>,
     early_retirement: Option<StateTransactionStamp>,
+    early_cancel: Option<(Entity, StateTransactionStamp)>,
     restart_after_welcome: bool,
     waiting_snapshot: bool,
     /// True once this connection uses atomic transport. Legacy deltas cannot bypass it.
@@ -48,6 +49,54 @@ impl StateTransactions {
         true
     }
 
+    fn cancellation(&mut self, entity: Entity, stamp: StateTransactionStamp) {
+        if self.match_id.is_some_and(|id| id != stamp.basis.match_id)
+            || self
+                .expected_map
+                .as_ref()
+                .is_some_and(|map| map != &stamp.basis.map)
+        {
+            return;
+        }
+        if self.ensure_context(entity, &stamp) {
+            self.restricted = true;
+            if let Some(assembler) = self.assembler.as_mut() {
+                assembler.cancel(&stamp);
+            }
+            return;
+        }
+        // Exactly one bounded watermark is retained until Welcome supplies the match/slot.
+        let map_bytes = stamp
+            .basis
+            .map
+            .package
+            .0
+            .capacity()
+            .saturating_add(stamp.basis.map.local.capacity());
+        if map_bytes.saturating_add(std::mem::size_of::<StateTransactionStamp>()) > 4096 {
+            return;
+        }
+        let replace = self.early_cancel.as_ref().is_none_or(|(old_entity, old)| {
+            *old_entity != entity
+                || old.basis.match_id != stamp.basis.match_id
+                || old.basis.map != stamp.basis.map
+                || old.transaction_id < stamp.transaction_id
+        });
+        if replace {
+            self.early_cancel = Some((entity, stamp));
+        }
+    }
+    fn apply_early_cancellation(&mut self) {
+        if let Some((entity, stamp)) = self.early_cancel.take() {
+            if self.ensure_context(entity, &stamp) {
+                self.restricted = true;
+                if let Some(assembler) = self.assembler.as_mut() {
+                    assembler.cancel(&stamp);
+                }
+            }
+        }
+    }
+
     fn clear_early(&mut self) {
         self.early = std::collections::VecDeque::new();
         self.early_heap = 0;
@@ -55,6 +104,15 @@ impl StateTransactions {
     }
     fn early_bytes(&self) -> usize {
         self.early_heap
+            .saturating_add(self.early_cancel.as_ref().map_or(0, |(_, stamp)| {
+                stamp
+                    .basis
+                    .map
+                    .package
+                    .0
+                    .capacity()
+                    .saturating_add(stamp.basis.map.local.capacity())
+            }))
             .saturating_add(self.early.capacity().saturating_mul(std::mem::size_of::<(
                 Entity,
                 StateTransactionFrame,
@@ -88,6 +146,13 @@ impl StateTransactions {
         if self.early_entity.is_some_and(|old| old != entity) {
             self.clear_early();
             self.early_retirement = None;
+            if self
+                .early_cancel
+                .as_ref()
+                .is_some_and(|(old_entity, _)| *old_entity != entity)
+            {
+                self.early_cancel = None;
+            }
             self.restart_after_welcome = false;
             self.waiting_snapshot = false;
         }
@@ -298,13 +363,8 @@ pub fn receive_transactions(
     let mut refused = Vec::new();
     for (entity, mut receiver) in &mut cancels {
         for cancel in receiver.receive() {
-            if !current(entity) || !transactions.ensure_context(entity, &cancel.stamp) {
-                continue;
-            }
-            // Control traffic can outrun the first ordered state frame.
-            transactions.restricted = true;
-            if let Some(assembler) = transactions.assembler.as_mut() {
-                assembler.cancel(&cancel.stamp);
+            if current(entity) {
+                transactions.cancellation(entity, cancel.stamp);
             }
         }
     }
@@ -317,6 +377,16 @@ pub fn receive_transactions(
         transactions.early_retirement = None;
         transactions.restart_after_welcome = false;
         transactions.waiting_snapshot = false;
+    }
+    if transactions
+        .early_cancel
+        .as_ref()
+        .is_some_and(|(entity, _)| !current(*entity))
+    {
+        transactions.early_cancel = None;
+    }
+    if ready {
+        transactions.apply_early_cancellation();
     }
     if ready
         && let Some(stamp) = transactions.early_retirement.take()
@@ -727,5 +797,94 @@ mod tests {
         assert!(transactions.waiting_snapshot);
         assert!(transactions.assembler.is_none());
         assert_eq!(transactions.retained_bytes(), 0);
+    }
+
+    #[test]
+    fn cancellation_before_welcome_retires_early_and_late_frames_before_replacement() {
+        use turts_net_protocol::visibility_transaction::encode_transaction;
+        let archive = PackageArchive::parse(
+            &pack_dir(
+                &std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                    .join("../../mods/visibility_probe"),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        let map = expected_map(std::slice::from_ref(&archive), "visibility_probe").unwrap();
+        let stamp = |id| StateTransactionStamp {
+            basis: KnowledgeBasis {
+                match_id: 7,
+                map: map.clone(),
+                tick: id as u32,
+                phase: ObservationPhase::Completed,
+            },
+            transaction_id: id,
+            parent_transaction_id: None,
+        };
+        let frames = |id| {
+            let payload = StateTransactionPayload::Snapshot {
+                state: Box::new(turts_net_protocol::Snapshot {
+                    tick: id as u32,
+                    ..Default::default()
+                }),
+                knowledge: None,
+                event_units: vec![],
+            };
+            let mut encoded =
+                encode_transaction(stamp(id), &payload, KNOWLEDGE_FRAME_LIMIT_BYTES).unwrap();
+            let mut frames = Vec::new();
+            while let Some(frame) = encoded.next_frame() {
+                frames.push(frame);
+            }
+            frames
+        };
+        let entity = Entity::from_bits(17);
+        let mut transactions = StateTransactions::default();
+        transactions.cancellation(entity, stamp(3));
+        assert!(transactions.assembler.is_none());
+        assert!(transactions.early_cancel.is_some());
+        let old_frames = (1..=3).flat_map(frames).collect::<Vec<_>>();
+        for frame in &old_frames {
+            transactions.defer(entity, frame.clone());
+        }
+        // A real Welcome and its verified root map now establish the connection context.
+        transactions.match_id = Some(7);
+        transactions.expected_map = Some(map.clone());
+        transactions.apply_early_cancellation();
+        assert!(transactions.early_cancel.is_none());
+        while let Some((entity, frame)) = transactions.pop_early() {
+            assert!(transactions.frame(entity, frame, 0).unwrap().is_none());
+        }
+        for frame in old_frames {
+            assert!(transactions.frame(entity, frame, 0).unwrap().is_none());
+        }
+        let mut replica = crate::replica::Replica::new(20);
+        replica.set_context(crate::replica::ReplicaContext::new(
+            crate::content::ClientContent::from_archives(&[archive]).unwrap(),
+            0,
+        ));
+        let mut activated = Vec::new();
+        for frame in frames(4) {
+            if let Some(staged) = transactions.frame(entity, frame, 0).unwrap() {
+                assert!(replica.activate_transaction(
+                    &staged.stamp,
+                    &staged.payload,
+                    Instant::now()
+                ));
+                activated.push(
+                    transactions
+                        .assembler
+                        .as_mut()
+                        .unwrap()
+                        .activate(&staged.stamp)
+                        .unwrap()
+                        .stamp
+                        .transaction_id,
+                );
+            }
+        }
+        assert_eq!(activated, vec![4]);
+        assert_eq!(replica.last_applied_tick, Some(4));
+        assert!(!transactions.restart_after_welcome);
     }
 }
