@@ -939,7 +939,12 @@ fn run(intervals: usize, acceptance: bool) {
     // Record immutable authoring before any timed work. Root captures CPU affinity,
     // compiler, machine, and build flags beside this artifact.
     let mut all = vec![];
-    for (fog, concentrated) in [(true, false), (false, false), (false, true)] {
+    let modes = if acceptance {
+        vec![(true, false), (false, false), (false, true)]
+    } else {
+        vec![(true, false)]
+    };
+    for (fog, concentrated) in modes {
         let mut harness = Harness::new(fog, concentrated);
         println!("SV7_AUTHORED {}", harness.authored);
         for index in 0..WARMUP {
