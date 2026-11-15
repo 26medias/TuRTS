@@ -345,6 +345,11 @@ impl StateTransactionAssembler {
         })
     }
     pub fn cancel(&mut self, stamp: &StateTransactionStamp) {
+        // Control cancellation can overtake a state-channel Begin. Retire its ID before receipt.
+        if stamp.basis.match_id != self.match_id || stamp.basis.map != self.map {
+            return;
+        }
+        self.highest_seen = self.highest_seen.max(stamp.transaction_id);
         if self
             .pending
             .as_ref()
@@ -393,7 +398,7 @@ mod tests {
                 .map(|unit| UnitSnapshot {
                     unit_id: UnitId(unit),
                     content_id: "fixture:ordinary_unit".into(),
-                    owner_slot: 0,
+                    owner_slot: crate::SlotId(0),
                     facing: None,
                     pos: Pos {
                         x: unit as f32,
@@ -490,6 +495,21 @@ mod tests {
             assembler.chunk(&chunk),
             Err(StateTransactionError::InvalidStamp)
         );
+    }
+    #[test]
+    fn cancellation_before_begin_retires_only_the_matching_context() {
+        let mut assembler = assembler();
+        let encoded = encode_transaction(stamp(1, None), &payload(1, false), 768).unwrap();
+        let mut unrelated = stamp(99, None);
+        unrelated.basis.match_id = 8;
+        assembler.cancel(&unrelated);
+        assembler.cancel(&stamp(1, None));
+        assert_eq!(
+            assembler.begin(encoded.begin().clone(), 0),
+            Err(StateTransactionError::InvalidStamp)
+        );
+        let encoded = encode_transaction(stamp(2, None), &payload(2, false), 768).unwrap();
+        assert_eq!(assembler.begin(encoded.begin().clone(), 1), Ok(()));
     }
     #[test]
     fn patch_parent_and_context_are_checked_and_timeout_releases_the_buffer() {
