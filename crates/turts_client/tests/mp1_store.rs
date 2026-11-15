@@ -1654,3 +1654,118 @@ fn supply_short_is_consumed_above_provided_and_has_one_getter() {
     assert!(!replica.supply_short("base:nothing"));
     assert!(!Replica::new(20).supply_short(POWER));
 }
+
+#[test]
+fn site_refund_uses_its_authoritative_recipe_and_rejects_unknown_or_wrong_outputs_atomically() {
+    use turts_client::widgets::sources::{CoreFeed, SourceContext, read_source};
+    use turts_mod_api::{ContentId, Cost, CostSource, ItemField, RefundRatio, Source};
+    let _guard = serial();
+    let mut content = content();
+    let original = ContentId::parse("base:build_command_center").unwrap();
+    let alternate = ContentId::parse("base:alternate_build").unwrap();
+    let mut recipe = content.catalog.production[&original].clone();
+    recipe.id = alternate.clone();
+    recipe.cancel_refunds.running = RefundRatio {
+        numerator: 3,
+        denominator: 4,
+    };
+    content
+        .catalog
+        .production
+        .get_mut(&original)
+        .unwrap()
+        .cancel_refunds
+        .running = RefundRatio::ZERO;
+    content
+        .catalog
+        .production
+        .insert(alternate.clone(), recipe.clone());
+    let wrong = ContentId::parse("base:wrong_output").unwrap();
+    recipe.id = wrong.clone();
+    recipe.output_unit = ContentId::parse("base:rifleman").unwrap();
+    content.catalog.production.insert(wrong.clone(), recipe);
+    let mut replica = Replica::new(20);
+    replica.set_context(ReplicaContext::new(content.clone(), 0));
+    let mut first = snapshot(10);
+    first.records.sites[0].production = alternate.to_string();
+    first.records.sites[0].progress = rate(37, 100, 0, 10);
+    first.records.sites[0].progress.state = RecordState::WaitingForFunds("base:credits".into());
+    first.records.sites[0].progress.charged = vec![Cost {
+        resource: "base:credits".into(),
+        amount: 185,
+        source: CostSource::SlotBalance,
+    }];
+    applied(&mut replica, &first);
+    let groups = BTreeMap::new();
+    let bindings = BTreeMap::new();
+    let input_map = turts_mod_api::InputMapDef {
+        actions: vec![],
+        engine_overrides: vec![],
+    };
+    let context = SourceContext {
+        binding_labels: None,
+        replica: &replica,
+        content: &content,
+        selection: &[SITE],
+        owner_slot: 0,
+        interface: None,
+        interface_package: Some("base"),
+        control_groups: &groups,
+        alerts: &[],
+        bindings: &bindings,
+        input_map: &input_map,
+        guide: &[],
+        guide_open: false,
+        sound_on: false,
+        last_notice: None,
+        core: CoreFeed::empty(),
+    };
+    let rows = read_source(&Source::Sites, context);
+    let row = &rows.items[0];
+    let credits = content.catalog.resources[&ContentId::parse("base:credits").unwrap()]
+        .name
+        .clone();
+    assert_eq!(
+        row.get(ItemField::Paid),
+        Some(&serde_json::json!(format!("185 {credits}")))
+    );
+    assert_eq!(
+        row.get(ItemField::Refund),
+        Some(&serde_json::json!(format!("138 {credits}")))
+    );
+    assert_eq!(
+        row.get(ItemField::State),
+        Some(&serde_json::json!(format!("Waiting for funds: {credits}")))
+    );
+    assert_eq!(
+        replica.site_production(SITE),
+        Some(alternate.to_string().as_str())
+    );
+    for production in ["base:missing".to_owned(), wrong.to_string()] {
+        let mut bad = first.clone();
+        bad.tick = 20;
+        bad.records.sites[0].production = production.clone();
+        bad.economy.balances[0].on_hand = 999;
+        assert_eq!(
+            replica.apply_snapshot(&bad, Instant::now()),
+            SnapshotOutcome::Invalid,
+            "{production}"
+        );
+        assert_eq!(replica.last_applied_tick, Some(10));
+        assert_eq!(replica.economy.balances[0].on_hand, 500);
+        assert_eq!(
+            replica.site_production(SITE),
+            Some(alternate.to_string().as_str())
+        );
+        let mut bad_delta = delta(11);
+        bad_delta.records.sites = bad.records.sites;
+        bad_delta.economy.balances = bad.economy.balances;
+        assert_eq!(
+            replica.apply_delta(&bad_delta, Instant::now()),
+            DeltaOutcome::ResyncRequested,
+            "{production}"
+        );
+        assert_eq!(replica.last_applied_tick, Some(10));
+        assert_eq!(replica.economy.balances[0].on_hand, 500);
+    }
+}
