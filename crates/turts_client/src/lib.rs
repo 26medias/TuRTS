@@ -38,12 +38,12 @@ pub mod render;
 pub mod replica;
 pub mod replica_store;
 mod scenario;
-pub mod ui_shared;
-pub mod visuals;
 mod staging_budget;
+pub mod ui_shared;
 pub mod visibility;
 pub mod visibility_ingest;
 pub mod visibility_present;
+pub mod visuals;
 pub mod volume_settings;
 pub mod widgets;
 
@@ -349,7 +349,10 @@ pub fn build_app(opts: ClientOptions) -> App {
         persist::PersistPlugin,
     ));
     if !headless {
-        app.add_plugins((UnitRenderPlugin, crate::visibility_present::VisibilityPresentationPlugin));
+        app.add_plugins((
+            UnitRenderPlugin,
+            crate::visibility_present::VisibilityPresentationPlugin,
+        ));
     }
     app
 }

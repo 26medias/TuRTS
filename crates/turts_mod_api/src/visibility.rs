@@ -4,6 +4,10 @@
 
 use serde::{Deserialize, Serialize};
 
+/// Maximum UTF-8 bytes in an opt-in fog map's qualified identity.
+/// Transaction chunks repeat this identity within their 1024-byte frame limit.
+pub const MAX_VISIBILITY_MAP_ID_BYTES: usize = 512;
+
 /// Maximum number of square coverage cells in one authored map.
 pub const MAX_VISIBILITY_CELLS: u64 = 1_048_576;
 /// Maximum storage for retained slot coverage masks, excluding entity memories.

@@ -242,6 +242,12 @@ pub fn stage_package_with_map_identity(
         ));
     }
     let visibility = if let Some(definition) = &map.visibility {
+        if map_identity.to_string().len() > turts_mod_api::MAX_VISIBILITY_MAP_ID_BYTES {
+            return Err(error(
+                "id",
+                "qualified fog map identity exceeds 512 UTF-8 bytes".into(),
+            ));
+        }
         let grid =
             turts_rules::visibility::Grid::checked(map.size.x, map.size.y, definition.cell_size)
                 .ok_or_else(|| {

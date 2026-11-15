@@ -15,6 +15,20 @@ pub fn validate_visibility(
     let Some(definition) = &map.visibility else {
         return Ok(None);
     };
+    if origin
+        .0
+        .len()
+        .saturating_add(1)
+        .saturating_add(map.id.len())
+        > turts_mod_api::MAX_VISIBILITY_MAP_ID_BYTES
+    {
+        return Err(error(
+            origin,
+            file,
+            "id",
+            "qualified fog map identity exceeds 512 UTF-8 bytes",
+        ));
+    }
     check_finite_positive(
         origin,
         file,

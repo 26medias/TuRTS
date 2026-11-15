@@ -5,6 +5,7 @@ use std::sync::{
     atomic::{AtomicUsize, Ordering},
 };
 
+/// Maximum retained payload and packet bookkeeping bytes per socket sender.
 pub const MAX_WEBSOCKET_SEND_QUEUE_BYTES: usize = 4 * 1024 * 1024;
 // Charge empty messages too, including queue/Bytes/permit bookkeeping.
 const ENTRY_OVERHEAD: usize = 64;
@@ -29,11 +30,14 @@ impl SendBudget {
 
     pub(crate) fn packet(&self, payload: Bytes) -> Option<QueuedPacket> {
         let charge = payload.len().checked_add(ENTRY_OVERHEAD)?;
-        self.used
-            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |used| {
-                used.checked_add(charge).filter(|next| *next <= self.limit)
-            })
-            .ok()?;
+        let mut used = self.used.load(Ordering::Relaxed);
+        loop {
+            let next = used.checked_add(charge).filter(|next| *next <= self.limit)?;
+            match self.used.compare_exchange_weak(used, next, Ordering::Relaxed, Ordering::Relaxed) {
+                Ok(_) => break,
+                Err(actual) => used = actual,
+            }
+        }
         Some(QueuedPacket {
             payload,
             permit: BytePermit {

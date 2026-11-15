@@ -242,8 +242,6 @@ pub fn drive(world: &mut World) {
     let start_due = lobby.room.start_due() && lobby.deadline.is_none_or(|deadline| now >= deadline);
     if start_due {
         let plan = lobby.room.start().expect("checked start conditions");
-        plan.claim_in(&mut world.resource_mut::<Slots>())
-            .expect("lobby slots are unclaimed until start");
         let start = MatchStart {
             start_tick: 1,
             teams: plan.claims.iter().map(|claim| claim.slot.0).collect(),
@@ -256,10 +254,12 @@ pub fn drive(world: &mut World) {
         if let Err(error) = turts_sim::visibility::initialize_context(world, match_id, &start.teams)
         {
             eprintln!("turts_server: cannot initialize match visibility: {error}");
-            world.send_event(bevy::app::AppExit::error());
+            world.write_message(bevy::app::AppExit::error());
             world.insert_resource(lobby);
             return;
         }
+        plan.claim_in(&mut world.resource_mut::<Slots>())
+            .expect("lobby slots are unclaimed until start");
         let tick = world.resource::<Tick>().0;
         for claim in &plan.claims {
             let entity = Entity::from_bits(claim.connection.0);

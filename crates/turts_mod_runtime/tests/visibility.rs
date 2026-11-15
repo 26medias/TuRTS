@@ -140,3 +140,17 @@ fn unit_sight_is_resolved_without_inventing_other_capabilities() {
         assert_eq!(error.field_path, "vision.radius");
     }
 }
+
+#[test]
+fn fog_map_identity_fits_each_bounded_transaction_frame() {
+    let mut map = map();
+    let prefix = origin().0.len() + 1;
+    map.id = "a".repeat(turts_mod_api::MAX_VISIBILITY_MAP_ID_BYTES - prefix);
+    assert!(validate_visibility(&origin(), "maps/plain.ron", &map).is_ok());
+    map.id.push('a');
+    let error = validate_visibility(&origin(), "maps/plain.ron", &map).unwrap_err();
+    assert_eq!(error.field_path, "id");
+    assert_eq!(error.file.as_deref(), Some("maps/plain.ron"));
+    map.visibility = None;
+    assert!(validate_visibility(&origin(), "maps/plain.ron", &map).is_ok());
+}

@@ -1044,6 +1044,26 @@ impl Transaction<'_> {
                 return Err(RejectReason::TargetGone);
             }
         }
+        // Prepare witnesses only after every fallible preflight. Publish them only
+        // after the transaction commits, so rejected work reveals no event facts.
+        let mut event_subjects: BTreeMap<u32, bool> = self
+            .writes
+            .removed
+            .iter()
+            .map(|row| (row.unit, true))
+            .collect();
+        for (_, event) in &self.writes.events {
+            if let EconomyEventKind::Fired { weapon, target, .. } = event {
+                event_subjects.entry(*weapon).or_insert(false);
+                event_subjects.entry(*target).or_insert(false);
+            }
+        }
+        let witnesses: Vec<_> = event_subjects
+            .into_iter()
+            .filter_map(|(unit, removed)| {
+                crate::visibility::prepare_event_unit(self.world, unit).map(|fact| (fact, removed))
+            })
+            .collect();
         let deactivate = self.operating_deactivations();
         let Transaction { world, mut writes } = self;
         if world.get_resource::<EconomyLedger>().is_none() {
@@ -1199,6 +1219,9 @@ impl Transaction<'_> {
             for work in writes.terminal_work {
                 receipts.finish(work);
             }
+        }
+        for (fact, removed) in witnesses {
+            crate::visibility::commit_event_unit(world, fact, removed);
         }
         Ok(())
     }
