@@ -152,6 +152,7 @@ pub(crate) fn run_combat(world: &mut World) {
             .total_cmp(&right.x)
             .then_with(|| left.y.total_cmp(&right.y))
     });
+    let sight = crate::visibility::active_basis_shared(world);
     for weapon in weapon_ids {
         if world.resource::<Disabled>().0.contains(&weapon) {
             continue;
@@ -236,7 +237,14 @@ pub(crate) fn run_combat(world: &mut World) {
         {
             None
         } else {
-            choose_target(world, origin, &parameters, &combat_index, focus)
+            choose_target(
+                world,
+                origin,
+                &parameters,
+                &combat_index,
+                focus,
+                sight.as_deref(),
+            )
         };
         if target.is_some()
             && stops_for_engage
@@ -464,24 +472,22 @@ fn choose_target(
     parameters: &WeaponParameters,
     candidates: &CombatIndex<'_>,
     focus: Option<u32>,
+    sight: Option<&crate::visibility::VisibilityBasis>,
 ) -> Option<u32> {
     let healths = &world.resource::<Healths>().0;
     let matches = |id: u32| {
-        if crate::visibility::active_basis(world)
-            .is_some_and(|basis| !basis.unit_permitted(parameters.owner, id))
-        {
-            return None;
-        }
-        let health = healths.get(&id)?;
-        if *health == 0 {
-            return None;
-        }
         let owner = *candidates.owners.get(&id)?;
         // One rule for every relation (`turts_rules::relation`); the team of a slot is the slot
         // itself until the match config gives teams.
         let relation_matches =
             crate::rules_adapter::holds_own_team(parameters.targets, parameters.owner, owner);
-        if !relation_matches {
+        if !relation_matches
+            || sight.is_some_and(|basis| !basis.unit_permitted(parameters.owner, id))
+        {
+            return None;
+        }
+        let health = healths.get(&id)?;
+        if *health == 0 {
             return None;
         }
         let position = *candidates.positions.get(&id)?;

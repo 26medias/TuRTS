@@ -112,6 +112,7 @@ pub(crate) fn run_acquire(world: &mut World) {
             .total_cmp(&right.position.x)
             .then_with(|| left.position.y.total_cmp(&right.position.y))
     });
+    let sight = crate::visibility::active_basis_shared(world);
     for actor in sources {
         let Some((acquire, range, mode, relation)) = actor.capability else {
             continue;
@@ -171,10 +172,11 @@ pub(crate) fn run_acquire(world: &mut World) {
         let reach = |target: &Actor| mode.centre_reach(range, actor.radius, target.radius);
         let valid = |target: &Actor| {
             target.alive
-                && crate::visibility::active_basis(world)
-                    .is_none_or(|basis| basis.unit_permitted(actor.owner, target.id))
                 && target.id != actor.id
                 && crate::rules_adapter::holds_own_team(relation, actor.owner, target.owner)
+                && sight
+                    .as_deref()
+                    .is_none_or(|basis| basis.unit_permitted(actor.owner, target.id))
                 && target.position.distance_squared(home) <= (acquire.leash + reach(target)).powi(2)
         };
         let in_range = |target: &Actor| {
