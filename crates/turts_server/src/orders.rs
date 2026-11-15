@@ -277,6 +277,7 @@ mod tests {
             orders: Default::default(),
             order_queue_depths: std::collections::BTreeMap::new(),
             source_files: Default::default(),
+            bots: Default::default(),
         }
     }
 

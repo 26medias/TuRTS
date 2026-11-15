@@ -4,6 +4,9 @@
 //! component) or gets it a `JoinRejected` and a delayed kick. A session sends `PlayerCommand` and
 //! `ResyncRequest`. The server never creates a gameplay entity for a session.
 
+#[path = "participant_trace.rs"]
+pub(crate) mod participant_trace;
+
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::time::{Duration, Instant};
 
@@ -110,6 +113,9 @@ pub struct Advertised {
 #[derive(Component)]
 pub struct SnapshotDue;
 
+#[derive(SystemSet, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) struct ParticipantTraceComplete;
+
 /// Add the session systems. They run in `PreUpdate`, after lightyear has received messages.
 pub fn install(app: &mut App, advertised: Advertised) {
     app.insert_resource(advertised);
@@ -141,6 +147,10 @@ pub fn install(app: &mut App, advertised: Advertised) {
             .after(MessageSystems::Receive),
     );
     app.add_systems(Update, kick_pending);
+    app.add_systems(
+        FixedLast,
+        participant_trace::completed.in_set(ParticipantTraceComplete),
+    );
 }
 
 /// A closed transport no longer holds a live application session. Its permanent slot and
@@ -507,6 +517,11 @@ pub(crate) fn admit_actor_envelope(
 }
 
 pub fn admit_player_commands(world: &mut World) {
+    if participant_trace::replay_enabled(world) {
+        world.resource_mut::<StagedPlayerCommands>().0.clear();
+        participant_trace::admit_recorded_humans(world);
+        return;
+    }
     let batch = std::mem::take(&mut world.resource_mut::<StagedPlayerCommands>().0);
     let tick = world.resource::<SimTick>().0;
     for staged in batch {
@@ -529,17 +544,53 @@ pub fn admit_player_commands(world: &mut World) {
         } else {
             false
         };
+        let identity = world.get::<Session>(staged.connection).map(|session| {
+            turts_audit::ActorLogIdentity::Human {
+                player_id: session.player_id,
+                slot: session.slot.0,
+                connection: staged
+                    .connection
+                    .to_bits()
+                    .checked_add(1)
+                    .expect("connection epoch exhausted"),
+            }
+        });
+        let ordinal = identity.as_ref().and_then(|identity| {
+            match participant_trace::submission(world, identity, None, &staged.envelope) {
+                Ok(ordinal) => ordinal,
+                Err(error) => {
+                    participant_trace::fail(world, error);
+                    None
+                }
+            }
+        });
         match admit_actor_envelope(world, staged.slot, &staged.envelope, admitted, newer) {
             Ok(commands) => {
+                if let Some(identity) = identity.clone() {
+                    if let Err(error) = participant_trace::accept(
+                        world,
+                        staged.slot.0,
+                        staged.envelope.seq,
+                        ordinal,
+                        identity,
+                    ) {
+                        participant_trace::fail(world, error);
+                    }
+                }
                 world.resource_mut::<PendingOrderCommands>().0.insert(
                     (staged.slot.0, staged.envelope.seq),
                     staged.envelope.clone(),
                 );
                 world.resource_mut::<CommandQueue>().0.extend(commands);
             }
-            Err((result, reason)) => {
-                record_admission_rejection(world, staged, tick, result, reason)
-            }
+            Err((result, reason)) => record_admission_rejection(
+                world,
+                staged,
+                tick,
+                result,
+                reason,
+                identity.zip(ordinal),
+            ),
         }
     }
 }
@@ -665,11 +716,12 @@ fn record_admission_rejection(
     tick: u32,
     mut order_result: OrderResult,
     reason: CommandRejectReason,
+    trace: Option<(turts_audit::ActorLogIdentity, u64)>,
 ) {
     let player_id = world
         .get::<Session>(staged.connection)
         .map_or(0, |session| session.player_id);
-    let admission_evidence = if world.contains_resource::<EconomyLogSink>() {
+    let admission_evidence = if trace.is_none() && world.contains_resource::<EconomyLogSink>() {
         let valid_capture = world
             .get_resource::<turts_sim::AuditTrail>()
             .is_some_and(|trail| trail.enabled && trail.valid);
@@ -711,6 +763,18 @@ fn record_admission_rejection(
             reason,
         });
     order_result.tick = tick;
+    if let Some((identity, ordinal)) = trace {
+        if let Err(error) = participant_trace::rejection(
+            world,
+            &identity,
+            Some(ordinal),
+            &staged.envelope,
+            &order_result,
+            reason,
+        ) {
+            participant_trace::fail(world, error);
+        }
+    }
     if let Some(mut sender) = world.get_mut::<MessageSender<OrderResult>>(staged.connection) {
         sender.send::<ReliableChannel>(order_result);
         world
@@ -1747,6 +1811,7 @@ mod admission_tests {
             orders: BTreeMap::new(),
             order_queue_depths: std::collections::BTreeMap::new(),
             source_files: BTreeMap::new(),
+            bots: Default::default(),
         };
         catalog.units.insert(
             id.clone(),
@@ -1840,6 +1905,7 @@ mod admission_tests {
             orders: BTreeMap::new(),
             order_queue_depths: std::collections::BTreeMap::new(),
             source_files: BTreeMap::new(),
+            bots: Default::default(),
         };
         for (name, behaviour, target) in [
             ("move", Behaviour::Move, TargetKind::Point),
@@ -2476,6 +2542,7 @@ mod admission_tests {
             orders: BTreeMap::new(),
             order_queue_depths: std::collections::BTreeMap::new(),
             source_files: BTreeMap::new(),
+            bots: Default::default(),
         };
         catalog.units.insert(
             id.clone(),

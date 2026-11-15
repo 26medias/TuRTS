@@ -154,6 +154,7 @@ fn audit_catalog() -> ContentCatalog {
         .collect(),
         order_queue_depths: BTreeMap::new(),
         source_files: BTreeMap::new(),
+        bots: Default::default(),
     }
 }
 
