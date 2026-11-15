@@ -249,6 +249,7 @@ fn install_with_registry_and_limits(
     )?;
     actors::install_bot_actors(app.world_mut(), &installed_actors)?;
     actors::configure_actor_limits(app.world_mut(), prepared_limits);
+    actors::enable_demand_publication(app.world_mut());
     actors::install(app);
     app.init_resource::<BotExecution>();
     app.init_resource::<ObservationPolicy>();
@@ -414,6 +415,10 @@ fn drive_inner(world: &mut World, host: &mut BotHost, execution: &mut BotExecuti
         host.decisions = host.decisions.saturating_add(1);
         #[cfg(test)]
         let profile_reconcile = crate::bot_profile::start();
+        if let Err(error) = actors::prepare_reconciliation(world, &bot.actor) {
+            diagnose(bot, error);
+            continue;
+        }
         for result in actors::actor_results(world, &bot.actor) {
             if let Err(error) = bot.coordinator.observe_result(result) {
                 diagnose(bot, format!("result reconciliation: {error:?}"))

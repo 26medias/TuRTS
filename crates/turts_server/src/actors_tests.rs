@@ -72,6 +72,85 @@ fn queued(app: &App) -> ReconcileBatch {
 }
 
 #[test]
+fn demand_publication_preserves_terminal_payments_through_a_long_decision_pause() {
+    let mut eager = fixture(600);
+    let mut demand = fixture(600);
+    enable_demand_publication(demand.world_mut());
+    for app in [&mut eager, &mut demand] {
+        stage_bot_command(
+            app.world_mut(),
+            command(1, vec![1], "order_produce", BotTarget::Content(id("hire"))),
+        )
+        .unwrap();
+    }
+    for _ in 0..30 {
+        eager.update();
+        demand.update();
+    }
+    assert!(actor_reconciliation(demand.world(), &actor()).is_err());
+    assert_eq!(
+        stage_bot_command(
+            demand.world_mut(),
+            command(2, vec![1], "order_stop", BotTarget::None)
+        ),
+        Err(CommandRejectReason::RateLimited),
+    );
+    prepare_reconciliation(demand.world_mut(), &actor()).unwrap();
+    let expected = serde_json::to_value(queued(&eager)).unwrap();
+    let actual = queued(&demand);
+    assert_eq!(serde_json::to_value(&actual).unwrap(), expected);
+    assert!(actual.included[0].terminal);
+    assert_eq!(
+        actual.included[0]
+            .paid
+            .iter()
+            .map(|row| row.amount)
+            .sum::<u64>(),
+        12
+    );
+    prepare_reconciliation(demand.world_mut(), &actor()).unwrap();
+    assert_eq!(serde_json::to_value(queued(&demand)).unwrap(), expected);
+    acknowledge(demand.world_mut(), &actor(), actual.watermark, &[]).unwrap();
+}
+
+#[test]
+fn demand_publication_keeps_exact_receipts_while_a_decision_exceeds_its_row_limit() {
+    let mut app = fixture(100);
+    enable_demand_publication(app.world_mut());
+    stage_bot_command(
+        app.world_mut(),
+        command(1, vec![1], "order_produce", BotTarget::Content(id("hire"))),
+    )
+    .unwrap();
+    app.update();
+    app.world_mut().resource_mut::<BotActors>().row_limit = 1;
+    assert!(prepare_reconciliation(app.world_mut(), &actor()).is_err());
+    for _ in 0..25 {
+        app.update();
+    }
+    assert!(app.world().resource::<BotActors>().error.is_none());
+    assert!(actor_reconciliation(app.world(), &actor()).is_err());
+    app.world_mut().resource_mut::<BotActors>().row_limit = 65536;
+    prepare_reconciliation(app.world_mut(), &actor()).unwrap();
+    let batch = queued(&app);
+    assert_eq!(batch.watermark.completed_tick, 26);
+    assert!(batch.included[0].terminal);
+    assert_eq!(
+        batch.included[0]
+            .paid
+            .iter()
+            .map(|row| row.amount)
+            .sum::<u64>(),
+        12
+    );
+    assert!(
+        app.world().resource::<BotActors>().entries[&0]
+            .publication_error
+            .is_none()
+    );
+}
+
+#[test]
 fn ordinary_group_refusal_and_actual_job_ids_reach_separate_member_receipts() {
     let mut app = fixture(600);
     stage_bot_command(

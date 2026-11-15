@@ -89,15 +89,24 @@ pub(crate) fn project(
         .map(|u| u.unit_id)
         .collect::<std::collections::BTreeSet<_>>();
     let mut units = Vec::new();
+    // Resolve immutable content once per permitted type in this basis. Repeated
+    // army members still get independent public rows and current own state.
+    let mut content_rows = std::collections::BTreeMap::new();
     for unit in &view.units {
         if !unit_permitted(permissions, slot, unit.unit_id, unit.owner_slot) {
             continue;
         }
-        let Ok(content) = ContentId::parse(&unit.content_id) else {
-            continue;
-        };
-        let Some(def) = catalog.units.get(&content) else {
-            continue;
+        let (content, def) = match content_rows.entry(unit.content_id.as_str()) {
+            std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                let Ok(content) = ContentId::parse(&unit.content_id) else {
+                    continue;
+                };
+                let Some(def) = catalog.units.get(&content) else {
+                    continue;
+                };
+                entry.insert((content, def))
+            }
         };
         let own = if unit.owner_slot == slot {
             let order = orders_by_unit.get(&unit.unit_id).copied();
@@ -160,7 +169,7 @@ pub(crate) fn project(
         units.push(UnitObservation {
             unit: unit.unit_id,
             owner_slot: unit.owner_slot,
-            content,
+            content: content.clone(),
             position: WorldPos {
                 x: unit.pos.x,
                 y: unit.pos.y,

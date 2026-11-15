@@ -32,6 +32,7 @@ pub(crate) struct BotActorState {
     pub pending_limit: usize,
     /// The last complete basis is retained, but cannot fund new decisions while stale.
     pub publication_error: Option<String>,
+    demand_publication: bool,
 }
 
 #[derive(Resource)]
@@ -201,6 +202,7 @@ pub(crate) fn install_bot_actors(world: &mut World, actors: &[BotActor]) -> Resu
                 requests: BTreeMap::new(),
                 pending_limit: DEFAULT_PENDING_MEMBERS,
                 publication_error: None,
+                demand_publication: false,
             },
         );
     }
@@ -212,6 +214,7 @@ pub(crate) fn stage_bot_command(
     world: &mut World,
     command: EmittedCommand,
 ) -> Result<(), CommandRejectReason> {
+    let completed_tick = turts_sim::completed_world(world).tick;
     let Some(mut book) = world.get_resource_mut::<BotActors>() else {
         return Err(CommandRejectReason::NotOwner);
     };
@@ -239,7 +242,12 @@ pub(crate) fn stage_bot_command(
         .entries
         .get_mut(&command.actor.slot)
         .ok_or(CommandRejectReason::NotOwner)?;
-    if entry.publication_error.is_some() {
+    if entry.publication_error.is_some()
+        || entry.demand_publication
+            && entry.published.as_ref().is_none_or(|batch| {
+                !batch.complete || batch.watermark.completed_tick != completed_tick
+            })
+    {
         return Err(CommandRejectReason::RateLimited);
     }
     if entry.last_seq.is_some_and(|last| command.sequence <= last)
@@ -285,6 +293,66 @@ pub(crate) fn stage_bot_command(
     Ok(())
 }
 
+/// The public host consumes accounts only on decision ticks. Receipt facts still
+/// advance at every Collect, including while the host is paused.
+pub(crate) fn enable_demand_publication(world: &mut World) {
+    for entry in world.resource_mut::<BotActors>().entries.values_mut() {
+        entry.demand_publication = true;
+    }
+}
+
+pub(crate) fn prepare_reconciliation(world: &mut World, actor: &BotActor) -> Result<(), String> {
+    let mut book = world
+        .remove_resource::<BotActors>()
+        .ok_or("unknown bot actor")?;
+    let result = (|| {
+        let entry = book
+            .entries
+            .get_mut(&actor.slot)
+            .filter(|entry| entry.actor == *actor)
+            .ok_or("unknown bot actor")?;
+        let view = turts_sim::completed_world(world);
+        if entry
+            .published
+            .as_ref()
+            .is_some_and(|batch| batch.complete && batch.watermark.completed_tick == view.tick)
+            && entry.publication_error.is_none()
+        {
+            return Ok(());
+        }
+        let watermark = Watermark {
+            completed_tick: view.tick,
+            revision: u64::from(view.tick),
+        };
+        match crate::actor_accounting::build_batch(
+            view,
+            turts_sim::committed_tick(world),
+            &world.resource::<crate::orders::ServerCatalog>().0,
+            &entry.actor,
+            &mut entry.requests,
+            watermark,
+            book.row_limit,
+        ) {
+            Ok(batch) => {
+                entry.published = Some(batch);
+                entry.publication_error = None;
+                Ok(())
+            }
+            Err(error) => {
+                entry.publication_error = Some(error.clone());
+                Err(error)
+            }
+        }
+    })();
+    world.insert_resource(book);
+    if let Err(error) = &result
+        && error != crate::actor_accounting::ROW_LIMIT_EXCEEDED
+    {
+        fail_pipeline(world, error.clone());
+    }
+    result
+}
+
 pub(crate) fn actor_reconciliation(
     world: &World,
     actor: &BotActor,
@@ -298,6 +366,13 @@ pub(crate) fn actor_reconciliation(
         return Err(format!(
             "bot accounting publication is awaiting a fresh complete basis: {error}"
         ));
+    }
+    if entry.demand_publication
+        && entry.published.as_ref().is_none_or(|batch| {
+            batch.watermark.completed_tick != turts_sim::completed_world(world).tick
+        })
+    {
+        return Err("accounting must be prepared from the latest completed tick".into());
     }
     entry
         .published
@@ -327,6 +402,7 @@ pub(crate) fn acknowledge(
     watermark: Watermark,
     retained: &[RequestKey],
 ) -> Result<(), String> {
+    let completed_tick = turts_sim::completed_world(world).tick;
     let mut book = world
         .get_resource_mut::<BotActors>()
         .ok_or("unknown bot actor")?;
@@ -335,7 +411,9 @@ pub(crate) fn acknowledge(
         .get_mut(&actor.slot)
         .filter(|entry| entry.actor == *actor)
         .ok_or("unknown bot actor")?;
-    if entry.publication_error.is_some() {
+    if entry.publication_error.is_some()
+        || entry.demand_publication && watermark.completed_tick != completed_tick
+    {
         return Err("cannot acknowledge a stale blocked accounting publication".into());
     }
     let batch = entry
@@ -710,6 +788,17 @@ pub(crate) fn publish_completed(world: &mut World) {
                 completed_tick: tick,
                 revision: u64::from(tick),
             };
+            if entry.demand_publication {
+                crate::actor_accounting::capture_intermediate_receipts(
+                    view,
+                    committed,
+                    catalog,
+                    &entry.actor,
+                    &mut entry.requests,
+                    watermark,
+                )?;
+                continue;
+            }
             match crate::actor_accounting::build_batch(
                 view,
                 committed,

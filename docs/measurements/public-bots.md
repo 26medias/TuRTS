@@ -45,3 +45,17 @@ Evidence is under `/home/julien/Projects/TuRTS/target/mc-evidence/public-bots/`:
 A separate 40-sample diagnostic uses the same readiness and workload. It adds test-only subphase timers.
 It does not replace the required 1,000-sample acceptance run.
 Other machines, maximum unit counts, and browser rendering performance are not established by this native measurement.
+
+## Optimization diagnostics
+
+These short runs use the same readiness check and 40 steady phases.
+They are diagnostics, not performance acceptance.
+
+| Diagnostic | Complete phase p99 | Role counting, mean per phase | Account rows, mean per phase | Receipt capture, mean per phase |
+| --- | ---: | ---: | ---: | ---: |
+| Baseline | 25.081 ms | 10.116 ms | 4.978 ms | 3.602 ms |
+| Immutable commands, actual-inventory lookup, allocation-free role matching | 13.918 ms | 0.826 ms | 3.683 ms | 3.660 ms |
+
+The second diagnostic is `bf8-diagnostic-opt2/bf8-diagnostic-40.json` under the evidence directory above.
+It predates shared immutable results/effects, borrowed payment validation, and sorted borrowed account rows.
+Those later changes require a new measurement.
