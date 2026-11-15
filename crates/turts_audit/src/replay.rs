@@ -238,6 +238,11 @@ pub fn validate_records(records: &[EconomyLogRecord]) -> Result<(), String> {
                         operation.operation_id
                     ));
                 }
+                if operation.before.construction_limit != initial.construction_limit
+                    || operation.after.construction_limit != initial.construction_limit
+                {
+                    return Err("operation changed the immutable construction limit".into());
+                }
                 if operation.before.catalog != initial.catalog
                     || operation.after.catalog != initial.catalog
                 {
@@ -1769,9 +1774,8 @@ fn expected_order_refusal(
         turts_mod_api::Behaviour::Remove => capability.is_some_and(|entry| entry.removable),
         turts_mod_api::Behaviour::SetEnabled(_) => capability.is_some_and(|entry| entry.toggleable),
         turts_mod_api::Behaviour::SetRally => capability.is_some_and(|entry| entry.producer),
-        // API 0.2.4: no unit has a capability for a behaviour that its lane has not built.
-        turts_mod_api::Behaviour::Construct
-        | turts_mod_api::Behaviour::CancelConstruction
+        turts_mod_api::Behaviour::Construct => crate::paid::has_constructor(before, unit_id),
+        turts_mod_api::Behaviour::CancelConstruction
         | turts_mod_api::Behaviour::Repair
         | turts_mod_api::Behaviour::Surrender => false,
     };
@@ -1779,7 +1783,8 @@ fn expected_order_refusal(
         return Ok(Some(match order.behaviour {
             turts_mod_api::Behaviour::Gather
             | turts_mod_api::Behaviour::Produce
-            | turts_mod_api::Behaviour::CancelProduction => R::MissingCapability,
+            | turts_mod_api::Behaviour::CancelProduction
+            | turts_mod_api::Behaviour::Construct => R::MissingCapability,
             turts_mod_api::Behaviour::Remove => R::NotRemovable,
             turts_mod_api::Behaviour::SetEnabled(_) => R::NotToggleable,
             _ => R::NotApplicable,
@@ -1798,7 +1803,11 @@ fn expected_order_refusal(
         | (turts_mod_api::TargetKind::Node, turts_sim::OrderTargetSim::Node(_))
         | (turts_mod_api::TargetKind::Job, turts_sim::OrderTargetSim::Job(_))
         | (turts_mod_api::TargetKind::Content, turts_sim::OrderTargetSim::Content(_))
-        | (turts_mod_api::TargetKind::None, turts_sim::OrderTargetSim::None) => true,
+        | (turts_mod_api::TargetKind::None, turts_sim::OrderTargetSim::None)
+        | (
+            turts_mod_api::TargetKind::ContentAtPoint,
+            turts_sim::OrderTargetSim::ContentAtPoint { .. },
+        ) => true,
         (turts_mod_api::TargetKind::Content, turts_sim::OrderTargetSim::Invalid)
             if order.behaviour == turts_mod_api::Behaviour::Produce =>
         {
@@ -1810,6 +1819,12 @@ fn expected_order_refusal(
         return Ok(Some(R::TargetInvalid));
     }
     match (&order.behaviour, &order.target) {
+        (
+            turts_mod_api::Behaviour::Construct,
+            turts_sim::OrderTargetSim::ContentAtPoint { content, point },
+        ) => {
+            return expected_construct_refusal(before, unit_id, sender_slot, content, *point);
+        }
         (turts_mod_api::Behaviour::SetRally, turts_sim::OrderTargetSim::Point(point)) => {
             if !point.is_finite() {
                 return Ok(Some(R::TargetNotFinite));
@@ -2409,6 +2424,516 @@ fn expected_refund_refusal(
     None
 }
 
+fn construct_actor_definition(
+    state: &AuditState,
+    unit: u32,
+) -> Result<&turts_sim::economy::views::CatalogUnitAudit, String> {
+    let actor = state
+        .raw_units
+        .iter()
+        .find(|row| row.unit_id == unit)
+        .ok_or("Construct actor missing")?;
+    let kind = state
+        .unit_types
+        .iter()
+        .find(|row| row.type_id == actor.unit_type)
+        .ok_or("Construct actor type missing")?;
+    state
+        .catalog
+        .as_ref()
+        .and_then(|catalog| {
+            catalog
+                .units
+                .iter()
+                .find(|row| row.id.to_string() == kind.content_id)
+        })
+        .ok_or_else(|| "Construct actor definition missing".into())
+}
+fn construct_has_room(before: &AuditState, unit: u32, owner: u8) -> Result<bool, String> {
+    let capability = construct_actor_definition(before, unit)?
+        .constructor
+        .as_ref()
+        .ok_or("Construct capability missing")?;
+    let limit = before
+        .construction_limit
+        .ok_or("Construct audit is missing its immutable construction limit")?;
+    let state = &before.economy.construction;
+    Ok(state
+        .sites
+        .values()
+        .filter(|site| site.owner_slot == owner)
+        .count()
+        < usize::from(limit)
+        && state
+            .sites
+            .values()
+            .filter(|site| site.constructor == unit)
+            .count()
+            < usize::from(capability.concurrent_sites)
+        && state.held.get(&unit).is_none_or(Vec::is_empty))
+}
+fn construct_placement_refusal(
+    before: &AuditState,
+    unit: u32,
+    owner: u8,
+    output: &turts_sim::economy::views::CatalogUnitAudit,
+    point: bevy::math::Vec2,
+) -> Result<Option<turts_sim::RejectReason>, String> {
+    use turts_sim::RejectReason as R;
+    let Some(placement) = output.placement else {
+        return Ok(Some(R::MissingCapability));
+    };
+    let bounds = before
+        .bounds
+        .as_ref()
+        .ok_or("Construct audit has no map bounds")?;
+    let radius = output.radius;
+    if !point.is_finite()
+        || !radius.is_finite()
+        || point.x - radius < 0.0
+        || point.y - radius < 0.0
+        || point.x + radius > bounds.x
+        || point.y + radius > bounds.y
+    {
+        return Ok(Some(R::SiteOutsideMap));
+    }
+    let distance = |x: f32, y: f32| {
+        let dx = point.x - x;
+        let dy = point.y - y;
+        dx * dx + dy * dy
+    };
+    if placement.in_build_area {
+        let mut covered = false;
+        for candidate in &before.raw_units {
+            if candidate.owner_slot != owner
+                || before
+                    .economy
+                    .construction
+                    .sites
+                    .contains_key(&candidate.unit_id)
+            {
+                continue;
+            }
+            let definition = construct_actor_definition(before, candidate.unit_id)?;
+            if let Some(area) = definition.build_area {
+                let reach = definition.radius + area;
+                covered |= distance(candidate.pos.x, candidate.pos.y) <= reach * reach;
+            }
+        }
+        if !covered {
+            return Ok(Some(R::SiteOutOfArea));
+        }
+    }
+    for candidate in &before.raw_units {
+        let definition = construct_actor_definition(before, candidate.unit_id)?;
+        let reach = radius + definition.radius;
+        if distance(candidate.pos.x, candidate.pos.y) < reach * reach {
+            return Ok(Some(R::SiteBlocked));
+        }
+    }
+    for candidate in &before.raw_units {
+        let definition = construct_actor_definition(before, candidate.unit_id)?;
+        let mobile = definition.movement_speed.is_some()
+            && !before
+                .economy
+                .construction
+                .sites
+                .contains_key(&candidate.unit_id);
+        if mobile {
+            continue;
+        }
+        let gap = placement
+            .gap
+            .max(definition.placement.map_or(0.0, |placement| placement.gap));
+        let reach = radius + definition.radius + gap;
+        if reach > 0.0 && distance(candidate.pos.x, candidate.pos.y) < reach * reach {
+            return Ok(Some(R::SiteNearBuilding));
+        }
+    }
+    for node in before.nodes.iter().filter(|node| node.remaining > 0) {
+        let radius_node = before
+            .catalog
+            .as_ref()
+            .and_then(|catalog| {
+                catalog
+                    .nodes
+                    .iter()
+                    .find(|definition| definition.id == node.content_id)
+            })
+            .ok_or("Construct node definition missing")?
+            .radius;
+        let reach = radius + radius_node + placement.node_clearance;
+        if reach > 0.0 && distance(node.pos.x, node.pos.y) < reach * reach {
+            return Ok(Some(R::SiteNearResource));
+        }
+    }
+    let capability = construct_actor_definition(before, unit)?
+        .constructor
+        .as_ref()
+        .ok_or("Construct capability missing")?;
+    if before
+        .economy
+        .construction
+        .held
+        .get(&unit)
+        .map_or(0, Vec::len)
+        >= usize::from(capability.queue_capacity)
+    {
+        return Ok(Some(R::ConstructionQueueFull));
+    }
+    Ok(None)
+}
+fn expected_construct_refusal(
+    before: &AuditState,
+    unit: u32,
+    owner: u8,
+    recipe: &turts_mod_api::ContentId,
+    point: bevy::math::Vec2,
+) -> Result<Option<turts_sim::RejectReason>, String> {
+    use turts_sim::RejectReason as R;
+    if !point.is_finite() {
+        return Ok(Some(R::TargetNotFinite));
+    }
+    if before.economy.construction.sites.contains_key(&unit) {
+        return Ok(Some(R::NotApplicable));
+    }
+    let capability = construct_actor_definition(before, unit)?
+        .constructor
+        .as_ref()
+        .ok_or("Construct capability missing")?;
+    if !capability.buildings.contains(recipe) {
+        return Ok(Some(R::RecipeNotEnabled));
+    }
+    let catalog = before.catalog.as_ref().ok_or("Construct catalog missing")?;
+    let Some(recipe) = catalog.recipes.iter().find(|row| row.id == *recipe) else {
+        return Ok(Some(R::UnknownRecipe));
+    };
+    let Some(output) = catalog
+        .units
+        .iter()
+        .find(|row| row.id == recipe.output_unit)
+    else {
+        return Ok(Some(R::UnknownRecipe));
+    };
+    if let Some(reason) = construct_placement_refusal(before, unit, owner, output, point)? {
+        return Ok(Some(reason));
+    }
+    if !construct_has_room(before, unit, owner)? {
+        return Ok(None);
+    }
+    if !before
+        .unit_types
+        .iter()
+        .any(|row| row.content_id == output.id.to_string())
+    {
+        return Ok(Some(R::MissingCapability));
+    }
+    let Some(duration) = before
+        .compiled_durations
+        .iter()
+        .find(|row| row.recipe == recipe.id)
+    else {
+        return Ok(Some(R::UnknownRecipe));
+    };
+    let q = before
+        .raw_operating
+        .as_ref()
+        .map_or(1, |operating| operating.rate_q);
+    if duration.ticks.checked_mul(q).is_none() {
+        return Ok(Some(R::ArithmeticOverflow));
+    }
+    let (next_unit, _, next_job) = before.allocators.next_values();
+    if next_job.checked_add(1).is_none() {
+        return Ok(Some(R::IdExhausted));
+    }
+    if recipe.payment != turts_mod_api::PaymentPolicy::ChargeOverTime {
+        if let Some(reason) = expected_job_cost_refusal(before, unit, owner, &recipe.costs) {
+            return Ok(Some(reason));
+        }
+    }
+    if next_unit.checked_add(1).is_none() {
+        return Ok(Some(R::IdExhausted));
+    }
+    Ok(None)
+}
+fn checked_construct_origin(
+    actual: Option<turts_sim::receipts::CommandMember>,
+    owner: u8,
+    seq: u32,
+    unit: u32,
+) -> Result<Option<turts_sim::receipts::CommandMember>, String> {
+    if actual.is_some_and(|origin| {
+        origin
+            != turts_sim::receipts::CommandMember {
+                slot: owner,
+                sequence: seq,
+                unit,
+            }
+    }) {
+        return Err("Construct tracking origin differs from its ordinary command member".into());
+    }
+    // Tracking is optional and does not authorize gameplay. Its fields are fully checked.
+    Ok(actual)
+}
+fn validate_construct_operation(
+    operation: &OperationAudit,
+    order: &turts_sim::OrderCommand,
+    unit: u32,
+    owner: u8,
+    seq: u32,
+) -> Result<(), String> {
+    use turts_mod_api::PaymentPolicy;
+    let turts_sim::OrderTargetSim::ContentAtPoint { content, point } = &order.target else {
+        return Err("accepted Construct has no content/point target".into());
+    };
+    let before = &operation.before;
+    if let Some(reason) = expected_construct_refusal(before, unit, owner, content, *point)? {
+        return Err(format!(
+            "accepted Construct violates independent admission: {reason:?}"
+        ));
+    }
+    if !operation.events.is_empty() {
+        return Err("Construct admission fabricated an economy event".into());
+    }
+    let mut expected = before.clone();
+    if !construct_has_room(before, unit, owner)? {
+        let previous = before
+            .economy
+            .construction
+            .held
+            .get(&unit)
+            .map_or(0, Vec::len);
+        let actual = operation
+            .after
+            .economy
+            .construction
+            .held
+            .get(&unit)
+            .and_then(|held| held.get(previous))
+            .ok_or("Construct failed to append its held request")?;
+        let origin = checked_construct_origin(actual.origin, owner, seq, unit)?;
+        expected
+            .economy
+            .construction
+            .held
+            .entry(unit)
+            .or_default()
+            .push(turts_sim::economy::construction::HeldConstruction {
+                origin,
+                recipe: content.clone(),
+                point: *point,
+            });
+    } else {
+        let catalog = before.catalog.as_ref().ok_or("Construct catalog missing")?;
+        let recipe = catalog
+            .recipes
+            .iter()
+            .find(|row| row.id == *content)
+            .ok_or("Construct recipe missing")?;
+        let output = catalog
+            .units
+            .iter()
+            .find(|row| row.id == recipe.output_unit)
+            .ok_or("Construct output missing")?;
+        let capability = construct_actor_definition(before, unit)?
+            .constructor
+            .as_ref()
+            .ok_or("Construct capability missing")?;
+        let (next_unit, next_node, next_job) = before.allocators.next_values();
+        let next_unit_after = next_unit
+            .checked_add(1)
+            .ok_or("Construct unit allocator overflow")?;
+        let next_job_after = next_job
+            .checked_add(1)
+            .ok_or("Construct job allocator overflow")?;
+        let total = before
+            .compiled_durations
+            .iter()
+            .find(|row| row.recipe == *content)
+            .ok_or("Construct duration missing")?
+            .ticks
+            .checked_mul(
+                before
+                    .raw_operating
+                    .as_ref()
+                    .map_or(1, |operating| operating.rate_q),
+            )
+            .ok_or("Construct scaled duration overflow")?;
+        let kind = before
+            .unit_types
+            .iter()
+            .find(|row| row.content_id == output.id.to_string())
+            .ok_or("Construct output type missing")?;
+        let actual = operation
+            .after
+            .economy
+            .construction
+            .sites
+            .get(&next_unit)
+            .ok_or("Construct did not create the next allocated site")?;
+        let origin = checked_construct_origin(actual.origin, owner, seq, unit)?;
+        let lines = recipe
+            .costs
+            .iter()
+            .map(|cost| turts_sim::ReservationLineView {
+                endpoint: match cost.source {
+                    turts_mod_api::CostSource::SlotBalance => {
+                        turts_sim::ReservationEndpointView::Slot(owner)
+                    }
+                    turts_mod_api::CostSource::ProducerInventory => {
+                        turts_sim::ReservationEndpointView::Inventory(unit)
+                    }
+                },
+                resource: cost.resource.clone(),
+                amount: cost.amount,
+            })
+            .collect::<Vec<_>>();
+        let charged = if recipe.payment == PaymentPolicy::ChargeOverTime {
+            vec![]
+        } else {
+            lines.clone()
+        };
+        // Site's private charged rows use their public serde encoding. Every
+        // value comes from immutable costs and the original constructor endpoint.
+        let site=serde_json::from_value(serde_json::json!({"origin":origin,"constructor":unit,"owner_slot":owner,"recipe":content,"job":next_job,"done":0,"total":total,"charged":charged,"funding":(recipe.payment==PaymentPolicy::ChargeOverTime).then(turts_sim::economy::production::FundingState::default),"constructor_when_short":if before.raw_operating.is_some() {capability.when_short.clone()}else{vec![]}})).map_err(|error|format!("encode independently modeled Construct site: {error}"))?;
+        expected.economy.construction.sites.insert(next_unit, site);
+        expected
+            .allocators
+            .set_next_values(next_unit_after, next_node, next_job_after);
+        expected
+            .raw_units
+            .push(turts_sim::economy::views::RawUnitAudit {
+                unit_id: next_unit,
+                unit_type: kind.type_id,
+                owner_slot: owner,
+                pos: turts_mod_api::WorldPos {
+                    x: point.x,
+                    y: point.y,
+                },
+                move_target: None,
+            });
+        expected.units.push(turts_sim::UnitView {
+            unit_id: next_unit,
+            content_id: output.id.to_string(),
+            owner_slot: owner,
+            pos: turts_mod_api::WorldPos {
+                x: point.x,
+                y: point.y,
+            },
+        });
+        expected.economy.units.push(turts_sim::world::UnitState {
+            unit_id: next_unit,
+            content_id: output.id.to_string(),
+            owner_slot: owner,
+            facing: None,
+            pos: *point,
+        });
+        if let Some(max) = output.health_max {
+            let ratio = output
+                .placement
+                .ok_or("Construct output placement missing")?
+                .site_health;
+            if ratio.denominator == 0 {
+                return Err("Construct site health denominator is zero".into());
+            }
+            let current = (u128::from(max) * u128::from(ratio.numerator.min(ratio.denominator))
+                / u128::from(ratio.denominator)) as u64;
+            expected
+                .raw_healths
+                .push(turts_sim::economy::views_m3::RawHealthAudit {
+                    unit: next_unit,
+                    current,
+                });
+            expected
+                .economy
+                .m3
+                .raw_healths
+                .push(turts_sim::economy::views_m3::RawHealthAudit {
+                    unit: next_unit,
+                    current,
+                });
+        }
+        if let Some(operating) = &mut expected.economy.operating {
+            if output.producer.is_some() || output.constructor.is_some() {
+                operating
+                    .rates
+                    .push(turts_sim::economy::views::OperatingRateView {
+                        unit: next_unit,
+                        producer: construct_capability_rate(
+                            before,
+                            owner,
+                            &output.producer_when_short,
+                        )?,
+                        constructor: construct_capability_rate(
+                            before,
+                            owner,
+                            output
+                                .constructor
+                                .as_ref()
+                                .map_or(&[], |capability| capability.when_short.as_slice()),
+                        )?,
+                    });
+            }
+        }
+        if recipe.payment != PaymentPolicy::ChargeOverTime {
+            for line in &lines {
+                adjust_order_cost(
+                    &mut expected,
+                    &line.endpoint,
+                    &line.resource,
+                    -i128::from(line.amount),
+                    0,
+                )?;
+            }
+            if recipe.payment == PaymentPolicy::ReserveThenCharge {
+                expected
+                    .ledger_claims
+                    .push(turts_sim::ReservationClaimView::Closed {
+                        map_job_id: next_job,
+                    });
+            }
+        }
+    }
+    if expected != operation.after {
+        return Err(format!(
+            "Construct changed state outside its independently derived placement, costs and site: {:?}",
+            audit_differences(
+                &serde_json::to_value(&expected).map_err(|e| e.to_string())?,
+                &serde_json::to_value(&operation.after).map_err(|e| e.to_string())?,
+                ""
+            )
+        ));
+    }
+    Ok(())
+}
+fn construct_capability_rate(
+    before: &AuditState,
+    owner: u8,
+    rules: &[turts_mod_api::WhenShort],
+) -> Result<(u64, u64), String> {
+    let mut result = (1u64, 1u64);
+    for rule in rules {
+        let short = before.raw_operating.as_ref().is_some_and(|operating| {
+            operating.effects.iter().any(|row| {
+                row.slot == owner
+                    && row.resource.to_string() == rule.resource
+                    && row.consumed > row.provided
+            })
+        });
+        if short && let turts_mod_api::ShortEffect::Rate(rate) = rule.effect {
+            let rate = (u64::from(rate.numerator), u64::from(rate.denominator));
+            if rate.1 == 0 {
+                return Err("Construct output rate denominator is zero".into());
+            }
+            if u128::from(rate.0) * u128::from(result.1) < u128::from(result.0) * u128::from(rate.1)
+            {
+                result = rate;
+            }
+        }
+    }
+    Ok(result)
+}
+
 fn validate_order_policy(command: &CommandAudit) -> Result<(), String> {
     let turts_sim::CommandKind::Order(order) = &command.input.kind else {
         return Ok(());
@@ -2540,9 +3065,10 @@ fn validate_order_policy(command: &CommandAudit) -> Result<(), String> {
         turts_mod_api::Behaviour::CancelProduction => {
             policy.target == turts_mod_api::TargetKind::Job
         }
-        // API 0.2.4: a policy for a new behaviour is not accepted until its lane builds it.
-        turts_mod_api::Behaviour::Construct
-        | turts_mod_api::Behaviour::CancelConstruction
+        turts_mod_api::Behaviour::Construct => {
+            policy.target == turts_mod_api::TargetKind::ContentAtPoint
+        }
+        turts_mod_api::Behaviour::CancelConstruction
         | turts_mod_api::Behaviour::Repair
         | turts_mod_api::Behaviour::Surrender => false,
     };
@@ -2702,6 +3228,15 @@ fn validate_order_operation(
         return Ok(());
     }
 
+    if order.behaviour == turts_mod_api::Behaviour::Construct {
+        return validate_construct_operation(
+            operation,
+            order,
+            unit_id,
+            span.command.input.slot.0,
+            span.command.input.seq,
+        );
+    }
     // Keep the actor's position check ahead of the deferred Replace Move
     // branch so malformed audit spans retain the named semantic rejection.
     if order.behaviour != turts_mod_api::Behaviour::Remove
@@ -2904,9 +3439,10 @@ fn validate_order_operation(
             }
         }
         turts_mod_api::Behaviour::Remove => expected_orders = Default::default(),
-        // API 0.2.4: no replay rule until the lane of the behaviour builds one.
-        turts_mod_api::Behaviour::Construct
-        | turts_mod_api::Behaviour::CancelConstruction
+        turts_mod_api::Behaviour::Construct => {
+            unreachable!("Construct uses its complete independent state model")
+        }
+        turts_mod_api::Behaviour::CancelConstruction
         | turts_mod_api::Behaviour::Repair
         | turts_mod_api::Behaviour::Surrender => {
             return Err(format!(
