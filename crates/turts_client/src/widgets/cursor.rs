@@ -689,6 +689,86 @@ mod tests {
     };
 
     #[test]
+    fn independent_cursor_reads_current_camera_and_replacement_archetype() {
+        let mut world = World::new();
+        let mut queries = CursorQueries::from_world(&mut world);
+        let mut replica = Replica::new(20);
+        let mut content = ClientContent::default();
+        let node_id = ContentId::parse("test:tree").unwrap();
+        content.catalog.nodes.insert(
+            node_id.clone(),
+            turts_mod_api::ResolvedNode {
+                id: node_id.clone(),
+                name: "Tree".into(),
+                item: ContentId::parse("test:wood").unwrap(),
+                radius: 1.0,
+            },
+        );
+        replica.nodes.insert(
+            turts_net_protocol::NodeId(9),
+            turts_net_protocol::NodeState {
+                id: turts_net_protocol::NodeId(9),
+                content_id: node_id.to_string(),
+                pos: turts_net_protocol::Pos { x: 0.0, y: 0.0 },
+                remaining: 10,
+            },
+        );
+        let presented = Presented::default();
+        let hover = |world: &World, queries: &mut CursorQueries| {
+            current_hover(
+                world,
+                queries,
+                &replica,
+                &content,
+                &presented,
+                Some(Vec2::splat(50.0)),
+            )
+        };
+        assert!(matches!(hover(&world, &mut queries), Hover::Ground));
+        let camera = || Camera {
+            computed: bevy::camera::ComputedCameraValues {
+                clip_from_view: bevy::camera::CameraProjection::get_clip_from_view(
+                    &PerspectiveProjection::default(),
+                ),
+                target_info: Some(bevy::camera::RenderTargetInfo {
+                    physical_size: UVec2::splat(100),
+                    scale_factor: 1.0,
+                }),
+                ..default()
+            },
+            ..default()
+        };
+        let transform = |x| {
+            GlobalTransform::from(
+                Transform::from_xyz(x, 10.0, 0.0).looking_at(Vec3::new(x, 0.0, 0.0), Vec3::Z),
+            )
+        };
+        let first = world
+            .spawn((Camera3d::default(), camera(), transform(0.0)))
+            .id();
+        assert!(
+            matches!(hover(&world, &mut queries), Hover::Node { id: 9 }),
+            "camera created after query initialization must be discovered"
+        );
+        *world.get_mut::<GlobalTransform>(first).unwrap() = transform(5.0);
+        assert!(
+            matches!(hover(&world, &mut queries), Hover::Ground),
+            "camera motion must affect the current cursor ray"
+        );
+        world.despawn(first);
+        world.spawn((
+            Camera3d::default(),
+            camera(),
+            transform(0.0),
+            Name::new("replacement camera"),
+        ));
+        assert!(
+            matches!(hover(&world, &mut queries), Hover::Node { id: 9 }),
+            "a replacement camera in a new archetype must be discovered"
+        );
+    }
+
+    #[test]
     fn task16_actual_locked_cursor_preserves_window_hotspot_across_ui_and_device_scales() {
         for ui_scale in [1.0, 1.5] {
             for device_scale in [1.0, 2.0] {
