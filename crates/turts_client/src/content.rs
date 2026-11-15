@@ -18,6 +18,7 @@ impl Default for ClientContent {
     fn default() -> Self {
         Self {
             catalog: ContentCatalog {
+                bots: Default::default(),
                 combat: None,
                 resources: Default::default(),
                 units: Default::default(),
