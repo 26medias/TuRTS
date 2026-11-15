@@ -579,35 +579,73 @@ fn content_ref_matches(authored: &str, id: &ContentId) -> bool {
         == Some(id.local.as_str())
 }
 fn role_counts(basis: &observation::ObservationBasis, profile: &BotDef) -> Vec<RoleCount> {
+    #[derive(Default)]
+    struct Counts<'a> {
+        // Keep each observed capability list. A role can require only part of that list.
+        completed: Vec<(&'a [turts_mod_api::Capability], usize)>,
+        working: usize,
+        held: u32,
+    }
+    let mut contents = BTreeMap::<&ContentId, Counts<'_>>::new();
+    for unit in &basis.units {
+        if unit.owner_slot != basis.slot || unit.site {
+            continue;
+        }
+        let counts = contents.entry(&unit.content).or_default();
+        if let Some((_, count)) = counts
+            .completed
+            .iter_mut()
+            .find(|(capabilities, _)| *capabilities == unit.capabilities.as_slice())
+        {
+            *count += 1;
+        } else {
+            counts.completed.push((&unit.capabilities, 1));
+        }
+    }
+    for work in &basis.works {
+        if !work.state.terminal()
+            && let Some(content) = &work.content
+        {
+            contents.entry(content).or_default().working += 1;
+        }
+    }
+    for (content, count) in &basis.pending_content {
+        contents.entry(content).or_default().held = *count as u32;
+    }
     profile
         .knowledge
         .roles
         .iter()
         .map(|role| {
-            let accepts = |id: &ContentId| role.units.iter().any(|s| content_ref_matches(s, id));
-            RoleCount {
-                role: role.key.clone(),
-                completed: basis
+            let mut completed = 0usize;
+            let mut working = 0usize;
+            let mut held = 0u32;
+            for (content, counts) in &contents {
+                // Membership, rather than iterating authored entries, counts duplicate bindings once.
+                if !role
                     .units
                     .iter()
-                    .filter(|u| {
-                        u.owner_slot == basis.slot
-                            && !u.site
-                            && accepts(&u.content)
-                            && role.requires.iter().all(|c| u.capabilities.contains(c))
-                    })
-                    .count() as u32,
-                pending: basis
-                    .works
+                    .any(|entry| content_ref_matches(entry, content))
+                {
+                    continue;
+                }
+                completed += counts
+                    .completed
                     .iter()
-                    .filter(|w| !w.state.terminal() && w.content.as_ref().is_some_and(accepts))
-                    .count() as u32
-                    + basis
-                        .pending_content
-                        .iter()
-                        .filter(|(content, _)| accepts(content))
-                        .map(|(_, count)| *count as u32)
-                        .sum::<u32>(),
+                    .filter(|(capabilities, _)| {
+                        role.requires
+                            .iter()
+                            .all(|required| capabilities.contains(required))
+                    })
+                    .map(|(_, count)| *count)
+                    .sum::<usize>();
+                working += counts.working;
+                held += counts.held;
+            }
+            RoleCount {
+                role: role.key.clone(),
+                completed: completed as u32,
+                pending: working as u32 + held,
             }
         })
         .collect()
