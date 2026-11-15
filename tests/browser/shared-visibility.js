@@ -148,9 +148,15 @@ function luminance(image, point) {
         result.status='PASS';console.log('PASS SV6: two slots, scout observe/hide, stale picking, hidden movement, old empty location');
     } catch(error) {result.status='FAIL';result.error=String(error.stack||error);process.exitCode=1;console.error(error);}
     finally {
-        for(const context of contexts)await context.close();
+        for(const context of contexts)try{await context.close();}catch(error){result.errors.push('Chrome cleanup: '+String(error));}
         for(const profile of profiles)fs.rmSync(profile,{recursive:true,force:true});
-        if(xvfb&&xvfb.exitCode===null)xvfb.kill('SIGTERM');
+        if(xvfb&&xvfb.exitCode===null){
+            const stopped=new Promise(resolve=>xvfb.once('exit',resolve));
+            xvfb.kill('SIGTERM');
+            await Promise.race([stopped,sleep(2000)]);
+            if(xvfb.exitCode===null&&xvfb.signalCode===null){xvfb.kill('SIGKILL');await stopped;}
+        }
+        result.xvfb_stopped=!xvfb||xvfb.exitCode!==null||xvfb.signalCode!==null;
         result.profiles_removed=profiles.every(profile=>!fs.existsSync(profile));
         fs.writeFileSync(path.join(output,'result.json'),JSON.stringify(result,null,2));
     }
