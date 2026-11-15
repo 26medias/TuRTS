@@ -1078,13 +1078,13 @@ fn a_package_with_no_new_feature_is_accepted_at_both_requirements() {
     archive("^0.2.4", &none).content().expect("^0.2.4");
 }
 
-/// The bump of design D:2280-2286: the engine is 0.2.4, the list is ascending, and a package
-/// that requires `^0.2.3` still accepts the engine.
+/// The current release preserves the historical releases used by feature-floor fixtures.
 #[test]
-fn the_engine_api_retains_0_2_4_and_adds_0_2_5() {
-    assert_eq!(ENGINE_API_VERSION, "0.2.14");
-    assert_eq!(RELEASED_ENGINE_APIS.last(), Some(&"0.2.14"));
-    assert_eq!(RELEASED_ENGINE_APIS.len(), 16);
+fn the_engine_api_retains_historical_releases_and_adds_0_2_15() {
+    assert_eq!(ENGINE_API_VERSION, "0.2.15");
+    assert_eq!(RELEASED_ENGINE_APIS.last(), Some(&"0.2.15"));
+    assert_eq!(RELEASED_ENGINE_APIS.len(), 17);
+    assert_eq!(RELEASED_ENGINE_APIS[15], "0.2.14");
 }
 
 /// The order rules keep their `rally` list on the way through the archive reader (the raw rules

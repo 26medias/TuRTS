@@ -49,8 +49,38 @@ pub fn read_files(dir: &Path) -> BTreeMap<String, Vec<u8>> {
             }
         }
     }
+    without_bot_content(&mut out);
     as_edition_0_2_3(&mut out);
     out
+}
+
+/// Older feature fixtures must omit the new export field, not write `bots: []`.
+/// An explicitly empty bots export deliberately requires API 0.2.15.
+pub fn without_bot_content(files: &mut BTreeMap<String, Vec<u8>>) {
+    let Some(bytes) = files.get("manifest.ron") else {
+        return;
+    };
+    let text = String::from_utf8(bytes.clone()).expect("utf-8 manifest");
+    let manifest: turts_mod_api::Manifest = ron::from_str(&text).expect("fixture manifest");
+    let has_field = text
+        .lines()
+        .any(|line| line.trim_start().starts_with("bots:"));
+    if !has_field {
+        assert!(manifest.exports.bots.is_empty());
+        return;
+    }
+    let stripped = text
+        .lines()
+        .filter(|line| !line.trim_start().starts_with("bots:"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let isolated: turts_mod_api::Manifest =
+        ron::from_str(&stripped).expect("manifest after removing only its bots export");
+    assert!(isolated.exports.bots.is_empty());
+    for path in manifest.exports.bots {
+        files.remove(&path);
+    }
+    files.insert("manifest.ron".into(), stripped.into_bytes());
 }
 
 /// Keep legacy feature fixtures independent of the shipped damage-system content.
