@@ -1118,7 +1118,34 @@ mod tests {
             check_version_table(&manifest, None, &raw, rows)
                 .unwrap_or_else(|error| panic!("row {}, field absent: {error}", row.name));
         }
-        assert_eq!(tested, 57, "the number of RAW rows of 0.2.4 (design 6.10)");
+        assert_eq!(
+            tested, 51,
+            "the remaining RAW rows first supported in 0.2.4"
+        );
+    }
+
+    #[test]
+    fn operating_raw_fields_require_the_first_supported_engine() {
+        let mut tested = 0;
+        for row in VERSION_TABLE
+            .iter()
+            .filter(|row| row.since_api == "0.2.13" && matches!(row.detect, Detect::Raw { .. }))
+        {
+            tested += 1;
+            let rows = std::slice::from_ref(row);
+            let (manifest, raw) = raw_for(row, "^0.2.12", true);
+            let error = check_version_table(&manifest, None, &raw, rows).unwrap_err();
+            assert!(
+                error.to_string().contains("0.2.13"),
+                "{}: {error}",
+                row.name
+            );
+            let (manifest, raw) = raw_for(row, "^0.2.13", true);
+            check_version_table(&manifest, None, &raw, rows).unwrap();
+            let (manifest, raw) = raw_for(row, "^0.2.12", false);
+            check_version_table(&manifest, None, &raw, rows).unwrap();
+        }
+        assert_eq!(tested, 6);
     }
 
     /// Every VAR and COMBO row names a use that `variants.rs` can list: a name that is not in
