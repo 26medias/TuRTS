@@ -160,6 +160,8 @@ pub struct VisualEvent {
 /// A replica keeps coherent samples and replaces on-wire absolute records atomically.
 #[derive(Debug, Clone)]
 pub struct Replica {
+    /// Complete permitted knowledge, committed with the gameplay tables. None is AllVisible.
+    pub knowledge: Option<turts_mod_api::KnowledgeSnapshot>,
     /// Bounded visual events from committed live deltas only. Never replayed by snapshots.
     pub visual_events: VecDeque<VisualEvent>,
     next_visual_event: u64,
@@ -223,6 +225,7 @@ impl Replica {
     pub fn with_config(tick_hz: u16, config: ReplicaConfig) -> Self {
         Self {
             tick_hz,
+            knowledge: None,
             visual_events: VecDeque::new(),
             next_visual_event: 0,
             units: HashMap::new(),

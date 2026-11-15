@@ -40,6 +40,7 @@ pub mod replica_store;
 mod scenario;
 pub mod ui_shared;
 pub mod visuals;
+pub mod visibility;
 pub mod volume_settings;
 pub mod widgets;
 
