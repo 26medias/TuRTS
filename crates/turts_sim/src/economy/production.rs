@@ -830,7 +830,20 @@ pub fn view_job_per_tick(view: &super::views::WorldView, producer: u32, stage: J
         .operating
         .as_ref()
         .is_some_and(|operating| operating.holds.iter().any(|hold| hold.unit == producer));
-    job_step_per_tick(stage, frozen || held, rate, q).unwrap_or(0)
+    let waiting = view
+        .operating
+        .as_ref()
+        .and_then(|operating| {
+            operating.jobs.iter().find(|job| {
+                job.unit == producer
+                    && job
+                        .funding
+                        .as_ref()
+                        .is_some_and(|state| state.waiting_for_funds.is_some())
+            })
+        })
+        .is_some();
+    job_step_per_tick(stage, frozen || held || waiting, rate, q).unwrap_or(0)
 }
 
 /// Exact absolute queue counters. The legacy public view remains in physical ticks.
@@ -864,7 +877,12 @@ pub fn queue_progress_rows(
                     total: raw.map_or(job.duration_ticks, |row| row.total),
                     per_tick,
                     at_tick: tick,
-                    state: if held {
+                    state: if let Some(resource) = raw
+                        .and_then(|job| job.funding.as_ref())
+                        .and_then(|state| state.waiting_for_funds.clone())
+                    {
+                        super::events::RecordStateRow::WaitingForFunds(resource)
+                    } else if hold.is_some() {
                         super::events::RecordStateRow::Held
                     } else {
                         match job.stage {
@@ -877,7 +895,11 @@ pub fn queue_progress_rows(
                             }
                         }
                     },
-                    charged: Vec::new(),
+                    charged: if raw.is_some_and(|row| row.funding.is_some()) {
+                        job.charged.clone()
+                    } else {
+                        Vec::new()
+                    },
                     held,
                     held_since_tick: hold.map_or_else(
                         || raw.map_or(0, |row| row.held_since_tick),
@@ -921,7 +943,7 @@ pub(crate) fn progress_changes(
                 || previous.state != row.state
                 || previous.held != row.held
                 || previous.held_since_tick != row.held_since_tick
-                || previous.charged != row.charged
+            // Cumulative charges follow exact progress; do not force one wire point per tick.
         })
         .collect()
 }
@@ -1500,6 +1522,7 @@ mod m3_disabled_legacy_producer_tests {
         app.world_mut().resource_mut::<ProductionQueues>().0.insert(
             7,
             vec![ProductionJob {
+                funding: None,
                 id: JobId(1),
                 recipe: recipe_id,
                 stage: JobStage::Running,
