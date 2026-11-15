@@ -2,10 +2,75 @@
 #[path = "export_visibility_memory.rs"]
 mod memory;
 use crate::permissions::ObservationPermissions;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use turts_mod_api::{CoverageRun, KnowledgeDelta, KnowledgeSnapshot};
 use turts_net_protocol::{self as wire, StateTransactionPayload};
 use turts_sim::{CommittedTick, SlotId, WorldView, visibility::EventUnitFact};
+
+/// Private lookup indexes keep the established wire ordering and duplicate semantics.
+struct SortedIds(Vec<u32>);
+impl FromIterator<u32> for SortedIds {
+    fn from_iter<T: IntoIterator<Item = u32>>(rows: T) -> Self {
+        let mut ids = rows.into_iter().collect::<Vec<_>>();
+        ids.sort_unstable();
+        ids.dedup();
+        Self(ids)
+    }
+}
+impl SortedIds {
+    fn contains(&self, id: &u32) -> bool {
+        self.0.binary_search(id).is_ok()
+    }
+    fn iter(&self) -> std::slice::Iter<'_, u32> {
+        self.0.iter()
+    }
+    fn difference<'a>(&'a self, other: &'a Self) -> impl Iterator<Item = &'a u32> + 'a {
+        let mut right = 0;
+        self.0.iter().filter(move |id| {
+            while right < other.0.len() && other.0[right] < **id {
+                right += 1;
+            }
+            other.0.get(right) != Some(*id)
+        })
+    }
+}
+struct FlatUnits<'a>(Vec<&'a wire::UnitSnapshot>);
+impl<'a> FlatUnits<'a> {
+    fn new(rows: &'a [wire::UnitSnapshot]) -> Self {
+        let mut index = rows.iter().collect::<Vec<_>>();
+        index.sort_by_key(|row| row.unit_id.0);
+        Self(index)
+    }
+    fn get(&self, id: &u32) -> Option<&'a wire::UnitSnapshot> {
+        let end = self.0.partition_point(|row| row.unit_id.0 <= *id);
+        end.checked_sub(1)
+            .and_then(|i| self.0.get(i))
+            .copied()
+            .filter(|row| row.unit_id.0 == *id)
+    }
+    fn contains_key(&self, id: &u32) -> bool {
+        self.get(id).is_some()
+    }
+}
+struct FlatFacts<'a>(Vec<&'a EventUnitFact>);
+impl<'a> FlatFacts<'a> {
+    fn new(rows: &'a [EventUnitFact]) -> Self {
+        let mut index = rows.iter().collect::<Vec<_>>();
+        index.sort_by_key(|row| row.unit.unit);
+        Self(index)
+    }
+    fn rows(&self, id: u32) -> &[&'a EventUnitFact] {
+        let first = self.0.partition_point(|row| row.unit.unit < id);
+        let end = self.0[first..].partition_point(|row| row.unit.unit == id);
+        &self.0[first..first + end]
+    }
+    fn shared_phase(&self, a: u32, b: u32) -> bool {
+        let right = self.rows(b);
+        self.rows(a)
+            .iter()
+            .any(|a| right.iter().any(|b| a.basis == b.basis))
+    }
+}
 
 #[derive(Clone)]
 pub struct PermittedBaseline {
@@ -44,13 +109,8 @@ impl PermittedBaseline {
             .units
             .iter()
             .map(|unit| unit.unit_id.0)
-            .collect::<BTreeSet<_>>();
-        let old = self
-            .state
-            .units
-            .iter()
-            .map(|unit| (unit.unit_id.0, unit))
-            .collect::<BTreeMap<_, _>>();
+            .collect::<SortedIds>();
+        let old = FlatUnits::new(&self.state.units);
         state.removed = batch
             .removed
             .iter()
@@ -59,18 +119,19 @@ impl PermittedBaseline {
             .map(wire::UnitId)
             .collect();
         let effects = super::export_effects::effects(batch, slot);
-        let mut references = BTreeSet::new();
+        let mut reference_ids = Vec::with_capacity(effects.len().saturating_mul(2));
         for effect in &effects {
             match effect {
                 wire::Effect::Fired { unit, target, .. } => {
-                    references.insert(unit.0);
-                    references.insert(target.0);
+                    reference_ids.push(unit.0);
+                    reference_ids.push(target.0);
                 }
                 wire::Effect::Destroyed { unit } | wire::Effect::Credited { unit, .. } => {
-                    references.insert(unit.0);
+                    reference_ids.push(unit.0);
                 }
             }
         }
+        let references = reference_ids.into_iter().collect::<SortedIds>();
         let mut observations = BTreeMap::new();
         for unit in &self.state.units {
             if references.contains(&unit.unit_id.0) && !current.contains(&unit.unit_id.0) {
@@ -127,20 +188,12 @@ impl PermittedBaseline {
     ) -> StateTransactionPayload {
         let old = &self.state;
         let new = &next.state;
-        let old_units = old
-            .units
-            .iter()
-            .map(|u| (u.unit_id.0, u))
-            .collect::<BTreeMap<_, _>>();
-        let new_units = new
-            .units
-            .iter()
-            .map(|u| (u.unit_id.0, u))
-            .collect::<BTreeMap<_, _>>();
+        let old_units = FlatUnits::new(&old.units);
+        let new_units = FlatUnits::new(&new.units);
         let witnessed = event_facts
             .iter()
             .map(|fact| fact.unit.unit)
-            .collect::<BTreeSet<_>>();
+            .collect::<SortedIds>();
         let removed = batch
             .removed
             .iter()
@@ -152,7 +205,7 @@ impl PermittedBaseline {
                         .get(id)
                         .is_some_and(|unit| unit.owner_slot.0 == slot.0)
             })
-            .collect::<BTreeSet<_>>();
+            .collect::<SortedIds>();
         let mut state = wire::WorldDelta {
             tick: new.tick,
             base_tick: old.tick,
@@ -252,13 +305,11 @@ impl PermittedBaseline {
             },
         };
         // Authorize events with their phase witness, never with the later hidden world position.
+        let facts_by_unit = FlatFacts::new(event_facts);
         state.records.effects.retain(|effect| match effect {
-            wire::Effect::Fired { unit, target, .. } => event_facts.iter().any(|source| {
-                source.unit.unit == unit.0
-                    && event_facts
-                        .iter()
-                        .any(|other| other.unit.unit == target.0 && other.basis == source.basis)
-            }),
+            wire::Effect::Fired { unit, target, .. } => {
+                facts_by_unit.shared_phase(unit.0, target.0)
+            }
             wire::Effect::Destroyed { unit } => witnessed.contains(&unit.0),
             wire::Effect::Credited { unit, .. } => {
                 new_units.contains_key(&unit.0) || witnessed.contains(&unit.0)
@@ -343,28 +394,28 @@ fn knowledge_delta(
     new: &KnowledgeSnapshot,
     before: &wire::Snapshot,
     after: &wire::Snapshot,
-    removed: &BTreeSet<u32>,
+    removed: &SortedIds,
 ) -> KnowledgeDelta {
     let before_units = before
         .units
         .iter()
         .map(|row| row.unit_id.0)
-        .collect::<BTreeSet<_>>();
+        .collect::<SortedIds>();
     let after_units = after
         .units
         .iter()
         .map(|row| row.unit_id.0)
-        .collect::<BTreeSet<_>>();
+        .collect::<SortedIds>();
     let before_nodes = before
         .nodes
         .iter()
         .map(|row| row.id.0)
-        .collect::<BTreeSet<_>>();
+        .collect::<SortedIds>();
     let after_nodes = after
         .nodes
         .iter()
         .map(|row| row.id.0)
-        .collect::<BTreeSet<_>>();
+        .collect::<SortedIds>();
     let mut coverage: Vec<CoverageRun> = vec![];
     for byte in 0..new.observed.len() {
         if old.observed.get(byte) == new.observed.get(byte)
@@ -405,12 +456,12 @@ fn knowledge_delta(
         .remembered_units
         .iter()
         .map(|row| row.unit)
-        .collect::<BTreeSet<_>>();
+        .collect::<SortedIds>();
     let new_mem_nodes = new
         .remembered_nodes
         .iter()
         .map(|row| row.node)
-        .collect::<BTreeSet<_>>();
+        .collect::<SortedIds>();
     KnowledgeDelta {
         basis: new.basis.clone(),
         viewer: new.viewer,
@@ -466,6 +517,31 @@ mod tests {
             changed(&old, &jumps, |row| row.0),
             vec![(99, 0), (0, 1), (101, 1)]
         );
+    }
+    #[test]
+    fn flat_membership_keeps_set_order_duplicates_and_last_unit_row() {
+        let left = [u32::MAX, 3, 1, 3].into_iter().collect::<SortedIds>();
+        let right = [1, 2].into_iter().collect::<SortedIds>();
+        assert_eq!(
+            left.difference(&right).copied().collect::<Vec<_>>(),
+            vec![3, u32::MAX]
+        );
+        assert!(left.contains(&3));
+        assert!(!left.contains(&2));
+        let mut last = unit(2);
+        last.pos.x = 9.;
+        let rows = [unit(2), unit(1), last];
+        assert_eq!(FlatUnits::new(&rows).get(&2).unwrap().pos.x, 9.);
+    }
+    #[test]
+    fn flat_event_lookup_requires_an_exact_shared_phase() {
+        let mut different = fact(2, 7);
+        different.basis.phase = ObservationPhase::Start;
+        let mut facts = vec![different, fact(1, 7), fact(2, 6)];
+        assert!(!FlatFacts::new(&facts).shared_phase(1, 2));
+        facts.push(fact(2, 7));
+        assert!(FlatFacts::new(&facts).shared_phase(1, 2));
+        assert!(!FlatFacts::new(&facts).shared_phase(1, 99));
     }
     fn basis(tick: u32) -> KnowledgeBasis {
         KnowledgeBasis {
