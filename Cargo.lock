@@ -8610,6 +8610,8 @@ dependencies = [
  "bevy",
  "bevy_app",
  "bevy_math",
+ "postcard",
+ "sha2",
  "serde",
  "serde_json",
  "turts_mod_api",
