@@ -11,14 +11,15 @@ TERRAIN_PREPARED="$(realpath "$1")"
 TERRAIN_PACKAGE="$2"
 TERRAIN_OUT="$(realpath -m "$3")"
 case "$TERRAIN_PACKAGE" in quarry) TERRAIN_SCENARIO=terrain-quarry;; terrain_stockyard) TERRAIN_SCENARIO=terrain-stockyard;; *) echo 'Unknown terrain fixture' >&2; exit 2;; esac
-python3 -B "$TERRAIN_ROOT/scripts/mc_prepare.py" check "$TERRAIN_PREPARED" --root "$TERRAIN_ROOT" --package mods \
-    --need bin/turts_server --need bin/turts-pack --need dist/index.html
+python3 -B "$TERRAIN_ROOT/tests/browser/terrain-prepared.py" "$TERRAIN_PREPARED" --root "$TERRAIN_ROOT" \
+    --fixture "$TERRAIN_ROOT/mods/$TERRAIN_PACKAGE" --record "$TERRAIN_OUT/public-source.json"
 mkdir -p "$TERRAIN_OUT"
 if [[ -e "$TERRAIN_OUT/fixture" ]]; then
     echo 'Use a fresh output directory; existing fixture is preserved.' >&2
     exit 2
 fi
 cp -a "$TERRAIN_ROOT/mods/$TERRAIN_PACKAGE" "$TERRAIN_OUT/fixture"
+python3 -B "$TERRAIN_ROOT/tests/browser/terrain-prepared.py" --verify-copy "$TERRAIN_OUT/public-source.json" --copy "$TERRAIN_OUT/fixture"
 "$TERRAIN_PREPARED/bin/turts-pack" "$TERRAIN_OUT/fixture" > "$TERRAIN_OUT/pack.log" 2>&1
 TERRAIN_URL="$(python3 - "$TERRAIN_PREPARED" "$TERRAIN_OUT" <<'PY'
 import json,os,pathlib,socket,sys
