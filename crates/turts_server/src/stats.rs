@@ -279,6 +279,7 @@ mod tests {
     fn cli(stats: Option<&Path>) -> Cli {
         Cli {
             computer_slot: None,
+            bots: vec![],
             config: PathBuf::from("server.ron"),
             tick_log: None,
             stats: stats.map(Path::to_path_buf),

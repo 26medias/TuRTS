@@ -292,7 +292,7 @@ pub(crate) fn project(
         min: WorldPos { x: 0.0, y: 0.0 },
         max: map_size,
     };
-    let basis = ObservationBasis {
+    let mut basis = ObservationBasis {
         id,
         tick: view.tick,
         slot,
@@ -300,6 +300,8 @@ pub(crate) fn project(
         units,
         nodes,
         accounts,
+        account_index: Default::default(),
+        unit_index: Default::default(),
         works,
         area: ObservedArea {
             min: area.min,
@@ -308,6 +310,7 @@ pub(crate) fn project(
         },
         catalog,
     };
+    basis.index();
     Projection {
         basis,
         private_scanned: view.units.len()
@@ -347,5 +350,98 @@ fn target(value: &UnitOrderTargetView) -> BotTarget {
             content: content.clone(),
             point: *point,
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::bots::observation::CandidateLease;
+    struct Restricted;
+    impl ObservationPermissions for Restricted {
+        fn unit_visible(&self, _: u8, _: u32, _: u8) -> bool {
+            false
+        }
+        fn node_visible(&self, _: u8, _: u32) -> bool {
+            false
+        }
+        fn area_observed(&self, _: u8, _: ObservationArea) -> bool {
+            false
+        }
+    }
+    #[test]
+    fn hidden_present_and_absent_worlds_have_identical_query_rows_and_metadata() {
+        use turts_mod_runtime::{archive::PackageArchive, pack::pack_dir};
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../mods/base");
+        let archive = PackageArchive::parse(&pack_dir(&root).unwrap()).unwrap();
+        let mut app = turts_sim::headless_app(20);
+        turts_pack::load_package(app.world_mut(), &archive).unwrap();
+        turts_sim::initialize_completed_world(app.world_mut());
+        let view = turts_sim::completed_world(app.world()).clone();
+        let hidden = view
+            .units
+            .iter()
+            .find(|u| u.owner_slot != 0)
+            .expect("fixture has a foreign unit")
+            .unit_id;
+        let actor = view
+            .units
+            .iter()
+            .find(|u| u.owner_slot == 0)
+            .unwrap()
+            .unit_id;
+        let mut absent = view.clone();
+        absent.units.retain(|u| u.owner_slot == 0);
+        absent.nodes.clear();
+        absent.economy.balances.retain(|a| a.slot == 0);
+        absent.economy.inventories.retain(|a| a.owner_slot == 0);
+        let catalog = Arc::new(archive.content().unwrap());
+        let recipe = catalog.production.keys().next().unwrap().clone();
+        let map = WorldPos { x: 200.0, y: 200.0 };
+        let mut present = CandidateLease::new(
+            project(&view, 0, 9, catalog.clone(), vec![0, 1], map, &Restricted).basis,
+            0,
+        );
+        let mut absent = CandidateLease::new(
+            project(&absent, 0, 9, catalog, vec![0, 1], map, &Restricted).basis,
+            0,
+        );
+        let quota = crate::bots::operator_quota();
+        let mut a = present.queries("tester", quota);
+        let mut b = absent.queries("tester", quota);
+        for query in [
+            Query::Units(UnitQuery {
+                relation: turts_mod_api::SlotRelation::Any,
+                content: vec![],
+                center: None,
+                radius: None,
+            }),
+            Query::Nodes(NodeQuery {
+                resources: vec![],
+                center: None,
+                radius: None,
+            }),
+            Query::LookupUnit(hidden),
+            Query::Placement(PlacementQuery {
+                actor,
+                production: recipe.clone(),
+                point: WorldPos { x: 20.0, y: 20.0 },
+            }),
+            Query::Affordability(AffordabilityQuery {
+                actor: hidden,
+                production: recipe,
+            }),
+        ] {
+            assert_eq!(
+                a.query(query.clone(), None, 64),
+                b.query(query, None, 64),
+                "private records cannot change a row, count, cursor, or coverage"
+            );
+        }
+        let missing = a.query(Query::LookupUnit(u32::MAX), None, 1).unwrap();
+        assert!(matches!(
+            missing.data,
+            QueryData::Lookup(Advice::NotObserved)
+        ));
     }
 }

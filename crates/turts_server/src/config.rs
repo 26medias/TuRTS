@@ -248,3 +248,69 @@ fn parse_bot(value: &str) -> Result<BotConfig, String> {
         seed,
     })
 }
+
+#[cfg(test)]
+mod bot_tests {
+    use super::*;
+    #[test]
+    fn explicit_profiles_keep_distinct_slots_names_and_full_width_seeds() {
+        let args = [
+            "server.ron",
+            "--bot",
+            "0,moda:custom,18446744073709551615",
+            "--bot",
+            "1,modb:other,42",
+        ]
+        .map(str::to_owned);
+        let cli = parse_cli(&args).unwrap();
+        assert_eq!(
+            cli.bots,
+            vec![
+                BotConfig {
+                    slot: 0,
+                    profile: "moda:custom".into(),
+                    seed: u64::MAX
+                },
+                BotConfig {
+                    slot: 1,
+                    profile: "modb:other".into(),
+                    seed: 42
+                }
+            ]
+        );
+    }
+    #[test]
+    fn malformed_selection_and_mixed_legacy_alias_are_refused() {
+        for argument in [
+            "1",
+            "1,unqualified,1",
+            "-1,mod:profile,1",
+            "1,mod:profile,-1",
+            "1,mod:profile,18446744073709551616",
+        ] {
+            assert!(
+                parse_cli(&["server.ron".into(), "--bot".into(), argument.into()]).is_err(),
+                "{argument}"
+            );
+        }
+        assert!(
+            parse_cli(
+                &[
+                    "server.ron",
+                    "--computer-slot",
+                    "1",
+                    "--bot",
+                    "0,mod:profile,1"
+                ]
+                .map(str::to_owned)
+            )
+            .is_err()
+        );
+        assert!(
+            parse_cli(
+                &["server.ron", "--computer-slot", "1", "--computer-slot", "0"].map(str::to_owned)
+            )
+            .is_err()
+        );
+    }
+}

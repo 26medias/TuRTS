@@ -26,6 +26,8 @@ pub(crate) struct ObservationBasis {
     pub units: Vec<UnitObservation>,
     pub nodes: Vec<NodeObservation>,
     pub accounts: Vec<AccountObservation>,
+    pub account_index: BTreeMap<SpendKey, usize>,
+    pub unit_index: BTreeMap<UnitId, usize>,
     pub works: Vec<WorkObservation>,
     pub area: ObservedArea,
     pub catalog: Arc<ContentCatalog>,
@@ -39,11 +41,24 @@ impl ObservationBasis {
             .sort_by(|a, b| physical(a.position, &a.content, b.position, &b.content));
         self.accounts.sort_by(|a, b| a.account.cmp(&b.account));
         self.works.sort_by(|a, b| a.identity.cmp(&b.identity));
+        self.unit_index = self
+            .units
+            .iter()
+            .enumerate()
+            .map(|(i, u)| (u.unit, i))
+            .collect();
+        self.account_index = self
+            .accounts
+            .iter()
+            .enumerate()
+            .map(|(i, a)| (a.account.clone(), i))
+            .collect();
     }
     fn own_unit(&self, id: UnitId) -> Option<&UnitObservation> {
-        self.units
-            .iter()
-            .find(|u| u.unit == id && u.owner_slot == self.slot && u.own.is_some())
+        self.unit_index
+            .get(&id)
+            .and_then(|index| self.units.get(*index))
+            .filter(|u| u.owner_slot == self.slot && u.own.is_some())
     }
     fn team(&self, slot: u8) -> u8 {
         self.teams.get(usize::from(slot)).copied().unwrap_or(slot)
@@ -90,7 +105,10 @@ impl ObservationBasis {
         }
         let mut affordable = true;
         for (key, amount) in &sums {
-            let account = self.accounts.iter().find(|a| a.account == *key)?;
+            let account = self
+                .account_index
+                .get(key)
+                .and_then(|index| self.accounts.get(*index))?;
             affordable &= account
                 .on_hand
                 .checked_sub(account.reserved)
@@ -224,6 +242,7 @@ fn within(p: WorldPos, center: Option<WorldPos>, radius: Option<f32>) -> bool {
 struct Continuation {
     query: Query,
     offset: usize,
+    controller: String,
 }
 /// One candidate basis per bot. Pins belong to controller identities, not query kinds.
 pub(crate) struct CandidateLease {
@@ -299,7 +318,7 @@ impl BotQueries for PermittedQueries<'_> {
                 .cursors
                 .get(&cursor.token)
                 .ok_or(QueryError::InvalidContinuation)?;
-            if state.query != query {
+            if state.query != query || state.controller != self.controller {
                 return Err(QueryError::InvalidContinuation);
             }
             state.offset
@@ -379,7 +398,11 @@ impl BotQueries for PermittedQueries<'_> {
                 // Index lookup costs are independent of absent or hidden subjects.
                 examined = 1;
                 end = 1;
-                let row = basis.units.iter().find(|u| u.unit == *id).cloned();
+                let row = basis
+                    .unit_index
+                    .get(id)
+                    .and_then(|index| basis.units.get(*index))
+                    .cloned();
                 let data = if let Some(row) = row {
                     Advice::Known(row)
                 } else {
@@ -399,7 +422,11 @@ impl BotQueries for PermittedQueries<'_> {
                     }
                     examined += 1;
                     end += 1;
-                    if let Some(row) = basis.accounts.iter().find(|row| row.account == *key) {
+                    if let Some(row) = basis
+                        .account_index
+                        .get(key)
+                        .and_then(|index| basis.accounts.get(*index))
+                    {
                         rows.push(row.clone())
                     } else {
                         coverage = Coverage::NotObserved
@@ -476,6 +503,7 @@ impl BotQueries for PermittedQueries<'_> {
                 Continuation {
                     query: query.clone(),
                     offset: end,
+                    controller: self.controller.clone(),
                 },
             );
             let cursor = QueryCursor {
@@ -604,5 +632,164 @@ impl ProposalVerifier for ObservationVerifier<'_> {
             });
         }
         Ok(VerifiedProposal { members })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    fn empty_catalog() -> ContentCatalog {
+        ContentCatalog {
+            bots: BTreeMap::new(),
+            combat: None,
+            resources: BTreeMap::new(),
+            units: BTreeMap::new(),
+            nodes: BTreeMap::new(),
+            production: BTreeMap::new(),
+            recipes: BTreeMap::new(),
+            technologies: BTreeMap::new(),
+            orders: BTreeMap::new(),
+            order_queue_depths: BTreeMap::new(),
+            source_files: BTreeMap::new(),
+        }
+    }
+    fn basis() -> ObservationBasis {
+        let content = ContentId::parse("fixture:unit").unwrap();
+        let units = (1..=3)
+            .map(|unit| UnitObservation {
+                unit,
+                owner_slot: 0,
+                content: content.clone(),
+                position: WorldPos {
+                    x: unit as f32,
+                    y: 2.0,
+                },
+                radius: 0.5,
+                capabilities: Vec::new(),
+                health: None,
+                site: false,
+                own: Some(OwnUnitObservation {
+                    enabled: true,
+                    activity: OwnActivity::Idle,
+                    current_order: None,
+                    queued_orders: 0,
+                }),
+            })
+            .collect();
+        ObservationBasis {
+            id: 7,
+            tick: 5,
+            slot: 0,
+            teams: vec![0, 1],
+            units,
+            nodes: vec![],
+            accounts: vec![],
+            account_index: BTreeMap::new(),
+            unit_index: BTreeMap::new(),
+            works: vec![],
+            area: ObservedArea {
+                min: WorldPos { x: 0.0, y: 0.0 },
+                max: WorldPos { x: 20.0, y: 20.0 },
+                complete: true,
+            },
+            catalog: Arc::new(empty_catalog()),
+        }
+    }
+    #[test]
+    fn a_candidate_pin_and_cursor_survive_other_query_kinds_and_new_steps() {
+        let mut lease = CandidateLease::new(basis(), 0);
+        let query = Query::Units(UnitQuery::own(vec![]));
+        let cursor = {
+            let mut q = lease.queries(
+                "opening",
+                BotQuota {
+                    queries: 2,
+                    candidates: 4,
+                    rows: 2,
+                    proposals: 0,
+                },
+            );
+            q.pin_basis(7).unwrap();
+            let page = q.query(query.clone(), None, 1).unwrap();
+            let PageState::More(cursor) = page.state else {
+                panic!("first page must be partial")
+            };
+            assert!(matches!(
+                q.query(Query::Works, None, 1).unwrap().state,
+                PageState::Complete
+            ));
+            cursor
+        };
+        assert!(lease.retained());
+        assert!(!lease.expired(7));
+        let mut q = lease.queries(
+            "opening",
+            BotQuota {
+                queries: 2,
+                candidates: 4,
+                rows: 2,
+                proposals: 0,
+            },
+        );
+        let page = q.query(query, Some(cursor), 1).unwrap();
+        let QueryData::Units(rows) = page.data else {
+            panic!("unit page")
+        };
+        assert_eq!(
+            rows[0].unit, 2,
+            "switching query kind must not restart the earlier scan"
+        );
+        q.release_basis(7).unwrap();
+        assert!(!lease.retained());
+        assert!(lease.expired(8));
+        let mut q = lease.queries("opening", operator_test_quota());
+        assert_eq!(q.pin_basis(6), Err(QueryError::ExpiredBasis));
+    }
+    fn operator_test_quota() -> BotQuota {
+        BotQuota {
+            queries: 8,
+            candidates: 32,
+            rows: 16,
+            proposals: 0,
+        }
+    }
+    #[test]
+    fn filtered_candidates_count_and_exact_tie_pages_remain_unresolved() {
+        let mut facts = basis();
+        facts.units[1].position = facts.units[0].position;
+        let mut lease = CandidateLease::new(facts, 0);
+        let mut queries = lease.queries("selection", operator_test_quota());
+        let first = queries
+            .query(Query::Units(UnitQuery::own(vec![])), None, 1)
+            .unwrap();
+        assert!(matches!(first.state, PageState::UnresolvedTie(_)));
+        let mut query = UnitQuery::own(vec![ContentId::parse("fixture:missing").unwrap()]);
+        query.center = None;
+        let empty = queries.query(Query::Units(query), None, 1).unwrap();
+        assert_eq!(
+            empty.usage.candidates, 3,
+            "rejected permitted candidates still consume work"
+        );
+        assert_eq!(empty.usage.rows, 0);
+        assert_eq!(empty.state, PageState::Complete);
+    }
+    #[test]
+    fn quota_exhaustion_does_not_produce_a_complete_prefix() {
+        let mut lease = CandidateLease::new(basis(), 0);
+        let mut query = lease.queries(
+            "limited",
+            BotQuota {
+                queries: 2,
+                candidates: 1,
+                rows: 1,
+                proposals: 0,
+            },
+        );
+        let kind = Query::Units(UnitQuery::own(vec![]));
+        let first = query.query(kind.clone(), None, 64).unwrap();
+        let PageState::More(cursor) = first.state else {
+            panic!("quota-limited result is incomplete")
+        };
+        assert_eq!(query.query(kind, Some(cursor), 64), Err(QueryError::Budget));
     }
 }
