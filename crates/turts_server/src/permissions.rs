@@ -22,6 +22,9 @@ pub trait ObservationPermissions {
     fn knowledge(&self, _viewer: u8) -> Option<turts_mod_api::KnowledgeSnapshot> {
         None
     }
+    fn knowledge_basis(&self) -> Option<&turts_mod_api::KnowledgeBasis> {
+        None
+    }
 
     /// Allows the unchanged production projection to avoid an extra filtered copy.
     fn all_public_geometry(&self, _viewer: u8) -> bool {
@@ -70,25 +73,27 @@ impl Default for ObservationPolicy {
     }
 }
 
-struct AuthoritativePermissions(std::sync::Arc<turts_sim::visibility::VisibilityBasis>);
-impl ObservationPermissions for AuthoritativePermissions {
+impl ObservationPermissions for turts_sim::visibility::VisibilityBasis {
     fn unit_visible(&self, viewer: u8, unit: u32, _owner: u8) -> bool {
-        self.0.unit_permitted(viewer, unit)
+        self.unit_permitted(viewer, unit)
     }
     fn node_visible(&self, viewer: u8, node: u32) -> bool {
-        self.0.node_permitted(viewer, node)
+        self.node_permitted(viewer, node)
     }
     fn area_observed(&self, viewer: u8, area: ObservationArea) -> bool {
-        self.0.area_observed(viewer, area.min, area.max)
+        turts_sim::visibility::VisibilityBasis::area_observed(self, viewer, area.min, area.max)
     }
     fn knowledge(&self, viewer: u8) -> Option<turts_mod_api::KnowledgeSnapshot> {
-        self.0.knowledge(viewer)
+        turts_sim::visibility::VisibilityBasis::knowledge(self, viewer)
+    }
+    fn knowledge_basis(&self) -> Option<&turts_mod_api::KnowledgeBasis> {
+        Some(self.stamp())
     }
 }
 /// One authoritative completed basis for both human publication and bot candidate projection.
 pub fn completed(world: &bevy::prelude::World) -> ObservationPolicy {
     match turts_sim::visibility::basis(world, turts_mod_api::ObservationPhase::Completed) {
-        Some(basis) => ObservationPolicy(std::sync::Arc::new(AuthoritativePermissions(basis))),
+        Some(basis) => ObservationPolicy(basis),
         None => world
             .get_resource::<ObservationPolicy>()
             .cloned()

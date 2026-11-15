@@ -155,7 +155,7 @@ fn emit_cancel(world: &mut World, entity: Entity, cancel: Option<StateTransactio
 /// Returns false only for the unchanged AllVisible publication path.
 pub fn queue_full(world: &mut World, entity: Entity, slot: SlotId) -> Result<bool, String> {
     let policy = crate::permissions::completed(world);
-    if policy.0.knowledge(slot.0).is_none() {
+    if policy.0.knowledge_basis().is_none() {
         return Ok(false);
     }
     if !turts_sim::visibility::context_ready(world) {
@@ -284,7 +284,7 @@ fn pump_one(
     let acks = world
         .get_mut::<MessageReceiver<StateTransactionAck>>(entity)
         .map_or_else(Vec::new, |mut receiver| {
-            receiver.receive().collect::<Vec<_>>()
+            receiver.receive().take(WINDOW * 4).collect::<Vec<_>>()
         });
     for ack in acks {
         if sender
@@ -303,7 +303,7 @@ fn pump_one(
     let cancels = world
         .get_mut::<MessageReceiver<StateTransactionCancel>>(entity)
         .map_or_else(Vec::new, |mut receiver| {
-            receiver.receive().collect::<Vec<_>>()
+            receiver.receive().take(WINDOW * 4).collect::<Vec<_>>()
         });
     let cancelled = cancels.iter().any(|cancel| {
         sender
