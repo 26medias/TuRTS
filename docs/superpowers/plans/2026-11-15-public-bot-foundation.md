@@ -1,6 +1,6 @@
 # Public bot foundation implementation plan
 
-Status: proposed for the same Anvil reviewer. No implementation starts before gate 2 passes.
+Status: approved by the same Anvil reviewer. Both final clarifications are incorporated.
 Contract: `../specs/2026-11-15-public-bot-foundation.md`.
 Budget: the existing reviewer, one plan turn. No new panel or task-review loops.
 
@@ -104,6 +104,8 @@ Return `Unknown/NotObserved` when coverage or an account is unavailable. The ans
 For direct lookup, hidden and absent both return NotObserved without a death flag.
 Authoritative admission checks the real world and returns only the permitted generic refusal.
 Test two worlds differing only in a hidden blocker/account through spatial, direct-ID, placement, and affordability queries.
+Compare rows, budget use, examined counts, coverage, and continuation values byte-for-byte.
+Only permitted candidates count toward public query metadata. Separately charge private projection scans to host limits and phase timings.
 
 Index each immutable basis once. Count examination work, including filtered-out candidates and page preparation.
 Page in physical `(x,y,content)` order. Exact physical ties carry an unresolved-rank marker, not a selectable prefix.
@@ -143,6 +145,8 @@ Never reset bot state on a human reconnect or take over a human-owned slot.
 Use the existing typed command/audit log, not `orderlog.rs`'s CSV state-transition log as a replay input.
 Add optional actor/source provenance and a deterministic per-tick admission ordinal. Old actor-free records retain their legacy interpretation.
 Record all generated submission attempts and their results in the trusted log so rejected attempts can also be compared.
+Record human-presence changes and match-lifecycle inputs before guards for that tick. Replay applies them before controller scheduling.
+Test a human disconnect/pause/reconnect while COT requests are pending, comparing active timers, commitments, commands, and state.
 `RecordedCommands` replay restores the locked initial state/claims and disables live bot submissions before advancing any tick.
 It consumes recorded actor commands once in their logged order, through the shared validated actor path.
 `RegenerateAndCompare` feeds only recorded non-bot inputs and enables live bot generation with the recorded profiles/seeds.

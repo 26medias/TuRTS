@@ -1,6 +1,6 @@
 # Public bot foundation
 
-Status: gate 1 findings incorporated. The plan needs the same reviewer before implementation.
+Status: Anvil spec and plan reviews approved. The final replay and query-metadata clarifications are incorporated.
 Baseline: SDK14 candidate `216cdd62`. Public authoring API: `0.2.15`. Network protocol stays `8`.
 Review budget: one Codex reviewer, reused for the spec and plan. Two review turns.
 
@@ -85,6 +85,8 @@ The present permission mode makes every existing unit and surface node visible, 
 This foundation adds no sight radius, fog mask, terrain occlusion, or remembered enemy representation.
 It must not claim secrecy or scouting that this mode does not provide.
 A test provider can withhold records. Controllers cannot discover those records through another query.
+Equivalent permitted worlds return identical rows, examined/budget metadata, coverage, and continuations.
+Hidden rejected candidates cannot affect public query metadata. Charge private projection work to host limits and timing separately.
 Future shared visibility and remembered-sighting records extend this provider; controllers must not depend on raw world access.
 A lost observation is not proof that its subject died. Only an authorized event can assert a death.
 
@@ -131,6 +133,7 @@ A bot actor does not impersonate a network connection. It cannot claim another a
 Results return to its controller/coordinator. Rejected orders cannot silently count as completed work.
 Sequences use checked advancement. Exhaustion stops that actor's submissions with a diagnostic; it never wraps.
 Bot commands enter the existing command log with actor/source identity and deterministic within-tick order.
+Record human-presence and match-lifecycle inputs before their decision guards execute, including disconnect and reconnect.
 Recorded-command replay disables live bot submissions. It must not regenerate and replay the same bot command twice.
 A separate comparison mode regenerates bot requests against the same inputs and compares their canonical generated-command trace.
 Full replay delivery and its UI remain deferred.
@@ -194,9 +197,9 @@ Its policy is authored data. It requires no game-specific server edit or privile
 | BF2 | Whole-package validation loads profiles/libraries, including custom factories absent from clients. Invalid references, duplicate keys, periods, and API floors fail with paths. Host activation rejects unknown factories. Empty written exports also require API15. No import silently installs a bot. |
 | BF3 | A Balance/conversion package and an inventory/storage package both build, gather, produce, and attack through ordinary commands. Their actor arrangements differ. A renamed third fixture works without changing Rust strategy code. |
 | BF4 | Recovery interrupts an opening after an ordinary gatherer loss or supply-provider loss. Repeated decisions and COT work do not duplicate tasks, spend commitments twice, or assign conflicting unit tasks. Test separate same-item inventories, delayed feedback, partial acceptance, and both observation/result arrival orders. |
-| BF5 | Forged ownership, stale/exhausted sequence, invalid content, exhausted budgets, and private enemy state remain safe. Hidden-present and hidden-absent worlds with identical permitted state give identical spatial/direct-ID/placement/affordability advice. No missing lookup asserts death. Page/tie boundaries and expired continuations remain explicit. |
+| BF5 | Forged ownership, stale/exhausted sequence, invalid content, exhausted budgets, and private enemy state remain safe. Hidden-present and hidden-absent worlds with identical permitted state give identical spatial/direct-ID/placement/affordability rows and all query metadata. No missing lookup asserts death. Page/tie boundaries and expired continuations remain explicit. |
 | BF6 | Equal seeds and admitted commands repeat exact server state and bot decisions. Controller registration order and genuine creation-ID inversion preserve physical competition. Authored sub-seeds survive registration/list reordering. Recorded replay submits each bot command once; regeneration compares exact traces. Instances/matches share no mutable policy state. |
-| BF7 | Immediate bot-vs-bot can run without a human. HumanPresent pause/resume retains pending state and uses active-time timers. Reconnect preserves bot state. Defeat/end stops commands. Invalid/duplicate/human-owned slot installation changes no ownership. No disconnected human takeover occurs. |
+| BF7 | Immediate bot-vs-bot can run without a human. HumanPresent disconnect/pause/reconnect retains pending COT state and uses active-time timers, including regenerated replay. Reconnect preserves bot state. Defeat/end stops commands. Invalid/duplicate/human-owned slot installation changes no ownership. No disconnected human takeover occurs. |
 | BF8 | The defined local workload meets its phase budget. Query/candidate/result/proposal/command limits are exercised separately. One exhausted bot does not prevent the other bot or a human command from advancing. |
 | BF9 | A fresh silent browser completes the public Skirmish profile loop. A second package also runs its public profile in a browser. Final cold-play probes pass. One independent foundation review runs the completed code. |
 
