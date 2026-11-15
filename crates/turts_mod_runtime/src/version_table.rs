@@ -1134,7 +1134,7 @@ mod tests {
                 .unwrap_or_else(|error| panic!("row {}, field absent: {error}", row.name));
         }
         assert_eq!(
-            tested, 51,
+            tested, 48,
             "the remaining RAW rows first supported in 0.2.4"
         );
     }
@@ -1162,6 +1162,31 @@ mod tests {
             check_version_table(&manifest, None, &raw, rows).unwrap();
         }
         assert_eq!(tested, 6);
+    }
+
+    #[test]
+    fn paid_work_raw_fields_require_api14_also_when_explicitly_empty() {
+        use super::support::raw_for;
+        let mut tested = 0;
+        for row in VERSION_TABLE
+            .iter()
+            .filter(|row| row.since_api == "0.2.14" && matches!(row.detect, Detect::Raw { .. }))
+        {
+            tested += 1;
+            let rows = std::slice::from_ref(row);
+            let (manifest, raw) = raw_for(row, "^0.2.13", true);
+            let error = check_version_table(&manifest, None, &raw, rows).unwrap_err();
+            assert!(
+                error.to_string().contains("needs engine api 0.2.14"),
+                "{}: {error}",
+                row.name
+            );
+            let (manifest, raw) = raw_for(row, "^0.2.14", true);
+            check_version_table(&manifest, None, &raw, rows).unwrap();
+            let (manifest, raw) = raw_for(row, "^0.2.13", false);
+            check_version_table(&manifest, None, &raw, rows).unwrap();
+        }
+        assert_eq!(tested, 3);
     }
 
     /// Every VAR and COMBO row names a use that `variants.rs` can list: a name that is not in
