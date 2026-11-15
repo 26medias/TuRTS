@@ -726,3 +726,34 @@ fn bf8_workload_preflight_admits_all_factories_and_keeps_collection_and_combat_a
             .collect::<Vec<_>>()
     );
 }
+
+/// A bounded profiling driver. This never replaces the 1,000-sample BF8 acceptance run.
+#[test]
+#[ignore = "diagnostic profiling only: identical workload readiness, then 40 steady phases"]
+#[allow(clippy::assertions_on_constants)] // Profile optimized production code only.
+fn diagnostic_bf8_40_steady_phases_after_identical_readiness() {
+    assert!(
+        !cfg!(debug_assertions),
+        "diagnostic profiling requires --release"
+    );
+    let (mut app, definition) = fixture(true);
+    app.world_mut().resource_mut::<Meter>().target = 40;
+    let (timings, _) = run(app);
+    let report = serde_json::json!({
+        "purpose": "diagnostic profiling only; not BF8 acceptance",
+        "steady_phase_samples": 40,
+        "required_acceptance_samples": PHASES,
+        "readiness": "identical frozen 1000-unit workload, all 100 COT jobs, active collection and combat",
+        "timings": timings,
+        "workload": definition,
+    });
+    println!("BF8_DIAGNOSTIC {}", serde_json::to_string(&report).unwrap());
+    if let Some(directory) = std::env::var_os("TURTS_BOT_EVIDENCE_DIR") {
+        std::fs::create_dir_all(&directory).unwrap();
+        std::fs::write(
+            std::path::PathBuf::from(directory).join("bf8-diagnostic-40.json"),
+            serde_json::to_vec_pretty(&report).unwrap(),
+        )
+        .unwrap();
+    }
+}
