@@ -923,3 +923,53 @@ fn observed_removal_cannot_restore_a_previous_phase_row_as_stale_memory() {
             .is_empty()
     );
 }
+
+#[test]
+fn typed_capture_tracks_archetype_changes_facing_spawns_and_source_death() {
+    let mut app = scene(false);
+    let entity = crate::unit_entity(app.world(), 1).unwrap();
+    let kind = *app.world().get::<crate::UnitType>(entity).unwrap();
+    app.world_mut()
+        .entity_mut(entity)
+        .remove::<crate::world::UnitFacing>();
+    let (units, sources) = capture_units(app.world_mut());
+    assert_eq!(units.iter().find(|row| row.unit == 1).unwrap().facing, None);
+    assert!(sources.iter().any(|source| source.0 == 1));
+    app.world_mut()
+        .entity_mut(entity)
+        .insert(crate::world::UnitFacing(Facing::NegX));
+    let extra = app
+        .world_mut()
+        .spawn((
+            crate::UnitId(99),
+            kind,
+            crate::Owner(SlotId(0)),
+            crate::Position(Vec2::new(9.0, 9.0)),
+        ))
+        .id();
+    app.world_mut()
+        .resource_mut::<crate::economy::combat::Healths>()
+        .0
+        .insert(99, 1);
+    let (units, sources) = capture_units(app.world_mut());
+    assert_eq!(
+        units.iter().find(|row| row.unit == 1).unwrap().facing,
+        Some(Facing::NegX)
+    );
+    assert!(
+        units
+            .iter()
+            .any(|row| row.unit == 99 && row.facing.is_none())
+    );
+    assert!(sources.iter().any(|source| source.0 == 99));
+    app.world_mut()
+        .resource_mut::<crate::economy::combat::Healths>()
+        .0
+        .insert(99, 0);
+    let (units, sources) = capture_units(app.world_mut());
+    assert!(units.iter().any(|row| row.unit == 99));
+    assert!(!sources.iter().any(|source| source.0 == 99));
+    app.world_mut().entity_mut(extra).remove::<crate::Owner>();
+    let (units, _) = capture_units(app.world_mut());
+    assert!(!units.iter().any(|row| row.unit == 99));
+}

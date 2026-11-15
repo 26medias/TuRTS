@@ -632,7 +632,16 @@ pub(crate) fn validate_target(
     }
 }
 
-fn capture_units(world: &World) -> (Vec<VisibleUnit>, Vec<(u32, u8, WorldPos, f32)>) {
+fn capture_units(world: &mut World) -> (Vec<VisibleUnit>, Vec<(u32, u8, WorldPos, f32)>) {
+    // A fresh typed query includes structural changes made between phase anchors.
+    // Column access avoids repeated dynamic component lookup for every entity.
+    let mut query = world.query::<(
+        &crate::UnitId,
+        &crate::UnitType,
+        &crate::Owner,
+        &crate::Position,
+        Option<&crate::world::UnitFacing>,
+    )>();
     let Some(types) = world.get_resource::<crate::UnitTypes>() else {
         return (Vec::new(), Vec::new());
     };
@@ -652,15 +661,7 @@ fn capture_units(world: &World) -> (Vec<VisibleUnit>, Vec<(u32, u8, WorldPos, f3
     let healths = world.get_resource::<crate::economy::combat::Healths>();
     let mut units = Vec::new();
     let mut sources = Vec::new();
-    for entity in world.iter_entities() {
-        let (Some(id), Some(kind), Some(owner), Some(position)) = (
-            entity.get::<crate::UnitId>(),
-            entity.get::<crate::UnitType>(),
-            entity.get::<crate::Owner>(),
-            entity.get::<crate::Position>(),
-        ) else {
-            continue;
-        };
+    for (id, kind, owner, position, facing) in query.iter(world) {
         let Some(Some((content, vision, has_health))) = definitions.get(kind.0.0 as usize) else {
             continue;
         };
@@ -674,9 +675,7 @@ fn capture_units(world: &World) -> (Vec<VisibleUnit>, Vec<(u32, u8, WorldPos, f3
             content: Arc::clone(content),
             owner: owner.0.0,
             position,
-            facing: entity
-                .get::<crate::world::UnitFacing>()
-                .map(|facing| facing.0),
+            facing: facing.map(|facing| facing.0),
             site,
         });
         let alive = !has_health
