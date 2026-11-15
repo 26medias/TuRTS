@@ -1023,7 +1023,7 @@ fn progress_json(replica: &Replica) -> Value {
         .queues
         .iter()
         .flat_map(|queue| {
-            queue.jobs.iter().filter_map(|job| {
+            queue.jobs.iter().filter_map(move |job| {
                 Some(json!({"producer":queue.producer.0,"job":job.id.0,
                 "rate":replica.job_progress(queue.producer.0,job.id.0)?,
                 "value":replica.job_value(queue.producer.0,job.id.0)?}))
@@ -1054,7 +1054,7 @@ fn progress_json(replica: &Replica) -> Value {
         .queues
         .iter()
         .flat_map(|queue| {
-            queue.jobs.iter().filter_map(|job| {
+            queue.jobs.iter().filter_map(move |job| {
                 Some(json!({"producer":queue.producer.0,"job":job.id.0,
                 "rate":replica.job_progress(queue.producer.0,job.id.0)?,
                 "value":replica.job_value(queue.producer.0,job.id.0)?}))
