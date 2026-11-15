@@ -366,17 +366,17 @@ test("M2 clicks the producer mesh above a nearer output blocker", async () => {
         `click must land on the intended producer, above the front blocker: ${JSON.stringify(clicks[1])}`);
 });
 
-test("M2 selects the interior producer in the fully blocked output fixture", async () => {
+test("M2 selects the producer in the fully blocked tiny map", async () => {
     const png = blankPng(1280, 720, [
-        { x: 639, y: 278, w: 25, h: 16, colour: [0, 114, 178] },
-        { x: 635, y: 294, w: 33, h: 24, colour: [0, 114, 178] },
+        { x: 628, y: 344, w: 25, h: 16, colour: [0, 114, 178] },
+        { x: 624, y: 360, w: 33, h: 24, colour: [0, 114, 178] },
     ]);
     const clicks = [];
     const io = { use: async () => {}, wait: async () => {}, screenshot: async () => png,
         save: async () => {}, click: async (x, y, button) => clicks.push({ x, y, button }) };
     await drive(io, { m2: { package: "base", case_id: "E9-browser-base-loss-final_change" }, fixture_phase: "select" });
     assert.equal(clicks.length, 2);
-    assert.ok(clicks[1].x >= 639 && clicks[1].x < 664 && clicks[1].y >= 278 && clicks[1].y < 294);
+    assert.ok(clicks[1].x >= 628 && clicks[1].x < 653 && clicks[1].y >= 344 && clicks[1].y < 360);
 });
 
 test("M2 selects the intended haul worker and samples the elevated node", async () => {

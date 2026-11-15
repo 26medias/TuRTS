@@ -331,12 +331,15 @@ package = Path(sys.argv[2])
 path = package / "maps/flat.ron"
 path.write_text(add_expected_case_override(path.read_text(), "base", "E9-browser-base-loss-final_change"))
 PYBLOCKERS
-    printf '%s\n' '{"fixture":"public base clone with interior producer1 and nonoverlapping triangular lattice of static output blockers covering the complete fallback search","prior_placement_ids_preserved":true,"prior_node_ids_preserved":true,"recipe_and_duration_unchanged":true}' > "$ARTIFACT_DIR/package-profile-overrides.json"
+    printf '%s\n' '{"fixture":"public4x4 base map containing only original producer1; every legal output center overlaps its unchanged radius2 footprint","producer_id_preserved":true,"balances_unchanged":true,"recipe_and_duration_unchanged":true}' > "$ARTIFACT_DIR/package-profile-overrides.json"
 fi
 
 FIXTURE_X_OFFSET=0
 case "$PACKAGE" in
-    base) FIXTURE_X_OFFSET=18; MAP_RELATIVE_PATH="maps/flat.ron" ;;
+    base)
+        MAP_RELATIVE_PATH="maps/flat.ron"
+        if [[ "$CASE_ID" != "E9-browser-base-loss-final_change" ]]; then FIXTURE_X_OFFSET=18; fi
+        ;;
     haul) FIXTURE_X_OFFSET=18; MAP_RELATIVE_PATH="maps/field.ron" ;;
     cedar) FIXTURE_X_OFFSET=18; MAP_RELATIVE_PATH="maps/clearing.ron" ;;
     acme) MAP_RELATIVE_PATH="" ;;

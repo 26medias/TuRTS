@@ -33,7 +33,7 @@ function layout(params) {
     const name = params.m2?.package;
     const baseMap = PACKAGES[name];
     const map = params.m2?.case_id === "E9-browser-base-loss-final_change"
-        ? { ...baseMap, producer: [24, 24] } : baseMap;
+        ? { ...baseMap, producer: [2, 2], size: [4, 4], offset: 0 } : baseMap;
     if (!map) throw new Error(`M2 driver has no map literals for package ${name}`);
     const at = (point) => point && [point[0] + map.offset, point[1]];
     const camera = { height: 40, pitch: 0.7, yaw: 0, fov: Math.PI / 3, lookAt: [(map.size[0] + map.offset) / 2, map.size[1] / 2] };
