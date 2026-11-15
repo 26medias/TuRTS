@@ -530,3 +530,87 @@ fn explicit_attack_finishes_when_the_target_leaves_sight_without_a_death_claim()
     );
     assert!(crate::unit_entity(app.world(), 2).is_some());
 }
+
+#[test]
+fn an_unfinished_site_contributes_sight_only_after_actual_completion() {
+    use turts_mod_api::{
+        CancelRefunds, ConstructProgress, PaymentPolicy, Ratio, RefundRatio, ResolvedConstructor,
+        ResolvedProduction, SitePlacementDef,
+    };
+    let mut app = scene_with(false, |catalog, _| {
+        let mut watch = catalog.units[&id("worker")].clone();
+        watch.id = id("watch");
+        watch.movement = None;
+        watch.inventory = None;
+        watch.gatherer = None;
+        watch.placement = Some(SitePlacementDef {
+            gap: 0.0,
+            node_clearance: 0.0,
+            in_build_area: false,
+            site_health: Ratio {
+                numerator: 1,
+                denominator: 4,
+            },
+        });
+        catalog.units.insert(watch.id.clone(), watch);
+        catalog.units.get_mut(&id("worker")).unwrap().constructor = Some(ResolvedConstructor {
+            buildings: vec![id("build_watch")],
+            concurrent_sites: 2,
+            queue_capacity: 2,
+            progress: ConstructProgress::Autonomous,
+            when_short: vec![],
+        });
+        catalog.production.insert(
+            id("build_watch"),
+            ResolvedProduction {
+                id: id("build_watch"),
+                name: "Watch".into(),
+                output_unit: id("watch"),
+                duration_ms: 150,
+                costs: vec![],
+                payment: PaymentPolicy::ChargeOnQueue,
+                cancel_refunds: CancelRefunds {
+                    queued: RefundRatio::ZERO,
+                    running: RefundRatio::ZERO,
+                    output_blocked: RefundRatio::ZERO,
+                    destroyed: RefundRatio::ZERO,
+                },
+            },
+        );
+    });
+    app.world_mut()
+        .insert_resource(crate::economy::construction::ConstructionLimit(2));
+    crate::economy::construction::construct(
+        app.world_mut(),
+        SlotId(0),
+        1,
+        id("build_watch"),
+        Vec2::new(21.0, 8.0),
+    )
+    .unwrap();
+    run(&mut app, 1);
+    assert_eq!(
+        app.world()
+            .resource::<crate::economy::construction::ConstructionState>()
+            .sites
+            .len(),
+        1
+    );
+    assert!(
+        !basis(app.world(), ObservationPhase::Completed)
+            .unwrap()
+            .unit_permitted(0, 2)
+    );
+    run(&mut app, 2);
+    assert!(
+        app.world()
+            .resource::<crate::economy::construction::ConstructionState>()
+            .sites
+            .is_empty()
+    );
+    assert!(
+        basis(app.world(), ObservationPhase::Completed)
+            .unwrap()
+            .unit_permitted(0, 2)
+    );
+}
