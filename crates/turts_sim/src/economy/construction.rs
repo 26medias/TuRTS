@@ -856,6 +856,40 @@ pub fn queue_rows(view: &super::views::WorldView) -> Vec<super::events::Construc
         .collect()
 }
 
+/// Publish existing held lists and one empty replacement when a surviving source clears.
+/// Removal is represented by the removed-unit record, never by another queue record.
+pub fn queue_changes(
+    previous: &super::views::WorldView,
+    current: &super::views::WorldView,
+) -> Vec<super::events::ConstructionQueueRow> {
+    let mut rows = queue_rows(current)
+        .into_iter()
+        .filter(|row| !row.orders.is_empty())
+        .map(|row| (row.constructor, row))
+        .collect::<BTreeMap<_, _>>();
+    for old in queue_rows(previous)
+        .into_iter()
+        .filter(|row| !row.orders.is_empty())
+    {
+        if !rows.contains_key(&old.constructor)
+            && current
+                .units
+                .iter()
+                .any(|unit| unit.unit_id == old.constructor)
+        {
+            rows.insert(
+                old.constructor,
+                super::events::ConstructionQueueRow {
+                    constructor: old.constructor,
+                    owner_slot: old.owner_slot,
+                    orders: Vec::new(),
+                },
+            );
+        }
+    }
+    rows.into_values().collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
