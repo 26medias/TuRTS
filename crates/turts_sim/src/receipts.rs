@@ -28,8 +28,32 @@ pub struct AdmittedWork {
     pub job: JobId,
     pub recipe: ContentId,
     pub construction: bool,
+    pub done: u64,
+    pub total: u64,
+    pub payment: Option<turts_mod_api::PaymentPolicy>,
     pub paid: Vec<ReservationLineView>,
     pub reserved: Vec<ReservationLineView>,
+}
+
+/// The final exact work state, captured in the transaction that ends it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TerminalWorkState {
+    Completed,
+    Cancelled,
+    Destroyed,
+}
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TerminalWork {
+    pub unit: u32,
+    pub job: u64,
+    pub recipe: ContentId,
+    pub construction: bool,
+    pub done: u64,
+    pub total: u64,
+    pub payment: Option<turts_mod_api::PaymentPolicy>,
+    pub paid: Vec<ReservationLineView>,
+    pub reserved: Vec<ReservationLineView>,
+    pub state: TerminalWorkState,
 }
 
 /// Exact job identities returned by successful ordinary order application.
@@ -38,6 +62,8 @@ pub struct AdmittedWork {
 pub struct CommandWorkReceipts {
     watched: BTreeSet<(u8, u32)>,
     jobs: BTreeMap<CommandMember, AdmittedWork>,
+    tracked_jobs: BTreeSet<u64>,
+    terminals: Vec<TerminalWork>,
 }
 
 impl CommandWorkReceipts {
@@ -57,16 +83,30 @@ impl CommandWorkReceipts {
     }
 
     pub(crate) fn record(&mut self, slot: SlotId, sequence: u32, unit: u32, work: AdmittedWork) {
-        if self.watched.contains(&(slot.0, sequence)) {
-            self.jobs.insert(
-                CommandMember {
-                    slot: slot.0,
-                    sequence,
-                    unit,
-                },
-                work,
-            );
+        self.tracked_jobs.insert(work.job.0);
+        self.jobs.insert(
+            CommandMember {
+                slot: slot.0,
+                sequence,
+                unit,
+            },
+            work,
+        );
+    }
+
+    pub(crate) fn tracks(&self, job: u64) -> bool {
+        self.tracked_jobs.contains(&job)
+    }
+    pub(crate) fn finish(&mut self, work: TerminalWork) {
+        if self.tracked_jobs.remove(&work.job) {
+            self.terminals.push(work);
         }
+    }
+    pub(crate) fn drain_terminals(&mut self) -> Vec<TerminalWork> {
+        std::mem::take(&mut self.terminals)
+    }
+    pub fn forget_job(&mut self, job: u64) {
+        self.tracked_jobs.remove(&job);
     }
 
     /// Consume only this envelope's job hints. Per-member acceptance/refusal still
@@ -93,10 +133,36 @@ pub(crate) fn capture_admitted_work(
     unit: u32,
     job: JobId,
 ) {
-    if world
-        .get_resource::<CommandWorkReceipts>()
-        .and_then(|receipts| receipts.member(slot, sequence, unit))
-        .is_none()
+    capture_work(world, slot, sequence, unit, job, false);
+}
+
+pub(crate) fn capture_origin_work(world: &mut World, origin: CommandMember, job: JobId) {
+    capture_work(
+        world,
+        SlotId(origin.slot),
+        origin.sequence,
+        origin.unit,
+        job,
+        true,
+    );
+}
+
+fn capture_work(
+    world: &mut World,
+    slot: SlotId,
+    sequence: u32,
+    unit: u32,
+    job: JobId,
+    origin: bool,
+) {
+    if !world.contains_resource::<CommandWorkReceipts>() {
+        return;
+    }
+    if !origin
+        && world
+            .get_resource::<CommandWorkReceipts>()
+            .and_then(|receipts| receipts.member(slot, sequence, unit))
+            .is_none()
     {
         return;
     }
@@ -108,6 +174,12 @@ pub(crate) fn capture_admitted_work(
             job,
             recipe: site.recipe.clone(),
             construction: true,
+            done: site.done,
+            total: site.total,
+            payment: world
+                .get_resource::<crate::bootstrap::InstalledCatalog>()
+                .and_then(|catalog| catalog.0.production.get(&site.recipe))
+                .map(|recipe| recipe.payment),
             paid: site.charged_rows(),
             reserved: vec![],
         });
@@ -121,6 +193,24 @@ pub(crate) fn capture_admitted_work(
                 job,
                 recipe: item.recipe.clone(),
                 construction: false,
+                done: item.elapsed_ticks,
+                total: item.total,
+                payment: world
+                    .get_resource::<crate::bootstrap::InstalledCatalog>()
+                    .and_then(|catalog| {
+                        catalog
+                            .0
+                            .production
+                            .get(&item.recipe)
+                            .map(|recipe| recipe.payment)
+                            .or_else(|| {
+                                catalog
+                                    .0
+                                    .technologies
+                                    .get(&item.recipe)
+                                    .map(|recipe| recipe.payment)
+                            })
+                    }),
                 paid: item
                     .charged
                     .iter()

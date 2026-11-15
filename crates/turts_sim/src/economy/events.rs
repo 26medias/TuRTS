@@ -227,6 +227,8 @@ pub enum EffectRow {
 
 #[derive(Resource, Debug, Clone, Default, PartialEq)]
 pub struct CommittedTick {
+    /// Private host accounting facts; these are never projected to another slot.
+    pub terminal_work: Vec<crate::receipts::TerminalWork>,
     pub repairs: Vec<super::repair::RepairRow>,
     pub repairs_cleared: Vec<u32>,
     pub match_outcomes: Option<crate::outcome::MatchOutcomes>,

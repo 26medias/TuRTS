@@ -339,6 +339,7 @@ pub(crate) fn finish_tick_audit(world: &mut World) {
 
 #[derive(Default)]
 struct WriteSet {
+    terminal_work: Vec<crate::receipts::TerminalWork>,
     operating_activations: Vec<OperatingActivationWrite>,
     repairs: BTreeMap<u32, super::repair::RepairUnitState>,
     construction: Option<super::construction::ConstructionState>,
@@ -414,6 +415,87 @@ fn transact_inner<R>(
 }
 
 impl Transaction<'_> {
+    fn tracks_work(&self, job: u64) -> bool {
+        self.world
+            .get_resource::<crate::receipts::CommandWorkReceipts>()
+            .is_some_and(|receipts| receipts.tracks(job))
+    }
+    pub(crate) fn stage_job_terminal(
+        &mut self,
+        unit: u32,
+        job: &super::production::ProductionJob,
+        state: crate::receipts::TerminalWorkState,
+    ) {
+        if !self.tracks_work(job.id.0) {
+            return;
+        }
+        let payment = self
+            .world
+            .get_resource::<crate::bootstrap::InstalledCatalog>()
+            .and_then(|catalog| {
+                catalog
+                    .0
+                    .production
+                    .get(&job.recipe)
+                    .map(|recipe| recipe.payment)
+                    .or_else(|| {
+                        catalog
+                            .0
+                            .technologies
+                            .get(&job.recipe)
+                            .map(|recipe| recipe.payment)
+                    })
+            });
+        self.writes
+            .terminal_work
+            .push(crate::receipts::TerminalWork {
+                unit,
+                job: job.id.0,
+                recipe: job.recipe.clone(),
+                construction: false,
+                done: job.elapsed_ticks,
+                total: job.total,
+                payment,
+                paid: job
+                    .charged
+                    .iter()
+                    .cloned()
+                    .map(super::views::reservation_line_view)
+                    .collect(),
+                reserved: vec![],
+                state,
+            });
+    }
+    pub(crate) fn stage_site_terminal(
+        &mut self,
+        unit: u32,
+        site: &super::construction::Site,
+        state: crate::receipts::TerminalWorkState,
+    ) {
+        if !self.tracks_work(site.job.0) {
+            return;
+        }
+        let payment = self
+            .world
+            .get_resource::<crate::bootstrap::InstalledCatalog>()
+            .and_then(|catalog| catalog.0.production.get(&site.recipe))
+            .map(|recipe| recipe.payment);
+        self.writes
+            .terminal_work
+            .push(crate::receipts::TerminalWork {
+                unit,
+                job: site.job.0,
+                recipe: site.recipe.clone(),
+                construction: true,
+                done: site.done,
+                total: site.total,
+                payment,
+                paid: site.charged_rows(),
+                reserved: vec![],
+                state,
+            });
+    }
+
     /// Clone only this source row, including any staged update in the same transaction.
     pub(crate) fn repair_state(&self, source: u32) -> super::repair::RepairUnitState {
         self.writes
@@ -1111,6 +1193,12 @@ impl Transaction<'_> {
                 }
             }
             world.resource_mut::<NextEventOrdinal>().0 = Some(next_event_ordinal);
+        }
+        if let Some(mut receipts) = world.get_resource_mut::<crate::receipts::CommandWorkReceipts>()
+        {
+            for work in writes.terminal_work {
+                receipts.finish(work);
+            }
         }
         Ok(())
     }

@@ -257,6 +257,7 @@ pub(crate) fn cancel_research(
                 u64::from(ratio.denominator),
             )?;
         }
+        tx.stage_job_terminal(station, &job, crate::receipts::TerminalWorkState::Cancelled);
         queue.remove(index);
         tx.stage_queues(queues);
         let refunded = refund
@@ -353,6 +354,13 @@ pub(crate) fn run_research(world: &mut World) {
                 .ok_or(RejectReason::ArithmeticOverflow)?;
             if elapsed == head.total {
                 let technology = head.recipe.clone();
+                let mut terminal = head.clone();
+                terminal.elapsed_ticks = elapsed;
+                tx.stage_job_terminal(
+                    station,
+                    &terminal,
+                    crate::receipts::TerminalWorkState::Completed,
+                );
                 queue.remove(0);
                 tx.stage_queues(queues);
                 tx.stage_research_complete(slot, technology.clone());
