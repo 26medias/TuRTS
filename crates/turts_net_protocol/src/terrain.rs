@@ -17,6 +17,9 @@ pub struct TerrainSurfaceRecord {
     pub elevation: i32,
     /// None denotes observed bedrock, not a buried material query.
     pub material: Option<TerrainMaterialId>,
+    /// Origin of this exposed surface only. Bedrock has no material/provenance.
+    #[serde(default)]
+    pub provenance: Option<turts_mod_api::TerrainProvenance>,
     pub observed_tick: u32,
     pub current: bool,
 }
