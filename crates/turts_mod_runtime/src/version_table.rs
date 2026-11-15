@@ -163,6 +163,23 @@ const fn variant_0_2_4(name: &'static str) -> VersionTableRow {
     }
 }
 
+/// Operating resource behavior first ships in API 0.2.13.
+const fn raw_0_2_13(
+    name: &'static str,
+    group: RawGroup,
+    path: &'static [&'static str],
+) -> VersionTableRow {
+    raw(name, "0.2.13", group, path)
+}
+
+const fn variant_0_2_13(name: &'static str) -> VersionTableRow {
+    VersionTableRow {
+        name,
+        detect: Detect::Variant(name),
+        since_api: "0.2.13",
+    }
+}
+
 fn weapon_details(manifest: &Manifest, content: &ParsedMcContent) -> bool {
     variants::collect(manifest, content)
         .iter()
@@ -570,22 +587,22 @@ pub(crate) const VERSION_TABLE: &[VersionTableRow] = &[
         &["weapon", "damage_type"],
     ),
     raw_0_2_4("acquire", RawGroup::Units, &["acquire"]),
-    raw_0_2_4("provides", RawGroup::Units, &["provides"]),
-    raw_0_2_4("consumes", RawGroup::Units, &["consumes"]),
-    raw_0_2_4(
+    raw_0_2_13("provides", RawGroup::Units, &["provides"]),
+    raw_0_2_13("consumes", RawGroup::Units, &["consumes"]),
+    raw_0_2_13(
         "weapon.when_short",
         RawGroup::Units,
         &["weapon", "when_short"],
     ),
-    raw_0_2_4(
+    raw_0_2_13(
         "producer.when_short",
         RawGroup::Units,
         &["producer", "when_short"],
     ),
-    raw_0_2_4("income", RawGroup::Units, &["income"]),
+    raw_0_2_13("income", RawGroup::Units, &["income"]),
     raw_0_2_4("spawn_order", RawGroup::Units, &["spawn_order"]),
     raw_0_2_4("constructor", RawGroup::Units, &["constructor"]),
-    raw_0_2_4(
+    raw_0_2_13(
         "constructor.when_short",
         RawGroup::Units,
         &["constructor", "when_short"],
@@ -730,7 +747,7 @@ pub(crate) const VERSION_TABLE: &[VersionTableRow] = &[
     variant_0_2_4("behaviour Repair"),
     variant_0_2_4("behaviour Surrender"),
     // S1, P1, L1.
-    variant_0_2_4("kind: Supply"),
+    variant_0_2_13("kind: Supply"),
     variant_0_2_4("payment: ChargeOverTime"),
     variant_0_2_4("SlotRelation::Ally"),
     variant_0_2_4("SlotRelation::Enemy"),
@@ -744,14 +761,14 @@ pub(crate) const VERSION_TABLE: &[VersionTableRow] = &[
     variant_0_2_4("removal with a queue"),
     // H4: the new alert triggers.
     variant_0_2_4("AlertTrigger::ConstructionComplete"),
-    variant_0_2_4("AlertTrigger::SupplyShort"),
-    variant_0_2_4("AlertTrigger::SupplyRestored"),
+    variant_0_2_13("AlertTrigger::SupplyShort"),
+    variant_0_2_13("AlertTrigger::SupplyRestored"),
     variant_0_2_4("AlertTrigger::InsufficientFunds"),
     variant_0_2_4("AlertTrigger::SlotDisconnected"),
     variant_0_2_4("AlertTrigger::SlotReconnected"),
     variant_0_2_4("AlertTrigger::GathererIdle"),
     // H7: the new values and sources.
-    variant_0_2_4("Value::Supply"),
+    variant_0_2_13("Value::Supply"),
     variant_0_2_4("Value::Connection"),
     variant_0_2_4("Value::Outcome"),
     variant_0_2_4("Value::OutcomeReason"),
@@ -777,7 +794,7 @@ pub(crate) const VERSION_TABLE: &[VersionTableRow] = &[
     // H10: the new predicates.
     variant_0_2_4("Predicate::ItemHas"),
     variant_0_2_4("Predicate::PrimaryHasValue"),
-    variant_0_2_4("Predicate::SupplyShort"),
+    variant_0_2_13("Predicate::SupplyShort"),
     variant_0_2_4("Predicate::MatchOver"),
     variant_0_2_4("Predicate::OutcomeIs"),
     variant_0_2_4("Predicate::OutcomeReasonIs"),

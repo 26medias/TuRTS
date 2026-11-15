@@ -44,7 +44,9 @@ Every affected capability uses that same snapshot throughout the tick.
 Keep this immutable effect snapshot separate from the live admission totals for creations in the tick.
 Admit competing creations in physical coordinate order. Unit IDs identify requests but must not rank visible results.
 One shared admission pass covers producer outputs and completed sites.
-Its physical key starts with the activation point, followed by the producer origin where needed.
+Its physical key is the producer origin for queued outputs, or the site position for completion.
+These source anchors remain fixed when an earlier spawn changes the free exits.
+Exact source ties receive equal priority: refuse both rather than use an ID fallback.
 Refuse overflow before committing the last progress step. Ordinary geometric output blocking keeps its current behavior.
 Compute income after commands and before per-tick payment, using the existing Income schedule position.
 An order paid during commands sees the pre-income balance.
@@ -75,7 +77,9 @@ Store the actual activation tick. Do not derive it from the first later income-s
 A nonpositive health value stops and discards a partial income clock. Revival starts a new full period.
 Revival must pass the same income admission check as a new activation.
 Activation and removal hooks receive all required validated data before mutation; their commit operations cannot fail.
-An automatically refused overflow reports one state transition through the existing result/notice path.
+An automatically refused overflow records one typed diagnostic transition in authoritative audit state.
+Its work record is held with per_tick zero. The original plan assumed an unsolicited notice path that does not exist.
+This batch does not add a wire notice or claim that the owner client displays the overflow reason.
 It must not emit a refusal every tick while the same condition persists.
 
 ## Public contract and display
@@ -100,7 +104,7 @@ Game words and labels remain mod data.
 
 | Row | Required executed result |
 | --- | --- |
-| OR1 | Pack and boot a separate fixture with two slots and at least two supply resources. Refuse wrong kinds, bad references, duplicates, invalid rates, and period conversion overflow with field paths. |
+| OR1 | Pack and boot a separate fixture with two slots and at least two supply resources. Refuse wrong kinds, bad references, duplicates, invalid rates, and invalid periods with field paths. The authored u32-ms/u16-Hz maximum fits u64 ticks; test that maximum and the generic converter overflow separately. |
 | OR2 | Check exact provided/consumed totals for completed units, sites, manual Disable, completion, spawn, removal, and destruction. Check the pre-command one-tick boundary. |
 | OR3 | A shortage halves producer and constructor progress. Recovery restores full progress without lost fractions or duplicated payment. Two active constraints use the smaller rate. |
 | OR4 | A shortage stops acquisition and firing. Restoration permits firing. A manual Disable remains disabled after restoration. Other slots and unaffected weapons continue. |

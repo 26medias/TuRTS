@@ -10,6 +10,7 @@ use crate::content::{check_finite_positive, error};
 /// Portable rules for API 0.2.1. Keep this separate from reference resolution so the
 /// frozen public catalog validator continues to serve API 0.2 callers.
 pub(crate) fn validate_m3(manifest: &Manifest, catalog: &ContentCatalog) -> Result<(), ModError> {
+    crate::operating_validation::validate(manifest, catalog)?;
     let origin = PackageId(manifest.id.clone());
     for unit in catalog.units.values() {
         let file = catalog

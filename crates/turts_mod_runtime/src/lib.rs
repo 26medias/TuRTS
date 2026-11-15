@@ -9,6 +9,7 @@ pub mod hash;
 pub mod lock;
 pub mod manifest;
 pub mod models;
+mod operating_validation;
 pub mod pack;
 pub mod parse;
 pub mod resolve;

@@ -62,16 +62,9 @@ const fn use_line(feature: &'static str, owner: &'static str) -> UnbuiltLine {
 /// The lines of plan 5.3, in its order. A task deletes only the lines of its own name.
 pub(crate) const UNBUILT_FEATURES: &[UnbuiltLine] = &[
     // L-PWR: `kind: Supply` (S1), `provides`, `consumes` (U5), `*.when_short` (U6).
-    line("kind: Supply", "L-PWR"),
-    line("provides", "L-PWR"),
-    line("consumes", "L-PWR"),
-    line("weapon.when_short", "L-PWR"),
-    line("producer.when_short", "L-PWR"),
-    line("constructor.when_short", "L-PWR"),
     // L-PAY: `payment: ChargeOverTime` (P1).
     line("payment: ChargeOverTime", "L-PAY"),
     // L-INC: `income` (U7).
-    line("income", "L-INC"),
     // L-CON1: `constructor` (K1), `placement` (K2), `build_area` (K3), production with a static
     // output (K4), `ContentAtPoint` (O5), `Construct` (O1), `needs: Constructor` (O6). The target
     // comes first, as in the version table.
@@ -119,8 +112,6 @@ pub(crate) const UNBUILT_FEATURES: &[UnbuiltLine] = &[
     line("alerts.sound_when", "UI-ALERT"),
     line("alert_sound_gap_secs", "UI-ALERT"),
     line("AlertTrigger::ConstructionComplete", "UI-ALERT"),
-    line("AlertTrigger::SupplyShort", "UI-ALERT"),
-    line("AlertTrigger::SupplyRestored", "UI-ALERT"),
     line("AlertTrigger::InsufficientFunds", "UI-ALERT"),
     line("AlertTrigger::GathererIdle", "UI-ALERT"),
     // UI2-CONN: the triggers `SlotDisconnected`, `SlotReconnected` (H4), `Value::Connection`.
@@ -144,11 +135,9 @@ pub(crate) const UNBUILT_FEATURES: &[UnbuiltLine] = &[
     line("role", "UI-HUD"),
     line("hotkey", "UI-HUD"),
     line("card", "UI-HUD"),
-    line("Value::Supply", "UI-HUD"),
     line("Source::ConstructionQueue", "UI-HUD"),
     line("Source::SelectionTypes", "UI-HUD"),
     line("Source::Notices", "UI-HUD"),
-    line("Predicate::SupplyShort", "UI-HUD"),
     line("Predicate::ItemHas", "UI-HUD"),
     line("ItemField::Role", "UI-HUD"),
     line("ItemField::State", "UI-HUD"),

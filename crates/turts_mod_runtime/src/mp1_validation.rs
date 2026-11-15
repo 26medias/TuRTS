@@ -571,6 +571,19 @@ impl Pack {
 
     fn resources_group(&self) -> Result<(), ModError> {
         for (file, resource) in &self.resources {
+            if matches!(
+                resource.kind,
+                ResourceKind::Supply {
+                    scope: turts_mod_api::SupplyScope::Network,
+                    ..
+                }
+            ) {
+                return Err(self.fail(
+                    file,
+                    "kind.scope",
+                    "`Network` is reserved for a later engine API",
+                ));
+            }
             if let ResourceKind::Supply { counts, .. } = resource.kind
                 && counts == SupplyCounts::Queued
             {

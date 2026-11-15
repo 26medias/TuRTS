@@ -44,7 +44,9 @@ Update live totals in the same transaction as creation or completion, and releas
 The integration owner adds one common admission/grant pass for all automatic creations in a tick.
 Gather site-completion and producer-output candidates together before either path commits its final progress.
 Compute their legal activation points with the existing placement/exit helpers.
-Sort by activation point, then producer origin if needed. Do not sort the two loops separately.
+Sort by source anchor: producer origin for outputs, site position for completion. Do not sort the loops separately.
+Free exits can change after an earlier spawn. Source anchors keep arbitration stable without repeated geometry sorting.
+Exact anchor ties are refused symmetrically. IDs are never a priority fallback.
 Grant checked live admission in that order. Supply and income admission are one atomic decision.
 The caller consumes a grant in the same transaction as the final progress and activation.
 Preflight before the last running step, not only in `try_output` after progress already commits.
@@ -78,7 +80,8 @@ Retain unpaid due payments when the account is full. Do not add missed periods b
 On success, schedule the next full period from that success tick.
 Remove clocks for missing, unfinished, or nonpositive-health units. Restart on later valid activation.
 Confirm free credits do not feed the Gathered statistics path.
-Expose one overflow-held state transition to the existing notice/result mechanism. Clear it after recovery.
+Expose one typed overflow-held transition through authoritative diagnostic audit state. Clear it after recovery.
+Use held progress records with per_tick zero. Do not invent command IDs or promise owner-client overflow reason text.
 Do not spam an ignored automatic refusal on every tick.
 
 ## Runtime, wire, and HUD integration
