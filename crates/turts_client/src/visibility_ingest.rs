@@ -3,7 +3,12 @@ use bevy::platform::time::Instant;
 use bevy::prelude::*;
 use lightyear::prelude::*;
 use turts_net_lightyear::{KNOWLEDGE_FRAME_LIMIT_BYTES, ReliableChannel};
-use turts_net_protocol::{visibility::*, visibility_transaction::StateTransactionAssembler};
+use turts_net_protocol::{
+    visibility::*,
+    visibility_transaction::{
+        StagedStateTransaction, StateTransactionAssembler, StateTransactionFrame,
+    },
+};
 
 use crate::ingest::ReplicaState;
 
@@ -35,6 +40,39 @@ impl StateTransactions {
             self.connection = Some(entity);
         }
         true
+    }
+
+    fn frame(
+        &mut self,
+        entity: Entity,
+        frame: StateTransactionFrame,
+        now_ms: u64,
+    ) -> Result<Option<StagedStateTransaction>, StateTransactionStamp> {
+        let stamp = match &frame {
+            StateTransactionFrame::Begin(value) => &value.stamp,
+            StateTransactionFrame::Chunk(value) => &value.stamp,
+            StateTransactionFrame::End(value) => &value.stamp,
+        }
+        .clone();
+        if !self.ensure_context(entity, &stamp) {
+            return Err(stamp);
+        }
+        self.restricted = true;
+        let Some(assembler) = self.assembler.as_mut() else {
+            return Err(stamp);
+        };
+        if assembler.is_obsolete(&stamp) {
+            return Ok(None);
+        }
+        let result = match frame {
+            StateTransactionFrame::Begin(value) => assembler.begin(value, now_ms).map(|_| None),
+            StateTransactionFrame::Chunk(value) => assembler.chunk(&value).map(|_| None),
+            StateTransactionFrame::End(value) => assembler.end(&value),
+        };
+        result.map_err(|_| {
+            assembler.cancel(&stamp);
+            stamp
+        })
     }
 
     pub fn retained_bytes(&self) -> usize {
@@ -70,9 +108,7 @@ pub struct ActivationBookkeeping<'w> {
 /// Split from ordinary receipt ingest so command results keep their own bounded path.
 #[allow(clippy::too_many_arguments)]
 pub fn receive_transactions(
-    mut begins: Query<(Entity, &mut MessageReceiver<StateTransactionBegin>)>,
-    mut chunks: Query<(Entity, &mut MessageReceiver<StateTransactionChunk>)>,
-    mut ends: Query<(Entity, &mut MessageReceiver<StateTransactionEnd>)>,
+    mut frames: Query<(Entity, &mut MessageReceiver<StateTransactionFrame>)>,
     mut cancels: Query<(Entity, &mut MessageReceiver<StateTransactionCancel>)>,
     mut acknowledgements: Query<(Entity, &mut MessageSender<StateTransactionAck>)>,
     mut cancellation_senders: Query<(Entity, &mut MessageSender<StateTransactionCancel>)>,
@@ -114,68 +150,13 @@ pub fn receive_transactions(
             }
         }
     }
-    for (entity, mut receiver) in &mut begins {
-        for begin in receiver.receive() {
+    for (entity, mut receiver) in &mut frames {
+        for frame in receiver.receive() {
             if !current(entity) {
                 continue;
             }
-            if !transactions.ensure_context(entity, &begin.stamp) {
-                refused.push((entity, begin.stamp));
-                continue;
-            }
-            transactions.restricted = true;
-            if transactions
-                .assembler
-                .as_ref()
-                .is_some_and(|a| a.is_obsolete(&begin.stamp))
-            {
-                continue;
-            }
-            if transactions
-                .assembler
-                .as_mut()
-                .is_none_or(|a| a.begin(begin.clone(), now_ms).is_err())
-            {
-                refused.push((entity, begin.stamp));
-            }
-        }
-    }
-    for (entity, mut receiver) in &mut chunks {
-        for chunk in receiver.receive() {
-            if !current(entity) || transactions.connection != Some(entity) {
-                continue;
-            }
-            if transactions
-                .assembler
-                .as_ref()
-                .is_some_and(|a| a.is_obsolete(&chunk.stamp))
-            {
-                continue;
-            }
-            if transactions
-                .assembler
-                .as_mut()
-                .is_none_or(|a| a.chunk(&chunk).is_err())
-            {
-                refused.push((entity, chunk.stamp));
-            }
-        }
-    }
-    for (entity, mut receiver) in &mut ends {
-        for end in receiver.receive() {
-            if !current(entity) || transactions.connection != Some(entity) {
-                continue;
-            }
-            if transactions
-                .assembler
-                .as_ref()
-                .is_some_and(|a| a.is_obsolete(&end.stamp))
-            {
-                continue;
-            }
-            let staged = transactions.assembler.as_mut().map(|a| a.end(&end));
-            match staged {
-                Some(Ok(Some(staged))) => {
+            match transactions.frame(entity, frame, now_ms) {
+                Ok(Some(staged)) => {
                     crate::ingest::append_raw_world_dto(
                         book.options.0.raw_world_log.as_deref(),
                         "state_transaction",
@@ -226,11 +207,14 @@ pub fn receive_transactions(
                             transactions.activated += 1;
                         }
                     } else {
+                        if let Some(assembler) = transactions.assembler.as_mut() {
+                            assembler.cancel(&staged.stamp);
+                        }
                         refused.push((entity, staged.stamp));
                     }
                 }
-                Some(Ok(None)) => {}
-                _ => refused.push((entity, end.stamp)),
+                Ok(None) => {}
+                Err(stamp) => refused.push((entity, stamp)),
             }
         }
     }
@@ -318,5 +302,101 @@ mod tests {
         )
         .unwrap();
         assert!(expected_map(&[archive], "visibility_probe").is_none());
+    }
+
+    #[test]
+    fn two_complete_transactions_in_one_application_batch_activate_in_wire_order() {
+        use turts_net_protocol::visibility_transaction::encode_transaction;
+        use turts_net_protocol::{Snapshot, WorldDelta};
+        let archive = PackageArchive::parse(
+            &pack_dir(
+                &std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                    .join("../../mods/visibility_probe"),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        let map = expected_map(std::slice::from_ref(&archive), "visibility_probe").unwrap();
+        let mut replica = crate::replica::Replica::new(20);
+        replica.set_context(crate::replica::ReplicaContext::new(
+            crate::content::ClientContent::from_archives(&[archive]).unwrap(),
+            0,
+        ));
+        let basis = KnowledgeBasis {
+            match_id: 7,
+            map: map.clone(),
+            tick: 1,
+            phase: ObservationPhase::Completed,
+        };
+        let first = StateTransactionStamp {
+            basis: basis.clone(),
+            transaction_id: 1,
+            parent_transaction_id: None,
+        };
+        let second = StateTransactionStamp {
+            basis: KnowledgeBasis { tick: 2, ..basis },
+            transaction_id: 2,
+            parent_transaction_id: Some(1),
+        };
+        let payloads = [
+            (
+                first,
+                StateTransactionPayload::Snapshot {
+                    state: Box::new(Snapshot {
+                        tick: 1,
+                        ..Default::default()
+                    }),
+                    knowledge: None,
+                    event_units: vec![],
+                },
+            ),
+            (
+                second,
+                StateTransactionPayload::Patch {
+                    state: Box::new(WorldDelta {
+                        tick: 2,
+                        base_tick: 1,
+                        ..Default::default()
+                    }),
+                    knowledge: None,
+                    event_units: vec![],
+                },
+            ),
+        ];
+        let mut batch = Vec::new();
+        for (stamp, payload) in payloads {
+            let mut encoded =
+                encode_transaction(stamp, &payload, KNOWLEDGE_FRAME_LIMIT_BYTES).unwrap();
+            while let Some(frame) = encoded.next_frame() {
+                batch.push(frame);
+            }
+        }
+        let mut transactions = StateTransactions {
+            match_id: Some(7),
+            expected_map: Some(map),
+            ..Default::default()
+        };
+        let entity = Entity::from_bits(17);
+        let mut activated = Vec::new();
+        // One receiver's ordered batch is consumed directly. No frame-kind regrouping is allowed.
+        for frame in batch {
+            if let Some(staged) = transactions.frame(entity, frame, 0).unwrap() {
+                assert!(replica.activate_transaction(
+                    &staged.stamp,
+                    &staged.payload,
+                    Instant::now()
+                ));
+                let ack = transactions
+                    .assembler
+                    .as_mut()
+                    .unwrap()
+                    .activate(&staged.stamp)
+                    .unwrap();
+                activated.push(ack.stamp.transaction_id);
+            }
+        }
+        assert_eq!(activated, vec![1, 2]);
+        assert_eq!(replica.last_applied_tick, Some(2));
+        assert_eq!(transactions.retained_bytes(), 0);
     }
 }
