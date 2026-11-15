@@ -93,6 +93,41 @@ fn archive(engine_api: &str, case: &Case) -> PackageArchive {
                 .into_bytes(),
         );
     }
+    if engine_api == "^0.2.14" {
+        if case.feature == "behaviour Repair" {
+            let mut worker: turts_mod_api::UnitDef = ron::de::from_bytes(&files[WORKER]).unwrap();
+            worker.repairer = Some(turts_mod_api::RepairerDef {
+                rate_per_second: 1,
+                reach: 1.,
+                cost: vec![],
+                targets: turts_mod_api::TargetFilter {
+                    slots: turts_mod_api::SlotRelation::Same,
+                },
+                classes: vec![],
+                auto_range: None,
+            });
+            files.insert(
+                WORKER.into(),
+                ron::ser::to_string(&worker).unwrap().into_bytes(),
+            );
+        }
+        if case.feature == "behaviour CancelConstruction" {
+            let mut depot: turts_mod_api::UnitDef = ron::de::from_bytes(&files[DEPOT]).unwrap();
+            depot.placement = Some(turts_mod_api::SitePlacementDef {
+                gap: 2.,
+                node_clearance: 0.,
+                in_build_area: false,
+                site_health: turts_mod_api::Ratio {
+                    numerator: 1,
+                    denominator: 4,
+                },
+            });
+            files.insert(
+                DEPOT.into(),
+                ron::ser::to_string(&depot).unwrap().into_bytes(),
+            );
+        }
+    }
     PackageArchive::parse(&pack_files(&files).expect("pack in memory")).expect("package parses")
 }
 
@@ -116,6 +151,37 @@ fn check(case: &Case) {
     } else {
         format!(" (written in {}: {})", case.file, case.path)
     };
+    if [
+        "repairer",
+        "cancel_refunds.destroyed",
+        "technology cancel_refunds.destroyed",
+        "payment: ChargeOverTime",
+        "behaviour CancelConstruction",
+        "behaviour Repair",
+        "smart target OwnDamaged",
+        "needs: Repairer",
+        "health without removal",
+        "ItemField::State",
+        "ItemField::Paid",
+        "ItemField::Refund",
+        "Source::ConstructionQueue",
+    ]
+    .contains(&case.feature)
+    {
+        for requirement in ["^0.2.3", "^0.2.4", "^0.2.13"] {
+            let error = refusal(&archive(requirement, case), case.feature);
+            assert_eq!(
+                error.to_string(),
+                format!(
+                    "cedar/manifest.ron: engine_api: `{}` needs engine api 0.2.14; `{requirement}` admits 0.2.13{written_in}",
+                    case.feature
+                )
+            );
+        }
+        load(&archive("^0.2.14", case))
+            .unwrap_or_else(|error| panic!("{} now ships: {error}", case.feature));
+        return;
+    }
     if [
         "provides",
         "consumes",
@@ -1016,9 +1082,9 @@ fn a_package_with_no_new_feature_is_accepted_at_both_requirements() {
 /// that requires `^0.2.3` still accepts the engine.
 #[test]
 fn the_engine_api_retains_0_2_4_and_adds_0_2_5() {
-    assert_eq!(ENGINE_API_VERSION, "0.2.13");
-    assert_eq!(RELEASED_ENGINE_APIS.last(), Some(&"0.2.13"));
-    assert_eq!(RELEASED_ENGINE_APIS.len(), 15);
+    assert_eq!(ENGINE_API_VERSION, "0.2.14");
+    assert_eq!(RELEASED_ENGINE_APIS.last(), Some(&"0.2.14"));
+    assert_eq!(RELEASED_ENGINE_APIS.len(), 16);
 }
 
 /// The order rules keep their `rally` list on the way through the archive reader (the raw rules
