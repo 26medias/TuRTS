@@ -148,6 +148,7 @@ pub(crate) fn capture_intermediate_receipts(
                 .as_ref()
                 .is_some_and(|effect| effect.terminal)
             {
+                tracked.captured_tick = Some(committed.tick);
                 continue;
             }
             let ongoing =
@@ -167,7 +168,32 @@ pub(crate) fn capture_intermediate_receipts(
                     .iter()
                     .any(|row| row.unit == unit && row.job == job)
                 {
-                    fold_work_events(committed, actor, tracked, unit, job)?;
+                    let previous = Arc::clone(
+                        tracked
+                            .last_effect
+                            .as_ref()
+                            .expect("ongoing work has a snapshot"),
+                    );
+                    let previous = previous
+                        .work
+                        .as_ref()
+                        .expect("ongoing work snapshot exists");
+                    let recipe = previous
+                        .content
+                        .as_ref()
+                        .ok_or("ongoing work lacks content")?;
+                    if previous.identity.unit != unit || previous.identity.id != job {
+                        return Err("admission work identity changed after capture".into());
+                    }
+                    fold_work_events(
+                        committed,
+                        catalog,
+                        actor,
+                        key,
+                        tracked,
+                        &previous.identity,
+                        recipe,
+                    )?;
                     continue;
                 }
             }
@@ -226,6 +252,9 @@ fn validate_request_identity(
     {
         return Err("receipt event capture tick moved backwards".into());
     }
+    if tracked.result.is_none() && tracked.last_effect.is_some() {
+        return Err("represented request lost its admission result".into());
+    }
     if tracked
         .result
         .as_ref()
@@ -252,9 +281,6 @@ fn capture_request(
         }
         return Ok(None);
     };
-    if result.request != *key {
-        return Err("receipt result names a different request".into());
-    }
     if result.effect_watermark > watermark {
         if tracked.last_effect.is_some() {
             return Err("represented request lost its admission result".into());
@@ -594,12 +620,70 @@ fn validate_advance(
     Ok(())
 }
 
+fn validate_event_accounts(
+    catalog: &ContentCatalog,
+    actor: &BotActor,
+    actor_unit: u32,
+    recipe: &ContentId,
+    amounts: &Amounts,
+    previous: Option<&Amounts>,
+) -> Result<(), String> {
+    if amounts.is_empty() {
+        return Ok(());
+    }
+    // Only matching nonempty monetary events need authored-cost lookup. Keep
+    // cumulative receipt storage bounded by the immutable original endpoints.
+    let costs = catalog
+        .production
+        .get(recipe)
+        .map(|row| row.costs.as_slice())
+        .or_else(|| {
+            catalog
+                .technologies
+                .get(recipe)
+                .map(|row| row.costs.as_slice())
+        })
+        .ok_or("receipt event content is absent from the locked catalog")?;
+    for (account, amount) in amounts {
+        let full = costs
+            .iter()
+            .find(|cost| {
+                cost.resource == account.resource
+                    && match (cost.source, &account.endpoint) {
+                        (CostSource::SlotBalance, SourceEndpoint::SlotBalance(slot)) => {
+                            *slot == actor.slot
+                        }
+                        (
+                            CostSource::ProducerInventory,
+                            SourceEndpoint::Inventory {
+                                unit,
+                                port: InventoryPort::Main,
+                            },
+                        ) => *unit == actor_unit,
+                        _ => false,
+                    }
+            })
+            .ok_or("receipt event contains an unauthored payment endpoint or resource")?
+            .amount;
+        let prior = previous
+            .and_then(|rows| rows.get(account))
+            .copied()
+            .unwrap_or(0);
+        if prior.checked_add(*amount).is_none_or(|total| total > full) {
+            return Err("receipt event cumulative debit exceeds its authored cost".into());
+        }
+    }
+    Ok(())
+}
+
 fn fold_work_events(
     committed: &CommittedTick,
+    catalog: &ContentCatalog,
     actor: &BotActor,
+    key: &RequestKey,
     tracked: &mut TrackedRequest,
-    work_unit: u32,
-    work_job: u64,
+    identity: &WorkIdentity,
+    recipe: &ContentId,
 ) -> Result<(), String> {
     if tracked.captured_tick == Some(committed.tick) {
         return Ok(());
@@ -610,31 +694,39 @@ fn fold_work_events(
     {
         return Err("receipt event capture tick moved backwards".into());
     }
+    for event in committed
+        .events
+        .iter()
+        .filter(|event| event.owner_slot == actor.slot)
     {
-        for event in committed
-            .events
-            .iter()
-            .filter(|event| event.owner_slot == actor.slot)
-        {
-            match &event.kind {
-                EconomyEventKind::ProgressCharged { unit, job, charged }
-                    if *unit == work_unit && *job == work_job =>
-                {
-                    add_amounts(&mut tracked.flushed, &event_amounts(charged)?)?;
-                }
-                EconomyEventKind::ProductionStarted {
-                    producer,
-                    job,
-                    charged,
-                } if *producer == work_unit && *job == work_job => {
-                    let amounts = event_amounts(charged)?;
-                    if !tracked.started.is_empty() && tracked.started != amounts {
-                        return Err("production start changed its exact debit rows".into());
-                    }
-                    tracked.started = amounts;
-                }
-                _ => {}
+        match &event.kind {
+            EconomyEventKind::ProgressCharged { unit, job, charged }
+                if *unit == identity.unit && *job == identity.id =>
+            {
+                let amounts = event_amounts(charged)?;
+                validate_event_accounts(
+                    catalog,
+                    actor,
+                    key.unit,
+                    recipe,
+                    &amounts,
+                    Some(&tracked.flushed),
+                )?;
+                add_amounts(&mut tracked.flushed, &amounts)?;
             }
+            EconomyEventKind::ProductionStarted {
+                producer,
+                job,
+                charged,
+            } if *producer == identity.unit && *job == identity.id => {
+                let amounts = event_amounts(charged)?;
+                validate_event_accounts(catalog, actor, key.unit, recipe, &amounts, None)?;
+                if !tracked.started.is_empty() && tracked.started != amounts {
+                    return Err("production start changed its exact debit rows".into());
+                }
+                tracked.started = amounts;
+            }
+            _ => {}
         }
     }
     tracked.captured_tick = Some(committed.tick);
@@ -738,7 +830,7 @@ fn prepare_effect(
     } else {
         return Err("admitted work content is absent from the locked catalog".into());
     };
-    fold_work_events(committed, actor, tracked, identity.unit, identity.id)?;
+    fold_work_events(committed, catalog, actor, key, tracked, &identity, &recipe)?;
     let site = placed.map(|(_, site)| site).or_else(|| {
         view.construction
             .sites

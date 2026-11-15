@@ -660,3 +660,236 @@ fn cancelled_reserved_work_releases_its_claim_without_inventing_paid_costs() {
             && result.included[0].terminal
     );
 }
+
+#[test]
+fn intermediate_capture_folds_once_and_retains_terminal_without_an_account_batch() {
+    use turts_sim::receipts::{TerminalWork, TerminalWorkState};
+    let catalog = catalog();
+    let (key, tracked) = finalized_request(1, 1, 5);
+    let mut requests = BTreeMap::from([(key.clone(), tracked)]);
+    let mut first = view(1);
+    add_live_job(&mut first, 1, 5, 3, 3, 3);
+    capture_intermediate_receipts(
+        &first,
+        &CommittedTick {
+            tick: 1,
+            ..Default::default()
+        },
+        &catalog,
+        &actor(),
+        &mut requests,
+        watermark(1),
+    )
+    .unwrap();
+    let mut second = view(2);
+    add_live_job(&mut second, 1, 5, 5, 5, 1);
+    let committed = CommittedTick {
+        tick: 2,
+        events: vec![turts_sim::EconomyEvent {
+            tick: 2,
+            ordinal: 0,
+            owner_slot: 0,
+            kind: EconomyEventKind::ProgressCharged {
+                unit: 1,
+                job: 5,
+                charged: vec![event_row(1, 4)],
+            },
+        }],
+        ..Default::default()
+    };
+    for _ in 0..2 {
+        capture_intermediate_receipts(
+            &second,
+            &committed,
+            &catalog,
+            &actor(),
+            &mut requests,
+            watermark(2),
+        )
+        .unwrap();
+    }
+    assert_eq!(requests[&key].captured_tick, Some(2));
+    assert_eq!(requests[&key].accounted, Some(watermark(1)));
+    assert_eq!(requests[&key].flushed.values().copied().sum::<u64>(), 4);
+    let materialized = batch(&second, &committed, &catalog, &mut requests).unwrap();
+    assert_eq!(materialized.included[0].paid[0].amount, 5);
+    assert_eq!(requests[&key].flushed.values().copied().sum::<u64>(), 4);
+    let terminal = CommittedTick {
+        tick: 3,
+        events: vec![turts_sim::EconomyEvent {
+            tick: 3,
+            ordinal: 0,
+            owner_slot: 0,
+            kind: EconomyEventKind::ProgressCharged {
+                unit: 1,
+                job: 5,
+                charged: vec![event_row(1, 8)],
+            },
+        }],
+        terminal_work: vec![TerminalWork {
+            unit: 1,
+            job: 5,
+            recipe: id("paid"),
+            construction: false,
+            done: 12,
+            total: 12,
+            payment: Some(PaymentPolicy::ChargeOverTime),
+            paid: vec![paid_row(1, 12)],
+            reserved: vec![],
+            state: TerminalWorkState::Completed,
+        }],
+        ..Default::default()
+    };
+    capture_intermediate_receipts(
+        &view(3),
+        &terminal,
+        &catalog,
+        &actor(),
+        &mut requests,
+        watermark(3),
+    )
+    .unwrap();
+    let later = CommittedTick {
+        tick: 4,
+        ..Default::default()
+    };
+    capture_intermediate_receipts(
+        &view(4),
+        &later,
+        &catalog,
+        &actor(),
+        &mut requests,
+        watermark(4),
+    )
+    .unwrap();
+    let final_batch = batch(&view(4), &later, &catalog, &mut requests).unwrap();
+    let effect = &final_batch.included[0];
+    assert!(effect.terminal);
+    assert_eq!(effect.effect_watermark, watermark(1));
+    assert_eq!(effect.paid[0].amount, 12);
+    assert_eq!(effect.work.as_ref().unwrap().done, 12);
+    assert_eq!(requests[&key].flushed.values().copied().sum::<u64>(), 12);
+}
+
+#[test]
+fn intermediate_terminal_failure_does_not_commit_an_earlier_members_event_fold() {
+    use turts_sim::receipts::{TerminalWork, TerminalWorkState};
+    let catalog = catalog();
+    let (one, first) = finalized_request(1, 1, 5);
+    let (two, second) = finalized_request(2, 2, 6);
+    let mut requests = BTreeMap::from([(one.clone(), first), (two.clone(), second)]);
+    let mut initial = view(1);
+    add_live_job(&mut initial, 1, 5, 3, 3, 3);
+    add_live_job(&mut initial, 2, 6, 3, 3, 3);
+    capture_intermediate_receipts(
+        &initial,
+        &CommittedTick {
+            tick: 1,
+            ..Default::default()
+        },
+        &catalog,
+        &actor(),
+        &mut requests,
+        watermark(1),
+    )
+    .unwrap();
+    let mut next = view(2);
+    add_live_job(&mut next, 1, 5, 5, 5, 1);
+    let committed = CommittedTick {
+        tick: 2,
+        events: [(1, 5, 4), (2, 6, 12)]
+            .into_iter()
+            .enumerate()
+            .map(|(ordinal, (unit, job, amount))| turts_sim::EconomyEvent {
+                tick: 2,
+                ordinal: ordinal as u64,
+                owner_slot: 0,
+                kind: EconomyEventKind::ProgressCharged {
+                    unit,
+                    job,
+                    charged: vec![event_row(unit, amount)],
+                },
+            })
+            .collect(),
+        terminal_work: vec![TerminalWork {
+            unit: 2,
+            job: 6,
+            recipe: id("paid"),
+            construction: false,
+            done: 12,
+            total: 12,
+            payment: Some(PaymentPolicy::ChargeOverTime),
+            paid: vec![paid_row(2, 11)],
+            reserved: vec![],
+            state: TerminalWorkState::Completed,
+        }],
+        ..Default::default()
+    };
+    assert!(
+        capture_intermediate_receipts(
+            &next,
+            &committed,
+            &catalog,
+            &actor(),
+            &mut requests,
+            watermark(2),
+        )
+        .unwrap_err()
+        .contains("terminal cumulative paid")
+    );
+    for key in [&one, &two] {
+        assert_eq!(requests[key].captured_tick, Some(1));
+        assert_eq!(requests[key].accounted, Some(watermark(1)));
+        assert!(requests[key].flushed.is_empty());
+        assert!(requests[key].result.is_some());
+    }
+}
+
+#[test]
+fn intermediate_capture_refuses_unauthored_endpoint_before_retaining_it() {
+    let catalog = catalog();
+    let (key, tracked) = finalized_request(1, 1, 5);
+    let mut requests = BTreeMap::from([(key.clone(), tracked)]);
+    let mut initial = view(1);
+    add_live_job(&mut initial, 1, 5, 3, 3, 3);
+    capture_intermediate_receipts(
+        &initial,
+        &CommittedTick {
+            tick: 1,
+            ..Default::default()
+        },
+        &catalog,
+        &actor(),
+        &mut requests,
+        watermark(1),
+    )
+    .unwrap();
+    let committed = CommittedTick {
+        tick: 2,
+        events: vec![turts_sim::EconomyEvent {
+            tick: 2,
+            ordinal: 0,
+            owner_slot: 0,
+            kind: EconomyEventKind::ProgressCharged {
+                unit: 1,
+                job: 5,
+                charged: vec![event_row(999, 1)],
+            },
+        }],
+        ..Default::default()
+    };
+    assert!(
+        capture_intermediate_receipts(
+            &view(2),
+            &committed,
+            &catalog,
+            &actor(),
+            &mut requests,
+            watermark(2),
+        )
+        .unwrap_err()
+        .contains("unauthored payment endpoint")
+    );
+    assert!(requests[&key].flushed.is_empty());
+    assert_eq!(requests[&key].captured_tick, Some(1));
+}
