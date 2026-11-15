@@ -519,7 +519,7 @@ async function judgeLoss(view, input, checkpoints, at, kind, record, records, jo
     const steps = record.steps;
     const needsGather = kind === "conversion";
     const target = needsGather ? unitNear(joined.debug, "base:harvester", 12 + OFFSET.base, 8)
-        : unitNear(joined.debug, "base:command_center", 8 + OFFSET.base, 8);
+        : unitNear(joined.debug, "base:command_center", kind === "final_change" ? 2 : 8 + OFFSET.base, kind === "final_change" ? 2 : 8);
     assert(target, `${kind} loss fixture lacks its real owner-0 target mesh`);
     const before = notTimedOut(steps.before, "the selected target");
     assert.deepEqual(before.debug.selection, [target.unit_id], `${kind} target selection uses actual Bevy UI`);
@@ -632,7 +632,7 @@ async function judgeCase(view, params) {
     const checkpoints = await readCheckpoints(view);
     const at = (file) => checkpointForSave(input, checkpoints, `${file}.png`, `M2 ${caseId}`);
     // The packed map copy is the source map moved by the declared offset (tests/m2/browser_fixture.py).
-    validateTranslationReceipt(packageName, caseId, String(OFFSET[packageName]),
+    validateTranslationReceipt(packageName, caseId, String(caseId === "E9-browser-base-loss-final_change" ? 0 : OFFSET[packageName]),
         JSON.parse(await view.serverFile("map-fixture-translation.json")));
     // The packed recipe time (M2_RECIPE_DURATION_SCALE, tests/m2/recipe_duration.py): the true time
     // comes from mods/, never from the receipt, and every job must show the packed duration. The

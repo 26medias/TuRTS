@@ -1,18 +1,19 @@
 // turts-test-role: pure
 "use strict";
 
-function expectedOffset(packageName) {
+function expectedOffset(packageName, caseId) {
+    if (packageName === "base" && caseId === "E9-browser-base-loss-final_change") return 0;
     if (packageName === "base" || packageName === "haul" || packageName === "cedar") return 18;
     if (packageName === "acme") return 0;
     throw new Error(`unknown M2 fixture package ${packageName}`);
 }
 
-function fixtureOffset(packageName, rawOffset) {
+function fixtureOffset(packageName, rawOffset, caseId) {
     if (packageName === undefined) {
         if (rawOffset !== undefined) throw new Error("M2 fixture offset requires an explicit package");
         return 0;
     }
-    const expected = expectedOffset(packageName);
+    const expected = expectedOffset(packageName, caseId);
     if (rawOffset !== String(expected)) {
         throw new Error(`M2 ${packageName} fixture requires explicit X offset ${expected}`);
     }
@@ -25,7 +26,7 @@ function fixtureWorldX(value, offset) {
 }
 
 function validateTranslationReceipt(packageName, caseId, rawOffset, receipt) {
-    const offset = fixtureOffset(packageName, rawOffset);
+    const offset = fixtureOffset(packageName, rawOffset, caseId);
     if (!receipt || receipt.package !== packageName || receipt.case_id !== caseId || receipt.offset_x !== offset) {
         throw new Error("M2 fixture translation receipt does not match the launched package, case, and offset");
     }

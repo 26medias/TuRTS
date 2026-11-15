@@ -322,23 +322,24 @@ PYRENAME
 fi
 
 if [[ "$CASE_ID" == "E9-browser-base-loss-final_change" ]]; then
-    python3 - "$ARTIFACT_DIR/pack/base/maps/flat.ron" <<'PYBLOCKERS'
+    python3 - "$ROOT" "$ARTIFACT_DIR/pack/base" <<'PYBLOCKERS'
 from pathlib import Path
 import sys
-path = Path(sys.argv[1])
-text = path.read_text()
-anchor = "        (unit: \"base:harvester\", owner_slot: 1, pos: (x: 52.0, y: 8.0), contents: []),"
-if text.count(anchor) != 1:
-    raise SystemExit("expected one final existing placement before appending public output blockers")
-blockers = "\n        (unit: \"base:command_center\", owner_slot: 0, pos: (x: 8.0, y: 12.0), contents: []),\n        (unit: \"base:command_center\", owner_slot: 0, pos: (x: 8.0, y: 4.0), contents: []),"
-path.write_text(text.replace(anchor, anchor + blockers, 1))
+sys.path.insert(0, str(Path(sys.argv[1]) / "tests/m2"))
+from browser_fixture import add_expected_case_override
+package = Path(sys.argv[2])
+path = package / "maps/flat.ron"
+path.write_text(add_expected_case_override(path.read_text(), "base", "E9-browser-base-loss-final_change"))
 PYBLOCKERS
-    printf '%s\n' '{"fixture":"public base map clone with two appended owner-0 Command Center output blockers","placements":[{"unit":"base:command_center","owner_slot":0,"pos":[8,12]},{"unit":"base:command_center","owner_slot":0,"pos":[8,4]}],"prior_placement_ids_preserved":true,"recipe_and_duration_unchanged":true}' > "$ARTIFACT_DIR/package-profile-overrides.json"
+    printf '%s\n' '{"fixture":"public4x4 base map containing only original producer1; every legal output center overlaps its unchanged radius2 footprint","producer_id_preserved":true,"balances_unchanged":true,"recipe_and_duration_unchanged":true}' > "$ARTIFACT_DIR/package-profile-overrides.json"
 fi
 
 FIXTURE_X_OFFSET=0
 case "$PACKAGE" in
-    base) FIXTURE_X_OFFSET=18; MAP_RELATIVE_PATH="maps/flat.ron" ;;
+    base)
+        MAP_RELATIVE_PATH="maps/flat.ron"
+        if [[ "$CASE_ID" != "E9-browser-base-loss-final_change" ]]; then FIXTURE_X_OFFSET=18; fi
+        ;;
     haul) FIXTURE_X_OFFSET=18; MAP_RELATIVE_PATH="maps/field.ron" ;;
     cedar) FIXTURE_X_OFFSET=18; MAP_RELATIVE_PATH="maps/clearing.ron" ;;
     acme) MAP_RELATIVE_PATH="" ;;

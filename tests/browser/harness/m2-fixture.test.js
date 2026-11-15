@@ -33,3 +33,12 @@ test("old absolute world lookups fail after translation and translated lookups s
     assert.notEqual(translated, 8);
     assert.equal(fixtureWorldX(24, offset), 42);
 });
+
+test("only the tiny output-blocked base case uses an untranslated map", () => {
+    const caseId = "E9-browser-base-loss-final_change";
+    assert.equal(validateTranslationReceipt("base", caseId, "0", {
+        package: "base", case_id: caseId, offset_x: 0, map_translation: "none",
+    }), 0);
+    assert.throws(() => fixtureOffset("base", "0", "E9-browser-base-loss-refund"), /explicit X offset 18/);
+    assert.throws(() => fixtureOffset("base", "18", caseId), /explicit X offset 0/);
+});

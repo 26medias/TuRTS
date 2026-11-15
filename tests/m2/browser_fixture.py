@@ -86,14 +86,18 @@ def parse_map(text, package, translated=False):
 
 def add_expected_case_override(source_text, package, case_id):
     if package == "base" and case_id == "E9-browser-base-loss-final_change":
-        anchor = '        (unit: "base:harvester", owner_slot: 1, pos: (x: 52.0, y: 8.0), contents: []),'
-        blockers = (
-            '\n        (unit: "base:command_center", owner_slot: 0, pos: (x: 8.0, y: 12.0), contents: []),'
-            '\n        (unit: "base:command_center", owner_slot: 0, pos: (x: 8.0, y: 4.0), contents: []),'
-        )
-        if source_text.count(anchor) != 1:
-            raise ValueError("base final_change source placement anchor must occur exactly once")
-        return source_text.replace(anchor, anchor + blockers, 1)
+        # The radius2 producer fills this map. Every legal radius0.4 output
+        # center overlaps it, including the complete bounded fallback search.
+        # Keep its original ID/type/owner and both owners' unchanged balances.
+        text = source_text.replace('size: (x: 64.0, y: 64.0)', 'size: (x: 4.0, y: 4.0)', 1)
+        start = text.index('    placements: [')
+        end = text.index('    slot_economy:', start)
+        return text[:start] + (
+            '    placements: [\n'
+            '        (unit: "base:command_center", owner_slot: 0, pos: (x: 2.0, y: 2.0), contents: []),\n'
+            '    ],\n'
+            '    nodes: [],\n'
+        ) + text[end:]
     return source_text
 
 
