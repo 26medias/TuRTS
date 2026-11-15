@@ -37,6 +37,16 @@ mod tests {
     use super::*;
 
     #[test]
+    fn the_version_one_seed_encoding_has_a_fixed_reference_vector() {
+        // Independently encoded with Python hashlib/struct using the documented field lengths.
+        let profile = ContentId::parse("test:policy").unwrap();
+        assert_eq!(
+            derive_seed(7, &profile, 0, "economy", None),
+            18_439_708_680_288_459_266
+        );
+    }
+
+    #[test]
     fn field_boundaries_and_optional_goal_are_distinct() {
         let profile = ContentId::parse("test:policy").unwrap();
         assert_ne!(
