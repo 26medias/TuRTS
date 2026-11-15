@@ -65,7 +65,7 @@ use turts_sim::{
 
 /// Build the owner-specific reliable snapshot from one completed world view.
 pub fn snapshot_for(view: &WorldView, slot: SlotId) -> wire::Snapshot {
-    snapshot_for_with_permissions(view, slot, &crate::permissions::AllVisible).0
+    snapshot_projected(view, slot)
 }
 
 fn snapshot_projected(view: &WorldView, slot: SlotId) -> wire::Snapshot {

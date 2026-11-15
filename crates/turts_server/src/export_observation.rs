@@ -122,7 +122,7 @@ pub(super) fn snapshot(
     } else {
         ObservationHistory::capture(&projected)
     };
-    let wire = super::snapshot_projected(&projected, slot);
+    let wire = super::snapshot_for(&projected, slot);
     let mut history = history;
     if history.restricted {
         history.baseline = Some(Box::new(wire.clone()));
@@ -142,7 +142,7 @@ pub(super) fn delta(
             return Err(ObservationChanged);
         }
         return Ok((
-            super::delta_projected(batch, view, slot),
+            super::delta_for(batch, view, slot),
             ObservationHistory::default(),
         ));
     }
@@ -151,7 +151,7 @@ pub(super) fn delta(
     }
     let projected = project_view(view, slot, policy);
     let mut current = ObservationHistory::capture(&projected);
-    let canonical = super::snapshot_projected(&projected, slot);
+    let canonical = super::snapshot_for(&projected, slot);
     if previous
         .units
         .keys()
@@ -230,7 +230,7 @@ pub(super) fn delta(
         .retain(|r| units.contains(&r.repairer) && units.contains(&r.target));
     changes.repairs_cleared.sort_unstable();
     changes.repairs_cleared.dedup();
-    let mut wire = super::delta_projected(&changes, &projected, slot);
+    let mut wire = super::delta_for(&changes, &projected, slot);
     let old = previous.baseline.as_deref().ok_or(ObservationChanged)?;
     // Raw changes involving censored endpoints must not become duplicate wire rows:
     // their frequency or serialized size would otherwise disclose hidden activity.

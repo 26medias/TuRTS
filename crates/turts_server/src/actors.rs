@@ -22,7 +22,6 @@ pub(crate) use crate::actor_accounting::TrackedRequest;
 
 pub(crate) struct BotActorState {
     pub actor: BotActor,
-    pub player_id: u64,
     pub last_seq: Option<u32>,
     pub published: Option<ReconcileBatch>,
     pub acknowledged: Option<Watermark>,
@@ -139,12 +138,6 @@ pub(crate) fn install(app: &mut App) {
 }
 
 impl BotActors {
-    pub fn contains_player_id(&self, player_id: u64) -> bool {
-        self.entries
-            .values()
-            .any(|entry| entry.player_id == player_id)
-    }
-
     pub fn contains_actor(&self, actor: &BotActor) -> bool {
         self.entries
             .get(&actor.slot)
@@ -196,7 +189,6 @@ pub(crate) fn install_bot_actors(world: &mut World, actors: &[BotActor]) -> Resu
             actor.slot,
             BotActorState {
                 actor: actor.clone(),
-                player_id: u64::MAX - u64::from(actor.slot),
                 last_seq: None,
                 published: None,
                 acknowledged: None,
