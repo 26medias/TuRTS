@@ -579,3 +579,6 @@ mod tests {
 
 #[cfg(test)]
 mod scenarios;
+
+#[cfg(test)]
+mod replay;
