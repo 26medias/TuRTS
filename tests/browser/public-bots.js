@@ -10,6 +10,7 @@ fs.mkdirSync(out,{recursive:true});
 const packageSource=fs.existsSync(prepared+'/pack/stockyard')?prepared+'/pack/stockyard':sourceRoot+'/mods/stockyard';
 const fixture=out+'/pack/stockyard';fs.mkdirSync(out+'/pack',{recursive:true});fs.cpSync(packageSource,fixture,{recursive:true});
 const sourceMap=fs.readFileSync(fixture+'/maps/field.ron','utf8');
+const initialPlacementCount=[...sourceMap.matchAll(/unit:\s*"stockyard:/g)].length;
 const initialCounts={};for(const m of sourceMap.matchAll(/unit:\s*"stockyard:([^"]+)"\s*,\s*owner_slot:\s*1/g))initialCounts['stockyard:'+m[1]]=(initialCounts['stockyard:'+m[1]]||0)+1;
 const profile=fs.readFileSync(fixture+'/bots/opponent.ron','utf8');
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
@@ -18,7 +19,7 @@ function project(scene,pos){const m=scene.clip_from_world,c=[0,1,2,3].map(r=>[..
 (async()=>{
  let server,context,page,browserProfile,read;
  const started=Date.now();
- const result={status:'RUNNING',package:'stockyard',public_profile:'stockyard:opponent',seed:42,source:packageSource,initial_counts:initialCounts,profile_sha256:crypto.createHash('sha256').update(profile).digest('hex'),actions:[],samples:[],errors:[]};
+ const result={status:'RUNNING',package:'stockyard',public_profile:'stockyard:opponent',seed:42,source:packageSource,initial_counts:initialCounts,initial_placement_count:initialPlacementCount,profile_sha256:crypto.createHash('sha256').update(profile).digest('hex'),actions:[],samples:[],errors:[]};
  const save=()=>fs.writeFileSync(out+'/result.json',JSON.stringify(result,null,2));
  const units=s=>s.debug.replicated_world.units;
  const enemy=(s,kind)=>units(s).filter(u=>u.owner_slot===1&&(!kind||u.content_id==='stockyard:'+kind));
@@ -54,8 +55,8 @@ function project(scene,pos){const m=scene.clip_from_world,c=[0,1,2,3].map(r=>[..
    if(result.samples.at(-1)?.tick!==tick)result.samples.push({tick,seconds:(Date.now()-started)/1000,enemy_units:enemy(s).map(u=>({id:u.unit_id,content:u.content_id,hp:health(s,u.unit_id)})),nodes:s.debug.replicated_world.nodes});
    if(!result.gather){const node=s.debug.replicated_world.nodes.find(n=>n.pos.x>32&&n.remaining<2000);if(node){await capture('gather',s,[node.pos.x,node.pos.y]);}}
    if(!result.produce){const workers=enemy(s,'worker');if(workers.length>(initialCounts['stockyard:worker']||0)){const unit=workers.at(-1);await focus(unit.pos[0],unit.pos[1]);await select(unit.unit_id);await capture('produce',s);}}
-   if(!result.build){const towers=enemy(s,'tower');if(towers.length>(initialCounts['stockyard:tower']||0)){const unit=towers.find(u=>u.unit_id>12&&health(s,u.unit_id)===400);if(unit){await focus(unit.pos[0],unit.pos[1]);await select(unit.unit_id);await capture('build',s);}}}
-   if(!result.attack){const victim=units(s).find(u=>u.owner_slot===0&&health(s,u.unit_id)>0&&health(s,u.unit_id)<u.max_health);if(victim){await focus(victim.pos[0],victim.pos[1]);await select(victim.unit_id);await capture('attack',s);}}
+   if(!result.build){const towers=enemy(s,'tower');if(towers.length>(initialCounts['stockyard:tower']||0)){const unit=towers.find(u=>u.unit_id>initialPlacementCount&&health(s,u.unit_id)===400);if(unit){await focus(unit.pos[0],unit.pos[1]);await select(unit.unit_id);await capture('build',s);}}}
+   if(!result.attack){const victim=units(s).find(u=>u.owner_slot===0&&u.max_health>=400&&health(s,u.unit_id)>u.max_health/2&&health(s,u.unit_id)<u.max_health);if(victim){await focus(victim.pos[0],victim.pos[1]);await select(victim.unit_id);await capture('attack',s);}}
    if(result.gather&&result.produce&&result.build&&result.attack)break;
    if(!alive(s))throw Error('match ended before all public profile actions were visible');
    save();await sleep(400);
