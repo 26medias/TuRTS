@@ -18,6 +18,7 @@ pub mod receipts;
 pub mod registry;
 pub mod rules_adapter;
 pub mod slots;
+pub mod terrain;
 pub mod unit_index;
 pub mod visibility;
 pub mod world;

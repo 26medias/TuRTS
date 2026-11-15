@@ -339,6 +339,7 @@ pub(crate) fn finish_tick_audit(world: &mut World) {
 
 #[derive(Default)]
 struct WriteSet {
+    terrain_step: Option<crate::terrain::PreparedCellEdit>,
     terminal_work: Vec<crate::receipts::TerminalWork>,
     operating_activations: Vec<OperatingActivationWrite>,
     repairs: BTreeMap<u32, super::repair::RepairUnitState>,
@@ -1016,6 +1017,29 @@ impl Transaction<'_> {
         Ok(())
     }
 
+    pub(crate) fn world(&self) -> &World {
+        self.world
+    }
+
+    /// A terrain prism and its accounts share one WriteSet. Preallocate its column/chunk
+    /// overlay before this call; final commit does not allocate terrain storage.
+    pub(crate) fn stage_terrain_cell(
+        &mut self,
+        edit: crate::terrain::PreparedCellEdit,
+    ) -> Result<(), RejectReason> {
+        if self.writes.terrain_step.is_some()
+            || !self
+                .world
+                .get_resource::<crate::terrain::TerrainState>()
+                .is_some_and(|terrain| terrain.validates(&edit))
+        {
+            return Err(RejectReason::IntegrityViolation);
+        }
+        self.writes.strict_m3 = true;
+        self.writes.terrain_step = Some(edit);
+        Ok(())
+    }
+
     pub(crate) fn stage_account(
         &mut self,
         endpoint: Endpoint,
@@ -1027,6 +1051,14 @@ impl Transaction<'_> {
 
     fn commit(self) -> Result<(), RejectReason> {
         self.preflight()?;
+        if let Some(edit) = &self.writes.terrain_step
+            && !self
+                .world
+                .get_resource::<crate::terrain::TerrainState>()
+                .is_some_and(|terrain| terrain.validates(edit))
+        {
+            return Err(RejectReason::IntegrityViolation);
+        }
         for (&source, state) in &self.writes.repairs {
             if crate::unit_index::unit_entity(self.world, source).is_none()
                 || self.writes.removed.iter().any(|row| row.unit == source)
@@ -1073,6 +1105,11 @@ impl Transaction<'_> {
             super::operating::clear_hold(world, unit);
             super::power::remove_active(world, unit);
             super::income::on_remove(world, unit);
+        }
+        if let Some(edit) = writes.terrain_step.take() {
+            world
+                .resource_mut::<crate::terrain::TerrainState>()
+                .apply_prevalidated(edit);
         }
         transaction_m3::apply_overlays(world, &mut writes);
         if !writes.repairs.is_empty() {
