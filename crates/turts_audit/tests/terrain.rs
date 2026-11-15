@@ -633,3 +633,202 @@ fn disabled_explicit_unload_retains_both_fractional_clocks_and_saved_work() {
             .is_empty()
     );
 }
+
+#[test]
+fn renamed_balance_mod_uses_actual_two_cube_prisms_and_never_routes_yield_to_another_slot() {
+    let package = "terrain_stockyard";
+    let cid = |local: &str| ContentId::parse(&format!("{package}:{local}")).unwrap();
+    let path =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../mods/terrain_stockyard");
+    let archive = PackageArchive::parse(&pack_dir(&path).unwrap()).unwrap();
+    let catalog = archive.content().unwrap();
+    let (file, mut map) = archive.maps().unwrap().remove(0);
+    map.visibility = None;
+    map.size = MapSize { x: 8.0, y: 8.0 };
+    let actor = map
+        .placements
+        .iter()
+        .find(|row| row.owner_slot == 0 && row.unit == cid("porter").to_string())
+        .unwrap()
+        .clone();
+    map.placements = vec![Placement {
+        pos: WorldPos { x: 1.5, y: 1.5 },
+        ..actor
+    }];
+    let terrain = map.terrain.as_mut().unwrap();
+    assert_eq!(
+        (
+            terrain.cell_width,
+            terrain.elevation_step,
+            terrain.length_scale
+        ),
+        (2000, 500, 1000)
+    );
+    terrain.columns = 4;
+    terrain.rows = 4;
+    terrain.initial_heights.clear();
+    let TerrainGenerationDef::Version1 { bands } = &mut terrain.generation;
+    bands.last_mut().unwrap().top = 0;
+    let resolved = turts_mod_runtime::terrain::validate_terrain_map(
+        &PackageId(package.into()),
+        &file,
+        &map,
+        &catalog,
+    )
+    .unwrap();
+    let mut app = turts_sim::headless_app(20);
+    let staged = turts_sim::stage_package_with_terrain(
+        app.world(),
+        catalog,
+        SourceDef { file, value: map },
+        20,
+        cid("field"),
+        resolved,
+        Some(turts_sim::terrain::PrivateTerrainSeed::new(17)),
+    )
+    .unwrap();
+    turts_sim::install_package(app.world_mut(), staged);
+    turts_sim::visibility::initialize_context(app.world_mut(), 91, &[0, 1]).unwrap();
+    app.update();
+    let unit = turts_sim::audit_state(app.world_mut()).raw_units[0].unit_id;
+    app.world_mut().resource_mut::<AuditTrail>().enable();
+    let mut fixture = Fixture { app, unit, seq: 0 };
+    let mut records = vec![EconomyLogRecord::Initial(turts_sim::audit_state(
+        fixture.app.world_mut(),
+    ))];
+    let cell = TerrainCell { x: 1, y: 0 };
+    for (seq, (tool, height, ticks)) in [
+        ("scraper", -1, 220),
+        ("leveler", 0, 90),
+        ("scraper", -1, 220),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let state = turts_sim::audit_state(fixture.app.world_mut());
+        let policy = state
+            .catalog
+            .as_ref()
+            .unwrap()
+            .order_definitions
+            .iter()
+            .find(|row| row.id == cid("order_work"))
+            .unwrap();
+        fixture
+            .app
+            .world_mut()
+            .resource_mut::<CommandQueue>()
+            .0
+            .push_back(Command {
+                slot: SlotId(0),
+                seq: seq as u32 + 1,
+                kind: CommandKind::Order(Box::new(turts_sim::OrderCommand {
+                    order: policy.id.clone(),
+                    behaviour: policy.behaviour,
+                    target_kind: policy.target,
+                    policy: Some(turts_sim::OrderPolicyAudit {
+                        id: policy.id.clone(),
+                        behaviour: policy.behaviour,
+                        target: policy.target,
+                        fire: policy.fire,
+                        engage: policy.engage,
+                        units: policy.units.clone(),
+                        queue_depth: policy.queue_depth,
+                        unit_capabilities: policy.unit_capabilities.clone(),
+                    }),
+                    units: vec![unit],
+                    target: OrderTargetSim::TerrainWork {
+                        tool: cid(tool),
+                        cells: TerrainRect {
+                            min: cell,
+                            max: TerrainCell {
+                                x: cell.x + 1,
+                                y: cell.y + 1,
+                            },
+                        },
+                        target_elevation: height,
+                    },
+                    queue: QueueMode::Replace,
+                    group: 0,
+                    allowed_units: policy.units.clone(),
+                    queue_depth: policy.queue_depth,
+                })),
+            });
+        fixture.tick(&mut records, ticks);
+    }
+    save("renamed-slot-balance-two-cube-prisms", &records);
+    validate_records(&records).unwrap();
+    let state = final_state(&records);
+    let column = state
+        .raw_terrain
+        .as_ref()
+        .unwrap()
+        .columns_state
+        .iter()
+        .find(|column| column.cell == cell)
+        .unwrap();
+    assert_eq!(
+        (column.surface, column.natural_top, column.revision),
+        (-1, -1, 3)
+    );
+    assert_eq!(
+        state
+            .economy
+            .balances
+            .iter()
+            .find(|row| row.slot == 0 && row.resource == cid("loam"))
+            .unwrap()
+            .on_hand,
+        50
+    );
+    let mut redirected = records.clone();
+    for record in &mut redirected {
+        states(record, &mut |state| {
+            let revision = state
+                .raw_terrain
+                .as_ref()
+                .unwrap()
+                .columns_state
+                .iter()
+                .find(|column| column.cell == cell)
+                .unwrap()
+                .revision;
+            if revision > 0 {
+                for row in &mut state.economy.balances {
+                    if row.resource == cid("loam") {
+                        if row.slot == 0 {
+                            row.on_hand -= 2;
+                        } else if row.slot == 1 {
+                            row.on_hand += 2;
+                        }
+                    }
+                }
+            }
+        });
+        let redirect = |events: &mut Vec<turts_sim::EconomyEvent>| {
+            for event in events {
+                if let EconomyEventKind::TerrainStepCommitted {
+                    placed: false,
+                    outputs,
+                    ..
+                } = &mut event.kind
+                {
+                    for row in outputs {
+                        row.source = turts_sim::economy::events::EventSource::Slot(1);
+                    }
+                }
+            }
+        };
+        match record {
+            EconomyLogRecord::Operation(operation) => redirect(&mut operation.events),
+            EconomyLogRecord::Tick { events, .. } => redirect(events),
+            _ => {}
+        }
+        states(record, &mut |state| redirect(&mut state.pending_events));
+    }
+    assert!(
+        validate_records(&redirected)
+            .unwrap_err()
+            .contains("terrain step resource payload")
+    );
+}
