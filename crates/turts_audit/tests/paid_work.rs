@@ -414,6 +414,36 @@ fn cancellation_flushes_actual_paid_without_duplicating_refund() {
         });
     ticks(&mut app, &mut records, 2);
     assert_records("cancel", &records);
+    let index=records.iter().position(|record|matches!(record,EconomyLogRecord::Operation(operation) if operation.events.iter().any(|event|matches!(&event.kind,EconomyEventKind::ProductionCancelled{refunded,..} if !refunded.is_empty())))).unwrap();
+    let mut bad = records[..=index].to_vec();
+    let EconomyLogRecord::Operation(operation) = bad.last_mut().unwrap() else {
+        unreachable!()
+    };
+    let event = operation
+        .events
+        .iter_mut()
+        .find(|event| matches!(event.kind, EconomyEventKind::ProductionCancelled { .. }))
+        .unwrap();
+    if let EconomyEventKind::ProductionCancelled { refunded, .. } = &mut event.kind {
+        refunded[0].amount += 1;
+    }
+    operation
+        .after
+        .economy
+        .balances
+        .iter_mut()
+        .find(|row| row.resource == cid("credits"))
+        .unwrap()
+        .on_hand += 1;
+    let ordinal = event.ordinal;
+    let event = event.clone();
+    *operation
+        .after
+        .pending_events
+        .iter_mut()
+        .find(|row| row.ordinal == ordinal)
+        .unwrap() = event;
+    assert!(validate_records(&bad).unwrap_err().contains("refund"));
 }
 #[test]
 fn fractional_repair_stream_preserves_debt_and_rejects_coherent_heal_tampering() {
@@ -478,6 +508,22 @@ fn fractional_repair_stream_preserves_debt_and_rejects_coherent_heal_tampering()
             .unwrap();
         mirror.current += 1;
         assert!(validate_records(&bad).unwrap_err().contains("repair"));
+        let mut bad = records[..=index].to_vec();
+        let EconomyLogRecord::Operation(operation) = bad.last_mut().unwrap() else {
+            unreachable!()
+        };
+        let row = operation
+            .after
+            .raw_repairs
+            .iter_mut()
+            .find(|row| !row.remainders.is_empty())
+            .unwrap();
+        row.remainders[0].remainder = (row.remainders[0].remainder + 1) % 4;
+        assert!(
+            validate_records(&bad)
+                .unwrap_err()
+                .contains("repair remainder")
+        );
     }
 }
 
@@ -563,4 +609,49 @@ fn destruction_refund_wide_discard_stream_and_coherent_tampering() {
         .find(|row| row.ordinal == ordinal)
         .unwrap() = event;
     assert!(validate_records(&bad).unwrap_err().contains("destruction"));
+}
+
+#[test]
+fn paid_wait_income_recovery_and_hold_hysteresis_are_independently_replayed() {
+    let mut fixture = Fixture::new();
+    fixture.ticks("train", 40);
+    fixture.map.slot_economy[0].balances[0].amount = 1;
+    fixture.unit("supply").income = Some(IncomeDef {
+        resource: cid("credits").to_string(),
+        amount: 7,
+        period_ms: 1000,
+    });
+    let mut app = fixture.app();
+    production::queue_production(app.world_mut(), SlotId(0), 1, cid("train")).unwrap();
+    let mut records = start(&mut app);
+    ticks(&mut app, &mut records, 60);
+    assert_records("wait-income-recovery", &records);
+    assert!(records.iter().any(|record|matches!(record,EconomyLogRecord::Operation(operation) if operation.after.raw_queues.iter().flat_map(|queue|&queue.jobs).any(|job|job.funding.as_ref().is_some_and(|funding|funding.waiting_for_funds.is_some())))));
+    let index=records.iter().position(|record|matches!(record,EconomyLogRecord::Operation(operation) if operation.after.raw_queues.iter().flat_map(|queue|&queue.jobs).any(|job|job.funding.as_ref().is_some_and(|funding|funding.waiting_for_funds.is_none() && funding.held_since_tick.is_some() && funding.recovery_ticks==1)))).expect("affordable progress while display hold remains true");
+    let mut bad = records[..=index].to_vec();
+    let EconomyLogRecord::Operation(operation) = bad.last_mut().unwrap() else {
+        unreachable!()
+    };
+    let job = operation
+        .after
+        .raw_queues
+        .iter_mut()
+        .flat_map(|queue| &mut queue.jobs)
+        .find(|job| {
+            job.funding
+                .as_ref()
+                .is_some_and(|funding| funding.held_since_tick.is_some())
+        })
+        .unwrap();
+    *job.funding
+        .as_mut()
+        .unwrap()
+        .held_since_tick
+        .as_mut()
+        .unwrap() += 1;
+    assert!(
+        validate_records(&bad)
+            .unwrap_err()
+            .contains("hold/recovery")
+    );
 }
