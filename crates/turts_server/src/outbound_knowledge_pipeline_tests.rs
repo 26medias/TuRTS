@@ -2,6 +2,7 @@
 use super::*;
 use lightyear::link::recv_payload_from_bytes;
 use lightyear::prelude::server::{ClientOf, ServerPlugins};
+use lightyear::transport::plugin::TransportSystems;
 use std::collections::BTreeMap;
 use turts_client::{
     content::ClientContent,
@@ -16,6 +17,50 @@ const TICK_MS: u64 = 50;
 const WARMUP_TICKS: u32 = 100;
 const MEASURED_TICKS: u32 = 1200;
 const FINAL_TICK: u32 = WARMUP_TICKS + MEASURED_TICKS;
+
+// The app contains both endpoints. Charge its complete registered receive and
+// send service to each peer rather than infer a cheaper per-endpoint share.
+#[derive(Resource, Default)]
+struct BatchTransportClock {
+    receive_start: Option<Instant>,
+    send_start: Option<Instant>,
+    receive_ns: u64,
+    send_ns: u64,
+}
+fn elapsed_ns(start: Instant) -> u64 {
+    u64::try_from(start.elapsed().as_nanos()).unwrap_or(u64::MAX)
+}
+fn begin_batch_receive(mut clock: ResMut<BatchTransportClock>) {
+    clock.receive_start = Some(Instant::now());
+}
+fn end_batch_receive(mut clock: ResMut<BatchTransportClock>) {
+    clock.receive_ns = elapsed_ns(clock.receive_start.take().unwrap());
+}
+fn begin_batch_send(mut clock: ResMut<BatchTransportClock>) {
+    clock.send_start = Some(Instant::now());
+}
+fn end_batch_send(mut clock: ResMut<BatchTransportClock>) {
+    clock.send_ns = elapsed_ns(clock.send_start.take().unwrap());
+}
+#[derive(serde::Serialize)]
+struct ClientBatchSample {
+    application_time_ms: u64,
+    shared_transport_receive_ns: u64,
+    shared_transport_send_ns: u64,
+    acknowledgement_queue_ns: u64,
+    assembly_validation_activation_ns: u64,
+    total_ns: u64,
+    activated_transactions: usize,
+}
+fn batch_quantiles(samples: &[ClientBatchSample]) -> Option<(u64, u64)> {
+    let mut sorted = samples
+        .iter()
+        .map(|sample| sample.total_ns)
+        .collect::<Vec<_>>();
+    sorted.sort_unstable();
+    let maximum = sorted.last().copied()?;
+    Some((sorted[(sorted.len() * 99).div_ceil(100) - 1], maximum))
+}
 
 #[derive(Resource, Default)]
 struct CapturedFrames {
@@ -141,6 +186,7 @@ struct Peer {
     cancellations: Vec<(u64, u64, String)>,
     issued_messages: BTreeSet<u16>,
     max_batch: usize,
+    batch_samples: Vec<ClientBatchSample>,
     max_age_ms: u64,
     max_backlog: usize,
     first_measured_backlog: Option<usize>,
@@ -196,9 +242,36 @@ impl Harness {
         });
         app.add_plugins(turts_net_lightyear::ProtocolPlugin);
         app.init_resource::<CapturedFrames>()
+            .init_resource::<BatchTransportClock>()
             .init_resource::<PumpReports>()
             .init_resource::<StoppedPeers>();
+        app.add_systems(
+            PreUpdate,
+            begin_batch_receive
+                .before(TransportSystems::Receive)
+                .before(MessageSystems::Receive),
+        );
         app.add_systems(PreUpdate, capture_frames.after(MessageSystems::Receive));
+        app.add_systems(
+            PreUpdate,
+            end_batch_receive
+                .after(TransportSystems::Receive)
+                .after(MessageSystems::Receive)
+                .after(capture_frames),
+        );
+        app.add_systems(
+            PostUpdate,
+            begin_batch_send
+                .after(pump_in_production_schedule)
+                .before(MessageSystems::Send)
+                .before(TransportSystems::Send),
+        );
+        app.add_systems(
+            PostUpdate,
+            end_batch_send
+                .after(MessageSystems::Send)
+                .after(TransportSystems::Send),
+        );
         app.add_systems(
             PostUpdate,
             pump_in_production_schedule.before(MessageSystems::Send),
@@ -276,6 +349,7 @@ impl Harness {
                     cancellations: vec![],
                     issued_messages: BTreeSet::new(),
                     max_batch: 0,
+                    batch_samples: vec![],
                     max_age_ms: 0,
                     max_backlog: 0,
                     first_measured_backlog: None,
@@ -348,7 +422,9 @@ impl Harness {
             }
         }
         self.packets = future;
+        let mut acknowledgement_queue_ns = Vec::with_capacity(self.peers.len());
         for peer in &mut self.peers {
+            let queue_start = Instant::now();
             while peer
                 .activation_acks
                 .front()
@@ -361,13 +437,18 @@ impl Harness {
                     .unwrap()
                     .send::<ReliableChannel>(ack);
             }
+            acknowledgement_queue_ns.push(elapsed_ns(queue_start));
         }
         self.app.insert_resource(PumpClock {
             epoch: self.epoch,
             now,
         });
         self.app.update();
-        for peer in &mut self.peers {
+        let transport_clock = self.app.world().resource::<BatchTransportClock>();
+        let shared_receive_ns = transport_clock.receive_ns;
+        let shared_send_ns = transport_clock.send_ns;
+        for (peer, acknowledgement_queue_ns) in self.peers.iter_mut().zip(acknowledgement_queue_ns)
+        {
             let report = self
                 .app
                 .world_mut()
@@ -394,6 +475,7 @@ impl Harness {
                 peer.first_measured_backlog.get_or_insert(report.backlog);
                 peer.last_measured_backlog = report.backlog;
             }
+            let consume_start = Instant::now();
             let (cancels, frames) = {
                 let mut captured = self.app.world_mut().resource_mut::<CapturedFrames>();
                 (
@@ -458,7 +540,23 @@ impl Harness {
                     }
                 }
             }
+            let consume_ns = elapsed_ns(consume_start);
             peer.max_batch = peer.max_batch.max(activations);
+            // Keep empty updates and the final drain. Bootstrap/warm-up is excluded.
+            if self.now_ms > u64::from(WARMUP_TICKS) * TICK_MS {
+                peer.batch_samples.push(ClientBatchSample {
+                    application_time_ms: self.now_ms,
+                    shared_transport_receive_ns: shared_receive_ns,
+                    shared_transport_send_ns: shared_send_ns,
+                    acknowledgement_queue_ns,
+                    assembly_validation_activation_ns: consume_ns,
+                    total_ns: shared_receive_ns
+                        .saturating_add(shared_send_ns)
+                        .saturating_add(acknowledgement_queue_ns)
+                        .saturating_add(consume_ns),
+                    activated_transactions: activations,
+                });
+            }
         }
         for (index, peer) in self.peers.iter().enumerate() {
             for (from, to, returning) in [
@@ -498,10 +596,20 @@ impl Harness {
             "max_unacknowledged_age_ms": peer.max_age_ms, "max_encoded_successor_bytes": peer.max_backlog,
             "first_measured_backlog_bytes": peer.first_measured_backlog, "final_backlog_bytes": peer.last_measured_backlog,
             "restart_error": peer.restart_error,
+            "client_receive_batches": peer.batch_samples,
+            "client_batch_p99_ns": batch_quantiles(&peer.batch_samples).map(|quantiles| quantiles.0),
+            "client_batch_max_ns": batch_quantiles(&peer.batch_samples).map(|quantiles| quantiles.1),
         })).collect::<Vec<_>>();
         let report = serde_json::json!({"label": label, "activation_ack_rtt_ms": self.rtt_ms, "application_step_ms": STEP_MS,
             "sender_hz": 20, "snapshot_units": 1000, "position_updates_per_tick": 500, "warmup_ticks": WARMUP_TICKS,
-            "measured_ticks": MEASURED_TICKS, "one_delivery_burst_ms": self.burst_at_ms.map_or(0, |_| TICK_MS), "peers": rows});
+            "measured_ticks": MEASURED_TICKS,
+            "release_profile": !cfg!(debug_assertions),
+            "client_batch_bounds_enforced": !cfg!(debug_assertions),
+            "client_batch_p99_limit_ns": 16_667_000u64,
+            "client_batch_max_limit_ns": 33_333_000u64,
+            "client_batch_timing": "whole peer consume/assembly/validation/activation/ACK queue plus complete shared registered transport receive/decode and send; shared work charged to every peer; empty warmed updates and final drain included",
+            "quantile": "nearest-rank ceil(0.99*n)-1",
+            "one_delivery_burst_ms": self.burst_at_ms.map_or(0, |_| TICK_MS), "peers": rows});
         if let Some(directory) = std::env::var_os("TURTS_VISIBILITY_PIPELINE_EVIDENCE") {
             let directory = std::path::PathBuf::from(directory);
             std::fs::create_dir_all(&directory).unwrap();
@@ -521,6 +629,23 @@ impl Harness {
                 peer.max_backlog,
                 peer.restart_error
             );
+            if let Some((p99, maximum)) = batch_quantiles(&peer.batch_samples) {
+                eprintln!(
+                    "{label} peer{index}: client_batches={} batch_p99_ns={p99} batch_max_ns={maximum} release_bounds={}",
+                    peer.batch_samples.len(),
+                    !cfg!(debug_assertions)
+                );
+                if !cfg!(debug_assertions) {
+                    assert!(
+                        p99 <= 16_667_000,
+                        "client batch p99 {p99} ns exceeds 60 FPS service period"
+                    );
+                    assert!(
+                        maximum <= 33_333_000,
+                        "client batch maximum {maximum} ns exceeds 30 FPS service period"
+                    );
+                }
+            }
         }
     }
 }
@@ -555,6 +680,11 @@ fn frozen_20hz_pipeline_preserves_every_tick_at_50_and_100_ms_activation_ack_rtt
             "activation ticks must be exact-once and ordered"
         );
         assert!(peer.max_batch >= 2);
+        assert!(
+            peer.batch_samples
+                .iter()
+                .any(|sample| sample.activated_transactions >= 2)
+        );
         assert!(peer.restart_error.is_none());
         assert!(peer.max_age_ms <= 1000);
         assert!(peer.max_backlog <= 1024 * 1024);
