@@ -411,6 +411,8 @@ pub struct OperatingRateView {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OperatingView {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub holds: Vec<super::operating::OperatingHold>,
     pub rate_q: u64,
     pub supply: Vec<SupplyView>,
     pub rates: Vec<OperatingRateView>,
@@ -481,6 +483,7 @@ fn operating_view(world: &World) -> Option<OperatingView> {
     }
     rates.sort_by_key(|row| row.unit);
     Some(OperatingView {
+        holds: super::operating::holds(world),
         rate_q: power::rate_q(world),
         supply: power::supply_rows(world)
             .into_iter()
@@ -497,6 +500,8 @@ fn operating_view(world: &World) -> Option<OperatingView> {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AuditState {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub raw_operating_holds: Vec<super::operating::OperatingHold>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub raw_operating: Option<OperatingAudit>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -1396,6 +1401,7 @@ pub fn audit_state(world: &mut World) -> AuditState {
     };
     let m3 = super::views_m3::m3_audit_state(world);
     AuditState {
+        raw_operating_holds: super::operating::holds(world),
         raw_operating: super::power::audit_state(world),
         raw_income_clocks: super::income::clock_audit(world)
             .into_iter()

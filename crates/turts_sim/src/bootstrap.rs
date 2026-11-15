@@ -544,6 +544,7 @@ pub fn stage_package(
 
 /// Commit a fully validated package. This operation has no fallible steps.
 pub fn install_package(world: &mut World, staged: StagedPackage) {
+    world.remove_resource::<crate::economy::operating::OperatingHolds>();
     world.remove_resource::<OperatingResources>();
     income::clear(world);
     world.insert_resource(RateQ(staged.rate_q));
@@ -984,6 +985,48 @@ mod operating_tests {
     }
 
     #[test]
+    fn holds_publish_owner_and_first_tick_once_then_clear_once() {
+        use crate::economy::{operating, transaction::AuditTrail};
+        let mut app = crate::headless_app(20);
+        let (catalog, map) = fixture();
+        let staged = stage_package(app.world(), catalog, map, 20).unwrap();
+        install_package(app.world_mut(), staged);
+        app.world_mut().resource_mut::<AuditTrail>().enable();
+        let empty = serde_json::to_value(views::audit_state(app.world_mut())).unwrap();
+        assert!(empty.get("raw_operating_holds").is_none());
+        assert!(empty["economy"]["operating"].get("holds").is_none());
+        app.world_mut().resource_mut::<crate::Tick>().0 = 5;
+        operating::hold(app.world_mut(), 2, crate::RejectReason::ArithmeticOverflow);
+        assert_eq!(app.world().resource::<AuditTrail>().operations.len(), 1);
+        let state = views::audit_state(app.world_mut());
+        assert_eq!(state.raw_operating_holds.len(), 1);
+        assert_eq!(state.raw_operating_holds[0].owner_slot, 0);
+        assert_eq!(state.raw_operating_holds[0].since_tick, 5);
+        assert_eq!(
+            state.economy.operating.as_ref().unwrap().holds,
+            state.raw_operating_holds
+        );
+        app.world_mut().resource_mut::<crate::Tick>().0 = 9;
+        operating::hold(app.world_mut(), 2, crate::RejectReason::ArithmeticOverflow);
+        assert_eq!(app.world().resource::<AuditTrail>().operations.len(), 1);
+        assert_eq!(operating::holds(app.world())[0].since_tick, 5);
+        operating::clear_hold(app.world_mut(), 2);
+        operating::clear_hold(app.world_mut(), 2);
+        assert_eq!(app.world().resource::<AuditTrail>().operations.len(), 2);
+        let state = views::audit_state(app.world_mut());
+        assert!(state.raw_operating_holds.is_empty());
+        assert!(state.economy.operating.as_ref().unwrap().holds.is_empty());
+        let last = app
+            .world()
+            .resource::<AuditTrail>()
+            .operations
+            .last()
+            .unwrap();
+        assert_eq!(last.before.raw_operating_holds.len(), 1);
+        assert!(last.after.raw_operating_holds.is_empty());
+    }
+
+    #[test]
     fn no_operating_install_clears_old_supply_and_income_without_audit_fields() {
         let mut app = crate::headless_app(20);
         let (catalog, map) = fixture();
@@ -1000,6 +1043,18 @@ mod operating_tests {
         )
         .unwrap();
         income::on_activate(app.world_mut(), 99, Some(clock));
+        app.world_mut()
+            .insert_resource(crate::economy::operating::OperatingHolds(BTreeMap::from([
+                (
+                    99,
+                    crate::economy::operating::OperatingHold {
+                        unit: 99,
+                        owner_slot: 0,
+                        reason: crate::RejectReason::ArithmeticOverflow,
+                        since_tick: 4,
+                    },
+                ),
+            ])));
         let mut catalog = catalog;
         for unit in catalog.units.values_mut() {
             unit.provides.clear();
@@ -1019,10 +1074,12 @@ mod operating_tests {
         install_package(app.world_mut(), staged);
         assert!(!app.world().contains_resource::<OperatingResources>());
         assert!(income::clock_audit(app.world()).is_empty());
+        assert!(crate::economy::operating::holds(app.world()).is_empty());
         assert_eq!(app.world().resource::<RateQ>().0, 1);
         let json = serde_json::to_value(views::audit_state(app.world_mut())).unwrap();
         assert!(json.get("raw_operating").is_none());
         assert!(json.get("raw_income_clocks").is_none());
+        assert!(json.get("raw_operating_holds").is_none());
         assert!(json["economy"].get("operating").is_none());
     }
 }
