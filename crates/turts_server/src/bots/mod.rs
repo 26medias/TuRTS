@@ -255,6 +255,24 @@ fn drive_inner(world: &mut World, host: &mut BotHost, execution: &mut BotExecuti
             return;
         }
     };
+    let phase = if input.ended {
+        turts_audit::ActorPhase::Ended
+    } else if input.running {
+        turts_audit::ActorPhase::Running
+    } else {
+        turts_audit::ActorPhase::Waiting
+    };
+    if let Err(error) = actors::record_lifecycle(
+        world,
+        turts_audit::ActorLogRecord::Lifecycle {
+            tick,
+            humans_present: input.human_present,
+            phase,
+        },
+    ) {
+        execution.error = Some(error);
+        return;
+    }
     if execution
         .input_trace
         .last()

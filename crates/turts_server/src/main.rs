@@ -171,6 +171,13 @@ fn run() -> Result<(), String> {
     {
         return Err(format!("economy log evidence failed: {error}"));
     }
+    if let Some(error) = app
+        .world()
+        .get_resource::<bots::BotExecution>()
+        .and_then(|execution| execution.error.as_ref())
+    {
+        return Err(format!("public bot host failed: {error}"));
+    }
     result
 }
 
