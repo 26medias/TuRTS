@@ -251,6 +251,9 @@ struct DenseUnit {
     capabilities: Vec<Capability>,
     gather_items: HashSet<u32>,
     target_slots: Option<SlotRelation>,
+    repairer: Option<turts_mod_api::RepairerDef>,
+    armour_class: Option<String>,
+    max_health: Option<u64>,
 }
 #[derive(Clone)]
 struct DenseNode {
@@ -283,6 +286,7 @@ struct FrameWorld {
     index: ContentIndex,
     producible: HashSet<(u32, String)>,
     jobs: HashSet<(u32, u64)>,
+    damaged_complete: HashSet<u32>,
     facts: facts::OwnerFacts,
 }
 impl WorldView for FrameWorld {
@@ -366,6 +370,27 @@ impl WorldView for FrameWorld {
     fn has_job(&self, unit: &UnitView, job: turts_net_protocol::JobId) -> bool {
         self.jobs.contains(&(unit.id.0, job.0))
     }
+    fn can_repair(&self, unit: &UnitView, target: &UnitView) -> bool {
+        if !self.damaged_complete.contains(&target.id.0) {
+            return false;
+        }
+        let Some(actor) = self
+            .index
+            .units
+            .get(&unit.content_id)
+            .and_then(|facts| facts.repairer.as_ref())
+        else {
+            return false;
+        };
+        crate::relation::holds_own_team(actor.targets.slots, unit.owner_slot.0, target.owner_slot.0)
+            && (actor.classes.is_empty()
+                || self
+                    .index
+                    .units
+                    .get(&target.content_id)
+                    .and_then(|facts| facts.armour_class.as_ref())
+                    .is_some_and(|class| actor.classes.contains(class)))
+    }
     fn can_weapon_target(&self, unit: &UnitView, target: &UnitView) -> bool {
         let relation = self
             .index
@@ -420,6 +445,12 @@ fn content_index(state: &ReplicaState, acquired: Option<&AcquiredPackages>) -> C
             if unit.research.is_some() {
                 capabilities.push(Capability::Research);
             }
+            if unit.constructor.is_some() {
+                capabilities.push(Capability::Constructor);
+            }
+            if unit.repairer.is_some() {
+                capabilities.push(Capability::Repairer);
+            }
             let gather_items = unit
                 .gatherer
                 .as_ref()
@@ -443,6 +474,9 @@ fn content_index(state: &ReplicaState, acquired: Option<&AcquiredPackages>) -> C
                     capabilities,
                     gather_items,
                     target_slots: unit.weapon.as_ref().map(|w| w.targets.slots),
+                    repairer: unit.repairer.clone(),
+                    armour_class: unit.armour.as_ref().map(|armour| armour.class.clone()),
+                    max_health: unit.health.as_ref().map(|health| health.max),
                 },
             )
         })
@@ -573,6 +607,18 @@ fn frame_world(
                 .map(move |job| (queue.producer.0, job.id.0))
         })
         .collect();
+    let damaged_complete = replica
+        .healths
+        .iter()
+        .filter_map(|health| {
+            if health.current == 0 || replica.is_site(health.unit.0) {
+                return None;
+            }
+            let unit = replica.units.get(&health.unit.0)?;
+            let maximum = index.units.get(&unit.content_id)?.max_health?;
+            (health.current < maximum).then_some(health.unit.0)
+        })
+        .collect();
     Some(FrameWorld {
         model_yaws: HashMap::new(),
         facings: replica
@@ -603,6 +649,7 @@ fn frame_world(
         index,
         producible,
         jobs,
+        damaged_complete,
         facts: {
             facts.build(replica, content);
             facts

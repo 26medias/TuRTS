@@ -75,6 +75,11 @@ pub trait WorldView {
     }
     /// Returns whether this unit's weapon can target this foreign unit.
     fn can_weapon_target(&self, unit: &UnitView, target: &UnitView) -> bool;
+    /// Whether the actor can repair this complete, positive-health damaged target.
+    /// The client adapter applies authored relation and armour-class filters.
+    fn can_repair(&self, _unit: &UnitView, _target: &UnitView) -> bool {
+        false
+    }
     /// The world data of the placement rule (`UI-PLACE` fills `placement::Facts`).
     fn placement_facts(&self) -> &placement::Facts {
         static EMPTY: std::sync::LazyLock<placement::Facts> =
