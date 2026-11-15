@@ -25,13 +25,14 @@ pub struct EconomyEvent {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum EconomyEventKind {
-    /// Paid-work buffer flush. Intermediate debits remain in authoritative job/site state.
+    /// Mandatory refunds account for every desired, credited, and discarded amount.
     DestructionRefunded {
         unit: u32,
         desired: Vec<CostLine>,
         credited: Vec<CostLine>,
         discarded: Vec<CostLine>,
     },
+    /// Coalesced paid-work buffer flush; raw job/site state records intermediate debits.
     ProgressCharged {
         unit: u32,
         job: u64,

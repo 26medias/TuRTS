@@ -3301,6 +3301,8 @@ fn project_raw_queues(state: &mut AuditState) -> Result<(), String> {
                 })
             };
             jobs.push(RawJobAudit {
+                funding: None,
+
                 id: job.id,
                 recipe: job.recipe.clone(),
                 stage: job.stage,
