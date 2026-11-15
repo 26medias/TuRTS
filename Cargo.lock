@@ -8779,6 +8779,7 @@ dependencies = [
  "bevy_math",
  "libm",
  "lightyear",
+ "lightyear_serde",
  "postcard",
  "ron",
  "serde",
