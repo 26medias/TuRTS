@@ -86,6 +86,8 @@ pub enum OrderTarget {
         content: ContentRef,
         point: Pos,
     },
+    /// API17 terrain operation through the ordinary queued command path.
+    TerrainWork(turts_mod_api::TerrainDesignation),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

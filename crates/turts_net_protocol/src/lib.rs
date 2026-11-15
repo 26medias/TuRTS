@@ -6,6 +6,8 @@ pub mod advertisement;
 pub mod economy;
 pub mod messages;
 pub mod records;
+pub mod terrain;
+pub use terrain::*;
 pub mod visibility;
 pub mod visibility_transaction;
 pub use visibility::*;
@@ -14,4 +16,4 @@ pub use advertisement::Advertisement;
 pub use messages::*;
 
 /// The version of the wire protocol. The client sends it in `Hello` and the server checks it.
-pub const NET_PROTOCOL_VERSION: u32 = 9;
+pub const NET_PROTOCOL_VERSION: u32 = 10;
