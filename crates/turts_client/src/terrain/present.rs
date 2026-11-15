@@ -95,161 +95,175 @@ pub(crate) fn panel(
     let mut actions = Vec::<(String, turts_interaction::terrain::UnloadResume)>::new();
     if let (Some(runtime), Some(replica), Some(acquired)) =
         (runtime.as_ref(), state.replica.as_ref(), acquired.as_ref())
+        && let Some(terrain) = replica.terrain.as_ref()
     {
-        if let Some(terrain) = replica.terrain.as_ref() {
-            let content = &acquired.0.content;
-            if let Some(preview) = runtime.terrain_preview.as_ref() {
-                let tool = ContentId::parse(&preview.input.tool)
-                    .ok()
-                    .and_then(|id| content.catalog.terrain_tools.get(&id));
-                text.push_str(tool.map_or("Terrain work", |tool| tool.name.as_str()));
-                if let Some(level) = preview.target_elevation {
-                    let unknown = preview.cells.iter().filter(|cell| !cell.current).count();
-                    text.push_str(&format!("\nTarget level {level} · {} cells · {unknown} Unknown\nDrag a rectangle. Shift queues. Right click cancels.",preview.cells.len()));
-                    if let Some(tool) = tool {
-                        if let Some(advice) =
-                            super::advice::estimate(terrain, &content.catalog, tool, preview)
-                        {
-                            let amounts = |values: &std::collections::BTreeMap<ContentId, u64>| {
-                                values
-                                    .iter()
-                                    .map(|(id, amount)| {
-                                        format!(
-                                            "{amount} {}",
-                                            content
-                                                .catalog
-                                                .resources
-                                                .get(id)
-                                                .map_or(id.local.as_str(), |resource| resource
-                                                    .name
-                                                    .as_str())
-                                        )
-                                    })
-                                    .collect::<Vec<_>>()
-                                    .join(", ")
-                            };
-                            if !advice.inputs.is_empty() {
-                                text.push_str(&format!(
-                                    "\nObserved fill input: {}",
-                                    amounts(&advice.inputs)
-                                ));
-                            }
-                            if !advice.next_outputs.is_empty() {
-                                text.push_str(&format!(
-                                    "\nNext exposed prism output: {}",
-                                    amounts(&advice.next_outputs)
-                                ));
-                            }
-                            if advice.no_yield_prisms > 0 {
-                                text.push_str(&format!(
-                                    "\n{} observed placed prisms: NoYield",
-                                    advice.no_yield_prisms
-                                ));
-                            }
-                            if advice.deeper_unknown {
-                                text.push_str("\nDeeper excavation cost and output: Unknown");
-                            }
-                        } else {
-                            text.push_str("\nCost and output: Unknown");
+        let content = &acquired.0.content;
+        if let Some(preview) = runtime.terrain_preview.as_ref() {
+            let tool = ContentId::parse(&preview.input.tool)
+                .ok()
+                .and_then(|id| content.catalog.terrain_tools.get(&id));
+            text.push_str(tool.map_or("Terrain work", |tool| tool.name.as_str()));
+            if let Some(level) = preview.target_elevation {
+                let unknown = preview.cells.iter().filter(|cell| !cell.current).count();
+                text.push_str(&format!("\nTarget level {level} · {} cells · {unknown} Unknown\nDrag a rectangle. Shift queues. Right click cancels.",preview.cells.len()));
+                if let Some(tool) = tool {
+                    if let Some(advice) =
+                        super::advice::estimate(terrain, &content.catalog, tool, preview)
+                    {
+                        let amounts = |values: &std::collections::BTreeMap<ContentId, u64>| {
+                            values
+                                .iter()
+                                .map(|(id, amount)| {
+                                    format!(
+                                        "{amount} {}",
+                                        content
+                                            .catalog
+                                            .resources
+                                            .get(id)
+                                            .map_or(id.local.as_str(), |resource| resource
+                                                .name
+                                                .as_str())
+                                    )
+                                })
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        };
+                        if !advice.inputs.is_empty() {
+                            text.push_str(&format!(
+                                "\nObserved fill input: {}",
+                                amounts(&advice.inputs)
+                            ));
                         }
-                        if matches!(tool.operation, ResolvedTerrainOperation::Fill { .. }) {
-                            text.push_str("\nPlaced fill has NoYield");
+                        if !advice.next_outputs.is_empty() {
+                            text.push_str(&format!(
+                                "\nNext exposed prism output: {}",
+                                amounts(&advice.next_outputs)
+                            ));
                         }
+                        if advice.no_yield_prisms > 0 {
+                            text.push_str(&format!(
+                                "\n{} observed placed prisms: NoYield",
+                                advice.no_yield_prisms
+                            ));
+                        }
+                        if advice.deeper_unknown {
+                            text.push_str("\nDeeper excavation cost and output: Unknown");
+                        }
+                    } else {
+                        text.push_str("\nCost and output: Unknown");
                     }
-                    if unknown > 0 {
-                        text.push_str(
-                            "\nUnknown cells remain in the order. Cost and work are Unknown.",
-                        );
+                    if matches!(tool.operation, ResolvedTerrainOperation::Fill { .. }) {
+                        text.push_str("\nPlaced fill has NoYield");
                     }
-                } else {
-                    text.push_str("\nClick an observed cell to choose its reference level.");
                 }
-                if let Some(reason) = &preview.reason {
-                    text.push_str(&format!("\n{reason}"));
+                if unknown > 0 {
+                    text.push_str(
+                        "\nUnknown cells remain in the order. Cost and work are Unknown.",
+                    );
                 }
+            } else {
+                text.push_str("\nClick an observed cell to choose its reference level.");
             }
-            if let Some(unit) = runtime
-                .core()
-                .and_then(|core| core.selected_units().first())
+            if let Some(reason) = &preview.reason {
+                text.push_str(&format!("\n{reason}"));
+            }
+        }
+        if let Some(unit) = runtime
+            .core()
+            .and_then(|core| core.selected_units().first())
+            && let Some(work) = terrain.work.get(&unit.0)
+        {
+            if !text.is_empty() {
+                text.push_str("\n\n");
+            }
+            text.push_str(&format!(
+                "Work target level {}",
+                work.designation.target_elevation
+            ));
+            match work.required_work {
+                Some(required) => {
+                    text.push_str(&format!("\nProgress: {} / {required}", work.completed_work))
+                }
+                None => text.push_str("\nProgress: Unknown"),
+            };
+            if let Some(wait) = work.wait {
+                text.push_str(&format!("\n{}", wait_text(wait)));
+            }
+            // The server keeps the exact suspended work record while unloading.
+            // Only the active original TerrainWork may offer another unload action.
+            let current = replica
+                .unit_orders
+                .get(&unit.0)
+                .and_then(|r| r.current.as_ref())
+                .filter(
+                    |o| matches!(&o.target,OrderTarget::TerrainWork(d) if d==&work.designation),
+                );
+            if work.wait == Some(TerrainWorkWait::FullCargo)
+                && let (Some(order), Some(actor)) = (current, replica.units.get(&unit.0))
+                && let Ok(actor_id) = ContentId::parse(&actor.content_id)
+                && content
+                    .catalog
+                    .units
+                    .get(&actor_id)
+                    .is_some_and(|d| d.terrain_cargo.is_some())
             {
-                if let Some(work) = terrain.work.get(&unit.0) {
-                    if !text.is_empty() {
-                        text.push_str("\n\n");
+                let mut depots = replica
+                    .units
+                    .iter()
+                    .filter_map(|(id, depot)| {
+                        let definition = ContentId::parse(&depot.content_id)
+                            .ok()
+                            .and_then(|id| content.catalog.units.get(&id))?;
+                        (depot.owner_slot == actor.owner_slot
+                            && definition.inventory.is_some()
+                            && definition.drop_off.as_ref().is_some_and(|dropoff| {
+                                dropoff.rules.iter().any(|rule| {
+                                    matches!(
+                                        rule.effect,
+                                        turts_mod_api::ResolvedDropOffEffect::Store
+                                    )
+                                })
+                            }))
+                        .then_some((*id, depot, definition))
+                    })
+                    .collect::<Vec<_>>();
+                depots.sort_by(|a, b| {
+                    a.1.samples
+                        .back()
+                        .map(|(_, p)| (p.x, p.y))
+                        .partial_cmp(&b.1.samples.back().map(|(_, p)| (p.x, p.y)))
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                        .then_with(|| a.2.name.cmp(&b.2.name))
+                });
+                for unload in content.catalog.orders.values().filter(|d| {
+                    d.behaviour == Behaviour::UnloadCargo
+                        && d.target == turts_mod_api::TargetKind::Unit
+                        && (d.units.is_empty() || d.units.contains(&actor.content_id))
+                }) {
+                    for (depot, unit_def, definition) in &depots {
+                        let Some((_, pos)) = unit_def.samples.back() else {
+                            continue;
+                        };
+                        actions.push((
+                            format!(
+                                "Unload and resume ({}): {} at ({:.1}, {:.1})",
+                                unload.name, definition.name, pos.x, pos.y
+                            ),
+                            turts_interaction::terrain::UnloadResume {
+                                identity: (terrain.basis.match_id, terrain.basis.map.clone()),
+                                unit: *unit,
+                                depot: turts_net_protocol::UnitId(*depot),
+                                unload_order: unload.id.to_string(),
+                                work_order: order.order.clone(),
+                                designation: work.designation.clone(),
+                            },
+                        ));
                     }
-                    text.push_str(&format!(
-                        "Work target level {}",
-                        work.designation.target_elevation
-                    ));
-                    match work.required_work {
-                        Some(required) => text
-                            .push_str(&format!("\nProgress: {} / {required}", work.completed_work)),
-                        None => text.push_str("\nProgress: Unknown"),
-                    };
-                    if let Some(wait) = work.wait {
-                        text.push_str(&format!("\n{}", wait_text(wait)));
-                    }
-                    // The server keeps the exact suspended work record while unloading.
-                    // Only the active original TerrainWork may offer another unload action.
-                    let current=replica.unit_orders.get(&unit.0).and_then(|r|r.current.as_ref()).filter(|o|matches!(&o.target,OrderTarget::TerrainWork(d) if d==&work.designation));
-                    if work.wait == Some(TerrainWorkWait::FullCargo) {
-                        if let (Some(order), Some(actor)) = (current, replica.units.get(&unit.0)) {
-                            if let Ok(actor_id) = ContentId::parse(&actor.content_id) {
-                                if content
-                                    .catalog
-                                    .units
-                                    .get(&actor_id)
-                                    .is_some_and(|d| d.terrain_cargo.is_some())
-                                {
-                                    let mut depots=replica.units.iter().filter_map(|(id,depot)|{
-                                        let definition=ContentId::parse(&depot.content_id).ok().and_then(|id|content.catalog.units.get(&id))?;
-                                        (depot.owner_slot==actor.owner_slot && definition.inventory.is_some() && definition.drop_off.as_ref().is_some_and(|dropoff|dropoff.rules.iter().any(|rule|matches!(rule.effect,turts_mod_api::ResolvedDropOffEffect::Store)))).then_some((*id,depot,definition))
-                                    }).collect::<Vec<_>>();
-                                    depots.sort_by(|a, b| {
-                                        a.1.samples
-                                            .back()
-                                            .map(|(_, p)| (p.x, p.y))
-                                            .partial_cmp(
-                                                &b.1.samples.back().map(|(_, p)| (p.x, p.y)),
-                                            )
-                                            .unwrap_or(std::cmp::Ordering::Equal)
-                                            .then_with(|| a.2.name.cmp(&b.2.name))
-                                    });
-                                    for unload in content.catalog.orders.values().filter(|d| {
-                                        d.behaviour == Behaviour::UnloadCargo
-                                            && d.target == turts_mod_api::TargetKind::Unit
-                                            && (d.units.is_empty()
-                                                || d.units.contains(&actor.content_id))
-                                    }) {
-                                        for (depot, unit_def, definition) in &depots {
-                                            let Some((_, pos)) = unit_def.samples.back() else {
-                                                continue;
-                                            };
-                                            actions.push((
-                                                format!(
-                                                    "Unload and resume ({}): {} at ({:.1}, {:.1})",
-                                                    unload.name, definition.name, pos.x, pos.y
-                                                ),
-                                                turts_interaction::terrain::UnloadResume {
-                                                    identity: (
-                                                        terrain.basis.match_id,
-                                                        terrain.basis.map.clone(),
-                                                    ),
-                                                    unit: *unit,
-                                                    depot: turts_net_protocol::UnitId(*depot),
-                                                    unload_order: unload.id.to_string(),
-                                                    work_order: order.order.clone(),
-                                                    designation: work.designation.clone(),
-                                                },
-                                            ));
-                                        }
-                                    }
-                                    if actions.is_empty() {
-                                        text.push_str("\nNo owned cargo depot and eligible unload order are available.");
-                                    }
-                                }
-                            }
-                        }
-                    }
+                }
+                if actions.is_empty() {
+                    text.push_str(
+                        "\nNo owned cargo depot and eligible unload order are available.",
+                    );
                 }
             }
         }

@@ -396,8 +396,11 @@ impl Workload {
 }
 
 fn run(intervals: usize, acceptance: bool, warmup: usize) {
+    #[cfg(debug_assertions)]
     if acceptance {
-        assert!(!cfg!(debug_assertions));
+        panic!("TW7 performance acceptance requires a release build");
+    }
+    if acceptance {
         assert_eq!(intervals, REQUIRED);
         assert_eq!(warmup, WARMUP);
     }

@@ -423,10 +423,10 @@ impl PermittedTerrain {
     /// Call only at the replica's commit boundary, after account/unit/knowledge staging succeeds.
     pub fn commit(&mut self, patch: Patch) {
         for cell in patch.delta.surfaces_cleared {
-            if let Some(initial) = self.layout.initial_elevation(cell) {
-                if self.geometry.elevation(cell) != Some(initial) {
-                    Arc::make_mut(&mut self.geometry).set(cell, initial);
-                }
+            if let Some(initial) = self.layout.initial_elevation(cell)
+                && self.geometry.elevation(cell) != Some(initial)
+            {
+                Arc::make_mut(&mut self.geometry).set(cell, initial);
             }
             self.surfaces.remove(&cell);
         }

@@ -601,7 +601,11 @@ fn explicit_relative_test_path_is_safe_only_without_a_production_inclusion() {
         r#"const RECIPE: &str="forge:make_shells";"#,
     )
     .unwrap();
-    assert!(scan_rust(&[src.clone()], &catalog).unwrap().is_empty());
+    assert!(
+        scan_rust(std::slice::from_ref(&src), &catalog)
+            .unwrap()
+            .is_empty()
+    );
     std::fs::write(
         src.join("leak.rs"),
         r#"#[path="nested_tests.rs"] mod production;"#,
