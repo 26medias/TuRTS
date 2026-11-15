@@ -154,3 +154,91 @@ fn losing_focus_or_the_constructor_cancels_placement() {
         );
     }
 }
+
+#[test]
+fn preview_stays_unknown_for_unobserved_public_clearance_region() {
+    use std::sync::Arc;
+    use turts_mod_api::{
+        ContentId, KnowledgeBasis, KnowledgeSnapshot, ObservationPhase, VisibilityGrid, WorldPos,
+    };
+    use turts_rules::visibility_advice::PublicPlacementMaxima;
+    for static_gap in [false, true] {
+        let mut verdicts = Vec::new();
+        for hidden_present in [false, true] {
+            let mut world = world();
+            let recipe = world
+                .placement
+                .recipes
+                .get_mut("forge:tower_recipe")
+                .unwrap();
+            recipe.node_clearance = if static_gap { 1. } else { 5. };
+            world.placement.public_maxima = PublicPlacementMaxima {
+                unit_radius: 1.,
+                static_gap: if static_gap { 6. } else { 1. },
+                node_radius: 1.,
+            };
+            let mut observed = vec![255; 32];
+            // The candidate footprint is observed. A possible blocker centre outside it is not.
+            let hidden_cell = 2 * 16 + 3;
+            observed[hidden_cell / 8] &= !(1 << (hidden_cell % 8));
+            world.placement.knowledge = Some(Arc::new(KnowledgeSnapshot {
+                basis: KnowledgeBasis {
+                    match_id: 1,
+                    map: ContentId::parse("fixture:field").unwrap(),
+                    tick: 1,
+                    phase: ObservationPhase::Completed,
+                },
+                viewer: 0,
+                grid: VisibilityGrid {
+                    size: WorldPos { x: 64., y: 64. },
+                    cell_size: 4.,
+                    columns: 16,
+                    rows: 16,
+                },
+                observed,
+                explored: vec![255; 32],
+                remembered_units: vec![],
+                remembered_nodes: vec![],
+                retention_truncated: false,
+            }));
+            if hidden_present {
+                let footprint = Circle {
+                    centre: Point { x: 12., y: 8. },
+                    radius: 1.,
+                };
+                if static_gap {
+                    world.placement.obstacles.push(Obstacle {
+                        id: 999,
+                        footprint,
+                        kind: ObstacleKind::Static { gap: 6. },
+                    });
+                } else {
+                    world.placement.nodes.push(footprint);
+                }
+            }
+            let mut core = Core::default();
+            enter(&mut core, &world);
+            let px = core.project_world_to_screen(vec2(8., 8.), &VIEW);
+            let effects = core.step(
+                &[InputEvent::PointerMove {
+                    px,
+                    over_widget: false,
+                }],
+                &world,
+                &VIEW,
+                30,
+            );
+            let ghost = effects
+                .iter()
+                .find_map(|effect| match effect {
+                    Effect::Placement(output) => output.ghost.clone(),
+                    _ => None,
+                })
+                .unwrap();
+            assert!(!ghost.valid);
+            assert_eq!(ghost.reason.as_deref(), Some("placement_unknown"));
+            verdicts.push(ghost);
+        }
+        assert_eq!(verdicts[0], verdicts[1]);
+    }
+}

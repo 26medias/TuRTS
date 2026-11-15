@@ -248,6 +248,7 @@ pub fn register(app: &mut App) {
 }
 #[allow(clippy::too_many_arguments)]
 pub fn update_particles(
+    state: Option<Res<ReplicaState>>,
     time: Res<Time>,
     acquired: Option<Res<AcquiredPackages>>,
     decals: Res<super::emitters::Emitters>,
@@ -327,6 +328,19 @@ pub fn update_particles(
             if p.age >= p.delay + p.life {
                 slot.particle = None;
             }
+        }
+        if slot.particle.as_ref().is_some_and(|particle| {
+            !super::permitted_position(state.as_deref(), particle.position)
+                || particle.follow.is_some_and(|id| {
+                    state
+                        .as_ref()
+                        .and_then(|state| state.replica.as_ref())
+                        .is_some_and(|replica| {
+                            replica.knowledge.is_some() && !replica.units.contains_key(&id)
+                        })
+                })
+        }) {
+            slot.particle = None;
         }
         if let Some(p) = slot.particle.as_mut() {
             let t = ((p.age - p.delay) / p.life.max(0.001)).clamp(0., 1.);

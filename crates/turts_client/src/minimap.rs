@@ -25,6 +25,9 @@ struct MinimapChildren {
     nodes: HashMap<NodeId, Entity>,
     pings: HashMap<u64, [Entity; 2]>,
     frame: Vec<Entity>,
+    fog: Vec<Entity>,
+    fog_basis: Option<(turts_mod_api::KnowledgeBasis, Vec2)>,
+    remembered: HashMap<(bool, u32), Entity>,
 }
 
 fn ping_markers(pings: &AlertPingsFeed, map_size: Vec2, now: f64) -> Vec<PingMarker> {
@@ -138,6 +141,10 @@ fn sync_minimap(world: &mut World) {
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();
+    let knowledge = world
+        .get_resource::<ReplicaState>()
+        .and_then(|state| state.replica.as_ref())
+        .and_then(|replica| replica.knowledge.clone());
     let now = world
         .get_resource::<Time>()
         .map_or(0.0, Time::elapsed_secs_f64);
@@ -157,6 +164,35 @@ fn sync_minimap(world: &mut World) {
             .entity_mut(root)
             .take::<MinimapChildren>()
             .unwrap_or_default();
+
+        let fog_basis = knowledge
+            .as_ref()
+            .map(|knowledge| (knowledge.basis.clone(), size));
+        if children.fog_basis != fog_basis {
+            sync_fog(world, root, &mut children.fog, knowledge.as_deref(), size);
+            children.fog_basis = fog_basis;
+        }
+        let remembered = knowledge
+            .as_ref()
+            .map(|knowledge| {
+                knowledge
+                    .remembered_units
+                    .iter()
+                    .map(|row| ((false, row.unit), row.position))
+                    .chain(
+                        knowledge
+                            .remembered_nodes
+                            .iter()
+                            .map(|row| ((true, row.node), row.position)),
+                    )
+                    .filter_map(|(id, pos)| {
+                        map_local(Vec2::new(pos.x, pos.y), map_size, size)
+                            .map(|point| (id, point, Color::srgb(0.48, 0.50, 0.56)))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        sync_square_markers(world, root, &mut children.remembered, remembered, 3.0);
 
         let desired_units = units
             .iter()
@@ -652,5 +688,68 @@ mod tests {
             world.get::<BackgroundColor>(*vertical).unwrap().0,
             Color::srgb_u8(255, 204, 0)
         );
+    }
+}
+
+/// Rasterize accepted knowledge into bounded minimap rows, then merge equal adjacent cells.
+fn sync_fog(
+    world: &mut World,
+    root: Entity,
+    entities: &mut Vec<Entity>,
+    knowledge: Option<&turts_mod_api::KnowledgeSnapshot>,
+    size: Vec2,
+) {
+    let mut desired = Vec::new();
+    if let Some(knowledge) = knowledge {
+        use crate::visibility::{FogCell, position_state};
+        let width = (size.x.ceil() as u32).clamp(1, 512);
+        let height = (size.y.ceil() as u32).clamp(1, 512);
+        let pixel = Vec2::new(size.x / width as f32, size.y / height as f32);
+        for y in 0..height {
+            let state = |x: u32| {
+                position_state(
+                    knowledge,
+                    turts_mod_api::WorldPos {
+                        x: (x as f32 + 0.5) / width as f32 * knowledge.grid.size.x,
+                        y: (1. - (y as f32 + 0.5) / height as f32) * knowledge.grid.size.y,
+                    },
+                )
+                .unwrap_or(FogCell::Unexplored)
+            };
+            let mut x = 0;
+            while x < width {
+                let first = x;
+                let fog = state(x);
+                x += 1;
+                while x < width && state(x) == fog {
+                    x += 1;
+                }
+                let colour = match fog {
+                    FogCell::Observed => continue,
+                    FogCell::Remembered => Color::srgba(0.01, 0.015, 0.025, 0.65),
+                    FogCell::Unexplored => Color::srgb(0.008, 0.01, 0.015),
+                };
+                desired.push((
+                    marker_node(
+                        first as f32 * pixel.x,
+                        y as f32 * pixel.y,
+                        (x - first) as f32 * pixel.x,
+                        pixel.y,
+                    ),
+                    colour,
+                ));
+            }
+        }
+    }
+    while entities.len() > desired.len() {
+        if let Some(entity) = entities.pop() {
+            let _ = world.despawn(entity);
+        }
+    }
+    for (index, (node, colour)) in desired.into_iter().enumerate() {
+        if entities.len() <= index {
+            entities.push(spawn_marker(world, root));
+        }
+        update_marker(world, entities[index], node, colour, 1);
     }
 }

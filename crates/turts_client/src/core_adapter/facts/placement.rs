@@ -11,6 +11,18 @@ pub(in crate::core_adapter) fn build(
     content: &ClientContent,
 ) {
     *facts = Facts::default();
+    facts.knowledge = replica.knowledge.clone();
+    for unit in content.catalog.units.values() {
+        let Footprint::Circle { radius } = unit.footprint;
+        facts.public_maxima.unit_radius = facts.public_maxima.unit_radius.max(radius);
+        facts.public_maxima.static_gap = facts
+            .public_maxima
+            .static_gap
+            .max(unit.placement.map_or(0., |rule| rule.gap));
+    }
+    for node in content.catalog.nodes.values() {
+        facts.public_maxima.node_radius = facts.public_maxima.node_radius.max(node.radius);
+    }
     for (id, recipe) in &content.catalog.production {
         let Some(output) = content.catalog.units.get(&recipe.output_unit) else {
             continue;

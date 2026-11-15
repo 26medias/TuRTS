@@ -161,7 +161,9 @@ pub struct VisualEvent {
 #[derive(Debug, Clone)]
 pub struct Replica {
     /// Complete permitted knowledge, committed with the gameplay tables. None is AllVisible.
-    pub knowledge: Option<turts_mod_api::KnowledgeSnapshot>,
+    pub knowledge: Option<std::sync::Arc<turts_mod_api::KnowledgeSnapshot>>,
+    /// Event-local permitted identities. These do not become live picking targets.
+    pub event_units: Vec<turts_net_protocol::visibility::EventUnitObservation>,
     /// Bounded visual events from committed live deltas only. Never replayed by snapshots.
     pub visual_events: VecDeque<VisualEvent>,
     next_visual_event: u64,
@@ -226,6 +228,7 @@ impl Replica {
         Self {
             tick_hz,
             knowledge: None,
+            event_units: Vec::new(),
             visual_events: VecDeque::new(),
             next_visual_event: 0,
             units: HashMap::new(),
@@ -260,6 +263,172 @@ impl Replica {
             gap_seen: false,
             tail_lost: false,
         }
+    }
+
+    /// Validate all transaction tables before changing any active presentation state.
+    /// The caller acknowledges the stamp only after this returns true.
+    pub fn activate_transaction(
+        &mut self,
+        stamp: &turts_net_protocol::visibility::StateTransactionStamp,
+        payload: &turts_net_protocol::visibility::StateTransactionPayload,
+        now: Instant,
+    ) -> bool {
+        use turts_net_protocol::visibility::StateTransactionPayload;
+        let Some(context) = self.context.as_ref() else {
+            return false;
+        };
+        if stamp.basis.phase != turts_mod_api::ObservationPhase::Completed
+            || self
+                .last_applied_tick
+                .is_some_and(|tick| stamp.basis.tick < tick)
+        {
+            return false;
+        }
+        let (mut candidate, store, knowledge, effects, event_units) = match payload {
+            StateTransactionPayload::Snapshot {
+                state,
+                knowledge,
+                event_units,
+            } => {
+                if state.tick != stamp.basis.tick
+                    || stamp.parent_transaction_id.is_some()
+                    || knowledge.as_ref().is_some_and(|k| k.basis != stamp.basis)
+                {
+                    return false;
+                }
+                let Some((candidate, store)) = self.stage_snapshot(state) else {
+                    return false;
+                };
+                (
+                    candidate,
+                    StoreUpdate::Replace(store),
+                    knowledge.clone(),
+                    &[][..],
+                    event_units,
+                )
+            }
+            StateTransactionPayload::Patch {
+                state,
+                knowledge,
+                event_units,
+            } => {
+                if state.tick != stamp.basis.tick
+                    || self.last_applied_tick != Some(state.base_tick)
+                    || state.tick <= state.base_tick
+                    || stamp.parent_transaction_id.is_none()
+                {
+                    return false;
+                }
+                let next_knowledge = match (&self.knowledge, knowledge) {
+                    (None, None) => None,
+                    (Some(current), Some(delta)) if delta.basis == stamp.basis => {
+                        let Some(next) = crate::visibility::stage_delta(current, delta) else {
+                            return false;
+                        };
+                        Some(next)
+                    }
+                    _ => return false,
+                };
+                let mut delta = state.as_ref().clone();
+                let mut current = self.candidate_at(state.base_tick);
+                if let Some(knowledge) = knowledge {
+                    if knowledge.hidden_units.iter().any(|id| {
+                        self.units
+                            .get(id)
+                            .is_some_and(|unit| unit.owner_slot == context.slot)
+                    }) || knowledge
+                        .hidden_units
+                        .iter()
+                        .any(|id| delta.removed.contains(&UnitId(*id)))
+                        || knowledge
+                            .revealed_units
+                            .iter()
+                            .any(|id| !delta.spawned.iter().any(|row| row.unit_id.0 == *id))
+                        || knowledge
+                            .revealed_nodes
+                            .iter()
+                            .any(|id| !delta.nodes.iter().any(|row| row.id.0 == *id))
+                    {
+                        return false;
+                    }
+                    delta
+                        .removed
+                        .extend(knowledge.hidden_units.iter().copied().map(UnitId));
+                    for id in &knowledge.hidden_nodes {
+                        if current.nodes.remove(&NodeId(*id)).is_none() {
+                            return false;
+                        }
+                    }
+                }
+                let Some((candidate, step)) = self.stage_delta_owned(current, &self.store, &delta)
+                else {
+                    return false;
+                };
+                (
+                    candidate,
+                    StoreUpdate::Step(step),
+                    next_knowledge,
+                    state.records.effects.as_slice(),
+                    event_units,
+                )
+            }
+        };
+        if let Some(knowledge) = &knowledge {
+            if knowledge.basis != stamp.basis
+                || knowledge.viewer != context.slot
+                || !crate::visibility::valid_snapshot(knowledge)
+                || !valid_known_entities(context, &candidate, knowledge)
+            {
+                return false;
+            }
+        }
+        let mut transient = HashSet::new();
+        if event_units.iter().any(|row| {
+            row.basis.match_id != stamp.basis.match_id
+                || row.basis.map != stamp.basis.map
+                || row.basis.tick != stamp.basis.tick
+                || !valid_unit(context, &row.unit)
+                || !transient.insert(row.unit.unit_id.0)
+        }) {
+            return false;
+        }
+        let endpoint =
+            |id: UnitId| candidate.units.contains_key(&id.0) || transient.contains(&id.0);
+        if effects.iter().any(|effect| match effect {
+            turts_net_protocol::Effect::Fired { unit, target, .. } => {
+                !endpoint(*unit) || !endpoint(*target)
+            }
+            turts_net_protocol::Effect::Destroyed { unit }
+            | turts_net_protocol::Effect::Credited { unit, .. } => !endpoint(*unit),
+        }) {
+            return false;
+        }
+        // A hide is not a death. No health history or old effect can survive it.
+        candidate
+            .health_trace
+            .retain(|id, _| candidate.units.contains_key(id));
+        self.commit(candidate, store, now);
+        if matches!(payload, StateTransactionPayload::Snapshot { .. }) {
+            self.snapshot_tick = Some(stamp.basis.tick);
+        }
+        self.knowledge = knowledge.map(std::sync::Arc::new);
+        self.event_units = event_units.clone();
+        self.visual_events.clear();
+        for effect in effects {
+            self.next_visual_event += 1;
+            self.visual_events.push_back(VisualEvent {
+                sequence: self.next_visual_event,
+                tick: stamp.basis.tick,
+                effect: effect.clone(),
+            });
+        }
+        self.resync = None;
+        self.reorder.clear();
+        self.highest_observed_tick = Some(stamp.basis.tick);
+        self.gap_anchor = None;
+        self.gap_seen = false;
+        self.tail_lost = false;
+        true
     }
 
     /// Take the start tick of the match from `Welcome.start.start_tick` (`ingest::on_welcome`).
@@ -741,8 +910,16 @@ impl Replica {
         store: &RecordStore,
         delta: &WorldDelta,
     ) -> Option<(Candidate, StoreStep)> {
+        self.stage_delta_owned(current.clone(), store, delta)
+    }
+
+    fn stage_delta_owned(
+        &self,
+        mut next: Candidate,
+        store: &RecordStore,
+        delta: &WorldDelta,
+    ) -> Option<(Candidate, StoreStep)> {
         let context = self.context.as_ref()?;
-        let mut next = current.clone();
         let removed: HashSet<u32> = delta.removed.iter().map(|id| id.0).collect();
         if removed.len() != delta.removed.len()
             || removed.iter().any(|id| !next.units.contains_key(id))
@@ -1879,4 +2056,42 @@ fn valid_m3_records(
         }
     }
     true
+}
+
+fn valid_known_entities(
+    context: &ReplicaContext,
+    candidate: &Candidate,
+    knowledge: &turts_mod_api::KnowledgeSnapshot,
+) -> bool {
+    use crate::visibility::{FogCell, position_state};
+    let current = |pos: Pos| {
+        position_state(knowledge, turts_mod_api::WorldPos { x: pos.x, y: pos.y })
+            == Some(FogCell::Observed)
+    };
+    let stale_units: HashSet<_> = knowledge
+        .remembered_units
+        .iter()
+        .map(|row| row.unit)
+        .collect();
+    let stale_nodes: HashSet<_> = knowledge
+        .remembered_nodes
+        .iter()
+        .map(|row| row.node)
+        .collect();
+    candidate.units.iter().all(|(id, unit)| {
+        (unit.owner_slot == context.slot
+            || unit.samples.back().is_some_and(|(_, pos)| current(*pos)))
+            && !stale_units.contains(id)
+    }) && candidate
+        .nodes
+        .values()
+        .all(|node| current(node.pos) && !stale_nodes.contains(&node.id.0))
+        && knowledge
+            .remembered_units
+            .iter()
+            .all(|row| context.content.catalog.units.contains_key(&row.content))
+        && knowledge
+            .remembered_nodes
+            .iter()
+            .all(|row| context.content.catalog.nodes.contains_key(&row.content))
 }

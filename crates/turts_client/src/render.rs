@@ -343,7 +343,6 @@ pub fn setup_scene(
     acquired: Option<Res<AcquiredPackages>>,
     acquisition: Option<Res<Acquisition>>,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
     mut images: ResMut<Assets<Image>>,
     settings: Res<crate::models::GraphicsSettings>,
     mut model_state: ResMut<crate::models::ModelState>,
@@ -457,11 +456,23 @@ pub fn setup_scene(
                 extension: crate::ground::GroundExtension {
                     layer: crate::ground::Layer::from_definition(layer),
                     texture,
+                    fog_grid: Vec4::ZERO,
+                    fog_texture: None,
                 },
             })),
         ));
     } else {
-        entity.insert(MeshMaterial3d(materials.add(ground_material)));
+        entity.insert(MeshMaterial3d(layered_materials.add(
+            crate::ground::GroundMaterial {
+                base: ground_material,
+                extension: crate::ground::GroundExtension {
+                    layer: default(),
+                    texture: None,
+                    fog_grid: Vec4::ZERO,
+                    fog_texture: None,
+                },
+            },
+        )));
     }
 }
 

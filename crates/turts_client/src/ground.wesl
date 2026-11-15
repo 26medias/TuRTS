@@ -44,6 +44,8 @@ struct Layer {
 @group(3) @binding(100) var<uniform> layer: Layer;
 @group(3) @binding(101) var layer_texture: texture_2d<f32>;
 @group(3) @binding(102) var layer_sampler: sampler;
+@group(3) @binding(103) var<uniform> fog_grid: vec4<f32>;
+@group(3) @binding(104) var fog_texture: texture_2d<f32>;
 
 fn layer_mask(world: vec2<f32>) -> f32 {
     var mask = 0.0;
@@ -97,6 +99,14 @@ fn fragment(
     pbr_input.material.base_color = mix(pbr_input.material.base_color, colour, mask);
     pbr_input.material.perceptual_roughness = mix(pbr_input.material.perceptual_roughness, layer.settings.z, mask);
     pbr_input.N = normalize(mix(pbr_input.N, pbr_input.world_normal, mask));
+
+    if fog_grid.w > 0.5 {
+        let cell = clamp(vec2<u32>(max(in.world_position.xz, vec2<f32>(0.0)) / fog_grid.x), vec2<u32>(0u), vec2<u32>(fog_grid.yz) - vec2<u32>(1u));
+        let index = cell.y * u32(fog_grid.y) + cell.x;
+        let width = textureDimensions(fog_texture).x;
+        let level = textureLoad(fog_texture, vec2<i32>(i32(index % width), i32(index / width)), 0).r;
+        pbr_input.material.base_color = vec4<f32>(pbr_input.material.base_color.rgb * level, pbr_input.material.base_color.a);
+    }
 
     // alpha discard
     pbr_input.material.base_color = alpha_discard(
