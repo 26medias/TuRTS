@@ -25,6 +25,14 @@ struct Fixture {
 }
 impl Fixture {
     fn new(rate: u64, capacity: u64, initial: i32) -> Self {
+        Self::configured(rate, capacity, initial, |_, _| {})
+    }
+    fn configured(
+        rate: u64,
+        capacity: u64,
+        initial: i32,
+        configure: impl FnOnce(&mut ContentCatalog, &mut MapDef),
+    ) -> Self {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../mods/base");
         let archive = PackageArchive::parse(&pack_dir(&path).unwrap()).unwrap();
         let mut catalog = archive.content().unwrap();
@@ -144,6 +152,7 @@ impl Fixture {
                 }],
             },
         });
+        configure(&mut catalog, &mut map);
         let resolved = turts_mod_runtime::terrain::validate_terrain_map(
             &PackageId("base".into()),
             "maps/terrain_fixture.ron",
@@ -169,16 +178,28 @@ impl Fixture {
         let find = |name: &str| {
             app.world()
                 .iter_entities()
-                .find_map(|entity| {
+                .filter_map(|entity| {
                     let kind = entity.get::<crate::UnitType>()?;
-                    (app.world()
+                    if app
+                        .world()
                         .resource::<crate::UnitTypes>()
                         .get(kind.0)?
                         .content_id
-                        == id(name).to_string())
-                    .then(|| entity.get::<crate::UnitId>().unwrap().0)
+                        != id(name).to_string()
+                    {
+                        return None;
+                    }
+                    let position = entity.get::<crate::Position>()?.0;
+                    Some((position, entity.get::<crate::UnitId>()?.0))
+                })
+                .min_by(|left, right| {
+                    left.0
+                        .x
+                        .total_cmp(&right.0.x)
+                        .then_with(|| left.0.y.total_cmp(&right.0.y))
                 })
                 .unwrap()
+                .1
         };
         let worker = find("harvester");
         let depot = find("command_center");
@@ -190,14 +211,34 @@ impl Fixture {
         }
     }
     fn command(&mut self, behaviour: Behaviour, target: OrderTargetSim, queue: QueueMode) {
+        self.command_units(vec![self.worker], behaviour, target, queue)
+    }
+    fn command_units(
+        &mut self,
+        units: Vec<u32>,
+        behaviour: Behaviour,
+        target: OrderTargetSim,
+        queue: QueueMode,
+    ) {
+        self.command_slot(SlotId(0), units, behaviour, target, queue)
+    }
+    fn command_slot(
+        &mut self,
+        slot: SlotId,
+        units: Vec<u32>,
+        behaviour: Behaviour,
+        target: OrderTargetSim,
+        queue: QueueMode,
+    ) {
         self.sequence += 1;
         let target_kind = match &target {
             OrderTargetSim::TerrainWork { .. } => TargetKind::TerrainDesignation,
             OrderTargetSim::Unit(_) => TargetKind::Unit,
+            OrderTargetSim::Point(_) => TargetKind::Point,
             _ => TargetKind::None,
         };
         let command = Command {
-            slot: SlotId(0),
+            slot,
             seq: self.sequence,
             kind: CommandKind::Order(Box::new(OrderCommand {
                 order: id(match behaviour {
@@ -209,7 +250,7 @@ impl Fixture {
                 behaviour,
                 target_kind,
                 policy: None,
-                units: vec![self.worker],
+                units,
                 target,
                 queue,
                 group: 0,
@@ -230,6 +271,16 @@ impl Fixture {
             },
             queue,
         );
+    }
+    fn unit_at(&self, x: f32, y: f32) -> u32 {
+        self.app
+            .world()
+            .iter_entities()
+            .find_map(|entity| {
+                (entity.get::<crate::Position>()?.0 == crate::Vec2::new(x, y))
+                    .then(|| entity.get::<crate::UnitId>().unwrap().0)
+            })
+            .unwrap()
     }
     fn tick(&mut self) {
         self.app.update();
@@ -456,25 +507,13 @@ fn immutable_phase_surface_and_world_sidecar_never_read_later_columns_or_seriali
 }
 #[test]
 fn unknown_surface_has_no_material_work_or_foreign_anchor_but_own_contact_remains() {
-    let mut fixture = Fixture::new(20, 100, 20);
-    let state = crate::visibility::prepare(
-        77,
-        id("terrain_fixture"),
-        &VisibilityDef {
+    let mut fixture = Fixture::configured(20, 100, 20, |_, map| {
+        map.visibility = Some(VisibilityDef {
             cell_size: 2.0,
             sharing: VisionSharing::OwnSlot,
             memory_limit: None,
-        },
-        VisibilityGrid {
-            size: WorldPos { x: 8.0, y: 8.0 },
-            cell_size: 2.0,
-            columns: 4,
-            rows: 4,
-        },
-        &[0, 1],
-    )
-    .unwrap();
-    fixture.app.world_mut().insert_resource(state);
+        });
+    });
     crate::visibility::initialize_context(fixture.app.world_mut(), 77, &[0, 1]).unwrap();
     let old = phase(fixture.app.world(), ObservationPhase::Completed).unwrap();
     assert!(old.observe_cell(0, TerrainCell { x: 3, y: 1 }).is_none());
@@ -489,4 +528,477 @@ fn unknown_surface_has_no_material_work_or_foreign_anchor_but_own_contact_remain
     assert_eq!(row.required_work, None);
     assert_eq!(row.completed_work, 0);
     assert_eq!(completed.work_for(1).count(), 0);
+}
+
+fn wall(catalog: &mut ContentCatalog, map: &mut MapDef, gap: bool) {
+    let terrain = map.terrain.as_mut().unwrap();
+    terrain.initial_heights = if gap {
+        vec![
+            TerrainHeightRect {
+                cells: TerrainRect {
+                    min: TerrainCell { x: 3, y: 0 },
+                    max: TerrainCell { x: 4, y: 4 },
+                },
+                elevation: 40,
+            },
+            TerrainHeightRect {
+                cells: TerrainRect {
+                    min: TerrainCell { x: 3, y: 5 },
+                    max: TerrainCell { x: 4, y: 8 },
+                },
+                elevation: 40,
+            },
+        ]
+    } else {
+        vec![TerrainHeightRect {
+            cells: TerrainRect {
+                min: TerrainCell { x: 3, y: 0 },
+                max: TerrainCell { x: 4, y: 8 },
+            },
+            elevation: 40,
+        }]
+    };
+    let TerrainGenerationDef::Version1 { bands } = &mut terrain.generation;
+    bands[0].top = 40;
+    map.placements[0].pos = WorldPos { x: 1.5, y: 4.5 };
+    map.placements[1].pos = WorldPos { x: 6.5, y: 6.5 };
+    catalog.units.get_mut(&id("harvester")).unwrap().movement = Some(MovementDef { speed: 100.0 });
+}
+#[test]
+fn fast_real_move_cannot_jump_a_one_cell_cliff_and_keeps_its_order() {
+    let mut fixture = Fixture::configured(20, 100, 20, |catalog, map| wall(catalog, map, false));
+    fixture.command(
+        Behaviour::Move,
+        OrderTargetSim::Point(crate::Vec2::new(5.5, 4.5)),
+        QueueMode::Replace,
+    );
+    for _ in 0..10 {
+        fixture.tick();
+    }
+    let entity = crate::unit_entity(fixture.app.world(), fixture.worker).unwrap();
+    assert!(
+        fixture
+            .app
+            .world()
+            .get::<crate::Position>(entity)
+            .unwrap()
+            .0
+            .x
+            < 2.75
+    );
+    assert!(
+        fixture
+            .app
+            .world()
+            .get::<crate::MoveTarget>(entity)
+            .is_some()
+    );
+    let retained = &fixture
+        .app
+        .world()
+        .resource::<crate::orders::PlainMoveOrderIdentities>()
+        .0[&fixture.worker];
+    assert_eq!(
+        retained.target,
+        OrderTargetSim::Point(crate::Vec2::new(5.5, 4.5))
+    );
+    assert!(
+        fixture
+            .app
+            .world()
+            .get::<navigation::TerrainMotionWait>(entity)
+            .is_some()
+    );
+}
+#[test]
+fn real_footprints_keep_large_rover_out_of_a_worker_width_gap() {
+    let mut small = Fixture::configured(20, 100, 20, |catalog, map| wall(catalog, map, true));
+    let mut large = Fixture::configured(20, 100, 20, |catalog, map| {
+        wall(catalog, map, true);
+        catalog.units.get_mut(&id("harvester")).unwrap().footprint =
+            Footprint::Circle { radius: 0.75 };
+    });
+    for fixture in [&mut small, &mut large] {
+        fixture.command(
+            Behaviour::Move,
+            OrderTargetSim::Point(crate::Vec2::new(5.5, 4.5)),
+            QueueMode::Replace,
+        );
+        for _ in 0..30 {
+            fixture.tick();
+        }
+    }
+    let position = |fixture: &Fixture| {
+        fixture
+            .app
+            .world()
+            .get::<crate::Position>(
+                crate::unit_entity(fixture.app.world(), fixture.worker).unwrap(),
+            )
+            .unwrap()
+            .0
+    };
+    assert!(
+        position(&small).x > 4.5,
+        "a half-width worker crosses the gap"
+    );
+    assert!(
+        position(&large).x < 3.0,
+        "centre-only traversal must not admit the rover"
+    );
+}
+#[test]
+fn real_class_step_and_grade_both_apply_even_to_a_fast_crossing() {
+    for (max_step, grade_denominator, crosses) in [(0, 1, false), (20, 100, false), (20, 50, true)]
+    {
+        let mut fixture = Fixture::configured(20, 100, 20, |catalog, map| {
+            wall(catalog, map, false);
+            catalog.terrain_movement_classes.insert(
+                id("walker_class"),
+                ResolvedTerrainMovementClass {
+                    id: id("walker_class"),
+                    name: "Walker".into(),
+                    max_step,
+                    max_grade: Ratio {
+                        numerator: 1,
+                        denominator: grade_denominator,
+                    },
+                },
+            );
+            catalog
+                .units
+                .get_mut(&id("harvester"))
+                .unwrap()
+                .terrain_class = Some(id("walker_class"));
+        });
+        fixture.command(
+            Behaviour::Move,
+            OrderTargetSim::Point(crate::Vec2::new(5.5, 4.5)),
+            QueueMode::Replace,
+        );
+        for _ in 0..30 {
+            fixture.tick();
+        }
+        let position = fixture
+            .app
+            .world()
+            .get::<crate::Position>(
+                crate::unit_entity(fixture.app.world(), fixture.worker).unwrap(),
+            )
+            .unwrap()
+            .0;
+        assert_eq!(
+            position.x > 4.5,
+            crosses,
+            "step{max_step}, grade1/{grade_denominator}, pose{position:?}"
+        );
+    }
+}
+#[test]
+fn ordinary_dig_opens_a_cached_blocked_route_but_distant_edit_does_not_invalidate_it() {
+    let mut fixture = Fixture::configured(20, 1000, 20, |catalog, map| {
+        wall(catalog, map, false);
+        map.placements[0].pos = WorldPos { x: 1.5, y: 1.5 };
+        let mut walker = map.placements[0].clone();
+        walker.pos = WorldPos { x: 1.5, y: 4.5 };
+        map.placements.push(walker);
+    });
+    let walker = fixture.unit_at(1.5, 4.5);
+    fixture.command_units(
+        vec![walker],
+        Behaviour::Move,
+        OrderTargetSim::Point(crate::Vec2::new(5.5, 4.5)),
+        QueueMode::Replace,
+    );
+    fixture.tick();
+    let before = privileged_navigation_diagnostics(fixture.app.world());
+    fixture.work("dig", rect(6, 0, 1), 19, QueueMode::Replace);
+    fixture.tick();
+    fixture.tick();
+    let distant = privileged_navigation_diagnostics(fixture.app.world());
+    assert_eq!(distant.invalidations, before.invalidations);
+    assert_eq!(distant.searches, before.searches);
+    fixture.work("dig", rect(3, 4, 1), 20, QueueMode::Replace);
+    for _ in 0..45 {
+        fixture.tick();
+    }
+    assert_eq!(fixture.height(3, 4), 20);
+    let after = privileged_navigation_diagnostics(fixture.app.world());
+    assert!(after.invalidations > distant.invalidations);
+    let position = fixture
+        .app
+        .world()
+        .get::<crate::Position>(crate::unit_entity(fixture.app.world(), walker).unwrap())
+        .unwrap()
+        .0;
+    assert!(
+        position.x > 4.5,
+        "the original retained move crosses the newly opened passage: {position:?}"
+    );
+}
+#[test]
+fn real_allocator_inversion_keeps_physical_work_claim_winner() {
+    let mut result = Vec::new();
+    for reverse in [false, true] {
+        let mut fixture = Fixture::configured(20, 100, 20, |_, map| {
+            let mut other = map.placements[0].clone();
+            other.pos = WorldPos { x: 1.5, y: 2.5 };
+            map.placements.push(other);
+            if reverse {
+                map.placements.reverse();
+            }
+        });
+        let first = fixture.unit_at(1.5, 1.5);
+        let later = fixture.unit_at(1.5, 2.5);
+        fixture.command_units(
+            vec![later, first],
+            Behaviour::TerrainWork,
+            OrderTargetSim::TerrainWork {
+                tool: id("dig"),
+                cells: rect(3, 1, 1),
+                target_elevation: 17,
+            },
+            QueueMode::Replace,
+        );
+        for _ in 0..5 {
+            fixture.tick();
+        }
+        assert_eq!(fixture.ore(first), 3);
+        assert_eq!(fixture.ore(later), 0);
+        result.push((first, later, fixture.height(3, 1)));
+    }
+    assert_ne!(
+        result[0].0, result[1].0,
+        "real placement order changed the physical actor's allocated identity"
+    );
+    assert_eq!(result[0].2, result[1].2);
+}
+#[test]
+fn a_later_closer_worker_cannot_steal_existing_partial_work_claim() {
+    let mut fixture = Fixture::configured(1, 100, 20, |_, map| {
+        let mut other = map.placements[0].clone();
+        other.pos = WorldPos { x: 2.5, y: 1.5 };
+        map.placements.push(other);
+    });
+    fixture.work("dig", rect(4, 1, 1), 19, QueueMode::Replace);
+    fixture.tick();
+    let later = fixture.unit_at(2.5, 1.5);
+    fixture.command_units(
+        vec![later],
+        Behaviour::TerrainWork,
+        OrderTargetSim::TerrainWork {
+            tool: id("dig"),
+            cells: rect(4, 1, 1),
+            target_elevation: 19,
+        },
+        QueueMode::Replace,
+    );
+    for _ in 0..22 {
+        fixture.tick();
+    }
+    assert_eq!(fixture.ore(fixture.worker), 1);
+    assert_eq!(fixture.ore(later), 0);
+}
+#[test]
+fn missing_second_fill_input_cannot_charge_first_input_or_change_column() {
+    let mut fixture = Fixture::configured(20, 100, 20, |_, map| {
+        for slot in &mut map.slot_economy {
+            for balance in &mut slot.balances {
+                balance.amount = 0;
+            }
+        }
+    });
+    fixture.work("dig", rect(3, 1, 1), 17, QueueMode::Replace);
+    for _ in 0..5 {
+        fixture.tick();
+    }
+    assert_eq!(fixture.ore(fixture.worker), 3);
+    let before = privileged_audit(fixture.app.world()).unwrap().columns_state;
+    fixture.work("fill", rect(3, 1, 1), 20, QueueMode::Replace);
+    for _ in 0..5 {
+        fixture.tick();
+    }
+    assert_eq!(fixture.ore(fixture.worker), 3);
+    assert_eq!(fixture.credits(), 0);
+    assert_eq!(
+        privileged_audit(fixture.app.world()).unwrap().columns_state,
+        before
+    );
+    assert_eq!(
+        work::rows_for(fixture.app.world(), 0)[0].wait,
+        TerrainWorkWait::MissingInputs
+    );
+}
+
+fn source_death_fixture(rate: u64, work_density: u32) -> Fixture {
+    let mut fixture = Fixture::configured(rate, 100, 20, |catalog, map| {
+        map.visibility = Some(VisibilityDef {
+            cell_size: 2.0,
+            sharing: VisionSharing::OwnSlot,
+            memory_limit: None,
+        });
+        catalog
+            .terrain_materials
+            .get_mut(&id("stone"))
+            .unwrap()
+            .work_per_world_cube
+            .numerator = work_density;
+        let mut scout = catalog.units[&id("rifleman")].clone();
+        scout.id = id("sight_scout");
+        scout.name = "Scout".into();
+        scout.vision = Some(VisionDef { radius: 6.0 });
+        scout.health = Some(HealthDef { max: 100 });
+        scout.removal = Some(RemovalDef {
+            by_command: true,
+            contents: ContentsPolicy::Destroy,
+        });
+        catalog.units.insert(scout.id.clone(), scout);
+        let mut enemy = catalog.units[&id("harvester")].clone();
+        enemy.id = id("enemy_tool");
+        enemy.name = "Enemy tool".into();
+        enemy.vision = Some(VisionDef { radius: 6.0 });
+        enemy.movement = None;
+        enemy.terrain_foundation = Some(TerrainFoundation::ForbidEdit);
+        enemy.weapon = Some(ResolvedWeapon {
+            damage_type: None,
+            bonus: vec![],
+            range: 2.0,
+            range_mode: WeaponRangeMode::Centre,
+            cooldown_ms: 50,
+            damage: 100,
+            ammo: None,
+            targets: TargetFilter {
+                slots: SlotRelation::Other,
+            },
+            when_short: vec![],
+        });
+        catalog.units.insert(enemy.id.clone(), enemy);
+        for (unit, owner, x, y) in [("sight_scout", 0, 1.5, 2.5), ("enemy_tool", 1, 2.5, 2.5)] {
+            map.placements.push(Placement {
+                unit: id(unit).to_string(),
+                owner_slot: owner,
+                pos: WorldPos { x, y },
+                contents: vec![],
+                facing: None,
+                start_order: None,
+            });
+        }
+    });
+    crate::visibility::initialize_context(fixture.app.world_mut(), 77, &[0, 1]).unwrap();
+    fixture
+}
+#[test]
+fn source_death_redacts_partial_work_and_hidden_edits_do_not_refresh_shared_memory() {
+    let mut fixture = source_death_fixture(31, 10_000);
+    let scout = fixture.unit_at(1.5, 2.5);
+    let enemy = fixture.unit_at(2.5, 2.5);
+    let cell = TerrainCell { x: 3, y: 1 };
+    fixture.work("dig", rect(3, 1, 1), 17, QueueMode::Replace);
+    fixture.tick();
+    assert!(
+        crate::unit_entity(fixture.app.world(), scout).is_none(),
+        "ordinary combat killed the sight source after work"
+    );
+    let runtime = &fixture
+        .app
+        .world()
+        .resource::<work::TerrainWorkRuntime>()
+        .units[&fixture.worker];
+    assert_eq!(runtime.done, 1);
+    assert_eq!(runtime.carry, 11);
+    assert_eq!(runtime.required, Some(10));
+    let completed = phase(fixture.app.world(), ObservationPhase::Completed).unwrap();
+    let row = completed.work_for(0).next().unwrap();
+    assert_eq!(row.wait, TerrainWorkWait::Unknown);
+    assert_eq!(row.required_work, None);
+    assert_eq!(row.completed_work, 0);
+    let remembered = completed.surface(0, cell).unwrap();
+    assert_eq!(remembered.elevation, 20);
+    assert!(!remembered.current);
+    assert_eq!(remembered.last_seen_tick, 1);
+    let chunk = completed
+        .chunk_for(turts_rules::terrain::geometry::Cell { x: 3, y: 1 })
+        .unwrap();
+    let revision = completed.knowledge_revision(0, chunk);
+    fixture.command_slot(
+        SlotId(1),
+        vec![enemy],
+        Behaviour::TerrainWork,
+        OrderTargetSim::TerrainWork {
+            tool: id("dig"),
+            cells: rect(3, 1, 1),
+            target_elevation: 19,
+        },
+        QueueMode::Replace,
+    );
+    for _ in 0..10 {
+        fixture.tick();
+    }
+    assert_eq!(
+        fixture.height(3, 1),
+        19,
+        "the other owner's ordinary hidden work committed"
+    );
+    let after = phase(fixture.app.world(), ObservationPhase::Completed).unwrap();
+    assert_eq!(after.surface(0, cell), Some(remembered));
+    assert_eq!(
+        after.knowledge_revision(0, chunk),
+        revision,
+        "hidden edit counters cannot invalidate permitted route caches"
+    );
+    assert_eq!(after.surface(1, cell).unwrap().elevation, 19);
+}
+#[test]
+fn committed_surface_witness_survives_a_later_same_tick_sight_source_death() {
+    let mut fixture = source_death_fixture(20, 1000);
+    fixture.work("dig", rect(3, 1, 1), 17, QueueMode::Replace);
+    fixture.tick();
+    assert_eq!(fixture.ore(fixture.worker), 1);
+    let completed = phase(fixture.app.world(), ObservationPhase::Completed).unwrap();
+    let remembered = completed.surface(0, TerrainCell { x: 3, y: 1 }).unwrap();
+    assert_eq!(remembered.elevation, 19);
+    assert!(!remembered.current);
+    assert_eq!(remembered.last_seen_tick, 1);
+    assert_eq!(remembered.provenance, Some(TerrainProvenance::Natural));
+    assert!(completed.observe_cell(0, remembered.cell).is_none());
+    assert_eq!(
+        committed_surface_observations(fixture.app.world(), 0)[0]
+            .surface
+            .elevation,
+        remembered.elevation
+    );
+}
+#[test]
+fn unchanged_current_surface_retains_sample_tick_without_refresh_traffic() {
+    let mut fixture = Fixture::new(20, 100, 20);
+    let cell = TerrainCell { x: 3, y: 1 };
+    let first = phase(fixture.app.world(), ObservationPhase::Completed)
+        .unwrap()
+        .surface(0, cell)
+        .unwrap();
+    for _ in 0..4 {
+        fixture.tick();
+    }
+    let stable = phase(fixture.app.world(), ObservationPhase::Completed)
+        .unwrap()
+        .surface(0, cell)
+        .unwrap();
+    assert_eq!(stable, first);
+    fixture.work("dig", rect(3, 1, 1), 19, QueueMode::Replace);
+    fixture.tick();
+    let changed = phase(fixture.app.world(), ObservationPhase::Completed)
+        .unwrap()
+        .surface(0, cell)
+        .unwrap();
+    assert_eq!(changed.elevation, 19);
+    assert_eq!(changed.last_seen_tick, 5);
+    for _ in 0..4 {
+        fixture.tick();
+    }
+    assert_eq!(
+        phase(fixture.app.world(), ObservationPhase::Completed)
+            .unwrap()
+            .surface(0, cell),
+        Some(changed)
+    );
 }

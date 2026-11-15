@@ -5,7 +5,7 @@ use super::{
 };
 use bevy_ecs::{prelude::Resource, world::World};
 use std::{collections::BTreeMap, sync::Arc};
-use turts_mod_api::{ObservationPhase, TerrainCell, TerrainProvenance, VisibilityGrid};
+use turts_mod_api::{ObservationPhase, TerrainProvenance, VisibilityGrid};
 use turts_rules::terrain::geometry::{Budget, Cell};
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct Remembered {

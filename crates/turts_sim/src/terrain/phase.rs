@@ -3,7 +3,7 @@ use super::{TerrainObservedCell, TerrainState, state::ChunkTable};
 use bevy_ecs::{prelude::Resource, world::World};
 use std::{collections::BTreeMap, fmt, sync::Arc};
 use turts_mod_api::{ContentId, ObservationPhase, TerrainCell};
-use turts_rules::terrain::geometry::{Budget, Cell, Grid};
+use turts_rules::terrain::geometry::{Cell, Grid};
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct Ground {
     owner: u8,
