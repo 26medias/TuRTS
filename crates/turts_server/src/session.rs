@@ -119,6 +119,7 @@ pub(crate) struct ParticipantTraceComplete;
 /// Add the session systems. They run in `PreUpdate`, after lightyear has received messages.
 pub fn install(app: &mut App, advertised: Advertised) {
     app.insert_resource(advertised);
+    app.init_resource::<crate::permissions::ObservationPolicy>();
     app.init_resource::<StagedPlayerCommands>()
         .init_resource::<PendingOrderCommands>()
         .init_resource::<CommandAdmissionDiagnostics>()
@@ -842,7 +843,16 @@ pub fn send_snapshots(world: &mut World, mut due: Local<QueryState<Entity, With<
         .filter_map(|entity| {
             let slot = world.get::<Session>(entity).map(|session| session.slot);
             let payload = slot.map(|slot| {
-                let message = export::snapshot_for(&world.resource::<CompletedWorld>().0, slot);
+                let policy = world
+                    .get_resource::<crate::permissions::ObservationPolicy>()
+                    .cloned()
+                    .unwrap_or_default();
+                let (message, history) = export::snapshot_for_with_permissions(
+                    &world.resource::<CompletedWorld>().0,
+                    slot,
+                    policy.0.as_ref(),
+                );
+                world.entity_mut(entity).insert(history);
                 (entity, message)
             });
             world.entity_mut(entity).remove::<SnapshotDue>();

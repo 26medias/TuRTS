@@ -4,6 +4,17 @@ Status: approved by the same Anvil reviewer. Both final clarifications are incor
 Contract: `../specs/2026-11-15-public-bot-foundation.md`.
 Budget: the existing reviewer, one plan turn. No new panel or task-review loops.
 
+## Current integration
+
+The pure core passed 39 tests before the final three seed/rollback regressions were added.
+The assembled workspace passed a non-test check at `d846fc6c`.
+Root owns participant tracing, integration checks, browser acceptance, and delivery.
+The execution owner now owns `actors.rs`, accounting, and real scheduled receipt tests.
+The host owner owns public bot scenarios, replay, and the complete-phase benchmark.
+The projection owner owns shared human permission projection and focused tests.
+Next: run all assembled native tests, fix failures, measure the phase, then run browser probes and the one foundation review.
+Main remains at the accepted SDK14 milestone until all public-bot acceptance checks pass.
+
 ## Delivery and ownership
 
 Root owns public contracts, shared actor admission, authoritative receipts, and permission decisions.
