@@ -10,8 +10,11 @@ use turts_net_protocol::{visibility::*, visibility_transaction::*, *};
 
 fn setup() -> (Replica, StateTransactionStamp, StateTransactionPayload) {
     let archive = PackageArchive::parse(
-        &pack_dir(&std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../mods/base"))
-            .unwrap(),
+        &pack_dir(
+            &std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../../mods/visibility_probe"),
+        )
+        .unwrap(),
     )
     .unwrap();
     let content = ClientContent::from_archives(&[archive]).unwrap();
@@ -45,9 +48,13 @@ fn setup() -> (Replica, StateTransactionStamp, StateTransactionPayload) {
     };
     let state = Snapshot {
         tick: 10,
+        healths: vec![HealthRecord {
+            unit: UnitId(1),
+            current: 100,
+        }],
         units: vec![UnitSnapshot {
             unit_id: UnitId(1),
-            content_id: "base:command_center".into(),
+            content_id: "visibility_probe:scout".into(),
             owner_slot: SlotId(1),
             pos: Pos { x: 5., y: 1. },
             facing: None,
@@ -89,7 +96,7 @@ fn hidden_patch(stamp: &StateTransactionStamp) -> (StateTransactionStamp, StateT
         revealed_nodes: vec![],
         remembered_units: vec![RememberedUnit {
             unit: 1,
-            content: ContentId::parse("base:command_center").unwrap(),
+            content: ContentId::parse("visibility_probe:scout").unwrap(),
             owner: 1,
             position: WorldPos { x: 5., y: 1. },
             facing: None,
@@ -137,6 +144,8 @@ fn interrupted_transport_keeps_old_view_until_complete_activation_and_ack() {
 fn hide_removes_live_interpolation_and_health_without_inventing_death() {
     let (mut replica, stamp, payload) = setup();
     assert!(replica.activate_transaction(&stamp, &payload, Instant::now()));
+    assert_eq!(replica.healths[0].current, 100);
+    assert_eq!(replica.health_trace[&1].last().unwrap().current, 100);
     let (stamp, payload) = hidden_patch(&stamp);
     assert!(replica.activate_transaction(&stamp, &payload, Instant::now()));
     assert!(!replica.units.contains_key(&1));
@@ -243,10 +252,10 @@ fn observed_killing_hit_remains_available_for_alerts_in_atomic_views() {
         {
             state.units[0].content_id = "visibility_probe:scout".into();
             state.units[0].owner_slot = SlotId(0);
-            state.healths.push(HealthRecord {
+            state.healths = vec![HealthRecord {
                 unit: UnitId(1),
                 current: 100,
-            });
+            }];
             if !restricted {
                 *knowledge = None;
             }
