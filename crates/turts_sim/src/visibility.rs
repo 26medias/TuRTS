@@ -20,6 +20,7 @@ pub struct VisibleUnit {
     pub position: WorldPos,
     pub facing: Option<Facing>,
     pub site: bool,
+    pub ground_elevation: Option<i32>,
 }
 impl VisibleUnit {
     fn remembered(&self, tick: u32) -> RememberedUnit {
@@ -31,6 +32,7 @@ impl VisibleUnit {
             facing: self.facing,
             site: self.site,
             last_seen_tick: tick,
+            ground_elevation: self.ground_elevation,
         }
     }
 }
@@ -115,6 +117,21 @@ impl VisibilityBasis {
             rule_grid(self.grid)
                 .cell(point(position))
                 .is_some_and(|cell| bit(&slot.observed, cell))
+        })
+    }
+    /// Exact positive-area terrain/fog overlap. Border tangency alone grants no extra sight.
+    pub fn terrain_cell_observed(
+        &self,
+        viewer: u8,
+        terrain: &turts_rules::terrain::geometry::Grid,
+        cell: turts_rules::terrain::geometry::Cell,
+        budget: &mut turts_rules::terrain::geometry::Budget,
+    ) -> Result<bool, turts_rules::terrain::geometry::Error> {
+        let Some(slot) = self.slots.get(usize::from(viewer)) else {
+            return Ok(false);
+        };
+        terrain.cell_observed(cell, rule_grid(self.grid), budget, |cell| {
+            bit(&slot.observed, cell)
         })
     }
     pub fn area_observed(&self, viewer: u8, min: WorldPos, max: WorldPos) -> bool {
@@ -805,6 +822,7 @@ fn capture_units(world: &mut World) -> (Vec<VisibleUnit>, Vec<SightSource>) {
             position,
             facing: facing.map(|facing| facing.0),
             site,
+            ground_elevation: crate::terrain::ground_elevation(world, id.0),
         });
         if !site && let Some(vision) = vision {
             let alive = !has_health
@@ -921,6 +939,7 @@ pub fn prepare_event_unit(world: &World, unit: u32) -> Option<PreparedEventUnit>
             let position = world.get::<crate::Position>(entity)?.0;
             Some(VisibleUnit {
                 unit,
+                ground_elevation: crate::terrain::ground_elevation(world, unit),
                 content: Arc::new(ContentId::parse(&entry.content_id).ok()?),
                 owner,
                 position: WorldPos {

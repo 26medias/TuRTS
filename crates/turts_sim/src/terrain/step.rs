@@ -10,7 +10,7 @@ use crate::{
 use bevy_ecs::world::World;
 use turts_mod_api::{
     ContentId, ObservationPhase, ResolvedTerrainOperation, ResourceKind, TerrainCell,
-    TerrainOutputDestination, WorldPos,
+    TerrainOutputDestination,
 };
 use turts_rules::terrain::{
     geometry::{Budget, Cell, Point},
@@ -26,13 +26,12 @@ pub(crate) enum StepWait {
     Material,
     Floor,
     Ceiling,
-    Funds,
-    CargoFull,
     Invalid,
 }
 pub(crate) struct StepPlan {
     pub(crate) owner: u8,
     pub(crate) required_work: u64,
+    pub(crate) max_steps: u32,
     pub(crate) material: ContentId,
     pub(crate) placed: bool,
     pub(crate) before: i32,
@@ -44,18 +43,8 @@ pub(crate) struct StepPlan {
 }
 fn ratio(ratio: turts_mod_api::Ratio) -> turts_rules::terrain::Ratio {
     turts_rules::terrain::Ratio {
-        numerator: ratio.numerator,
-        denominator: ratio.denominator,
-    }
-}
-fn outward(value: f64, upper: bool) -> f32 {
-    let rounded = value as f32;
-    if upper && f64::from(rounded) < value {
-        rounded.next_up()
-    } else if !upper && f64::from(rounded) > value {
-        rounded.next_down()
-    } else {
-        rounded
+        numerator: u64::from(ratio.numerator),
+        denominator: u64::from(ratio.denominator),
     }
 }
 pub(crate) fn observed(
@@ -68,16 +57,19 @@ pub(crate) fn observed(
     let Some(basis) = crate::visibility::basis(world, phase) else {
         return true;
     };
-    let width = f64::from(state.grid.cell_width) / f64::from(state.grid.length_scale);
-    let min = WorldPos {
-        x: outward(f64::from(cell.x) * width, false),
-        y: outward(f64::from(cell.y) * width, false),
+    let grid = basis.grid();
+    let cells = u64::from(grid.columns) * u64::from(grid.rows);
+    let Some(limit) = usize::try_from(cells)
+        .ok()
+        .and_then(|cells| cells.checked_mul(2))
+        .and_then(|cells| cells.checked_add(16))
+    else {
+        return false;
     };
-    let max = WorldPos {
-        x: outward((f64::from(cell.x) + 1.0) * width, true),
-        y: outward((f64::from(cell.y) + 1.0) * width, true),
-    };
-    basis.area_observed(owner, min, max)
+    let mut budget = Budget::new(limit);
+    basis
+        .terrain_cell_observed(owner, &state.grid, cell, &mut budget)
+        .unwrap_or(false)
 }
 fn body_blocks(state: &TerrainState, cell: Cell, point: bevy_math::Vec2, radius: f32) -> bool {
     let mut budget = Budget::new(4096);
@@ -132,6 +124,15 @@ pub(crate) fn prepare_step(
     actor: u32,
     cell: Cell,
     tool_id: &ContentId,
+) -> Result<StepPlan, StepWait> {
+    prepare_steps(world, actor, cell, tool_id, 1)
+}
+pub(crate) fn prepare_steps(
+    world: &World,
+    actor: u32,
+    cell: Cell,
+    tool_id: &ContentId,
+    steps: u32,
 ) -> Result<StepPlan, StepWait> {
     let state = world
         .get_resource::<TerrainState>()
@@ -218,7 +219,7 @@ pub(crate) fn prepare_step(
     let (step, input_rates, output_rates) = match &tool.operation {
         ResolvedTerrainOperation::Excavate => (
             column
-                .stage_remove(state.prism, terms, u64::MAX)
+                .stage_remove_many(state.prism, terms, u64::MAX, steps)
                 .map_err(|_| StepWait::Invalid)?,
             &[][..],
             if placed {
@@ -233,11 +234,12 @@ pub(crate) fn prepare_step(
             }
             (
                 column
-                    .stage_fill(
+                    .stage_fill_many(
                         state.key(material).ok_or(StepWait::Invalid)?,
                         state.prism,
                         terms,
                         u64::MAX,
+                        steps,
                     )
                     .map_err(|_| StepWait::Invalid)?,
                 material_inputs(material, catalog)?,
@@ -253,13 +255,26 @@ pub(crate) fn prepare_step(
                 state
                     .prism
                     .amount(ratio(rate.per_world_cube), u64::MAX)
+                    .and_then(|amount| {
+                        amount
+                            .checked_mul(u64::from(steps))
+                            .ok_or(turts_rules::terrain::material::Error::ArithmeticOverflow)
+                    })
                     .map(|amount| (rate.resource.clone(), amount))
                     .map_err(|_| StepWait::Invalid)
             })
             .collect::<Result<Vec<_>, _>>()
     };
+    let max_steps = match tool.operation {
+        ResolvedTerrainOperation::Excavate => original.exposed_run_steps(),
+        ResolvedTerrainOperation::Fill { .. } => {
+            u32::try_from(i64::from(state.grid.ceiling) - i64::from(original.surface()))
+                .map_err(|_| StepWait::Invalid)?
+        }
+    };
     Ok(StepPlan {
         owner,
+        max_steps,
         required_work: effect.required_work,
         material: material_id.clone(),
         placed,
@@ -285,65 +300,205 @@ fn material_inputs<'a>(
         .ok_or(StepWait::Invalid)
 }
 
+fn stage_accounts(
+    tx: &mut transaction::Transaction<'_>,
+    actor: u32,
+    plan: &StepPlan,
+) -> Result<(), RejectReason> {
+    for (resource, amount) in &plan.inputs {
+        if *amount == 0 {
+            continue;
+        }
+        let kind = tx
+            .world()
+            .get_resource::<InstalledCatalog>()
+            .and_then(|catalog| catalog.0.resources.get(resource))
+            .map(|resource| resource.kind)
+            .ok_or(RejectReason::IntegrityViolation)?;
+        let endpoint = match kind {
+            ResourceKind::Item => Endpoint::Inventory(actor),
+            ResourceKind::Balance => Endpoint::Slot(plan.owner),
+            ResourceKind::Supply { .. } => return Err(RejectReason::IncompatibleItem),
+        };
+        tx.validate_endpoint(endpoint, resource)?;
+        let mut account = tx.account(endpoint, resource);
+        let available = account
+            .on_hand
+            .checked_sub(account.reserved)
+            .ok_or(RejectReason::IntegrityViolation)?;
+        if available < *amount {
+            return Err(if kind == ResourceKind::Balance {
+                RejectReason::InsufficientBalance
+            } else {
+                RejectReason::InsufficientItems
+            });
+        }
+        account.on_hand -= *amount;
+        tx.stage_account(endpoint, resource.clone(), account);
+    }
+    for (resource, amount) in &plan.outputs {
+        if *amount == 0 {
+            continue;
+        }
+        let endpoint = match plan.destination {
+            TerrainOutputDestination::Inventory => Endpoint::Inventory(actor),
+            TerrainOutputDestination::SlotBalances => Endpoint::Slot(plan.owner),
+        };
+        tx.validate_endpoint(endpoint, resource)?;
+        let mut account = tx.account(endpoint, resource);
+        account.on_hand = account
+            .on_hand
+            .checked_add(*amount)
+            .ok_or(RejectReason::RefundDestinationOverflow)?;
+        tx.stage_account(endpoint, resource.clone(), account);
+        if let Endpoint::Inventory(_) = endpoint {
+            let capacity = tx.inventory(endpoint)?.capacity;
+            if tx.inventory_used(endpoint)? > u128::from(capacity) {
+                return Err(RejectReason::RefundDestinationFull);
+            }
+        }
+    }
+    Ok(())
+}
+pub(crate) fn affordable_steps(
+    world: &World,
+    actor: u32,
+    single: &StepPlan,
+    requested: u32,
+) -> u32 {
+    use crate::economy::ledger::EconomyLedger;
+    let Some(ledger) = world.get_resource::<EconomyLedger>() else {
+        return 0;
+    };
+    let Some(catalog) = world.get_resource::<InstalledCatalog>() else {
+        return 0;
+    };
+    let mut count = u64::from(requested);
+    for (resource, amount) in &single.inputs {
+        if *amount == 0 {
+            continue;
+        }
+        let account = match catalog
+            .0
+            .resources
+            .get(resource)
+            .map(|resource| resource.kind)
+        {
+            Some(ResourceKind::Balance) => ledger.balances.get(&(single.owner, resource.clone())),
+            Some(ResourceKind::Item) => ledger
+                .inventories
+                .get(&actor)
+                .and_then(|inventory| inventory.items.get(resource)),
+            _ => return 0,
+        };
+        let available = account
+            .and_then(|account| account.on_hand.checked_sub(account.reserved))
+            .unwrap_or(0);
+        count = count.min(available / amount);
+    }
+    let mut inventory_total = 0u128;
+    for (resource, amount) in &single.outputs {
+        if *amount == 0 {
+            continue;
+        }
+        let account = match single.destination {
+            TerrainOutputDestination::SlotBalances => {
+                ledger.balances.get(&(single.owner, resource.clone()))
+            }
+            TerrainOutputDestination::Inventory => ledger
+                .inventories
+                .get(&actor)
+                .and_then(|inventory| inventory.items.get(resource)),
+        };
+        count = count.min((u64::MAX - account.map_or(0, |account| account.on_hand)) / amount);
+        if single.destination == TerrainOutputDestination::Inventory {
+            let Some(total) = inventory_total.checked_add(u128::from(*amount)) else {
+                return 0;
+            };
+            inventory_total = total;
+        }
+    }
+    if inventory_total > 0 {
+        let Some(inventory) = ledger.inventories.get(&actor) else {
+            return 0;
+        };
+        let Some(used) = inventory.items.values().try_fold(0u128, |sum, account| {
+            sum.checked_add(u128::from(account.on_hand))
+        }) else {
+            return 0;
+        };
+        let remaining = u128::from(inventory.capacity).saturating_sub(used);
+        count = count.min(u64::try_from(remaining / inventory_total).unwrap_or(u64::MAX));
+    }
+    u32::try_from(count).unwrap_or(0)
+}
+pub(crate) fn accounts_ready(
+    world: &mut World,
+    actor: u32,
+    plan: &StepPlan,
+) -> Result<(), RejectReason> {
+    transaction::validate_only(world, |tx| stage_accounts(tx, actor, plan))
+}
 pub(crate) fn commit_step(
     world: &mut World,
     actor: u32,
     plan: StepPlan,
+    state: super::work::WorkState,
 ) -> Result<(), RejectReason> {
     transaction::transact(world, |tx| {
-        for (resource, amount) in &plan.inputs {
-            if *amount == 0 {
-                continue;
-            }
-            let kind = tx
-                .world()
-                .get_resource::<InstalledCatalog>()
-                .and_then(|catalog| catalog.0.resources.get(resource))
-                .map(|resource| resource.kind)
-                .ok_or(RejectReason::IntegrityViolation)?;
-            let endpoint = match kind {
-                ResourceKind::Item => Endpoint::Inventory(actor),
-                ResourceKind::Balance => Endpoint::Slot(plan.owner),
-                ResourceKind::Supply { .. } => return Err(RejectReason::IncompatibleItem),
-            };
-            tx.validate_endpoint(endpoint, resource)?;
-            let mut account = tx.account(endpoint, resource);
-            let available = account
-                .on_hand
-                .checked_sub(account.reserved)
-                .ok_or(RejectReason::IntegrityViolation)?;
-            if available < *amount {
-                return Err(if kind == ResourceKind::Balance {
-                    RejectReason::InsufficientBalance
-                } else {
-                    RejectReason::InsufficientItems
-                });
-            }
-            account.on_hand -= *amount;
-            tx.stage_account(endpoint, resource.clone(), account);
-        }
-        for (resource, amount) in &plan.outputs {
-            if *amount == 0 {
-                continue;
-            }
-            let endpoint = match plan.destination {
-                TerrainOutputDestination::Inventory => Endpoint::Inventory(actor),
-                TerrainOutputDestination::SlotBalances => Endpoint::Slot(plan.owner),
-            };
-            tx.validate_endpoint(endpoint, resource)?;
-            let mut account = tx.account(endpoint, resource);
-            account.on_hand = account
-                .on_hand
-                .checked_add(*amount)
-                .ok_or(RejectReason::RefundDestinationOverflow)?;
-            tx.stage_account(endpoint, resource.clone(), account);
-            if let Endpoint::Inventory(_) = endpoint {
-                let capacity = tx.inventory(endpoint)?.capacity;
-                if tx.inventory_used(endpoint)? > u128::from(capacity) {
-                    return Err(RejectReason::RefundDestinationFull);
-                }
-            }
-        }
+        stage_accounts(tx, actor, &plan)?;
+        let inputs = plan
+            .inputs
+            .iter()
+            .filter(|(_, amount)| *amount > 0)
+            .map(|(resource, amount)| {
+                let kind = tx
+                    .world()
+                    .resource::<InstalledCatalog>()
+                    .0
+                    .resources
+                    .get(resource)
+                    .ok_or(RejectReason::IntegrityViolation)?
+                    .kind;
+                let source = match kind {
+                    ResourceKind::Item => crate::EventSource::Inventory(actor),
+                    ResourceKind::Balance => crate::EventSource::Slot(plan.owner),
+                    ResourceKind::Supply { .. } => return Err(RejectReason::IncompatibleItem),
+                };
+                Ok(crate::CostLine {
+                    source,
+                    resource: resource.clone(),
+                    amount: *amount,
+                })
+            })
+            .collect::<Result<Vec<_>, RejectReason>>()?;
+        let outputs = plan
+            .outputs
+            .iter()
+            .filter(|(_, amount)| *amount > 0)
+            .map(|(resource, amount)| crate::CostLine {
+                source: match plan.destination {
+                    TerrainOutputDestination::Inventory => crate::EventSource::Inventory(actor),
+                    TerrainOutputDestination::SlotBalances => crate::EventSource::Slot(plan.owner),
+                },
+                resource: resource.clone(),
+                amount: *amount,
+            })
+            .collect();
+        tx.stage_event(
+            plan.owner,
+            crate::EconomyEventKind::TerrainStepCommitted {
+                unit: actor,
+                cell: api_cell(plan.column.cell),
+                before: plan.before,
+                after: plan.after,
+                material: plan.material.clone(),
+                placed: plan.placed,
+                inputs,
+                outputs,
+            },
+        )?;
+        tx.stage_terrain_work(actor, state);
         tx.stage_terrain_cell(plan.column)?;
         Ok(())
     })

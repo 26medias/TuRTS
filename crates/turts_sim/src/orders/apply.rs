@@ -34,7 +34,9 @@ pub(crate) fn unit_order_capable(world: &World, kind: turts_mod_api::UnitTypeId)
                         && (unit.weapon.is_some()
                             || unit.producer.is_some()
                             || unit.constructor.is_some()
-                            || unit.repairer.is_some())
+                            || unit.repairer.is_some()
+                            || !unit.terrain_tools.is_empty()
+                            || unit.terrain_cargo.is_some())
                 })
             })
 }
@@ -48,6 +50,8 @@ pub(super) fn unit_toggleable(unit: &turts_mod_api::ResolvedUnit) -> bool {
         || unit.constructor.is_some()
         || unit.weapon.is_some()
         || unit.repairer.is_some()
+        || !unit.terrain_tools.is_empty()
+        || unit.terrain_cargo.is_some()
 }
 
 /// Apply one server-resolved order envelope, validating each unit independently.
@@ -659,7 +663,11 @@ fn validate_member(
         Behaviour::Move => registry_movement,
         Behaviour::Stop | Behaviour::Hold => {
             definition.is_some_and(|unit| {
-                unit.weapon.is_some() || unit.constructor.is_some() || unit.repairer.is_some()
+                unit.weapon.is_some()
+                    || unit.constructor.is_some()
+                    || unit.repairer.is_some()
+                    || !unit.terrain_tools.is_empty()
+                    || unit.terrain_cargo.is_some()
             }) || registry_movement
         }
         Behaviour::Attack => match command.target {
@@ -683,6 +691,8 @@ fn validate_member(
         Behaviour::Construct => definition.is_some_and(|unit| unit.constructor.is_some()),
         Behaviour::SetRally => definition.is_some_and(|unit| unit.producer.is_some()),
         Behaviour::Repair => definition.is_some_and(|unit| unit.repairer.is_some()),
+        Behaviour::TerrainWork => definition.is_some_and(|unit| !unit.terrain_tools.is_empty()),
+        Behaviour::UnloadCargo => definition.is_some_and(|unit| unit.terrain_cargo.is_some()),
         Behaviour::CancelConstruction | Behaviour::Surrender => false,
     };
     if !capable {
@@ -691,7 +701,9 @@ fn validate_member(
             | Behaviour::Produce
             | Behaviour::CancelProduction
             | Behaviour::Construct
-            | Behaviour::Repair => R::MissingCapability,
+            | Behaviour::Repair
+            | Behaviour::TerrainWork
+            | Behaviour::UnloadCargo => R::MissingCapability,
             Behaviour::Remove => R::NotRemovable,
             Behaviour::SetEnabled(_) => R::NotToggleable,
             _ => R::NotApplicable,
@@ -707,6 +719,9 @@ fn validate_member(
     }
     crate::visibility::validate_target(world, slot.0, &command.target)?;
     validate_target(world, command)?;
+    if command.behaviour == Behaviour::TerrainWork {
+        crate::terrain::work::validate_designation(world, *unit_id, &command.target)?;
+    }
     Ok(entity)
 }
 
@@ -724,7 +739,10 @@ fn validate_target(
         | (turts_mod_api::TargetKind::Job, OrderTargetSim::Job(_))
         | (turts_mod_api::TargetKind::Content, OrderTargetSim::Content(_))
         | (turts_mod_api::TargetKind::ContentAtPoint, OrderTargetSim::ContentAtPoint { .. })
-        | (turts_mod_api::TargetKind::None, OrderTargetSim::None) => true,
+        | (turts_mod_api::TargetKind::None, OrderTargetSim::None)
+        | (turts_mod_api::TargetKind::TerrainDesignation, OrderTargetSim::TerrainWork { .. }) => {
+            true
+        }
         (turts_mod_api::TargetKind::Content, OrderTargetSim::Invalid)
             if command.behaviour == Behaviour::Produce =>
         {
@@ -736,6 +754,10 @@ fn validate_target(
         return Err(R::TargetInvalid);
     }
     match (&command.behaviour, &command.target) {
+        (Behaviour::TerrainWork, OrderTargetSim::TerrainWork { .. }) => Ok(()),
+        (Behaviour::TerrainWork, _) => Err(R::TargetInvalid),
+        (Behaviour::UnloadCargo, OrderTargetSim::Unit(_)) => Ok(()),
+        (Behaviour::UnloadCargo, _) => Err(R::TargetInvalid),
         (Behaviour::SetRally, OrderTargetSim::Point(point)) => {
             if !point.is_finite() {
                 return Err(R::TargetNotFinite);
@@ -1198,11 +1220,22 @@ fn apply_unit_order(
             set_unit_orders(world, entity, orders);
             Ok(None)
         }
-        Behaviour::Repair => {
-            let OrderTargetSim::Unit(target) = order.target else {
-                return Err(R::TargetInvalid);
-            };
-            crate::economy::repair::validate_order(world, unit_id, target)?;
+        Behaviour::Repair | Behaviour::TerrainWork | Behaviour::UnloadCargo => {
+            match order.behaviour {
+                Behaviour::Repair => {
+                    let OrderTargetSim::Unit(target) = order.target else {
+                        return Err(R::TargetInvalid);
+                    };
+                    crate::economy::repair::validate_order(world, unit_id, target)?;
+                }
+                Behaviour::TerrainWork => {
+                    crate::terrain::work::validate_designation(world, unit_id, &order.target)?
+                }
+                Behaviour::UnloadCargo => {
+                    crate::terrain::cargo::validate_order(world, unit_id, &order.target)?
+                }
+                _ => unreachable!(),
+            }
             let active = world
                 .get::<UnitOrders>(entity)
                 .is_some_and(|orders| orders.current.is_some())
@@ -1247,6 +1280,8 @@ pub(crate) fn clear_replaced_movement(
     entity: bevy_ecs::entity::Entity,
     unit_id: u32,
 ) {
+    crate::terrain::work::order_changed(world, unit_id);
+    crate::terrain::cargo::order_changed(world, unit_id);
     edit_unit_orders(world, entity, |orders| orders.acquired = None);
     world
         .resource_mut::<PendingMovementOrders>()

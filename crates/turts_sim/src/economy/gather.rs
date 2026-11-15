@@ -1037,49 +1037,65 @@ fn store(
     if owner_of(world, from)? != owner || owner_of(world, to)? != owner {
         return Err(RejectReason::NotOwner);
     }
-    transact(world, |tx| {
-        let src = Endpoint::Inventory(from);
-        let dst = Endpoint::Inventory(to);
-        tx.validate_endpoint_legacy(src, item)?;
-        tx.validate_endpoint_legacy(dst, item)?;
-        let source = tx.account(src, item);
-        let destination = tx.account(dst, item);
-        let available = source
-            .on_hand
-            .checked_sub(source.reserved)
-            .ok_or(RejectReason::ArithmeticOverflow)?;
-        if available < amount {
-            return Err(RejectReason::InsufficientItems);
-        }
-        let used = tx.inventory_used_legacy(to)?;
-        if used
-            .checked_add(u128::from(amount))
-            .ok_or(RejectReason::ArithmeticOverflow)?
-            > u128::from(tx.inventory_legacy(to)?.capacity)
-        {
-            return Err(RejectReason::RefundDestinationFull);
-        }
-        tx.stage_account(
-            src,
-            item.clone(),
-            Account {
-                on_hand: source.on_hand - amount,
-                ..source
-            },
-        );
-        tx.stage_account(
-            dst,
-            item.clone(),
-            Account {
-                on_hand: destination
-                    .on_hand
-                    .checked_add(amount)
-                    .ok_or(RejectReason::ArithmeticOverflow)?,
-                ..destination
-            },
-        );
-        Ok(())
-    })
+    transact(world, |tx| stage_store(tx, owner, from, to, item, amount))
+}
+
+/// Share the ordinary physical store transaction with explicit terrain cargo unloading.
+pub(crate) fn stage_store(
+    tx: &mut super::transaction::Transaction<'_>,
+    owner: SlotId,
+    from: u32,
+    to: u32,
+    item: &ContentId,
+    amount: u64,
+) -> Result<(), RejectReason> {
+    if from == to {
+        return Err(RejectReason::InvalidAmount);
+    }
+    if owner_of(tx.world(), from)? != owner || owner_of(tx.world(), to)? != owner {
+        return Err(RejectReason::NotOwner);
+    }
+    let src = Endpoint::Inventory(from);
+    let dst = Endpoint::Inventory(to);
+    tx.validate_endpoint_legacy(src, item)?;
+    tx.validate_endpoint_legacy(dst, item)?;
+    let source = tx.account(src, item);
+    let destination = tx.account(dst, item);
+    let available = source
+        .on_hand
+        .checked_sub(source.reserved)
+        .ok_or(RejectReason::ArithmeticOverflow)?;
+    if available < amount {
+        return Err(RejectReason::InsufficientItems);
+    }
+    let used = tx.inventory_used_legacy(to)?;
+    if used
+        .checked_add(u128::from(amount))
+        .ok_or(RejectReason::ArithmeticOverflow)?
+        > u128::from(tx.inventory_legacy(to)?.capacity)
+    {
+        return Err(RejectReason::RefundDestinationFull);
+    }
+    tx.stage_account(
+        src,
+        item.clone(),
+        Account {
+            on_hand: source.on_hand - amount,
+            ..source
+        },
+    );
+    tx.stage_account(
+        dst,
+        item.clone(),
+        Account {
+            on_hand: destination
+                .on_hand
+                .checked_add(amount)
+                .ok_or(RejectReason::ArithmeticOverflow)?,
+            ..destination
+        },
+    );
+    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1176,7 +1192,7 @@ fn choose_receiver(
         .map(|(id, _, pos, radius)| (id, pos, radius))
 }
 
-fn receiver_rule(
+pub(crate) fn receiver_rule(
     world: &World,
     receiver: u32,
     owner: SlotId,

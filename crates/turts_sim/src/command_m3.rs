@@ -162,6 +162,10 @@ mod tests {
             .register_unit_type(
                 &package,
                 UnitDef {
+                    terrain_class: None,
+                    terrain_cargo: None,
+                    terrain_foundation: None,
+                    terrain_tools: Vec::new(),
                     vision: None,
                     id: "fixture".into(),
                     name: "Fixture".into(),
@@ -204,6 +208,9 @@ mod tests {
             )
             .unwrap();
         let mut catalog = ContentCatalog {
+            terrain_materials: Default::default(),
+            terrain_movement_classes: Default::default(),
+            terrain_tools: Default::default(),
             bots: Default::default(),
 
             combat: None,
@@ -228,6 +235,10 @@ mod tests {
         catalog.units.insert(
             unit_id.clone(),
             ResolvedUnit {
+                terrain_class: None,
+                terrain_cargo: None,
+                terrain_foundation: None,
+                terrain_tools: Vec::new(),
                 vision: None,
                 repairer: None,
 

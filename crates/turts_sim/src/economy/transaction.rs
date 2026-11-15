@@ -340,6 +340,8 @@ pub(crate) fn finish_tick_audit(world: &mut World) {
 #[derive(Default)]
 struct WriteSet {
     terrain_step: Option<crate::terrain::PreparedCellEdit>,
+    terrain_witnesses: Vec<(u8, crate::terrain::TerrainSurfaceWitness)>,
+    terrain_work: Option<(u32, crate::terrain::work::WorkState)>,
     terminal_work: Vec<crate::receipts::TerminalWork>,
     operating_activations: Vec<OperatingActivationWrite>,
     repairs: BTreeMap<u32, super::repair::RepairUnitState>,
@@ -400,6 +402,20 @@ pub(crate) fn transact<R>(
     run: impl FnOnce(&mut Transaction<'_>) -> Result<R, RejectReason>,
 ) -> Result<R, RejectReason> {
     capture_operation(world, |world| transact_inner(world, run))
+}
+
+/// Check the same staged account invariants without applying the WriteSet.
+pub(crate) fn validate_only<R>(
+    world: &mut World,
+    run: impl FnOnce(&mut Transaction<'_>) -> Result<R, RejectReason>,
+) -> Result<R, RejectReason> {
+    let mut tx = Transaction {
+        world,
+        writes: WriteSet::default(),
+    };
+    let result = run(&mut tx)?;
+    tx.preflight()?;
+    Ok(result)
 }
 
 fn transact_inner<R>(
@@ -1023,6 +1039,9 @@ impl Transaction<'_> {
 
     /// A terrain prism and its accounts share one WriteSet. Preallocate its column/chunk
     /// overlay before this call; final commit does not allocate terrain storage.
+    pub(crate) fn stage_terrain_work(&mut self, unit: u32, state: crate::terrain::work::WorkState) {
+        self.writes.terrain_work = Some((unit, state));
+    }
     pub(crate) fn stage_terrain_cell(
         &mut self,
         edit: crate::terrain::PreparedCellEdit,
@@ -1034,6 +1053,34 @@ impl Transaction<'_> {
                 .is_some_and(|terrain| terrain.validates(&edit))
         {
             return Err(RejectReason::IntegrityViolation);
+        }
+        let terrain = self.world.resource::<crate::terrain::TerrainState>();
+        let material = edit
+            .column
+            .exposed()
+            .and_then(|exposed| terrain.material(exposed.material))
+            .cloned();
+        let tick = self.world.resource::<crate::Tick>().0;
+        for viewer in 0..crate::slots::SLOT_COUNT {
+            if crate::terrain::step::observed(
+                self.world,
+                viewer,
+                terrain,
+                edit.cell,
+                turts_mod_api::ObservationPhase::Tactical,
+            ) {
+                self.writes.terrain_witnesses.push((
+                    viewer,
+                    crate::terrain::TerrainSurfaceWitness {
+                        surface: crate::terrain::TerrainObservedCell {
+                            cell: crate::terrain::step::api_cell(edit.cell),
+                            elevation: edit.column.surface(),
+                            material: material.clone(),
+                        },
+                        observed_tick: tick,
+                    },
+                ));
+            }
         }
         self.writes.strict_m3 = true;
         self.writes.terrain_step = Some(edit);
@@ -1076,6 +1123,23 @@ impl Transaction<'_> {
                 return Err(RejectReason::TargetGone);
             }
         }
+        if let Some(terrain) = self.world.get_resource::<crate::terrain::TerrainState>() {
+            let catalog = &self
+                .world
+                .resource::<crate::bootstrap::InstalledCatalog>()
+                .0;
+            let types = self.world.resource::<crate::UnitTypes>();
+            for spawn in &self.writes.spawned {
+                crate::terrain::support_elevation(
+                    terrain,
+                    catalog,
+                    types,
+                    spawn.unit_type,
+                    spawn.position,
+                )
+                .map_err(|_| RejectReason::Blocked)?;
+            }
+        }
         // Prepare witnesses only after every fallible preflight. Publish them only
         // after the transaction commits, so rejected work reveals no event facts.
         let mut event_subjects: BTreeMap<u32, bool> = self
@@ -1110,6 +1174,23 @@ impl Transaction<'_> {
             world
                 .resource_mut::<crate::terrain::TerrainState>()
                 .apply_prevalidated(edit);
+        }
+        if !writes.terrain_witnesses.is_empty() {
+            let mut terrain = world.resource_mut::<crate::terrain::TerrainState>();
+            for (viewer, witness) in writes.terrain_witnesses.drain(..) {
+                let cell = turts_rules::terrain::geometry::Cell {
+                    x: witness.surface.cell.x,
+                    y: witness.surface.cell.y,
+                };
+                terrain.step_observations.insert((viewer, cell), witness);
+            }
+        }
+        if let Some((unit, state)) = writes.terrain_work.take() {
+            world.init_resource::<crate::terrain::work::TerrainWorkRuntime>();
+            world
+                .resource_mut::<crate::terrain::work::TerrainWorkRuntime>()
+                .units
+                .insert(unit, state);
         }
         transaction_m3::apply_overlays(world, &mut writes);
         if !writes.repairs.is_empty() {
@@ -1210,6 +1291,8 @@ impl Transaction<'_> {
         }
         for removal in writes.removed {
             super::repair::remove_unit(world, removal.unit);
+            crate::terrain::work::order_changed(world, removal.unit);
+            crate::terrain::cargo::order_changed(world, removal.unit);
             if let Some(mut identities) =
                 world.get_resource_mut::<crate::orders::PlainMoveOrderIdentities>()
             {
@@ -2435,6 +2518,9 @@ mod m3_transaction_contract_tests {
     fn install_extraction_node(world: &mut World, item: &ContentId, remaining: u64) {
         let node_id = content("probe:deposit");
         let mut catalog = turts_mod_api::ContentCatalog {
+            terrain_materials: Default::default(),
+            terrain_movement_classes: Default::default(),
+            terrain_tools: Default::default(),
             bots: Default::default(),
 
             combat: None,
@@ -3017,6 +3103,10 @@ mod operating_transaction_tests {
 
     fn fixture() -> (bevy_app::App, ResolvedUnit) {
         let definition = ResolvedUnit {
+            terrain_class: None,
+            terrain_cargo: None,
+            terrain_foundation: None,
+            terrain_tools: Vec::new(),
             vision: None,
             repairer: None,
 
@@ -3085,6 +3175,9 @@ mod operating_transaction_tests {
         })
         .collect();
         let catalog = ContentCatalog {
+            terrain_materials: Default::default(),
+            terrain_movement_classes: Default::default(),
+            terrain_tools: Default::default(),
             bots: Default::default(),
 
             combat: None,

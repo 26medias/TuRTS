@@ -138,6 +138,34 @@ pub fn stage_package_with_terrain(
                     "resolved terrain does not match the authored map".into(),
                 ));
             }
+            let turts_mod_api::TerrainGenerationDef::Version1 { bands } = &authored.generation;
+            let same_bands = bands.len() == resolved.generation.len()
+                && bands
+                    .iter()
+                    .zip(&resolved.generation)
+                    .all(|(authored, resolved)| {
+                        authored.bottom == resolved.bottom
+                            && authored.top == resolved.top
+                            && authored.choices.len() == resolved.choices.len()
+                            && authored.choices.iter().zip(&resolved.choices).all(
+                                |(authored, resolved)| {
+                                    let qualified = if authored.material.contains(':') {
+                                        authored.material.clone()
+                                    } else {
+                                        format!("{}:{}", map_identity.package.0, authored.material)
+                                    };
+                                    authored.weight == resolved.weight
+                                        && ContentId::parse(&qualified).ok().as_ref()
+                                            == Some(&resolved.material)
+                                },
+                            )
+                    });
+            if !same_bands {
+                return Err(error(
+                    "terrain.generation",
+                    "resolved geological rules do not match the authored map".into(),
+                ));
+            }
             let seed = terrain_seed
                 .ok_or_else(|| error("terrain", "private terrain seed is required".into()))?;
             Some(
@@ -641,6 +669,26 @@ pub fn stage_package_with_terrain(
     }
     operating.begin_tick();
     let operating = operating.initialized.then_some(operating);
+    if let Some(terrain) = &terrain {
+        for (_, kind, _, position) in &units {
+            crate::terrain::support_elevation(terrain, &catalog, &types, *kind, *position)
+                .map_err(|failure| {
+                    error(
+                        "terrain.placements",
+                        format!("unsupported initial unit: {failure:?}"),
+                    )
+                })?;
+        }
+        for (_, kind, _, position) in &m3.extra_units {
+            crate::terrain::support_elevation(terrain, &catalog, &types, kind.0, *position)
+                .map_err(|failure| {
+                    error(
+                        "terrain.placements",
+                        format!("unsupported infrastructure: {failure:?}"),
+                    )
+                })?;
+        }
+    }
     Ok(StagedPackage {
         map_identity,
         visibility,
@@ -669,6 +717,8 @@ pub fn stage_package_with_terrain(
 pub fn install_package(world: &mut World, staged: StagedPackage) {
     world.insert_resource(InstalledMapIdentity(staged.map_identity));
     world.remove_resource::<crate::terrain::TerrainState>();
+    world.remove_resource::<crate::terrain::work::TerrainWorkRuntime>();
+    world.remove_resource::<crate::terrain::cargo::CargoRuntime>();
     if let Some(terrain) = staged.terrain {
         world.insert_resource(terrain);
     }
@@ -749,6 +799,10 @@ mod operating_tests {
     }
     fn definition(name: &str) -> turts_mod_api::ResolvedUnit {
         turts_mod_api::ResolvedUnit {
+            terrain_class: None,
+            terrain_cargo: None,
+            terrain_foundation: None,
+            terrain_tools: Vec::new(),
             vision: None,
             repairer: None,
 
@@ -839,6 +893,9 @@ mod operating_tests {
         })
         .collect();
         let catalog = ContentCatalog {
+            terrain_materials: Default::default(),
+            terrain_movement_classes: Default::default(),
+            terrain_tools: Default::default(),
             bots: Default::default(),
 
             combat: None,
@@ -869,6 +926,7 @@ mod operating_tests {
         let map = SourceDef {
             file: "maps/field.ron".into(),
             value: MapDef {
+                terrain: None,
                 visibility: None,
                 id: "field".into(),
                 size: MapSize { x: 40.0, y: 30.0 },

@@ -8792,6 +8792,7 @@ dependencies = [
  "bevy",
  "bevy_app",
  "bevy_math",
+ "getrandom 0.4.3",
  "libm",
  "lightyear",
  "lightyear_serde",

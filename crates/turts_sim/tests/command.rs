@@ -20,6 +20,10 @@ fn app_with_two_units_on(size: MapSize) -> bevy_app::App {
     let mut app = headless_app(20);
     let origin = PackageId(ORIGIN.to_string());
     let def = UnitDef {
+        terrain_class: None,
+        terrain_cargo: None,
+        terrain_foundation: None,
+        terrain_tools: Vec::new(),
         vision: None,
         id: "walker".to_string(),
         name: "Walker".to_string(),
@@ -63,6 +67,7 @@ fn app_with_two_units_on(size: MapSize) -> bevy_app::App {
         start_order: None,
     };
     let map = MapDef {
+        terrain: None,
         visibility: None,
         environment: None,
         ground: None,
@@ -185,6 +190,10 @@ fn map_owner_slot_decides_who_may_move_a_unit() {
     let mut app = headless_app(20);
     let origin = PackageId(ORIGIN.to_string());
     let def = UnitDef {
+        terrain_class: None,
+        terrain_cargo: None,
+        terrain_foundation: None,
+        terrain_tools: Vec::new(),
         vision: None,
         id: "walker".to_string(),
         name: "Walker".to_string(),
@@ -228,6 +237,7 @@ fn map_owner_slot_decides_who_may_move_a_unit() {
         start_order: None,
     };
     let map = MapDef {
+        terrain: None,
         visibility: None,
         environment: None,
         ground: None,
@@ -439,6 +449,10 @@ fn move_to_mixed_mobile_and_static_units_move_per_unit() {
     let mut app = headless_app(20);
     let origin = PackageId(ORIGIN.to_string());
     let mobile = UnitDef {
+        terrain_class: None,
+        terrain_cargo: None,
+        terrain_foundation: None,
+        terrain_tools: Vec::new(),
         vision: None,
         id: "walker".into(),
         name: "Walker".into(),
@@ -469,6 +483,10 @@ fn move_to_mixed_mobile_and_static_units_move_per_unit() {
         repairer: None,
     };
     let static_def = UnitDef {
+        terrain_class: None,
+        terrain_cargo: None,
+        terrain_foundation: None,
+        terrain_tools: Vec::new(),
         vision: None,
         id: "yard".into(),
         name: "Yard".into(),
@@ -502,6 +520,7 @@ fn move_to_mixed_mobile_and_static_units_move_per_unit() {
     types.register_unit_type(&origin, mobile).unwrap();
     types.register_unit_type(&origin, static_def).unwrap();
     let map = MapDef {
+        terrain: None,
         visibility: None,
         environment: None,
         ground: None,

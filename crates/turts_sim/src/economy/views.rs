@@ -150,7 +150,15 @@ pub struct UnitView {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum UnitOrderTargetView {
-    ContentAtPoint { content: ContentId, point: WorldPos },
+    TerrainWork {
+        tool: ContentId,
+        cells: turts_mod_api::TerrainRect,
+        target_elevation: i32,
+    },
+    ContentAtPoint {
+        content: ContentId,
+        point: WorldPos,
+    },
     None,
     Point(WorldPos),
     Unit(u32),
@@ -550,6 +558,8 @@ fn operating_view(world: &World) -> Option<OperatingView> {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AuditState {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub raw_terrain: Option<crate::terrain::TerrainAudit>,
     /// Immutable authored cap needed to validate ordinary construction admission.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub construction_limit: Option<u16>,
@@ -903,6 +913,15 @@ fn unit_order_summary(order: &crate::orders::Order) -> UnitOrderSummaryView {
     UnitOrderSummaryView {
         order: order.order.to_string(),
         target: match &order.target {
+            crate::orders::OrderTargetSim::TerrainWork {
+                tool,
+                cells,
+                target_elevation,
+            } => UnitOrderTargetView::TerrainWork {
+                tool: tool.clone(),
+                cells: *cells,
+                target_elevation: *target_elevation,
+            },
             crate::orders::OrderTargetSim::Invalid => UnitOrderTargetView::None,
             crate::orders::OrderTargetSim::None => UnitOrderTargetView::None,
             crate::orders::OrderTargetSim::Point(position) => {
@@ -1347,6 +1366,8 @@ pub fn audit_state(world: &mut World) -> AuditState {
                             .map(
                                 |(unit_id, unit)| crate::orders::OrderUnitCapabilitiesAudit {
                                     unit: unit_id.to_string(),
+                                    terrain_worker: !unit.terrain_tools.is_empty(),
+                                    cargo_unloader: unit.terrain_cargo.is_some(),
                                     movement: unit.movement.is_some(),
                                     weapon: unit.weapon.is_some(),
                                     gatherer: unit.gatherer.is_some(),
@@ -1486,6 +1507,7 @@ pub fn audit_state(world: &mut World) -> AuditState {
     };
     let m3 = super::views_m3::m3_audit_state(world);
     AuditState {
+        raw_terrain: crate::terrain::privileged_audit(world),
         construction_limit: world
             .get_resource::<super::construction::ConstructionLimit>()
             .map(|limit| limit.0),

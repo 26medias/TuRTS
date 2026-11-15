@@ -22,6 +22,10 @@ fn app_with_units(mobile: usize, static_units: usize, foreign: usize) -> bevy_ap
             .register_unit_type(
                 &origin,
                 UnitDef {
+                    terrain_class: None,
+                    terrain_cargo: None,
+                    terrain_foundation: None,
+                    terrain_tools: Vec::new(),
                     vision: None,
                     id: id.into(),
                     name: id.into(),
@@ -79,6 +83,7 @@ fn app_with_units(mobile: usize, static_units: usize, foreign: usize) -> bevy_ap
         app.world_mut(),
         &origin,
         &MapDef {
+            terrain: None,
             visibility: None,
             environment: None,
             ground: None,

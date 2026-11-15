@@ -43,6 +43,7 @@ pub(crate) struct TerrainState {
     pub(crate) materials: Vec<ContentId>,
     chunks: Vec<Arc<SurfaceChunk>>,
     dirty_chunks: Vec<bool>,
+    pub(crate) step_observations: BTreeMap<(u8, Cell), super::TerrainSurfaceWitness>,
 }
 // StagedPackage needs Debug. Never print realized columns or private seed.
 impl fmt::Debug for TerrainState {
@@ -56,6 +57,7 @@ impl fmt::Debug for TerrainState {
 }
 pub(crate) struct PreparedCellEdit {
     pub(crate) index: usize,
+    pub(crate) cell: Cell,
     pub(crate) expected_revision: u64,
     pub(crate) column: Column,
     chunk_index: usize,
@@ -113,6 +115,7 @@ impl TerrainState {
         elevations[offset] = column.surface();
         Ok(PreparedCellEdit {
             index,
+            cell,
             expected_revision: self.columns[index].revision(),
             column,
             chunk_index,
@@ -334,6 +337,7 @@ pub(crate) fn prepare(
         materials,
         dirty_chunks: vec![false; chunk_count],
         chunks,
+        step_observations: BTreeMap::new(),
     })
 }
 

@@ -42,6 +42,10 @@ impl GeometricField {
 
 fn plain_unit(id: &str) -> ResolvedUnit {
     ResolvedUnit {
+        terrain_class: None,
+        terrain_cargo: None,
+        terrain_foundation: None,
+        terrain_tools: Vec::new(),
         vision: None,
         repairer: None,
 
@@ -81,6 +85,10 @@ fn catalog(field: GeometricField, value: f32) -> ContentCatalog {
     let id = ContentId::parse(field.id()).unwrap();
     let ore = ContentId::parse("probe:ore").unwrap();
     let unit = ResolvedUnit {
+        terrain_class: None,
+        terrain_cargo: None,
+        terrain_foundation: None,
+        terrain_tools: Vec::new(),
         vision: None,
         repairer: None,
 
@@ -146,6 +154,9 @@ fn catalog(field: GeometricField, value: f32) -> ContentCatalog {
         );
     }
     ContentCatalog {
+        terrain_materials: Default::default(),
+        terrain_movement_classes: Default::default(),
+        terrain_tools: Default::default(),
         bots: Default::default(),
 
         combat: None,
@@ -179,6 +190,7 @@ fn catalog(field: GeometricField, value: f32) -> ContentCatalog {
 
 fn map(field: GeometricField, placed: bool) -> MapDef {
     MapDef {
+        terrain: None,
         visibility: None,
         environment: None,
         ground: None,

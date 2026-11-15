@@ -1377,6 +1377,10 @@ mod m3_disabled_legacy_producer_tests {
             .register_unit_type(
                 &package,
                 UnitDef {
+                    terrain_class: None,
+                    terrain_cargo: None,
+                    terrain_foundation: None,
+                    terrain_tools: Vec::new(),
                     vision: None,
                     id: "producer".into(),
                     name: "Producer".into(),
@@ -1412,6 +1416,10 @@ mod m3_disabled_legacy_producer_tests {
             .register_unit_type(
                 &package,
                 UnitDef {
+                    terrain_class: None,
+                    terrain_cargo: None,
+                    terrain_foundation: None,
+                    terrain_tools: Vec::new(),
                     vision: None,
                     id: "product".into(),
                     name: "Product".into(),
@@ -1445,6 +1453,10 @@ mod m3_disabled_legacy_producer_tests {
             .unwrap();
         let resolved_unit =
             |id: turts_mod_api::ContentId, name: &str, radius, producer, movement| ResolvedUnit {
+                terrain_class: None,
+                terrain_cargo: None,
+                terrain_foundation: None,
+                terrain_tools: Vec::new(),
                 vision: None,
                 repairer: None,
                 consumes: Vec::new(),
@@ -1474,6 +1486,9 @@ mod m3_disabled_legacy_producer_tests {
                 removal: None,
             };
         let mut catalog = ContentCatalog {
+            terrain_materials: Default::default(),
+            terrain_movement_classes: Default::default(),
+            terrain_tools: Default::default(),
             bots: Default::default(),
 
             combat: None,
@@ -1650,6 +1665,10 @@ mod m3_disabled_legacy_producer_tests {
         let mut app = exit_app();
         let package = PackageId::parse("wall").unwrap();
         let wall = UnitDef {
+            terrain_class: None,
+            terrain_cargo: None,
+            terrain_foundation: None,
+            terrain_tools: Vec::new(),
             vision: None,
             id: "wall".into(),
             name: "Producer".into(),

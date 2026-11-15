@@ -109,6 +109,10 @@ fn gatherer_app() -> (bevy_app::App, bevy_ecs::entity::Entity) {
         .register_unit_type(
             &PackageId("test".into()),
             UnitDef {
+                terrain_class: None,
+                terrain_cargo: None,
+                terrain_foundation: None,
+                terrain_tools: Vec::new(),
                 vision: None,
                 id: "worker".into(),
                 name: "Worker".into(),
@@ -151,6 +155,9 @@ fn gatherer_app() -> (bevy_app::App, bevy_ecs::entity::Entity) {
         )
         .unwrap();
     let mut catalog = turts_mod_api::ContentCatalog {
+        terrain_materials: Default::default(),
+        terrain_movement_classes: Default::default(),
+        terrain_tools: Default::default(),
         bots: Default::default(),
 
         combat: None,
@@ -167,6 +174,10 @@ fn gatherer_app() -> (bevy_app::App, bevy_ecs::entity::Entity) {
     catalog.units.insert(
         id.clone(),
         turts_mod_api::ResolvedUnit {
+            terrain_class: None,
+            terrain_cargo: None,
+            terrain_foundation: None,
+            terrain_tools: Vec::new(),
             vision: None,
             repairer: None,
 
@@ -826,6 +837,10 @@ fn production_dispatch_reuses_the_spatial_index_for_many_small_envelopes() {
         .register_unit_type(
             &turts_mod_api::PackageId("test".into()),
             UnitDef {
+                terrain_class: None,
+                terrain_cargo: None,
+                terrain_foundation: None,
+                terrain_tools: Vec::new(),
                 vision: None,
                 id: "post".into(),
                 name: "Post".into(),
@@ -3300,6 +3315,10 @@ fn depleted_gather_writes_last_failure() {
         .register_unit_type(
             &PackageId("test".into()),
             UnitDef {
+                terrain_class: None,
+                terrain_cargo: None,
+                terrain_foundation: None,
+                terrain_tools: Vec::new(),
                 vision: None,
                 id: "worker".into(),
                 name: "Worker".into(),
@@ -3407,6 +3426,10 @@ fn queued_gather_that_depletes_before_activation_fails_and_idles() {
         .register_unit_type(
             &PackageId("test".into()),
             UnitDef {
+                terrain_class: None,
+                terrain_cargo: None,
+                terrain_foundation: None,
+                terrain_tools: Vec::new(),
                 vision: None,
                 id: "worker".into(),
                 name: "Worker".into(),

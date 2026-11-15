@@ -99,7 +99,15 @@ pub enum OrderTargetSim {
     Node(NodeId),
     Job(JobId),
     Content(ContentId),
-    ContentAtPoint { content: ContentId, point: Vec2 },
+    ContentAtPoint {
+        content: ContentId,
+        point: Vec2,
+    },
+    TerrainWork {
+        tool: ContentId,
+        cells: turts_mod_api::TerrainRect,
+        target_elevation: i32,
+    },
 }
 
 /// Whether an order replaces or appends to a unit's queue.
@@ -194,6 +202,13 @@ pub struct OrderUnitCapabilitiesAudit {
     pub research: bool,
     pub removable: bool,
     pub toggleable: bool,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub terrain_worker: bool,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub cargo_unloader: bool,
+}
+fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 /// Per-unit outcome of an order envelope.
@@ -212,4 +227,19 @@ pub(crate) struct MovementEnvelopeRequest {
     pub(crate) order: Option<Order>,
     pub(crate) member_orders: BTreeMap<u32, Order>,
     pub(crate) plain: bool,
+}
+
+/// Complete one terrain/cargo order through the ordinary queue transition.
+pub(crate) fn finish_terrain_order(world: &mut bevy_ecs::world::World, unit: u32) {
+    let Some(entity) = crate::unit_index::unit_entity(world, unit) else {
+        return;
+    };
+    let Some(slot) = world.get::<crate::Owner>(entity).map(|owner| owner.0) else {
+        return;
+    };
+    crate::economy::transaction::capture_unit_order_operation(world, unit, |world| {
+        writer::edit_unit_orders(world, entity, |orders| orders.current = None);
+        apply::clear_replaced_movement(world, slot, entity, unit);
+        behaviours::queue::start_next_queued_order(world, slot, entity, unit);
+    });
 }

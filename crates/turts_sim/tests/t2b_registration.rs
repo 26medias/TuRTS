@@ -20,6 +20,10 @@ fn other_of(origin: &str) -> &'static str {
 
 fn unit_def(id: &str, speed: f32, radius: f32) -> UnitDef {
     UnitDef {
+        terrain_class: None,
+        terrain_cargo: None,
+        terrain_foundation: None,
+        terrain_tools: Vec::new(),
         vision: None,
         id: id.to_string(),
         name: "Test unit".to_string(),
@@ -64,6 +68,7 @@ fn placement(unit: &str, owner_slot: u8, x: f32, y: f32) -> Placement {
 
 fn map_def(size: f32, placements: Vec<Placement>) -> MapDef {
     MapDef {
+        terrain: None,
         visibility: None,
         environment: None,
         ground: None,
