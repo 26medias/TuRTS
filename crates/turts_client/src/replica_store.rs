@@ -34,7 +34,7 @@
 //! A message that names a removed unit in a record (a record of a unit that the same message
 //! removes) is refused, as the order records are (`merge_unit_orders`).
 
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use turts_mod_api::{ContentId, ResourceKind};
@@ -45,7 +45,7 @@ use turts_net_protocol::{
 use turts_rules::charge::{CancelCase, CancelRefunds};
 use turts_rules::progress;
 
-use crate::replica::{ReplicaContext, UnitReplica};
+use crate::replica::{ReplicaContext, UnitTable};
 
 /// Clones of a [`RecordStore`] since the process started. The apply path never clones the store:
 /// a counter above 0 across the deltas of a run is a defect (`tests/mp1_store.rs`).
@@ -118,19 +118,6 @@ pub(crate) struct StoreStep {
 }
 
 impl RecordStore {
-    pub(crate) fn charge_staging(
-        &self,
-        budget: &mut crate::staging_budget::Budget,
-    ) -> Result<(), crate::staging_budget::Limit> {
-        budget.value(&self.sites)?;
-        budget.value(&self.site_progress)?;
-        budget.value(&self.construction_queues)?;
-        budget.value(&self.supply)?;
-        budget.value(&self.match_state)?;
-        budget.value(&self.job_progress)?;
-        budget.value(&self.repairs)
-    }
-
     /// The tick of the last applied message. It equals the tick of the candidate.
     pub fn tick(&self) -> u32 {
         self.tick
@@ -292,7 +279,7 @@ fn finite(pos: turts_net_protocol::Pos) -> bool {
 /// The unit is known, owned by the receiving slot and not removed by the same message.
 fn own_unit(
     context: &ReplicaContext,
-    units: &HashMap<u32, UnitReplica>,
+    units: &impl UnitTable,
     removed: &HashSet<u32>,
     unit: u32,
 ) -> bool {
@@ -309,7 +296,7 @@ fn unique<T, K: Eq + std::hash::Hash>(records: &[T], key: impl Fn(&T) -> K) -> b
 
 fn valid_orders(
     context: &ReplicaContext,
-    units: &HashMap<u32, UnitReplica>,
+    units: &impl UnitTable,
     queue: &ConstructionQueue,
 ) -> bool {
     let Some(constructor) = units
@@ -384,7 +371,7 @@ fn held_jobs(
 /// The progress of each own site. A record names an own site that the message does not remove.
 fn site_progress_rows(
     context: &ReplicaContext,
-    units: &HashMap<u32, UnitReplica>,
+    units: &impl UnitTable,
     removed: &HashSet<u32>,
     is_site: impl Fn(u32) -> bool,
     records: &[SiteProgress],
@@ -410,7 +397,7 @@ fn site_progress_rows(
 
 fn construction_rows(
     context: &ReplicaContext,
-    units: &HashMap<u32, UnitReplica>,
+    units: &impl UnitTable,
     removed: &HashSet<u32>,
     records: &[ConstructionQueue],
 ) -> Option<Vec<(u32, Vec<HeldOrder>)>> {
@@ -440,7 +427,7 @@ fn supply_rows(context: &ReplicaContext, records: &[SupplyRecord]) -> Option<Vec
 
 fn repairer_definition<'a>(
     context: &'a ReplicaContext,
-    units: &HashMap<u32, UnitReplica>,
+    units: &impl UnitTable,
     removed: &HashSet<u32>,
     repairer: u32,
 ) -> Option<&'a turts_mod_api::RepairerDef> {
@@ -453,7 +440,7 @@ fn repairer_definition<'a>(
 
 fn repair_rows(
     context: &ReplicaContext,
-    units: &HashMap<u32, UnitReplica>,
+    units: &impl UnitTable,
     removed: &HashSet<u32>,
     is_site: impl Fn(u32) -> bool,
     records: &[RepairRecord],
@@ -495,7 +482,7 @@ fn repair_rows(
 pub(crate) fn stage_snapshot_store(
     context: &ReplicaContext,
     snapshot: &turts_net_protocol::Snapshot,
-    units: &HashMap<u32, UnitReplica>,
+    units: &impl UnitTable,
     economy: &EconomyState,
 ) -> Option<RecordStore> {
     let no_removed = HashSet::new();
@@ -557,7 +544,7 @@ pub(crate) fn stage_snapshot_store(
 pub(crate) fn stage_delta_step(
     context: &ReplicaContext,
     base: &RecordStore,
-    units: &HashMap<u32, UnitReplica>,
+    units: &impl UnitTable,
     economy: &EconomyState,
     delta: &WorldDelta,
     removed: &HashSet<u32>,
