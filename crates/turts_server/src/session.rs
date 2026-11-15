@@ -460,6 +460,52 @@ pub fn receive_player_commands(
 }
 
 /// Admit the staged batch for the advanced tick before the domain command drain.
+/// Consume sequence numbers identically for transported and internal participants.
+pub(crate) fn advance_sequence(last: &mut Option<u32>, sequence: u32) -> bool {
+    if last.is_some_and(|previous| sequence <= previous) {
+        return false;
+    }
+    *last = Some(sequence);
+    true
+}
+
+/// Shared ordinary admission after the caller authenticates its participant identity.
+/// Rate and sequence tokens are consumed before this function, even for bad envelopes.
+pub(crate) fn admit_actor_envelope(
+    world: &mut World,
+    slot: turts_sim::SlotId,
+    envelope: &PlayerCommand,
+    admitted: bool,
+    newer: bool,
+) -> Result<Vec<turts_sim::Command>, (OrderResult, CommandRejectReason)> {
+    let reason = if !admitted {
+        Some(CommandRejectReason::RateLimited)
+    } else if !newer {
+        Some(CommandRejectReason::BadSequence)
+    } else if world
+        .get_resource::<turts_sim::outcome::MatchOutcomes>()
+        .is_some_and(|state| state.end_tick.is_some())
+    {
+        Some(CommandRejectReason::MatchOver)
+    } else if turts_sim::outcome::slot_defeated(world, slot.0) {
+        Some(CommandRejectReason::SlotDefeated)
+    } else {
+        production_precheck(world, slot, envelope)
+    };
+    if let Some(reason) = reason {
+        return Err((crate::orders::refusal(envelope, reason), reason));
+    }
+    let catalog = &world.resource::<crate::orders::ServerCatalog>().0;
+    crate::orders::to_sim(slot, envelope, catalog).map_err(|mut result| {
+        result.tick = world.resource::<SimTick>().0;
+        let reason = result
+            .envelope
+            .or_else(|| result.refused.first().map(|row| row.reason))
+            .unwrap_or(CommandRejectReason::Internal);
+        (result, reason)
+    })
+}
+
 pub fn admit_player_commands(world: &mut World) {
     let batch = std::mem::take(&mut world.resource_mut::<StagedPlayerCommands>().0);
     let tick = world.resource::<SimTick>().0;
@@ -476,62 +522,14 @@ pub fn admit_player_commands(world: &mut World) {
             tick_hz,
             staged.envelope.order.units.len(),
         );
+
         let newer = if let Some(mut session) = world.get_mut::<Session>(staged.connection) {
-            if session.slot != staged.slot
-                || session
-                    .last_seq
-                    .is_some_and(|last| staged.envelope.seq <= last)
-            {
-                false
-            } else {
-                session.last_seq = Some(staged.envelope.seq);
-                true
-            }
+            session.slot == staged.slot
+                && advance_sequence(&mut session.last_seq, staged.envelope.seq)
         } else {
             false
         };
-        if !admitted {
-            let result = crate::orders::refusal(&staged.envelope, CommandRejectReason::RateLimited);
-            record_admission_rejection(
-                world,
-                staged,
-                tick,
-                result,
-                CommandRejectReason::RateLimited,
-            );
-            continue;
-        }
-        if !newer {
-            let result = crate::orders::refusal(&staged.envelope, CommandRejectReason::BadSequence);
-            record_admission_rejection(
-                world,
-                staged,
-                tick,
-                result,
-                CommandRejectReason::BadSequence,
-            );
-            continue;
-        }
-        let match_refusal = if world
-            .get_resource::<turts_sim::outcome::MatchOutcomes>()
-            .is_some_and(|state| state.end_tick.is_some())
-        {
-            Some(CommandRejectReason::MatchOver)
-        } else if turts_sim::outcome::slot_defeated(world, staged.slot.0) {
-            Some(CommandRejectReason::SlotDefeated)
-        } else {
-            None
-        };
-        if let Some(reason) = match_refusal.or_else(|| production_precheck(world, &staged)) {
-            let result = crate::orders::refusal(&staged.envelope, reason);
-            record_admission_rejection(world, staged, tick, result, reason);
-            continue;
-        }
-        let resolved = {
-            let catalog = &world.resource::<crate::orders::ServerCatalog>().0;
-            crate::orders::to_sim(staged.slot, &staged.envelope, catalog)
-        };
-        match resolved {
+        match admit_actor_envelope(world, staged.slot, &staged.envelope, admitted, newer) {
             Ok(commands) => {
                 world.resource_mut::<PendingOrderCommands>().0.insert(
                     (staged.slot.0, staged.envelope.seq),
@@ -539,13 +537,8 @@ pub fn admit_player_commands(world: &mut World) {
                 );
                 world.resource_mut::<CommandQueue>().0.extend(commands);
             }
-            Err(mut result) => {
-                result.tick = tick;
-                let reason = result
-                    .envelope
-                    .or_else(|| result.refused.first().map(|refusal| refusal.reason))
-                    .unwrap_or(CommandRejectReason::Internal);
-                record_admission_rejection(world, staged, tick, result, reason);
+            Err((result, reason)) => {
+                record_admission_rejection(world, staged, tick, result, reason)
             }
         }
     }
@@ -555,13 +548,13 @@ pub fn admit_player_commands(world: &mut World) {
 /// resolved by package behavior: ownership, capability, then target reference syntax.
 fn production_precheck(
     world: &mut World,
-    staged: &StagedPlayerCommand,
+    slot: turts_sim::SlotId,
+    command: &PlayerCommand,
 ) -> Option<CommandRejectReason> {
-    if staged.envelope.order.units.is_empty() || staged.envelope.order.units.len() > MAX_ORDER_UNITS
-    {
+    if command.order.units.is_empty() || command.order.units.len() > MAX_ORDER_UNITS {
         return None;
     }
-    let order_id = ContentId::parse(&staged.envelope.order.order).ok()?;
+    let order_id = ContentId::parse(&command.order.order).ok()?;
     let is_produce = world
         .resource::<crate::orders::ServerCatalog>()
         .0
@@ -571,7 +564,7 @@ fn production_precheck(
     if !is_produce {
         return None;
     }
-    let OrderTarget::Content(reference) = &staged.envelope.order.target else {
+    let OrderTarget::Content(reference) = &command.order.target else {
         return None;
     };
 
@@ -583,14 +576,14 @@ fn production_precheck(
             })
         })
         .is_ok();
-    if staged.envelope.order.units.len() > 1 {
+    if command.order.units.len() > 1 {
         // Multi-subject envelopes always reach per-unit validation, including malformed
         // content targets, so ownership and capability priority is resolved per subject.
         return None;
     }
     if representable
-        && staged.envelope.order.units.iter().any(|unit| {
-            owns_unit(world, unit.0, staged.slot) == Some(true)
+        && command.order.units.iter().any(|unit| {
+            owns_unit(world, unit.0, slot) == Some(true)
                 && has_production_capability(world, unit.0) == Some(true)
         })
     {
@@ -598,8 +591,8 @@ fn production_precheck(
         return None;
     }
 
-    for unit in &staged.envelope.order.units {
-        match owns_unit(world, unit.0, staged.slot) {
+    for unit in &command.order.units {
+        match owns_unit(world, unit.0, slot) {
             Some(true) => {}
             Some(false) => return Some(CommandRejectReason::NotOwner),
             None => return Some(CommandRejectReason::UnknownUnit),
