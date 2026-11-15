@@ -20,6 +20,7 @@ use turts_bot::*;
 use turts_mod_api::{BotDef, BotQuota, BotStartWhen, ContentId, WorldPos};
 use turts_sim::{MatchConfig, SimClock, SimSet, Tick};
 
+#[cfg(test)]
 pub(crate) fn operator_quota() -> BotQuota {
     BotQuota {
         queries: 32,
@@ -118,11 +119,13 @@ pub(crate) struct BotHost {
     installation_recorded: bool,
 }
 impl BotHost {
+    #[cfg(test)]
     pub fn actors(&self) -> Vec<BotActor> {
         self.bots.iter().map(|b| b.actor.clone()).collect()
     }
 }
 /// Validate every profile and factory before the atomic actor claim batch.
+#[cfg(test)]
 pub(crate) fn install(app: &mut App, configuration: &[BotConfig]) -> Result<(), String> {
     let mut registry = ControllerRegistry::new();
     turts_bot::controllers::register_stock(&mut registry).map_err(|e| e.to_string())?;
@@ -137,6 +140,7 @@ pub(crate) fn install_with_limits(
     turts_bot::controllers::register_stock(&mut registry).map_err(|e| e.to_string())?;
     install_with_registry_and_limits(app, configuration, &registry, limits)
 }
+#[cfg(test)]
 pub(crate) fn install_with_registry(
     app: &mut App,
     configuration: &[BotConfig],
@@ -152,6 +156,9 @@ fn install_with_registry_and_limits(
 ) -> Result<(), String> {
     if configuration.is_empty() {
         return Ok(());
+    }
+    if app.world().resource::<Tick>().0 != 0 {
+        return Err("public bots must be installed before the first tick".into());
     }
     if app.world().contains_resource::<BotHost>() {
         return Err("bots are already installed for this match".into());
@@ -232,10 +239,17 @@ fn install_with_registry_and_limits(
         bots: installed_bots,
         limits: artifact_limits(limits)?,
     };
-    actors::install_bot_actors(
-        app.world_mut(),
-        &bots.iter().map(|b| b.actor.clone()).collect::<Vec<_>>(),
+    let installed_actors = bots.iter().map(|bot| bot.actor.clone()).collect::<Vec<_>>();
+    turts_sim::initialize_completed_world(app.world_mut());
+    let prepared_limits = actors::prepare_actor_limits(
+        app.world(),
+        &installed_actors,
+        coordinator_limits(limits),
+        limits.projection_rows,
     )?;
+    actors::install_bot_actors(app.world_mut(), &installed_actors)?;
+    actors::configure_actor_limits(app.world_mut(), prepared_limits);
+    actors::install(app);
     app.init_resource::<BotExecution>();
     app.insert_resource(BotHost {
         bots,
