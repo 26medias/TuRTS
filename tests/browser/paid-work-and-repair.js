@@ -144,6 +144,8 @@ function project(scene,pos){const m=scene.clip_from_world,c=[0,1,2,3].map(r=>[..
   await shot('repair-foreign-selection',foreign);
   await select(2);await click('Stop');
   await shot('repair-stopped',await wait(s=>!world(s).repairs.some(x=>x.repairer===2)&&!widget(s,'repair_state')&&!widget(s,'repair_target')&&!widget(s,'repair_resource'),'repair status cleared'));
+  await select(3);
+  await shot('repaired-target-health',await wait(s=>widget(s,'name')?.text===`Damaged workshop: ${health(s,3)}/200`&&health(s,3)>damage,'repaired target health display'));
   const final=await read();if(widget(final,'credits')?.text!==`Credits: ${balance(final)}`)throw Error('displayed credits mismatch');
   result.status=mode==='--independent'?'PARTIAL_PASS':'PASS';if(mode==='--independent')result.missing_checks=['Held construction request and Stop'];console.log(JSON.stringify({status:result.status,wallId,damage,healed:health(result['repair-healed'],3)}));
  }catch(e){result.status='FAIL';result.error=String(e.stack||e);if(read)try{result.failure=await read();}catch{}if(page)try{await page.screenshot({path:out+'/failure.png'});}catch{}console.error(e);process.exitCode=1;}
