@@ -206,19 +206,43 @@ struct Cpu {
     start: Option<Instant>,
     server_ns: u64,
     client_ns: u64,
+    stages_ns: [u64; 10],
+    profiling: bool,
 }
 fn begin_cpu(mut cpu: ResMut<Cpu>) {
     cpu.start = Some(Instant::now());
 }
-fn end_server(mut cpu: ResMut<Cpu>) {
+fn finish_server(cpu: &mut Cpu, stage: usize) {
     if let Some(t) = cpu.start.take() {
-        cpu.server_ns += t.elapsed().as_nanos() as u64;
+        let elapsed = t.elapsed().as_nanos() as u64;
+        cpu.server_ns += elapsed;
+        cpu.stages_ns[stage] += elapsed;
     }
+}
+fn end_start(mut cpu: ResMut<Cpu>) {
+    finish_server(&mut cpu, 0);
+}
+fn end_tactical(mut cpu: ResMut<Cpu>) {
+    finish_server(&mut cpu, 1);
+}
+fn end_completed(mut cpu: ResMut<Cpu>) {
+    finish_server(&mut cpu, 2);
+}
+fn end_send(mut cpu: ResMut<Cpu>) {
+    finish_server(&mut cpu, 4);
 }
 fn end_client(mut cpu: ResMut<Cpu>) {
     if let Some(t) = cpu.start.take() {
-        cpu.client_ns += t.elapsed().as_nanos() as u64;
+        let elapsed = t.elapsed().as_nanos() as u64;
+        cpu.client_ns += elapsed;
+        cpu.stages_ns[7] += elapsed;
     }
+}
+fn charge_server(world: &mut World, stage: usize, start: Instant) {
+    let elapsed = start.elapsed().as_nanos() as u64;
+    let mut cpu = world.resource_mut::<Cpu>();
+    cpu.server_ns += elapsed;
+    cpu.stages_ns[stage] += elapsed;
 }
 #[derive(Resource, Default)]
 struct Received {
@@ -328,7 +352,7 @@ impl Harness {
         );
         app.add_systems(
             FixedPreUpdate,
-            end_server
+            end_start
                 .in_set(SimSet::Advance)
                 .after(turts_sim::visibility::refresh_start)
                 .after(begin_cpu),
@@ -341,7 +365,7 @@ impl Harness {
         );
         app.add_systems(
             FixedUpdate,
-            end_server
+            end_tactical
                 .in_set(SimSet::Acquire)
                 .after(turts_sim::visibility::refresh_tactical)
                 .after(begin_cpu),
@@ -349,7 +373,7 @@ impl Harness {
         app.add_systems(FixedPostUpdate, begin_cpu.before(SimSet::Collect));
         app.add_systems(
             FixedPostUpdate,
-            end_server.after(SimSet::Collect).after(begin_cpu),
+            end_completed.after(SimSet::Collect).after(begin_cpu),
         );
         app.add_systems(PreUpdate, begin_cpu.before(MessageSystems::Receive));
         app.add_systems(
@@ -362,7 +386,7 @@ impl Harness {
         );
         app.add_systems(
             PostUpdate,
-            end_server.after(MessageSystems::Send).after(begin_cpu),
+            end_send.after(MessageSystems::Send).after(begin_cpu),
         );
         app.finish();
         app.cleanup();
@@ -565,6 +589,9 @@ impl Harness {
     }
     fn consume(&mut self) {
         let started = Instant::now();
+        let profiling = self.app.world().resource::<Cpu>().profiling;
+        let mut assembly_ns = 0;
+        let mut activation_ns = 0;
         for peer in &mut self.peers {
             let cancels = self
                 .app
@@ -592,6 +619,7 @@ impl Harness {
                 if peer.assembler.is_obsolete(stamp) {
                     continue;
                 }
+                let mut assembly_start = profiling.then(Instant::now);
                 match frame {
                     StateTransactionFrame::Begin(begin) => {
                         peer.assembler.begin(begin, self.frame_ms).unwrap();
@@ -599,6 +627,9 @@ impl Harness {
                     StateTransactionFrame::Chunk(chunk) => peer.assembler.chunk(&chunk).unwrap(),
                     StateTransactionFrame::End(end) => {
                         let staged = peer.assembler.end(&end).unwrap().unwrap();
+                        if let Some(start) = assembly_start.take() {
+                            assembly_ns += start.elapsed().as_nanos() as u64;
+                        }
                         if let StateTransactionPayload::Patch { state, .. } = &staged.payload {
                             peer.permitted_shots += state
                                 .records
@@ -615,6 +646,7 @@ impl Harness {
                             peer.hides += knowledge.hidden_units.len();
                             peer.reveals += knowledge.revealed_units.len();
                         }
+                        let activation_start = profiling.then(Instant::now);
                         assert!(
                             peer.replica.activate_transaction(
                                 &staged.stamp,
@@ -624,6 +656,9 @@ impl Harness {
                             "native replica refused tick{}",
                             staged.stamp.basis.tick
                         );
+                        if let Some(start) = activation_start {
+                            activation_ns += start.elapsed().as_nanos() as u64;
+                        }
                         peer.latest = staged.stamp.basis.tick;
                         peer.replica.visual_events.clear();
                         let ack = peer.assembler.activate(&staged.stamp).unwrap();
@@ -633,6 +668,9 @@ impl Harness {
                             .unwrap()
                             .send::<ReliableChannel>(ack);
                     }
+                }
+                if let Some(start) = assembly_start {
+                    assembly_ns += start.elapsed().as_nanos() as u64;
                 }
                 peer.max_retained = peer.max_retained.max(peer.assembler.retained_bytes());
             }
@@ -645,7 +683,10 @@ impl Harness {
                     .benchmark_retained(),
             );
         }
-        self.app.world_mut().resource_mut::<Cpu>().client_ns += started.elapsed().as_nanos() as u64;
+        let mut cpu = self.app.world_mut().resource_mut::<Cpu>();
+        cpu.client_ns += started.elapsed().as_nanos() as u64;
+        cpu.stages_ns[8] += assembly_ns;
+        cpu.stages_ns[9] += activation_ns;
     }
     fn transfer(&mut self) {
         let started = Instant::now();
@@ -670,7 +711,7 @@ impl Harness {
                 }
             }
         }
-        self.app.world_mut().resource_mut::<Cpu>().server_ns += started.elapsed().as_nanos() as u64;
+        charge_server(self.app.world_mut(), 6, started);
     }
     fn update(&mut self, ms: u64) {
         self.frame_ms += ms;
@@ -708,6 +749,7 @@ struct Sample {
     server_ns: u64,
     client_ns: u64,
     sum_ns: u64,
+    stages_ns: [u64; 10],
     fired: u64,
     permitted_shots: [u64; 2],
     extracted: u64,
@@ -806,10 +848,14 @@ impl Harness {
             queries.release_basis(u64::from(view.tick)).unwrap();
             std::hint::black_box(coordinator);
         }
-        self.app.world_mut().resource_mut::<Cpu>().server_ns += started.elapsed().as_nanos() as u64;
+        charge_server(self.app.world_mut(), 5, started);
     }
     fn interval(&mut self, index: usize, resync: bool) -> Sample {
-        let _ = std::mem::take(&mut *self.app.world_mut().resource_mut::<Cpu>());
+        let profiling = self.app.world().resource::<Cpu>().profiling;
+        *self.app.world_mut().resource_mut::<Cpu>() = Cpu {
+            profiling,
+            ..Default::default()
+        };
         for peer in &mut self.peers {
             peer.hides = 0;
             peer.permitted_shots = 0;
@@ -862,8 +908,7 @@ impl Harness {
                     .unwrap()
                 );
             }
-            self.app.world_mut().resource_mut::<Cpu>().server_ns +=
-                start.elapsed().as_nanos() as u64;
+            charge_server(self.app.world_mut(), 3, start);
             // Drain actual registered transport and native activation. No work is
             // deferred outside the sample or silently coalesced into a later tick.
             self.flush_to(tick);
@@ -883,8 +928,7 @@ impl Harness {
                     .unwrap()
                 );
             }
-            self.app.world_mut().resource_mut::<Cpu>().server_ns +=
-                start.elapsed().as_nanos() as u64;
+            charge_server(self.app.world_mut(), 3, start);
             let tick = completed_world(self.app.world()).tick;
             // Same-tick resync must actually activate the new transaction as well.
             let old = self
@@ -933,6 +977,7 @@ impl Harness {
             server_ns: cpu.server_ns,
             client_ns: cpu.client_ns,
             sum_ns: cpu.server_ns + cpu.client_ns,
+            stages_ns: cpu.stages_ns,
             fired,
             permitted_shots: std::array::from_fn(|i| self.peers[i].permitted_shots),
             extracted,
@@ -977,6 +1022,7 @@ fn run(intervals: usize, acceptance: bool) {
     };
     for (fog, concentrated) in modes {
         let mut harness = Harness::new(fog, concentrated);
+        harness.app.world_mut().resource_mut::<Cpu>().profiling = !acceptance;
         println!("SV7_AUTHORED {}", harness.authored);
         for index in 0..WARMUP {
             harness.interval(index, false);
@@ -999,7 +1045,8 @@ fn run(intervals: usize, acceptance: bool) {
     }
     let artifact = serde_json::json!({"acceptance":acceptance,"diagnostic_only":!acceptance,
         "warmup_intervals":WARMUP,"measured_intervals":intervals,"ticks_per_interval":20,
-        "server_includes_completed_world_collection":true,"network_wait_excluded":true,"rows":all});
+        "server_includes_completed_world_collection":true,"nested_profile_clocks":!acceptance,
+        "stage_names":["start_refresh","tactical_refresh","completed_refresh_and_collect","queue_encode","pump_and_transport_send","bot_projection_queries_accounts","local_link_transfer","transport_receive","assembly_decode_nested","replica_activation_nested"],"network_wait_excluded":true,"rows":all});
     if let Some(path) = std::env::var_os("TURTS_SV7_OUT") {
         std::fs::write(path, serde_json::to_vec_pretty(&artifact).unwrap()).unwrap();
     }
