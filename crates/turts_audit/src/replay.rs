@@ -2834,6 +2834,15 @@ fn validate_construct_operation(
             facing: None,
             pos: *point,
         });
+        if output.health_max.is_none()
+            && operation
+                .after
+                .raw_healths
+                .iter()
+                .any(|row| row.unit == next_unit)
+        {
+            return Err("Construct health row has no immutable output health maximum".into());
+        }
         if let Some(max) = output.health_max {
             let ratio = output
                 .placement
