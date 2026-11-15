@@ -254,6 +254,7 @@ pub(crate) fn validate_state(state: &AuditState) -> Result<(), String> {
 pub(crate) fn validate_operation(operation: &OperationAudit) -> Result<(), String> {
     use turts_sim::EconomyEventKind;
     validate_repair_operation(operation)?;
+    validate_released_claims(operation)?;
     let before = jobs(&operation.before)?;
     let after = jobs(&operation.after)?;
     let mut debits = Amounts::new();
@@ -1145,4 +1146,88 @@ fn reserved(state: &AuditState, key: &AccountKey) -> u128 {
             .and_then(|row| row.items.iter().find(|(id, _)| *id == key.1))
             .map_or(0, |(_, row)| u128::from(row.reserved)),
     }
+}
+
+fn reserved_accounts(state: &AuditState) -> Amounts {
+    let mut amounts = Amounts::new();
+    for row in &state.economy.balances {
+        amounts.insert(
+            (Destination::Slot(row.slot), row.resource.clone()),
+            u128::from(row.reserved),
+        );
+    }
+    for inventory in &state.economy.inventories {
+        for row in &inventory.items {
+            amounts.insert(
+                (Destination::Inventory(inventory.unit), row.resource.clone()),
+                u128::from(row.reserved),
+            );
+        }
+    }
+    for inventory in &state.raw_output_inventories {
+        for (resource, account) in &inventory.items {
+            amounts.insert(
+                (Destination::Output(inventory.unit), resource.clone()),
+                u128::from(account.reserved),
+            );
+        }
+    }
+    amounts
+}
+fn validate_released_claims(operation: &OperationAudit) -> Result<(), String> {
+    let mut expected = reserved_accounts(&operation.before);
+    let mut claims = operation.before.ledger_claims.clone();
+    let mut changed = false;
+    for queue in &operation.before.raw_queues {
+        for job in &queue.jobs {
+            let present = operation.after.raw_queues.iter().any(|next| {
+                next.producer == queue.producer && next.jobs.iter().any(|next| next.id == job.id)
+            });
+            if present {
+                continue;
+            }
+            let Some(reservation) = &job.reservation else {
+                continue;
+            };
+            changed = true;
+            for row in &reservation.lines {
+                let destination = match row.endpoint {
+                    ReservationEndpointView::Slot(id) => Destination::Slot(id),
+                    ReservationEndpointView::Inventory(id) => Destination::Inventory(id),
+                    ReservationEndpointView::Output(id) => Destination::Output(id),
+                };
+                let amount = expected
+                    .get_mut(&(destination, row.resource.clone()))
+                    .ok_or("refund reservation account missing")?;
+                *amount = amount
+                    .checked_sub(u128::from(row.amount))
+                    .ok_or("refund reservation releases twice")?;
+            }
+            for claim in &mut claims {
+                if matches!(claim,turts_sim::ReservationClaimView::Active{map_job_id,..} if *map_job_id==job.id)
+                {
+                    *claim = turts_sim::ReservationClaimView::Closed { map_job_id: job.id };
+                }
+            }
+        }
+    }
+    if changed {
+        expected.retain(|(destination, _), _| match destination {
+            Destination::Slot(_) => true,
+            Destination::Inventory(unit) | Destination::Output(unit) => operation
+                .after
+                .raw_units
+                .iter()
+                .any(|row| row.unit_id == *unit),
+        });
+        expected.retain(|_, amount| *amount != 0);
+        let mut actual = reserved_accounts(&operation.after);
+        actual.retain(|_, amount| *amount != 0);
+        if expected != actual || claims != operation.after.ledger_claims {
+            return Err(
+                "refund removal did not release exactly its original reservation claims".into(),
+            );
+        }
+    }
+    Ok(())
 }
