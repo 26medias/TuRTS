@@ -521,6 +521,11 @@ fn unit_definition(
         .ok_or_else(|| "repair unit definition missing".into())
 }
 fn validate_repair_state(state: &AuditState) -> Result<(), String> {
+    for row in &state.unit_orders {
+        if row.orders.repair_stopped && !has_repairer(state, row.unit_id) {
+            return Err("repair Stop latch belongs to a unit without repair capability".into());
+        }
+    }
     let mut seen = std::collections::BTreeSet::new();
     for row in &state.raw_repairs {
         if !seen.insert(row.repairer) {
@@ -545,6 +550,16 @@ fn validate_repair_state(state: &AuditState) -> Result<(), String> {
             }
         }
         if let Some(action) = &row.action {
+            if action.automatic
+                && state.unit_orders.iter().any(|orders| {
+                    orders.unit_id == row.repairer
+                        && (orders.orders.repair_stopped
+                            || orders.orders.current.is_some()
+                            || !orders.orders.queue.is_empty())
+                })
+            {
+                return Err("automatic repair continued through Stop or explicit work".into());
+            }
             if !state
                 .raw_units
                 .iter()
@@ -1244,4 +1259,8 @@ fn validate_released_claims(operation: &OperationAudit) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+pub(crate) fn has_repairer(state: &AuditState, unit: u32) -> bool {
+    unit_definition(state, unit).is_ok_and(|definition| definition.repairer.is_some())
 }

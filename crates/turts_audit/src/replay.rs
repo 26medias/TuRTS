@@ -1200,6 +1200,7 @@ fn expected_order_refusal(
         turts_mod_api::Behaviour::Move => capability.is_some_and(|entry| entry.movement),
         turts_mod_api::Behaviour::Stop | turts_mod_api::Behaviour::Hold => {
             capability.is_some_and(|entry| entry.movement || entry.weapon)
+                || crate::paid::has_repairer(before, unit_id)
         }
         turts_mod_api::Behaviour::Attack => match &order.target {
             turts_sim::OrderTargetSim::Unit(_) => capability.is_some_and(|entry| entry.weapon),
@@ -2350,6 +2351,9 @@ fn validate_order_operation(
                 operation.operation_id, order.behaviour
             ));
         }
+    }
+    if crate::paid::has_repairer(&operation.before, unit_id) {
+        expected_orders.repair_stopped = order.behaviour == turts_mod_api::Behaviour::Stop;
     }
     if order.behaviour != turts_mod_api::Behaviour::SetRally
         && order.behaviour != turts_mod_api::Behaviour::Remove

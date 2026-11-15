@@ -442,43 +442,49 @@ fn cancellation_flushes_actual_paid_without_duplicating_refund() {
         .unwrap() = event;
     assert!(validate_records(&bad).unwrap_err().contains("refund"));
 }
+fn repair_fixture() -> Fixture {
+    let mut fixture = Fixture::new();
+    fixture.unit("factory").producer = None;
+    fixture.unit("factory").repairer = Some(RepairerDef {
+        rate_per_second: 6,
+        reach: 30.,
+        cost: vec![RepairCost {
+            resource: cid("credits").to_string(),
+            amount: 3,
+            per_health: 4,
+        }],
+        targets: TargetFilter {
+            slots: SlotRelation::Same,
+        },
+        classes: vec![],
+        auto_range: Some(30.),
+    });
+    fixture.unit("builder").constructor = None;
+    fixture.map.placements[1].pos = WorldPos { x: 14., y: 8. };
+    fixture.map.placements[2].owner_slot = 1;
+    fixture.map.placements[2].pos = WorldPos { x: 24., y: 8. };
+    fixture.unit("supply").weapon = Some(ResolvedWeapon {
+        range: 20.,
+        range_mode: WeaponRangeMode::Centre,
+        cooldown_ms: 5000,
+        damage: 90,
+        ammo: None,
+        targets: TargetFilter {
+            slots: SlotRelation::Other,
+        },
+        damage_type: None,
+        bonus: vec![],
+        when_short: vec![],
+    });
+    fixture.unit("factory").health = None;
+
+    fixture
+}
+
 #[test]
 fn fractional_repair_stream_preserves_debt_and_rejects_coherent_heal_tampering() {
     for hz in [10, 20] {
-        let mut fixture = Fixture::new();
-        fixture.unit("factory").producer = None;
-        fixture.unit("factory").repairer = Some(RepairerDef {
-            rate_per_second: 6,
-            reach: 30.,
-            cost: vec![RepairCost {
-                resource: cid("credits").to_string(),
-                amount: 3,
-                per_health: 4,
-            }],
-            targets: TargetFilter {
-                slots: SlotRelation::Same,
-            },
-            classes: vec![],
-            auto_range: Some(30.),
-        });
-        fixture.unit("builder").constructor = None;
-        fixture.map.placements[1].pos = WorldPos { x: 14., y: 8. };
-        fixture.map.placements[2].owner_slot = 1;
-        fixture.map.placements[2].pos = WorldPos { x: 24., y: 8. };
-        fixture.unit("supply").weapon = Some(ResolvedWeapon {
-            range: 20.,
-            range_mode: WeaponRangeMode::Centre,
-            cooldown_ms: 5000,
-            damage: 90,
-            ammo: None,
-            targets: TargetFilter {
-                slots: SlotRelation::Other,
-            },
-            damage_type: None,
-            bonus: vec![],
-            when_short: vec![],
-        });
-        fixture.unit("factory").health = None;
+        let fixture = repair_fixture();
         let mut app = fixture.app_at(hz);
         let mut records = start(&mut app);
         ticks(&mut app, &mut records, 25);
@@ -650,5 +656,208 @@ fn paid_wait_income_recovery_and_hold_hysteresis_are_independently_replayed() {
         validate_records(&bad)
             .unwrap_err()
             .contains("hold/recovery")
+    );
+}
+
+fn queue_order(app: &mut App, seq: u32, local: &str, target: turts_sim::OrderTargetSim) {
+    let state = turts_sim::audit_state(app.world_mut());
+    let definition = state
+        .catalog
+        .as_ref()
+        .unwrap()
+        .order_definitions
+        .iter()
+        .find(|row| row.id == cid(local))
+        .unwrap();
+    let policy = turts_sim::OrderPolicyAudit {
+        id: definition.id.clone(),
+        behaviour: definition.behaviour,
+        target: definition.target,
+        fire: definition.fire,
+        engage: definition.engage,
+        units: definition.units.clone(),
+        queue_depth: definition.queue_depth,
+        unit_capabilities: definition.unit_capabilities.clone(),
+    };
+    app.world_mut()
+        .resource_mut::<turts_sim::CommandQueue>()
+        .0
+        .push_back(Command {
+            slot: SlotId(0),
+            seq,
+            kind: CommandKind::Order(Box::new(turts_sim::OrderCommand {
+                order: definition.id.clone(),
+                behaviour: definition.behaviour,
+                target_kind: definition.target,
+                policy: Some(policy),
+                allowed_units: definition.units.clone(),
+                units: vec![1],
+                target,
+                queue: turts_sim::QueueMode::Replace,
+                group: 0,
+                queue_depth: definition.queue_depth,
+            })),
+        });
+}
+#[test]
+fn explicit_stop_and_move_keep_repair_cost_debt_in_real_order_stream() {
+    let mut fixture = repair_fixture();
+    fixture.unit("factory").movement = Some(MovementDef { speed: 3. });
+    for (local, behaviour, target) in [
+        ("stop", Behaviour::Stop, TargetKind::None),
+        ("move", Behaviour::Move, TargetKind::Point),
+    ] {
+        fixture.catalog.orders.insert(
+            cid(local),
+            OrderDef {
+                id: local.into(),
+                name: local.into(),
+                behaviour,
+                target,
+                fire: None,
+                engage: None,
+                icon: String::new(),
+                hotkey: String::new(),
+                cursor: None,
+                card: None,
+                units: vec![],
+                description: String::new(),
+            },
+        );
+    }
+    let mut app = fixture.app();
+    let mut records = start(&mut app);
+    ticks(&mut app, &mut records, 5);
+    let before = turts_sim::audit_state(app.world_mut());
+    let debt = before
+        .raw_repairs
+        .iter()
+        .find(|row| row.repairer == 1)
+        .unwrap()
+        .remainders
+        .clone();
+    assert!(debt.iter().any(|row| row.remainder != 0));
+    queue_order(&mut app, 1, "stop", turts_sim::OrderTargetSim::None);
+    ticks(&mut app, &mut records, 3);
+    let stopped = turts_sim::audit_state(app.world_mut());
+    assert!(
+        stopped
+            .unit_orders
+            .iter()
+            .find(|row| row.unit_id == 1)
+            .unwrap()
+            .orders
+            .repair_stopped
+    );
+    let source = stopped
+        .raw_repairs
+        .iter()
+        .find(|row| row.repairer == 1)
+        .unwrap();
+    assert_eq!(source.remainders, debt);
+    assert!(source.action.is_none());
+    assert_eq!(before.raw_healths, stopped.raw_healths);
+    queue_order(
+        &mut app,
+        2,
+        "move",
+        turts_sim::OrderTargetSim::Point(Vec2::new(8., 8.)),
+    );
+    ticks(&mut app, &mut records, 10);
+    assert_records("repair-stop-move", &records);
+    let resumed = turts_sim::audit_state(app.world_mut());
+    assert!(
+        !resumed
+            .unit_orders
+            .iter()
+            .any(|row| row.unit_id == 1 && row.orders.repair_stopped)
+    );
+    assert!(
+        resumed
+            .raw_healths
+            .iter()
+            .find(|row| row.unit == 2)
+            .unwrap()
+            .current
+            > stopped
+                .raw_healths
+                .iter()
+                .find(|row| row.unit == 2)
+                .unwrap()
+                .current
+    );
+    let index=records.iter().position(|record|matches!(record,EconomyLogRecord::Operation(operation) if operation.after.unit_orders.iter().any(|row|row.unit_id==1 && row.orders.repair_stopped))).unwrap();
+    let mut bad = records[..=index].to_vec();
+    let EconomyLogRecord::Operation(operation) = bad.last_mut().unwrap() else {
+        unreachable!()
+    };
+    operation
+        .after
+        .unit_orders
+        .iter_mut()
+        .find(|row| row.unit_id == 1)
+        .unwrap()
+        .orders
+        .repair_stopped = false;
+    assert!(
+        validate_records(&bad).is_err(),
+        "coherent Stop latch corruption must fail independent order modeling"
+    );
+}
+
+#[test]
+fn automatic_retarget_keeps_fractional_cost_debt_between_real_damaged_targets() {
+    let mut fixture = repair_fixture();
+    fixture
+        .unit("factory")
+        .repairer
+        .as_mut()
+        .unwrap()
+        .rate_per_second = 60;
+    let mut enemy = fixture.unit("supply").clone();
+    enemy.id = cid("supply_b");
+    fixture.catalog.units.insert(enemy.id.clone(), enemy);
+    fixture.map.placements.push(placement("product", 14., 16.));
+    let mut enemy = placement("supply_b", 24., 16.);
+    enemy.owner_slot = 1;
+    fixture.map.placements.push(enemy);
+    let mut app = fixture.app();
+    let mut records = start(&mut app);
+    ticks(&mut app, &mut records, 60);
+    assert_records("repair-retarget", &records);
+    let index=records.iter().position(|record|matches!(record,EconomyLogRecord::Operation(operation) if operation.after.raw_repairs.iter().any(|row|row.repairer==1 && row.action.as_ref().is_some_and(|action|action.target==4 && action.elapsed==0)))).expect("automatic repair selects the second genuinely damaged target");
+    let EconomyLogRecord::Operation(operation) = &records[index] else {
+        unreachable!()
+    };
+    let before = operation
+        .before
+        .raw_repairs
+        .iter()
+        .find(|row| row.repairer == 1)
+        .unwrap();
+    let after = operation
+        .after
+        .raw_repairs
+        .iter()
+        .find(|row| row.repairer == 1)
+        .unwrap();
+    assert_eq!(before.remainders, after.remainders);
+    assert!(after.remainders.iter().any(|row| row.remainder != 0));
+    let mut bad = records[..=index].to_vec();
+    let EconomyLogRecord::Operation(operation) = bad.last_mut().unwrap() else {
+        unreachable!()
+    };
+    operation
+        .after
+        .raw_repairs
+        .iter_mut()
+        .find(|row| row.repairer == 1)
+        .unwrap()
+        .remainders
+        .clear();
+    assert!(
+        validate_records(&bad)
+            .unwrap_err()
+            .contains("fractional cost debt")
     );
 }
