@@ -34,7 +34,7 @@ Evidence: `terrain-work-orders/protocol-terrain-grid-boundary-lib.log`.
 
 The independent implementation review passes 102 focused tests. Its test compilation finding is fixed.
 Evidence: `terrain-work-orders/review.md`.
-The prepared browser build runs. The first terrain selection check fails because camera feedback discards its terrain offset. The fix and final browser checks are in progress. High-detail frame rate and scripted cold-play probes remain unrun.
+The prepared browser build runs. The first terrain selection check fails because camera feedback discards its terrain offset. The native fix passes its focused checks. The rebuilt browser checks are in progress. High-detail frame rate and scripted cold-play probes remain unrun.
 No spec acceptance criterion has been relaxed. The frozen timing workload and thresholds remain unchanged.
 
 The full native campaign ran once. It passed 3,033 tests and found 32 failures in stale fixtures and checks.
@@ -147,3 +147,11 @@ On the ridge-centred fixture, rendering uses a 32-unit eye height while interact
 The client fix must preserve the exact terrain camera base through shake and align raised-body hover.
 Evidence: `terrain-work-orders/final-quarry-browser-sequenced-input/browser/selection-attempt-1.json`, `failure.png` and `result.json` in that folder.
 No terrain browser acceptance row is claimed from these failed runs.
+
+The camera feedback fix preserves the adapter's exact unshaken transform. Hover uses the live authorized body support.
+The original system fails three new camera regressions. The fixed system passes those three tests and two raised-hover tests.
+All 43 existing adapter tests pass. All 24 construction/shared-export tests pass. Strict client Clippy passes.
+One shared export test needed the existing `bevy_app` crate declared as a direct client test dependency.
+Evidence: `terrain-work-orders/final-camera-feedback-red.log`, `final-camera-feedback-green.log`, `final-hover-ground-tests.log`, `final-camera-adapter-tests.log`, `final-camera-construction.log` and `final-camera-clippy-fixed.log` in that directory.
+The camera fix changes client presentation only. The measured server, rules and simulation source are unchanged.
+Picking during nonzero cosmetic camera shake was not checked. The focused shake tests cover bounded displacement and exact return to the terrain base.
