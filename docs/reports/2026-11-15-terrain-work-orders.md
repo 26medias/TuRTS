@@ -11,15 +11,15 @@ Quarry uses physical cargo. Terrain Stockyard uses renamed tools and slot balanc
 Evidence root: `/home/julien/Projects/TuRTS/target/mc-evidence/`.
 Paths below are relative to that root. Earlier failed logs remain beside the passing runs.
 
-| Row | Current evidence | Remaining checks |
+| Row | Evidence | State |
 | --- | --- | --- |
-| TW1 | Public schema/runtime checks, the native compatibility campaign and process acceptance pass. See the logs below. | Final browser staging of both public packages. |
-| TW2 | Lifecycle, atomic transport and nine independent audit cases pass. See `terrain-work-orders/review.md`. | Final workload conservation and browser unloading. |
-| TW3 | Physical claim, allocator inversion, same-seed replay and retained-order audit checks pass. | Final frozen workload and browser scenarios. |
-| TW4 | `terrain-work-orders/sim/navigation-pause-final.log`; `terrain-work-orders/pure-kernel-ray-pruning.log`; client interaction and package tests. | Real browser passage, rover, height picking and local rendering checks. |
-| TW5 | Independent review, real HTTP privacy, atomic export, memory caps and process resync checks pass. See `terrain-work-orders/review.md` and process logs. | Final browser transport and cold-play checks. |
-| TW6 | Browser drivers are prepared. Native interaction and client checks pass. | Real pointer/key scenarios for both packages, both zoom extremes and final cold-play probes. |
-| TW7 | Functionality preflight passes. The full frozen native workload passes all four configurations. See the measurements below. | Run three 400-unit High-detail browser camera cases. |
+| TW1 | Schema/runtime compatibility campaign, process acceptance, and both real public-package browser scenarios below. | PASS |
+| TW2 | Lifecycle/accounting audit, three FullCargo unloads, AppendUnload continuity, and physical/slot payment scenarios. | PASS |
+| TW3 | Physical claims, identifier inversion, same-seed replay, depletion/provenance and retained-order checks. | PASS |
+| TW4 | Exact navigation/support tests, raised picking, ordinary worker clearance, and rover passage in both packages. | PASS |
+| TW5 | Independent audit, HTTP privacy, atomic export, memory bounds and process resync. | PASS |
+| TW6 | Both full browser scenarios, both zoom limits, and all three final scripted cold-play probes. | PASS |
+| TW7 | Three 400-unit High cases pass. Final warmed native retiming is running after the routing fixes. | PENDING native retiming |
 
 The focused client run passes 423 library tests, eight shared-visibility tests and two real-package tests.
 The simulation checkpoint passes 439 library tests, with one ignored measurement.
@@ -34,7 +34,7 @@ Evidence: `terrain-work-orders/protocol-terrain-grid-boundary-lib.log`.
 
 The independent implementation review passes 102 focused tests. Its test compilation finding is fixed.
 Evidence: `terrain-work-orders/review.md`.
-The prepared browser build runs. The first terrain selection check fails because camera feedback discards its terrain offset. The native fix passes its focused checks. The rebuilt browser checks are in progress. High-detail frame rate and scripted cold-play probes remain unrun.
+The final browser scenarios, three High-detail camera cases and all scripted cold-play probes pass. The final routing source is undergoing the full native retiming run.
 No spec acceptance criterion has been relaxed. The frozen timing workload and thresholds remain unchanged.
 
 The full native campaign ran once. It passed 3,033 tests and found 32 failures in stale fixtures and checks.
@@ -51,7 +51,7 @@ Only the failed E9 snapshot oracle and the remaining rows were rerun.
 Evidence: `terrain-work-orders/final-process-acceptance.log`,
 `terrain-work-orders/final-process-acceptance-continued.log` and `terrain-work-orders/final-process-acceptance/`.
 These compatibility checks precede the exact arithmetic optimization below.
-The later full warmed native performance run passes. Final browser acceptance remains pending.
+The earlier full warmed native performance run passes. Final browser acceptance also passes. The final routing source is undergoing a fresh full native measurement.
 
 ## Warmed diagnostic and exact arithmetic
 
@@ -110,7 +110,7 @@ Evidence: `terrain-work-orders/browser-fps-fixture-frozen-v2/typed-pack-result.j
 
 ## Full warmed native acceptance
 
-The final source checkpoint is `a73ed248c13bb81399a65d059fbaa4e8e22d58c7`.
+This earlier passing measurement uses source checkpoint `a73ed248c13bb81399a65d059fbaa4e8e22d58c7`. It does not measure the later approach and route fixes.
 The unchanged workload passes all four configurations. Each has 100 warm-up intervals and 1,000 measured intervals of 20 ticks.
 The run measures 80,000 ticks after 8,000 warm-up ticks. Both native clients pass their tick and batch timing limits.
 Every configuration ends with zero service debt. All server p99, p99.9, maximum-tick and maximum-debt bounds pass.
@@ -170,4 +170,65 @@ The renamed Stockyard run found a work-approach bug on its two-unit cell grid.
 The chosen pose `(22, 19.65)` straddles the ridge and cannot support the worker. A legal west-side approach exists.
 The work remains queued but never starts. The fix must choose a full-footprint legal approach from permitted geometry.
 Evidence: `terrain-work-orders/final-camera-stockyard-browser/browser/result.json`.
-Both fixes are in progress. The accepted SDK16 launcher remains unchanged.
+Both product defects are fixed. The FullCargo shortcut now emits the qualified order key. A real panel-to-observer-to-adapter regression passes for Quarry and renamed cargo capabilities.
+The approach planner checks supported side poses and certified direct routes before ordinary route search.
+Evidence: `terrain-work-orders/final-full-cargo-action-tests.log` and `terrain-work-orders/approach/`.
+
+The Stockyard passage then exposed a real coarse-routing limit. A two-unit opening fits its rover, but cell-centre routing cannot represent it.
+An exhausted coarse search now falls back to half-cell vertices. Every edge and actual start/goal connector uses the exact support certificate.
+The original unsnapped goal remains the destination. The existing search budgets remain unchanged.
+Two Quarry regressions and the actual cleared Stockyard passage pass. All 42 focused terrain tests and strict simulation Clippy pass.
+Evidence: `terrain-work-orders/half-route/` and `terrain-work-orders/half-route/stockyard-clear-bay-final.log`.
+
+## Final browser and player evidence
+
+Both complete terrain scenarios pass on the final runtime source `2073e15eb6c9`.
+The prepared build is `skirmish-terrain-route-final-prepared`.
+
+- Quarry: `terrain-work-orders/final-route-quarry-browser-live-widget/browser/result.json`.
+- Terrain Stockyard: `terrain-work-orders/final-route-stockyard-browser/browser/result.json`.
+
+They check ordinary body selection, raised picking, near/far cut and fill previews, partial pause/resume, Stop,
+occupied-foundation refusal without charge, work continuation, passage clearance, rover traversal, paid fill, and PlacedNoYield.
+Quarry also checks partial AppendUnload continuity and three FullCargo shortcuts. The driver waits for actual cargo reduction.
+The worker clears the passage with an ordinary move. It is not evicted by the rover.
+Stockyard uses free exit `(31, 19)`. The old `(31, 16)` destination overlapped a settled enemy at `(32, 16)`.
+This repairs the passage fixture. Closest completion at occupied destinations is tracked separately in M4b.
+
+| High camera | Mean FPS | Evidence |
+| --- | --- | --- |
+| Normal | 59.7 | `terrain-work-orders/final-route-high400-mixed-oracle/result.json` |
+| Near | 59.5 | `terrain-work-orders/final-route-high400-remaining-views/result.json` |
+| Far | 59.8 | `terrain-work-orders/final-route-high400-remaining-views/result.json` |
+
+All cases retain 400 detailed High models, live terrain work, the frozen v3 assets and stats, combat, and the unchanged 30 FPS limit.
+The normal row passed before that driver's next near-view assertion failed on a cached capture. That first result file therefore has overall status FAIL.
+The focused near/far run passes both selected cases. The three rows above combine their actual passing samples.
+The driver now waits for a fresh scene capture after camera changes. Raw samples are retained before assertions.
+The combat oracle measures attack coverage across the sample because melee actors rest between strikes.
+It still requires the full expected attack mix, health loss at every applicable victim, and all 400 actors alive.
+No frozen assets, stats, commands, camera positions, sample duration, or frame-rate threshold changed.
+
+All final scripted cold-play probes pass on this prepared build:
+
+- First click, 1280×720: `terrain-work-orders/final-cold-first1280/internal/session.log`.
+- First click, 1024×768: `terrain-work-orders/final-cold-first1024/internal/session.log`.
+- Buttons, 1280×720: `terrain-work-orders/final-cold-buttons/internal/session.log`.
+
+These paths are relative to the evidence root. Each run uses a fresh profile and null audio.
+A new human play session, a complete human multiplayer match, and pointer alignment during nonzero cosmetic shake were not checked.
+
+## Final native source verification
+
+The actual final source preflight passes all 240 ticks and four configurations.
+Evidence: `terrain-work-orders/tw7-final-route-preflight.log` and `tw7-final-route-preflight-metadata.json`.
+The warmed ten-interval diagnostic passes all four deadlines. Its server p99.9 is 36.745–39.043 ms.
+Evidence: `terrain-work-orders/tw7-final-route-warm-diagnostic.json`.
+The full 1,000-interval run is in progress. Its result must pass before this milestone merges.
+Its source is `6649262aff6c8222eb2042a83c2c7f9f6cff2d51`; runtime engine source remains the final browser checkpoint above.
+The executable SHA-256 is `eb514ffee1821ecd20cb0ffdf22fc16debce8153e92dd6cbe1a25fd13cc4f9cf`.
+The build record is `terrain-work-orders/tw7-final-route-build.jsonl`.
+
+The independent whole-feature review ran 102 tests before the later performance and browser fixes.
+The later fixes have focused regressions, browser acceptance, and the fresh final measurement described above.
+No second whole-feature review loop was added. No product requirement or acceptance threshold was relaxed.

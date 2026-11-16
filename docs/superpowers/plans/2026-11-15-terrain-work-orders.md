@@ -11,14 +11,18 @@ Next deliverables:
 
 | Owner | Deliverable | Dependency | Acceptance |
 | --- | --- | --- | --- |
-| Client agent | Preserve the terrain camera base through camera shake; align raised hover | Browser failure records | Focused native regression and strict changed-target checks |
-| Root | Rebuild the frozen browser candidate | Camera fix | TW6 on both public packages, High400 at three zoom levels, scripted cold-play probes |
-| Root | Update README, report and launchers; merge and push M4 | All milestone acceptance checks pass | Launcher starts the accepted build; evidence names every row |
-| Routing and traffic agents | Finish exact first-arrival group routing on the M4b branch | Approved M4b contract | Focused regressions, then the full M4b acceptance workload |
+| Root | Final M4 native retiming after route fixes | Frozen final source and executable | Four configurations, 80,000 measured ticks, unchanged deadlines |
+| Root | Update README, report and launchers; merge and push M4 | Final native retiming passes; browser scenarios, High400 and cold-play already pass | Actual launcher starts the final build; evidence names every row |
+| Movement agent and root | M4b endpoint retention and shared group routing | Final M4 source is integrated | Focused endpoint/passage/traffic regressions, then full GM acceptance and one code-running review |
+| Root | API18 runtime resolution, atomic human/bot export and replay audit | Approved M5a spec/plan | Typed authoring, private-pair and atomic-basis checks |
+| Simulation agent | M5a fixed-work scans and recipient history | Published API18/protocol11 contracts | Permission, lifecycle, payment, privacy and replay regressions |
+| Client agent | M5a history UI, public content and real browser driver | Published API18/protocol11 contracts | GD1–GD8, including final real two-slot transport evidence |
+| Measurement agent | M5a sustained scanner benchmark | Exact M4 workload and approved GD9 schedule | Seal tape first; unchanged service budgets and live work counters |
 
-Root owns integration. The client agent holds the native build lease during the camera fix.
-Serialize native builds, GPU measurements and browser workloads that would affect timing.
-Do not publish M4 or change the accepted launcher before its browser checks pass.
+Root owns the native measurement lease. All other agents write source only during its quiet window.
+The full M4 browser scenarios, all three High400 views and all three scripted cold-play probes pass.
+M4b and M5a source is not accepted and has not passed its final runtime checks.
+Do not publish M4 or change the accepted launcher before final native retiming passes.
 The approved implementation contracts below remain unchanged.
 
 ## Common contract and pure rules: root first
