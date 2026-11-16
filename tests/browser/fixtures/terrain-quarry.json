@@ -67,5 +67,10 @@
     "y": 4
   },
   "output_destination": "Inventory",
-  "require_raised_picking": true
+  "require_raised_picking": true,
+  "worker_clearance": [
+    13,
+    11,
+    0
+  ]
 }

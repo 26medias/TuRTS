@@ -34,7 +34,7 @@
   "target_elevation": 0,
   "destination": [
     31,
-    16,
+    19,
     0
   ],
   "require_unload": false,
@@ -67,5 +67,10 @@
     "y": 4
   },
   "output_destination": "SlotBalances",
-  "require_raised_picking": true
+  "require_raised_picking": true,
+  "worker_clearance": [
+    18,
+    12,
+    0
+  ]
 }
