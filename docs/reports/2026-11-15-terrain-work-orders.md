@@ -155,3 +155,19 @@ One shared export test needed the existing `bevy_app` crate declared as a direct
 Evidence: `terrain-work-orders/final-camera-feedback-red.log`, `final-camera-feedback-green.log`, `final-hover-ground-tests.log`, `final-camera-adapter-tests.log`, `final-camera-construction.log` and `final-camera-clippy-fixed.log` in that directory.
 The camera fix changes client presentation only. The measured server, rules and simulation source are unchanged.
 Picking during nonzero cosmetic camera shake was not checked. The focused shake tests cover bounded displacement and exact return to the terrain base.
+
+The rebuilt browser passes body selection, raised-body selection and fill/cut ghosts at both zoom limits.
+It also preserves partial work through Disable/Enable and Stop. These partial results do not pass the complete browser row.
+One run was interrupted by SIGTERM. Its partial captures remain preserved.
+The next complete attempt found a probe mismatch: simulation occupancy uses the existing public `Blocked` state.
+The probe now checks that state, its visible refusal text, and unchanged terrain and payment. No spec criterion changed.
+
+The Quarry run then found a real FullCargo shortcut bug. The generated action used a local order name instead of the qualified catalog key.
+The normal targeted Append unload works and resumes the same public work. The shortcut emits no command and needs the qualified-key fix.
+Evidence: `terrain-work-orders/final-camera-quarry-browser-blocked-oracle/browser/result.json` and its retained input frames.
+
+The renamed Stockyard run found a work-approach bug on its two-unit cell grid.
+The chosen pose `(22, 19.65)` straddles the ridge and cannot support the worker. A legal west-side approach exists.
+The work remains queued but never starts. The fix must choose a full-footprint legal approach from permitted geometry.
+Evidence: `terrain-work-orders/final-camera-stockyard-browser/browser/result.json`.
+Both fixes are in progress. The accepted SDK16 launcher remains unchanged.
