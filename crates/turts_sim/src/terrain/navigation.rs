@@ -19,6 +19,7 @@ const SEARCH_POPS_PER_TICK: usize = 256;
 const MAX_ACTIVE_SEARCHES: usize = 16;
 const MAX_SOLVER_RETRIES: usize = 8;
 const GEOMETRY_BUDGET: usize = 16_384;
+const MAX_HALF_NODES: usize = 16_384;
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct TerrainMotionWait;
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -45,6 +46,8 @@ struct Node {
     closed: bool,
 }
 struct Search {
+    half: bool,
+    connector_lease: BTreeMap<usize, u64>,
     start: Cell,
     goal: Cell,
     nodes: BTreeMap<Cell, Node>,
@@ -52,6 +55,7 @@ struct Search {
     lease: BTreeMap<usize, u64>,
 }
 struct Route {
+    half: bool,
     cells: Vec<Cell>,
     cursor: usize,
     lease: BTreeMap<usize, u64>,
@@ -135,6 +139,27 @@ fn centre(terrain: &impl TerrainRead, cell: Cell) -> Vec2 {
         ((f64::from(cell.x) + 0.5) * width) as f32,
         ((f64::from(cell.y) + 0.5) * width) as f32,
     )
+}
+fn graph_point(terrain: &impl TerrainRead, node: Cell, half: bool) -> Vec2 {
+    if !half {
+        return centre(terrain, node);
+    }
+    let width = f64::from(terrain.grid().cell_width) / f64::from(terrain.grid().length_scale);
+    Vec2::new(
+        (f64::from(node.x) * width * 0.5) as f32,
+        (f64::from(node.y) * width * 0.5) as f32,
+    )
+}
+fn graph_node(terrain: &impl TerrainRead, position: Vec2, half: bool) -> Option<Cell> {
+    let cell = terrain.grid().point_to_cell(point(position)).ok()?;
+    if !half {
+        return Some(cell);
+    }
+    let width = f64::from(terrain.grid().cell_width) / f64::from(terrain.grid().length_scale);
+    Some(Cell {
+        x: (f64::from(position.x) * 2.0 / width).round() as u32,
+        y: (f64::from(position.y) * 2.0 / width).round() as u32,
+    })
 }
 fn profile(world: &World, unit: &MovementFrameUnit) -> Option<Traversal> {
     let entry = world
@@ -292,6 +317,8 @@ fn heuristic(from: Cell, to: Cell) -> u64 {
 }
 fn start_search(start: Cell, goal: Cell) -> Search {
     Search {
+        half: false,
+        connector_lease: BTreeMap::new(),
         start,
         goal,
         nodes: BTreeMap::from([(
@@ -332,12 +359,12 @@ fn search_step(
             }
             let cells = path.into_iter().collect::<Vec<_>>();
             // Lease only the route's actual clearance certificates, not discarded search branches.
-            let mut lease = BTreeMap::new();
+            let mut lease = search.connector_lease.clone();
             for edge in cells.windows(2) {
                 if !clear(
                     terrain,
-                    centre(terrain, edge[0]),
-                    centre(terrain, edge[1]),
+                    graph_point(terrain, edge[0], search.half),
+                    graph_point(terrain, edge[1], search.half),
                     radius,
                     profile,
                     &mut lease,
@@ -346,6 +373,7 @@ fn search_step(
                 }
             }
             return Some(Some(Route {
+                half: search.half,
                 cells,
                 cursor: 0,
                 lease,
@@ -362,7 +390,17 @@ fn search_step(
                 ) else {
                     continue;
                 };
-                if x >= terrain.grid().columns || y >= terrain.grid().rows {
+                let columns = if search.half {
+                    terrain.grid().columns * 2 + 1
+                } else {
+                    terrain.grid().columns
+                };
+                let rows = if search.half {
+                    terrain.grid().rows * 2 + 1
+                } else {
+                    terrain.grid().rows
+                };
+                if x >= columns || y >= rows {
                     continue;
                 }
                 let next = Cell { x, y };
@@ -370,19 +408,49 @@ fn search_step(
                 // Diagonals cannot bypass either orthogonal intermediate or its grade/step edges.
                 let segment_clear = clear(
                     terrain,
-                    centre(terrain, cell),
-                    centre(terrain, next),
+                    graph_point(terrain, cell, search.half),
+                    graph_point(terrain, next, search.half),
                     radius,
                     profile,
                     &mut search.lease,
                 );
                 if !segment_clear
-                    || terrain
-                        .grid()
-                        .transition(terrain, cell, next, profile, &mut budget)
-                        .is_err()
+                    || (!search.half
+                        && terrain
+                            .grid()
+                            .transition(terrain, cell, next, profile, &mut budget)
+                            .is_err())
                 {
                     continue;
+                }
+                if search.half && dx != 0 && dy != 0 {
+                    let horizontal = Cell {
+                        x: next.x,
+                        y: cell.y,
+                    };
+                    let vertical = Cell {
+                        x: cell.x,
+                        y: next.y,
+                    };
+                    let mut corner_clear = true;
+                    for (from, to) in [
+                        (cell, horizontal),
+                        (horizontal, next),
+                        (cell, vertical),
+                        (vertical, next),
+                    ] {
+                        corner_clear &= clear(
+                            terrain,
+                            graph_point(terrain, from, true),
+                            graph_point(terrain, to, true),
+                            radius,
+                            profile,
+                            &mut search.lease,
+                        );
+                    }
+                    if !corner_clear {
+                        continue;
+                    }
                 }
                 let Some(next_cost) = cost.checked_add(if dx == 0 || dy == 0 { 10 } else { 14 })
                 else {
@@ -394,6 +462,12 @@ fn search_step(
                     .is_some_and(|node| node.cost <= next_cost)
                 {
                     continue;
+                }
+                if search.half
+                    && !search.nodes.contains_key(&next)
+                    && search.nodes.len() == MAX_HALF_NODES
+                {
+                    return Some(None);
                 }
                 search.nodes.insert(
                     next,
@@ -485,15 +559,57 @@ fn waypoint(
     }
     let entry = navigation.entries.get_mut(&unit.unit_id)?;
     if let RouteState::Searching(search) = &mut entry.state {
-        if terrain.grid().point_to_cell(point(unit.position)).ok() != Some(search.start) {
+        if graph_node(terrain, unit.position, search.half) != Some(search.start) {
             navigation.entries.remove(&unit.unit_id);
             return None;
         }
         if let Some(result) = search_step(terrain, search, unit.radius, profile) {
-            entry.state = result.map_or_else(
-                || RouteState::Blocked(search.lease.clone()),
-                RouteState::Ready,
-            );
+            entry.state = if let Some(route) = result {
+                RouteState::Ready(route)
+            } else if !search.half {
+                let mut lease = search.lease.clone();
+                match (
+                    graph_node(terrain, unit.position, true),
+                    graph_node(terrain, goal, true),
+                ) {
+                    (Some(start), Some(destination)) => {
+                        let mut connectors = BTreeMap::new();
+                        let first = clear(
+                            terrain,
+                            unit.position,
+                            graph_point(terrain, start, true),
+                            unit.radius,
+                            profile,
+                            &mut connectors,
+                        );
+                        let last = clear(
+                            terrain,
+                            graph_point(terrain, destination, true),
+                            goal,
+                            unit.radius,
+                            profile,
+                            &mut connectors,
+                        );
+                        lease.extend(
+                            connectors
+                                .iter()
+                                .map(|(&chunk, &revision)| (chunk, revision)),
+                        );
+                        if first && last {
+                            let mut fallback = start_search(start, destination);
+                            fallback.half = true;
+                            fallback.lease = connectors.clone();
+                            fallback.connector_lease = connectors;
+                            RouteState::Searching(fallback)
+                        } else {
+                            RouteState::Blocked(lease)
+                        }
+                    }
+                    _ => RouteState::Blocked(lease),
+                }
+            } else {
+                RouteState::Blocked(search.lease.clone())
+            };
         }
     }
     let RouteState::Ready(route) = &mut entry.state else {
@@ -501,10 +617,31 @@ fn waypoint(
     };
     let width = terrain.grid().cell_width as f32 / terrain.grid().length_scale as f32;
     while route.cursor < route.cells.len() {
-        let point = centre(terrain, route.cells[route.cursor]);
-        if unit.position.distance(point) <= width * 0.25 {
-            route.cursor += 1;
-            continue;
+        let point = graph_point(terrain, route.cells[route.cursor], route.half);
+        if unit.position.distance(point)
+            <= if route.half {
+                width * 0.125
+            } else {
+                width * 0.25
+            }
+        {
+            let next = route
+                .cells
+                .get(route.cursor + 1)
+                .map_or(goal, |&node| graph_point(terrain, node, route.half));
+            // Proximity is not a corner-cutting certificate. Keep approaching
+            // this vertex until the actual body can sweep to the next one.
+            if clear(
+                terrain,
+                unit.position,
+                next,
+                unit.radius,
+                profile,
+                &mut route.lease,
+            ) {
+                route.cursor += 1;
+                continue;
+            }
         }
         if clear(
             terrain,
@@ -711,3 +848,7 @@ pub(crate) fn step(
     world.insert_resource(navigation);
     (outputs, waiting)
 }
+
+#[cfg(test)]
+#[path = "navigation_fallback_tests.rs"]
+mod fallback_tests;
