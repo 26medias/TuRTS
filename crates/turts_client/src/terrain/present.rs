@@ -235,7 +235,7 @@ pub(crate) fn panel(
                         .unwrap_or(std::cmp::Ordering::Equal)
                         .then_with(|| a.2.name.cmp(&b.2.name))
                 });
-                for unload in content.catalog.orders.values().filter(|d| {
+                for (unload_id, unload) in content.catalog.orders.iter().filter(|(_, d)| {
                     d.behaviour == Behaviour::UnloadCargo
                         && d.target == turts_mod_api::TargetKind::Unit
                         && (d.units.is_empty() || d.units.contains(&actor.content_id))
@@ -253,7 +253,7 @@ pub(crate) fn panel(
                                 identity: (terrain.basis.match_id, terrain.basis.map.clone()),
                                 unit: *unit,
                                 depot: turts_net_protocol::UnitId(*depot),
-                                unload_order: unload.id.to_string(),
+                                unload_order: unload_id.to_string(),
                                 work_order: order.order.clone(),
                                 designation: work.designation.clone(),
                             },
@@ -366,3 +366,7 @@ fn wait_text(wait: TerrainWorkWait) -> &'static str {
         TerrainWorkWait::Unloading => "Unloading; the same work and partial progress will resume",
     }
 }
+
+#[cfg(test)]
+#[path = "unload_action_tests.rs"]
+mod unload_action_tests;
