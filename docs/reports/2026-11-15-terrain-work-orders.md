@@ -34,7 +34,7 @@ Evidence: `terrain-work-orders/protocol-terrain-grid-boundary-lib.log`.
 
 The independent implementation review passes 102 focused tests. Its test compilation finding is fixed.
 Evidence: `terrain-work-orders/review.md`.
-The final browser build, High-detail frame rate and scripted cold-play probes have not run.
+The prepared browser build runs. The first terrain selection check fails because camera feedback discards its terrain offset. The fix and final browser checks are in progress. High-detail frame rate and scripted cold-play probes remain unrun.
 No spec acceptance criterion has been relaxed. The frozen timing workload and thresholds remain unchanged.
 
 The full native campaign ran once. It passed 3,033 tests and found 32 failures in stale fixtures and checks.
@@ -133,3 +133,17 @@ Changed-target strict Clippy and formatting pass.
 Evidence: `terrain-work-orders/normalization-rules.log`, `ground-cache-terrain.log`, `separation-movement.log`, `separation-movement-probes.log`, `surface-borrowed-tests.log` and `export-allvisible-tests.log` in that directory.
 The independent feature review precedes these performance changes. The differential checks and full timing run cover the later changes.
 No workload, quality, deadline, timeout or memory limit was reduced.
+
+## Final browser findings
+
+The prepared candidate builds successfully from source checkpoint `a73ed248`.
+The first driver run opened a bare page URL. The browser client requires explicit server and WebSocket query parameters.
+Both terrain drivers now supply those parameters. Their syntax checks pass. This repair changes no built artifact.
+
+The connected browser receives live terrain and own units. Its first body selection fails.
+Separate pointer move, down and up frames reproduce the failure. An 80 ms hold does not fix it.
+The camera feedback system reconstructs the camera at zero ground height after the interaction adapter raises it to the current terrain.
+On the ridge-centred fixture, rendering uses a 32-unit eye height while interaction expects 33 units.
+The client fix must preserve the exact terrain camera base through shake and align raised-body hover.
+Evidence: `terrain-work-orders/final-quarry-browser-sequenced-input/browser/selection-attempt-1.json`, `failure.png` and `result.json` in that folder.
+No terrain browser acceptance row is claimed from these failed runs.
