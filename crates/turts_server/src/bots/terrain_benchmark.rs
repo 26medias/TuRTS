@@ -396,6 +396,16 @@ impl Workload {
 }
 
 fn run(intervals: usize, acceptance: bool, warmup: usize) {
+    let diagnostic_fog = std::env::var("TURTS_TW7_DIAGNOSTIC_FOG").ok();
+    assert!(
+        !acceptance || diagnostic_fog.is_none(),
+        "acceptance cannot select a diagnostic visibility subset"
+    );
+    let diagnostic_fog = diagnostic_fog.map(|value| match value.as_str() {
+        "fog" => true,
+        "allvisible" => false,
+        _ => panic!("diagnostic visibility must be fog or allvisible"),
+    });
     #[cfg(debug_assertions)]
     if acceptance {
         panic!("TW7 performance acceptance requires a release build");
@@ -406,6 +416,9 @@ fn run(intervals: usize, acceptance: bool, warmup: usize) {
     }
     let mut rows = Vec::new();
     for fog in [true, false] {
+        if diagnostic_fog.is_some_and(|selected| selected != fog) {
+            continue;
+        }
         for rtt in [50, 100] {
             let fixture = authored(fog);
             turts_mod_runtime::terrain::validate_terrain_catalog(
