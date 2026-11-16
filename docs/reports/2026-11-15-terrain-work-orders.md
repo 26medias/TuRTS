@@ -1,7 +1,7 @@
 # Terrain work orders
 
-Status: implementation and acceptance in progress. This milestone is not accepted.
-The SDK16 browser launchers remain on the accepted main build.
+Status: all M4 acceptance checks pass on the integration branch.
+The three local launchers use the final terrain build. The actual Skirmish launcher passes its smoke check.
 
 API 0.2.17 adds authored plateau terrain, public geological generation rules, movement classes, excavation/fill tools, physical cargo and explicit unloading.
 Protocol 10 installs permitted terrain, work, contacts and accounts on one atomic basis.
@@ -19,7 +19,7 @@ Paths below are relative to that root. Earlier failed logs remain beside the pas
 | TW4 | Exact navigation/support tests, raised picking, ordinary worker clearance, and rover passage in both packages. | PASS |
 | TW5 | Independent audit, HTTP privacy, atomic export, memory bounds and process resync. | PASS |
 | TW6 | Both full browser scenarios, both zoom limits, and all three final scripted cold-play probes. | PASS |
-| TW7 | Three 400-unit High cases pass. Final warmed native retiming is running after the routing fixes. | PENDING native retiming |
+| TW7 | All four final native configurations pass 80,000 measured ticks. All three 400-unit High views pass. | PASS |
 
 The focused client run passes 423 library tests, eight shared-visibility tests and two real-package tests.
 The simulation checkpoint passes 439 library tests, with one ignored measurement.
@@ -34,7 +34,7 @@ Evidence: `terrain-work-orders/protocol-terrain-grid-boundary-lib.log`.
 
 The independent implementation review passes 102 focused tests. Its test compilation finding is fixed.
 Evidence: `terrain-work-orders/review.md`.
-The final browser scenarios, three High-detail camera cases and all scripted cold-play probes pass. The final routing source is undergoing the full native retiming run.
+The final browser scenarios, three High-detail camera cases and all scripted cold-play probes pass. The final routing source passes the full native retiming run.
 No spec acceptance criterion has been relaxed. The frozen timing workload and thresholds remain unchanged.
 
 The full native campaign ran once. It passed 3,033 tests and found 32 failures in stale fixtures and checks.
@@ -51,7 +51,7 @@ Only the failed E9 snapshot oracle and the remaining rows were rerun.
 Evidence: `terrain-work-orders/final-process-acceptance.log`,
 `terrain-work-orders/final-process-acceptance-continued.log` and `terrain-work-orders/final-process-acceptance/`.
 These compatibility checks precede the exact arithmetic optimization below.
-The earlier full warmed native performance run passes. Final browser acceptance also passes. The final routing source is undergoing a fresh full native measurement.
+The earlier full warmed native performance run passes. Final browser acceptance also passes. The final routing source passes the fresh full native measurement.
 
 ## Warmed diagnostic and exact arithmetic
 
@@ -108,7 +108,7 @@ This cold preflight does not establish the timing limits. The later full warmed 
 The prepared400-model terrain fixture passes normal typed package validation. Its73 source files remain unchanged after packing.
 Evidence: `terrain-work-orders/browser-fps-fixture-frozen-v2/typed-pack-result.json`.
 
-## Full warmed native acceptance
+## Earlier warmed native checkpoint
 
 This earlier passing measurement uses source checkpoint `a73ed248c13bb81399a65d059fbaa4e8e22d58c7`. It does not measure the later approach and route fixes.
 The unchanged workload passes all four configurations. Each has 100 warm-up intervals and 1,000 measured intervals of 20 ticks.
@@ -224,7 +224,19 @@ The actual final source preflight passes all 240 ticks and four configurations.
 Evidence: `terrain-work-orders/tw7-final-route-preflight.log` and `tw7-final-route-preflight-metadata.json`.
 The warmed ten-interval diagnostic passes all four deadlines. Its server p99.9 is 36.745–39.043 ms.
 Evidence: `terrain-work-orders/tw7-final-route-warm-diagnostic.json`.
-The full 1,000-interval run is in progress. Its result must pass before this milestone merges.
+The full 1,000-interval run passes all four configurations. It measures 80,000 ticks after 8,000 warm-up ticks.
+Both native clients pass tick and batch deadlines. All server p99, p99.9, maximum-tick and service-debt bounds pass.
+Every configuration ends with zero service debt.
+
+| Visibility | Application ACK delay | Server p99 | Server p99.9 | Maximum tick | Result |
+| --- | --- | --- | --- | --- | --- |
+| Fog | 50 ms | 36.523 ms | 39.718 ms | 60.262 ms | PASS |
+| Fog | 100 ms | 37.119 ms | 42.403 ms | 61.027 ms | PASS |
+| AllVisible | 50 ms | 37.469 ms | 40.775 ms | 47.908 ms | PASS |
+| AllVisible | 100 ms | 38.374 ms | 42.478 ms | 60.733 ms | PASS |
+
+Evidence: `terrain-work-orders/tw7-final-route-1000.json`, `.log` and `-metadata.json`.
+The run used CPUs 0, 2, 4 and 6 from 2026-11-16 04:16:36 UTC to 04:56:12 UTC.
 Its source is `6649262aff6c8222eb2042a83c2c7f9f6cff2d51`; runtime engine source remains the final browser checkpoint above.
 The executable SHA-256 is `eb514ffee1821ecd20cb0ffdf22fc16debce8153e92dd6cbe1a25fd13cc4f9cf`.
 The build record is `terrain-work-orders/tw7-final-route-build.jsonl`.
@@ -232,3 +244,16 @@ The build record is `terrain-work-orders/tw7-final-route-build.jsonl`.
 The independent whole-feature review ran 102 tests before the later performance and browser fixes.
 The later fixes have focused regressions, browser acceptance, and the fresh final measurement described above.
 No second whole-feature review loop was added. No product requirement or acceptance threshold was relaxed.
+
+
+## Launcher and handoff
+
+The actual `target/mc-evidence/play-skirmish.sh` starts the final prepared build and receives a populated authoritative world.
+The test used its real wrapper, an owned Xvfb display, a fresh Chrome profile and `--alsa-output-device=null`.
+The profile was removed on shutdown. Evidence: `terrain-work-orders/launcher-final-smoke/result.json`, `browser-result.json` and `world.png`.
+The wrappers supply their recorded build settings so prepared-source validation also works from an ordinary shell.
+Two-player and shared-host wrappers point to the same final source and bundle. Their complete match campaigns were not repeated for this terrain milestone.
+
+A player can still build, harvest, train and fight in Skirmish. The two public terrain packages additionally support excavation, fill, physical or slot payments, explicit unloading, raised picking and traversable passages.
+M4b group routing and M5a surveys remain separate unaccepted branches. Terrain sight and direct-fire obstruction is specified for M5b.
+The million-cell fully exposed map limit, nonzero-shake picking and new human multiplayer session remain unverified as stated above.

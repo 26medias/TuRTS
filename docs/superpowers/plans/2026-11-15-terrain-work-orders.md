@@ -1,7 +1,7 @@
 # M4 terrain work implementation
 
 Status: Anvil spec and plan approved by the same reviewer. Each needed one turn and one focused recheck.
-Current accepted main is SDK16 at `507e7010`. Its playable launcher remains available.
+M4 acceptance and the final actual-launcher check pass. The final prepared build remains available.
 API 0.2.17 and protocol 10 are implemented on this integration branch.
 The independent feature review passes 102 focused tests. The full native and process campaigns pass after scoped fixture repairs.
 The unchanged full warmed native workload passes all four configurations and 80,000 measured ticks.
@@ -11,7 +11,7 @@ Next deliverables:
 
 | Owner | Deliverable | Dependency | Acceptance |
 | --- | --- | --- | --- |
-| Root | Final M4 native retiming after route fixes | Frozen final source and executable | Four configurations, 80,000 measured ticks, unchanged deadlines |
+| Root | Final M4 native retiming after route fixes | Complete | PASS: four configurations, 80,000 measured ticks, unchanged deadlines |
 | Root | Update README, report and launchers; merge and push M4 | Final native retiming passes; browser scenarios, High400 and cold-play already pass | Actual launcher starts the final build; evidence names every row |
 | Movement agent and root | M4b endpoint retention and shared group routing | Final M4 source is integrated | Focused endpoint/passage/traffic regressions, then full GM acceptance and one code-running review |
 | Root | API18 runtime resolution, atomic human/bot export and replay audit | Approved M5a spec/plan | Typed authoring, private-pair and atomic-basis checks |
@@ -19,10 +19,10 @@ Next deliverables:
 | Client agent | M5a history UI, public content and real browser driver | Published API18/protocol11 contracts | GD1–GD8, including final real two-slot transport evidence |
 | Measurement agent | M5a sustained scanner benchmark | Exact M4 workload and approved GD9 schedule | Seal tape first; unchanged service budgets and live work counters |
 
-Root owns the native measurement lease. All other agents write source only during its quiet window.
+The final M4 quiet measurement is complete. Root now runs the M4b focused native checks.
 The full M4 browser scenarios, all three High400 views and all three scripted cold-play probes pass.
 M4b and M5a source is not accepted and has not passed its final runtime checks.
-Do not publish M4 or change the accepted launcher before final native retiming passes.
+The final native retiming passes. The launchers now use the final build.
 The approved implementation contracts below remain unchanged.
 
 ## Common contract and pure rules: root first
