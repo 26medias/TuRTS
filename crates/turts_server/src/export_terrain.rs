@@ -269,6 +269,37 @@ fn changed<T: Clone, K: Ord + Copy>(
     key: impl Fn(&T) -> K,
     same: impl Fn(&T, &T) -> bool,
 ) -> (Vec<T>, Vec<K>) {
+    if old.windows(2).all(|pair| key(&pair[0]) < key(&pair[1]))
+        && new.windows(2).all(|pair| key(&pair[0]) < key(&pair[1]))
+    {
+        // Immutable projections already have unique canonical keys. Merge them
+        // directly instead of allocating two trees for every peer and tick.
+        let (mut before, mut after) = (0, 0);
+        let (mut rows, mut cleared) = (Vec::new(), Vec::new());
+        while before < old.len() && after < new.len() {
+            match key(&old[before]).cmp(&key(&new[after])) {
+                std::cmp::Ordering::Less => {
+                    cleared.push(key(&old[before]));
+                    before += 1;
+                }
+                std::cmp::Ordering::Greater => {
+                    rows.push(new[after].clone());
+                    after += 1;
+                }
+                std::cmp::Ordering::Equal => {
+                    if !same(&old[before], &new[after]) {
+                        rows.push(new[after].clone());
+                    }
+                    before += 1;
+                    after += 1;
+                }
+            }
+        }
+        rows.extend_from_slice(&new[after..]);
+        cleared.extend(old[before..].iter().map(&key));
+        return (rows, cleared);
+    }
+    // Preserve last-value and canonical-order semantics for noncanonical inputs.
     let before: BTreeMap<_, _> = old.iter().map(|row| (key(row), row)).collect();
     let after: BTreeMap<_, _> = new.iter().map(|row| (key(row), row)).collect();
     let rows = after
@@ -361,3 +392,7 @@ mod tests {
         assert!(!delta_compatible(&None, &Some(old)));
     }
 }
+
+#[cfg(test)]
+#[path = "export_terrain_merge_tests.rs"]
+mod merge_tests;
