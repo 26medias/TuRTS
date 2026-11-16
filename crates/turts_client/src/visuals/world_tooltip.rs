@@ -31,7 +31,17 @@ pub(super) fn update_world_tooltip(
                 .and_then(|content| catalog.units.get(&content))
                 .map(|def| def.name.clone())?;
             let point = camera
-                .world_to_viewport(camera_transform, world_to_scene(shown.pos) + Vec3::Y * 2.0)
+                .world_to_viewport(
+                    camera_transform,
+                    world_to_scene(shown.pos)
+                        + Vec3::Y
+                            * (2.0
+                                + crate::terrain::render::live_height(
+                                    replica.terrain.as_ref(),
+                                    shown.unit_id,
+                                )
+                                .unwrap_or(0.)),
+                )
                 .ok()?;
             Some((id, tooltip_text(&name, unit.owner_slot), point))
         })
@@ -41,7 +51,17 @@ pub(super) fn update_world_tooltip(
             let content = ContentId::parse(&node.content_id).ok()?;
             let name = &catalog.nodes.get(&content)?.name;
             let point = camera
-                .world_to_viewport(camera_transform, world_to_scene(node.pos) + Vec3::Y * 2.0)
+                .world_to_viewport(
+                    camera_transform,
+                    world_to_scene(node.pos)
+                        + Vec3::Y
+                            * (2.0
+                                + crate::terrain::render::marker_height(
+                                    replica.terrain.as_ref(),
+                                    node.pos,
+                                )
+                                .unwrap_or(0.)),
+                )
                 .ok()?;
             Some((
                 id.0,

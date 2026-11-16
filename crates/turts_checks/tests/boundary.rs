@@ -188,16 +188,22 @@ fn standalone_copy(name: &str) -> (PathBuf, PathBuf) {
         std::env::temp_dir().join(format!("turts-{short}-t1x-{}-{stamp}", std::process::id()));
     let copied_crate = temp.join("crates").join(name);
     std::fs::create_dir_all(copied_crate.join("src")).expect("create copied crate");
-    for entry in
-        std::fs::read_dir(root.join("crates").join(name).join("src")).expect("read sources")
-    {
-        let entry = entry.expect("source entry");
-        std::fs::copy(
-            entry.path(),
-            copied_crate.join("src").join(entry.file_name()),
-        )
-        .expect("copy source");
+    fn copy_sources(from: &std::path::Path, to: &std::path::Path) {
+        std::fs::create_dir_all(to).expect("create source directory");
+        for entry in std::fs::read_dir(from).expect("read sources") {
+            let entry = entry.expect("source entry");
+            let destination = to.join(entry.file_name());
+            if entry.file_type().expect("source type").is_dir() {
+                copy_sources(&entry.path(), &destination);
+            } else {
+                std::fs::copy(entry.path(), destination).expect("copy source file");
+            }
+        }
     }
+    copy_sources(
+        &root.join("crates").join(name).join("src"),
+        &copied_crate.join("src"),
+    );
     std::fs::copy(
         root.join("crates").join(name).join("Cargo.toml"),
         copied_crate.join("Cargo.toml"),

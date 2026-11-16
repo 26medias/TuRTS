@@ -84,7 +84,17 @@ pub fn world_pointer_commands(
     let Ok(ray) = camera.viewport_to_world(transform, cursor) else {
         return;
     };
-    let Some(point) = ground_point(ray) else {
+    let point = if let Some(terrain) = &replica.terrain {
+        crate::terrain::ray_hit(terrain, ray).map(|hit| Pos {
+            x: hit.position.x as f32,
+            y: hit.position.y as f32,
+        })
+    } else if acquired.0.content.terrain.is_some() {
+        None
+    } else {
+        ground_point(ray)
+    };
+    let Some(point) = point else {
         return;
     };
 

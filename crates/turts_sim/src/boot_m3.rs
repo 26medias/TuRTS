@@ -768,6 +768,9 @@ mod tests {
         let first = ContentId::parse("forge:vein_a").unwrap();
         let second = ContentId::parse("forge:vein_b").unwrap();
         let catalog = ContentCatalog {
+            terrain_materials: Default::default(),
+            terrain_movement_classes: Default::default(),
+            terrain_tools: Default::default(),
             bots: Default::default(),
 
             combat: None,
@@ -882,6 +885,9 @@ mod tests {
 
     fn empty_catalog() -> ContentCatalog {
         ContentCatalog {
+            terrain_materials: Default::default(),
+            terrain_movement_classes: Default::default(),
+            terrain_tools: Default::default(),
             bots: Default::default(),
 
             combat: None,
@@ -910,6 +916,10 @@ mod tests {
         let drone_id = ContentId::parse("forge:drone").unwrap();
         let shell = ContentId::parse("forge:shell").unwrap();
         let drone = ResolvedUnit {
+            terrain_class: None,
+            terrain_cargo: None,
+            terrain_foundation: None,
+            terrain_tools: Vec::new(),
             vision: None,
             repairer: None,
 
@@ -949,6 +959,9 @@ mod tests {
             removal: None,
         };
         ContentCatalog {
+            terrain_materials: Default::default(),
+            terrain_movement_classes: Default::default(),
+            terrain_tools: Default::default(),
             bots: Default::default(),
 
             combat: None,
@@ -1108,6 +1121,10 @@ mod tests {
         catalog.units.insert(
             producer_id.clone(),
             ResolvedUnit {
+                terrain_class: None,
+                terrain_cargo: None,
+                terrain_foundation: None,
+                terrain_tools: Vec::new(),
                 vision: None,
                 repairer: None,
 
@@ -1147,6 +1164,10 @@ mod tests {
         catalog.units.insert(
             output_id.clone(),
             ResolvedUnit {
+                terrain_class: None,
+                terrain_cargo: None,
+                terrain_foundation: None,
+                terrain_tools: Vec::new(),
                 vision: None,
                 repairer: None,
 

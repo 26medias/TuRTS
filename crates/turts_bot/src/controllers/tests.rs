@@ -7,6 +7,7 @@ fn id(s: &str) -> ContentId {
 }
 fn unit(unit: u32, x: f32, y: f32) -> UnitObservation {
     UnitObservation {
+        ground_elevation: None,
         unit,
         owner_slot: 0,
         content: id("fixture:worker"),
@@ -563,6 +564,7 @@ fn complete_physical_target_ties_remain_refused_with_inverted_ids() {
 fn squad_scouts_complete_remembered_pages_as_points_and_never_reuses_stale_ids() {
     fn memory(unit: u32, x: f32) -> turts_mod_api::RememberedUnit {
         turts_mod_api::RememberedUnit {
+            ground_elevation: None,
             unit,
             content: id("fixture:enemy"),
             owner: 1,

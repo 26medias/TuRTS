@@ -13,6 +13,9 @@ pub struct UnitObservation {
     pub capabilities: Vec<Capability>,
     pub health: Option<(u64, u64)>,
     pub site: bool,
+    /// Permitted physical contact. It grants no adjacent terrain/material facts.
+    #[serde(default)]
+    pub ground_elevation: Option<i32>,
     /// Present only for this bot's own units. Enemy orders/enable state are private.
     pub own: Option<OwnUnitObservation>,
 }
@@ -78,6 +81,34 @@ pub struct AffordabilityQuery {
     pub actor: UnitId,
     pub production: ContentId,
 }
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TerrainQuery {
+    /// Public coordinate enumeration, bounded to 256 cells before reading facts.
+    pub cells: turts_mod_api::TerrainRect,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TerrainSurfaceObservation {
+    pub elevation: i32,
+    pub material: Option<ContentId>,
+    pub provenance: Option<turts_mod_api::TerrainProvenance>,
+    pub observed_tick: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TerrainCellKnowledge {
+    Unknown,
+    Current(TerrainSurfaceObservation),
+    Remembered(TerrainSurfaceObservation),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TerrainCellObservation {
+    pub cell: turts_mod_api::TerrainCell,
+    pub knowledge: TerrainCellKnowledge,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Query {
     Units(UnitQuery),
@@ -89,6 +120,7 @@ pub enum Query {
     RememberedNodes(NodeQuery),
     Placement(PlacementQuery),
     Affordability(AffordabilityQuery),
+    Terrain(TerrainQuery),
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct QueryCursor {
@@ -135,6 +167,8 @@ pub enum QueryData {
     RememberedNodes(RememberedRows<turts_mod_api::RememberedNode>),
     Placement(Advice<PlacementAdvice>),
     Affordability(Advice<CostQuote>),
+    /// One row per submitted coordinate, including explicit Unknown entries.
+    Terrain(Vec<TerrainCellObservation>),
 }
 /// Stale permitted facts. These are never live handles or a current-health query.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

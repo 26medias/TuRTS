@@ -447,15 +447,22 @@ pub(crate) fn sync_models(
             continue;
         };
         let height = (max[1] - min[1]) * model.scale;
+        let ground_height = transform.translation.y
+            - acquired
+                .0
+                .content
+                .shapes
+                .get(content)
+                .map_or(0., crate::render::mesh_lift);
         let screen_height = cameras
             .iter()
             .next()
             .and_then(|(camera, global)| {
                 let a = camera
-                    .world_to_viewport(global, Vec3::new(pos.x, 0., pos.y))
+                    .world_to_viewport(global, Vec3::new(pos.x, ground_height, pos.y))
                     .ok()?;
                 let b = camera
-                    .world_to_viewport(global, Vec3::new(pos.x, height, pos.y))
+                    .world_to_viewport(global, Vec3::new(pos.x, ground_height + height, pos.y))
                     .ok()?;
                 Some((a.y - b.y).abs() / camera.logical_viewport_size()?.y)
             })
@@ -465,7 +472,10 @@ pub(crate) fn sync_models(
             animation.screen_height = screen_height;
             animation.visible = cameras.iter().next().is_none_or(|(camera, global)| {
                 camera
-                    .world_to_viewport(global, Vec3::new(pos.x, height * 0.5, pos.y))
+                    .world_to_viewport(
+                        global,
+                        Vec3::new(pos.x, ground_height + height * 0.5, pos.y),
+                    )
                     .ok()
                     .zip(camera.logical_viewport_size())
                     .is_some_and(|(point, size)| {

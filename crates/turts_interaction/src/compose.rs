@@ -11,7 +11,26 @@ impl Core {
         view: &Viewport,
         world: &dyn WorldView,
     ) -> Option<OrderTarget> {
-        let point = projection::screen_to_world(px, view, self.camera)?;
+        // A tall visible body near the map edge can be hit above a ray which
+        // subsequently leaves the terrain. It remains a valid entity target.
+        match order.target {
+            TargetKind::Unit => {
+                return nearest_unit(px, view, self.camera, world)
+                    .map(|unit| OrderTarget::Unit(unit.id));
+            }
+            TargetKind::Node => {
+                return nearest_node(px, view, self.camera, world)
+                    .map(|node| OrderTarget::Node(node.id));
+            }
+            TargetKind::PointOrUnit if order.behaviour != Behaviour::Move => {
+                if let Some(unit) = nearest_unit(px, view, self.camera, world) {
+                    return Some(OrderTarget::Unit(unit.id));
+                }
+            }
+            TargetKind::None => return Some(OrderTarget::None),
+            _ => {}
+        }
+        let point = projection::screen_to_world_on(px, view, self.camera, world)?;
         match order.target {
             TargetKind::None => Some(OrderTarget::None),
             TargetKind::Point => Some(OrderTarget::Point(Pos {

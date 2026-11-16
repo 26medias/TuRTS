@@ -36,6 +36,7 @@ fn prepared(sharing: VisionSharing, limit: u32) -> VisibilityState {
 }
 fn visible(unit: u32, owner: u8, position: WorldPos) -> VisibleUnit {
     VisibleUnit {
+        ground_elevation: None,
         unit,
         content: Arc::new(id("worker")),
         owner,

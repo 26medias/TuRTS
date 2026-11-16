@@ -10,6 +10,7 @@ fn origin() -> PackageId {
 fn map() -> MapDef {
     MapDef {
         id: "plain".into(),
+        terrain: None,
         visibility: Some(VisibilityDef {
             cell_size: 2.0,
             sharing: VisionSharing::OwnSlot,

@@ -147,6 +147,8 @@ fn validate_bot(
                 turts_mod_api::Behaviour::Produce => Some(Capability::Producer),
                 turts_mod_api::Behaviour::Construct => Some(Capability::Constructor),
                 turts_mod_api::Behaviour::Repair => Some(Capability::Repairer),
+                turts_mod_api::Behaviour::TerrainWork => Some(Capability::TerrainWorker),
+                turts_mod_api::Behaviour::UnloadCargo => Some(Capability::CargoUnloader),
                 _ => None,
             };
             if (!order.units.is_empty() && !order.units.contains(unit))
@@ -416,6 +418,8 @@ fn has_capability(unit: &turts_mod_api::content::ResolvedUnit, cap: Capability) 
         Capability::Research => unit.research.is_some(),
         Capability::Constructor => unit.constructor.is_some(),
         Capability::Repairer => unit.repairer.is_some(),
+        Capability::TerrainWorker => !unit.terrain_tools.is_empty(),
+        Capability::CargoUnloader => unit.terrain_cargo.is_some(),
     }
 }
 fn validate_value(

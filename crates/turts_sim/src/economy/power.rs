@@ -714,6 +714,10 @@ mod tests {
     }
     fn unit(name: &str) -> ResolvedUnit {
         ResolvedUnit {
+            terrain_class: None,
+            terrain_cargo: None,
+            terrain_foundation: None,
+            terrain_tools: Vec::new(),
             vision: None,
             repairer: None,
 
@@ -768,6 +772,9 @@ mod tests {
         })
         .collect();
         ContentCatalog {
+            terrain_materials: Default::default(),
+            terrain_movement_classes: Default::default(),
+            terrain_tools: Default::default(),
             bots: Default::default(),
 
             combat: None,

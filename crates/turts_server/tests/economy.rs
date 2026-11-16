@@ -1763,6 +1763,15 @@ fn owner_unit_orders_from_audit(
     }
 
     let target = |target: &OrderTargetSim| match target {
+        OrderTargetSim::TerrainWork {
+            tool,
+            cells,
+            target_elevation,
+        } => wire::OrderTarget::TerrainWork(turts_mod_api::TerrainDesignation {
+            tool: tool.to_string(),
+            cells: *cells,
+            target_elevation: *target_elevation,
+        }),
         OrderTargetSim::Invalid => panic!("invalid order target in captured unit state"),
         OrderTargetSim::None => wire::OrderTarget::None,
         OrderTargetSim::Point(point) => wire::OrderTarget::Point(wire::Pos {
@@ -2398,7 +2407,9 @@ fn owner_report_projection_from_audit(
         "unit_orders": snapshot.unit_orders,
         "progress":progress,
         "repairs":repairs,
-        // These M2 fixtures use AllVisible and have no fog knowledge.
+        // These M2 fixtures use AllVisible and flat terrain. Keep explicit absence
+        // so an unexpected terrain payload still fails the complete projection equality.
+        "terrain": serde_json::Value::Null,
         "knowledge": serde_json::Value::Null,
     })
 }
@@ -2415,6 +2426,7 @@ fn owner_report_keeps_sdk14_progress_and_repair_families_for_legacy_packages() {
         );
         assert_eq!(expected["repairs"], serde_json::json!([]));
         assert_eq!(expected.get("knowledge"), Some(&serde_json::Value::Null));
+        assert_eq!(expected.get("terrain"), Some(&serde_json::Value::Null));
     }
 }
 
@@ -2920,6 +2932,7 @@ fn sdk14_progress_history_keeps_real_anchors_and_rejects_poisoned_rates() {
             research: vec![],
             unit_orders: vec![],
             records: wire::DeltaRecords {
+                terrain: None,
                 jobs: if tick == 3 {
                     vec![rate(3, 1, 0)]
                 } else {

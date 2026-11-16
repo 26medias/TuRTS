@@ -25,6 +25,16 @@ pub struct EconomyEvent {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum EconomyEventKind {
+    TerrainStepCommitted {
+        unit: u32,
+        cell: turts_mod_api::TerrainCell,
+        before: i32,
+        after: i32,
+        material: ContentId,
+        placed: bool,
+        inputs: Vec<CostLine>,
+        outputs: Vec<CostLine>,
+    },
     /// Mandatory refunds account for every desired, credited, and discarded amount.
     DestructionRefunded {
         unit: u32,

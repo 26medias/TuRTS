@@ -1,0 +1,76 @@
+{
+  "slot": 0,
+  "worker": "terrain_stockyard:porter",
+  "rover": "terrain_stockyard:carrier",
+  "dig": "terrain_stockyard:scraper",
+  "body_pick_height": 0.6,
+  "reference": [
+    19,
+    15,
+    0
+  ],
+  "rectangle": [
+    [
+      23,
+      15,
+      1
+    ],
+    [
+      25,
+      17,
+      1
+    ]
+  ],
+  "cells": {
+    "min": {
+      "x": 11,
+      "y": 7
+    },
+    "max": {
+      "x": 13,
+      "y": 9
+    }
+  },
+  "target_elevation": 0,
+  "destination": [
+    31,
+    19,
+    0
+  ],
+  "require_unload": false,
+  "fill": "terrain_stockyard:leveler",
+  "resource": "terrain_stockyard:loam",
+  "depot": "terrain_stockyard:depot",
+  "depot_pick_height": 1.0,
+  "cell_width": 2,
+  "elevation_step": 0.5,
+  "initial_ridge_elevation": 2,
+  "partial_cell": {
+    "x": 11,
+    "y": 10
+  },
+  "ghost_point": [
+    19,
+    17
+  ],
+  "ghost_reference": [
+    23.0,
+    21.0,
+    1
+  ],
+  "pause_order": "terrain_stockyard:order_pause",
+  "resume_order": "terrain_stockyard:order_resume",
+  "stop_order": "terrain_stockyard:order_stop",
+  "unload_order": "terrain_stockyard:order_unload",
+  "refusal_cell": {
+    "x": 4,
+    "y": 4
+  },
+  "output_destination": "SlotBalances",
+  "require_raised_picking": true,
+  "worker_clearance": [
+    18,
+    12,
+    0
+  ]
+}

@@ -33,6 +33,10 @@ impl UnitTypes {
         let mut candidate = existing.clone();
         for unit in catalog.units.values() {
             let def = UnitDef {
+                terrain_class: None,
+                terrain_cargo: None,
+                terrain_foundation: None,
+                terrain_tools: Vec::new(),
                 vision: unit.vision,
                 id: unit.id.local.clone(),
                 name: unit.name.clone(),

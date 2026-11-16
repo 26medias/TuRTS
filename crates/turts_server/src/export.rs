@@ -10,6 +10,8 @@
 //! ([`weapon_records`]); the site, job and queue writers skip a removed owner.
 
 use turts_mod_api::Cost;
+#[path = "export_terrain.rs"]
+pub(crate) mod export_terrain;
 #[path = "export_visibility.rs"]
 mod export_visibility;
 // Legacy standalone export fixtures include this module without the atomic sender.
@@ -73,7 +75,9 @@ use turts_sim::{
 /// Build a snapshot from an already-permitted completed view. Live transport applies the shared
 /// permission provider first. Direct full-world use is only valid for AllVisible.
 pub fn snapshot_for(view: &WorldView, slot: SlotId) -> wire::Snapshot {
-    snapshot_projected(view, slot, None)
+    let mut state = snapshot_projected(view, slot, None);
+    state.records.terrain = export_terrain::snapshot(view, slot, &crate::permissions::AllVisible);
+    state
 }
 
 pub(super) fn snapshot_permitted(
@@ -222,6 +226,7 @@ fn snapshot_projected_reusing(
             .collect(),
         // Reliable baselines project the same completed immutable view as change records.
         records: wire::SnapshotRecords {
+            terrain: None,
             repairs: export_repair::snapshot(&view.economy.repairs, slot),
             supply: export_supply::snapshot(view.operating.as_ref(), slot),
             sites: turts_sim::economy::construction::progress_rows_for_slot(view, slot)
@@ -376,6 +381,7 @@ fn delta_projected(batch: &CommittedTick, view: &WorldView, slot: SlotId) -> wir
             .map(unit_order_state)
             .collect(),
         records: wire::DeltaRecords {
+            terrain: None,
             repairs,
             repairs_cleared,
             sites_completed: export_sites::sites_completed(batch),
@@ -802,6 +808,15 @@ fn unit_order_state(record: &turts_sim::economy::views::UnitOrderView) -> wire::
     let summary = |summary: &Summary| wire::OrderSummary {
         order: summary.order.clone(),
         target: match &summary.target {
+            Target::TerrainWork {
+                tool,
+                cells,
+                target_elevation,
+            } => wire::OrderTarget::TerrainWork(turts_mod_api::TerrainDesignation {
+                tool: tool.to_string(),
+                cells: *cells,
+                target_elevation: *target_elevation,
+            }),
             Target::None => wire::OrderTarget::None,
             Target::Point(point) => wire::OrderTarget::Point(messages::Pos {
                 x: point.x,

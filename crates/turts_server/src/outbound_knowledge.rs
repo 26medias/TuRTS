@@ -33,6 +33,8 @@ struct Pending {
     created: Instant,
     started: Option<Instant>,
     end_sent: bool,
+    #[cfg(test)]
+    frames_sent: u64,
 }
 impl Pending {
     fn new(encoded: EncodedStateTransaction, now: Instant) -> Self {
@@ -41,6 +43,8 @@ impl Pending {
             created: now,
             started: None,
             end_sent: false,
+            #[cfg(test)]
+            frames_sent: 0,
         }
     }
 }
@@ -64,6 +68,32 @@ impl KnowledgeSender {
     #[cfg(test)]
     pub(crate) fn benchmark_retained(&self) -> usize {
         self.retained()
+    }
+    #[cfg(test)]
+    pub(crate) fn benchmark_transfer_trace(&self) -> serde_json::Value {
+        serde_json::json!({
+            "tick": self.tip.state.tick,
+            "active": self.active,
+            "outstanding": self.outstanding.len(),
+            "retained_bytes": self.retained(),
+            "pending": self.pending.as_ref().map(|pending| serde_json::json!({
+                "begin": pending.encoded.begin(),
+                "fully_queued": pending.encoded.fully_queued(),
+                "frames_sent": pending.frames_sent,
+                "frames_remaining": (u64::from(pending.encoded.begin().chunk_count) + 2).saturating_sub(pending.frames_sent),
+                "end_sent": pending.end_sent,
+                "elapsed_ms": pending.created.elapsed().as_millis(),
+            })),
+            "queued_patches": self.patches.len(),
+        })
+    }
+    #[cfg(test)]
+    pub(crate) fn benchmark_snapshot_payload(&self) -> turts_net_protocol::StateTransactionPayload {
+        turts_net_protocol::StateTransactionPayload::Snapshot {
+            state: Box::new(self.tip.state.clone()),
+            knowledge: self.tip.knowledge.clone(),
+            event_units: Vec::new(),
+        }
     }
     #[cfg(test)]
     pub(crate) fn benchmark_drained(&self) -> bool {
@@ -237,6 +267,16 @@ fn emit_cancel(world: &mut World, entity: Entity, cancel: Option<StateTransactio
         }
     }
 }
+fn validate_terrain_publication(world: &World) -> Result<(), String> {
+    let installed = turts_sim::terrain::grid(world).is_some();
+    if installed != turts_sim::completed_world(world).terrain.is_some() {
+        return Err("Completed terrain basis is missing or belongs to a retired map".into());
+    }
+    if installed && !turts_sim::visibility::event_units_complete(world) {
+        return Err("Terrain event witness context is incomplete".into());
+    }
+    Ok(())
+}
 /// Small AllVisible baselines retain their legacy fast path.
 pub fn queue_full(world: &mut World, entity: Entity, slot: SlotId) -> Result<bool, String> {
     queue_snapshot(world, entity, slot, false)
@@ -255,9 +295,14 @@ fn queue_snapshot(
     if !turts_sim::visibility::context_ready(world) {
         return Err("Sight context is not ready for publication".into());
     }
-    let tip =
-        PermittedBaseline::capture(turts_sim::completed_world(world), slot, policy.0.as_ref());
+    validate_terrain_publication(world)?;
+    let tip = PermittedBaseline::capture_checked(
+        turts_sim::completed_world(world),
+        slot,
+        policy.0.as_ref(),
+    )?;
     if tip.knowledge.is_none()
+        && tip.state.records.terrain.is_none()
         && !force
         && world.get::<KnowledgeSender>(entity).is_none()
         && postcard::experimental::serialized_size(&tip.state).map_err(|error| error.to_string())?
@@ -313,11 +358,13 @@ fn queue_snapshot(
     Ok(true)
 }
 pub fn queue_tick(world: &mut World, entity: Entity, slot: SlotId) -> Result<bool, String> {
+    validate_terrain_publication(world)?;
     let Some(mut sender) = world.entity_mut(entity).take::<KnowledgeSender>() else {
         if crate::permissions::completed(world)
             .0
             .knowledge_basis()
             .is_none()
+            && turts_sim::completed_world(world).terrain.is_none()
         {
             return Ok(false);
         }
@@ -330,11 +377,19 @@ pub fn queue_tick(world: &mut World, entity: Entity, slot: SlotId) -> Result<boo
     #[cfg(test)]
     let profile = crate::bot_profile::start();
     let policy = crate::permissions::completed(world);
-    let next = sender.tip.capture_reusing_metadata(
+    let next = sender.tip.capture_reusing_metadata_checked(
         turts_sim::completed_world(world),
         slot,
         policy.0.as_ref(),
-    );
+    )?;
+    if !sender.tip.terrain_delta_compatible(&next) {
+        sender.tip = next;
+        let cancel = sender.cancel(StateTransactionCancelReason::Superseded);
+        emit_cancel(world, entity, cancel);
+        sender.restart(Instant::now())?;
+        world.entity_mut(entity).insert(sender);
+        return Ok(true);
+    }
     #[cfg(test)]
     crate::bot_profile::finish("visibility.capture_permitted", profile);
     #[cfg(test)]
@@ -345,16 +400,17 @@ pub fn queue_tick(world: &mut World, entity: Entity, slot: SlotId) -> Result<boo
     #[cfg(test)]
     let profile = crate::bot_profile::start();
     let payload = if sender.tip.knowledge.is_none() && next.knowledge.is_none() {
-        sender.tip.all_visible_patch(
+        sender.tip.all_visible_patch_checked(
             &next,
             turts_sim::committed_tick(world),
             slot,
             &sender.context,
-        )
+            &facts,
+        )?
     } else {
         sender
             .tip
-            .patch(&next, turts_sim::committed_tick(world), slot, &facts)
+            .patch_checked(&next, turts_sim::committed_tick(world), slot, &facts)?
     };
     #[cfg(test)]
     crate::bot_profile::finish("visibility.permitted_diff", profile);
@@ -522,6 +578,15 @@ fn pump_one(
             >= Duration::from_millis(STATE_TRANSACTION_TIMEOUT_MS)
     });
     if cancelled || timed_out {
+        #[cfg(test)]
+        if std::env::var_os("TURTS_TRANSFER_TRACE_DIR").is_some() {
+            eprintln!(
+                "STATE_TRANSFER_RESTART {}",
+                serde_json::json!({
+                    "cancelled":cancelled,"timed_out":timed_out,"sender":sender.benchmark_transfer_trace(),
+                })
+            );
+        }
         let cancel = sender.cancel(if timed_out {
             StateTransactionCancelReason::TimedOut
         } else {
@@ -557,6 +622,10 @@ fn pump_one(
         };
         target.started.get_or_insert(now);
         let id = send_frame(world, entity, &frame)?;
+        #[cfg(test)]
+        {
+            target.frames_sent += 1;
+        }
         if matches!(frame, StateTransactionFrame::End(_)) {
             target.end_sent = true;
         }

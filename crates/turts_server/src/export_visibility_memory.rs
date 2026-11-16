@@ -22,13 +22,23 @@ fn order(row: &w::OrderSummary) -> usize {
         w::OrderTarget::Content(content) | w::OrderTarget::ContentAtPoint { content, .. } => {
             content.capacity()
         }
+        w::OrderTarget::TerrainWork(designation) => designation.tool.capacity(),
         _ => 0,
     })
+}
+fn terrain(row: &w::TerrainSnapshot) -> usize {
+    strings(&row.materials)
+        .saturating_add(vec_bytes(&row.surfaces, |_| 0))
+        .saturating_add(vec_bytes(&row.anchors, |_| 0))
+        .saturating_add(vec_bytes(&row.work, |work| {
+            work.designation.tool.capacity()
+        }))
 }
 pub(super) fn baseline(value: &super::PermittedBaseline) -> usize {
     let s = &value.state;
     let mut total = std::mem::size_of_val(value);
     let fields = [
+        s.records.terrain.as_ref().map_or(0, terrain),
         vec_bytes(&s.units, |row| row.content_id.capacity()),
         vec_bytes(&s.nodes, |row| row.content_id.capacity()),
         vec_bytes(&s.economy.balances, |row| row.resource.capacity()),

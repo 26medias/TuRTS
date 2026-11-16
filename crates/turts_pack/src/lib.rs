@@ -8,11 +8,20 @@ use turts_mod_runtime::archive::{MANIFEST_PATH, PackageArchive};
 use turts_mod_runtime::pack::pack_dir;
 use turts_mod_runtime::visuals::visuals_by_content;
 use turts_sim::{
-    DEFAULT_TICK_HZ, SimClock, headless_app, install_package, stage_package_with_map_identity,
+    DEFAULT_TICK_HZ, SimClock, headless_app, install_package, stage_package_with_terrain,
 };
 
 /// Validate the complete portable catalog and map, then install them atomically.
 pub fn load_package(world: &mut World, archive: &PackageArchive) -> Result<(), ModError> {
+    load_package_with_terrain_seed(world, archive, None)
+}
+
+/// Host-only generation input. The archive never stores this seed or the selected strata.
+pub fn load_package_with_terrain_seed(
+    world: &mut World,
+    archive: &PackageArchive,
+    seed: Option<turts_sim::terrain::PrivateTerrainSeed>,
+) -> Result<(), ModError> {
     turts_mod_runtime::resolve::resolve(&archive.manifest, &[])?;
     let catalog = archive.content()?;
     let maps = archive.maps()?;
@@ -27,7 +36,10 @@ pub fn load_package(world: &mut World, archive: &PackageArchive) -> Result<(), M
     let tick_hz = world
         .get_resource::<SimClock>()
         .map_or(DEFAULT_TICK_HZ, |clock| clock.tick_hz);
-    let staged = stage_package_with_map_identity(
+    let origin = turts_mod_api::PackageId(archive.manifest.id.clone());
+    turts_mod_runtime::terrain::validate_terrain_catalog(&origin, &catalog)?;
+    let terrain = turts_mod_runtime::terrain::validate_terrain_map(&origin, file, map, &catalog)?;
+    let staged = stage_package_with_terrain(
         world,
         catalog,
         SourceDef {
@@ -39,6 +51,8 @@ pub fn load_package(world: &mut World, archive: &PackageArchive) -> Result<(), M
             package: turts_mod_api::PackageId(archive.manifest.id.clone()),
             local: map.id.clone(),
         },
+        terrain,
+        seed,
     )?;
     let matches = archive.match_defs()?;
     let construction_limit = matches
@@ -94,7 +108,13 @@ pub fn check_package(archive: &PackageArchive) -> Result<(), ModError> {
     match archive.manifest.kind {
         PackageKind::Game => {
             let mut app = headless_app(DEFAULT_TICK_HZ);
-            load_package(app.world_mut(), archive)?;
+            // Validate authoring with a disposable realization. Neither the seed
+            // nor generated columns enter the returned public archive bytes.
+            load_package_with_terrain_seed(
+                app.world_mut(),
+                archive,
+                Some(turts_sim::terrain::PrivateTerrainSeed::new(0)),
+            )?;
             visuals_by_content(std::slice::from_ref(archive))?;
             Ok(())
         }

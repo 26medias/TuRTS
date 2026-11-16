@@ -20,6 +20,7 @@ pub struct VisibleUnit {
     pub position: WorldPos,
     pub facing: Option<Facing>,
     pub site: bool,
+    pub ground_elevation: Option<i32>,
 }
 impl VisibleUnit {
     fn remembered(&self, tick: u32) -> RememberedUnit {
@@ -31,6 +32,7 @@ impl VisibleUnit {
             facing: self.facing,
             site: self.site,
             last_seen_tick: tick,
+            ground_elevation: self.ground_elevation,
         }
     }
 }
@@ -110,11 +112,39 @@ impl VisibilityBasis {
     pub fn grid(&self) -> VisibilityGrid {
         self.grid
     }
+    pub(crate) fn fog_cell_observed(&self, viewer: u8, cell: u32) -> bool {
+        self.slots
+            .get(usize::from(viewer))
+            .is_some_and(|slot| bit(&slot.observed, cell))
+    }
+    pub(crate) fn same_observation_mask(&self, viewer: u8, other: &Self) -> bool {
+        self.grid == other.grid
+            && self
+                .slots
+                .get(usize::from(viewer))
+                .zip(other.slots.get(usize::from(viewer)))
+                .is_some_and(|(left, right)| left.observed == right.observed)
+    }
     pub fn point_observed(&self, viewer: u8, position: WorldPos) -> bool {
         self.slots.get(usize::from(viewer)).is_some_and(|slot| {
             rule_grid(self.grid)
                 .cell(point(position))
                 .is_some_and(|cell| bit(&slot.observed, cell))
+        })
+    }
+    /// Exact positive-area terrain/fog overlap. Border tangency alone grants no extra sight.
+    pub fn terrain_cell_observed(
+        &self,
+        viewer: u8,
+        terrain: &turts_rules::terrain::geometry::Grid,
+        cell: turts_rules::terrain::geometry::Cell,
+        budget: &mut turts_rules::terrain::geometry::Budget,
+    ) -> Result<bool, turts_rules::terrain::geometry::Error> {
+        let Some(slot) = self.slots.get(usize::from(viewer)) else {
+            return Ok(false);
+        };
+        terrain.cell_observed(cell, rule_grid(self.grid), budget, |cell| {
+            bit(&slot.observed, cell)
         })
     }
     pub fn area_observed(&self, viewer: u8, min: WorldPos, max: WorldPos) -> bool {
@@ -231,7 +261,119 @@ pub struct EventUnitFact {
 pub struct PreparedEventUnit {
     fact: EventUnitFact,
     viewers: Vec<u8>,
+    all_visible_terrain: bool,
 }
+// One tick of commit witnesses, not a terrain or entity history. At overflow the
+// entire set becomes incomplete; unit IDs never select retained winners.
+const ALL_VISIBLE_TERRAIN_EVENT_LIMIT: usize = turts_mod_api::MAX_REMEMBERED_SUBJECTS as usize;
+#[derive(Resource)]
+pub(crate) struct AllVisibleTerrainEvents {
+    match_id: u64,
+    map: ContentId,
+    tick: u32,
+    phase: ObservationPhase,
+    complete: bool,
+    events: Vec<PreparedEventUnit>,
+}
+impl AllVisibleTerrainEvents {
+    fn advance(&mut self, tick: u32, phase: ObservationPhase) {
+        if self.tick != tick {
+            self.tick = tick;
+            self.events.clear();
+            self.complete = true;
+        }
+        self.phase = phase;
+    }
+    fn commit(&mut self, prepared: PreparedEventUnit, limit: usize) {
+        if !self.complete {
+            return;
+        }
+        if let Some(existing) = self.events.iter_mut().find(|event| {
+            event.fact.basis == prepared.fact.basis
+                && event.fact.unit.unit == prepared.fact.unit.unit
+        }) {
+            *existing = prepared;
+            return;
+        }
+        if self.events.len() >= limit {
+            self.events.clear();
+            self.complete = false;
+            return;
+        }
+        if self.events.len() == self.events.capacity() {
+            let capacity = self.events.capacity().saturating_mul(2).max(4).min(limit);
+            if self
+                .events
+                .try_reserve_exact(capacity - self.events.len())
+                .is_err()
+                || self.events.capacity() > limit
+            {
+                self.events = Vec::new();
+                self.complete = false;
+                return;
+            }
+        }
+        self.events.push(prepared);
+    }
+}
+fn event_tick(world: &World) -> u32 {
+    world.get_resource::<crate::Tick>().map_or(0, |tick| tick.0)
+}
+fn terrain_context_matches(world: &World, context: &AllVisibleTerrainEvents) -> bool {
+    world.contains_resource::<crate::terrain::TerrainState>()
+        && world
+            .get_resource::<crate::bootstrap::InstalledMapIdentity>()
+            .is_none_or(|map| map.0 == context.map)
+}
+/// Bind actual host identity for terrain-only AllVisible commit witnesses.
+/// Fresh package installation must remove the old context before another match.
+pub fn initialize_all_visible_terrain_event_context(
+    world: &mut World,
+    match_id: u64,
+    map: ContentId,
+) -> Result<(), String> {
+    if event_tick(world) != 0 {
+        return Err("terrain event context can only be finalized at tick zero".into());
+    }
+    if world.contains_resource::<VisibilityState>()
+        || !world.contains_resource::<crate::terrain::TerrainState>()
+        || world
+            .get_resource::<crate::bootstrap::InstalledMapIdentity>()
+            .is_some_and(|installed| installed.0 != map)
+    {
+        return Err("terrain event context requires the installed AllVisible terrain map".into());
+    }
+    if let Some(existing) = world.get_resource::<AllVisibleTerrainEvents>() {
+        return if existing.match_id == match_id && existing.map == map {
+            Ok(())
+        } else {
+            Err("terrain event match context is already finalized".into())
+        };
+    }
+    world.insert_resource(AllVisibleTerrainEvents {
+        match_id,
+        map,
+        tick: 0,
+        phase: ObservationPhase::Start,
+        complete: true,
+        events: Vec::new(),
+    });
+    Ok(())
+}
+/// AllVisible terrain senders must refuse incomplete event witness publication.
+/// Ordinary flat and restricted-fog behavior is unchanged.
+pub fn event_units_complete(world: &World) -> bool {
+    world.contains_resource::<VisibilityState>()
+        || !world.contains_resource::<crate::terrain::TerrainState>()
+        || world
+            .get_resource::<AllVisibleTerrainEvents>()
+            .is_some_and(|context| {
+                terrain_context_matches(world, context)
+                    && (context.tick < event_tick(world)
+                        || (context.tick == event_tick(world) && context.complete))
+            })
+}
+
 #[derive(Resource, Debug, Clone)]
 pub struct VisibilityState {
     definition: VisibilityDef,
@@ -805,6 +947,7 @@ fn capture_units(world: &mut World) -> (Vec<VisibleUnit>, Vec<SightSource>) {
             position,
             facing: facing.map(|facing| facing.0),
             site,
+            ground_elevation: crate::terrain::ground_elevation(world, id.0),
         });
         if !site && let Some(vision) = vision {
             let alive = !has_health
@@ -820,10 +963,17 @@ fn capture_units(world: &mut World) -> (Vec<VisibleUnit>, Vec<SightSource>) {
     (units, sources)
 }
 fn refresh(world: &mut World, phase: ObservationPhase) {
+    let tick = event_tick(world);
+    if !world.contains_resource::<VisibilityState>()
+        && let Some(mut context) = world.get_resource_mut::<AllVisibleTerrainEvents>()
+    {
+        context.advance(tick, phase);
+    }
     if !world
         .get_resource::<VisibilityState>()
         .is_some_and(|state| state.context_finalized)
     {
+        crate::terrain::phase::capture_phase(world, phase);
         return;
     }
     let (units, sources) = capture_units(world);
@@ -850,6 +1000,7 @@ fn refresh(world: &mut World, phase: ObservationPhase) {
     world
         .resource_mut::<VisibilityState>()
         .update(tick, phase, units, nodes, sources);
+    crate::terrain::phase::capture_phase(world, phase);
 }
 /// Finalize the real match identity and installed teams before initial publication.
 /// Match ID zero is reserved for explicitly initialized headless diagnostics.
@@ -865,6 +1016,14 @@ pub fn initialize_context(world: &mut World, match_id: u64, teams: &[u8]) -> Res
         return Err("sight context contains too many slot teams".into());
     }
     let Some(state) = world.get_resource::<VisibilityState>() else {
+        if world.contains_resource::<crate::terrain::TerrainState>() {
+            let map = world
+                .get_resource::<crate::bootstrap::InstalledMapIdentity>()
+                .ok_or("terrain event context requires the installed map identity")?
+                .0
+                .clone();
+            initialize_all_visible_terrain_event_context(world, match_id, map)?;
+        }
         return Ok(());
     };
     if state.context_finalized {
@@ -910,31 +1069,59 @@ pub fn refresh_completed(world: &mut World) {
 }
 
 /// Prepare before a transaction removes/mutates an event subject. This has no side effects.
-pub fn prepare_event_unit(world: &World, unit: u32) -> Option<PreparedEventUnit> {
-    let state = world.get_resource::<VisibilityState>()?;
-    let basis = state.phase(state.active);
-    let row = crate::unit_entity(world, unit)
-        .and_then(|entity| {
-            let kind = world.get::<crate::UnitType>(entity)?;
-            let entry = world.get_resource::<crate::UnitTypes>()?.get(kind.0)?;
-            let owner = world.get::<crate::Owner>(entity)?.0.0;
-            let position = world.get::<crate::Position>(entity)?.0;
-            Some(VisibleUnit {
-                unit,
-                content: Arc::new(ContentId::parse(&entry.content_id).ok()?),
-                owner,
-                position: WorldPos {
-                    x: position.x,
-                    y: position.y,
-                },
-                facing: world
-                    .get::<crate::world::UnitFacing>(entity)
-                    .map(|facing| facing.0),
-                site: world
-                    .get_resource::<crate::economy::construction::ConstructionState>()
-                    .is_some_and(|state| state.sites.contains_key(&unit)),
-            })
+fn capture_event_unit(world: &World, unit: u32) -> Option<VisibleUnit> {
+    crate::unit_entity(world, unit).and_then(|entity| {
+        let kind = world.get::<crate::UnitType>(entity)?;
+        let entry = world.get_resource::<crate::UnitTypes>()?.get(kind.0)?;
+        let owner = world.get::<crate::Owner>(entity)?.0.0;
+        let position = world.get::<crate::Position>(entity)?.0;
+        Some(VisibleUnit {
+            unit,
+            ground_elevation: crate::terrain::ground_elevation(world, unit),
+            content: Arc::new(ContentId::parse(&entry.content_id).ok()?),
+            owner,
+            position: WorldPos {
+                x: position.x,
+                y: position.y,
+            },
+            facing: world
+                .get::<crate::world::UnitFacing>(entity)
+                .map(|facing| facing.0),
+            site: world
+                .get_resource::<crate::economy::construction::ConstructionState>()
+                .is_some_and(|state| state.sites.contains_key(&unit)),
         })
+    })
+}
+pub fn prepare_event_unit(world: &World, unit: u32) -> Option<PreparedEventUnit> {
+    let Some(state) = world.get_resource::<VisibilityState>() else {
+        let context = world.get_resource::<AllVisibleTerrainEvents>()?;
+        if !terrain_context_matches(world, context) {
+            return None;
+        }
+        let row = capture_event_unit(world, unit)?;
+        row.ground_elevation?;
+        let tick = event_tick(world);
+        return Some(PreparedEventUnit {
+            fact: EventUnitFact {
+                basis: KnowledgeBasis {
+                    match_id: context.match_id,
+                    map: context.map.clone(),
+                    tick,
+                    phase: if context.tick == tick {
+                        context.phase
+                    } else {
+                        ObservationPhase::Start
+                    },
+                },
+                unit: row,
+            },
+            viewers: Vec::new(),
+            all_visible_terrain: true,
+        });
+    };
+    let basis = state.phase(state.active);
+    let row = capture_event_unit(world, unit)
         .or_else(|| basis.units.iter().find(|row| row.unit == unit).cloned())?;
     let viewers = (0..SLOT_COUNT)
         .filter(|viewer| *viewer == row.owner || basis.point_observed(*viewer, row.position))
@@ -945,10 +1132,35 @@ pub fn prepare_event_unit(world: &World, unit: u32) -> Option<PreparedEventUnit>
             unit: row,
         },
         viewers,
+        all_visible_terrain: false,
     })
 }
 /// Commit only after the corresponding real event/removal transaction succeeds.
 pub fn commit_event_unit(world: &mut World, prepared: PreparedEventUnit, removed: bool) {
+    if prepared.all_visible_terrain {
+        if world.contains_resource::<VisibilityState>()
+            || prepared.fact.basis.tick != event_tick(world)
+            || !world
+                .get_resource::<AllVisibleTerrainEvents>()
+                .is_some_and(|context| {
+                    terrain_context_matches(world, context)
+                        && context.match_id == prepared.fact.basis.match_id
+                        && context.map == prepared.fact.basis.map
+                })
+        {
+            return;
+        }
+        if let Some(mut context) = world.get_resource_mut::<AllVisibleTerrainEvents>() {
+            let phase = if context.tick == prepared.fact.basis.tick {
+                context.phase
+            } else {
+                prepared.fact.basis.phase
+            };
+            context.advance(prepared.fact.basis.tick, phase);
+            context.commit(prepared, ALL_VISIBLE_TERRAIN_EVENT_LIMIT);
+        }
+        return;
+    }
     let Some(mut state) = world.get_resource_mut::<VisibilityState>() else {
         return;
     };
@@ -969,6 +1181,24 @@ pub fn commit_event_unit(world: &mut World, prepared: PreparedEventUnit, removed
     }
 }
 pub fn event_units(world: &World, viewer: u8) -> Vec<EventUnitFact> {
+    if !world.contains_resource::<VisibilityState>() {
+        return world
+            .get_resource::<AllVisibleTerrainEvents>()
+            .filter(|context| {
+                viewer < SLOT_COUNT
+                    && terrain_context_matches(world, context)
+                    && context.complete
+                    && context.tick == event_tick(world)
+            })
+            .map(|context| {
+                context
+                    .events
+                    .iter()
+                    .map(|event| event.fact.clone())
+                    .collect()
+            })
+            .unwrap_or_default();
+    }
     world
         .get_resource::<VisibilityState>()
         .map(|state| {
@@ -1090,5 +1320,153 @@ mod source_cache_tests {
         let mut streamed = vec![];
         grid.circle(point(position), 6.0, |cell| streamed.push(cell));
         assert_eq!(cached, streamed);
+    }
+}
+
+#[cfg(test)]
+mod all_visible_terrain_event_tests {
+    use super::*;
+    use crate::{Owner, Position, SlotId, Tick, UnitId, UnitType, UnitTypes};
+    use turts_mod_api::ResolvedTerrainDef;
+    use turts_mod_runtime::{archive::PackageArchive, pack::pack_dir};
+
+    fn scene() -> (World, turts_mod_api::UnitTypeId) {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../mods/base");
+        let catalog = PackageArchive::parse(&pack_dir(&root).unwrap())
+            .unwrap()
+            .content()
+            .unwrap();
+        let types = UnitTypes::from_catalog(&catalog, &UnitTypes::default()).unwrap();
+        let kind = types.find("base:command_center").unwrap();
+        let terrain = crate::terrain::prepare(
+            &catalog,
+            &ResolvedTerrainDef {
+                length_scale: 1,
+                cell_width: 1,
+                elevation_step: 1,
+                columns: 8,
+                rows: 8,
+                chunk_width: 4,
+                initial_elevation: -3,
+                initial_heights: Vec::new(),
+                floor: -3,
+                ceiling: 3,
+                generation: Vec::new(),
+            },
+            crate::terrain::PrivateTerrainSeed::new(123),
+        )
+        .unwrap();
+        let mut world = World::new();
+        world.insert_resource(Tick(0));
+        world.insert_resource(types);
+        world.insert_resource(crate::bootstrap::InstalledCatalog(catalog));
+        world.insert_resource(crate::bootstrap::InstalledMapIdentity(
+            ContentId::parse("base:flat").unwrap(),
+        ));
+        world.insert_resource(terrain);
+        (world, kind)
+    }
+    fn born(world: &mut World, kind: turts_mod_api::UnitTypeId) -> bevy_ecs::entity::Entity {
+        let entity = world
+            .spawn((
+                UnitId(u32::MAX),
+                Owner(SlotId(1)),
+                UnitType(kind),
+                Position(bevy_math::Vec2::new(4.0, 4.0)),
+            ))
+            .id();
+        world.flush();
+        entity
+    }
+
+    #[test]
+    fn terrain_birth_death_witness_requires_commit_and_retains_real_contact() {
+        let (mut world, kind) = scene();
+        assert!(!event_units_complete(&world));
+        initialize_context(&mut world, 47, &[0, 1]).unwrap();
+        assert!(event_units_complete(&world));
+        refresh_tactical(&mut world);
+        let entity = born(&mut world, kind);
+        let prepared = prepare_event_unit(&world, u32::MAX).unwrap();
+        assert!(event_units(&world, 0).is_empty());
+        assert_eq!(prepared.fact.unit.ground_elevation, Some(-3));
+        world.despawn(entity);
+        commit_event_unit(&mut world, prepared, true);
+        for viewer in [0, 1] {
+            let facts = event_units(&world, viewer);
+            assert_eq!(facts.len(), 1);
+            assert_eq!(facts[0].basis.match_id, 47);
+            assert_eq!(facts[0].basis.phase, ObservationPhase::Tactical);
+            assert_eq!(facts[0].unit.unit, u32::MAX);
+            assert_eq!(facts[0].unit.ground_elevation, Some(-3));
+        }
+        assert!(event_units(&world, SLOT_COUNT).is_empty());
+        initialize_context(&mut world, 47, &[0, 1]).unwrap();
+        assert_eq!(event_units(&world, 0).len(), 1);
+        assert!(initialize_context(&mut world, 48, &[0, 1]).is_err());
+        world.resource_mut::<Tick>().0 = 1;
+        assert!(event_units(&world, 0).is_empty());
+        refresh_start(&mut world);
+        assert!(event_units_complete(&world));
+        assert!(
+            world
+                .resource::<AllVisibleTerrainEvents>()
+                .events
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn terrain_witness_deduplicates_only_same_phase_and_checks_context_reset() {
+        let (mut world, kind) = scene();
+        initialize_context(&mut world, 47, &[0, 1]).unwrap();
+        let entity = born(&mut world, kind);
+        let start = prepare_event_unit(&world, u32::MAX).unwrap();
+        commit_event_unit(&mut world, start.clone(), false);
+        commit_event_unit(&mut world, start, false);
+        refresh_tactical(&mut world);
+        world.get_mut::<Position>(entity).unwrap().0.x = 4.25;
+        let tactical = prepare_event_unit(&world, u32::MAX).unwrap();
+        commit_event_unit(&mut world, tactical.clone(), false);
+        let facts = event_units(&world, 0);
+        assert_eq!(facts.len(), 2);
+        assert_eq!(facts[0].unit.position.x, 4.0);
+        assert_eq!(facts[1].unit.position.x, 4.25);
+        world.remove_resource::<AllVisibleTerrainEvents>();
+        assert!(!event_units_complete(&world));
+        initialize_context(&mut world, 48, &[0, 1]).unwrap();
+        commit_event_unit(&mut world, tactical, false);
+        assert!(event_units(&world, 0).is_empty());
+        world.resource_mut::<Tick>().0 = 1;
+        assert!(initialize_context(&mut world, 48, &[0, 1]).is_err());
+    }
+
+    #[test]
+    fn terrain_witness_cap_fails_the_whole_set_and_resets_next_tick() {
+        let (mut world, kind) = scene();
+        initialize_context(&mut world, 47, &[0, 1]).unwrap();
+        born(&mut world, kind);
+        let prepared = prepare_event_unit(&world, u32::MAX).unwrap();
+        {
+            let mut context = world.resource_mut::<AllVisibleTerrainEvents>();
+            context.commit(prepared.clone(), 1);
+            context.commit(prepared.clone(), 1);
+            assert!(context.complete);
+            let mut different = prepared;
+            different.fact.unit.unit = 1;
+            context.commit(different, 1);
+        }
+        assert!(!event_units_complete(&world));
+        assert!(event_units(&world, 0).is_empty());
+        world.resource_mut::<Tick>().0 = 1;
+        refresh_start(&mut world);
+        assert!(event_units_complete(&world));
+        let new = prepare_event_unit(&world, u32::MAX).unwrap();
+        commit_event_unit(&mut world, new, false);
+        assert_eq!(event_units(&world, 0).len(), 1);
+        world.remove_resource::<crate::terrain::TerrainState>();
+        assert!(event_units_complete(&world));
+        assert!(prepare_event_unit(&world, u32::MAX).is_none());
+        assert!(event_units(&world, 0).is_empty());
     }
 }

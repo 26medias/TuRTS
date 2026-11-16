@@ -30,6 +30,7 @@ pub struct Output {
 pub struct Ghost {
     pub content: String,
     pub point: Vec2,
+    pub height: f32,
     pub radius: f32,
     pub valid: bool,
     pub reason: Option<String>,
@@ -73,10 +74,12 @@ fn cancel(core: &mut Core, effects: &mut Vec<Effect>) {
 }
 
 fn ghost(core: &Core, px: Vec2, world: &dyn WorldView, view: &Viewport) -> Option<Ghost> {
-    let point = super::projection::screen_to_world(px, view, core.camera)?;
+    let point = super::projection::screen_to_world_on(px, view, core.camera, world)?;
     let facts = world.placement_facts();
     let recipe = facts.recipes.get(&core.placement.content)?;
     let bounds = world.map_size()?;
+    let foundation = world.terrain_foundation(point, recipe.radius);
+    let height = foundation.unwrap_or_else(|_| world.camera_ground_height(point));
     let site = placement::Site {
         footprint: Circle {
             centre: Point {
@@ -106,6 +109,7 @@ fn ghost(core: &Core, px: Vec2, world: &dyn WorldView, view: &Viewport) -> Optio
             return Some(Ghost {
                 content: core.placement.content.clone(),
                 point,
+                height,
                 radius: recipe.radius,
                 valid: false,
                 reason: Some("placement_unknown".into()),
@@ -126,13 +130,17 @@ fn ghost(core: &Core, px: Vec2, world: &dyn WorldView, view: &Viewport) -> Optio
         },
         |_| true,
     );
-    let reason = match verdict {
-        placement::Verdict::Valid => None,
-        placement::Verdict::Refused { reason, .. } => Some(reason.key().into()),
-    };
+    let reason = foundation
+        .err()
+        .map(str::to_owned)
+        .or_else(|| match verdict {
+            placement::Verdict::Valid => None,
+            placement::Verdict::Refused { reason, .. } => Some(reason.key().into()),
+        });
     Some(Ghost {
         content: core.placement.content.clone(),
         point,
+        height,
         radius: recipe.radius,
         valid: reason.is_none(),
         reason,

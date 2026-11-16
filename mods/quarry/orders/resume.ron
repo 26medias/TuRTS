@@ -1,0 +1,1 @@
+(id:"order_resume",name:"Resume",behaviour:SetEnabled(true),target:None,fire:None,engage:None,icon:"icon_order_move",hotkey:"key_resume",cursor:None,card:None,units:["quarry:walker","quarry:crawler","quarry:depot"],description:"Resume selected units")

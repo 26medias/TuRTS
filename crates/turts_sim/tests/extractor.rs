@@ -15,6 +15,10 @@ fn extractor_runs_in_fixed_extract_set() {
     let drill_id = ContentId::parse("probe:drill").unwrap();
     let node_id = ContentId::parse("probe:deposit").unwrap();
     let drill = ResolvedUnit {
+        terrain_class: None,
+        terrain_cargo: None,
+        terrain_foundation: None,
+        terrain_tools: Vec::new(),
         vision: None,
         repairer: None,
 
@@ -52,6 +56,9 @@ fn extractor_runs_in_fixed_extract_set() {
         removal: None,
     };
     let catalog = ContentCatalog {
+        terrain_materials: Default::default(),
+        terrain_movement_classes: Default::default(),
+        terrain_tools: Default::default(),
         bots: Default::default(),
 
         combat: None,
@@ -82,6 +89,7 @@ fn extractor_runs_in_fixed_extract_set() {
         source_files: BTreeMap::new(),
     };
     let map = MapDef {
+        terrain: None,
         visibility: None,
         environment: None,
         ground: None,

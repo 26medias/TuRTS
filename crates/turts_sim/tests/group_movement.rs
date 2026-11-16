@@ -28,6 +28,10 @@ fn app_with_units_on(
         .register_unit_type(
             &origin,
             UnitDef {
+                terrain_class: None,
+                terrain_cargo: None,
+                terrain_foundation: None,
+                terrain_tools: Vec::new(),
                 vision: None,
                 id: "walker".into(),
                 name: "Walker".into(),
@@ -60,6 +64,7 @@ fn app_with_units_on(
         )
         .unwrap();
     let map = MapDef {
+        terrain: None,
         visibility: None,
         environment: None,
         ground: None,
@@ -529,6 +534,10 @@ fn merged_unit_follow_keeps_each_members_radius_inset_origin() {
         .register_unit_type(
             &PackageId(ORIGIN.to_owned()),
             UnitDef {
+                terrain_class: None,
+                terrain_cargo: None,
+                terrain_foundation: None,
+                terrain_tools: Vec::new(),
                 vision: None,
                 id: "large-walker".into(),
                 name: "Large Walker".into(),
@@ -1805,6 +1814,10 @@ fn post_target_gives_a_ring() {
     let origin = PackageId(ORIGIN.to_owned());
     for def in [
         UnitDef {
+            terrain_class: None,
+            terrain_cargo: None,
+            terrain_foundation: None,
+            terrain_tools: Vec::new(),
             vision: None,
             id: "walker".into(),
             name: "Walker".into(),
@@ -1835,6 +1848,10 @@ fn post_target_gives_a_ring() {
             repairer: None,
         },
         UnitDef {
+            terrain_class: None,
+            terrain_cargo: None,
+            terrain_foundation: None,
+            terrain_tools: Vec::new(),
             vision: None,
             id: "post".into(),
             name: "Post".into(),
@@ -1871,6 +1888,7 @@ fn post_target_gives_a_ring() {
             .unwrap();
     }
     let map = MapDef {
+        terrain: None,
         visibility: None,
         environment: None,
         ground: None,
@@ -1951,6 +1969,10 @@ fn group_zero_singleton_finds_a_free_point_beyond_a_large_post() {
     let origin = PackageId(ORIGIN.to_owned());
     for def in [
         UnitDef {
+            terrain_class: None,
+            terrain_cargo: None,
+            terrain_foundation: None,
+            terrain_tools: Vec::new(),
             vision: None,
             id: "walker".into(),
             name: "Walker".into(),
@@ -1981,6 +2003,10 @@ fn group_zero_singleton_finds_a_free_point_beyond_a_large_post() {
             repairer: None,
         },
         UnitDef {
+            terrain_class: None,
+            terrain_cargo: None,
+            terrain_foundation: None,
+            terrain_tools: Vec::new(),
             vision: None,
             id: "large_post".into(),
             name: "Large Post".into(),
@@ -2017,6 +2043,7 @@ fn group_zero_singleton_finds_a_free_point_beyond_a_large_post() {
             .unwrap();
     }
     let map = MapDef {
+        terrain: None,
         visibility: None,
         environment: None,
         ground: None,
@@ -2091,6 +2118,10 @@ fn plain_singleton_blocked_by_a_full_width_post_reports_failure_by_gmu_deadline(
         .register_unit_type(
             &PackageId(ORIGIN.to_owned()),
             UnitDef {
+                terrain_class: None,
+                terrain_cargo: None,
+                terrain_foundation: None,
+                terrain_tools: Vec::new(),
                 vision: None,
                 id: "wide-post".into(),
                 name: "Wide post".into(),
@@ -2215,6 +2246,10 @@ fn full_width_post_app() -> bevy_app::App {
         .register_unit_type(
             &PackageId(ORIGIN.to_owned()),
             UnitDef {
+                terrain_class: None,
+                terrain_cargo: None,
+                terrain_foundation: None,
+                terrain_tools: Vec::new(),
                 vision: None,
                 id: "wide-post".into(),
                 name: "Wide post".into(),
@@ -2525,6 +2560,10 @@ fn mixed_radius_unit_cohort_consumes_resting_follow_origin_in_orders() {
         .register_unit_type(
             &origin,
             UnitDef {
+                terrain_class: None,
+                terrain_cargo: None,
+                terrain_foundation: None,
+                terrain_tools: Vec::new(),
                 vision: None,
                 id: "large-walker".into(),
                 name: "Large walker".into(),
@@ -2863,6 +2902,10 @@ fn idless_legacy_move_reports_blocked_without_inventing_an_order_id() {
         .register_unit_type(
             &PackageId(ORIGIN.to_owned()),
             UnitDef {
+                terrain_class: None,
+                terrain_cargo: None,
+                terrain_foundation: None,
+                terrain_tools: Vec::new(),
                 vision: None,
                 id: "wide-post".into(),
                 name: "Wide post".into(),

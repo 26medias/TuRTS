@@ -24,7 +24,7 @@ use crate::join::Phase;
 use crate::present::Presented;
 use crate::render::{
     PresentedNode, PresentedUnit as RenderedUnit, declared_node_pick_radius,
-    declared_unit_pick_radius, projected_ground_center,
+    declared_unit_pick_radius, projected_ground_center_at_height,
 };
 use crate::widgets::primitives::AuthoredWidgetId;
 
@@ -295,7 +295,26 @@ fn snapshot_json(world: &World) -> Value {
                 (pos, radius)
             };
             let ground_center = active_camera.and_then(|(_, camera, camera_transform)| {
-                map_pos.and_then(|pos| projected_ground_center(camera, camera_transform, pos))
+                map_pos.and_then(|pos| {
+                    projected_ground_center_at_height(
+                        camera,
+                        camera_transform,
+                        pos,
+                        if kind == "unit" {
+                            crate::terrain::render::live_height(
+                                replica.and_then(|r| r.terrain.as_ref()),
+                                id,
+                            )
+                            .unwrap_or(0.)
+                        } else {
+                            crate::terrain::render::marker_height(
+                                replica.and_then(|r| r.terrain.as_ref()),
+                                pos,
+                            )
+                            .unwrap_or(0.)
+                        },
+                    )
+                })
             });
             let mesh_center = active_camera.and_then(|(_, camera, camera_transform)| {
                 camera

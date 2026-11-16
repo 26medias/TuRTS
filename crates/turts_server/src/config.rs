@@ -18,7 +18,7 @@ usage: turts_server <server.ron> [options]
 Run the headless authoritative server. It loads the game package that server.ron names,
 serves the package to clients over HTTP, and runs the match over WebSocket.
 
-server.ron is one RON record. Every field is required, except static_dir, start_policy, bots, and bot_limits:
+server.ron is one RON record. The listener, package, URL and tick fields are required:
   game_package  Path of the package archive that turts-pack wrote.
   http_listen   Address of the HTTP listener, for example \"127.0.0.1:7000\".
   ws_listen     Address of the WebSocket listener, for example \"127.0.0.1:7001\".
@@ -29,6 +29,10 @@ server.ron is one RON record. Every field is required, except static_dir, start_
   bots          Optional list of (slot, profile, seed) public bot selections.
   bot_limits    Optional decision limits and projection_rows host ceiling; engine defaults apply.
   start_policy  Optional override: Immediate, AllSeated, or AllSeatedReady with countdown_secs.
+  terrain_seed_file Optional private file with one unsigned decimal 64-bit terrain seed.
+                Absent: generate a private seed from operating-system entropy.
+  terrain_provenance Optional new private provenance file. Default: .turts-private/terrain-*.json.
+                Both paths must stay outside static_dir. Files are never overwritten.
 
 HTTP endpoints (GET):
   /advertisement.json            The package name and version, the engine and protocol
@@ -92,6 +96,10 @@ pub struct HostConfig {
     pub bots: Vec<BotConfig>,
     #[serde(default)]
     pub bot_limits: BotLimitsConfig,
+    #[serde(default)]
+    pub terrain_seed_file: Option<String>,
+    #[serde(default)]
+    pub terrain_provenance: Option<String>,
 }
 
 /// One explicitly selected bot actor. The seed does not use connection or wall time.

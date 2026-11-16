@@ -1,0 +1,1 @@
+(target:Unit("quarry:crawler"),shape:Cuboid(x:1.4,y:1.4,z:1.6),model:Some((asset:"quarry:worker_glb",team_material:Some("team"),scale:1.1,lods:[],animations:Some((idle:Some((clip:"Idle")),move:Some((clip:"Walking_A",stride:Some(0.47700539))),death:Some((clip:"Death_A")),work:Some((clip:"Interact")))))))

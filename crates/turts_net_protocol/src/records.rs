@@ -338,6 +338,8 @@ pub enum RepairState {
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct DeltaRecords {
     #[serde(default)]
+    pub terrain: Option<crate::terrain::TerrainDelta>,
+    #[serde(default)]
     pub repairs: Vec<RepairRecord>,
     #[serde(default)]
     pub repairs_cleared: Vec<UnitId>,
@@ -363,6 +365,8 @@ pub struct DeltaRecords {
 /// a delta, `match_state: None` means "no change".
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct SnapshotRecords {
+    #[serde(default)]
+    pub terrain: Option<crate::terrain::TerrainSnapshot>,
     #[serde(default)]
     pub repairs: Vec<RepairRecord>,
     pub sites: Vec<SiteProgress>,

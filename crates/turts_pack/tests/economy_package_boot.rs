@@ -462,6 +462,9 @@ fn cedar_matches_the_public_ten_file_authoring_example() {
     assert!(archive.manifest.capabilities.is_empty());
     assert_eq!(archive.manifest.license, "LicenseRef-TBD");
     let expected_exports = Exports {
+        terrain_materials: Vec::new(),
+        terrain_movement_classes: Vec::new(),
+        terrain_tools: Vec::new(),
         bots: Default::default(),
 
         units: vec!["units/depot.ron".into(), "units/worker.ron".into()],
@@ -516,6 +519,10 @@ fn cedar_matches_the_public_ten_file_authoring_example() {
             .collect::<Vec<_>>(),
         [
             UnitDef {
+                terrain_class: None,
+                terrain_cargo: None,
+                terrain_foundation: None,
+                terrain_tools: Vec::new(),
                 vision: None,
                 id: "depot".into(),
                 name: "Timber Yard".into(),
@@ -559,6 +566,10 @@ fn cedar_matches_the_public_ten_file_authoring_example() {
                 repairer: None,
             },
             UnitDef {
+                terrain_class: None,
+                terrain_cargo: None,
+                terrain_foundation: None,
+                terrain_tools: Vec::new(),
                 vision: None,
                 id: "worker".into(),
                 name: "Carrier".into(),
@@ -691,6 +702,7 @@ fn cedar_matches_the_public_ten_file_authoring_example() {
     assert_eq!(
         archive.maps().unwrap()[0].1,
         MapDef {
+            terrain: None,
             visibility: None,
             environment: None,
             ground: None,

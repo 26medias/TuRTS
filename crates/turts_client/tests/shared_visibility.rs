@@ -95,6 +95,7 @@ fn hidden_patch(stamp: &StateTransactionStamp) -> (StateTransactionStamp, StateT
         revealed_units: vec![],
         revealed_nodes: vec![],
         remembered_units: vec![RememberedUnit {
+            ground_elevation: None,
             unit: 1,
             content: ContentId::parse("visibility_probe:scout").unwrap(),
             owner: 1,
@@ -190,6 +191,7 @@ fn earlier_event_positions_are_accepted_only_for_all_visible_fallback() {
                 *knowledge = None;
             }
             event_units.push(EventUnitObservation {
+                ground_elevation: None,
                 basis: KnowledgeBasis {
                     tick: stamp.basis.tick - 1,
                     ..stamp.basis.clone()
@@ -289,6 +291,7 @@ fn observed_killing_hit_remains_available_for_alerts_in_atomic_views() {
                 *knowledge = None;
             }
             event_units.push(EventUnitObservation {
+                ground_elevation: None,
                 basis: stamp.basis.clone(),
                 unit,
             });

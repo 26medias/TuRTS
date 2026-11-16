@@ -108,6 +108,23 @@ pub fn check_placement(
     queue: Option<placement::QueueFill>,
 ) -> Result<(), RejectReason> {
     let config = output.placement.ok_or(RejectReason::MissingCapability)?;
+    if let Some(terrain) = world.get_resource::<crate::terrain::TerrainState>() {
+        let turts_mod_api::Footprint::Circle { radius } = output.footprint;
+        let mut budget = turts_rules::terrain::geometry::Budget::new(2_097_168);
+        terrain
+            .grid
+            .flat_foundation(
+                terrain,
+                turts_rules::terrain::geometry::Point {
+                    x: f64::from(point.x),
+                    y: f64::from(point.y),
+                },
+                f64::from(radius),
+                &mut budget,
+            )
+            .map_err(|_| RejectReason::SiteBlocked)?;
+    }
+
     let bounds = world
         .get_resource::<crate::MapBounds>()
         .ok_or(RejectReason::IntegrityViolation)?;
@@ -975,6 +992,10 @@ mod tests {
     fn fixture(policy: PaymentPolicy) -> App {
         let mut app = crate::headless_app(20);
         let tower = ResolvedUnit {
+            terrain_class: None,
+            terrain_cargo: None,
+            terrain_foundation: None,
+            terrain_tools: Vec::new(),
             vision: None,
             repairer: None,
             consumes: Vec::new(),
@@ -1058,6 +1079,9 @@ mod tests {
             cancel_refunds: refunds,
         };
         let catalog = ContentCatalog {
+            terrain_materials: Default::default(),
+            terrain_movement_classes: Default::default(),
+            terrain_tools: Default::default(),
             bots: Default::default(),
 
             combat: None,
@@ -1087,6 +1111,7 @@ mod tests {
             source_files: BTreeMap::new(),
         };
         let map = MapDef {
+            terrain: None,
             visibility: None,
             environment: None,
             ground: None,

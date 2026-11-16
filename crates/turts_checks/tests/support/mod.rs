@@ -22,14 +22,6 @@ pub struct TokenRecord {
 #[derive(Debug, Clone, Default)]
 pub struct TokenCatalog {
     records: BTreeMap<String, Vec<TokenRecord>>,
-    exceptions: BTreeMap<String, GenericException>,
-}
-#[derive(Debug, Clone)]
-pub struct GenericException {
-    pub category: String,
-    pub reason: String,
-    pub definition_provenance: String,
-    pub identifiers_only: bool,
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Hit {
@@ -109,6 +101,15 @@ pub fn derive_tokens(root: &Path) -> Result<TokenCatalog, ScanError> {
             ("combat-export", &a.manifest.exports.combat),
             ("visual-effect-export", &a.manifest.exports.visual_effects),
             ("bot-export", &a.manifest.exports.bots),
+            (
+                "terrain-material-export",
+                &a.manifest.exports.terrain_materials,
+            ),
+            (
+                "terrain-movement-class-export",
+                &a.manifest.exports.terrain_movement_classes,
+            ),
+            ("terrain-tool-export", &a.manifest.exports.terrain_tools),
         ] {
             for path in xs {
                 exports.insert(path.clone());
@@ -134,6 +135,20 @@ pub fn derive_tokens(root: &Path) -> Result<TokenCatalog, ScanError> {
         stray_ron(&dir, &dir, &exports)?;
         let content = a.content().map_err(|e| pkgerr(&dir, e))?;
         validate_map_references(&dir, &a, &content)?;
+        turts_mod_runtime::terrain::validate_terrain_catalog(
+            &turts_mod_api::PackageId(p.clone()),
+            &content,
+        )
+        .map_err(|error| pkgerr(&dir, error))?;
+        for (file, map) in a.maps().map_err(|error| pkgerr(&dir, error))? {
+            turts_mod_runtime::terrain::validate_terrain_map(
+                &turts_mod_api::PackageId(p.clone()),
+                &file,
+                &map,
+                &content,
+            )
+            .map_err(|error| pkgerr(&dir, error))?;
+        }
         validate_visual_references(&dir, &a, &content)?;
         add(&mut c, &p, "package", &pname, "manifest.id", &p);
         add(
@@ -174,6 +189,83 @@ pub fn derive_tokens(root: &Path) -> Result<TokenCatalog, ScanError> {
                 "id",
                 &format!("{p}:{}", definition.id),
             );
+        }
+        for (path, definition) in a.terrain_materials().map_err(|error| pkgerr(&dir, error))? {
+            add_id(&mut c, &p, &path, "id", &definition.id, "terrain-material");
+            add(
+                &mut c,
+                &p,
+                "terrain-material-name",
+                &path,
+                "name",
+                &definition.name,
+            );
+            for rate in definition
+                .natural_outputs
+                .iter()
+                .chain(&definition.fill_inputs)
+            {
+                add_id(
+                    &mut c,
+                    &p,
+                    &path,
+                    "resource",
+                    &rate.resource,
+                    "resource-ref",
+                );
+            }
+        }
+        for (path, definition) in a
+            .terrain_movement_classes()
+            .map_err(|error| pkgerr(&dir, error))?
+        {
+            add_id(
+                &mut c,
+                &p,
+                &path,
+                "id",
+                &definition.id,
+                "terrain-movement-class",
+            );
+            add(
+                &mut c,
+                &p,
+                "terrain-movement-class-name",
+                &path,
+                "name",
+                &definition.name,
+            );
+        }
+        for (path, definition) in a.terrain_tools().map_err(|error| pkgerr(&dir, error))? {
+            add_id(&mut c, &p, &path, "id", &definition.id, "terrain-tool");
+            add(
+                &mut c,
+                &p,
+                "terrain-tool-name",
+                &path,
+                "name",
+                &definition.name,
+            );
+            for material in &definition.allowed_materials {
+                add_id(
+                    &mut c,
+                    &p,
+                    &path,
+                    "allowed_materials",
+                    material,
+                    "terrain-material-ref",
+                );
+            }
+            if let turts_mod_api::TerrainOperation::Fill { material } = &definition.operation {
+                add_id(
+                    &mut c,
+                    &p,
+                    &path,
+                    "operation.material",
+                    material,
+                    "terrain-material-ref",
+                );
+            }
         }
         for (path, d) in a.orders().map_err(|e| pkgerr(&dir, e))? {
             add_id(&mut c, &p, &path, "id", &d.id, "order");
@@ -319,53 +411,6 @@ pub fn derive_tokens(root: &Path) -> Result<TokenCatalog, ScanError> {
     }
     if count == 0 || c.records.is_empty() {
         return Err(pkgerr(root, "empty package discovery or token catalog"));
-    }
-    // Keep only known generic spellings that occur in the parsed data. Full ids and paths are never exempt.
-    for (word, reason, identifiers_only) in [
-        ("field", "map id is an ordinary source identifier", false),
-        ("builder", "generic Rust builder-pattern identifier", true),
-        ("deposit", "generic gather-order target handle", true),
-        ("Item", "resource kind is a common Rust type word", false),
-        ("Balance", "resource kind is a common Rust type word", false),
-        ("Move", "engine behaviour name", false),
-        ("Attack", "engine behaviour name", false),
-        ("Stop", "engine behaviour name", false),
-        (
-            "log",
-            "resource unit name is a common source identifier",
-            false,
-        ),
-        (
-            "credit",
-            "resource unit name is a generic accounting term",
-            true,
-        ),
-        (
-            "base",
-            "Bevy ExtendedMaterial uses base as a required field name",
-            true,
-        ),
-        (
-            "flat",
-            "the armour schema names its flat reduction `flat` (design 6.10 row U1)",
-            true,
-        ),
-    ] {
-        if let Some(records) = c.records.get(word) {
-            let r = &records[0];
-            c.exceptions.insert(
-                word.into(),
-                GenericException {
-                    category: "generic-word".into(),
-                    reason: reason.into(),
-                    definition_provenance: format!(
-                        "{}:{}:{}:{}",
-                        r.package, r.definition_path, r.field, r.token
-                    ),
-                    identifiers_only,
-                },
-            );
-        }
     }
     Ok(c)
 }
@@ -518,7 +563,20 @@ fn add_id(c: &mut TokenCatalog, p: &str, path: &str, field: &str, id: &str, cat:
 
 fn add_unit(c: &mut TokenCatalog, p: &str, path: &str, d: &UnitDef) {
     add_id(c, p, path, "id", &d.id, "unit");
-    add(c, p, "unit-name", path, "name", &d.name)
+    add(c, p, "unit-name", path, "name", &d.name);
+    if let Some(class) = &d.terrain_class {
+        add_id(
+            c,
+            p,
+            path,
+            "terrain_class",
+            class,
+            "terrain-movement-class-ref",
+        );
+    }
+    for tool in &d.terrain_tools {
+        add_id(c, p, path, "terrain_tools", tool, "terrain-tool-ref");
+    }
 }
 fn add_map(c: &mut TokenCatalog, p: &str, path: &str, d: &MapDef) {
     add_id(c, p, path, "id", &d.id, "map");
@@ -561,9 +619,10 @@ pub fn scan_rust(roots: &[PathBuf], c: &TokenCatalog) -> Result<Vec<Hit>, ScanEr
     for r in roots {
         collect(r, &mut fslist, &mut skipped)?
     }
-    for file in &skipped {
-        check_test_module_gate(file)?
-    }
+    let test_files = verified_test_modules(&fslist, &skipped)?;
+    fslist.retain(|file| {
+        !test_files.contains(&fs::canonicalize(file).unwrap_or_else(|_| file.clone()))
+    });
     fslist.sort();
     let mut hits = Vec::new();
     for p in fslist {
@@ -586,17 +645,18 @@ pub fn scan_rust(roots: &[PathBuf], c: &TokenCatalog) -> Result<Vec<Hit>, ScanEr
     Ok(hits)
 }
 /// The production source files under `roots`, sorted: the files that `scan_rust` reads (no
-/// `tests` directory, no listed test-module file; each listed file is checked to be gated by
-/// `#[cfg(test)]` in its parent).
+/// `tests` directory, no test-only module file; real declarations and explicit paths
+/// determine whether a source can be included in production).
 pub fn production_sources(roots: &[PathBuf]) -> Result<Vec<PathBuf>, ScanError> {
     let mut fslist = Vec::new();
     let mut skipped = Vec::new();
     for r in roots {
         collect(r, &mut fslist, &mut skipped)?
     }
-    for file in &skipped {
-        check_test_module_gate(file)?
-    }
+    let test_files = verified_test_modules(&fslist, &skipped)?;
+    fslist.retain(|file| {
+        !test_files.contains(&fs::canonicalize(file).unwrap_or_else(|_| file.clone()))
+    });
     fslist.sort();
     let mut production = Vec::new();
     for file in fslist {
@@ -612,59 +672,178 @@ pub fn production_sources(roots: &[PathBuf]) -> Result<Vec<PathBuf>, ScanError> 
 }
 /// Test modules in their own file. The parent file declares each one with `#[cfg(test)] mod`,
 /// so the scan skips the file as it skips an inline `#[cfg(test)]` module.
-const TEST_MODULE_FILES: &[&str] = &[
-    "crates/turts_client/src/client_shell/tests.rs",
-    "crates/turts_client/src/core_adapter/adapter_tests.rs",
-    "crates/turts_client/src/visuals/scene_tests.rs",
-    "crates/turts_client/src/visuals/tests.rs",
-    "crates/turts_client/src/widgets/tests.rs",
-    "crates/turts_sim/src/orders/tests.rs",
-];
-/// The scan skips a listed file by path only. This check reads the parent file and requires an
-/// `ItemMod` named like the file stem, with no inline body and a `#[cfg(test)]` gate. Without it,
-/// production code could hide in a skipped file.
-fn check_test_module_gate(file: &Path) -> Result<(), ScanError> {
-    let fail = |parent: &Path, why: String| ScanError::TestModule(file.into(), parent.into(), why);
-    let dir = file.parent().unwrap_or(Path::new(""));
-    let stem = file.file_stem().and_then(|x| x.to_str()).unwrap_or("");
-    let sibling = dir.with_extension("rs");
-    let mod_rs = dir.join("mod.rs");
-    let parent = [sibling.as_path(), mod_rs.as_path()]
-        .into_iter()
-        .find(|c| c.is_file())
-        .ok_or_else(|| {
-            fail(
-                &sibling,
-                "no parent file (`<dir>.rs` or `<dir>/mod.rs`)".into(),
-            )
+/// Resolve real Rust module declarations once. A test inclusion cannot hide a
+/// second production inclusion of the same source file.
+#[derive(Clone)]
+struct ModuleDeclaration {
+    parent: PathBuf,
+    name: String,
+    production: bool,
+    inline: bool,
+}
+fn verified_test_modules(
+    files: &[PathBuf],
+    conventional: &[PathBuf],
+) -> Result<BTreeSet<PathBuf>, ScanError> {
+    fn explicit_path(attributes: &[syn::Attribute]) -> Option<String> {
+        attributes.iter().find_map(|attribute| {
+            if attribute.path().is_ident("path")
+                && let syn::Meta::NameValue(value) = &attribute.meta
+                && let Expr::Lit(literal) = &value.value
+                && let Lit::Str(path) = &literal.lit
+            {
+                Some(path.value())
+            } else {
+                None
+            }
+        })
+    }
+    fn declarations(
+        items: &[Item],
+        parent: &Path,
+        default_dir: &Path,
+        explicit_dir: &Path,
+        production: bool,
+        out: &mut BTreeMap<PathBuf, Vec<ModuleDeclaration>>,
+    ) -> Result<(), ScanError> {
+        for item in items {
+            let Item::Mod(module) = item else {
+                continue;
+            };
+            let production = production && production_attrs(&module.attrs);
+            let name = normalize_ident(&module.ident);
+            let explicit = explicit_path(&module.attrs).map(|path| explicit_dir.join(path));
+            let target = explicit.clone().unwrap_or_else(|| {
+                let flat = default_dir.join(format!("{name}.rs"));
+                if flat.is_file() {
+                    flat
+                } else {
+                    default_dir.join(&name).join("mod.rs")
+                }
+            });
+            if target.is_file() {
+                let target =
+                    fs::canonicalize(&target).map_err(|error| ScanError::Io(target, error))?;
+                out.entry(target).or_default().push(ModuleDeclaration {
+                    parent: parent.into(),
+                    name: name.clone(),
+                    production,
+                    inline: module.content.is_some(),
+                });
+            }
+            if let Some((_, items)) = &module.content {
+                let nested = explicit.unwrap_or_else(|| default_dir.join(&name));
+                declarations(items, parent, &nested, &nested, production, out)?;
+            }
+        }
+        Ok(())
+    }
+    let mut intrinsic = BTreeSet::new();
+    let mut registry = BTreeMap::<PathBuf, Vec<ModuleDeclaration>>::new();
+    let all = files
+        .iter()
+        .chain(conventional)
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    for file in all {
+        let parent = fs::canonicalize(&file).map_err(|error| ScanError::Io(file.clone(), error))?;
+        let source =
+            fs::read_to_string(&parent).map_err(|error| ScanError::Io(parent.clone(), error))?;
+        let parsed = syn::parse_file(&source)
+            .map_err(|error| ScanError::Rust(parent.clone(), error.to_string()))?;
+        let production = production_attrs(&parsed.attrs);
+        if !production {
+            intrinsic.insert(parent.clone());
+        }
+        let directory = parent.parent().unwrap();
+        let default_dir = if parent
+            .file_stem()
+            .is_some_and(|stem| matches!(stem.to_str(), Some("lib" | "main" | "mod")))
+        {
+            directory.to_path_buf()
+        } else {
+            parent.with_extension("")
+        };
+        declarations(
+            &parsed.items,
+            &parent,
+            &default_dir,
+            directory,
+            production,
+            &mut registry,
+        )?;
+    }
+    let mut only_test = intrinsic.clone();
+    loop {
+        let mut changed = false;
+        for (target, entries) in &registry {
+            let imports = entries
+                .iter()
+                .filter(|entry| !entry.inline)
+                .collect::<Vec<_>>();
+            if !imports.is_empty()
+                && imports
+                    .iter()
+                    .all(|entry| !entry.production || only_test.contains(&entry.parent))
+            {
+                changed |= only_test.insert(target.clone());
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+    for file in conventional {
+        let canonical =
+            fs::canonicalize(file).map_err(|error| ScanError::Io(file.clone(), error))?;
+        let stem = file
+            .file_stem()
+            .and_then(|stem| stem.to_str())
+            .unwrap_or("");
+        let fallback = file.parent().unwrap_or(Path::new("")).with_extension("rs");
+        let entries = registry.get(&canonical).ok_or_else(|| {
+            ScanError::TestModule(file.clone(), fallback, format!("declares no `mod {stem}`"))
         })?;
-    let source = fs::read_to_string(parent).map_err(|e| ScanError::Io(parent.into(), e))?;
-    let parsed =
-        syn::parse_file(&source).map_err(|e| ScanError::Rust(parent.into(), e.to_string()))?;
-    let declaration = parsed.items.iter().find_map(|item| match item {
-        Item::Mod(m) if m.ident == stem => Some(m),
-        _ => None,
-    });
-    let Some(declaration) = declaration else {
-        return Err(fail(parent, format!("declares no `mod {stem}`")));
-    };
-    if declaration.content.is_some() {
-        return Err(fail(parent, format!("`mod {stem}` has an inline body")));
+        for entry in entries {
+            let why = if entry.inline {
+                Some(format!("`mod {}` has an inline body", entry.name))
+            } else if entry.production && !only_test.contains(&entry.parent) {
+                Some(format!(
+                    "`mod {}` is not gated by `#[cfg(test)]`",
+                    entry.name
+                ))
+            } else {
+                None
+            };
+            if let Some(why) = why {
+                return Err(ScanError::TestModule(
+                    file.clone(),
+                    entry.parent.clone(),
+                    why,
+                ));
+            }
+        }
     }
-    if production_cfg(&declaration.attrs) {
-        return Err(fail(
-            parent,
-            format!("`mod {stem}` is not gated by `#[cfg(test)]`"),
-        ));
-    }
-    Ok(())
+    Ok(only_test)
 }
 fn collect(p: &Path, out: &mut Vec<PathBuf>, skipped: &mut Vec<PathBuf>) -> Result<(), ScanError> {
     if p.is_file() {
         if p.extension().is_some_and(|x| x == "rs")
             && !p.components().any(|x| x.as_os_str() == "tests")
         {
-            if TEST_MODULE_FILES.iter().any(|file| p.ends_with(file)) {
+            let source = fs::read_to_string(p).map_err(|error| ScanError::Io(p.into(), error))?;
+            let parsed = syn::parse_file(&source)
+                .map_err(|error| ScanError::Rust(p.into(), error.to_string()))?;
+            if !production_attrs(&parsed.attrs) {
+                out.push(p.into());
+                return Ok(());
+            }
+            let stem = p.file_stem().and_then(|stem| stem.to_str()).unwrap_or("");
+            let contains_production = parsed
+                .items
+                .iter()
+                .any(|item| production_attrs(item_attrs(item)));
+            if contains_production && (stem == "tests" || stem.ends_with("_tests")) {
                 skipped.push(p.into())
             } else {
                 out.push(p.into())
@@ -688,12 +867,9 @@ struct Scanner<'a> {
 }
 impl Scanner<'_> {
     fn check(&mut self, t: &str, s: proc_macro2::Span) {
-        if self
-            .catalog
-            .exceptions
-            .get(t)
-            .is_some_and(|exception| !exception.identifiers_only)
-        {
+        // Bare names and display words are ambiguous ordinary Rust/game vocabulary.
+        // Inspect only exact qualified IDs and explicit exported file selectors.
+        if !(t.contains(':') || t.contains('/') || t.ends_with(".tar") || t.ends_with(".ron")) {
             return;
         }
         if let Some(rs) = self.catalog.records.get(t) {
@@ -712,15 +888,10 @@ impl Scanner<'_> {
             }
         }
     }
-    fn check_ident(&mut self, t: &str, s: proc_macro2::Span) {
-        if !self.catalog.exceptions.contains_key(t) {
-            self.check(t, s);
-        }
-    }
     fn stream(&mut self, s: proc_macro2::TokenStream) {
         for t in s {
             match t {
-                TokenTree::Ident(i) => self.check_ident(normalize_ident(&i).as_str(), i.span()),
+                TokenTree::Ident(_) => (),
                 TokenTree::Literal(l) => self.literal(&l),
                 TokenTree::Group(g) => self.stream(g.stream()),
                 TokenTree::Punct(_) => (),
@@ -774,9 +945,6 @@ impl<'a> Visit<'a> for Scanner<'_> {
         if production_cfg(expr_attrs(e)) {
             syn::visit::visit_expr(self, e);
         }
-    }
-    fn visit_ident(&mut self, i: &'a syn::Ident) {
-        self.check_ident(normalize_ident(i).as_str(), i.span())
     }
     fn visit_lit(&mut self, l: &'a Lit) {
         match l {

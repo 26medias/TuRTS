@@ -1,6 +1,7 @@
 mod format;
 mod paid;
 mod replay;
+mod terrain;
 
 pub use format::{
     ActorBotInstallation, ActorInstallation, ActorLogIdentity, ActorLogRecord, ActorOperatorLimits,

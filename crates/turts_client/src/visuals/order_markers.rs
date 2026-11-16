@@ -60,12 +60,25 @@ pub(super) fn draw_order_markers(
     marker_gizmos: &mut Gizmos<OrderMarkerGizmoConfigGroup>,
     assets: &VisualAssets,
     visuals: &VisualState,
+    terrain: Option<&crate::terrain::store::PermittedTerrain>,
 ) {
     for marker in &visuals.markers {
         let material = assets.marker_overlay_material.clone();
         if let Some(material) = material {
             let kind = marker_kind(&marker.kind);
-            let position = Vec3::new(marker.position.x, 0.035, marker.position.y);
+            let position = Vec3::new(
+                marker.position.x,
+                0.035
+                    + crate::terrain::render::marker_height(
+                        terrain,
+                        turts_net_protocol::Pos {
+                            x: marker.position.x,
+                            y: marker.position.y,
+                        },
+                    )
+                    .unwrap_or(0.),
+                marker.position.y,
+            );
             let id = VisualId {
                 kind: VisualKind::OrderMarker,
                 unit: 0,

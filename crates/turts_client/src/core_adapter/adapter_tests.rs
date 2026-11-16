@@ -2916,3 +2916,93 @@ fn repair_adapter_uses_health_completion_relation_and_authored_class_filters() {
         );
     }
 }
+
+#[test]
+fn terrain_wall_picking_keeps_actual_hit_height_and_flat_foundation_refuses_a_cliff() {
+    use crate::terrain::store::{Authority, PermittedTerrain};
+    use turts_mod_api::{KnowledgeBasis, ObservationPhase};
+    use turts_net_protocol::{TerrainGroundAnchor, TerrainSnapshot, TerrainWorkRecord};
+    struct Public;
+    impl Authority for Public {
+        fn surface(&self, _: turts_mod_api::TerrainCell, _: u32, _: bool) -> bool {
+            true
+        }
+        fn anchor(&self, _: &TerrainGroundAnchor) -> bool {
+            true
+        }
+        fn required_anchors(&self) -> impl Iterator<Item = u32> {
+            std::iter::empty()
+        }
+        fn work(&self, _: &TerrainWorkRecord) -> bool {
+            true
+        }
+    }
+    let archive = PackageArchive::parse(
+        &pack_dir(&PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../mods/quarry")).unwrap(),
+    )
+    .unwrap();
+    let content = crate::content::ClientContent::from_archives(&[archive]).unwrap();
+    let basis = KnowledgeBasis {
+        match_id: 1,
+        map: turts_mod_api::ContentId::parse("quarry:field").unwrap(),
+        tick: 1,
+        phase: ObservationPhase::Completed,
+    };
+    let materials = content
+        .catalog
+        .terrain_materials
+        .keys()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>();
+    let terrain = PermittedTerrain::stage_snapshot(
+        content.terrain.clone().unwrap(),
+        &basis,
+        &materials,
+        &TerrainSnapshot {
+            materials: materials.clone(),
+            ..Default::default()
+        },
+        &Public,
+        None,
+    )
+    .unwrap();
+    let mut replica = crate::replica::Replica::new(20);
+    replica.terrain = Some(terrain);
+    let state = ReplicaState {
+        replica: Some(replica),
+        content: Some(content),
+        welcome: Some(WelcomeInfo {
+            slot: 0,
+            tick: 1,
+            tick_hz: 20,
+            match_id: 1,
+        }),
+        ..Default::default()
+    };
+    let world = frame_world(
+        &state,
+        None,
+        &Presented::default(),
+        content_index(&state, None),
+        &CorePreferences::default(),
+        CameraOptions::default(),
+        facts::OwnerFacts::default(),
+    )
+    .unwrap();
+    let hit = world.surface_hit(Vec3::new(13., 0.5, 8.), Vec3::X).unwrap();
+    assert_eq!(
+        hit.height, 0.5,
+        "zoom anchors use the wall contact, not its owning plateau top"
+    );
+    assert_eq!(
+        hit.elevation,
+        Some(4),
+        "work captures the owning plateau reference level"
+    );
+    assert_eq!(hit.position.x, 15.);
+    assert_eq!(
+        world.terrain_foundation(Vec2::new(14.8, 8.), 0.4),
+        Err("placement_nonflat")
+    );
+    assert_eq!(world.terrain_foundation(Vec2::new(13., 8.), 0.4), Ok(0.));
+}

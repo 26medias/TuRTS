@@ -509,6 +509,10 @@ mod tests {
         let ore = cid("machine_fixture:ore");
         let part = cid("machine_fixture:part");
         let definition = ResolvedUnit {
+            terrain_class: None,
+            terrain_cargo: None,
+            terrain_foundation: None,
+            terrain_tools: Vec::new(),
             vision: None,
             repairer: None,
 
@@ -592,6 +596,9 @@ mod tests {
             })
             .collect();
         let catalog = ContentCatalog {
+            terrain_materials: Default::default(),
+            terrain_movement_classes: Default::default(),
+            terrain_tools: Default::default(),
             bots: Default::default(),
 
             combat: None,
@@ -606,6 +613,7 @@ mod tests {
             source_files: BTreeMap::new(),
         };
         let map = MapDef {
+            terrain: None,
             visibility: None,
             environment: None,
             ground: None,

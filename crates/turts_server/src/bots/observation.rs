@@ -19,6 +19,7 @@ pub(crate) struct ObservedArea {
 
 #[derive(Clone)]
 pub(crate) struct ObservationBasis {
+    pub terrain: Option<Arc<turts_sim::terrain::TerrainPhase>>,
     pub id: BasisId,
     pub tick: u32,
     pub slot: u8,
@@ -35,6 +36,35 @@ pub(crate) struct ObservationBasis {
     pub knowledge: Option<Arc<turts_mod_api::KnowledgeSnapshot>>,
     pub catalog: Arc<ContentCatalog>,
 }
+
+fn terrain_cell_count(
+    grid: turts_rules::terrain::geometry::Grid,
+    cells: turts_mod_api::TerrainRect,
+) -> Result<usize, QueryError> {
+    let width = cells
+        .max
+        .x
+        .checked_sub(cells.min.x)
+        .ok_or(QueryError::InvalidQuery)?;
+    let height = cells
+        .max
+        .y
+        .checked_sub(cells.min.y)
+        .ok_or(QueryError::InvalidQuery)?;
+    let count = u64::from(width)
+        .checked_mul(u64::from(height))
+        .ok_or(QueryError::InvalidQuery)?;
+    if width == 0
+        || height == 0
+        || cells.max.x > grid.columns
+        || cells.max.y > grid.rows
+        || count > 256
+    {
+        return Err(QueryError::InvalidQuery);
+    }
+    usize::try_from(count).map_err(|_| QueryError::InvalidQuery)
+}
+
 impl ObservationBasis {
     /// Only permitted rows enter these indexes. Their order cannot disclose rejected objects.
     pub fn index(&mut self) {
@@ -656,6 +686,44 @@ impl BotQueries for PermittedQueries<'_> {
                     .map_or(Advice::NotObserved, Advice::Known);
                 (QueryData::Affordability(advice), 1, 1)
             }
+            Query::Terrain(request) => {
+                let terrain = basis.terrain.as_ref().ok_or(QueryError::InvalidQuery)?;
+                let total = terrain_cell_count(terrain.grid(), request.cells)?;
+                if offset > total {
+                    return Err(QueryError::InvalidContinuation);
+                }
+                let width = request.cells.max.x - request.cells.min.x;
+                let mut rows = Vec::new();
+                while end < total && rows.len() < max_rows && examined < max_scan {
+                    let index = u32::try_from(end).map_err(|_| QueryError::InvalidQuery)?;
+                    let cell = turts_mod_api::TerrainCell {
+                        x: request.cells.min.x + index % width,
+                        y: request.cells.min.y + index / width,
+                    };
+                    let knowledge = if let Some(surface) = terrain.surface(basis.slot, cell) {
+                        let fact = TerrainSurfaceObservation {
+                            elevation: surface.elevation,
+                            material: surface.material,
+                            provenance: surface.provenance,
+                            observed_tick: surface.last_seen_tick,
+                        };
+                        if surface.current {
+                            TerrainCellKnowledge::Current(fact)
+                        } else {
+                            coverage = Coverage::NotObserved;
+                            TerrainCellKnowledge::Remembered(fact)
+                        }
+                    } else {
+                        coverage = Coverage::NotObserved;
+                        TerrainCellKnowledge::Unknown
+                    };
+                    rows.push(TerrainCellObservation { cell, knowledge });
+                    end += 1;
+                    examined += 1;
+                }
+                let returned = rows.len();
+                (QueryData::Terrain(rows), total, returned)
+            }
         };
         let usage = BudgetUsage {
             queries: 1,
@@ -749,6 +817,10 @@ impl ProposalVerifier for ObservationVerifier<'_> {
                 | (BotTarget::Job(_), TargetKind::Job)
                 | (BotTarget::Content(_), TargetKind::Content)
                 | (BotTarget::ContentAtPoint { .. }, TargetKind::ContentAtPoint)
+                | (
+                    BotTarget::TerrainWork { .. },
+                    TargetKind::TerrainDesignation
+                )
         );
         if !target_valid {
             return Err(ProposalRejection::InvalidOrder);
@@ -800,6 +872,37 @@ impl ProposalVerifier for ObservationVerifier<'_> {
                     return Err(ProposalRejection::InvalidOrder);
                 }
                 _ => {}
+            }
+            if let BotTarget::TerrainWork {
+                tool,
+                cells,
+                target_elevation,
+            } = &proposal.order.target
+            {
+                let terrain = self
+                    .current
+                    .terrain
+                    .as_ref()
+                    .ok_or(ProposalRejection::InvalidOrder)?;
+                terrain_cell_count(terrain.grid(), *cells)
+                    .map_err(|_| ProposalRejection::InvalidOrder)?;
+                let grid = terrain.grid();
+                let actor = self
+                    .current
+                    .catalog
+                    .units
+                    .get(&unit.content)
+                    .ok_or(ProposalRejection::InvalidOrder)?;
+                if definition.behaviour != Behaviour::TerrainWork
+                    || !self.current.catalog.terrain_tools.contains_key(tool)
+                    || !actor.terrain_tools.contains(tool)
+                    || *target_elevation < grid.floor
+                    || *target_elevation > grid.ceiling
+                {
+                    return Err(ProposalRejection::InvalidOrder);
+                }
+                // Future prism costs depend on authorized exposure. No speculative
+                // buried-material quote or advance credit enters this proposal.
             }
             members.push(VerifiedMember {
                 unit: *id,
@@ -989,6 +1092,8 @@ fn role_matches(role: &turts_mod_api::BotRole, unit: &turts_mod_api::ResolvedUni
             turts_mod_api::Capability::Research => unit.research.is_some(),
             turts_mod_api::Capability::Constructor => unit.constructor.is_some(),
             turts_mod_api::Capability::Repairer => unit.repairer.is_some(),
+            turts_mod_api::Capability::TerrainWorker => !unit.terrain_tools.is_empty(),
+            turts_mod_api::Capability::CargoUnloader => unit.terrain_cargo.is_some(),
         })
 }
 
@@ -1241,6 +1346,9 @@ mod tests {
     }
     fn empty_catalog() -> ContentCatalog {
         ContentCatalog {
+            terrain_materials: Default::default(),
+            terrain_movement_classes: Default::default(),
+            terrain_tools: Default::default(),
             bots: BTreeMap::new(),
             combat: None,
             resources: BTreeMap::new(),
@@ -1258,6 +1366,7 @@ mod tests {
         let content = ContentId::parse("fixture:unit").unwrap();
         let units = (1..=3)
             .map(|unit| UnitObservation {
+                ground_elevation: None,
                 unit,
                 owner_slot: 0,
                 content: content.clone(),
@@ -1278,6 +1387,7 @@ mod tests {
             })
             .collect();
         ObservationBasis {
+            terrain: None,
             id: 7,
             tick: 5,
             slot: 0,
@@ -1324,6 +1434,7 @@ mod tests {
             remembered_units: [(8, 8.0), (7, 7.0)]
                 .into_iter()
                 .map(|(unit, x)| RememberedUnit {
+                    ground_elevation: None,
                     unit,
                     content: ContentId::parse("fixture:enemy").unwrap(),
                     owner: 1,

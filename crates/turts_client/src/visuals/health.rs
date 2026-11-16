@@ -62,6 +62,7 @@ pub(super) fn sync_health_bars(
         camera,
         camera_transform,
         generation,
+        terrain,
     } = input;
     let (Some(mesh), Some(background), Some(fill)) =
         (&assets.bar, &assets.bar_background, &assets.bar_health)
@@ -85,7 +86,9 @@ pub(super) fn sync_health_bars(
         if !health_bar_visible(mode, is_selected, health.current, max) {
             continue;
         }
-        let position = world_to_scene(unit.pos) + Vec3::Y * 2.2;
+        let position = world_to_scene(unit.pos)
+            + Vec3::Y
+                * (2.2 + crate::terrain::render::live_height(terrain, unit.unit_id).unwrap_or(0.));
         let size =
             world_units_for_pixels(camera, camera_transform, position, assets.health_bar_size);
         let id = VisualId {
@@ -186,6 +189,7 @@ pub(super) fn collect_health_bars(
             camera,
             camera_transform,
             generation: visuals.generation,
+            terrain: replica.terrain.as_ref(),
         },
         desired,
         health_fractions,

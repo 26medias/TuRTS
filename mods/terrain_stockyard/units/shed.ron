@@ -1,0 +1,1 @@
+(id:"shed",name:"Survey shed",footprint:Circle(radius:1.0),movement:None,inventory:None,gatherer:None,drop_off:None,producer:None,terrain_foundation:Some(ForbidEdit),health:Some((max:200)),vision:Some((radius:5.0)),placement:Some((gap:2.0,node_clearance:2.0,in_build_area:true,site_health:(numerator:1,denominator:4))))

@@ -1,0 +1,1 @@
+(id:"order_hold",name:"Hold",behaviour:Hold,target:None,fire:None,engage:None,icon:"icon_order_move",hotkey:"key_hold",cursor:None,card:None,units:["quarry:walker","quarry:crawler"],description:"Hold selected units")

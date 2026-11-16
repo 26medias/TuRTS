@@ -46,12 +46,12 @@ fn place(local: &str, slot: u8, x: f32, y: f32) -> Placement {
         start_order: None,
     }
 }
-struct Fixture {
-    catalog: ContentCatalog,
-    map: MapDef,
-    authored: serde_json::Value,
+pub(super) struct Fixture {
+    pub(super) catalog: ContentCatalog,
+    pub(super) map: MapDef,
+    pub(super) authored: serde_json::Value,
 }
-fn authored_fixture(fog: bool, concentrated: bool) -> Fixture {
+pub(super) fn authored_fixture(fog: bool, concentrated: bool) -> Fixture {
     let bytes =
         pack_dir(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../mods/stockyard"))
             .unwrap();
@@ -114,6 +114,7 @@ fn authored_fixture(fog: bool, concentrated: bool) -> Fixture {
     });
     let mut map = MapDef {
         visibility,
+        terrain: None,
         id: "sv7".into(),
         environment: None,
         ground: None,
@@ -307,19 +308,36 @@ struct Peer {
     permitted_shots: u64,
     wire_bytes: u64,
 }
-struct Harness {
-    app: App,
+pub(super) struct Harness {
+    pub(super) app: App,
     peers: Vec<Peer>,
-    catalog: Arc<ContentCatalog>,
-    authored: serde_json::Value,
+    pub(super) catalog: Arc<ContentCatalog>,
+    pub(super) authored: serde_json::Value,
     seq: [u32; 2],
     fog: bool,
     concentrated: bool,
     frame_ms: u64,
+    ack_clock_ms: u64,
+    ack_rtt_ms: u64,
+    delayed_acks: Vec<(u64, Entity, StateTransactionAck)>,
 }
 impl Harness {
     fn new(fog: bool, concentrated: bool) -> Self {
-        let fixture = authored_fixture(fog, concentrated);
+        Self::with_fixture(authored_fixture(fog, concentrated), fog, concentrated, None)
+    }
+    pub(super) fn with_fixture(
+        fixture: Fixture,
+        fog: bool,
+        concentrated: bool,
+        terrain: Option<(
+            turts_mod_api::ResolvedTerrainDef,
+            turts_sim::terrain::PrivateTerrainSeed,
+        )>,
+    ) -> Self {
+        let map = ContentId::parse(&format!("stockyard:{}", fixture.map.id)).unwrap();
+        let client_terrain = fixture.map.terrain.as_ref().map(|definition| {
+            Arc::new(turts_client::terrain::store::Layout::new(map.clone(), definition).unwrap())
+        });
         let hash =
             turts_mod_runtime::hash::sha256_hex(&serde_json::to_vec(&fixture.authored).unwrap());
         let mut app = App::new();
@@ -338,18 +356,25 @@ impl Harness {
                 tick_hz: 20,
             },
         );
-        let staged = turts_sim::stage_package(
-            app.world(),
-            fixture.catalog.clone(),
-            SourceDef {
-                file: "stockyard/maps/sv7.ron".into(),
-                value: fixture.map,
-            },
-            20,
-        )
+        let source = SourceDef {
+            file: format!("stockyard/maps/{}.ron", fixture.map.id),
+            value: fixture.map,
+        };
+        let staged = if let Some((definition, seed)) = terrain {
+            turts_sim::stage_package_with_terrain(
+                app.world(),
+                fixture.catalog.clone(),
+                source,
+                20,
+                map.clone(),
+                Some(definition),
+                Some(seed),
+            )
+        } else {
+            turts_sim::stage_package(app.world(), fixture.catalog.clone(), source, 20)
+        }
         .unwrap();
         turts_sim::install_package(app.world_mut(), staged);
-        let map = id("sv7");
         app.insert_resource(turts_sim::InstalledMapIdentity(map.clone()));
         turts_sim::visibility::initialize_context(app.world_mut(), 91, &[0, 1]).unwrap();
         turts_sim::initialize_completed_world(app.world_mut());
@@ -488,6 +513,7 @@ impl Harness {
                 replica.set_context(ReplicaContext::new(
                     ClientContent {
                         catalog: fixture.catalog.clone(),
+                        terrain: client_terrain.clone(),
                         ..Default::default()
                     },
                     slot,
@@ -529,11 +555,41 @@ impl Harness {
             fog,
             concentrated,
             frame_ms: 0,
+            ack_clock_ms: 0,
+            ack_rtt_ms: 0,
+            delayed_acks: Vec::new(),
         };
         harness.flush_to(0);
         harness
     }
-    fn command(
+    pub(super) fn set_ack_rtt(&mut self, rtt_ms: u64) {
+        assert!(matches!(rtt_ms, 50 | 100));
+        self.ack_rtt_ms = rtt_ms;
+    }
+    fn send_due_acks(&mut self) {
+        let mut index = 0;
+        while index < self.delayed_acks.len() {
+            if self.delayed_acks[index].0 <= self.ack_clock_ms {
+                let (_, client, ack) = self.delayed_acks.remove(index);
+                self.app
+                    .world_mut()
+                    .get_mut::<MessageSender<StateTransactionAck>>(client)
+                    .unwrap()
+                    .send::<ReliableChannel>(ack);
+            } else {
+                index += 1;
+            }
+        }
+    }
+    fn advance_ack_tail(&mut self) {
+        if let Some(next) = self.delayed_acks.iter().map(|(due, _, _)| *due).min() {
+            self.ack_clock_ms = self.ack_clock_ms.max(next);
+        }
+    }
+    pub(super) fn set_profiling(&mut self, enabled: bool) {
+        self.app.world_mut().resource_mut::<Cpu>().profiling = enabled;
+    }
+    pub(super) fn command(
         &mut self,
         slot: u8,
         local: &str,
@@ -710,11 +766,19 @@ impl Harness {
                         peer.latest = staged.stamp.basis.tick;
                         peer.replica.visual_events.clear();
                         let ack = peer.assembler.activate(&staged.stamp).unwrap();
-                        self.app
-                            .world_mut()
-                            .get_mut::<MessageSender<StateTransactionAck>>(peer.client)
-                            .unwrap()
-                            .send::<ReliableChannel>(ack);
+                        if self.ack_rtt_ms == 0 {
+                            self.app
+                                .world_mut()
+                                .get_mut::<MessageSender<StateTransactionAck>>(peer.client)
+                                .unwrap()
+                                .send::<ReliableChannel>(ack);
+                        } else {
+                            self.delayed_acks.push((
+                                self.ack_clock_ms + self.ack_rtt_ms,
+                                peer.client,
+                                ack,
+                            ));
+                        }
                     }
                 }
                 if let Some(start) = assembly_start {
@@ -768,28 +832,149 @@ impl Harness {
         }
         charge_server(self.app.world_mut(), 6, started);
     }
+    fn trace_update(&self, step_ms: u64, phase: &str) {
+        let Some(directory) =
+            std::env::var_os("TURTS_TRANSFER_TRACE_DIR").map(std::path::PathBuf::from)
+        else {
+            return;
+        };
+        use std::io::Write;
+        std::fs::create_dir_all(&directory).unwrap();
+        let cpu = self.app.world().resource::<Cpu>();
+        let peers = self.peers.iter().map(|peer| serde_json::json!({
+            "slot":peer.slot,"latest":peer.latest,"assembler_retained":peer.assembler.retained_bytes(),
+            "sender":self.app.world().get::<crate::outbound::knowledge::KnowledgeSender>(peer.server)
+                .map(|sender|sender.benchmark_transfer_trace()),
+        })).collect::<Vec<_>>();
+        let row = serde_json::json!({"phase":phase,"actual_tick":completed_world(self.app.world()).tick,
+            "frame_ms":self.frame_ms,"step_ms":step_ms,"full_service_ns":cpu.full_server_service_ns(),
+            "simulation_ns":cpu.simulation_ns,"stages_ns":cpu.stages_ns,"peers":peers});
+        let mut file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(directory.join("updates.jsonl"))
+            .unwrap();
+        serde_json::to_writer(&mut file, &row).unwrap();
+        writeln!(file).unwrap();
+    }
     fn update(&mut self, ms: u64) {
         self.frame_ms += ms;
+        self.ack_clock_ms += ms;
+        if self.ack_rtt_ms != 0 {
+            let started = Instant::now();
+            self.send_due_acks();
+            charge_server(self.app.world_mut(), 6, started);
+        }
         self.app
             .insert_resource(bevy::time::TimeUpdateStrategy::ManualDuration(
                 Duration::from_millis(ms),
             ));
         let before = self.app.world().resource::<Cpu>().stages_ns;
+        self.trace_update(ms, "before_app");
         self.app.update();
+        self.trace_update(ms, "after_app");
         let after = self.app.world().resource::<Cpu>().stages_ns;
         // The app contains both endpoints. Charge all shared receive and send
         // work to each client rather than undercount its decoder or ACK sender.
         self.consume(after[7] - before[7] + after[4] - before[4]);
         self.transfer();
+        self.trace_update(ms, "after_receive");
+        if std::env::var_os("TURTS_TRANSFER_TRACE_DIR").is_some()
+            && let Ok(limit) = std::env::var("TURTS_TRANSFER_TRACE_TICKS")
+                .unwrap_or_else(|_| "2".into())
+                .parse::<u32>()
+            && ms > 0
+            && completed_world(self.app.world()).tick >= limit
+        {
+            panic!("diagnostic transfer trace stopped after {limit} ticks");
+        }
     }
     fn flush_to(&mut self, tick: u32) {
-        for _ in 0..2048 {
+        let trace = std::env::var_os("TURTS_TRANSFER_TRACE_DIR").map(std::path::PathBuf::from);
+        if let Some(directory) = &trace {
+            std::fs::create_dir_all(directory).unwrap();
+            for peer in &self.peers {
+                let sender = self
+                    .app
+                    .world()
+                    .get::<crate::outbound::knowledge::KnowledgeSender>(peer.server)
+                    .unwrap();
+                let path = directory.join(format!("first-slot{}-tick{tick}.postcard", peer.slot));
+                if !path.exists() {
+                    let payload = sender.benchmark_snapshot_payload();
+                    let summary = sender.benchmark_transfer_trace();
+                    let stamp =
+                        serde_json::from_value::<turts_net_protocol::StateTransactionStamp>(
+                            summary["pending"]["begin"]["stamp"].clone(),
+                        )
+                        .unwrap();
+                    let mut probe = peer.replica.clone();
+                    let accepted = probe.activate_transaction(
+                        &stamp,
+                        &payload,
+                        bevy::platform::time::Instant::now(),
+                    );
+                    std::fs::write(
+                        directory.join(format!("first-slot{}-tick{tick}-probe.json", peer.slot)),
+                        serde_json::to_vec(
+                            &serde_json::json!({"accepted":accepted,"summary":summary}),
+                        )
+                        .unwrap(),
+                    )
+                    .unwrap();
+                    std::fs::write(
+                        path,
+                        postcard::to_allocvec(&sender.benchmark_snapshot_payload()).unwrap(),
+                    )
+                    .unwrap();
+                    std::fs::write(
+                        directory.join(format!("first-slot{}-tick{tick}.json", peer.slot)),
+                        serde_json::to_vec(&sender.benchmark_snapshot_payload()).unwrap(),
+                    )
+                    .unwrap();
+                }
+            }
+        }
+        for pump in 0..2048 {
+            if self.ack_rtt_ms != 0 {
+                self.advance_ack_tail();
+            }
             self.update(0);
+            if let Some(directory) = &trace {
+                let rows = self.peers.iter().map(|peer| serde_json::json!({
+                    "slot":peer.slot,"latest":peer.latest,"assembler_retained":peer.assembler.retained_bytes(),
+                    "sender":self.app.world().get::<crate::outbound::knowledge::KnowledgeSender>(peer.server)
+                        .map(|sender|sender.benchmark_transfer_trace()),
+                })).collect::<Vec<_>>();
+                std::fs::write(directory.join(format!("pump-{pump:03}.json")),
+                    serde_json::to_vec(&serde_json::json!({"pump":pump,"target_tick":tick,
+                        "actual_tick":completed_world(self.app.world()).tick,"frame_ms":self.frame_ms,"peers":rows})).unwrap()).unwrap();
+            }
             if self.drained_to(tick) {
                 return;
             }
+            if trace.is_some() && pump == 31 {
+                panic!("diagnostic transfer trace stopped after32 pumps");
+            }
         }
         panic!("atomic publication did not drain to tick{tick}");
+    }
+    /// Publish each completed tick while application ACKs remain delayed. The actual
+    /// ACK tail drains at the final tick, without granting another service period.
+    fn flush_delivered_to(&mut self, tick: u32) {
+        for _ in 0..2048 {
+            self.update(0);
+            if self.peers.iter().all(|peer| {
+                peer.latest == tick
+                    && [peer.server, peer.client].iter().all(|entity| {
+                        let link = self.app.world().get::<Link>(*entity).unwrap();
+                        link.recv.len() == 0 && link.send.len() == 0
+                    })
+            }) {
+                return;
+            }
+        }
+        panic!("delayed ACK publication failed to deliver tick{tick}");
     }
     fn drained_to(&self, tick: u32) -> bool {
         self.peers.iter().all(|peer| {
@@ -811,22 +996,22 @@ impl Harness {
 }
 
 #[derive(serde::Serialize)]
-struct Sample {
-    server_ns: u64,
-    client_ns: u64,
-    sum_ns: u64,
-    stages_ns: [u64; 10],
-    full_server_tick_ns: Vec<u64>,
-    client_tick_ns: [Vec<u64>; 2],
-    client_batches_ns: [Vec<u64>; 2],
-    fired: u64,
-    permitted_shots: [u64; 2],
-    extracted: u64,
-    moved: usize,
-    hides: [usize; 2],
-    reveals: [usize; 2],
-    retained_bytes: [usize; 2],
-    wire_bytes: [u64; 2],
+pub(super) struct Sample {
+    pub(super) server_ns: u64,
+    pub(super) client_ns: u64,
+    pub(super) sum_ns: u64,
+    pub(super) stages_ns: [u64; 10],
+    pub(super) full_server_tick_ns: Vec<u64>,
+    pub(super) client_tick_ns: [Vec<u64>; 2],
+    pub(super) client_batches_ns: [Vec<u64>; 2],
+    pub(super) fired: u64,
+    pub(super) permitted_shots: [u64; 2],
+    pub(super) extracted: u64,
+    pub(super) moved: usize,
+    pub(super) hides: [usize; 2],
+    pub(super) reveals: [usize; 2],
+    pub(super) retained_bytes: [usize; 2],
+    pub(super) wire_bytes: [u64; 2],
 }
 impl Harness {
     fn bots(&mut self) {
@@ -925,6 +1110,23 @@ impl Harness {
         charge_server(self.app.world_mut(), 5, started);
     }
     fn interval(&mut self, index: usize, resync: bool) -> Sample {
+        self.interval_impl(index, resync, None::<fn(&mut Self, u32, bool)>)
+    }
+    /// Optional workload orders/counters run on each real authoritative tick.
+    pub(super) fn interval_with(
+        &mut self,
+        index: usize,
+        resync: bool,
+        hook: impl FnMut(&mut Self, u32, bool),
+    ) -> Sample {
+        self.interval_impl(index, resync, Some(hook))
+    }
+    fn interval_impl(
+        &mut self,
+        index: usize,
+        resync: bool,
+        mut hook: Option<impl FnMut(&mut Self, u32, bool)>,
+    ) -> Sample {
         let profiling = self.app.world().resource::<Cpu>().profiling;
         crate::bot_profile::activate(profiling && resync);
         *self.app.world_mut().resource_mut::<Cpu>() = Cpu {
@@ -948,6 +1150,11 @@ impl Harness {
             let clients_before = cpu.peer_client_ns;
             let next = completed_world(self.app.world()).tick + 1;
             self.orders(next);
+            if let Some(hook) = hook.as_mut() {
+                let started = Instant::now();
+                hook(self, next, false);
+                charge_server(self.app.world_mut(), 5, started);
+            }
             let before = completed_world(self.app.world())
                 .units
                 .iter()
@@ -977,6 +1184,9 @@ impl Harness {
                     _ => {}
                 }
             }
+            if let Some(hook) = hook.as_mut() {
+                hook(self, tick, true);
+            }
             let start = Instant::now();
             for peer in &self.peers {
                 assert!(
@@ -991,7 +1201,11 @@ impl Harness {
             charge_server(self.app.world_mut(), 3, start);
             // Drain actual registered transport and native activation. No work is
             // deferred outside the sample or silently coalesced into a later tick.
-            self.flush_to(tick);
+            if self.ack_rtt_ms == 0 || step == 19 {
+                self.flush_to(tick);
+            } else {
+                self.flush_delivered_to(tick);
+            }
             if tick.is_multiple_of(20) {
                 self.bots();
             }
@@ -1016,6 +1230,9 @@ impl Harness {
                     .map(|p| p.assembler.active().unwrap().transaction_id)
                     .collect::<Vec<_>>();
                 for _ in 0..2048 {
+                    if self.ack_rtt_ms != 0 {
+                        self.advance_ack_tail();
+                    }
                     self.update(0);
                     if self.drained_to(tick)
                         && self.peers.iter().zip(&old).all(|(p, id)| {
@@ -1091,7 +1308,7 @@ impl Harness {
         sample
     }
 }
-fn quantiles(mut values: Vec<u64>) -> serde_json::Value {
+pub(super) fn quantiles(mut values: Vec<u64>) -> serde_json::Value {
     values.sort_unstable();
     let at = |percent: usize| values[(values.len() * percent).div_ceil(100) - 1];
     serde_json::json!({"p50_ns":at(50),"p95_ns":at(95),"p99_ns":at(99),"max_ns":values.last().unwrap()})
@@ -1102,7 +1319,7 @@ fn rank(values: &[u64], permille: usize) -> u64 {
     ordered.sort_unstable();
     ordered[(ordered.len() * permille).div_ceil(1000) - 1]
 }
-fn deadline_summary(
+pub(super) fn deadline_summary(
     server: &[u64],
     clients: [&[u64]; 2],
     batches: [&[u64]; 2],
@@ -1134,7 +1351,7 @@ fn deadline_summary(
         "server_p99_9_ns":rank(server,999),"server_tick_samples":server.len(),
         "maximum_debt_ns":maximum_debt,"final_debt_ns":debt,"clients":client_rows})
 }
-fn peak_resident_bytes() -> Option<u64> {
+pub(super) fn peak_resident_bytes() -> Option<u64> {
     std::fs::read_to_string("/proc/self/status")
         .ok()?
         .lines()

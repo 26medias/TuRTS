@@ -8661,6 +8661,7 @@ name = "turts_client"
 version = "0.2.0"
 dependencies = [
  "bevy",
+ "bevy_app",
  "gloo-net",
  "image",
  "js-sys",
@@ -8734,6 +8735,7 @@ dependencies = [
  "sha2",
  "tar",
  "turts_mod_api",
+ "turts_rules",
 ]
 
 [[package]]
@@ -8791,6 +8793,7 @@ dependencies = [
  "bevy",
  "bevy_app",
  "bevy_math",
+ "getrandom 0.4.3",
  "libm",
  "lightyear",
  "lightyear_serde",

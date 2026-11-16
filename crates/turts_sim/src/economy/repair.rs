@@ -766,6 +766,10 @@ mod tests {
     }
     fn unit(local: &str) -> ResolvedUnit {
         ResolvedUnit {
+            terrain_class: None,
+            terrain_cargo: None,
+            terrain_foundation: None,
+            terrain_tools: Vec::new(),
             vision: None,
             id: id(local),
             name: local.into(),
@@ -815,6 +819,9 @@ mod tests {
         let mut target = unit("target");
         target.health = Some(HealthDef { max: 100 });
         let catalog = ContentCatalog {
+            terrain_materials: Default::default(),
+            terrain_movement_classes: Default::default(),
+            terrain_tools: Default::default(),
             bots: Default::default(),
 
             combat: None,

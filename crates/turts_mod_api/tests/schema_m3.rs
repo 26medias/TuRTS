@@ -147,6 +147,9 @@ fn old_packages_omit_m3_defaults_when_serialized_and_nonempty_fields_remain() {
     }
 
     let exports = serde_json::to_value(Exports {
+        terrain_materials: Default::default(),
+        terrain_movement_classes: Default::default(),
+        terrain_tools: Default::default(),
         bots: Default::default(),
 
         units: vec![],
@@ -273,6 +276,10 @@ fn visit_package_ron_serialization(dir: &Path) {
 
 fn m3_unit() -> UnitDef {
     UnitDef {
+        terrain_class: None,
+        terrain_cargo: None,
+        terrain_foundation: None,
+        terrain_tools: Vec::new(),
         vision: None,
         id: "turret".into(),
         name: "Turret".into(),
@@ -343,6 +350,7 @@ fn m3_unit() -> UnitDef {
 
 fn m3_map() -> MapDef {
     MapDef {
+        terrain: None,
         visibility: None,
         environment: None,
         ground: None,

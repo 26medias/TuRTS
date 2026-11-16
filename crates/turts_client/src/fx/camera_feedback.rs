@@ -45,11 +45,7 @@ pub fn shake_camera(
     core: Option<Res<crate::core_adapter::CoreRuntime>>,
     mut cameras: Query<&mut Transform, With<crate::render::MainSceneCamera>>,
 ) {
-    let Some(camera) = core
-        .as_ref()
-        .and_then(|core| core.core())
-        .map(|core| core.camera_state())
-    else {
+    let Some(mut desired) = core.as_ref().and_then(|core| core.base_camera_transform()) else {
         return;
     };
     let amount = emitters
@@ -64,7 +60,6 @@ pub fn shake_camera(
         .sum::<f32>()
         .min(0.5)
         * settings.shake.gain();
-    let mut desired = crate::core_adapter::camera_components(camera).0;
     if amount > 0. {
         let phase = fx.now as f32;
         desired.translation += (desired.rotation * Vec3::X) * (phase * 83.).sin() * amount

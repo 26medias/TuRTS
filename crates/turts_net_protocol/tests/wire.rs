@@ -19,8 +19,8 @@ where
 }
 
 #[test]
-fn wire_v9_roundtrips_existing_fields_and_reasons() {
-    assert_eq!(NET_PROTOCOL_VERSION, 9);
+fn wire_v10_roundtrips_existing_fields_and_reasons() {
+    assert_eq!(NET_PROTOCOL_VERSION, 10);
     round_trip(UnitId(4_000_000_000));
     round_trip(SlotId(255));
     round_trip(Pos { x: 1.5, y: -2.25 });

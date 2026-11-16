@@ -1,12 +1,13 @@
 //! `turts_rules`: the one copy of each pure rule of MP1 (design section 9, "One copy of each
 //! rule"). The server simulation, the interaction core and the client call these functions.
-//! No other crate holds a second copy of the placement check, the relation, the damage
-//! formula, the charge, the refund, the heal, the site health or the "value at tick".
+//! No other crate holds a second copy of placement, relations, damage, charging,
+//! refunds, healing, site health, terrain geometry or material conservation.
 //!
 //! The crate has no dependency at all. It takes plain values and gives plain values, so it
-//! builds on host and on wasm32 with no rendering crate. It never allocates in a rule.
-//! Integer rules use `u128` intermediates and no float. The placement check uses `f32`
-//! and compares squared distances only.
+//! builds on host and on wasm32 with no rendering crate. Scalar rules do not allocate.
+//! Terrain columns and queries use bounded owned storage. Material accounting uses
+//! checked `u128` intermediates. Terrain predicates preserve continuous actor poses
+//! through checked rational arithmetic. Legacy placement uses squared `f32` distances.
 
 #![forbid(unsafe_code)]
 
@@ -61,3 +62,6 @@ impl Ratio {
         self.denominator
     }
 }
+
+/// Exact terrain geometry and material accounting.
+pub mod terrain;

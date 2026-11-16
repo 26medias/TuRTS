@@ -41,6 +41,7 @@ pub(crate) struct IncomePeriods(pub(crate) BTreeMap<ContentId, u64>);
 pub struct StagedPackage {
     map_identity: ContentId,
     visibility: Option<crate::visibility::VisibilityState>,
+    terrain: Option<crate::terrain::TerrainState>,
     types: UnitTypes,
     bounds: MapBounds,
     units: Vec<(u32, UnitTypeId, u8, Vec2)>,
@@ -93,9 +94,92 @@ pub fn stage_package_with_map_identity(
     tick_hz: u16,
     map_identity: ContentId,
 ) -> Result<StagedPackage, ModError> {
+    stage_package_with_terrain(
+        world,
+        catalog,
+        source_map,
+        tick_hz,
+        map_identity,
+        None,
+        None,
+    )
+}
+
+/// Opted-in terrain requires runtime-resolved public rules and an explicit private seed.
+/// Legacy callers cannot silently install a flat replacement for an authored terrain map.
+pub fn stage_package_with_terrain(
+    world: &World,
+    catalog: ContentCatalog,
+    source_map: SourceDef<MapDef>,
+    tick_hz: u16,
+    map_identity: ContentId,
+    terrain_definition: Option<turts_mod_api::ResolvedTerrainDef>,
+    terrain_seed: Option<crate::terrain::PrivateTerrainSeed>,
+) -> Result<StagedPackage, ModError> {
     let package = map_identity.package.0.clone();
     let error =
         |field: &str, msg: String| ModError::new(&package, field, msg).with_file(&source_map.file);
+    let terrain = match (&source_map.value.terrain, terrain_definition) {
+        (None, None) => None,
+        (Some(authored), Some(resolved)) => {
+            if authored.columns != resolved.columns
+                || authored.rows != resolved.rows
+                || authored.length_scale != resolved.length_scale
+                || authored.cell_width != resolved.cell_width
+                || authored.elevation_step != resolved.elevation_step
+                || authored.chunk_width != resolved.chunk_width
+                || authored.floor != resolved.floor
+                || authored.ceiling != resolved.ceiling
+                || authored.initial_elevation != resolved.initial_elevation
+                || authored.initial_heights != resolved.initial_heights
+            {
+                return Err(error(
+                    "terrain",
+                    "resolved terrain does not match the authored map".into(),
+                ));
+            }
+            let turts_mod_api::TerrainGenerationDef::Version1 { bands } = &authored.generation;
+            let same_bands = bands.len() == resolved.generation.len()
+                && bands
+                    .iter()
+                    .zip(&resolved.generation)
+                    .all(|(authored, resolved)| {
+                        authored.bottom == resolved.bottom
+                            && authored.top == resolved.top
+                            && authored.choices.len() == resolved.choices.len()
+                            && authored.choices.iter().zip(&resolved.choices).all(
+                                |(authored, resolved)| {
+                                    let qualified = if authored.material.contains(':') {
+                                        authored.material.clone()
+                                    } else {
+                                        format!("{}:{}", map_identity.package.0, authored.material)
+                                    };
+                                    authored.weight == resolved.weight
+                                        && ContentId::parse(&qualified).ok().as_ref()
+                                            == Some(&resolved.material)
+                                },
+                            )
+                    });
+            if !same_bands {
+                return Err(error(
+                    "terrain.generation",
+                    "resolved geological rules do not match the authored map".into(),
+                ));
+            }
+            let seed = terrain_seed
+                .ok_or_else(|| error("terrain", "private terrain seed is required".into()))?;
+            Some(
+                crate::terrain::prepare(&catalog, &resolved, seed)
+                    .map_err(|failure| error("terrain", format!("invalid terrain: {failure:?}")))?,
+            )
+        }
+        _ => {
+            return Err(error(
+                "terrain",
+                "authored terrain requires its resolved definition".into(),
+            ));
+        }
+    };
     if tick_hz == 0 {
         return Err(error("tick_hz", "must be above zero".into()));
     }
@@ -585,9 +669,30 @@ pub fn stage_package_with_map_identity(
     }
     operating.begin_tick();
     let operating = operating.initialized.then_some(operating);
+    if let Some(terrain) = &terrain {
+        for (_, kind, _, position) in &units {
+            crate::terrain::support_elevation(terrain, &catalog, &types, *kind, *position)
+                .map_err(|failure| {
+                    error(
+                        "terrain.placements",
+                        format!("unsupported initial unit: {failure:?}"),
+                    )
+                })?;
+        }
+        for (_, kind, _, position) in &m3.extra_units {
+            crate::terrain::support_elevation(terrain, &catalog, &types, kind.0, *position)
+                .map_err(|failure| {
+                    error(
+                        "terrain.placements",
+                        format!("unsupported infrastructure: {failure:?}"),
+                    )
+                })?;
+        }
+    }
     Ok(StagedPackage {
         map_identity,
         visibility,
+        terrain,
         types,
         bounds: MapBounds {
             size: Vec2::new(map.size.x, map.size.y),
@@ -611,6 +716,17 @@ pub fn stage_package_with_map_identity(
 /// Commit a fully validated package. This operation has no fallible steps.
 pub fn install_package(world: &mut World, staged: StagedPackage) {
     world.insert_resource(InstalledMapIdentity(staged.map_identity));
+    world.remove_resource::<crate::terrain::TerrainState>();
+    world.remove_resource::<crate::terrain::navigation::TerrainNavigation>();
+    world.remove_resource::<crate::terrain::phase::TerrainPhases>();
+    world.remove_resource::<crate::terrain::history::TerrainHistories>();
+    world.remove_resource::<crate::terrain::work::TerrainWorkRuntime>();
+    world.remove_resource::<crate::terrain::pause::TerrainWorkPauses>();
+    world.remove_resource::<crate::visibility::AllVisibleTerrainEvents>();
+    world.remove_resource::<crate::terrain::cargo::CargoRuntime>();
+    if let Some(terrain) = staged.terrain {
+        world.insert_resource(terrain);
+    }
     world.remove_resource::<crate::visibility::VisibilityState>();
     if let Some(visibility) = staged.visibility {
         world.insert_resource(visibility);
@@ -671,6 +787,7 @@ pub fn install_package(world: &mut World, staged: StagedPackage) {
     for (id, clock) in staged.income_clocks {
         income::on_activate(world, id, Some(clock));
     }
+    crate::terrain::phase::initialize_phases(world);
 }
 
 #[cfg(test)]
@@ -688,6 +805,10 @@ mod operating_tests {
     }
     fn definition(name: &str) -> turts_mod_api::ResolvedUnit {
         turts_mod_api::ResolvedUnit {
+            terrain_class: None,
+            terrain_cargo: None,
+            terrain_foundation: None,
+            terrain_tools: Vec::new(),
             vision: None,
             repairer: None,
 
@@ -778,6 +899,9 @@ mod operating_tests {
         })
         .collect();
         let catalog = ContentCatalog {
+            terrain_materials: Default::default(),
+            terrain_movement_classes: Default::default(),
+            terrain_tools: Default::default(),
             bots: Default::default(),
 
             combat: None,
@@ -808,6 +932,7 @@ mod operating_tests {
         let map = SourceDef {
             file: "maps/field.ron".into(),
             value: MapDef {
+                terrain: None,
                 visibility: None,
                 id: "field".into(),
                 size: MapSize { x: 40.0, y: 30.0 },

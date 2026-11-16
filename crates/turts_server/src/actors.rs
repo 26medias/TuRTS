@@ -509,6 +509,15 @@ fn wire_command(command: &EmittedCommand) -> PlayerCommand {
                     content: content.to_string(),
                     point: point(at),
                 },
+                BotTarget::TerrainWork {
+                    tool,
+                    cells,
+                    target_elevation,
+                } => OrderTarget::TerrainWork(turts_mod_api::TerrainDesignation {
+                    tool: tool.to_string(),
+                    cells: *cells,
+                    target_elevation: *target_elevation,
+                }),
             },
             queue: match command.order.queue {
                 BotQueueMode::Replace => turts_net_protocol::QueueMode::Replace,

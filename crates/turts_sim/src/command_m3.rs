@@ -70,14 +70,7 @@ pub(crate) fn set_enabled(
 ) -> Result<(), RejectReason> {
     let (entity, owner) = target(world, slot, unit_id)?;
     let unit = definition(world, entity)?;
-    let toggleable = unit.extractor.is_some()
-        || unit.inserter.is_some()
-        || unit.machine.is_some()
-        || unit.research.is_some()
-        || unit.producer.is_some()
-        || unit.constructor.is_some()
-        || unit.repairer.is_some()
-        || unit.weapon.is_some();
+    let toggleable = crate::orders::unit_toggleable(unit);
     if !toggleable {
         return Err(RejectReason::NotToggleable);
     }
@@ -162,6 +155,10 @@ mod tests {
             .register_unit_type(
                 &package,
                 UnitDef {
+                    terrain_class: None,
+                    terrain_cargo: None,
+                    terrain_foundation: None,
+                    terrain_tools: Vec::new(),
                     vision: None,
                     id: "fixture".into(),
                     name: "Fixture".into(),
@@ -204,6 +201,9 @@ mod tests {
             )
             .unwrap();
         let mut catalog = ContentCatalog {
+            terrain_materials: Default::default(),
+            terrain_movement_classes: Default::default(),
+            terrain_tools: Default::default(),
             bots: Default::default(),
 
             combat: None,
@@ -228,6 +228,10 @@ mod tests {
         catalog.units.insert(
             unit_id.clone(),
             ResolvedUnit {
+                terrain_class: None,
+                terrain_cargo: None,
+                terrain_foundation: None,
+                terrain_tools: Vec::new(),
                 vision: None,
                 repairer: None,
 

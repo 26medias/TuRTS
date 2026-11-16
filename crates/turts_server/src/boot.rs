@@ -13,6 +13,8 @@ use turts_mod_runtime::lock::write_lockfile;
 use turts_net_protocol::{Advertisement, NET_PROTOCOL_VERSION};
 
 use crate::config::HostConfig;
+#[path = "terrain_seed.rs"]
+mod terrain_seed;
 
 /// Everything that the HTTP endpoints serve, built once at boot.
 #[derive(Debug)]
@@ -35,7 +37,21 @@ pub struct Booted {
 /// advertisement. An error in a file of the package carries that file in `ModError::file`.
 pub fn boot(world: &mut World, cfg: &HostConfig, archive_bytes: &[u8]) -> Result<Booted, ModError> {
     let archive = PackageArchive::parse(archive_bytes)?;
-    turts_pack::load_package(world, &archive)?;
+    let terrain_enabled = archive.maps()?.iter().any(|(_, map)| map.terrain.is_some());
+    let private_terrain = terrain_seed::prepare(
+        cfg,
+        &archive.manifest.id,
+        &sha256_hex(archive_bytes),
+        terrain_enabled,
+    )?;
+    turts_pack::load_package_with_terrain_seed(
+        world,
+        &archive,
+        private_terrain.as_ref().map(|prepared| prepared.seed()),
+    )?;
+    if let Some(prepared) = private_terrain {
+        prepared.commit();
+    }
 
     let public_url = cfg.public_url.trim_end_matches('/');
     // M1 placeholder; format open (spec 15): the archive is a ustar file named <id>-<version>.tar.

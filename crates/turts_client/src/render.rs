@@ -39,11 +39,20 @@ pub fn projected_ground_center(
     camera_transform: &GlobalTransform,
     pos: Pos,
 ) -> Option<Vec2> {
-    if !camera.is_active {
+    projected_ground_center_at_height(camera, camera_transform, pos, 0.)
+}
+
+pub fn projected_ground_center_at_height(
+    camera: &Camera,
+    camera_transform: &GlobalTransform,
+    pos: Pos,
+    height: f32,
+) -> Option<Vec2> {
+    if !camera.is_active || !height.is_finite() {
         return None;
     }
     let center = camera
-        .world_to_viewport(camera_transform, world_to_scene(pos))
+        .world_to_viewport(camera_transform, world_to_scene(pos) + Vec3::Y * height)
         .ok()?;
     let viewport = camera.logical_viewport_rect()?;
     (center.is_finite() && viewport.contains(center)).then_some(center)
@@ -422,11 +431,42 @@ pub fn setup_scene(
         .normal
         .as_ref()
         .map(|source| model_state.texture(source, settings.quality, &mut images));
+    let terrain = acquired.0.content.terrain.as_deref();
+    let margin = acquired
+        .0
+        .presentation
+        .environment
+        .as_ref()
+        .map_or(0., |environment| environment.ground_margin);
+    let ground_origin = if let Some(layout) = terrain {
+        let color = ground_material.base_color.to_linear().to_vec4().to_array();
+        ground_material.base_color = Color::WHITE;
+        ground_mesh = crate::terrain::mesh::margin(
+            layout,
+            margin,
+            acquired
+                .0
+                .presentation
+                .ground
+                .as_ref()
+                .map_or(1., |ground| ground.tile_size),
+            color,
+        );
+        Vec3::ZERO
+    } else {
+        centre
+    };
     let mut entity = commands.spawn((
         ground_source,
         Mesh3d(meshes.add(ground_mesh)),
-        Transform::from_translation(centre),
+        Transform::from_translation(ground_origin),
     ));
+    if terrain.is_some() {
+        entity.insert(crate::terrain::render::MaterialSource);
+        if margin <= 0. {
+            entity.insert(Visibility::Hidden);
+        }
+    }
     if let Some(layer) = acquired
         .0
         .presentation
@@ -504,8 +544,18 @@ pub fn sync_units(
     }
     let mut kept: HashSet<u32> = HashSet::new();
     for unit in &presented.units {
+        let terrain = state
+            .replica
+            .as_ref()
+            .and_then(|replica| replica.terrain.as_ref());
+        if acquired.0.content.terrain.is_some() && terrain.is_none() {
+            continue;
+        }
+        let Some(ground) = crate::terrain::render::live_height(terrain, unit.unit_id) else {
+            continue;
+        };
         kept.insert(unit.unit_id);
-        let position = world_to_scene(unit.pos);
+        let position = world_to_scene(unit.pos) + Vec3::Y * ground;
         if let Some(&entity) = entities.get(&unit.unit_id) {
             if let Ok((_, _, mut transform)) = shown.get_mut(entity) {
                 let lift = assets
@@ -682,10 +732,20 @@ impl Plugin for UnitRenderPlugin {
                     .before(bevy::transform::TransformSystems::Propagate),
             ),
         );
+        app.init_resource::<crate::terrain::render::ChunkRender>()
+            .init_resource::<crate::terrain::present::WorkPanel>();
         app.add_systems(
             Update,
             (
-                setup_scene,
+                crate::terrain::present::panel,
+                crate::terrain::present::preview,
+            )
+                .after(crate::core_adapter::CoreAdapterSet),
+        );
+        app.add_systems(
+            Update,
+            (
+                (setup_scene, crate::terrain::render::sync).chain(),
                 (
                     crate::environment::sync_camera,
                     crate::environment::draw_boundary,
@@ -749,8 +809,16 @@ pub fn sync_nodes(
     }
     let mut kept = HashSet::new();
     for node in replica.nodes.values() {
+        let radius = declared_node_pick_radius(&acquired.0.content, &node.content_id).unwrap_or(0.);
+        let Some(ground) = crate::terrain::render::infrastructure_height(
+            acquired.0.content.terrain.as_deref(),
+            node.pos,
+            radius,
+        ) else {
+            continue;
+        };
         kept.insert(node.id.0);
-        let pos = world_to_scene(node.pos);
+        let pos = world_to_scene(node.pos) + Vec3::Y * ground;
         if let Some(&entity) = entities.get(&node.id.0) {
             if let Ok((_, _, mut transform)) = shown.get_mut(entity) {
                 let lift = assets

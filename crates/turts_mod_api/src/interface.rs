@@ -349,6 +349,10 @@ pub enum Source {
     Sites,
     Notices,
     SelectionTypes,
+    /// API17: selected own unit tools, bound to this explicit terrain work order.
+    TerrainTools {
+        order: ContentRef,
+    },
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

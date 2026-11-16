@@ -16,8 +16,8 @@ where
 }
 
 #[test]
-fn the_protocol_version_is_9() {
-    assert_eq!(NET_PROTOCOL_VERSION, 9);
+fn the_protocol_version_is_10() {
+    assert_eq!(NET_PROTOCOL_VERSION, 10);
 }
 
 #[test]
@@ -133,6 +133,7 @@ fn the_record_list_round_trips() {
         held_since_tick: 31,
     };
     let records = DeltaRecords {
+        terrain: None,
         repairs: Vec::new(),
         repairs_cleared: Vec::new(),
 

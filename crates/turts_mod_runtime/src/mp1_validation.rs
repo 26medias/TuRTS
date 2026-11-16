@@ -1232,6 +1232,10 @@ impl Pack {
             Behaviour::CancelConstruction => (Some("placement"), |unit| unit.placement.is_some()),
             Behaviour::SetRally => (Some("producer"), |unit| unit.producer.is_some()),
             Behaviour::Repair => (Some("repairer"), |unit| unit.repairer.is_some()),
+            Behaviour::TerrainWork => {
+                (Some("terrain_tools"), |unit| !unit.terrain_tools.is_empty())
+            }
+            Behaviour::UnloadCargo => (Some("terrain_cargo"), |unit| unit.terrain_cargo.is_some()),
             _ => (None, |_| true),
         };
         if let Some(capability) = needs {

@@ -18,6 +18,7 @@ pub mod receipts;
 pub mod registry;
 pub mod rules_adapter;
 pub mod slots;
+pub mod terrain;
 pub mod unit_index;
 pub mod visibility;
 pub mod world;
@@ -38,7 +39,7 @@ pub const DEFAULT_TICK_HZ: u16 = 20; // prototype constant: measure at M1
 pub use bevy_math::Vec2;
 pub use bootstrap::{
     InstalledMapIdentity, StagedPackage, install_package, stage_package,
-    stage_package_with_map_identity,
+    stage_package_with_map_identity, stage_package_with_terrain,
 };
 pub use command::{
     Applied, Command, CommandKind, CommandQueue, CommandResult, CommandResults, RejectReason,

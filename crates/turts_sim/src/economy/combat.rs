@@ -1250,6 +1250,10 @@ mod tests {
 
     fn unit(id: &str, health: Option<u64>) -> ResolvedUnit {
         ResolvedUnit {
+            terrain_class: None,
+            terrain_cargo: None,
+            terrain_foundation: None,
+            terrain_tools: Vec::new(),
             vision: None,
             repairer: None,
 
@@ -1343,6 +1347,9 @@ mod tests {
             .map(|definition| (definition.id.clone(), definition))
             .collect();
         let catalog = ContentCatalog {
+            terrain_materials: Default::default(),
+            terrain_movement_classes: Default::default(),
+            terrain_tools: Default::default(),
             bots: Default::default(),
 
             combat: None,
@@ -1365,6 +1372,7 @@ mod tests {
             source_files: BTreeMap::new(),
         };
         let map = MapDef {
+            terrain: None,
             visibility: None,
             environment: None,
             ground: None,
@@ -3545,6 +3553,9 @@ mod tests {
         let mut invalid_weapon = weapon(u64::MAX, 10);
         invalid_weapon.weapon.as_mut().unwrap().cooldown_ms = u64::MAX;
         let catalog = ContentCatalog {
+            terrain_materials: Default::default(),
+            terrain_movement_classes: Default::default(),
+            terrain_tools: Default::default(),
             bots: Default::default(),
 
             combat: None,
@@ -3570,6 +3581,7 @@ mod tests {
             source_files: BTreeMap::from([(cid(WEAPON), "units/weapon.ron".into())]),
         };
         let map = MapDef {
+            terrain: None,
             visibility: None,
             environment: None,
             ground: None,

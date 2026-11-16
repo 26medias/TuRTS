@@ -60,6 +60,7 @@ pub enum SimSet {
     Inserters,
     Production,
     Acquire,
+    TerrainWork,
     Repair,
     Combat,
     Outcome,
@@ -152,6 +153,7 @@ impl Plugin for SimPlugin {
                     SimSet::Inserters,
                     SimSet::Production,
                     SimSet::Acquire,
+                    SimSet::TerrainWork,
                     SimSet::Repair,
                     SimSet::Combat,
                     SimSet::Outcome,
@@ -218,6 +220,19 @@ impl Plugin for SimPlugin {
             )
             .add_systems(
                 FixedUpdate,
+                crate::terrain::work::run
+                    .in_set(SimSet::TerrainWork)
+                    .run_if(not_stopped),
+            )
+            .add_systems(
+                FixedUpdate,
+                crate::terrain::cargo::run
+                    .in_set(SimSet::TerrainWork)
+                    .after(crate::terrain::work::run)
+                    .run_if(not_stopped),
+            )
+            .add_systems(
+                FixedUpdate,
                 crate::economy::repair::run_repair
                     .in_set(SimSet::Repair)
                     .run_if(not_stopped),
@@ -270,6 +285,7 @@ impl Plugin for SimPlugin {
 
 /// FixedPreUpdate: count the tick.
 fn advance_tick(world: &mut World) {
+    crate::terrain::begin_tick(world);
     if world.contains_resource::<MatchStopped>() {
         return;
     }
@@ -490,7 +506,7 @@ mod tests {
     /// `Production` is the one pay pass, over producers and sites in ascending unit id.
     /// `Acquire` builds the grids, `Repair` heals before `Combat` damages, and `Outcome` runs
     /// after the death path of `Combat` and before `Collect`.
-    const TICK_ORDER: [SimSet; 17] = [
+    const TICK_ORDER: [SimSet; 18] = [
         SimSet::Advance,
         SimSet::Supply,
         SimSet::Construction,
@@ -504,6 +520,7 @@ mod tests {
         SimSet::Inserters,
         SimSet::Production,
         SimSet::Acquire,
+        SimSet::TerrainWork,
         SimSet::Repair,
         SimSet::Combat,
         SimSet::Outcome,
@@ -547,11 +564,12 @@ mod tests {
         // One system at least: the empty system of the slot, or the system of the lane that
         // filled it. A lane that fills a slot may add more, so the test does not pin the count.
         // `Supply` and `Construction` run before the commands, so they are in `FixedPreUpdate`.
-        let slots: [(SimSet, bevy_ecs::intern::Interned<dyn ScheduleLabel>); 7] = [
+        let slots: [(SimSet, bevy_ecs::intern::Interned<dyn ScheduleLabel>); 8] = [
             (SimSet::Supply, FixedPreUpdate.intern()),
             (SimSet::Construction, FixedPreUpdate.intern()),
             (SimSet::Income, FixedUpdate.intern()),
             (SimSet::Acquire, FixedUpdate.intern()),
+            (SimSet::TerrainWork, FixedUpdate.intern()),
             (SimSet::Repair, FixedUpdate.intern()),
             (SimSet::Outcome, FixedUpdate.intern()),
             (SimSet::Collect, FixedPostUpdate.intern()),

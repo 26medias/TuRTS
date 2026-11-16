@@ -123,7 +123,10 @@ fn actual_canvas_pointer_lock() -> Option<bool> {
 
 /// Copy the renderer-independent camera state into Bevy's camera transform and projection.
 pub fn camera_components(camera: CameraState) -> (Transform, Projection) {
-    let look_at = Vec3::new(camera.look_at.x, 0.0, camera.look_at.y);
+    camera_components_at_height(camera, 0.)
+}
+fn camera_components_at_height(camera: CameraState, ground: f32) -> (Transform, Projection) {
+    let look_at = Vec3::new(camera.look_at.x, ground, camera.look_at.y);
     let back = camera.height * camera.pitch.tan();
     let offset = Vec3::new(
         camera.yaw.sin() * back,
@@ -141,7 +144,10 @@ pub fn camera_components(camera: CameraState) -> (Transform, Projection) {
 #[derive(Resource, Default)]
 pub struct CoreRuntime {
     pub(crate) placement_ghost: Option<turts_interaction::placement::Ghost>,
+    pub(crate) terrain_preview: Option<turts_interaction::terrain::Preview>,
     core: Option<Core>,
+    /// Exact unshaken render pose, including the permitted terrain ground offset.
+    base_camera_transform: Option<Transform>,
     content_index: Option<ContentIndex>,
     started: Option<Instant>,
     pressed_keys: HashSet<String>,
@@ -172,6 +178,10 @@ pub struct CorePreferences {
 #[derive(Resource, Default, Debug, Clone)]
 pub struct CoreEffects(pub Vec<Effect>);
 impl CoreRuntime {
+    /// Feedback starts from the adapter's current base pose, never the prior shaken pose.
+    pub(crate) fn base_camera_transform(&self) -> Option<Transform> {
+        self.base_camera_transform
+    }
     pub fn core(&self) -> Option<&Core> {
         self.core.as_ref()
     }
@@ -254,6 +264,8 @@ struct DenseUnit {
     repairer: Option<turts_mod_api::RepairerDef>,
     armour_class: Option<String>,
     max_health: Option<u64>,
+    terrain_tools: Vec<String>,
+    stores_cargo: bool,
 }
 #[derive(Clone)]
 struct DenseNode {
@@ -267,6 +279,7 @@ struct ContentIndex {
     units: HashMap<String, DenseUnit>,
     nodes: HashMap<String, DenseNode>,
     ranks: HashMap<String, usize>,
+    terrain_tools: HashMap<String, turts_mod_api::ResolvedTerrainTool>,
 }
 
 struct FrameWorld {
@@ -283,6 +296,14 @@ struct FrameWorld {
     interaction: InteractionSettings,
     camera_options: CameraOptions,
     map_size: Option<Vec2>,
+    terrain_enabled: bool,
+    terrain_match: Option<u64>,
+    terrain: Option<std::sync::Arc<crate::terrain::store::SurfaceView>>,
+    knowledge: Option<std::sync::Arc<turts_mod_api::KnowledgeSnapshot>>,
+    unit_heights: HashMap<u32, f32>,
+    terrain_orders: HashMap<u32, (String, turts_mod_api::TerrainDesignation)>,
+    node_heights: HashMap<u32, f32>,
+    pick_budget: std::cell::RefCell<turts_rules::terrain::geometry::Budget>,
     index: ContentIndex,
     producible: HashSet<(u32, String)>,
     jobs: HashSet<(u32, u64)>,
@@ -291,6 +312,236 @@ struct FrameWorld {
     facts: facts::OwnerFacts,
 }
 impl WorldView for FrameWorld {
+    fn terrain_foundation(&self, point: Vec2, radius: f32) -> Result<f32, &'static str> {
+        use turts_rules::terrain::geometry::{Budget, Cell, Error, Point};
+        if !self.terrain_enabled {
+            return Ok(0.);
+        }
+        let terrain = self.terrain.as_ref().ok_or("placement_unknown")?;
+        let support = terrain.layout.grid.flat_foundation(
+            &|cell: Cell| {
+                let cell = turts_mod_api::TerrainCell {
+                    x: cell.x,
+                    y: cell.y,
+                };
+                self.terrain_current(cell)
+                    .then(|| terrain.elevation(cell))
+                    .flatten()
+            },
+            Point {
+                x: f64::from(point.x),
+                y: f64::from(point.y),
+            },
+            f64::from(radius),
+            &mut Budget::new(1_048_576),
+        );
+        support
+            .map(|support| support.anchor as f32)
+            .map_err(|error| match error {
+                Error::Unknown(_) => "placement_unknown",
+                Error::Step => "placement_nonflat",
+                _ => "placement_terrain_refused",
+            })
+    }
+
+    fn terrain_enabled(&self) -> bool {
+        self.terrain_enabled
+    }
+    fn terrain_active_order(
+        &self,
+        unit: UnitId,
+    ) -> Option<(&str, &turts_mod_api::TerrainDesignation)> {
+        self.terrain_orders
+            .get(&unit.0)
+            .map(|(order, designation)| (order.as_str(), designation))
+    }
+    fn can_unload(&self, unit: &UnitView, target: &UnitView) -> bool {
+        unit.owner_slot == self.own_slot
+            && target.owner_slot == self.own_slot
+            && unit.id != target.id
+            && unit.capabilities.contains(&Capability::CargoUnloader)
+            && self
+                .index
+                .units
+                .get(&target.content_id)
+                .is_some_and(|definition| definition.stores_cargo)
+    }
+    fn terrain_identity(&self) -> Option<(u64, ContentId)> {
+        Some((
+            self.terrain_match?,
+            self.terrain.as_ref()?.layout.map.clone(),
+        ))
+    }
+    fn terrain_grid(&self) -> Option<turts_rules::terrain::geometry::Grid> {
+        self.terrain.as_ref().map(|view| view.layout.grid)
+    }
+    fn terrain_elevation(&self, cell: turts_mod_api::TerrainCell) -> Option<i32> {
+        self.terrain.as_ref()?.elevation(cell)
+    }
+    fn terrain_current(&self, cell: turts_mod_api::TerrainCell) -> bool {
+        let Some(terrain) = &self.terrain else {
+            return false;
+        };
+        let Some(knowledge) = &self.knowledge else {
+            return true;
+        };
+        let shape = knowledge.grid;
+        let Some(fog) =
+            turts_rules::visibility::Grid::checked(shape.size.x, shape.size.y, shape.cell_size)
+        else {
+            return false;
+        };
+        terrain
+            .layout
+            .grid
+            .cell_observed(
+                turts_rules::terrain::geometry::Cell {
+                    x: cell.x,
+                    y: cell.y,
+                },
+                fog,
+                &mut self.pick_budget.borrow_mut(),
+                |index| {
+                    knowledge
+                        .observed
+                        .get(index as usize / 8)
+                        .is_some_and(|byte| byte & (1 << (index % 8)) != 0)
+                },
+            )
+            .unwrap_or(false)
+    }
+    fn terrain_tool(
+        &self,
+        unit: &UnitView,
+        tool: &str,
+    ) -> Option<&turts_mod_api::ResolvedTerrainTool> {
+        self.index
+            .units
+            .get(&unit.content_id)?
+            .terrain_tools
+            .iter()
+            .any(|id| id == tool)
+            .then_some(())?;
+        self.index.terrain_tools.get(tool)
+    }
+    fn camera_ground_height(&self, point: Vec2) -> f32 {
+        let Some(terrain) = &self.terrain else {
+            return 0.;
+        };
+        let mut budget = turts_rules::terrain::geometry::Budget::new(1);
+        terrain
+            .layout
+            .grid
+            .sample(
+                terrain.as_ref(),
+                turts_rules::terrain::geometry::Point {
+                    x: f64::from(point.x),
+                    y: f64::from(point.y),
+                },
+                &mut budget,
+            )
+            .map_or_else(
+                |_| terrain.layout.elevation_height(terrain.layout.grid.floor),
+                |sample| sample.height as f32,
+            )
+    }
+    fn unit_ground_height(&self, unit: &UnitView) -> Option<f32> {
+        if self.terrain_enabled {
+            self.unit_heights.get(&unit.id.0).copied()
+        } else {
+            Some(0.)
+        }
+    }
+    fn node_ground_height(&self, node: &NodeView) -> Option<f32> {
+        if self.terrain_enabled {
+            self.node_heights.get(&node.id.0).copied()
+        } else {
+            Some(0.)
+        }
+    }
+    fn surface_occlusion(&self, origin: Vec3, direction: Vec3) -> Result<Option<f32>, ()> {
+        if !self.terrain_enabled {
+            return Ok(None);
+        }
+        let terrain = self.terrain.as_ref().ok_or(())?;
+        use turts_rules::terrain::geometry::{Point3, Ray};
+        terrain
+            .layout
+            .grid
+            .ray_hit(
+                terrain.as_ref(),
+                Ray {
+                    origin: Point3 {
+                        x: f64::from(origin.x),
+                        y: f64::from(origin.z),
+                        z: f64::from(origin.y),
+                    },
+                    direction: Point3 {
+                        x: f64::from(direction.x),
+                        y: f64::from(direction.z),
+                        z: f64::from(direction.y),
+                    },
+                },
+                &mut self.pick_budget.borrow_mut(),
+            )
+            .map(|hit| hit.map(|hit| hit.parameter as f32))
+            .map_err(|_| ())
+    }
+    fn surface_hit(&self, origin: Vec3, direction: Vec3) -> Option<turts_interaction::SurfaceHit> {
+        if !self.terrain_enabled {
+            if !origin.is_finite() || !direction.is_finite() || direction.y.abs() < 1e-6 {
+                return None;
+            }
+            let parameter = -origin.y / direction.y;
+            if !parameter.is_finite() || parameter < 0. {
+                return None;
+            }
+            let point = origin + direction * parameter;
+            return Some(turts_interaction::SurfaceHit {
+                position: Vec2::new(point.x, point.z),
+                height: 0.,
+                elevation: None,
+                cell: None,
+                parameter,
+                current: true,
+            });
+        }
+        let terrain = self.terrain.as_ref()?;
+        use turts_rules::terrain::geometry::{Point3, Ray};
+        let hit = terrain
+            .layout
+            .grid
+            .ray_hit(
+                terrain.as_ref(),
+                Ray {
+                    origin: Point3 {
+                        x: f64::from(origin.x),
+                        y: f64::from(origin.z),
+                        z: f64::from(origin.y),
+                    },
+                    direction: Point3 {
+                        x: f64::from(direction.x),
+                        y: f64::from(direction.z),
+                        z: f64::from(direction.y),
+                    },
+                },
+                &mut self.pick_budget.borrow_mut(),
+            )
+            .ok()??;
+        let cell = turts_mod_api::TerrainCell {
+            x: hit.cell.x,
+            y: hit.cell.y,
+        };
+        let current = self.terrain_current(cell);
+        Some(turts_interaction::SurfaceHit {
+            position: Vec2::new(hit.position.x as f32, hit.position.y as f32),
+            height: hit.position.z as f32,
+            elevation: Some(hit.elevation),
+            cell: Some(cell),
+            parameter: hit.parameter as f32,
+            current,
+        })
+    }
     fn unit_pick_shape(&self, unit: &UnitView) -> Option<(&turts_mod_api::Shape, f32)> {
         let shape = self.index.units.get(&unit.content_id)?.shape.as_ref()?;
         let yaw = self.facings.get(&unit.id.0).map_or(0.0, |facing| {
@@ -452,6 +703,12 @@ fn content_index(state: &ReplicaState, acquired: Option<&AcquiredPackages>) -> C
             if unit.repairer.is_some() {
                 capabilities.push(Capability::Repairer);
             }
+            if !unit.terrain_tools.is_empty() {
+                capabilities.push(Capability::TerrainWorker);
+            }
+            if unit.terrain_cargo.is_some() {
+                capabilities.push(Capability::CargoUnloader);
+            }
             let gather_items = unit
                 .gatherer
                 .as_ref()
@@ -478,6 +735,13 @@ fn content_index(state: &ReplicaState, acquired: Option<&AcquiredPackages>) -> C
                     repairer: unit.repairer.clone(),
                     armour_class: unit.armour.as_ref().map(|armour| armour.class.clone()),
                     max_health: unit.health.as_ref().map(|health| health.max),
+                    terrain_tools: unit.terrain_tools.iter().map(ToString::to_string).collect(),
+                    stores_cargo: unit.inventory.is_some()
+                        && unit.drop_off.as_ref().is_some_and(|dropoff| {
+                            dropoff.rules.iter().any(|rule| {
+                                matches!(rule.effect, turts_mod_api::ResolvedDropOffEffect::Store)
+                            })
+                        }),
                 },
             )
         })
@@ -515,6 +779,12 @@ fn content_index(state: &ReplicaState, acquired: Option<&AcquiredPackages>) -> C
         units,
         nodes,
         ranks,
+        terrain_tools: content
+            .catalog
+            .terrain_tools
+            .iter()
+            .map(|(id, tool)| (id.to_string(), tool.clone()))
+            .collect(),
     }
 }
 
@@ -647,6 +917,63 @@ fn frame_world(
         interaction: preferences.interaction,
         camera_options,
         map_size: acquired.map(|a| Vec2::new(a.0.map_size.0, a.0.map_size.1)),
+        terrain_enabled: content.terrain.is_some(),
+        terrain_match: replica
+            .terrain
+            .as_ref()
+            .map(|terrain| terrain.basis.match_id),
+        terrain: replica
+            .terrain
+            .as_ref()
+            .map(|terrain| terrain.geometry.clone()),
+        knowledge: replica.knowledge.clone(),
+        terrain_orders: replica
+            .unit_orders
+            .iter()
+            .filter_map(|(id, row)| {
+                let current = row.current.as_ref()?;
+                let turts_net_protocol::OrderTarget::TerrainWork(designation) = &current.target
+                else {
+                    return None;
+                };
+                replica
+                    .units
+                    .get(id)
+                    .filter(|unit| unit.owner_slot == welcome.slot)?;
+                Some((*id, (current.order.clone(), designation.clone())))
+            })
+            .collect(),
+        unit_heights: replica
+            .terrain
+            .as_ref()
+            .map(|terrain| {
+                terrain
+                    .anchors
+                    .iter()
+                    .filter(|(_, anchor)| anchor.current)
+                    .map(|(id, anchor)| (*id, terrain.layout.elevation_height(anchor.elevation)))
+                    .collect()
+            })
+            .unwrap_or_default(),
+        node_heights: replica
+            .nodes
+            .values()
+            .filter_map(|node| {
+                let radius = index
+                    .nodes
+                    .get(&node.content_id)
+                    .map_or(0., |definition| definition.radius);
+                crate::terrain::render::infrastructure_height(
+                    content.terrain.as_deref(),
+                    node.pos,
+                    radius,
+                )
+                .map(|height| (node.id.0, height))
+            })
+            .collect(),
+        pick_budget: std::cell::RefCell::new(turts_rules::terrain::geometry::Budget::new(
+            8_388_608,
+        )),
         index,
         producible,
         jobs,
@@ -1177,6 +1504,7 @@ fn drive_core_adapter(
             Effect::ShellAction { action } => {
                 apply_shell_action(action, &mut runtime);
             }
+            Effect::TerrainWork(output) => runtime.terrain_preview = output.preview,
             Effect::Placement(output) => effects::placement::apply(output, &mut runtime),
             Effect::Hint(output) => effects::hint::apply(output, &mut runtime),
             Effect::GroupsChanged | Effect::CameraChanged => {}
@@ -1202,7 +1530,11 @@ fn drive_core_adapter(
             .collect();
     }
     output.player_feed.0 = output.player_id.as_deref().map(|player| player.0);
-    let (transform, projection) = camera_components(camera_state);
+    let (transform, projection) = camera_components_at_height(
+        camera_state,
+        world.camera_ground_height(camera_state.look_at),
+    );
+    runtime.base_camera_transform = Some(transform);
     for (mut current_transform, mut current_projection) in &mut input.camera_query {
         *current_transform = transform;
         *current_projection = projection.clone();
@@ -1491,3 +1823,7 @@ fn update_primary_window_focus(
 
 #[cfg(test)]
 mod adapter_tests;
+
+#[cfg(test)]
+#[path = "core_adapter/camera_feedback_tests.rs"]
+mod camera_feedback_tests;

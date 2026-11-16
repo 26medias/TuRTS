@@ -49,6 +49,8 @@ pub enum Behaviour {
     Repair,
     /// API 0.2.4, row O9: give up the match.
     Surrender,
+    TerrainWork,
+    UnloadCargo,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -62,6 +64,7 @@ pub enum TargetKind {
     Content,
     /// API 0.2.4, row O5: a content id and a point (only with `Construct`).
     ContentAtPoint,
+    TerrainDesignation,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -87,6 +90,8 @@ pub enum Capability {
     Constructor,
     /// API 0.2.4, row O6.
     Repairer,
+    TerrainWorker,
+    CargoUnloader,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

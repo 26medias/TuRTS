@@ -1665,9 +1665,9 @@ mod tests {
     /// Older clients receive a clear refusal before they can claim a slot.
     #[test]
     fn older_protocols_are_refused_before_a_slot_is_claimed() {
-        assert_eq!(turts_net_protocol::NET_PROTOCOL_VERSION, 9);
+        assert_eq!(turts_net_protocol::NET_PROTOCOL_VERSION, 10);
         let mut slots = Slots::new(2);
-        for version in [4, 5, 6, 7, 8] {
+        for version in [4, 5, 6, 7, 8, 9] {
             assert_eq!(
                 judge_hello(&hello(7, version, HASH), &advertised(), &mut slots, false),
                 Err("protocol version mismatch")
@@ -1679,7 +1679,7 @@ mod tests {
     #[test]
     fn unknown_protocols_are_refused_before_a_slot_is_claimed() {
         let mut slots = Slots::new(2);
-        for version in [0, 10, u32::MAX] {
+        for version in [0, 11, u32::MAX] {
             assert_eq!(
                 judge_hello(&hello(7, version, HASH), &advertised(), &mut slots, false),
                 Err("protocol version mismatch")
@@ -2051,6 +2051,10 @@ mod admission_tests {
             .register_unit_type(
                 &package,
                 UnitDef {
+                    terrain_class: None,
+                    terrain_foundation: None,
+                    terrain_tools: Vec::new(),
+                    terrain_cargo: None,
                     vision: None,
                     id: "producer".into(),
                     name: "Producer".into(),
@@ -2089,6 +2093,9 @@ mod admission_tests {
             .unwrap();
         let id = ContentId::new(&package, "producer");
         let mut catalog = ContentCatalog {
+            terrain_materials: Default::default(),
+            terrain_movement_classes: Default::default(),
+            terrain_tools: Default::default(),
             combat: None,
             resources: BTreeMap::new(),
             units: BTreeMap::new(),
@@ -2104,6 +2111,10 @@ mod admission_tests {
         catalog.units.insert(
             id.clone(),
             ResolvedUnit {
+                terrain_class: None,
+                terrain_foundation: None,
+                terrain_tools: Vec::new(),
+                terrain_cargo: None,
                 vision: None,
                 repairer: None,
 
@@ -2184,6 +2195,9 @@ mod admission_tests {
     fn test_order_catalog() -> ContentCatalog {
         use turts_mod_api::{Behaviour, ContentId, OrderDef, TargetKind};
         let mut catalog = ContentCatalog {
+            terrain_materials: Default::default(),
+            terrain_movement_classes: Default::default(),
+            terrain_tools: Default::default(),
             combat: None,
             resources: BTreeMap::new(),
             units: BTreeMap::new(),
@@ -2615,6 +2629,10 @@ mod admission_tests {
             .register_unit_type(
                 &package,
                 UnitDef {
+                    terrain_class: None,
+                    terrain_foundation: None,
+                    terrain_tools: Vec::new(),
+                    terrain_cargo: None,
                     vision: None,
                     id: "lab".into(),
                     name: "Lab".into(),
@@ -2657,6 +2675,10 @@ mod admission_tests {
             .insert(
                 id.clone(),
                 ResolvedUnit {
+                    terrain_class: None,
+                    terrain_foundation: None,
+                    terrain_tools: Vec::new(),
+                    terrain_cargo: None,
                     vision: None,
                     repairer: None,
 
@@ -2786,6 +2808,10 @@ mod admission_tests {
             .register_unit_type(
                 &package,
                 UnitDef {
+                    terrain_class: None,
+                    terrain_foundation: None,
+                    terrain_tools: Vec::new(),
+                    terrain_cargo: None,
                     vision: None,
                     id: "producer".into(),
                     name: "Producer".into(),
@@ -2824,6 +2850,9 @@ mod admission_tests {
             .unwrap();
         let id = ContentId::new(&package, "producer");
         let mut catalog = ContentCatalog {
+            terrain_materials: Default::default(),
+            terrain_movement_classes: Default::default(),
+            terrain_tools: Default::default(),
             combat: None,
             resources: BTreeMap::new(),
             units: BTreeMap::new(),
@@ -2839,6 +2868,10 @@ mod admission_tests {
         catalog.units.insert(
             id.clone(),
             ResolvedUnit {
+                terrain_class: None,
+                terrain_foundation: None,
+                terrain_tools: Vec::new(),
+                terrain_cargo: None,
                 vision: None,
                 repairer: None,
 
@@ -3288,6 +3321,10 @@ mod admission_tests {
             .register_unit_type(
                 &PackageId::parse("test").unwrap(),
                 UnitDef {
+                    terrain_class: None,
+                    terrain_foundation: None,
+                    terrain_tools: Vec::new(),
+                    terrain_cargo: None,
                     vision: None,
                     id: "static".into(),
                     name: "Static".into(),
@@ -3327,6 +3364,10 @@ mod admission_tests {
             .insert(
                 static_id.clone(),
                 ResolvedUnit {
+                    terrain_class: None,
+                    terrain_foundation: None,
+                    terrain_tools: Vec::new(),
+                    terrain_cargo: None,
                     vision: None,
                     repairer: None,
 
@@ -3594,6 +3635,10 @@ mod admission_tests {
             .register_unit_type(
                 &PackageId::parse("test").unwrap(),
                 UnitDef {
+                    terrain_class: None,
+                    terrain_foundation: None,
+                    terrain_tools: Vec::new(),
+                    terrain_cargo: None,
                     vision: None,
                     id: "static".into(),
                     name: "Static".into(),
@@ -3633,6 +3678,10 @@ mod admission_tests {
             .insert(
                 static_id.clone(),
                 ResolvedUnit {
+                    terrain_class: None,
+                    terrain_foundation: None,
+                    terrain_tools: Vec::new(),
+                    terrain_cargo: None,
                     vision: None,
                     repairer: None,
 

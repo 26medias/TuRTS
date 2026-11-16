@@ -40,6 +40,9 @@ fn target_for(kind: TargetKind) -> OrderTarget {
         TargetKind::Content => OrderTarget::Content("muster:trooper".into()),
         // API 0.2.4: no 0.2.3 package has an order with this target.
         TargetKind::ContentAtPoint => unreachable!("no API 0.2.3 order targets a content point"),
+        TargetKind::TerrainDesignation => {
+            unreachable!("muster's API 0.2.3 fixture declares no terrain designation order")
+        }
     }
 }
 
@@ -55,6 +58,9 @@ fn sim_target_for(kind: TargetKind) -> OrderTargetSim {
         }
         // API 0.2.4: no 0.2.3 package has an order with this target.
         TargetKind::ContentAtPoint => unreachable!("no API 0.2.3 order targets a content point"),
+        TargetKind::TerrainDesignation => {
+            unreachable!("muster's API 0.2.3 fixture declares no terrain designation order")
+        }
     }
 }
 
@@ -65,6 +71,10 @@ fn audit_catalog() -> ContentCatalog {
             let content_id = ContentId::parse(id).unwrap();
             let shooter = id == "audit:shooter";
             let unit = ResolvedUnit {
+                terrain_class: None,
+                terrain_foundation: None,
+                terrain_tools: Vec::new(),
+                terrain_cargo: None,
                 vision: None,
                 repairer: None,
 
@@ -135,6 +145,9 @@ fn audit_catalog() -> ContentCatalog {
         )
     };
     ContentCatalog {
+        terrain_materials: Default::default(),
+        terrain_movement_classes: Default::default(),
+        terrain_tools: Default::default(),
         combat: None,
         resources: BTreeMap::new(),
         units,
@@ -168,6 +181,7 @@ fn audit_fixture_at_enemy(
     enemy_position: WorldPos,
 ) -> (bevy_app::App, ContentCatalog) {
     let map = MapDef {
+        terrain: None,
         visibility: None,
         environment: None,
         ground: None,
@@ -252,6 +266,9 @@ fn every_behaviour_has_an_envelope() {
             Behaviour::CancelProduction => 6,
             Behaviour::Remove => 7,
             Behaviour::SetEnabled(_) => 8,
+            Behaviour::TerrainWork | Behaviour::UnloadCargo => {
+                unreachable!("muster's flat API 0.2.3 fixture declares no terrain capabilities")
+            }
             // API 0.2.4: `muster` has no order of the new behaviours.
             Behaviour::Construct
             | Behaviour::CancelConstruction
@@ -821,6 +838,7 @@ fn point_attack_switches_to_another_eligible_target_and_strictly_replays() {
         .unwrap()
         .max = 1;
     let map = MapDef {
+        terrain: None,
         visibility: None,
         environment: None,
         ground: None,

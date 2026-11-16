@@ -441,6 +441,7 @@ fn physical_decisions(
             BotTarget::Content(content)=>serde_json::json!({"content":content}),
             BotTarget::None=>serde_json::Value::Null,
             BotTarget::Job(id)=>serde_json::json!({"job":id}),
+            BotTarget::TerrainWork{tool,cells,target_elevation}=>serde_json::json!({"tool":tool,"cells":cells,"target_elevation":target_elevation}),
         };
         // Keep emitted command and actor order. Only opaque subject identifiers are normalized.
         serde_json::json!({"sequence":command.sequence,"controller":command.task.controller,"goal":command.task.goal,"order":command.order.content,"queue":command.order.queue,"group":command.order.group,"actors":command.units.iter().map(|id|physical_unit(view,*id)).collect::<Vec<_>>(),"target":target})

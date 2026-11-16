@@ -318,6 +318,10 @@ fn dynamic_list_values_refresh_without_replacing_button_entities() {
     content.catalog.units.insert(
         id.clone(),
         turts_mod_api::ResolvedUnit {
+            terrain_class: None,
+            terrain_cargo: None,
+            terrain_foundation: None,
+            terrain_tools: vec![],
             vision: None,
             consumes: Vec::new(),
             income: None,
@@ -617,6 +621,10 @@ fn grid_item_tooltips_inherit_context_and_template_tooltips_override_it() {
     content.catalog.units.insert(
         worker_id.clone(),
         turts_mod_api::ResolvedUnit {
+            terrain_class: None,
+            terrain_cargo: None,
+            terrain_foundation: None,
+            terrain_tools: vec![],
             vision: None,
             consumes: Vec::new(),
             income: None,

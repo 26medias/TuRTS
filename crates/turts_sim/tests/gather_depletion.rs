@@ -42,6 +42,10 @@ fn id(local: &str) -> ContentId {
 
 fn unit(local: &str, radius: f32) -> ResolvedUnit {
     ResolvedUnit {
+        terrain_class: None,
+        terrain_cargo: None,
+        terrain_foundation: None,
+        terrain_tools: Vec::new(),
         vision: None,
         repairer: None,
 
@@ -121,6 +125,9 @@ fn catalog() -> ContentCatalog {
         interaction_range: 0.5,
     });
     ContentCatalog {
+        terrain_materials: Default::default(),
+        terrain_movement_classes: Default::default(),
+        terrain_tools: Default::default(),
         bots: Default::default(),
 
         combat: None,
@@ -220,6 +227,7 @@ fn app_with(node_stock: u64, units: &[Vec2]) -> bevy_app::App {
     let mut placements = vec![placement("depot", DEPOT_POS)];
     placements.extend(units.iter().map(|at| placement("worker", *at)));
     let map = MapDef {
+        terrain: None,
         visibility: None,
         environment: None,
         ground: None,

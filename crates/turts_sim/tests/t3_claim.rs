@@ -11,6 +11,10 @@ fn app_with_one_unit() -> bevy_app::App {
     let mut app = headless_app(20);
     let origin = PackageId("fixture_pkg".to_string());
     let def = UnitDef {
+        terrain_class: None,
+        terrain_cargo: None,
+        terrain_foundation: None,
+        terrain_tools: Vec::new(),
         vision: None,
         id: "walker".to_string(),
         name: "Walker".to_string(),
@@ -45,6 +49,7 @@ fn app_with_one_unit() -> bevy_app::App {
         .register_unit_type(&origin, def)
         .unwrap();
     let map = MapDef {
+        terrain: None,
         visibility: None,
         environment: None,
         ground: None,

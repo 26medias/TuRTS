@@ -39,6 +39,7 @@ pub mod replica;
 pub mod replica_store;
 mod scenario;
 mod staging_budget;
+pub mod terrain;
 pub mod ui_shared;
 pub mod visibility;
 pub mod visibility_ingest;

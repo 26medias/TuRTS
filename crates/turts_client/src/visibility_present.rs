@@ -39,19 +39,30 @@ fn sync_remembered(
     let camera = cameras.iter().find(|(camera, _)| camera.is_active);
     let mut desired = HashMap::new();
     if let (Some(knowledge), Some((camera, transform))) = (knowledge, camera) {
-        let mut add = |key, position: turts_mod_api::WorldPos, text: String| {
-            let pos = turts_net_protocol::Pos {
-                x: position.x,
-                y: position.y,
+        let mut add =
+            |key, position: turts_mod_api::WorldPos, height: Option<f32>, text: String| {
+                let pos = turts_net_protocol::Pos {
+                    x: position.x,
+                    y: position.y,
+                };
+                if let Some(point) = crate::render::projected_ground_center_at_height(
+                    camera,
+                    transform,
+                    pos,
+                    height.unwrap_or(0.),
+                ) {
+                    desired.insert(key, (point, text));
+                }
             };
-            if let Some(point) = crate::render::projected_ground_center(camera, transform, pos) {
-                desired.insert(key, (point, text));
-            }
-        };
         for row in &knowledge.remembered_units {
             add(
                 (false, row.unit),
                 row.position,
+                state
+                    .replica
+                    .as_ref()
+                    .and_then(|r| r.terrain.as_ref())
+                    .and_then(|t| row.ground_elevation.map(|e| t.layout.elevation_height(e))),
                 format!(
                     "◇ {}",
                     last_seen_age(knowledge.basis.tick, row.last_seen_tick, tick_hz)
@@ -62,6 +73,13 @@ fn sync_remembered(
             add(
                 (true, row.node),
                 row.position,
+                crate::terrain::render::marker_height(
+                    state.replica.as_ref().and_then(|r| r.terrain.as_ref()),
+                    turts_net_protocol::Pos {
+                        x: row.position.x,
+                        y: row.position.y,
+                    },
+                ),
                 format!(
                     "◇ Remembered: {} remaining · {}",
                     row.remaining,

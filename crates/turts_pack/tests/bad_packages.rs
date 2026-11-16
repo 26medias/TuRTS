@@ -227,7 +227,7 @@ fn a_field_typo_is_refused() {
             "movenment: Some((speed: 8.0))",
         )],
         "zeta/units/runner.ron: unknown field `movenment` at line 1 column 64; did you mean `movement`? \
-         (allowed: vision, id, name, footprint, movement, inventory, gatherer, drop_off, producer, output_inventory, extractor, conveyor, inserter, machine, research, health, weapon, removal, armour, acquire, provides, consumes, income, spawn_order, constructor, placement, build_area, repairer)",
+         (allowed: terrain_class, terrain_cargo, terrain_foundation, terrain_tools, vision, id, name, footprint, movement, inventory, gatherer, drop_off, producer, output_inventory, extractor, conveyor, inserter, machine, research, health, weapon, removal, armour, acquire, provides, consumes, income, spawn_order, constructor, placement, build_area, repairer)",
     );
 }
 
@@ -461,7 +461,7 @@ fn hud3_unknown_source_is_refused() {
             "source: CommandCard",
             "source: SecretSource",
         )],
-        "zeta/interface/main.ron: unknown variant `SecretSource` at line 5 column 153 (allowed: Balance, Balances, SelectionUnits, CommandCard, BuildMenu, ProductionQueue, ControlGroups, Alerts, Bindings, Guide, ConstructionQueue, Sites, Notices, SelectionTypes)",
+        "zeta/interface/main.ron: unknown variant `SecretSource` at line 5 column 153 (allowed: Balance, Balances, SelectionUnits, CommandCard, BuildMenu, ProductionQueue, ControlGroups, Alerts, Bindings, Guide, ConstructionQueue, Sites, Notices, SelectionTypes, TerrainTools)",
     );
 }
 

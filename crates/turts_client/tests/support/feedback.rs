@@ -104,6 +104,10 @@ pub fn alert_state() -> (ReplicaState, AcquiredPackages) {
     content.catalog.units.insert(
         station_id.clone(),
         ResolvedUnit {
+            terrain_class: None,
+            terrain_cargo: None,
+            terrain_foundation: None,
+            terrain_tools: vec![],
             vision: None,
             consumes: Vec::new(),
             income: None,

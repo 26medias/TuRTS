@@ -213,6 +213,79 @@ const fn variant_0_2_14(name: &'static str) -> VersionTableRow {
 /// detection kind that its design row names, and nowhere else. The order is the order of the
 /// first refusal when one package has several problems.
 pub(crate) const VERSION_TABLE: &[VersionTableRow] = &[
+    VersionTableRow {
+        name: "Source::TerrainTools",
+        detect: Detect::Variant("Source::TerrainTools"),
+        since_api: "0.2.17",
+    },
+    raw("terrain", "0.2.17", RawGroup::Maps, &["terrain"]),
+    raw(
+        "terrain_class",
+        "0.2.17",
+        RawGroup::Units,
+        &["terrain_class"],
+    ),
+    raw(
+        "terrain_cargo",
+        "0.2.17",
+        RawGroup::Units,
+        &["terrain_cargo"],
+    ),
+    raw(
+        "terrain_foundation",
+        "0.2.17",
+        RawGroup::Units,
+        &["terrain_foundation"],
+    ),
+    raw(
+        "terrain_tools",
+        "0.2.17",
+        RawGroup::Units,
+        &["terrain_tools"],
+    ),
+    raw(
+        "exports.terrain_materials",
+        "0.2.17",
+        RawGroup::Manifest,
+        &["exports", "terrain_materials"],
+    ),
+    raw(
+        "exports.terrain_movement_classes",
+        "0.2.17",
+        RawGroup::Manifest,
+        &["exports", "terrain_movement_classes"],
+    ),
+    raw(
+        "exports.terrain_tools",
+        "0.2.17",
+        RawGroup::Manifest,
+        &["exports", "terrain_tools"],
+    ),
+    VersionTableRow {
+        name: "behaviour TerrainWork",
+        detect: Detect::Variant("behaviour TerrainWork"),
+        since_api: "0.2.17",
+    },
+    VersionTableRow {
+        name: "behaviour UnloadCargo",
+        detect: Detect::Variant("behaviour UnloadCargo"),
+        since_api: "0.2.17",
+    },
+    VersionTableRow {
+        name: "target: TerrainDesignation",
+        detect: Detect::Variant("target: TerrainDesignation"),
+        since_api: "0.2.17",
+    },
+    VersionTableRow {
+        name: "Capability::TerrainWorker",
+        detect: Detect::Variant("Capability::TerrainWorker"),
+        since_api: "0.2.17",
+    },
+    VersionTableRow {
+        name: "Capability::CargoUnloader",
+        detect: Detect::Variant("Capability::CargoUnloader"),
+        since_api: "0.2.17",
+    },
     raw("visibility", "0.2.16", RawGroup::Maps, &["visibility"]),
     raw("vision", "0.2.16", RawGroup::Units, &["vision"]),
     raw(
@@ -1046,6 +1119,7 @@ mod tests {
                 "0.2.3" => ("^0.2.2", "0.2.2"),
                 "0.2.4" => ("^0.2.3", "0.2.3"),
                 "0.2.15" => ("^0.2.14", "0.2.14"),
+                "0.2.17" => ("^0.2.16", "0.2.16"),
                 other => panic!("row {}: the test has no requirement for {other}", row.name),
             };
             let text = manifest_text_with_export(requirement, field)
@@ -1061,7 +1135,7 @@ mod tests {
         }
         // 6 rows of 0.2.1 and 0.2.3, and `exports.combat`, `exports.match`,
         // `exports.visual_effects` of 0.2.4, plus `exports.bots` of 0.2.15.
-        assert_eq!(raw_rows, 10);
+        assert_eq!(raw_rows, 13);
     }
 
     /// A row on a `Written` field of an enum variant fires when the key is written, also with

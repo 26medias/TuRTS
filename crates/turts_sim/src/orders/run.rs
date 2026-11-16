@@ -306,6 +306,12 @@ pub(crate) fn run_orders(world: &mut World) {
             });
             continue;
         }
+        if matches!(
+            current.behaviour,
+            Behaviour::TerrainWork | Behaviour::UnloadCargo
+        ) {
+            continue;
+        }
         if current.behaviour == Behaviour::Repair {
             if replacement_pending {
                 continue;

@@ -339,6 +339,9 @@ pub(crate) fn finish_tick_audit(world: &mut World) {
 
 #[derive(Default)]
 struct WriteSet {
+    terrain_step: Option<crate::terrain::PreparedCellEdit>,
+    terrain_witnesses: Vec<(u8, crate::terrain::TerrainSurfaceWitness)>,
+    terrain_work: Option<(u32, crate::terrain::work::WorkState)>,
     terminal_work: Vec<crate::receipts::TerminalWork>,
     operating_activations: Vec<OperatingActivationWrite>,
     repairs: BTreeMap<u32, super::repair::RepairUnitState>,
@@ -399,6 +402,20 @@ pub(crate) fn transact<R>(
     run: impl FnOnce(&mut Transaction<'_>) -> Result<R, RejectReason>,
 ) -> Result<R, RejectReason> {
     capture_operation(world, |world| transact_inner(world, run))
+}
+
+/// Check the same staged account invariants without applying the WriteSet.
+pub(crate) fn validate_only<R>(
+    world: &mut World,
+    run: impl FnOnce(&mut Transaction<'_>) -> Result<R, RejectReason>,
+) -> Result<R, RejectReason> {
+    let mut tx = Transaction {
+        world,
+        writes: WriteSet::default(),
+    };
+    let result = run(&mut tx)?;
+    tx.preflight()?;
+    Ok(result)
 }
 
 fn transact_inner<R>(
@@ -1016,6 +1033,70 @@ impl Transaction<'_> {
         Ok(())
     }
 
+    pub(crate) fn world(&self) -> &World {
+        self.world
+    }
+
+    /// A terrain prism and its accounts share one WriteSet. Preallocate its column/chunk
+    /// overlay before this call; final commit does not allocate terrain storage.
+    pub(crate) fn stage_terrain_work(&mut self, unit: u32, state: crate::terrain::work::WorkState) {
+        self.writes.terrain_work = Some((unit, state));
+    }
+    pub(crate) fn stage_terrain_cell(
+        &mut self,
+        edit: crate::terrain::PreparedCellEdit,
+    ) -> Result<(), RejectReason> {
+        if self.writes.terrain_step.is_some()
+            || !self
+                .world
+                .get_resource::<crate::terrain::TerrainState>()
+                .is_some_and(|terrain| terrain.validates(&edit))
+        {
+            return Err(RejectReason::IntegrityViolation);
+        }
+        let terrain = self.world.resource::<crate::terrain::TerrainState>();
+        let material = edit
+            .column
+            .exposed()
+            .and_then(|exposed| terrain.material(exposed.material))
+            .cloned();
+        let tick = self.world.resource::<crate::Tick>().0;
+        for viewer in 0..crate::slots::SLOT_COUNT {
+            if crate::terrain::step::observed(
+                self.world,
+                viewer,
+                terrain,
+                edit.cell,
+                turts_mod_api::ObservationPhase::Tactical,
+            ) {
+                self.writes.terrain_witnesses.push((
+                    viewer,
+                    crate::terrain::TerrainSurfaceWitness {
+                        surface: crate::terrain::TerrainObservedCell {
+                            cell: crate::terrain::step::api_cell(edit.cell),
+                            elevation: edit.column.surface(),
+                            material: material.clone(),
+                            provenance: edit.column.exposed().map(|exposed| {
+                                match exposed.provenance {
+                                    turts_rules::terrain::material::Provenance::Natural => {
+                                        turts_mod_api::TerrainProvenance::Natural
+                                    }
+                                    turts_rules::terrain::material::Provenance::NoYield => {
+                                        turts_mod_api::TerrainProvenance::Placed
+                                    }
+                                }
+                            }),
+                        },
+                        observed_tick: tick,
+                    },
+                ));
+            }
+        }
+        self.writes.strict_m3 = true;
+        self.writes.terrain_step = Some(edit);
+        Ok(())
+    }
+
     pub(crate) fn stage_account(
         &mut self,
         endpoint: Endpoint,
@@ -1027,6 +1108,14 @@ impl Transaction<'_> {
 
     fn commit(self) -> Result<(), RejectReason> {
         self.preflight()?;
+        if let Some(edit) = &self.writes.terrain_step
+            && !self
+                .world
+                .get_resource::<crate::terrain::TerrainState>()
+                .is_some_and(|terrain| terrain.validates(edit))
+        {
+            return Err(RejectReason::IntegrityViolation);
+        }
         for (&source, state) in &self.writes.repairs {
             if crate::unit_index::unit_entity(self.world, source).is_none()
                 || self.writes.removed.iter().any(|row| row.unit == source)
@@ -1042,6 +1131,29 @@ impl Transaction<'_> {
                         .any(|row| row.unit == action.target))
             {
                 return Err(RejectReason::TargetGone);
+            }
+        }
+        if !self.writes.spawned.is_empty()
+            && let Some(terrain) = self.world.get_resource::<crate::terrain::TerrainState>()
+        {
+            let catalog = &self
+                .world
+                .get_resource::<crate::bootstrap::InstalledCatalog>()
+                .ok_or(RejectReason::IntegrityViolation)?
+                .0;
+            let types = self
+                .world
+                .get_resource::<crate::UnitTypes>()
+                .ok_or(RejectReason::IntegrityViolation)?;
+            for spawn in &self.writes.spawned {
+                crate::terrain::support_elevation(
+                    terrain,
+                    catalog,
+                    types,
+                    spawn.unit_type,
+                    spawn.position,
+                )
+                .map_err(|_| RejectReason::Blocked)?;
             }
         }
         // Prepare witnesses only after every fallible preflight. Publish them only
@@ -1074,7 +1186,61 @@ impl Transaction<'_> {
             super::power::remove_active(world, unit);
             super::income::on_remove(world, unit);
         }
+        if let Some(edit) = writes.terrain_step.take() {
+            world
+                .resource_mut::<crate::terrain::TerrainState>()
+                .apply_prevalidated(edit);
+        }
+        if !writes.terrain_witnesses.is_empty() {
+            let mut terrain = world.resource_mut::<crate::terrain::TerrainState>();
+            for (viewer, witness) in writes.terrain_witnesses.drain(..) {
+                let cell = turts_rules::terrain::geometry::Cell {
+                    x: witness.surface.cell.x,
+                    y: witness.surface.cell.y,
+                };
+                terrain.step_observations.insert((viewer, cell), witness);
+            }
+        }
+        if let Some((unit, state)) = writes.terrain_work.take() {
+            world.init_resource::<crate::terrain::work::TerrainWorkRuntime>();
+            world
+                .resource_mut::<crate::terrain::work::TerrainWorkRuntime>()
+                .units
+                .insert(unit, state);
+        }
+        // Zero health cancels terrain work at this same captured transaction boundary.
+        // A later revival cannot recover an old designation or suspended utility queue.
+        let terrain_deactivated = if world.contains_resource::<crate::terrain::TerrainState>() {
+            writes
+                .healths
+                .iter()
+                .filter_map(|(&unit, health)| {
+                    if !matches!(health, None | Some(0)) {
+                        return None;
+                    }
+                    let entity = crate::unit_entity(world, unit)?;
+                    let orders = world.get::<crate::orders::UnitOrders>(entity)?;
+                    (orders.current.as_ref().is_some_and(|order| {
+                        matches!(
+                            order.behaviour,
+                            turts_mod_api::Behaviour::TerrainWork
+                                | turts_mod_api::Behaviour::UnloadCargo
+                        )
+                    }) || crate::terrain::pause::has_record(world, unit))
+                    .then_some((unit, entity, world.get::<crate::Owner>(entity)?.0))
+                })
+                .collect::<Vec<_>>()
+        } else {
+            Vec::new()
+        };
         transaction_m3::apply_overlays(world, &mut writes);
+        for (unit, entity, owner) in terrain_deactivated {
+            crate::orders::clear_replaced_movement(world, owner, entity, unit);
+            crate::orders::writer::edit_unit_orders(world, entity, |orders| {
+                orders.current = None;
+                orders.queue.clear();
+            });
+        }
         if !writes.repairs.is_empty() {
             world.init_resource::<super::repair::RepairRuntime>();
             world
@@ -1173,6 +1339,9 @@ impl Transaction<'_> {
         }
         for removal in writes.removed {
             super::repair::remove_unit(world, removal.unit);
+            crate::terrain::navigation::order_changed(world, removal.unit);
+            crate::terrain::work::order_changed(world, removal.unit);
+            crate::terrain::cargo::order_changed(world, removal.unit);
             if let Some(mut identities) =
                 world.get_resource_mut::<crate::orders::PlainMoveOrderIdentities>()
             {
@@ -2398,6 +2567,9 @@ mod m3_transaction_contract_tests {
     fn install_extraction_node(world: &mut World, item: &ContentId, remaining: u64) {
         let node_id = content("probe:deposit");
         let mut catalog = turts_mod_api::ContentCatalog {
+            terrain_materials: Default::default(),
+            terrain_movement_classes: Default::default(),
+            terrain_tools: Default::default(),
             bots: Default::default(),
 
             combat: None,
@@ -2980,6 +3152,10 @@ mod operating_transaction_tests {
 
     fn fixture() -> (bevy_app::App, ResolvedUnit) {
         let definition = ResolvedUnit {
+            terrain_class: None,
+            terrain_cargo: None,
+            terrain_foundation: None,
+            terrain_tools: Vec::new(),
             vision: None,
             repairer: None,
 
@@ -3048,6 +3224,9 @@ mod operating_transaction_tests {
         })
         .collect();
         let catalog = ContentCatalog {
+            terrain_materials: Default::default(),
+            terrain_movement_classes: Default::default(),
+            terrain_tools: Default::default(),
             bots: Default::default(),
 
             combat: None,

@@ -17,6 +17,19 @@ pub enum WidgetAction {
     Order {
         id: String,
     },
+    TerrainWork {
+        order: String,
+        tool: String,
+    },
+    UnloadResume {
+        match_id: String,
+        map: String,
+        unit: u32,
+        depot: u32,
+        unload_order: String,
+        work_order: String,
+        designation: turts_mod_api::TerrainDesignation,
+    },
     Select {
         unit: u32,
     },

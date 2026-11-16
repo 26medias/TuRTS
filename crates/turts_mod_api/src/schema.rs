@@ -81,6 +81,12 @@ pub struct Exports {
     /// API 0.2.4, row A3: files of type `VisualEffectsDef`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub visual_effects: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub terrain_materials: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub terrain_movement_classes: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub terrain_tools: Vec<String>,
     /// API 0.2.15: portable bot profiles. Loading a profile does not install it.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub bots: Vec<String>,
@@ -416,6 +422,14 @@ pub struct BeltLinePlacement {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct UnitDef {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub terrain_class: Option<ContentRef>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub terrain_cargo: Option<crate::TerrainCargoDef>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub terrain_foundation: Option<crate::TerrainFoundation>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub terrain_tools: Vec<ContentRef>,
     /// API16: completed-unit sight; absence contributes no sight in fog mode.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub vision: Option<crate::visibility::VisionDef>,
@@ -814,6 +828,8 @@ pub struct SlotEconomyInit {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct MapDef {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub terrain: Option<crate::TerrainDef>,
     /// API16: map knowledge policy; absence preserves AllVisible.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub visibility: Option<crate::visibility::VisibilityDef>,

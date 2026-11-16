@@ -267,7 +267,10 @@ fn sim_command_from_envelope(envelope: &turts_net_protocol::OrderEnvelope, seq: 
         OrderTarget::Point(Pos { x, y }) => OrderTargetSim::Point(Vec2::new(*x, *y)),
         OrderTarget::Unit(ProtocolUnitId(id)) => OrderTargetSim::Unit(*id),
         OrderTarget::Node(ProtocolNodeId(id)) => OrderTargetSim::Node(turts_sim::NodeId(*id)),
-        OrderTarget::Job(_) | OrderTarget::Content(_) | OrderTarget::ContentAtPoint { .. } => {
+        OrderTarget::Job(_)
+        | OrderTarget::Content(_)
+        | OrderTarget::ContentAtPoint { .. }
+        | OrderTarget::TerrainWork(_) => {
             panic!("smart order fixture has a supported world target")
         }
     };
@@ -454,6 +457,8 @@ fn command(
         .units
         .iter()
         .map(|(unit_id, unit)| OrderUnitCapabilitiesAudit {
+            terrain_worker: !unit.terrain_tools.is_empty(),
+            cargo_unloader: unit.terrain_cargo.is_some(),
             unit: unit_id.to_string(),
             movement: unit.movement.is_some(),
             weapon: unit.weapon.is_some(),

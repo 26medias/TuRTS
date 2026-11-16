@@ -1,4 +1,5 @@
 /target
+/.turts-private/
 /dist
 *.wasm.map
 .DS_Store

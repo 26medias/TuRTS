@@ -510,6 +510,10 @@ mod tests {
         let second_technology = cid("research_fixture:second");
         let turret = cid("research_fixture:turret");
         let station = |id: ContentId, name: &str| ResolvedUnit {
+            terrain_class: None,
+            terrain_cargo: None,
+            terrain_foundation: None,
+            terrain_tools: Vec::new(),
             vision: None,
             repairer: None,
 
@@ -546,6 +550,9 @@ mod tests {
             removal: None,
         };
         let mut catalog = ContentCatalog {
+            terrain_materials: Default::default(),
+            terrain_movement_classes: Default::default(),
+            terrain_tools: Default::default(),
             bots: Default::default(),
 
             combat: None,
@@ -567,6 +574,10 @@ mod tests {
                 (
                     turret.clone(),
                     ResolvedUnit {
+                        terrain_class: None,
+                        terrain_cargo: None,
+                        terrain_foundation: None,
+                        terrain_tools: Vec::new(),
                         vision: None,
                         repairer: None,
 
@@ -678,6 +689,7 @@ mod tests {
             source_files: BTreeMap::new(),
         };
         let mut map = MapDef {
+            terrain: None,
             visibility: None,
             environment: None,
             ground: None,

@@ -26,6 +26,17 @@ pub struct NodeView {
     pub content_index: u32,
 }
 
+/// A hit on the permitted plateau model. Wall hits retain their owning top level.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SurfaceHit {
+    pub position: Vec2,
+    pub height: f32,
+    pub elevation: Option<i32>,
+    pub cell: Option<turts_mod_api::TerrainCell>,
+    pub parameter: f32,
+    pub current: bool,
+}
+
 /// Read-only view of the replicated world and package input/order definitions.
 pub trait WorldView {
     fn units(&self) -> &[UnitView];
@@ -36,6 +47,80 @@ pub trait WorldView {
     }
     fn node_pick_shape(&self, _node: &NodeView) -> Option<&turts_mod_api::Shape> {
         None
+    }
+    /// Returns a flat, fully observed support plane or an explicit public refusal.
+    fn terrain_foundation(&self, _point: Vec2, _radius: f32) -> Result<f32, &'static str> {
+        Ok(0.)
+    }
+    fn terrain_enabled(&self) -> bool {
+        false
+    }
+    fn terrain_active_order(
+        &self,
+        _unit: UnitId,
+    ) -> Option<(&str, &turts_mod_api::TerrainDesignation)> {
+        None
+    }
+    fn can_unload(&self, _unit: &UnitView, _target: &UnitView) -> bool {
+        false
+    }
+    fn terrain_identity(&self) -> Option<(u64, turts_mod_api::ContentId)> {
+        None
+    }
+    fn terrain_grid(&self) -> Option<turts_rules::terrain::geometry::Grid> {
+        None
+    }
+    fn terrain_current(&self, _cell: turts_mod_api::TerrainCell) -> bool {
+        false
+    }
+    fn terrain_elevation(&self, _cell: turts_mod_api::TerrainCell) -> Option<i32> {
+        None
+    }
+    fn terrain_tool(
+        &self,
+        _unit: &UnitView,
+        _tool: &str,
+    ) -> Option<&turts_mod_api::ResolvedTerrainTool> {
+        None
+    }
+    fn camera_ground_height(&self, _point: Vec2) -> f32 {
+        0.
+    }
+    fn unit_ground_height(&self, _unit: &UnitView) -> Option<f32> {
+        Some(0.)
+    }
+    fn node_ground_height(&self, _node: &NodeView) -> Option<f32> {
+        Some(0.)
+    }
+    /// None is an unobstructed ray outside the map; Err is an uncertified query.
+    #[allow(
+        clippy::result_unit_err,
+        reason = "This geometric predicate returns hit, clear or uncertified without an error payload"
+    )]
+    fn surface_occlusion(
+        &self,
+        origin: glam::Vec3,
+        direction: glam::Vec3,
+    ) -> Result<Option<f32>, ()> {
+        Ok(self.surface_hit(origin, direction).map(|hit| hit.parameter))
+    }
+    fn surface_hit(&self, origin: glam::Vec3, direction: glam::Vec3) -> Option<SurfaceHit> {
+        if !origin.is_finite() || !direction.is_finite() || direction.y.abs() < 1e-6 {
+            return None;
+        }
+        let parameter = -origin.y / direction.y;
+        if !parameter.is_finite() || parameter < 0. {
+            return None;
+        }
+        let point = origin + direction * parameter;
+        Some(SurfaceHit {
+            position: Vec2::new(point.x, point.z),
+            height: 0.,
+            elevation: None,
+            cell: None,
+            parameter,
+            current: true,
+        })
     }
     fn own_slot(&self) -> SlotId;
     fn orders(&self) -> &[OrderDef];

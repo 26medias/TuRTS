@@ -689,4 +689,10 @@ mod replay;
 mod benchmark_tests;
 
 #[cfg(test)]
+mod terrain_benchmark;
+#[cfg(test)]
 mod visibility_benchmark;
+
+#[cfg(test)]
+#[path = "../terrain_wire_tests.rs"]
+mod terrain_wire_tests;

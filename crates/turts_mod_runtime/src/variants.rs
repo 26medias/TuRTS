@@ -69,10 +69,15 @@ pub(crate) fn collect(_manifest: &Manifest, content: &ParsedMcContent) -> Vec<Va
         rule_uses(&mut uses, content, file, rules);
     }
     for (file, order) in &content.orders {
+        if order.target == TargetKind::TerrainDesignation {
+            uses.push("target: TerrainDesignation", file, "target");
+        }
         if order.target == TargetKind::ContentAtPoint {
             uses.push("target: ContentAtPoint", file, "target");
         }
         let name = match order.behaviour {
+            Behaviour::TerrainWork => Some("behaviour TerrainWork"),
+            Behaviour::UnloadCargo => Some("behaviour UnloadCargo"),
             Behaviour::Construct => Some("behaviour Construct"),
             Behaviour::CancelConstruction => Some("behaviour CancelConstruction"),
             Behaviour::SetRally => Some("behaviour SetRally"),
@@ -215,6 +220,12 @@ fn rule_uses(uses: &mut Uses, content: &ParsedMcContent, file: &str, rules: &Ord
                 uses.push("smart target OwnDamaged", file, format!("{path}.target"));
             }
             match entry.needs {
+                Capability::TerrainWorker => {
+                    uses.push("Capability::TerrainWorker", file, format!("{path}.needs"))
+                }
+                Capability::CargoUnloader => {
+                    uses.push("Capability::CargoUnloader", file, format!("{path}.needs"))
+                }
                 Capability::Constructor => {
                     uses.push("needs: Constructor", file, format!("{path}.needs"));
                 }
@@ -428,6 +439,7 @@ impl InterfaceWalk<'_> {
 
     fn source(&mut self, source: &Source, path: &str) {
         let name = match source {
+            Source::TerrainTools { .. } => Some("Source::TerrainTools"),
             Source::ConstructionQueue => Some("Source::ConstructionQueue"),
             Source::Sites => Some("Source::Sites"),
             Source::Notices => Some("Source::Notices"),
@@ -474,6 +486,8 @@ impl InterfaceWalk<'_> {
 
     fn predicate(&mut self, predicate: &Predicate, path: &str) {
         let name = match predicate {
+            Predicate::PrimaryHas(Capability::TerrainWorker) => Some("Capability::TerrainWorker"),
+            Predicate::PrimaryHas(Capability::CargoUnloader) => Some("Capability::CargoUnloader"),
             Predicate::RepairStateIs(_) => Some("Predicate::RepairStateIs"),
             Predicate::PrimaryHas(Capability::Repairer) => Some("Predicate::PrimaryHas(Repairer)"),
             Predicate::ItemHas(_) => Some("Predicate::ItemHas"),

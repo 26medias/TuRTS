@@ -143,7 +143,11 @@ pub(super) fn step_plain_progress(
     for other_index in grid.nearby(
         points,
         unit.position,
-        unit.radius + max_radius + 0.05 + step_limit * 1.2,
+        super::frame::separation_reach(
+            unit.radius,
+            max_radius,
+            unit.radius + max_radius + 0.05 + step_limit * 1.2,
+        ),
     ) {
         if other_index == index {
             continue;

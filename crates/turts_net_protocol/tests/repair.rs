@@ -3,8 +3,8 @@ use turts_net_protocol::{
 };
 
 #[test]
-fn protocol9_repair_states_and_explicit_clear_shapes_round_trip() {
-    assert_eq!(NET_PROTOCOL_VERSION, 9);
+fn protocol10_repair_states_and_explicit_clear_shapes_round_trip() {
+    assert_eq!(NET_PROTOCOL_VERSION, 10);
     for state in [
         RepairState::Approaching,
         RepairState::Working,

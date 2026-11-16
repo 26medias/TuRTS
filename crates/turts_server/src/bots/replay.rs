@@ -407,6 +407,11 @@ fn bot_command(record: &ActorLogRecord) -> Result<EmittedCommand, String> {
                 y: point.y,
             },
         },
+        OrderTarget::TerrainWork(designation) => BotTarget::TerrainWork {
+            tool: ContentId::parse(&designation.tool)?,
+            cells: designation.cells,
+            target_elevation: designation.target_elevation,
+        },
     };
     Ok(EmittedCommand {
         actor: BotActor {

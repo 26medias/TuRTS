@@ -22,8 +22,20 @@ pub fn world_plane_point(point: Vec2) -> glam::Vec3 {
 ///
 /// Task 9 preparation stub. The production implementation is shared by selection and adapter tests.
 pub fn world_to_screen(_point: Vec2, _viewport: &Viewport, _camera: CameraState) -> Option<Vec2> {
-    let (view, projection) = matrices(_viewport, _camera)?;
-    let world = view * world_plane_point(_point).extend(1.0);
+    world_to_screen_at_height(_point, 0., _viewport, _camera)
+}
+
+pub fn world_to_screen_at_height(
+    point: Vec2,
+    height: f32,
+    viewport: &Viewport,
+    camera: CameraState,
+) -> Option<Vec2> {
+    if !height.is_finite() {
+        return None;
+    }
+    let (view, projection) = matrices(viewport, camera)?;
+    let world = view * glam::Vec3::new(point.x, height, point.y).extend(1.0);
     let clip = projection * world;
     if !clip.is_finite() || clip.w <= 0.0 {
         return None;
@@ -33,8 +45,8 @@ pub fn world_to_screen(_point: Vec2, _viewport: &Viewport, _camera: CameraState)
         return None;
     }
     Some(Vec2::new(
-        (ndc.x + 1.0) * 0.5 * _viewport.size.x,
-        (1.0 - ndc.y) * 0.5 * _viewport.size.y,
+        (ndc.x + 1.0) * 0.5 * viewport.size.x,
+        (1.0 - ndc.y) * 0.5 * viewport.size.y,
     ))
 }
 
@@ -106,4 +118,49 @@ fn matrices(viewport: &Viewport, camera: CameraState) -> Option<(Mat4, Mat4)> {
     let view = glam::camera::rh::view::look_at_mat4(eye, target, glam::Vec3::Y);
     let projection = perspective_matrix(viewport, camera);
     Some((view, projection))
+}
+
+/// Projection and unprojection share the camera's permitted ground offset.
+pub fn world_to_screen_on(
+    point: Vec2,
+    height: f32,
+    viewport: &Viewport,
+    camera: CameraState,
+    world: &dyn crate::WorldView,
+) -> Option<Vec2> {
+    world_to_screen_at_height(
+        point,
+        height - world.camera_ground_height(camera.look_at),
+        viewport,
+        camera,
+    )
+}
+pub fn screen_ray_on(
+    point: Vec2,
+    viewport: &Viewport,
+    camera: CameraState,
+    world: &dyn crate::WorldView,
+) -> Option<(glam::Vec3, glam::Vec3)> {
+    let (origin, direction) = screen_ray(point, viewport, camera)?;
+    Some((
+        origin + glam::Vec3::Y * world.camera_ground_height(camera.look_at),
+        direction,
+    ))
+}
+pub fn surface_hit(
+    point: Vec2,
+    viewport: &Viewport,
+    camera: CameraState,
+    world: &dyn crate::WorldView,
+) -> Option<crate::SurfaceHit> {
+    let (origin, direction) = screen_ray_on(point, viewport, camera, world)?;
+    world.surface_hit(origin, direction)
+}
+pub fn screen_to_world_on(
+    point: Vec2,
+    viewport: &Viewport,
+    camera: CameraState,
+    world: &dyn crate::WorldView,
+) -> Option<Vec2> {
+    Some(surface_hit(point, viewport, camera, world)?.position)
 }

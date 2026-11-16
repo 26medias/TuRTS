@@ -150,7 +150,15 @@ pub struct UnitView {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum UnitOrderTargetView {
-    ContentAtPoint { content: ContentId, point: WorldPos },
+    TerrainWork {
+        tool: ContentId,
+        cells: turts_mod_api::TerrainRect,
+        target_elevation: i32,
+    },
+    ContentAtPoint {
+        content: ContentId,
+        point: WorldPos,
+    },
     None,
     Point(WorldPos),
     Unit(u32),
@@ -297,6 +305,12 @@ pub struct DurationAudit {
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CatalogAudit {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub terrain_materials: Vec<turts_mod_api::TerrainMaterialDef>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub terrain_tools: Vec<turts_mod_api::TerrainToolDef>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub terrain_movement_classes: Vec<turts_mod_api::TerrainMovementClassDef>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub combat: Option<turts_mod_api::CombatDef>,
     pub resource_kinds: Vec<(ContentId, ResourceKind)>,
@@ -331,6 +345,14 @@ pub struct CatalogNodeAudit {
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CatalogUnitAudit {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub terrain_tools: Vec<ContentId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub terrain_cargo: Option<turts_mod_api::TerrainCargoDef>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub terrain_class: Option<ContentId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub terrain_foundation: Option<turts_mod_api::TerrainFoundation>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub health_max: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -550,6 +572,8 @@ fn operating_view(world: &World) -> Option<OperatingView> {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AuditState {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub raw_terrain: Option<crate::terrain::TerrainAudit>,
     /// Immutable authored cap needed to validate ordinary construction admission.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub construction_limit: Option<u16>,
@@ -653,8 +677,11 @@ pub struct EconomyChangesView {
     pub queues: Vec<QueueView>,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct WorldView {
+    /// Immutable transport cache. Privileged AuditState.raw_terrain owns authoritative equality.
+    #[serde(skip)]
+    pub terrain: Option<std::sync::Arc<crate::terrain::TerrainPhase>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub operating: Option<OperatingView>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -677,6 +704,56 @@ pub struct WorldView {
     pub economy: EconomyStateView,
 }
 
+impl PartialEq for WorldView {
+    fn eq(&self, other: &Self) -> bool {
+        // Exhaustive destructuring makes a new serialized field a compile error here.
+        let Self {
+            terrain: _,
+            operating,
+            match_outcomes,
+            construction,
+            tick,
+            m3,
+            units,
+            nodes,
+            unit_orders,
+            economy,
+        } = self;
+        let Self {
+            terrain: _,
+            operating: other_operating,
+            match_outcomes: other_outcomes,
+            construction: other_construction,
+            tick: other_tick,
+            m3: other_m3,
+            units: other_units,
+            nodes: other_nodes,
+            unit_orders: other_orders,
+            economy: other_economy,
+        } = other;
+        (
+            operating,
+            match_outcomes,
+            construction,
+            tick,
+            m3,
+            units,
+            nodes,
+            unit_orders,
+            economy,
+        ) == (
+            other_operating,
+            other_outcomes,
+            other_construction,
+            other_tick,
+            other_m3,
+            other_units,
+            other_nodes,
+            other_orders,
+            other_economy,
+        )
+    }
+}
 impl std::ops::Deref for WorldView {
     type Target = EconomyStateView;
     fn deref(&self) -> &Self::Target {
@@ -732,6 +809,9 @@ pub fn world_view(world: &mut World) -> WorldView {
                         progress.activity == crate::movement::MovementActivity::Blocked
                     })
                 || entity.get::<crate::movement::PhysicalEscape>().is_some();
+            let terrain_waiting = entity
+                .get::<crate::terrain::navigation::TerrainMotionWait>()
+                .is_some();
             let fresh_blocked =
                 entity
                     .get::<crate::movement::MoveProgress>()
@@ -758,7 +838,7 @@ pub fn world_view(world: &mut World) -> WorldView {
             let Some(orders) = entity.get::<crate::orders::UnitOrders>() else {
                 let activity = if pending {
                     UnitOrderActivityView::Pending
-                } else if blocked {
+                } else if terrain_waiting || blocked {
                     UnitOrderActivityView::Blocked
                 } else if active_gather {
                     UnitOrderActivityView::Gathering
@@ -781,7 +861,7 @@ pub fn world_view(world: &mut World) -> WorldView {
             };
             let activity = if pending {
                 UnitOrderActivityView::Pending
-            } else if physically_escaping || fresh_blocked {
+            } else if terrain_waiting || physically_escaping || fresh_blocked {
                 UnitOrderActivityView::Blocked
             } else if let Some(current) = &orders.current {
                 match current.behaviour {
@@ -791,7 +871,9 @@ pub fn world_view(world: &mut World) -> WorldView {
                     turts_mod_api::Behaviour::Move => UnitOrderActivityView::Pending,
                     turts_mod_api::Behaviour::Attack => UnitOrderActivityView::Attacking,
                     turts_mod_api::Behaviour::Hold => UnitOrderActivityView::Holding,
-                    turts_mod_api::Behaviour::Gather => UnitOrderActivityView::Gathering,
+                    turts_mod_api::Behaviour::Gather
+                    | turts_mod_api::Behaviour::TerrainWork
+                    | turts_mod_api::Behaviour::UnloadCargo => UnitOrderActivityView::Gathering,
                     _ => UnitOrderActivityView::Pending,
                 }
             } else if !orders.queue.is_empty() {
@@ -836,6 +918,8 @@ pub fn world_view(world: &mut World) -> WorldView {
     unit_orders.sort_by_key(|record| record.unit_id);
     let m3 = super::views_m3::m3_world_view(world);
     let mut view = WorldView {
+        terrain: crate::terrain::phase(world, turts_mod_api::ObservationPhase::Completed)
+            .filter(|phase| phase.tick() == tick),
         economy: EconomyStateView {
             repairs: super::repair::status_rows(world),
             ..EconomyStateView::default()
@@ -903,6 +987,15 @@ fn unit_order_summary(order: &crate::orders::Order) -> UnitOrderSummaryView {
     UnitOrderSummaryView {
         order: order.order.to_string(),
         target: match &order.target {
+            crate::orders::OrderTargetSim::TerrainWork {
+                tool,
+                cells,
+                target_elevation,
+            } => UnitOrderTargetView::TerrainWork {
+                tool: tool.clone(),
+                cells: *cells,
+                target_elevation: *target_elevation,
+            },
             crate::orders::OrderTargetSim::Invalid => UnitOrderTargetView::None,
             crate::orders::OrderTargetSim::None => UnitOrderTargetView::None,
             crate::orders::OrderTargetSim::Point(position) => {
@@ -1198,6 +1291,71 @@ pub fn audit_state(world: &mut World) -> AuditState {
         .map(|installed| {
             let c = &installed.0;
             CatalogAudit {
+                terrain_materials: c
+                    .terrain_materials
+                    .values()
+                    .map(|row| turts_mod_api::TerrainMaterialDef {
+                        id: row.id.to_string(),
+                        name: row.name.clone(),
+                        surface_color: row.surface_color.clone(),
+                        hardness: row.hardness,
+                        work_per_world_cube: row.work_per_world_cube,
+                        natural_outputs: row
+                            .natural_outputs
+                            .iter()
+                            .map(|rate| turts_mod_api::TerrainResourceRate {
+                                resource: rate.resource.to_string(),
+                                per_world_cube: rate.per_world_cube,
+                            })
+                            .collect(),
+                        fill_inputs: row
+                            .fill_inputs
+                            .iter()
+                            .map(|rate| turts_mod_api::TerrainResourceRate {
+                                resource: rate.resource.to_string(),
+                                per_world_cube: rate.per_world_cube,
+                            })
+                            .collect(),
+                        placed_removal: row.placed_removal,
+                    })
+                    .collect(),
+                terrain_tools: c
+                    .terrain_tools
+                    .values()
+                    .map(|row| turts_mod_api::TerrainToolDef {
+                        id: row.id.to_string(),
+                        name: row.name.clone(),
+                        operation: match &row.operation {
+                            turts_mod_api::ResolvedTerrainOperation::Excavate => {
+                                turts_mod_api::TerrainOperation::Excavate
+                            }
+                            turts_mod_api::ResolvedTerrainOperation::Fill { material } => {
+                                turts_mod_api::TerrainOperation::Fill {
+                                    material: material.to_string(),
+                                }
+                            }
+                        },
+                        work_per_second: row.work_per_second,
+                        reach: row.reach,
+                        allowed_materials: row
+                            .allowed_materials
+                            .iter()
+                            .map(ToString::to_string)
+                            .collect(),
+                        max_hardness: row.max_hardness,
+                        output_destination: row.output_destination,
+                    })
+                    .collect(),
+                terrain_movement_classes: c
+                    .terrain_movement_classes
+                    .values()
+                    .map(|row| turts_mod_api::TerrainMovementClassDef {
+                        id: row.id.to_string(),
+                        name: row.name.clone(),
+                        max_step: row.max_step,
+                        max_grade: row.max_grade,
+                    })
+                    .collect(),
                 combat: c.combat.clone(),
                 resource_kinds: c
                     .resources
@@ -1217,6 +1375,10 @@ pub fn audit_state(world: &mut World) -> AuditState {
                     .units
                     .iter()
                     .map(|(id, d)| CatalogUnitAudit {
+                        terrain_tools: d.terrain_tools.clone(),
+                        terrain_cargo: d.terrain_cargo,
+                        terrain_class: d.terrain_class.clone(),
+                        terrain_foundation: d.terrain_foundation,
                         health_max: (c.units.values().any(|unit| {
                             unit.repairer.is_some()
                                 || unit.constructor.is_some()
@@ -1347,6 +1509,8 @@ pub fn audit_state(world: &mut World) -> AuditState {
                             .map(
                                 |(unit_id, unit)| crate::orders::OrderUnitCapabilitiesAudit {
                                     unit: unit_id.to_string(),
+                                    terrain_worker: !unit.terrain_tools.is_empty(),
+                                    cargo_unloader: unit.terrain_cargo.is_some(),
                                     movement: unit.movement.is_some(),
                                     weapon: unit.weapon.is_some(),
                                     gatherer: unit.gatherer.is_some(),
@@ -1356,12 +1520,7 @@ pub fn audit_state(world: &mut World) -> AuditState {
                                         .removal
                                         .as_ref()
                                         .is_some_and(|policy| policy.by_command),
-                                    toggleable: unit.extractor.is_some()
-                                        || unit.inserter.is_some()
-                                        || unit.machine.is_some()
-                                        || unit.research.is_some()
-                                        || unit.producer.is_some()
-                                        || unit.weapon.is_some(),
+                                    toggleable: crate::orders::unit_toggleable(unit),
                                 },
                             )
                             .collect(),
@@ -1486,6 +1645,7 @@ pub fn audit_state(world: &mut World) -> AuditState {
     };
     let m3 = super::views_m3::m3_audit_state(world);
     AuditState {
+        raw_terrain: crate::terrain::privileged_audit(world),
         construction_limit: world
             .get_resource::<super::construction::ConstructionLimit>()
             .map(|limit| limit.0),

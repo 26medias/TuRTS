@@ -157,7 +157,15 @@ pub enum BotTarget {
     Node(NodeId),
     Job(u64),
     Content(ContentId),
-    ContentAtPoint { content: ContentId, point: WorldPos },
+    ContentAtPoint {
+        content: ContentId,
+        point: WorldPos,
+    },
+    TerrainWork {
+        tool: ContentId,
+        cells: turts_mod_api::TerrainRect,
+        target_elevation: i32,
+    },
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum BotQueueMode {

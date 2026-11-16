@@ -229,6 +229,8 @@ pub(super) fn predicate_matches(
                 turts_mod_api::Capability::Research => unit.research.is_some(),
                 turts_mod_api::Capability::Constructor => unit.constructor.is_some(),
                 turts_mod_api::Capability::Repairer => unit.repairer.is_some(),
+                turts_mod_api::Capability::TerrainWorker => !unit.terrain_tools.is_empty(),
+                turts_mod_api::Capability::CargoUnloader => unit.terrain_cargo.is_some(),
             }),
         Predicate::GuideOpen => context.guide_open,
         // API 0.2.4 (row H25).

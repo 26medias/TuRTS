@@ -13,6 +13,7 @@ pub mod placement;
 pub mod projection;
 pub mod selection;
 pub mod smart;
+pub mod terrain;
 mod world_view;
 
 // The integration-test world, shared with the unit tests of the hooks (`hook_tests.rs`).
@@ -38,7 +39,7 @@ use turts_net_protocol::{
 };
 
 pub use turts_mod_api::Button;
-pub use world_view::{NodeView, UnitView, WorldView};
+pub use world_view::{NodeView, SurfaceHit, UnitView, WorldView};
 
 /// The plain state machine that turns frame input into client effects.
 #[derive(Debug)]
@@ -64,6 +65,7 @@ pub struct Core {
     dispatch_records_truncated: usize,
     /// The state of the tasks that add interaction state: each type is in the file of its owner.
     placement: placement::State,
+    terrain: terrain::State,
     hints: hints::State,
     alerts: alerts::State,
 }
@@ -108,6 +110,7 @@ impl Core {
             dispatch_records: Vec::new(),
             dispatch_records_truncated: 0,
             placement: placement::State::default(),
+            terrain: terrain::State::default(),
             hints: hints::State::default(),
             alerts: alerts::State::default(),
         }
@@ -186,6 +189,9 @@ impl Core {
         let mut ignored_wheel_inputs = Vec::new();
         let mut wheel_camera_actions = Vec::new();
         for (input_index, event) in events.iter().enumerate() {
+            if terrain::intercept(self, event, world, view, &mut effects) {
+                continue;
+            }
             if placement::intercept(self, input_index, event, world, view, now_ms, &mut effects) {
                 continue;
             }
@@ -199,6 +205,12 @@ impl Core {
                 }
                 InputEvent::FocusLost => {
                     self.on_focus_lost();
+                }
+                InputEvent::TerrainWork(input) => {
+                    terrain::on_input(self, input, world, &mut effects)
+                }
+                InputEvent::UnloadResume(input) => {
+                    terrain::unload_resume(self, input, world, &mut effects)
                 }
                 InputEvent::UiAction { name } => {
                     self.on_ui_action(input_index, name, world, view, now_ms, &mut effects);
@@ -318,6 +330,7 @@ impl Core {
             &mut effects,
         );
         self.held_modifier_actions.remove("wheel:pulse");
+        terrain::refresh(self, world, view, &mut effects);
         effects
     }
 
@@ -943,6 +956,7 @@ impl Core {
         world: &dyn WorldView,
         effects: &mut Vec<Effect>,
     ) {
+        terrain::cancel(self, effects);
         if order.target == TargetKind::None {
             self.pending_order = None;
             self.compose_explicit(order, OrderTarget::None, world, effects);
@@ -1031,6 +1045,9 @@ pub enum InputEvent {
         button: Button,
         local: [f32; 2],
     },
+    /// A typed tool chosen from a mod-authored TerrainTools list.
+    TerrainWork(terrain::Input),
+    UnloadResume(terrain::UnloadResume),
     /// An input of the placement mode (`UI-PLACE`; the type is in `placement.rs`).
     Placement(placement::Input),
     /// An input of the hint engine (`UI-HINT`; the type is in `hints.rs`).
@@ -1124,6 +1141,8 @@ pub enum Effect {
     ShellAction {
         action: String,
     },
+    /// Public-geometry work preview; never reads hidden material or eligibility.
+    TerrainWork(terrain::Output),
     /// An effect of the placement mode (`UI-PLACE`; the type is in `placement.rs`).
     Placement(placement::Output),
     /// An effect of the hint engine (`UI-HINT`; the type is in `hints.rs`).

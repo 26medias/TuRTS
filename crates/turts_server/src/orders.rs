@@ -54,6 +54,13 @@ pub fn to_sim(
                 point: bevy::math::Vec2::new(point.x, point.y),
             })
             .unwrap_or(OrderTargetSim::Invalid),
+        OrderTarget::TerrainWork(designation) => ContentId::parse(&designation.tool)
+            .map(|tool| OrderTargetSim::TerrainWork {
+                tool,
+                cells: designation.cells,
+                target_elevation: designation.target_elevation,
+            })
+            .unwrap_or(OrderTargetSim::Invalid),
     };
     let order_package = order_id.package.clone();
     let queue_depth = catalog
@@ -77,6 +84,8 @@ pub fn to_sim(
                 .units
                 .iter()
                 .map(|(id, unit)| turts_sim::OrderUnitCapabilitiesAudit {
+                    terrain_worker: !unit.terrain_tools.is_empty(),
+                    cargo_unloader: unit.terrain_cargo.is_some(),
                     unit: id.to_string(),
                     movement: unit.movement.is_some(),
                     weapon: unit.weapon.is_some(),
@@ -92,7 +101,11 @@ pub fn to_sim(
                         || unit.machine.is_some()
                         || unit.research.is_some()
                         || unit.producer.is_some()
-                        || unit.weapon.is_some(),
+                        || unit.weapon.is_some()
+                        || unit.constructor.is_some()
+                        || unit.repairer.is_some()
+                        || !unit.terrain_tools.is_empty()
+                        || unit.terrain_cargo.is_some(),
                 })
                 .collect(),
         }),
@@ -267,6 +280,9 @@ mod tests {
 
     fn empty_catalog() -> ContentCatalog {
         ContentCatalog {
+            terrain_materials: Default::default(),
+            terrain_movement_classes: Default::default(),
+            terrain_tools: Default::default(),
             combat: None,
             resources: Default::default(),
             units: Default::default(),

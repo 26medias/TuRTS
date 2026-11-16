@@ -13,11 +13,15 @@ pub struct ClientContent {
     pub order_rules: OrderRulesDef,
     pub selection_priority: Vec<String>,
     pub camera: Option<CameraDef>,
+    pub terrain: Option<std::sync::Arc<crate::terrain::store::Layout>>,
 }
 impl Default for ClientContent {
     fn default() -> Self {
         Self {
             catalog: ContentCatalog {
+                terrain_materials: Default::default(),
+                terrain_movement_classes: Default::default(),
+                terrain_tools: Default::default(),
                 bots: Default::default(),
                 combat: None,
                 resources: Default::default(),
@@ -43,13 +47,24 @@ impl Default for ClientContent {
             },
             selection_priority: Vec::new(),
             camera: None,
+            terrain: None,
         }
     }
 }
 impl ClientContent {
     pub fn from_archives(archives: &[PackageArchive]) -> Result<Self, ModError> {
+        Self::from_archives_for_root(archives, None)
+    }
+
+    pub fn from_archives_for_root(
+        archives: &[PackageArchive],
+        root: Option<&str>,
+    ) -> Result<Self, ModError> {
         let shapes = visuals_by_content(archives)?;
         let mut catalog = ContentCatalog {
+            terrain_materials: Default::default(),
+            terrain_movement_classes: Default::default(),
+            terrain_tools: Default::default(),
             bots: Default::default(),
             combat: None,
             resources: Default::default(),
@@ -83,6 +98,41 @@ impl ClientContent {
                     "exports.combat",
                     "a match can have only one damage table",
                 ));
+            }
+            for (id, value) in part.terrain_materials {
+                if catalog
+                    .terrain_materials
+                    .insert(id.clone(), value)
+                    .is_some()
+                {
+                    return Err(ModError::new(
+                        &id.package.0,
+                        "id",
+                        format!("duplicate content id `{id}`"),
+                    ));
+                }
+            }
+            for (id, value) in part.terrain_movement_classes {
+                if catalog
+                    .terrain_movement_classes
+                    .insert(id.clone(), value)
+                    .is_some()
+                {
+                    return Err(ModError::new(
+                        &id.package.0,
+                        "id",
+                        format!("duplicate content id `{id}`"),
+                    ));
+                }
+            }
+            for (id, value) in part.terrain_tools {
+                if catalog.terrain_tools.insert(id.clone(), value).is_some() {
+                    return Err(ModError::new(
+                        &id.package.0,
+                        "id",
+                        format!("duplicate content id `{id}`"),
+                    ));
+                }
             }
             for (id, value) in part.resources {
                 if catalog.resources.insert(id.clone(), value).is_some() {
@@ -190,6 +240,56 @@ impl ClientContent {
                 }
             }
         }
+        // Resolve library references only after every public package has contributed.
+        let mut selected = None;
+        for archive in archives {
+            if root.is_some_and(|id| archive.manifest.id != id) {
+                continue;
+            }
+            let maps = archive.maps()?;
+            if !maps.is_empty() {
+                selected = Some((archive, maps));
+                break;
+            }
+        }
+        let origin = selected
+            .as_ref()
+            .map(|(archive, _)| archive.id())
+            .unwrap_or_else(|| turts_mod_api::PackageId("client".into()));
+        turts_mod_runtime::terrain::validate_terrain_catalog(&origin, &catalog)?;
+        for archive in archives {
+            for (file, interface) in archive.interfaces()? {
+                turts_mod_runtime::terrain::validate_terrain_tool_sources(
+                    &archive.id(),
+                    &file,
+                    &interface,
+                    &catalog,
+                )?;
+            }
+        }
+        let terrain = if let Some((archive, maps)) = selected {
+            let (file, map) = &maps[0];
+            turts_mod_runtime::terrain::validate_terrain_map(&archive.id(), file, map, &catalog)?;
+            map.terrain
+                .as_ref()
+                .map(|definition| {
+                    crate::terrain::store::Layout::new(
+                        ContentId::new(&archive.id(), &map.id),
+                        definition,
+                    )
+                    .map(std::sync::Arc::new)
+                    .map_err(|error| {
+                        ModError::new(
+                            &archive.id().0,
+                            file,
+                            format!("terrain client layout: {error:?}"),
+                        )
+                    })
+                })
+                .transpose()?
+        } else {
+            None
+        };
         Ok(Self {
             catalog,
             shapes,
@@ -198,6 +298,7 @@ impl ClientContent {
             order_rules,
             selection_priority,
             camera,
+            terrain,
         })
     }
 }
