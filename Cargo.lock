@@ -8661,6 +8661,7 @@ name = "turts_client"
 version = "0.2.0"
 dependencies = [
  "bevy",
+ "bevy_app",
  "gloo-net",
  "image",
  "js-sys",

@@ -20,6 +20,8 @@ serde_json = { workspace = true }
 url = "=2.5.8"
 
 [dev-dependencies]
+# Shared server export tests name App directly.
+bevy_app = { workspace = true }
 ron = { workspace = true }
 # The job progress test runs the real export and the real sim against real `Replica` values (see
 # `tests/job_progress_clients.rs`). Dev edges only: the boundary rules read normal and build edges.
