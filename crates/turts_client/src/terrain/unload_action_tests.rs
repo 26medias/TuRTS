@@ -156,6 +156,7 @@ fn fixture(package: &str) -> (App, TerrainDesignation) {
     replica.unit_orders.insert(
         1,
         UnitOrderRecord {
+            rally: None,
             unit: UnitId(1),
             activity: Activity::Blocked,
             current: Some(OrderSummary {
