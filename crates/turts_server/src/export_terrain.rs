@@ -57,7 +57,7 @@ pub(super) fn snapshot_checked(
     for y in 0..grid.rows {
         for x in 0..grid.columns {
             let cell = TerrainCell { x, y };
-            let Some(row) = phase.surface(slot.0, cell) else {
+            let Some(row) = phase.surface_borrowed(slot.0, cell) else {
                 continue;
             };
             if row.cell != cell
@@ -70,7 +70,6 @@ pub(super) fn snapshot_checked(
             }
             let material = row
                 .material
-                .as_ref()
                 .map(|material| {
                     dictionary
                         .get(material)
@@ -393,6 +392,9 @@ mod tests {
     }
 }
 
+#[cfg(test)]
+#[path = "export_terrain_borrowed_tests.rs"]
+mod borrowed_surface_tests;
 #[cfg(test)]
 #[path = "export_terrain_merge_tests.rs"]
 mod merge_tests;

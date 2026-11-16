@@ -24,6 +24,32 @@ pub struct TerrainSurfaceObservation {
     pub last_seen_tick: u32,
     pub current: bool,
 }
+/// A surface fact borrowed from one immutable phase's permitted history.
+/// Material points into that phase's canonical dictionary. This lookup allocates
+/// nothing and grants exactly the same knowledge as [`TerrainPhase::surface`].
+/// An invalid retained material key stays `None`, with provenance unchanged.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TerrainSurfaceObservationRef<'a> {
+    pub cell: TerrainCell,
+    pub elevation: i32,
+    pub material: Option<&'a ContentId>,
+    pub provenance: Option<turts_mod_api::TerrainProvenance>,
+    pub last_seen_tick: u32,
+    pub current: bool,
+}
+impl TerrainSurfaceObservationRef<'_> {
+    /// Own the material identifier when the caller must outlive the retained phase.
+    pub fn into_owned(self) -> TerrainSurfaceObservation {
+        TerrainSurfaceObservation {
+            cell: self.cell,
+            elevation: self.elevation,
+            material: self.material.cloned(),
+            provenance: self.provenance,
+            last_seen_tick: self.last_seen_tick,
+            current: self.current,
+        }
+    }
+}
 /// Retain this Arc alongside its WorldView/visibility basis. It never reads live World data.
 pub struct TerrainPhase {
     grid: Grid,
@@ -116,6 +142,16 @@ impl TerrainPhase {
         self.initial.get(index).copied()
     }
     pub fn surface(&self, viewer: u8, cell: TerrainCell) -> Option<TerrainSurfaceObservation> {
+        self.surface_borrowed(viewer, cell)
+            .map(TerrainSurfaceObservationRef::into_owned)
+    }
+    /// Borrow permitted current or remembered facts from this immutable phase.
+    /// Unknown cells and invalid viewers remain absent. No live terrain is read.
+    pub fn surface_borrowed(
+        &self,
+        viewer: u8,
+        cell: TerrainCell,
+    ) -> Option<TerrainSurfaceObservationRef<'_>> {
         if viewer >= turts_mod_api::SLOT_COUNT {
             return None;
         }
@@ -130,8 +166,7 @@ impl TerrainPhase {
             .as_ref()?;
         let material = row
             .material
-            .and_then(|key| self.materials.get(key as usize))
-            .cloned();
+            .and_then(|key| self.materials.get(key as usize));
         let current = super::history::seen(
             self.permissions.as_deref(),
             self.coverage.as_deref(),
@@ -142,7 +177,7 @@ impl TerrainPhase {
                 y: cell.y,
             },
         );
-        Some(TerrainSurfaceObservation {
+        Some(TerrainSurfaceObservationRef {
             cell,
             elevation: row.elevation,
             material,
@@ -368,3 +403,7 @@ pub(crate) fn initialize_phases(world: &mut World) {
         capture_phase(world, phase);
     }
 }
+
+#[cfg(test)]
+#[path = "surface_borrowed_tests.rs"]
+mod surface_borrowed_tests;

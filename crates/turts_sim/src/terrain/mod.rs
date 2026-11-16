@@ -5,7 +5,10 @@ pub(crate) mod history;
 pub(crate) mod pause;
 pub use pause::TerrainPauseAudit;
 pub(crate) mod phase;
-pub use phase::{TerrainGroundObservation, TerrainPhase, TerrainSurfaceObservation, phase};
+pub use phase::{
+    TerrainGroundObservation, TerrainPhase, TerrainSurfaceObservation,
+    TerrainSurfaceObservationRef, phase,
+};
 pub(crate) mod cargo;
 pub(crate) mod navigation;
 pub use navigation::{
