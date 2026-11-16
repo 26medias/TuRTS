@@ -6,7 +6,7 @@ fn tree_reference(old: &[(u32, u64)], new: &[(u32, u64)]) -> (Vec<(u32, u64)>, V
     let new: BTreeMap<_, _> = new.iter().map(|row| (row.0, *row)).collect();
     (
         new.iter()
-            .filter(|(key, row)| old.get(key) != Some(row))
+            .filter(|&(key, row)| old.get(key) != Some(row))
             .map(|(_, row)| *row)
             .collect(),
         old.keys()
