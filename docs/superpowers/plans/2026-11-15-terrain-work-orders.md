@@ -1,20 +1,25 @@
 # M4 terrain work implementation
 
 Status: Anvil spec and plan approved by the same reviewer. Each needed one turn and one focused recheck.
-Current predecessor: SDK16 accepted and pushed on main at `52ac9b5e`; its tested launcher remains available.
-Common API/runtime checks pass, including the four public tool-source cases. The simulation passes439 library tests, with one ignored measurement. The client passes422 library tests and10 package/visibility integration tests before the final anchor-current addition.
-Root integrates protocol10, private host seed/provenance, public bot terrain queries and the assembled server checks.
-The API owner wires checked terrain exports and atomic publication. The simulation owner completes independent terrain audit certification. The client owner updates anchor metadata and prepares the final browser checks.
-The independent reviewer has seven whole-feature acceptance tests prepared. The review starts after the assembled candidate compiles.
-The frozen TW7 workload driver is committed. Timing, final browser work and the complete gate campaign remain unrun.
-The rechecks closed material accounting, geological coverage, permitted previews, and shared terrain geometry.
-Independent M4 implementation may proceed in separate worktrees against the reviewed SDK16 source while its final acceptance runs.
-Do not publish M4 or switch its playable launcher before SDK16 is accepted. Merge the final SDK16 source before M4 acceptance.
-API fields, exports and dependent engine lanes wait for the common contract checkpoint, rather than for unrelated predecessor measurements.
-During quiet performance runs, implementation may write source but cannot compile or run competing workloads.
-Pure geometry and conservation rules remain independent of SDK16. Prepare them without creating compiled caches or changing the accepted build.
-Root owns integration. Use three implementation lanes after the common contract compiles.
-Do not change the accepted default Skirmish or its launcher while this branch is incomplete.
+Current accepted main is SDK16 at `507e7010`. Its playable launcher remains available.
+API 0.2.17 and protocol 10 are implemented on this integration branch.
+The independent feature review passes 102 focused tests. The full native and process campaigns pass after scoped fixture repairs.
+The unchanged full warmed native workload passes all four configurations and 80,000 measured ticks.
+See `docs/reports/2026-11-15-terrain-work-orders.md` for evidence and limits.
+
+Next deliverables:
+
+| Owner | Deliverable | Dependency | Acceptance |
+| --- | --- | --- | --- |
+| Client agent | Preserve the terrain camera base through camera shake; align raised hover | Browser failure records | Focused native regression and strict changed-target checks |
+| Root | Rebuild the frozen browser candidate | Camera fix | TW6 on both public packages, High400 at three zoom levels, scripted cold-play probes |
+| Root | Update README, report and launchers; merge and push M4 | All milestone acceptance checks pass | Launcher starts the accepted build; evidence names every row |
+| Routing and traffic agents | Finish exact first-arrival group routing on the M4b branch | Approved M4b contract | Focused regressions, then the full M4b acceptance workload |
+
+Root owns integration. The client agent holds the native build lease during the camera fix.
+Serialize native builds, GPU measurements and browser workloads that would affect timing.
+Do not publish M4 or change the accepted launcher before its browser checks pass.
+The approved implementation contracts below remain unchanged.
 
 ## Common contract and pure rules: root first
 
