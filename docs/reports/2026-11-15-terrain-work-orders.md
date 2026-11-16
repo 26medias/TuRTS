@@ -19,7 +19,7 @@ Paths below are relative to that root. Earlier failed logs remain beside the pas
 | TW4 | `terrain-work-orders/sim/navigation-pause-final.log`; `terrain-work-orders/pure-kernel-ray-pruning.log`; client interaction and package tests. | Real browser passage, rover, height picking and local rendering checks. |
 | TW5 | Independent review, real HTTP privacy, atomic export, memory caps and process resync checks pass. See `terrain-work-orders/review.md` and process logs. | Final browser transport and cold-play checks. |
 | TW6 | Browser drivers are prepared. Native interaction and client checks pass. | Real pointer/key scenarios for both packages, both zoom extremes and final cold-play probes. |
-| TW7 | Functionality preflight passes. The first warmed diagnostic exceeds the server p99 limit. See the measurements below. | Optimize, run the full frozen workload and run three 400-unit High-detail browser camera cases. |
+| TW7 | Functionality preflight passes. The full frozen native workload passes all four configurations. See the measurements below. | Run three 400-unit High-detail browser camera cases. |
 
 The focused client run passes 423 library tests, eight shared-visibility tests and two real-package tests.
 The simulation checkpoint passes 439 library tests, with one ignored measurement.
@@ -51,7 +51,7 @@ Only the failed E9 snapshot oracle and the remaining rows were rerun.
 Evidence: `terrain-work-orders/final-process-acceptance.log`,
 `terrain-work-orders/final-process-acceptance-continued.log` and `terrain-work-orders/final-process-acceptance/`.
 These compatibility checks precede the exact arithmetic optimization below.
-Full warmed performance acceptance remains pending.
+The later full warmed native performance run passes. Final browser acceptance remains pending.
 
 ## Warmed diagnostic and exact arithmetic
 
@@ -70,7 +70,7 @@ Evidence: `terrain-work-orders/gcd-full-rules.log`, `terrain-work-orders/gcd-dif
 The pinned isolated microbenchmark records 15 alternating samples per input family.
 Median speedup is 22.678× for terrain-style dyadic inputs and 1.636× for full-width integer inputs.
 Evidence: `terrain-work-orders/gcd-microbenchmark.log`.
-This is a helper measurement. The optimized whole-service timing and final browser build remain unverified.
+This is a helper measurement. The full-service result is recorded below. The final browser checks remain pending.
 The independent feature review above precedes this arithmetic optimization.
 
 ## Integration findings
@@ -103,7 +103,33 @@ Evidence: `terrain-work-orders/tw7-subrectangle-comparison.json` and `terrain-wo
 The unchanged functionality preflight passes all four configurations and 240 actual simulation ticks.
 It checks movement, combat, harvesting, jobs, terrain work, client activation and persistent depletion.
 Evidence: `terrain-work-orders/tw7-preflight-subrectangle-final.log`.
-This cold preflight does not establish the timing limits. Warmed acceptance remains pending.
+This cold preflight does not establish the timing limits. The later full warmed run below passes them.
 
 The prepared400-model terrain fixture passes normal typed package validation. Its73 source files remain unchanged after packing.
 Evidence: `terrain-work-orders/browser-fps-fixture-frozen-v2/typed-pack-result.json`.
+
+## Full warmed native acceptance
+
+The final source checkpoint is `a73ed248c13bb81399a65d059fbaa4e8e22d58c7`.
+The unchanged workload passes all four configurations. Each has 100 warm-up intervals and 1,000 measured intervals of 20 ticks.
+The run measures 80,000 ticks after 8,000 warm-up ticks. Both native clients pass their tick and batch timing limits.
+Every configuration ends with zero service debt. All server p99, p99.9, maximum-tick and maximum-debt bounds pass.
+
+| Visibility | Application ACK delay | Server p99 | Maximum tick | Result |
+| --- | --- | --- | --- | --- |
+| Fog | 50 ms | 38.125 ms | 63.556 ms | PASS |
+| Fog | 100 ms | 37.108 ms | 59.053 ms | PASS |
+| AllVisible | 50 ms | 39.238 ms | 96.598 ms | PASS |
+| AllVisible | 100 ms | 38.263 ms | 56.825 ms | PASS |
+
+Evidence: `terrain-work-orders/tw7-final-1000.json`, `terrain-work-orders/tw7-final-1000.log` and `terrain-work-orders/tw7-final-1000-metadata.json`.
+The run uses CPUs 0, 2, 4 and 6. It ran from 2026-11-16 00:27:59 UTC to 01:08:23 UTC.
+The measured executable SHA-256 is `6b04f0b4206f947c0c4cf9e3bee26d0c541325ca14326ccd0d612cf74ccacaae`.
+
+The remaining optimizations preserve exact rules and public outputs. They cache exact ground support, narrow only separation searches, merge sorted terrain deltas and borrow immutable surface material names.
+Differential checks compare the old arithmetic, movement trajectories and serialized terrain projections.
+They pass 47 pure rules tests, 37 terrain tests, 40 movement tests with each probe setting, two borrowed-surface tests and six export tests.
+Changed-target strict Clippy and formatting pass.
+Evidence: `terrain-work-orders/normalization-rules.log`, `ground-cache-terrain.log`, `separation-movement.log`, `separation-movement-probes.log`, `surface-borrowed-tests.log` and `export-allvisible-tests.log` in that directory.
+The independent feature review precedes these performance changes. The differential checks and full timing run cover the later changes.
+No workload, quality, deadline, timeout or memory limit was reduced.
