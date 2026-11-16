@@ -146,6 +146,8 @@ pub struct CoreRuntime {
     pub(crate) placement_ghost: Option<turts_interaction::placement::Ghost>,
     pub(crate) terrain_preview: Option<turts_interaction::terrain::Preview>,
     core: Option<Core>,
+    /// Exact unshaken render pose, including the permitted terrain ground offset.
+    base_camera_transform: Option<Transform>,
     content_index: Option<ContentIndex>,
     started: Option<Instant>,
     pressed_keys: HashSet<String>,
@@ -176,6 +178,10 @@ pub struct CorePreferences {
 #[derive(Resource, Default, Debug, Clone)]
 pub struct CoreEffects(pub Vec<Effect>);
 impl CoreRuntime {
+    /// Feedback starts from the adapter's current base pose, never the prior shaken pose.
+    pub(crate) fn base_camera_transform(&self) -> Option<Transform> {
+        self.base_camera_transform
+    }
     pub fn core(&self) -> Option<&Core> {
         self.core.as_ref()
     }
@@ -1528,6 +1534,7 @@ fn drive_core_adapter(
         camera_state,
         world.camera_ground_height(camera_state.look_at),
     );
+    runtime.base_camera_transform = Some(transform);
     for (mut current_transform, mut current_projection) in &mut input.camera_query {
         *current_transform = transform;
         *current_projection = projection.clone();
@@ -1816,3 +1823,7 @@ fn update_primary_window_focus(
 
 #[cfg(test)]
 mod adapter_tests;
+
+#[cfg(test)]
+#[path = "core_adapter/camera_feedback_tests.rs"]
+mod camera_feedback_tests;

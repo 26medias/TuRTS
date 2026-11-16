@@ -3,6 +3,34 @@
 use super::*;
 use crate::{content::ClientContent, present::PresentedUnit, replica::Replica};
 
+// Both hover paths use only the same live contact permission as the rendered body.
+fn body_hit(
+    ray: Ray3d,
+    position: Vec2,
+    shape: &turts_mod_api::Shape,
+    yaw: f32,
+    support: Option<f32>,
+) -> Option<f32> {
+    turts_interaction::picking::shape_hit(
+        ray.origin - Vec3::Y * support?,
+        *ray.direction,
+        position,
+        shape,
+        yaw,
+    )
+}
+fn footprint_hit(ray: Ray3d, position: Vec2, radius: f32, support: Option<f32>) -> Option<f32> {
+    let distance = ray.intersect_plane(Vec3::Y * support?, InfinitePlane3d::new(Dir3::Y))?;
+    let point = ray.get_point(distance);
+    let delta = Vec2::new(point.x, point.z) - position;
+    (delta.length_squared() <= radius * radius).then_some(distance)
+}
+fn physical_hit_order(a: &(u32, f32, Vec2), b: &(u32, f32, Vec2)) -> std::cmp::Ordering {
+    a.1.total_cmp(&b.1)
+        .then_with(|| a.2.x.total_cmp(&b.2.x))
+        .then_with(|| a.2.y.total_cmp(&b.2.y))
+}
+
 /// The unit under the pointer. It updates the hover state of `visuals`.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn resolve_hover(
@@ -40,21 +68,20 @@ pub(super) fn resolve_hover(
                                 .to_euler(EulerRot::YXZ)
                                 .0
                         });
-                    turts_interaction::picking::shape_hit(
-                        ray.origin,
-                        *ray.direction,
-                        Vec2::new(unit.pos.x, unit.pos.y),
+                    let position = Vec2::new(unit.pos.x, unit.pos.y);
+                    body_hit(
+                        ray,
+                        position,
                         shape,
                         model_state.and_then(|m| m.yaw(unit.unit_id)).unwrap_or(yaw),
+                        crate::terrain::render::live_height(replica.terrain.as_ref(), unit.unit_id),
                     )
-                    .map(|distance| (unit.unit_id, distance))
+                    .map(|distance| (unit.unit_id, distance, position))
                 })
-                .min_by(|a, b| a.1.total_cmp(&b.1));
-            if let Some((id, _)) = body {
+                .min_by(physical_hit_order);
+            if let Some((id, _, _)) = body {
                 return Some(id);
             }
-            let distance = ray.intersect_plane(Vec3::ZERO, InfinitePlane3d::new(Dir3::Y))?;
-            let point = ray.get_point(distance);
             presented
                 .units
                 .iter()
@@ -63,11 +90,17 @@ pub(super) fn resolve_hover(
                         .ok()
                         .and_then(|id| content.catalog.units.get(&id))?;
                     let turts_mod_api::Footprint::Circle { radius } = &def.footprint;
-                    let dx = point.x - unit.pos.x;
-                    let dz = point.z - unit.pos.y;
-                    (dx * dx + dz * dz <= radius * radius).then_some(unit.unit_id)
+                    let position = Vec2::new(unit.pos.x, unit.pos.y);
+                    footprint_hit(
+                        ray,
+                        position,
+                        *radius,
+                        crate::terrain::render::live_height(replica.terrain.as_ref(), unit.unit_id),
+                    )
+                    .map(|distance| (unit.unit_id, distance, position))
                 })
-                .min()
+                .min_by(physical_hit_order)
+                .map(|(id, _, _)| id)
         });
     if visuals.hover_unit != hovered {
         visuals.hover_unit = hovered;
@@ -170,3 +203,7 @@ pub(super) fn draw_hover_ring(
         }
     }
 }
+
+#[cfg(test)]
+#[path = "hover_ground_tests.rs"]
+mod hover_ground_tests;
