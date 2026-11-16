@@ -36,7 +36,7 @@ url=f'http://127.0.0.1:{http}'
 q=json.dumps
 config=f'(game_package:{q(str(out/"fixture.tar"))},http_listen:{q(f"127.0.0.1:{http}")},ws_listen:{q(f"127.0.0.1:{ws}")},public_url:{q(url)},tick_hz:20,static_dir:Some({q(str(prepared/"dist"))}),start_policy:Some(Immediate),terrain_seed_file:Some({q(str(seed))}),terrain_provenance:Some({q(str(private/"terrain.json"))}))\n'
 (out/'server.ron').write_text(config)
-print(url)
+print(url+"/?server="+url+"&ws="+f"ws://127.0.0.1:{ws}")
 PY
 )"
 TURTS_COMPUTER_SLOT='' "$TERRAIN_PREPARED/bin/turts_server" "$TERRAIN_OUT/server.ron" > "$TERRAIN_OUT/server.log" 2>&1 &
@@ -53,7 +53,7 @@ import sys,time,urllib.request
 end=time.monotonic()+30
 while time.monotonic()<end:
     try:
-        with urllib.request.urlopen(sys.argv[1]+'/advertisement.json',timeout=1) as response:
+        with urllib.request.urlopen(sys.argv[1].split('/?')[0]+'/advertisement.json',timeout=1) as response:
             if response.status==200:break
     except OSError:pass
     time.sleep(.1)
