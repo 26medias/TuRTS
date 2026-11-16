@@ -87,7 +87,18 @@ function ghostPixels(beforeBytes,afterBytes,center,radius,color='blue') {
    s=await wait(s=>world(s).tick>utilityTick&&JSON.stringify(order(s,actor)?.current)===JSON.stringify(original.current)&&work(s,actor)?.current_cell?.x===unloading.current_cell.x&&work(s,actor)?.current_cell?.y===unloading.current_cell.y&&work(s,actor).required_work!==null,'Original partial work did not resume after unload');assert(work(s,actor).completed_work>=unloading.completed_work,'Unload reset partial work');assert(JSON.stringify(order(s,actor).queued)===JSON.stringify(original.queued),'Unload changed the pending queue');result.checks.unload_partial={before,unloading,resumed:work(s,actor),public_order:original.current};
   }
   const end=Date.now()+300000;let unloads=0;
-  while(Date.now()<end){s=await read();if(done(s))break;if(work(s,actor)?.wait==='FullCargo'){assert(unloads<32,'Unbounded unloading loop');await capture('cargo-'+unloads);await widget(w=>w.enabled&&w.widget_action?.kind==='unload_resume'&&w.widget_action.unit===actor);unloads++;await wait(s=>work(s,actor)?.wait!=='FullCargo','Unload did not resume work');}else await sleep(150);}
+  while(Date.now()<end){
+   s=await read();if(done(s))break;
+   if(work(s,actor)?.wait==='FullCargo'&&amount(s,actor)>0){
+    assert(unloads<32,'Unbounded unloading loop');await capture('cargo-'+unloads);
+    // The ordinary transfer can finish while a capture awaits the next public frame.
+    s=await wait(s=>done(s)||work(s,actor)?.wait!=='FullCargo'||s.ui.some(w=>w.visible&&w.enabled&&w.widget_action?.kind==='unload_resume'&&w.widget_action.unit===actor),'Full cargo has no visible unload action');
+    if(done(s))break;if(work(s,actor)?.wait!=='FullCargo'||amount(s,actor)===0)continue;
+    const beforeUnload=amount(s,actor),w=s.ui.find(w=>w.visible&&w.enabled&&w.widget_action?.kind==='unload_resume'&&w.widget_action.unit===actor),[x,y,width,height]=w.rect;
+    await click([x+width/2,y+height/2]);unloads++;
+    await wait(s=>done(s)||(work(s,actor)?.wait!=='FullCargo'&&amount(s,actor)<beforeUnload),'Unload did not transfer cargo and resume work');
+   }else await sleep(150);
+  }
   assert(done(s),'Work rectangle did not reach the captured reference level');result.unloads=unloads;await capture('06-passage-open');
   // A settled worker keeps its point. Clear the mouth through an ordinary player move.
   await select(scenario.worker);s=await read();await click(project(s.scene,scenario.worker_clearance),'right');s=await wait(s=>{const u=world(s).units.find(u=>u.unit_id===actor);return u&&Math.hypot(u.pos[0]-scenario.worker_clearance[0],u.pos[1]-scenario.worker_clearance[1])<.5;},'Worker did not clear the passage through its ordinary move');await capture('06b-worker-cleared');result.checks.worker_cleared={unit:actor,destination:scenario.worker_clearance};
