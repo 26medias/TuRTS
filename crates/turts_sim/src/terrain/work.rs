@@ -277,53 +277,182 @@ fn selected_cell(world: &World, unit: u32, order: &Order) -> Option<Cell> {
     cells_ranked.first().map(|(_, x, y)| Cell { x: *x, y: *y })
 }
 fn approach(world: &mut World, unit: u32, cell: Cell) {
+    use turts_rules::terrain::{
+        Ratio,
+        geometry::{Budget, Point, Traversal},
+    };
     let Some(entity) = unit_entity(world, unit) else {
         return;
     };
-    let Some(position) = world.get::<Position>(entity).map(|position| position.0) else {
+    let (Some(position), Some(kind), Some(owner)) = (
+        world.get::<Position>(entity),
+        world.get::<UnitType>(entity),
+        world.get::<Owner>(entity),
+    ) else {
         return;
     };
-    let Some(kind) = world.get::<UnitType>(entity) else {
-        return;
-    };
-    let Some(radius) = world
+    let position = position.0;
+    let kind = kind.0;
+    let owner = owner.0.0;
+    let Some(entry) = world
         .get_resource::<crate::UnitTypes>()
-        .and_then(|types| types.get(kind.0))
-        .map(|entry| entry.radius)
+        .and_then(|types| types.get(kind))
     else {
         return;
     };
-    let Some(terrain) = world.get_resource::<TerrainState>() else {
+    if entry.movement.is_none() {
+        return;
+    }
+    let radius = entry.radius;
+    let Some(definition) = ContentId::parse(&entry.content_id)
+        .ok()
+        .and_then(|id| world.get_resource::<InstalledCatalog>()?.0.units.get(&id))
+    else {
         return;
     };
-    let width = f64::from(terrain.grid.cell_width) / f64::from(terrain.grid.length_scale);
-    let cx = (f64::from(cell.x) + 0.5) * width;
-    let cy = (f64::from(cell.y) + 0.5) * width;
-    let dx = f64::from(position.x) - cx;
-    let dy = f64::from(position.y) - cy;
-    // A tangent circle does not occupy the work cell. Move beside it, never onto it.
-    let point = if dx.abs() >= dy.abs() {
-        bevy_math::Vec2::new(
-            (cx + if dx <= 0.0 {
-                -width * 0.5 - f64::from(radius)
-            } else {
-                width * 0.5 + f64::from(radius)
-            }) as f32,
-            f64::from(position.y).clamp(cy - width * 0.5, cy + width * 0.5) as f32,
-        )
-    } else {
-        bevy_math::Vec2::new(
-            f64::from(position.x).clamp(cx - width * 0.5, cx + width * 0.5) as f32,
-            (cy + if dy <= 0.0 {
-                -width * 0.5 - f64::from(radius)
-            } else {
-                width * 0.5 + f64::from(radius)
-            }) as f32,
-        )
+    let class = definition.terrain_class.as_ref().and_then(|id| {
+        world
+            .get_resource::<InstalledCatalog>()?
+            .0
+            .terrain_movement_classes
+            .get(id)
+    });
+    let profile = class.map_or(
+        Traversal {
+            max_step: 0,
+            max_grade: Ratio {
+                numerator: 0,
+                denominator: 1,
+            },
+        },
+        |class| Traversal {
+            max_step: class.max_step,
+            max_grade: Ratio {
+                numerator: u64::from(class.max_grade.numerator),
+                denominator: u64::from(class.max_grade.denominator),
+            },
+        },
+    );
+    let Some(phase) = super::phase(world, ObservationPhase::Tactical) else {
+        return;
     };
-    world
-        .entity_mut(entity)
-        .insert(crate::world::MoveTarget(point));
+    struct Permitted<'a> {
+        phase: &'a super::TerrainPhase,
+        owner: u8,
+    }
+    impl Surface for Permitted<'_> {
+        fn elevation(&self, cell: Cell) -> Option<i32> {
+            self.phase.planning_elevation(self.owner, cell)
+        }
+    }
+    let surface = Permitted {
+        phase: &phase,
+        owner,
+    };
+    let grid = phase.grid();
+    let width = f64::from(grid.cell_width) / f64::from(grid.length_scale);
+    let min_x = f64::from(cell.x) * width;
+    let max_x = min_x + width;
+    let min_y = f64::from(cell.y) * width;
+    let max_y = min_y + width;
+    // Round away from the work cell. Rounding a tangent pose inward can make
+    // the worker occupy its own cell or straddle an impassable plateau edge.
+    let down = |value: f64| {
+        let rounded = value as f32;
+        if f64::from(rounded) > value {
+            rounded.next_down()
+        } else {
+            rounded
+        }
+    };
+    let up = |value: f64| {
+        let rounded = value as f32;
+        if f64::from(rounded) < value {
+            rounded.next_up()
+        } else {
+            rounded
+        }
+    };
+    let x = f64::from(position.x).clamp(min_x, max_x) as f32;
+    let y = f64::from(position.y).clamp(min_y, max_y) as f32;
+    let middle_x = ((min_x + max_x) * 0.5) as f32;
+    let middle_y = ((min_y + max_y) * 0.5) as f32;
+    let west = down(min_x - f64::from(radius));
+    let east = up(max_x + f64::from(radius));
+    let north = down(min_y - f64::from(radius));
+    let south = up(max_y + f64::from(radius));
+    let poses = [
+        bevy_math::Vec2::new(west, y),
+        bevy_math::Vec2::new(east, y),
+        bevy_math::Vec2::new(x, north),
+        bevy_math::Vec2::new(x, south),
+        bevy_math::Vec2::new(west, middle_y),
+        bevy_math::Vec2::new(east, middle_y),
+        bevy_math::Vec2::new(middle_x, north),
+        bevy_math::Vec2::new(middle_x, south),
+    ];
+    let point = |value: bevy_math::Vec2| Point {
+        x: f64::from(value.x),
+        y: f64::from(value.y),
+    };
+    let start = grid
+        .disk_support(
+            &surface,
+            point(position),
+            f64::from(radius),
+            profile.max_step,
+            &mut Budget::new(16_384),
+        )
+        .ok();
+    let mut candidates = Vec::new();
+    for pose in poses {
+        let Ok(support) = grid.disk_support(
+            &surface,
+            point(pose),
+            f64::from(radius),
+            profile.max_step,
+            &mut Budget::new(16_384),
+        ) else {
+            continue;
+        };
+        if profile.max_step == 0
+            && start
+                .as_ref()
+                .is_some_and(|start| start.maximum != support.maximum)
+        {
+            continue;
+        }
+        let swept = grid.sweep(
+            &surface,
+            point(position),
+            point(pose),
+            f64::from(radius),
+            profile,
+            &mut Budget::new(16_384),
+        );
+        let direct = swept.result.is_ok() && swept.numerator == swept.denominator;
+        let dx = f64::from(pose.x) - f64::from(position.x);
+        let dy = f64::from(pose.y) - f64::from(position.y);
+        candidates.push((!direct, dx * dx + dy * dy, pose));
+    }
+    candidates.sort_by(|left, right| {
+        left.0
+            .cmp(&right.0)
+            .then_with(|| left.1.total_cmp(&right.1))
+            .then_with(|| left.2.x.total_cmp(&right.2.x))
+            .then_with(|| left.2.y.total_cmp(&right.2.y))
+    });
+    if let Some((_, _, point)) = candidates.first() {
+        // A supported endpoint without a straight connector still uses the
+        // existing permitted route search. It never grants straight-line motion.
+        world
+            .entity_mut(entity)
+            .insert(crate::world::MoveTarget(*point));
+    } else {
+        world
+            .entity_mut(entity)
+            .remove::<crate::world::MoveTarget>();
+    }
 }
 /// After Acquire and before Repair/Combat. Existing claimants retain their cell until completion
 /// or loss of physical eligibility. New equal physical starts remain contested.
@@ -720,3 +849,7 @@ pub fn rows_for(world: &World, owner: u8) -> Vec<TerrainWorkView> {
         })
         .collect()
 }
+
+#[cfg(test)]
+#[path = "work_approach_tests.rs"]
+mod approach_tests;
