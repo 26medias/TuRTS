@@ -21,6 +21,9 @@ bash target/mc-evidence/play-skirmish.sh
 
 That launcher uses prepared local artifacts. To build from source, use `bash scripts/skirmish-play.sh --prepare /absolute/path/to/prepared`, then `bash scripts/skirmish-play.sh --prepared /absolute/path/to/prepared --silent`. Test browsers must use a fresh profile and `--alsa-output-device=null`.
 
+The M6 underground utility fixture (`mods/utility_yard`) has its own tested launcher on its branch:
+`bash target/mc-evidence/play-utilities.sh`. Press U for the utility view; the package README lists the steps.
+
 Two local browsers can play one match through `bash target/mc-evidence/play-two-player.sh`.
 Run its printed `JOIN_COMMAND` in another terminal.
 For a temporary Internet game, use `bash target/mc-evidence/play-shared-skirmish.sh`.
@@ -40,6 +43,17 @@ Authored map fog and bounded remembered sightings are now available to mods. Edi
 The target is the full RTS engine in the [project specification](RTS-Engine-Project-Specifications.md).
 The skirmish is its playable test bed. This table tracks delivered capabilities, not completion percentages.
 
+Whole-engine milestone count (spec section 14, 20 milestones; complete accepted milestones only):
+
+```text
+M1 M2 M3 QA0 M4 M6* | MC MP1 MP2 M4b M5 MS MB M7 M8 M9 M10 M11 M12 M13
+██████░░░░░░░░░░░░░░  6 of 20 (30 %) with M6*, 5 of 20 (25 %) on main
+```
+
+\* M6 underground utilities passes its acceptance on branch `codex/m6-underground-utilities`.
+It counts only after root integration into main. MC, MP1 and MP2 have shipped capabilities, but their
+full milestone player checks remain open, so they are not counted.
+
 | Capability | Verified progress | Evidence and remaining work |
 | --- | --- | --- |
 | Core simulation and mod content | Authoritative simulation, package loading, gathering, production, logistics, research, and combat are implemented. | Forge and Skirmish exercise these systems. Incremental payment, repair, cancellation, and safe destruction refunds pass native and browser acceptance. |
@@ -53,7 +67,8 @@ The skirmish is its playable test bed. This table tracks delivered capabilities,
 | Public mod bots | Portable profiles, public Rust controllers, bounded observations, exact account coordination, shared command admission, and headless recorded/regenerated replay are implemented. | [SDK15 report](docs/reports/2026-11-15-public-bot-foundation.md). Final Skirmish and Stockyard browser probes pass. BF8 passed at 4.906851 ms p99 before later financial/profile fixes; those fixes were not remeasured. Full human/reference readiness remains open. |
 | Shared visibility | Authored fog, team sharing, bounded stale sightings, hidden-target command rules, and atomic permitted human/bot state pass acceptance. | [SDK16 report](docs/reports/2026-11-15-shared-visibility.md). API 0.2.16; protocol 9. Independent code-running review, 2,924 native tests, full network acceptance, 60,000 measured server ticks, nine High camera cases, and scripted player probes pass. |
 | Editable terrain | Plateau heights, excavation/fill, private seeded geology, persistent depletion, physical cargo, explicit unloading, permitted surface memory, raised picking, and traversable passages pass acceptance. | [M4 evidence and limits](docs/reports/2026-11-15-terrain-work-orders.md). API 0.2.17; protocol 10. Both public terrain packages, independent code-running review, 80,000 final measured ticks, three High400 views and scripted cold-play probes pass. Fully exposed million-cell maps exceed the decoded-state guard. |
-| Remaining engine scope | Shared group routing, geological discovery and terrain occlusion, scripts, utilities, rooms, durable identity/saves, statistics, and spectator/replay delivery remain open. | M4b routing and M5a surveys are under implementation on separate branches. M5b obstruction has an approved spec and plan. The full project specification remains the target. |
+| Underground utilities (M6, branch) | Mod-defined utility types, explicit junctions, surface ports, fixed line elevation, terrain-dependent burial with mod exposure policy, aggregate electrical supply per network, and a browser utility view with place, connect and inspect. | [M6 report](docs/reports/2026-11-16-underground-utilities.md). API 0.2.18 and protocol 11 are branch-local. Two-viewer wire privacy, real paid terrain edits, independent code-running review, real-input browser case and three scripted cold-play probes pass. No water, sewage or heat model; bots do not use utilities. |
+| Remaining engine scope | Shared group routing, geological discovery and terrain occlusion, scripts, rooms, durable identity/saves, statistics, and spectator/replay delivery remain open. | M4b routing and M5a surveys are under implementation on separate branches. M5b obstruction has an approved spec and plan. The full project specification remains the target. |
 
 Latest accepted build: `target/mc-evidence/skirmish-terrain-route-final-prepared` (API 0.2.17; protocol 10), sealed from source `2073e15e`.
 All three local launchers use the frozen `TuRTS-terrain-play` checkout and this prepared build.
