@@ -1,0 +1,1 @@
+(target:Unit("utility_yard:porter"),shape:Cuboid(x:0.6,y:0.6,z:1.0),model:Some((asset:"utility_yard:worker_glb",team_material:Some("team"),scale:0.7,lods:[],animations:Some((idle:Some((clip:"Idle")),move:Some((clip:"Walking_A",stride:Some(0.47700539))),death:Some((clip:"Death_A")),work:Some((clip:"Interact")))))))

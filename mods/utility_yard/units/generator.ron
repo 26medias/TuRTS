@@ -1,0 +1,1 @@
+(id:"generator",name:"Generator",footprint:Circle(radius:1.2),movement:None,inventory:None,gatherer:None,drop_off:None,producer:None,terrain_foundation:Some(ForbidEdit),provides:[(resource:"utility_yard:power",amount:10)],health:Some((max:300)),vision:Some((radius:8.0)))

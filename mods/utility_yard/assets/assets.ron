@@ -1,0 +1,1 @@
+(images:[(id:"icon_order_move",path:"assets/icon_order_move.png",nine_slice:None),(id:"ground_grass",path:"assets/models/ground_grass.png",nine_slice:None)],fonts:[],sounds:[],cursors:[],models:[(id:"worker_glb",path:"assets/models/worker_anim.glb"),(id:"base_glb",path:"assets/models/base.glb")])

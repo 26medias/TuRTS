@@ -1,0 +1,1 @@
+(id:"borer",name:"Borer",operation:Excavate,work_per_second:16,reach:1.5,allowed_materials:["utility_yard:loam_layer","utility_yard:crystal_layer"],max_hardness:8,output_destination:SlotBalances)

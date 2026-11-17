@@ -1,0 +1,1 @@
+(id:"make_porter",name:"Make porter",output_unit:"utility_yard:porter",duration_ms:8000,costs:[],payment:ChargeOnQueue,cancel_refunds:(queued:(numerator:1,denominator:1),running:(numerator:1,denominator:1),output_blocked:(numerator:1,denominator:1)))

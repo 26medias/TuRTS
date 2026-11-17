@@ -29,3 +29,5 @@ pub mod bots;
 pub mod visibility;
 
 pub mod terrain;
+
+pub mod utilities;

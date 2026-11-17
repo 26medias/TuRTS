@@ -22,7 +22,7 @@ fn source<'a>(catalog: &'a ContentCatalog, id: &ContentId) -> &'a str {
         .get(id)
         .map_or("content", String::as_str)
 }
-fn insert_source(
+pub(crate) fn insert_source(
     origin: &PackageId,
     file: &str,
     local: &str,

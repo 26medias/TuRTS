@@ -1,0 +1,1 @@
+(target:Unit("utility_yard:generator"),shape:Cuboid(x:2.0,y:2.0,z:1.4),model:Some((asset:"utility_yard:base_glb",team_material:Some("team"),scale:0.45,lods:[],animations:None)))

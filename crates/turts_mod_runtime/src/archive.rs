@@ -209,6 +209,11 @@ impl PackageArchive {
         )
     }
 
+    /// Exported utility type definitions (API 0.2.18, `exports.utilities`).
+    pub fn utilities(&self) -> Result<Vec<(String, turts_mod_api::UtilityDef)>, ModError> {
+        self.parse_exports("exports.utilities", &self.manifest.exports.utilities)
+    }
+
     /// Portable bot profiles. Factory availability is checked only by host activation.
     pub fn bots(&self) -> Result<Vec<(String, turts_mod_api::BotDef)>, ModError> {
         self.parse_exports("exports.bots", &self.manifest.exports.bots)
@@ -227,6 +232,7 @@ impl PackageArchive {
         crate::terrain::validate_terrain_catalog(&self.id(), &catalog)?;
         for (file, interface) in self.interfaces()? {
             crate::terrain::validate_terrain_tool_sources(&self.id(), &file, &interface, &catalog)?;
+            crate::utilities::validate_utility_sources(&self.id(), &file, &interface, &catalog)?;
         }
         for (file, map) in self.maps()? {
             crate::terrain::validate_terrain_map(&self.id(), &file, &map, &catalog)?;
@@ -361,6 +367,7 @@ impl PackageArchive {
             self.terrain_movement_classes()?,
             self.terrain_tools()?,
         )?;
+        crate::utilities::install_utilities(&self.manifest, &mut catalog, self.utilities()?)?;
         Ok(catalog)
     }
 

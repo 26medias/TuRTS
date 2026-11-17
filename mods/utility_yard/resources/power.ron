@@ -1,0 +1,1 @@
+(id:"power",name:"Power",unit_name:"unit",kind:Supply(scope:Network,counts:Completed))
