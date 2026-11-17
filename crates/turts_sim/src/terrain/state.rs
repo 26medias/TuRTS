@@ -1,5 +1,9 @@
 use bevy_ecs::prelude::Resource;
-use std::{collections::BTreeMap, fmt, sync::Arc};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    fmt,
+    sync::Arc,
+};
 use turts_mod_api::{ContentCatalog, ContentId, ResolvedTerrainDef};
 use turts_rules::terrain::{
     generation::{self, DatumBand, Geology, WeightedMaterial},
@@ -155,6 +159,9 @@ pub(crate) struct TerrainState {
     pub(super) chunks: ChunkTable,
     table_revision: u64,
     dirty_chunks: Vec<bool>,
+    /// M6: cells that an edit commit changed in the current tick. Written by
+    /// `apply_prevalidated`; cleared with the dirty-chunk bits by `terrain::begin_tick`.
+    changed_cells: BTreeSet<Cell>,
     pub(crate) step_observations: BTreeMap<(u8, Cell), super::TerrainSurfaceWitness>,
 }
 // StagedPackage needs Debug. Never print realized columns or private seed.
@@ -295,6 +302,7 @@ impl TerrainState {
         self.chunks = edit.table;
         self.table_revision = edit.next_table_revision;
         self.dirty_chunks[edit.chunk_index] = true;
+        self.changed_cells.insert(edit.cell);
     }
     pub(crate) fn material(&self, key: u32) -> Option<&ContentId> {
         self.materials.get(usize::try_from(key).ok()?)
@@ -361,6 +369,11 @@ impl TerrainState {
     }
     pub(crate) fn clear_changed_chunks(&mut self) {
         self.dirty_chunks.fill(false);
+        self.changed_cells.clear();
+    }
+    /// The cells that an edit commit changed in this tick, ascending.
+    pub(crate) fn changed_cells(&self) -> &BTreeSet<Cell> {
+        &self.changed_cells
     }
 }
 
@@ -563,6 +576,7 @@ pub(crate) fn prepare(
         materials: materials.into(),
         initial: initial.into(),
         dirty_chunks: vec![false; chunk_count],
+        changed_cells: BTreeSet::new(),
         initial_ranges: chunks
             .iter()
             .map(|chunk| (chunk.minimum, chunk.maximum))

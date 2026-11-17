@@ -90,6 +90,10 @@ pub(crate) fn apply_order(
     if command.behaviour == Behaviour::CancelConstruction {
         return cancel_sites(world, slot, command, &unit_ids, &entity_by_unit);
     }
+    // M6: a route is applied on admission and never enters a unit order queue.
+    if command.behaviour == Behaviour::UtilityRoute {
+        return crate::utilities::apply_route(world, slot, command, &unit_ids, &entity_by_unit);
+    }
     let financial = matches!(command.behaviour, Behaviour::Produce | Behaviour::Construct);
     let mut anchors = BTreeMap::new();
     let mut tied = std::collections::BTreeSet::new();
@@ -693,7 +697,8 @@ fn validate_member(
         Behaviour::Repair => definition.is_some_and(|unit| unit.repairer.is_some()),
         Behaviour::TerrainWork => definition.is_some_and(|unit| !unit.terrain_tools.is_empty()),
         Behaviour::UnloadCargo => definition.is_some_and(|unit| unit.terrain_cargo.is_some()),
-        Behaviour::CancelConstruction | Behaviour::Surrender => false,
+        // M6: a utility route is applied by `crate::utilities` before per-unit validation.
+        Behaviour::CancelConstruction | Behaviour::Surrender | Behaviour::UtilityRoute => false,
     };
     if !capable {
         let reason = match command.behaviour {
@@ -740,9 +745,8 @@ fn validate_target(
         | (turts_mod_api::TargetKind::Content, OrderTargetSim::Content(_))
         | (turts_mod_api::TargetKind::ContentAtPoint, OrderTargetSim::ContentAtPoint { .. })
         | (turts_mod_api::TargetKind::None, OrderTargetSim::None)
-        | (turts_mod_api::TargetKind::TerrainDesignation, OrderTargetSim::TerrainWork { .. }) => {
-            true
-        }
+        | (turts_mod_api::TargetKind::TerrainDesignation, OrderTargetSim::TerrainWork { .. })
+        | (turts_mod_api::TargetKind::UtilityRoute, OrderTargetSim::UtilityRoute(_)) => true,
         (turts_mod_api::TargetKind::Content, OrderTargetSim::Invalid)
             if command.behaviour == Behaviour::Produce =>
         {
@@ -1305,7 +1309,9 @@ fn apply_unit_order(
             }
             Ok(None)
         }
-        Behaviour::CancelConstruction | Behaviour::Surrender => Err(R::NotApplicable),
+        Behaviour::CancelConstruction | Behaviour::Surrender | Behaviour::UtilityRoute => {
+            Err(R::NotApplicable)
+        }
     }
 }
 

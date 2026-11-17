@@ -19,6 +19,7 @@ impl Default for ClientContent {
     fn default() -> Self {
         Self {
             catalog: ContentCatalog {
+                utilities: Default::default(),
                 terrain_materials: Default::default(),
                 terrain_movement_classes: Default::default(),
                 terrain_tools: Default::default(),
@@ -62,6 +63,7 @@ impl ClientContent {
     ) -> Result<Self, ModError> {
         let shapes = visuals_by_content(archives)?;
         let mut catalog = ContentCatalog {
+            utilities: Default::default(),
             terrain_materials: Default::default(),
             terrain_movement_classes: Default::default(),
             terrain_tools: Default::default(),
@@ -118,6 +120,16 @@ impl ClientContent {
                     .insert(id.clone(), value)
                     .is_some()
                 {
+                    return Err(ModError::new(
+                        &id.package.0,
+                        "id",
+                        format!("duplicate content id `{id}`"),
+                    ));
+                }
+            }
+            // API 0.2.18 (M6): the utility types of the match, for ports, colours and labels.
+            for (id, value) in part.utilities {
+                if catalog.utilities.insert(id.clone(), value).is_some() {
                     return Err(ModError::new(
                         &id.package.0,
                         "id",

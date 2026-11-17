@@ -7,7 +7,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use bevy_ecs::{prelude::Resource, world::World};
 use turts_mod_api::{
-    ContentCatalog, ContentId, ModError, ResolvedUnit, ResourceKind, ShortEffect, WhenShort,
+    ContentCatalog, ContentId, ModError, ResolvedUnit, ResourceKind, ShortEffect, SupplyScope,
+    WhenShort,
 };
 use turts_rules::Ratio;
 
@@ -45,7 +46,12 @@ struct Contribution {
 }
 
 impl Contribution {
-    fn of(unit: &ResolvedUnit, slot: u8) -> Result<Self, RejectReason> {
+    /// A Network resource never enters slot totals (M6): the utility pass counts it.
+    fn of(
+        unit: &ResolvedUnit,
+        slot: u8,
+        network: &BTreeSet<ContentId>,
+    ) -> Result<Self, RejectReason> {
         let mut contribution = Self {
             slot,
             ..Self::default()
@@ -57,6 +63,9 @@ impl Contribution {
                     .map_err(|_| RejectReason::IntegrityViolation)?;
                 if row.amount == 0 || !seen.insert(id.clone()) {
                     return Err(RejectReason::IntegrityViolation);
+                }
+                if network.contains(&id) {
+                    continue;
                 }
                 let total = contribution.supply.entry(id).or_default();
                 if provided {
@@ -110,6 +119,8 @@ pub(crate) struct OperatingResources {
     live_income: BTreeMap<AccountKey, u64>,
     active: BTreeMap<u32, Contribution>,
     slot_count: u8,
+    /// M6: Supply resources with `SupplyScope::Network`. They have no slot row.
+    network_resources: BTreeSet<ContentId>,
 }
 
 /// Whether a catalog needs operating state. This keeps legacy worlds on their old path.
@@ -164,9 +175,25 @@ impl OperatingResources {
             slot_count,
             ..Self::default()
         };
+        state.network_resources = catalog
+            .resources
+            .iter()
+            .filter(|(_, resource)| {
+                matches!(
+                    resource.kind,
+                    ResourceKind::Supply {
+                        scope: SupplyScope::Network,
+                        ..
+                    }
+                )
+            })
+            .map(|(id, _)| id.clone())
+            .collect();
         for slot in 0..slot_count {
             for (id, resource) in &catalog.resources {
-                if matches!(resource.kind, ResourceKind::Supply { .. }) {
+                if matches!(resource.kind, ResourceKind::Supply { .. })
+                    && !state.network_resources.contains(id)
+                {
                     state
                         .live_supply
                         .insert((slot, id.clone()), SupplyTotal::default());
@@ -183,7 +210,7 @@ impl OperatingResources {
         unit: &ResolvedUnit,
         slot: u8,
     ) -> Result<Activation, RejectReason> {
-        let contribution = Contribution::of(unit, slot)?;
+        let contribution = Contribution::of(unit, slot, &self.network_resources)?;
         if !contribution.is_empty() && (!self.initialized || slot >= self.slot_count) {
             return Err(RejectReason::IntegrityViolation);
         }
@@ -455,6 +482,8 @@ pub(crate) fn run_supply(world: &mut World) {
     if let Some(mut state) = world.get_resource_mut::<OperatingResources>() {
         state.begin_tick();
     }
+    // M6: the network state swap does not depend on the slot totals.
+    crate::utilities::begin_tick(world);
 }
 
 /// Complete zero-inclusive effect records, sorted by slot and qualified resource.
@@ -526,7 +555,7 @@ pub(crate) enum WorkCapability {
     Research,
 }
 
-fn definition(world: &World, unit: u32) -> Option<&ResolvedUnit> {
+pub(crate) fn definition(world: &World, unit: u32) -> Option<&ResolvedUnit> {
     let entity = unit_entity(world, unit)?;
     let kind = world.get::<UnitType>(entity)?;
     let entry = world.get_resource::<UnitTypes>()?.get(kind.0)?;
@@ -540,13 +569,19 @@ fn slot_of(world: &World, unit: u32) -> Option<u8> {
         .map(|owner| owner.0.0)
 }
 
-fn shortage(world: &World, slot: u8, reference: &str) -> bool {
+/// Whether the resource is short for this reader. A Network resource is short for the
+/// network of `unit` (M6, `crate::utilities`); it has no slot total. With no unit a
+/// Network resource is never short.
+fn shortage(world: &World, unit: Option<u32>, slot: u8, reference: &str) -> bool {
     let Some(state) = world.get_resource::<OperatingResources>() else {
         return false;
     };
     let Ok(resource) = ContentId::parse(reference) else {
         return false;
     };
+    if state.network_resources.contains(&resource) {
+        return unit.is_some_and(|unit| crate::utilities::network_short(world, unit, &resource));
+    }
     state
         .effects
         .get(&(slot, resource))
@@ -566,10 +601,11 @@ pub(crate) fn weapon_enabled(world: &World, unit: u32) -> bool {
         return true;
     };
     definition(world, unit)
-        .and_then(|unit| unit.weapon.as_ref())
+        .and_then(|definition| definition.weapon.as_ref())
         .is_none_or(|weapon| {
             !weapon.when_short.iter().any(|entry| {
-                entry.effect == ShortEffect::Disable && shortage(world, slot, &entry.resource)
+                entry.effect == ShortEffect::Disable
+                    && shortage(world, Some(unit), slot, &entry.resource)
             })
         })
 }
@@ -596,11 +632,16 @@ fn constrained_rate(entries: &[WhenShort], short: impl Fn(&str) -> bool) -> Rati
 
 /// Site progress retains its constructor's rules even after that source unit is removed.
 pub(crate) fn rate_for_rules(world: &World, slot: u8, entries: &[WhenShort]) -> Ratio {
+    rate_for_rules_of(world, None, slot, entries)
+}
+
+/// The same rule for the work of one unit. A Network resource follows the network of `unit`.
+fn rate_for_rules_of(world: &World, unit: Option<u32>, slot: u8, entries: &[WhenShort]) -> Ratio {
     #[cfg(test)]
     if let Some(probe) = world.get_resource::<PowerProbe>() {
         return probe.rate;
     }
-    constrained_rate(entries, |resource| shortage(world, slot, resource))
+    constrained_rate(entries, |resource| shortage(world, unit, slot, resource))
 }
 
 /// The same rule applied to an immutable, completed view for published progress records.
@@ -655,7 +696,7 @@ pub(crate) fn rate_for(world: &World, unit: u32, capability: WorkCapability) -> 
     let Some(slot) = slot_of(world, unit) else {
         return full_rate();
     };
-    rate_for_rules(world, slot, entries.unwrap_or_default())
+    rate_for_rules_of(world, Some(unit), slot, entries.unwrap_or_default())
 }
 
 /// Compatibility accessor for existing producer callers. Constructor callers use `rate_for`.
@@ -772,6 +813,7 @@ mod tests {
         })
         .collect();
         ContentCatalog {
+            utilities: Default::default(),
             terrain_materials: Default::default(),
             terrain_movement_classes: Default::default(),
             terrain_tools: Default::default(),

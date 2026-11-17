@@ -461,7 +461,7 @@ fn hud3_unknown_source_is_refused() {
             "source: CommandCard",
             "source: SecretSource",
         )],
-        "zeta/interface/main.ron: unknown variant `SecretSource` at line 5 column 153 (allowed: Balance, Balances, SelectionUnits, CommandCard, BuildMenu, ProductionQueue, ControlGroups, Alerts, Bindings, Guide, ConstructionQueue, Sites, Notices, SelectionTypes, TerrainTools)",
+        "zeta/interface/main.ron: unknown variant `SecretSource` at line 5 column 153 (allowed: Balance, Balances, SelectionUnits, CommandCard, BuildMenu, ProductionQueue, ControlGroups, Alerts, Bindings, Guide, ConstructionQueue, Sites, Notices, SelectionTypes, TerrainTools, UtilityRoutes)",
     );
 }
 

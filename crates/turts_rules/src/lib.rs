@@ -19,6 +19,7 @@ pub mod placement;
 pub mod progress;
 pub mod relation;
 pub mod supply;
+pub mod utilities;
 pub mod visibility;
 pub mod visibility_advice;
 

@@ -596,6 +596,7 @@ mod tests {
             })
             .collect();
         let catalog = ContentCatalog {
+            utilities: Default::default(),
             terrain_materials: Default::default(),
             terrain_movement_classes: Default::default(),
             terrain_tools: Default::default(),

@@ -17,9 +17,16 @@ The local tested launcher is:
 bash target/mc-evidence/play-skirmish.sh
 ```
 
+The underground utility demo uses `bash target/mc-evidence/play-utilities.sh`.
+Press U, connect the Workshop to the generator, and check that its port turns green and shows Powered.
+The demo also supports excavation that exposes a line and fill that restores its cover.
+
 [Rendering measurements](docs/measurements/models.md) record about 59 FPS for 400 fighting units on the local RTX 3080. The new three-type 2,000-unit stress battle reaches about 29 FPS High and 40 FPS Low. Hit sparks now appear above the armour. Selecting a unit shows its portrait, name, health, and own armour. A tooltip shows its weapon damage.
 
 That launcher uses prepared local artifacts. To build from source, use `bash scripts/skirmish-play.sh --prepare /absolute/path/to/prepared`, then `bash scripts/skirmish-play.sh --prepared /absolute/path/to/prepared --silent`. Test browsers must use a fresh profile and `--alsa-output-device=null`.
+
+The M6 underground utility fixture (`mods/utility_yard`) has its own tested launcher on its branch:
+`bash target/mc-evidence/play-utilities.sh`. Press U for the utility view; the package README lists the steps.
 
 Two local browsers can play one match through `bash target/mc-evidence/play-two-player.sh`.
 Run its printed `JOIN_COMMAND` in another terminal.
@@ -40,10 +47,10 @@ Authored map fog and bounded remembered sightings are now available to mods. Edi
 The target is the full RTS engine in the [project specification](RTS-Engine-Project-Specifications.md).
 The skirmish is its playable test bed. The table below tracks delivered capabilities.
 
-Accepted milestones of spec section 14 (20 in all): `██████░░░░░░░░░░░░░░` 6 of 20.
-- Accepted: M1, M2, M3, QA0, M4, MS.
+Accepted milestones of spec section 14 (20 in all): `███████░░░░░░░░░░░░░` 7 of 20.
+- Accepted: M1, M2, M3, QA0, M4, MS, M6.
 - Partial (capabilities delivered; no recorded acceptance by a person): MC, MP1, MP2.
-- Open: M4b and M5 (in progress on other branches), MB, M6, M7, M8, M9, M10, M11, M12, M13.
+- Open: M4b and M5 (in progress on other branches), MB, M7, M8, M9, M10, M11, M12, M13.
 
 The count is of milestones, not of work. Milestones differ in size, so it gives no date.
 
@@ -61,10 +68,11 @@ The count is of milestones, not of work. Milestones differ in size, so it gives 
 | Shared visibility | Authored fog, team sharing, bounded stale sightings, hidden-target command rules, and atomic permitted human/bot state pass acceptance. | [SDK16 report](docs/reports/2026-11-15-shared-visibility.md). API 0.2.16; protocol 9. Independent code-running review, 2,924 native tests, full network acceptance, 60,000 measured server ticks, nine High camera cases, and scripted player probes pass. |
 | Editable terrain | Plateau heights, excavation/fill, private seeded geology, persistent depletion, physical cargo, explicit unloading, permitted surface memory, raised picking, and traversable passages pass acceptance. | [M4 evidence and limits](docs/reports/2026-11-15-terrain-work-orders.md). API 0.2.17; protocol 10. Both public terrain packages, independent code-running review, 80,000 final measured ticks, three High400 views and scripted cold-play probes pass. Fully exposed million-cell maps exceed the decoded-state guard. |
 | Scripting language (MS) | Rune 0.14.2 is selected from measured native and Chrome-wasm runs against budgets set before the runs. Rune adds 13.6 µs (native) and 60 µs (Chrome) script p99 for each tick at 1,000 units and 16 events, and 1,003,799 gzip bytes. | [MS report](docs/reports/2026-11-16-scripting-selection.md), [measurements](docs/measurements/scripting.md). Spike only: no production runtime and no engine change. The selection depends on one configuration decision (core Rune modules only; spec amendment 5). The CEO declined the MPL dependency, so Rune remains selected. Standard license notices still apply. |
-| Remaining engine scope | Shared group routing, geological discovery and terrain occlusion, the production script runtime, utilities, rooms, durable identity/saves, statistics, and spectator/replay delivery remain open. | M4b routing and M5a surveys are under implementation on separate branches. M5b obstruction has an approved spec and plan. The full project specification remains the target. |
+| Underground utilities (M6) | Mod-defined utility types, explicit junctions, surface ports, fixed line elevation, terrain-dependent burial with mod exposure policy, aggregate electrical supply per network, and a browser utility view with place, connect and inspect. | [M6 report](docs/reports/2026-11-16-underground-utilities.md). API 0.2.18; protocol 11. Two-viewer wire privacy, real paid terrain edits, independent code-running review, real-input browser case and three scripted cold-play probes pass. No water, sewage or heat model; bots do not use utilities. |
+| Remaining engine scope | Shared group routing, geological discovery and terrain occlusion, the production script runtime, rooms, durable identity/saves, statistics, and spectator/replay delivery remain open. | M4b routing and M5a surveys are under implementation on separate branches. M5b obstruction has an approved spec and plan. The full project specification remains the target. |
 
-Latest accepted build: `target/mc-evidence/skirmish-terrain-route-final-prepared` (API 0.2.17; protocol 10), sealed from source `2073e15e`.
-All three local launchers use the frozen `TuRTS-terrain-play` checkout and this prepared build.
+Default skirmish prepared build: `target/mc-evidence/skirmish-terrain-route-final-prepared` (API 0.2.17; protocol 10), sealed from source `2073e15e`.
+All three skirmish launchers use the frozen `TuRTS-terrain-play` checkout and this prepared build.
 The actual normal launcher loads a populated world, models and minimap, with sound off and gzip WASM delivery.
 Both final terrain browser scenarios and all three scripted cold-play product probes pass. The final M4 service run passes at 36.52–38.37 ms server p99. Its three 400-unit High views reach 59.5–59.8 FPS. The actual launcher starts a populated world with a fresh silent browser.
 The checker reports PARTIAL-PASS with manual/reference checks open. The full fresh-agent and manual readiness procedure was not repeated.
@@ -72,7 +80,7 @@ The two-human and Internet modes retain their tested launch flags. Their full ma
 Default Skirmish uses its existing AllVisible map. Mods can opt into the new shared knowledge provider.
 Tested milestones are merged and pushed to main under the CEO's standing approval.
 Legacy browser fixtures now prove blocked output and real loss recovery with valid current exit rules.
-CI keeps native, WebAssembly, process, browser, and test-tool checks. Historical fault campaigns remain manual. The SDK15 browser oracle now checks owner work and repair data against audit history. The [CI repair report](docs/reports/2026-11-15-ci-product-checks.md) records local validation and limits. The terrain schema repair passes 51 helper tests, 159 captured CI snapshots, and one fresh browser selection case. It keeps the strict privacy checks. The [repair report](docs/reports/2026-11-16-browser-debug-schema.md) records the evidence. The full hosted suite on this repair remains pending. Prior hosted browser runner losses remain unexplained.
+CI keeps native, WebAssembly, process, browser, and test-tool checks. Historical fault campaigns remain manual. The SDK15 browser oracle now checks owner work and repair data against audit history. The [CI repair report](docs/reports/2026-11-15-ci-product-checks.md) records local validation and limits. The terrain schema repair passes 51 helper tests, 159 captured CI snapshots, and one fresh browser selection case. It keeps the strict privacy checks. The [repair report](docs/reports/2026-11-16-browser-debug-schema.md) records the evidence. Native CI on the schema repair passes. The full hosted browser suite and CI on the utilities integration remain pending. Prior hosted browser runner losses remain unexplained.
 See [working rules](AGENTS.md) for parallel delivery, review, and milestone integration.
 
 The older Forge industrial demonstration remains available below. It proves extraction, conveyors, inserters, recipes, research, and ammunition combat through the public mod API. Its two-slot and restart restrictions describe that demonstration.

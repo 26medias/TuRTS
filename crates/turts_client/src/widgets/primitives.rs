@@ -30,6 +30,11 @@ pub enum WidgetAction {
         work_order: String,
         designation: turts_mod_api::TerrainDesignation,
     },
+    /// M6: enter route mode for the utility type `utility` with the order `order`.
+    UtilityRoute {
+        order: String,
+        utility: String,
+    },
     Select {
         unit: u32,
     },

@@ -145,6 +145,8 @@ fn camera_components_at_height(camera: CameraState, ground: f32) -> (Transform, 
 pub struct CoreRuntime {
     pub(crate) placement_ghost: Option<turts_interaction::placement::Ghost>,
     pub(crate) terrain_preview: Option<turts_interaction::terrain::Preview>,
+    /// The utility view, route preview and hover that the core last sent (M6).
+    pub(crate) utility_output: turts_interaction::utility::Output,
     core: Option<Core>,
     /// Exact unshaken render pose, including the permitted terrain ground offset.
     base_camera_transform: Option<Transform>,
@@ -187,6 +189,10 @@ impl CoreRuntime {
     }
     pub fn effects(&self) -> &[ValueEffect] {
         &self.last_effects
+    }
+    /// The utility view state that the core last sent: view on, route preview, hover (M6).
+    pub fn utility_output(&self) -> &turts_interaction::utility::Output {
+        &self.utility_output
     }
     /// Read-only interaction state used to present the cursor for a pending target order.
     pub fn pending_order_id(&self) -> Option<&str> {
@@ -600,6 +606,9 @@ impl WorldView for FrameWorld {
     }
     fn placement_facts(&self) -> &turts_interaction::placement::Facts {
         &self.facts.placement
+    }
+    fn utility_facts(&self) -> &turts_interaction::utility::Facts {
+        &self.facts.utility
     }
     fn hint_facts(&self) -> &turts_interaction::hints::Facts {
         &self.facts.hints
@@ -1505,6 +1514,7 @@ fn drive_core_adapter(
                 apply_shell_action(action, &mut runtime);
             }
             Effect::TerrainWork(output) => runtime.terrain_preview = output.preview,
+            Effect::Utility(output) => runtime.utility_output = output,
             Effect::Placement(output) => effects::placement::apply(output, &mut runtime),
             Effect::Hint(output) => effects::hint::apply(output, &mut runtime),
             Effect::GroupsChanged | Effect::CameraChanged => {}

@@ -412,6 +412,9 @@ fn bot_command(record: &ActorLogRecord) -> Result<EmittedCommand, String> {
             cells: designation.cells,
             target_elevation: designation.target_elevation,
         },
+        OrderTarget::UtilityRoute(_) => {
+            return Err("bots do not place utility routes in this milestone".into());
+        }
     };
     Ok(EmittedCommand {
         actor: BotActor {

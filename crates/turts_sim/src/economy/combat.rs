@@ -1347,6 +1347,7 @@ mod tests {
             .map(|definition| (definition.id.clone(), definition))
             .collect();
         let catalog = ContentCatalog {
+            utilities: Default::default(),
             terrain_materials: Default::default(),
             terrain_movement_classes: Default::default(),
             terrain_tools: Default::default(),
@@ -3553,6 +3554,7 @@ mod tests {
         let mut invalid_weapon = weapon(u64::MAX, 10);
         invalid_weapon.weapon.as_mut().unwrap().cooldown_ms = u64::MAX;
         let catalog = ContentCatalog {
+            utilities: Default::default(),
             terrain_materials: Default::default(),
             terrain_movement_classes: Default::default(),
             terrain_tools: Default::default(),

@@ -353,6 +353,10 @@ pub enum Source {
     TerrainTools {
         order: ContentRef,
     },
+    /// API 0.2.18 (M6): utility types that the selection can route with this order.
+    UtilityRoutes {
+        order: ContentRef,
+    },
 }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

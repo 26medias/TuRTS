@@ -14,6 +14,7 @@ pub mod projection;
 pub mod selection;
 pub mod smart;
 pub mod terrain;
+pub mod utility;
 mod world_view;
 
 // The integration-test world, shared with the unit tests of the hooks (`hook_tests.rs`).
@@ -68,6 +69,7 @@ pub struct Core {
     terrain: terrain::State,
     hints: hints::State,
     alerts: alerts::State,
+    utility: utility::State,
 }
 
 /// One named action observed at the interaction dispatch branch.
@@ -113,6 +115,7 @@ impl Core {
             terrain: terrain::State::default(),
             hints: hints::State::default(),
             alerts: alerts::State::default(),
+            utility: utility::State::default(),
         }
     }
 
@@ -195,6 +198,9 @@ impl Core {
             if placement::intercept(self, input_index, event, world, view, now_ms, &mut effects) {
                 continue;
             }
+            if utility::intercept(self, event, world, view, &mut effects) {
+                continue;
+            }
             match event {
                 InputEvent::UiCapture { allow_shell } => self.begin_ui_capture(*allow_shell),
                 InputEvent::KeyDown { code, mods } => {
@@ -211,6 +217,9 @@ impl Core {
                 }
                 InputEvent::UnloadResume(input) => {
                     terrain::unload_resume(self, input, world, &mut effects)
+                }
+                InputEvent::UtilityRoute(input) => {
+                    utility::on_input(self, input, world, &mut effects)
                 }
                 InputEvent::UiAction { name } => {
                     self.on_ui_action(input_index, name, world, view, now_ms, &mut effects);
@@ -293,6 +302,7 @@ impl Core {
         placement::update(self, events, world, view, now_ms, &mut effects);
         hints::update(self, events, world, view, now_ms, &mut effects);
         alerts::update(self, events, world, view, now_ms, &mut effects);
+        utility::update(self, events, world, view, &mut effects);
         let mut held_camera_actions: Vec<_> = self
             .keys
             .iter()
@@ -890,6 +900,15 @@ impl Core {
                 Some(&order.id),
             );
             self.dispatch_order(order, world, effects);
+        } else if utility::is_action(action) {
+            self.record_named_dispatch(
+                source.input_index,
+                source.origin,
+                source.code,
+                action,
+                None,
+            );
+            utility::on_action(self, action, world, effects);
         } else if action == "jump_to_alert" {
             self.record_named_dispatch(
                 source.input_index,
@@ -956,6 +975,10 @@ impl Core {
         world: &dyn WorldView,
         effects: &mut Vec<Effect>,
     ) {
+        // A route needs a utility type: the `UtilityRoutes` list enters it (M6).
+        if order.behaviour == Behaviour::UtilityRoute {
+            return;
+        }
         terrain::cancel(self, effects);
         if order.target == TargetKind::None {
             self.pending_order = None;
@@ -1048,6 +1071,8 @@ pub enum InputEvent {
     /// A typed tool chosen from a mod-authored TerrainTools list.
     TerrainWork(terrain::Input),
     UnloadResume(terrain::UnloadResume),
+    /// A utility type chosen from a mod-authored `UtilityRoutes` list: route mode (M6).
+    UtilityRoute(utility::Input),
     /// An input of the placement mode (`UI-PLACE`; the type is in `placement.rs`).
     Placement(placement::Input),
     /// An input of the hint engine (`UI-HINT`; the type is in `hints.rs`).
@@ -1143,6 +1168,8 @@ pub enum Effect {
     },
     /// Public-geometry work preview; never reads hidden material or eligibility.
     TerrainWork(terrain::Output),
+    /// The utility view, the route preview and the hover (M6; the type is in `utility.rs`).
+    Utility(utility::Output),
     /// An effect of the placement mode (`UI-PLACE`; the type is in `placement.rs`).
     Placement(placement::Output),
     /// An effect of the hint engine (`UI-HINT`; the type is in `hints.rs`).

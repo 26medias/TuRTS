@@ -310,6 +310,9 @@ pub(crate) fn sync_client_notice(
                 turts_mod_api::TargetKind::TerrainDesignation => {
                     "choose an observed reference level, then drag a work rectangle"
                 }
+                turts_mod_api::TargetKind::UtilityRoute => {
+                    "click the start, then the end of the line"
+                }
                 turts_mod_api::TargetKind::None => return None,
             };
             Some(format!("{}: {target}. Right-click cancels.", order.name))

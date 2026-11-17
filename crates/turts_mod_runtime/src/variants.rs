@@ -54,6 +54,15 @@ pub(crate) fn collect(_manifest: &Manifest, content: &ParsedMcContent) -> Vec<Va
         if matches!(resource.kind, ResourceKind::Supply { .. }) {
             uses.push("kind: Supply", file, "kind");
         }
+        if matches!(
+            resource.kind,
+            ResourceKind::Supply {
+                scope: turts_mod_api::SupplyScope::Network,
+                ..
+            }
+        ) {
+            uses.push("SupplyScope::Network", file, "kind.scope");
+        }
     }
     for (file, production) in &content.production {
         if production.payment == PaymentPolicy::ChargeOverTime {
@@ -72,11 +81,15 @@ pub(crate) fn collect(_manifest: &Manifest, content: &ParsedMcContent) -> Vec<Va
         if order.target == TargetKind::TerrainDesignation {
             uses.push("target: TerrainDesignation", file, "target");
         }
+        if order.target == TargetKind::UtilityRoute {
+            uses.push("target: UtilityRoute", file, "target");
+        }
         if order.target == TargetKind::ContentAtPoint {
             uses.push("target: ContentAtPoint", file, "target");
         }
         let name = match order.behaviour {
             Behaviour::TerrainWork => Some("behaviour TerrainWork"),
+            Behaviour::UtilityRoute => Some("behaviour UtilityRoute"),
             Behaviour::UnloadCargo => Some("behaviour UnloadCargo"),
             Behaviour::Construct => Some("behaviour Construct"),
             Behaviour::CancelConstruction => Some("behaviour CancelConstruction"),
@@ -107,6 +120,13 @@ pub(crate) fn collect(_manifest: &Manifest, content: &ParsedMcContent) -> Vec<Va
 /// would then refuse the override at `^0.2.4` too (`docs/research/mp1/errata-sound.md`).
 fn input_uses(uses: &mut Uses, file: &str, input: &turts_mod_api::InputMapDef) {
     for (index, over) in input.engine_overrides.iter().enumerate() {
+        if crate::content_mc_validation::UTILITY_ENGINE_ACTIONS.contains(&over.name.as_str()) {
+            uses.push(
+                "engine action utility view",
+                file,
+                format!("engine_overrides[{index}].name"),
+            );
+        }
         if over.name == "jump_to_alert" {
             uses.push(
                 "engine action jump_to_alert",
@@ -123,6 +143,13 @@ fn input_uses(uses: &mut Uses, file: &str, input: &turts_mod_api::InputMapDef) {
         }
     }
     for (index, action) in input.actions.iter().enumerate() {
+        if crate::content_mc_validation::UTILITY_ENGINE_ACTIONS.contains(&action.name.as_str()) {
+            uses.push(
+                "engine action utility view",
+                file,
+                format!("actions[{index}].name"),
+            );
+        }
         if action.name == "jump_to_alert" {
             uses.push(
                 "engine action jump_to_alert",
@@ -367,6 +394,14 @@ impl InterfaceWalk<'_> {
                         &format!("{path}.widget.action"),
                     );
                 }
+                if matches!(action, ButtonAction::Input(name)
+                    if crate::content_mc_validation::UTILITY_ENGINE_ACTIONS.contains(&name.as_str()))
+                {
+                    self.push(
+                        "engine action utility view",
+                        &format!("{path}.widget.action"),
+                    );
+                }
                 if matches!(action, ButtonAction::Input(name) if name == "toggle_sound") {
                     self.push(
                         "engine action toggle_sound",
@@ -440,6 +475,7 @@ impl InterfaceWalk<'_> {
     fn source(&mut self, source: &Source, path: &str) {
         let name = match source {
             Source::TerrainTools { .. } => Some("Source::TerrainTools"),
+            Source::UtilityRoutes { .. } => Some("Source::UtilityRoutes"),
             Source::ConstructionQueue => Some("Source::ConstructionQueue"),
             Source::Sites => Some("Source::Sites"),
             Source::Notices => Some("Source::Notices"),

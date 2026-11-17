@@ -339,6 +339,9 @@ pub enum RepairState {
 pub struct DeltaRecords {
     #[serde(default)]
     pub terrain: Option<crate::terrain::TerrainDelta>,
+    /// Protocol 11 (M6): `Some` replaces the whole owner utility view; `None` is no change.
+    #[serde(default)]
+    pub utilities: Option<crate::utilities::UtilityView>,
     #[serde(default)]
     pub repairs: Vec<RepairRecord>,
     #[serde(default)]
@@ -367,6 +370,9 @@ pub struct DeltaRecords {
 pub struct SnapshotRecords {
     #[serde(default)]
     pub terrain: Option<crate::terrain::TerrainSnapshot>,
+    /// Protocol 11 (M6): the owner utility view.
+    #[serde(default)]
+    pub utilities: Option<crate::utilities::UtilityView>,
     #[serde(default)]
     pub repairs: Vec<RepairRecord>,
     pub sites: Vec<SiteProgress>,

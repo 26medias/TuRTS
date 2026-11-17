@@ -171,6 +171,12 @@ pub trait WorldView {
             std::sync::LazyLock::new(placement::Facts::default);
         &EMPTY
     }
+    /// The utility types and the owner utility view (M6; `utility::Facts`).
+    fn utility_facts(&self) -> &utility::Facts {
+        static EMPTY: std::sync::LazyLock<utility::Facts> =
+            std::sync::LazyLock::new(utility::Facts::default);
+        &EMPTY
+    }
     /// The world data of the hint conditions (`UI-HINT` fills `hints::Facts`).
     fn hint_facts(&self) -> &hints::Facts {
         static EMPTY: std::sync::LazyLock<hints::Facts> =

@@ -29,7 +29,13 @@ pub(crate) fn validate(manifest: &Manifest, catalog: &ContentCatalog) -> Result<
             } else {
                 ResourceKind::Balance
             };
-            if definition.kind != expected {
+            // API 0.2.18: a Network supply resource passes here. `install_utilities` checks
+            // the utility type, the port and the owner of each use.
+            let network = ResourceKind::Supply {
+                scope: SupplyScope::Network,
+                counts: SupplyCounts::Completed,
+            };
+            if definition.kind != expected && !(supply && definition.kind == network) {
                 return Err(fail(
                     path,
                     format!("`{name}` must be a {expected:?} resource"),

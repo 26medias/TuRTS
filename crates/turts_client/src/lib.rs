@@ -41,6 +41,7 @@ mod scenario;
 mod staging_budget;
 pub mod terrain;
 pub mod ui_shared;
+pub mod utilities;
 pub mod visibility;
 pub mod visibility_ingest;
 pub mod visibility_present;
@@ -353,6 +354,7 @@ pub fn build_app(opts: ClientOptions) -> App {
         app.add_plugins((
             UnitRenderPlugin,
             crate::visibility_present::VisibilityPresentationPlugin,
+            crate::utilities::UtilityPlugin,
         ));
     }
     app

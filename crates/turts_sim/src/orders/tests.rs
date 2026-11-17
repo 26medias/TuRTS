@@ -155,6 +155,7 @@ fn gatherer_app() -> (bevy_app::App, bevy_ecs::entity::Entity) {
         )
         .unwrap();
     let mut catalog = turts_mod_api::ContentCatalog {
+        utilities: Default::default(),
         terrain_materials: Default::default(),
         terrain_movement_classes: Default::default(),
         terrain_tools: Default::default(),

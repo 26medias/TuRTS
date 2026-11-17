@@ -768,6 +768,7 @@ mod tests {
         let first = ContentId::parse("forge:vein_a").unwrap();
         let second = ContentId::parse("forge:vein_b").unwrap();
         let catalog = ContentCatalog {
+            utilities: Default::default(),
             terrain_materials: Default::default(),
             terrain_movement_classes: Default::default(),
             terrain_tools: Default::default(),
@@ -885,6 +886,7 @@ mod tests {
 
     fn empty_catalog() -> ContentCatalog {
         ContentCatalog {
+            utilities: Default::default(),
             terrain_materials: Default::default(),
             terrain_movement_classes: Default::default(),
             terrain_tools: Default::default(),
@@ -959,6 +961,7 @@ mod tests {
             removal: None,
         };
         ContentCatalog {
+            utilities: Default::default(),
             terrain_materials: Default::default(),
             terrain_movement_classes: Default::default(),
             terrain_tools: Default::default(),

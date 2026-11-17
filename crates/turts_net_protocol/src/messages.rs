@@ -88,6 +88,8 @@ pub enum OrderTarget {
     },
     /// API17 terrain operation through the ordinary queued command path.
     TerrainWork(turts_mod_api::TerrainDesignation),
+    /// API 0.2.18 (M6): one underground utility segment. Applied on admission.
+    UtilityRoute(turts_mod_api::UtilityRouteTarget),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -216,6 +218,10 @@ pub enum CommandRejectReason {
     MatchNotStarted,
     SlotDefeated,
     MatchOver,
+    /// Protocol 11 (M6): a touched cell is not currently observed by the slot.
+    UtilityNotObserved,
+    /// Protocol 11 (M6): the slot has its largest number of junctions or segments.
+    UtilityLimitReached,
 }
 impl CommandRejectReason {
     pub const ALL: &'static [Self] = &[
@@ -265,6 +271,8 @@ impl CommandRejectReason {
         Self::MatchNotStarted,
         Self::SlotDefeated,
         Self::MatchOver,
+        Self::UtilityNotObserved,
+        Self::UtilityLimitReached,
     ];
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -314,6 +322,8 @@ impl CommandRejectReason {
             Self::MatchNotStarted => "match_not_started",
             Self::SlotDefeated => "slot_defeated",
             Self::MatchOver => "match_over",
+            Self::UtilityNotObserved => "utility_not_observed",
+            Self::UtilityLimitReached => "utility_limit_reached",
         }
     }
 }

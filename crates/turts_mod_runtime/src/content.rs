@@ -142,6 +142,7 @@ fn validate_content_m2(
         terrain_materials: Default::default(),
         terrain_movement_classes: Default::default(),
         terrain_tools: Default::default(),
+        utilities: Default::default(),
         bots: BTreeMap::new(),
         combat: None,
         resources: BTreeMap::new(),

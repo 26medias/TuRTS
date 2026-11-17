@@ -340,6 +340,8 @@ pub(crate) fn finish_tick_audit(world: &mut World) {
 #[derive(Default)]
 struct WriteSet {
     terrain_step: Option<crate::terrain::PreparedCellEdit>,
+    /// M6: one prepared utility route, applied with the debit in one audited operation.
+    utility: Option<crate::utilities::UtilityWrite>,
     terrain_witnesses: Vec<(u8, crate::terrain::TerrainSurfaceWitness)>,
     terrain_work: Option<(u32, crate::terrain::work::WorkState)>,
     terminal_work: Vec<crate::receipts::TerminalWork>,
@@ -1037,6 +1039,17 @@ impl Transaction<'_> {
         self.world
     }
 
+    /// M6: stage one prepared utility route. It commits with the staged accounts.
+    pub(crate) fn stage_utility(
+        &mut self,
+        write: crate::utilities::UtilityWrite,
+    ) -> Result<(), RejectReason> {
+        if self.writes.utility.is_some() || !crate::utilities::validates(self.world, &write) {
+            return Err(RejectReason::IntegrityViolation);
+        }
+        self.writes.utility = Some(write);
+        Ok(())
+    }
     /// A terrain prism and its accounts share one WriteSet. Preallocate its column/chunk
     /// overlay before this call; final commit does not allocate terrain storage.
     pub(crate) fn stage_terrain_work(&mut self, unit: u32, state: crate::terrain::work::WorkState) {
@@ -1116,6 +1129,11 @@ impl Transaction<'_> {
         {
             return Err(RejectReason::IntegrityViolation);
         }
+        if let Some(write) = &self.writes.utility
+            && !crate::utilities::validates(self.world, write)
+        {
+            return Err(RejectReason::IntegrityViolation);
+        }
         for (&source, state) in &self.writes.repairs {
             if crate::unit_index::unit_entity(self.world, source).is_none()
                 || self.writes.removed.iter().any(|row| row.unit == source)
@@ -1190,6 +1208,9 @@ impl Transaction<'_> {
             world
                 .resource_mut::<crate::terrain::TerrainState>()
                 .apply_prevalidated(edit);
+        }
+        if let Some(write) = writes.utility.take() {
+            crate::utilities::apply_write(world, write);
         }
         if !writes.terrain_witnesses.is_empty() {
             let mut terrain = world.resource_mut::<crate::terrain::TerrainState>();
@@ -2567,6 +2588,7 @@ mod m3_transaction_contract_tests {
     fn install_extraction_node(world: &mut World, item: &ContentId, remaining: u64) {
         let node_id = content("probe:deposit");
         let mut catalog = turts_mod_api::ContentCatalog {
+            utilities: Default::default(),
             terrain_materials: Default::default(),
             terrain_movement_classes: Default::default(),
             terrain_tools: Default::default(),
@@ -3224,6 +3246,7 @@ mod operating_transaction_tests {
         })
         .collect();
         let catalog = ContentCatalog {
+            utilities: Default::default(),
             terrain_materials: Default::default(),
             terrain_movement_classes: Default::default(),
             terrain_tools: Default::default(),

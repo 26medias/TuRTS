@@ -157,6 +157,7 @@ fn behaviour_name(behaviour: Behaviour) -> &'static str {
         Behaviour::Surrender => "Surrender",
         Behaviour::TerrainWork => "TerrainWork",
         Behaviour::UnloadCargo => "UnloadCargo",
+        Behaviour::UtilityRoute => "UtilityRoute",
     }
 }
 

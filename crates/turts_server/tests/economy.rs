@@ -1716,6 +1716,8 @@ fn owner_unit_orders_from_audit(
         use wire::CommandRejectReason as W;
         match reason {
             R::MatchOver => W::MatchOver,
+            R::UtilityNotObserved => W::UtilityNotObserved,
+            R::UtilityLimitReached => W::UtilityLimitReached,
             R::SlotDefeated => W::SlotDefeated,
             R::SiteOutsideMap => W::SiteOutsideMap,
             R::SiteOutOfArea => W::SiteOutOfArea,
@@ -1773,6 +1775,7 @@ fn owner_unit_orders_from_audit(
             target_elevation: *target_elevation,
         }),
         OrderTargetSim::Invalid => panic!("invalid order target in captured unit state"),
+        OrderTargetSim::UtilityRoute(route) => wire::OrderTarget::UtilityRoute(route.clone()),
         OrderTargetSim::None => wire::OrderTarget::None,
         OrderTargetSim::Point(point) => wire::OrderTarget::Point(wire::Pos {
             x: point.x,

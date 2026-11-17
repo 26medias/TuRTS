@@ -1,0 +1,1 @@
+(id:"order_route",name:"Power line",behaviour:UtilityRoute,target:UtilityRoute,fire:None,engage:None,icon:"icon_order_move",hotkey:"key_route",cursor:None,card:None,units:["utility_yard:depot"],description:"Lay a power line")

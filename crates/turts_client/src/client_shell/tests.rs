@@ -2689,7 +2689,12 @@ fn menu_rows_name_mod_actions_by_order_and_list_them_before_the_groups() {
         .add_plugins(ClientShellPlugin);
     app.update();
     let labels = menu_action_labels(&mut app);
-    assert_eq!(labels.len(), 52, "{labels:?}");
+    // 52 rows before M6; the engine actions `utility_view`, `utility_deeper` and
+    // `utility_shallower` add three rows, so the player can rebind them.
+    assert_eq!(labels.len(), 55, "{labels:?}");
+    for label in ["Utility view", "Utility deeper", "Utility shallower"] {
+        assert!(labels.contains(&label.to_owned()), "{labels:?}");
+    }
     assert!(labels.contains(&"Jump to alert".to_owned()), "{labels:?}");
     assert!(
         labels.contains(&"Stop selected units".to_owned()),

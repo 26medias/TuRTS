@@ -16,6 +16,7 @@ fn manifest(id: &str, kind: PackageKind, dependencies: &[(&str, &str)]) -> Manif
                 .collect::<BTreeMap<_, _>>(),
         ),
         exports: Exports {
+            utilities: Default::default(),
             terrain_materials: Default::default(),
             terrain_movement_classes: Default::default(),
             terrain_tools: Default::default(),

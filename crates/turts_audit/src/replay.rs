@@ -1370,6 +1370,8 @@ fn actor_wire_reason(reason: turts_sim::RejectReason) -> turts_net_protocol::Com
     use turts_sim::RejectReason as R;
     match reason {
         R::MatchOver => CommandRejectReason::MatchOver,
+        R::UtilityNotObserved => CommandRejectReason::UtilityNotObserved,
+        R::UtilityLimitReached => CommandRejectReason::UtilityLimitReached,
         R::SlotDefeated => CommandRejectReason::SlotDefeated,
         R::SiteOutsideMap => CommandRejectReason::SiteOutsideMap,
         R::SiteOutOfArea => CommandRejectReason::SiteOutOfArea,
@@ -1878,7 +1880,8 @@ fn expected_order_refusal(
         }
         turts_mod_api::Behaviour::CancelConstruction
         | turts_mod_api::Behaviour::Repair
-        | turts_mod_api::Behaviour::Surrender => false,
+        | turts_mod_api::Behaviour::Surrender
+        | turts_mod_api::Behaviour::UtilityRoute => false,
     };
     if !has_capability {
         return Ok(Some(match order.behaviour {
@@ -3223,7 +3226,8 @@ fn validate_order_policy(command: &CommandAudit) -> Result<(), String> {
         turts_mod_api::Behaviour::UnloadCargo => policy.target == turts_mod_api::TargetKind::Unit,
         turts_mod_api::Behaviour::CancelConstruction
         | turts_mod_api::Behaviour::Repair
-        | turts_mod_api::Behaviour::Surrender => false,
+        | turts_mod_api::Behaviour::Surrender
+        | turts_mod_api::Behaviour::UtilityRoute => false,
     };
     if !target_allowed {
         return Err(format!(
@@ -3631,7 +3635,8 @@ fn validate_order_operation(
         }
         turts_mod_api::Behaviour::CancelConstruction
         | turts_mod_api::Behaviour::Repair
-        | turts_mod_api::Behaviour::Surrender => {
+        | turts_mod_api::Behaviour::Surrender
+        | turts_mod_api::Behaviour::UtilityRoute => {
             return Err(format!(
                 "accepted order operation {} uses the behaviour {:?}, which has no replay rule yet",
                 operation.operation_id, order.behaviour
@@ -10440,6 +10445,7 @@ mod tests {
         let unit_id = turts_mod_api::ContentId::new(&package, "walker");
         let move_id = turts_mod_api::ContentId::new(&package, "move");
         let mut catalog = ContentCatalog {
+            utilities: Default::default(),
             terrain_materials: Default::default(),
             terrain_tools: Default::default(),
             terrain_movement_classes: Default::default(),
@@ -10919,6 +10925,7 @@ mod tests {
         let worker = ContentId::new(&package, "worker");
         let gather = ContentId::new(&package, "gather");
         let mut catalog = ContentCatalog {
+            utilities: Default::default(),
             terrain_materials: Default::default(),
             terrain_tools: Default::default(),
             terrain_movement_classes: Default::default(),
@@ -11177,6 +11184,7 @@ mod tests {
         let move_order = ContentId::new(&package, "move");
         let hold_order = ContentId::new(&package, "hold");
         let catalog = ContentCatalog {
+            utilities: Default::default(),
             terrain_materials: Default::default(),
             terrain_tools: Default::default(),
             terrain_movement_classes: Default::default(),
@@ -12097,6 +12105,7 @@ mod tests {
         let worker = ContentId::new(&package, "worker");
         let remove = ContentId::new(&package, "remove");
         let catalog = ContentCatalog {
+            utilities: Default::default(),
             terrain_materials: Default::default(),
             terrain_tools: Default::default(),
             terrain_movement_classes: Default::default(),
@@ -12335,6 +12344,7 @@ mod tests {
             denominator: 2,
         };
         let catalog = ContentCatalog {
+            utilities: Default::default(),
             terrain_materials: Default::default(),
             terrain_tools: Default::default(),
             terrain_movement_classes: Default::default(),
@@ -12630,6 +12640,7 @@ mod tests {
             destroyed: turts_mod_api::RefundRatio::ZERO,
         };
         let catalog = ContentCatalog {
+            utilities: Default::default(),
             terrain_materials: Default::default(),
             terrain_tools: Default::default(),
             terrain_movement_classes: Default::default(),
@@ -12887,6 +12898,7 @@ mod tests {
         let enable = ContentId::new(&package, "enable");
         let disable = ContentId::new(&package, "disable");
         let catalog = ContentCatalog {
+            utilities: Default::default(),
             terrain_materials: Default::default(),
             terrain_tools: Default::default(),
             terrain_movement_classes: Default::default(),
@@ -13062,6 +13074,7 @@ mod tests {
             denominator: 2,
         };
         let catalog = ContentCatalog {
+            utilities: Default::default(),
             terrain_materials: Default::default(),
             terrain_tools: Default::default(),
             terrain_movement_classes: Default::default(),
@@ -14374,6 +14387,7 @@ mod tests {
         let move_content = turts_mod_api::ContentId::new(&package, "move");
         let hold_content = turts_mod_api::ContentId::new(&package, "hold");
         let mut catalog = ContentCatalog {
+            utilities: Default::default(),
             terrain_materials: Default::default(),
             terrain_tools: Default::default(),
             terrain_movement_classes: Default::default(),
@@ -14845,6 +14859,7 @@ mod tests {
         let move_order = turts_mod_api::ContentId::new(&package, "move");
         let hold_order = turts_mod_api::ContentId::new(&package, "hold");
         let mut catalog = ContentCatalog {
+            utilities: Default::default(),
             terrain_materials: Default::default(),
             terrain_tools: Default::default(),
             terrain_movement_classes: Default::default(),
@@ -16070,6 +16085,7 @@ mod tests {
             description: String::new(),
         };
         let catalog = ContentCatalog {
+            utilities: Default::default(),
             terrain_materials: Default::default(),
             terrain_tools: Default::default(),
             terrain_movement_classes: Default::default(),
@@ -20269,6 +20285,7 @@ mod tests {
         let order_id = ContentId::parse("fixture:move").unwrap();
         let unit_id = ContentId::parse("fixture:walker").unwrap();
         let mut catalog = ContentCatalog {
+            utilities: Default::default(),
             terrain_materials: Default::default(),
             terrain_tools: Default::default(),
             terrain_movement_classes: Default::default(),
@@ -21250,6 +21267,7 @@ mod tests {
         let unit_id = turts_mod_api::ContentId::parse("test:walker").unwrap();
         let order_id = turts_mod_api::ContentId::parse("test:move").unwrap();
         let mut catalog = turts_mod_api::ContentCatalog {
+            utilities: Default::default(),
             terrain_materials: Default::default(),
             terrain_tools: Default::default(),
             terrain_movement_classes: Default::default(),

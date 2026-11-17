@@ -614,7 +614,8 @@ fn order_target_valid(
         TargetKind::Job
         | TargetKind::Content
         | TargetKind::ContentAtPoint
-        | TargetKind::TerrainDesignation => false,
+        | TargetKind::TerrainDesignation
+        | TargetKind::UtilityRoute => false,
     }
 }
 
@@ -662,6 +663,8 @@ fn order_capability(order: &OrderDef, unit: &turts_mod_api::ResolvedUnit) -> boo
         Behaviour::CancelConstruction => unit.placement.is_some(),
         Behaviour::Repair => unit.repairer.is_some(),
         Behaviour::Surrender => false,
+        // M6: the order's `units` list names the builders.
+        Behaviour::UtilityRoute => true,
     }
 }
 

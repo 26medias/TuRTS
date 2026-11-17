@@ -110,6 +110,7 @@ pub fn derive_tokens(root: &Path) -> Result<TokenCatalog, ScanError> {
                 &a.manifest.exports.terrain_movement_classes,
             ),
             ("terrain-tool-export", &a.manifest.exports.terrain_tools),
+            ("utility-export", &a.manifest.exports.utilities),
         ] {
             for path in xs {
                 exports.insert(path.clone());
@@ -265,6 +266,33 @@ pub fn derive_tokens(root: &Path) -> Result<TokenCatalog, ScanError> {
                     material,
                     "terrain-material-ref",
                 );
+            }
+        }
+        for (path, d) in a.utilities().map_err(|e| pkgerr(&dir, e))? {
+            add_id(&mut c, &p, &path, "id", &d.id, "utility");
+            add(&mut c, &p, "utility-name", &path, "name", &d.name);
+            add_id(&mut c, &p, &path, "carries", &d.carries, "resource-ref");
+            for port in &d.ports {
+                add_id(&mut c, &p, &path, "ports.unit", &port.unit, "unit-ref");
+            }
+            for cost in &d.segment_cost {
+                add_id(
+                    &mut c,
+                    &p,
+                    &path,
+                    "segment_cost",
+                    &cost.resource,
+                    "resource-ref",
+                );
+            }
+            let labels = &d.appearance.labels;
+            for (field, text) in [
+                ("powered", &labels.powered),
+                ("short", &labels.short),
+                ("unconnected", &labels.unconnected),
+                ("exposed", &labels.exposed),
+            ] {
+                add(&mut c, &p, "utility-label", &path, field, text);
             }
         }
         for (path, d) in a.orders().map_err(|e| pkgerr(&dir, e))? {

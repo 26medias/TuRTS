@@ -20,6 +20,7 @@ pub mod rules_adapter;
 pub mod slots;
 pub mod terrain;
 pub mod unit_index;
+pub mod utilities;
 pub mod visibility;
 pub mod world;
 
@@ -74,6 +75,7 @@ pub use plugin::SimSet;
 pub use registry::{UnitTypeEntry, UnitTypes};
 pub use slots::{ClaimError, SlotId, Slots};
 pub use unit_index::{UnitIndex, unit_entity};
+pub use utilities::{UtilityOwnerView, owner_view, owner_view_changed_tick};
 pub use world::{
     ChangedThisTick, MapBounds, MoveTarget, Owner, Position, Tick, UnitId, UnitState, UnitType,
     gameplay_entity_count, snapshot,

@@ -32,6 +32,8 @@ pub(super) fn retained_marker(
                 (work.cells.min.y as f32 + work.cells.max.y as f32) * width * 0.5,
             )
         }
+        // M6: a route is applied on admission; the utility view shows the result.
+        OrderTarget::UtilityRoute(_) => return None,
         OrderTarget::None | OrderTarget::Job(_) | OrderTarget::Content(_) => return None,
     };
     Some(RetainedMarker {
