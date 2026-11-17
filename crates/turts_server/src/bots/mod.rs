@@ -696,3 +696,7 @@ mod visibility_benchmark;
 #[cfg(test)]
 #[path = "../terrain_wire_tests.rs"]
 mod terrain_wire_tests;
+
+#[cfg(test)]
+#[path = "../utility_wire_tests.rs"]
+mod utility_wire_tests;

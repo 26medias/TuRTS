@@ -55,6 +55,8 @@ mod export_repair;
 mod export_sites;
 #[path = "export_supply.rs"]
 mod export_supply;
+#[path = "export_utilities.rs"]
+mod export_utilities;
 
 use turts_sim::{
     CommittedTick, SlotId, WorldView,
@@ -227,7 +229,7 @@ fn snapshot_projected_reusing(
         // Reliable baselines project the same completed immutable view as change records.
         records: wire::SnapshotRecords {
             terrain: None,
-            utilities: None,
+            utilities: export_utilities::snapshot(view, slot),
             repairs: export_repair::snapshot(&view.economy.repairs, slot),
             supply: export_supply::snapshot(view.operating.as_ref(), slot),
             sites: turts_sim::economy::construction::progress_rows_for_slot(view, slot)
@@ -383,7 +385,7 @@ fn delta_projected(batch: &CommittedTick, view: &WorldView, slot: SlotId) -> wir
             .collect(),
         records: wire::DeltaRecords {
             terrain: None,
-            utilities: None,
+            utilities: export_utilities::delta(view, slot, batch.tick),
             repairs,
             repairs_cleared,
             sites_completed: export_sites::sites_completed(batch),
