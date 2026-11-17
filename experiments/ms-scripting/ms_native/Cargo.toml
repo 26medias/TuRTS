@@ -1,0 +1,17 @@
+[package]
+name = "ms_native"
+edition.workspace = true
+version.workspace = true
+publish.workspace = true
+
+[features]
+rhai = ["ms_core/rhai"]
+rune = ["ms_core/rune"]
+rune-full = ["ms_core/rune_full"]
+lua = ["ms_core/lua"]
+# No default: build one binary for each candidate (tools/build_native.sh). A binary with
+# several candidates unifies their dependency features (for example ahash `runtime-rng`).
+default = []
+
+[dependencies]
+ms_core = { path = "../ms_core" }

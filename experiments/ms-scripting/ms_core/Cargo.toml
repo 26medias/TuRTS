@@ -1,0 +1,26 @@
+[package]
+name = "ms_core"
+edition.workspace = true
+version.workspace = true
+publish.workspace = true
+
+[features]
+rhai = ["dep:rhai"]
+rune = ["dep:rune"]
+# Recorded-only variant `rune-full`: Rune with the broad module set of the first run (spec 9).
+rune_full = ["rune"]
+lua = ["dep:piccolo"]
+
+[dependencies]
+# C1. `no_time`: no clock. `no_module`: no `import`. Floats stay on, as a modder would get them.
+rhai = { version = "=1.27.0", optional = true, default-features = false, features = ["std", "no_time", "no_module", "no_custom_syntax"] }
+# C2. No default features: no `emit` (terminal diagnostics).
+rune = { version = "=0.14.2", optional = true, default-features = false, features = ["std"] }
+# C3.
+piccolo = { version = "=0.3.3", optional = true }
+
+# Wasm32 entropy backends (spec 2.1, plan 4a): both fill a fixed byte pattern. No script can
+# call them. Native builds keep the operating-system source.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom02 = { package = "getrandom", version = "0.2", features = ["custom"] }
+getrandom03 = { package = "getrandom", version = "0.3" }

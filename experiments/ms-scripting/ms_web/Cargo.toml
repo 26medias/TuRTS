@@ -1,0 +1,17 @@
+[package]
+name = "ms_web"
+edition.workspace = true
+version.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[features]
+rhai = ["ms_core/rhai"]
+rune = ["ms_core/rune"]
+rune-full = ["ms_core/rune_full"]
+lua = ["ms_core/lua"]
+
+[dependencies]
+ms_core = { path = "../ms_core" }
