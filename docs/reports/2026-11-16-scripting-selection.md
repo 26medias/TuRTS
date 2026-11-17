@@ -15,10 +15,15 @@ bytes against a budget of 1,048,576.
 MS selects the language only. It does not build the production runtime, does not change any
 engine crate, and does not make Rune the engine default in code.
 
-**One decision for the CEO:** Rhai fails only B11. It always depends on `smartstring 1.0.1`,
-which is MPL-2.0+ (weak, file-level copyleft). If the CEO accepts that license, Rhai is
-eligible, and rule 4.1 selects Rhai instead: its score is 0.522 against 0.043. Without that
-decision, the selection stays Rune.
+**CEO decision, 2026-11-16:** do not use the MPL-covered `smartstring` dependency.
+Retain Rune and the permissive-license selection requirement for the scripting runtime.
+No license exception is granted for Rhai.
+
+The measured core-module configuration is accepted for this selection spike.
+It is not a promise that the full production script API is implemented.
+Adding modules or integrating Rune with the engine dependency graph requires validation
+against the recorded size, sandbox and deterministic-behavior requirements.
+The post-run configuration choice and its small margin remain explicit below.
 
 ## Budget results (budgets fixed before the runs; none changed)
 
@@ -69,8 +74,8 @@ items (amendments 4 and 5). No budget changed. Each change is in spec section 9:
    broad set stays recorded as `rune-full`. This choice came after the first run, and it
    changes the result from RED to PASS. Without it, no candidate is eligible.
 
-The CEO can reject amendment 5. Then MS is red until the MPL-2.0 decision. If amendment 5
-stays, the production runtime must keep the core module set, or measure B4 again: `rune-full`
+The selection uses amendment 5. The CEO rejected the MPL alternative. Production module
+expansion must measure B4 again: `rune-full`
 adds 1,052,498 gzip bytes and fails B4.
 
 ## Validation
@@ -82,7 +87,7 @@ adds 1,052,498 gzip bytes and fails B4.
 | Probes L1 to L9, 5 processes and 5 launches for each candidate | as in the table | `final/probes/` |
 | Red checks: `apply-now` (L8), `no-request-cap` (L9a), `no-accounting` (L3 on Rune), import parser self-test | each goes red | `red-checks/` |
 | License check over all transitive dependencies, both targets | Rune 49 and piccolo 28 packages permissive; Rhai 1 MPL-2.0+ | `final/meta/licenses.json` |
-| Gate 1 (spec), gate 2 (plan), final code-running review, recheck of repairs | gate 1 FAIL then repaired; gate 2 PASS_WITH_FINDINGS; final PASS_WITH_FINDINGS (material findings fixed: amendments 4 and 5); recheck PASS_WITH_FINDINGS (amendment 5 recorded as a decision) | reviewer: `mod-runtime-engineer` (4 passes); the recheck reran the aggregator with one L1 run removed (RED) and with Rune gzip +44,778 bytes (RED) |
+| Gate 1 (spec), gate 2 (plan), final code-running review, recheck of repairs | gate 1 FAIL then repaired; gate 2 PASS_WITH_FINDINGS; final PASS_WITH_FINDINGS (material findings fixed: amendments 4 and 5); recheck PASS_WITH_FINDINGS (amendment 5 recorded as a decision) | reviewer: `mod-runtime-engineer` (5 invocations, including two repair rechecks); the recheck reran the aggregator with one L1 run removed (RED) and with Rune gzip +44,778 bytes (RED) |
 | Chrome hygiene | fresh profile for each launch, `--alsa-output-device=null`, no console output, 0 import calls, profiles deleted | `tools/chrome_run.mjs`, `final/summary.json` |
 
 Commands: `experiments/ms-scripting/README.md`. The single full command is
@@ -104,3 +109,5 @@ Commands: `experiments/ms-scripting/README.md`. The single full command is
 - Chrome timing has 5 µs resolution; compiler tier-up after 200 warmup ticks was not checked.
 - The timing ran on a shared workstation (load average 3.86 to 5.03), with the exclusive lock.
 - Rune has no call-depth limit; recursion is stopped by the instruction budget (L2).
+
+Integration note: five clippy style warnings remain in the isolated spike. No production engine code changes in MS. The orchestrator rechecks the recorded acceptance aggregation; the native/Chrome measurement matrix is not repeated.

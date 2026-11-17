@@ -308,3 +308,13 @@ PASS. It is a decision, not a measurement, and the CEO can reverse it.
 
 The first-run evidence (before amendments 1 to 5) is kept in
 `target/mc-evidence/ms-scripting/first-run/`.
+
+
+## CEO licensing decision, 2026-11-16
+
+The CEO declined the MPL-covered smartstring dependency after reviewing the selection.
+B11 stays unchanged. Rhai remains ineligible under that requirement.
+Rune 0.14.2 with the measured core-module configuration remains selected.
+All numerical budgets and recorded measurements remain unchanged.
+The core-module choice is accepted for MS; future production module additions require
+new size and compatibility validation, not an assumed pass from this spike.
