@@ -1,0 +1,88 @@
+// MS mod rules (spec 3.2), Rune. The host keeps the state that `init` returns and passes it in.
+// Event record: [kind, player, unit_type, unit, extra, x, y]. 1 Died, 2 Produced,
+// 3 Researched, 4 Timer.
+
+pub fn init() {
+    let rx = [];
+    let ry = [];
+    for p in 0..8 {
+        rx.push(16000 + p * 28000);
+        ry.push(128000);
+    }
+    #{ kills: [0, 0, 0, 0, 0, 0, 0, 0], rx: rx, ry: ry, leader: -1, counter: 0 }
+}
+
+pub fn on_tick(s, ev) {
+    let bounty = [50, 75, 150, 400];
+    let n = ev.len();
+    let i = 0;
+    while i < n {
+        let kind = ev[i];
+        let player = ev[i + 1];
+        if kind == 1 {
+            let killer = ev[i + 4];
+            let kills = s.kills;
+            kills[killer] = kills[killer] + 1;
+            let b = bounty[ev[i + 2]];
+            if kills[killer] % 10 == 0 {
+                b = b * 2;
+            }
+            host::grant(killer, b);
+            let near = host::units_near(player, ev[i + 5], ev[i + 6], 8000, 16);
+            if near.len() < 3 {
+                host::alert(player, 1);
+            } else {
+                host::move_group(near, s.rx[player], s.ry[player]);
+            }
+        } else if kind == 2 {
+            let c = host::count_owned(player, ev[i + 2]);
+            if c > 30 {
+                host::set_stance(ev[i + 3], 2);
+            } else {
+                host::move_to(ev[i + 3], s.rx[player], s.ry[player]);
+            }
+        } else if kind == 3 {
+            let rx = s.rx;
+            let ry = s.ry;
+            rx[player] = rx[player] + 1000 * (ev[i + 4] % 3 + 1);
+            ry[player] = ry[player] - 500;
+            if rx[player] > 250000 {
+                rx[player] = 6000;
+            }
+            if ry[player] < 6000 {
+                ry[player] = 250000;
+            }
+        } else if kind == 4 {
+            let best = -1;
+            let best_c = -1;
+            for p in 0..8 {
+                let c = host::credits(p);
+                if c > best_c {
+                    best = p;
+                    best_c = c;
+                }
+            }
+            if best != s.leader {
+                s.leader = best;
+                host::alert(best, 2);
+            }
+        }
+        i = i + 7;
+    }
+}
+
+pub fn bench_calls(s, n) {
+    let sum = 0;
+    let i = 0;
+    while i < n {
+        sum = sum + host::count_owned(i % 8, i % 4);
+        i = i + 1;
+    }
+    sum
+}
+
+pub fn on_unit(s, id, x, y, owner) {
+    if x > y {
+        s.counter = s.counter + 1;
+    }
+}
