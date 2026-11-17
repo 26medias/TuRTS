@@ -1,16 +1,37 @@
-# Terrain Stockyard
+# Utility Yard
 
-API17 terrain work fixture. This package has public initial heights and generation rules. It contains no private match seed or realized columns.
+API 0.2.18 (M6) underground utility fixture. It uses only the public mod API. It is a copy of
+Terrain Stockyard with one power utility added.
 
-Select the Porter or Carrier. Choose a public tool at the bottom left. Click a fully observed cell to capture its reference level. Then drag a rectangle across the ridge. Gray cells remain in the order with Unknown cost and progress. Shift appends work. Right click cancels the designation.
+## Content
 
-The narrow worker and wide rover have different footprints. The ridge blocks both until work opens a sufficiently wide passage. Soft loam covers harder crystal; only the heavy tool can remove the harder exposed material. Fill consumes loam; removing placed fill gives NoYield.
+- `power` is a `Supply` resource with scope `Network`. Only connected networks count it.
+- `power_line` carries `power`. Its ports are on the Generator and the Workshop. Depth is 1 to 4
+  elevation steps (default 2). A segment costs 1 loam. The longest segment is 16 world units.
+  Exposure policy: `Disconnect`.
+- The Generator provides 10 power. The Workshop consumes 6 power. Without power its production
+  runs at one quarter of the full rate.
+- The Material depot is the only unit that can lay a line (order `order_route`).
 
-Output destination: SlotBalances. The renamed tools credit slot balances and need no cargo shuttle.
+## Player path
 
-The depot builds a Survey shed through ordinary construction. Placement needs flat observed support. Existing static foundations forbid edits underneath them.
+1. Press U. The terrain fades. The two ports show as grey squares.
+2. Select the depot. Click "Power line". Click the Generator port, then a point on the ridge to
+   the north-east. Press Escape.
+3. Click "Power line" again. Click the Workshop port, then a point to the north-west. The two
+   lines cross in plan view, but the Workshop port stays red ("Underpowered").
+4. Click "Power line" again. Press `[` once for depth 1. Click the first line on the ridge, then
+   the second line. This route makes two junctions. The Workshop port turns green ("Powered").
+5. Press U to see normal terrain. Select a Porter. Dig the ridge cell under the depth-1 route down
+   to the flat level. Press U: the route is exposed, dashed and disconnected. The Workshop is short.
+6. Fill that cell back to the ridge level with the Leveler (it costs loam). The route conducts
+   again. No line ever moves: its elevation is fixed at placement.
 
-Models and ground texture are copied unchanged from Stockyard/Skirmish. See assets/CREDITS.md for Kay Lousberg and Quaternius CC0 source credits. The two model files and grass texture are reused; no artwork was regenerated. The larger rover uses the supplied animated worker model at a different public scale.
+Hover over a line, junction or port in the view to see its state, the network supply and demand,
+the depth, the elevation and the cover from the terrain that you can see.
 
-Native public archive validation and typed private-seed-backed staging pass through the normal packer. The client archive path and atomic terrain/resource activation counterexample pass. Real browser input, rendering, and cold acceptance remain unverified.
+## Limits
 
+No water, sewage or heat model. No line removal by the player. Bots do not use utilities.
+Models and ground texture are copied unchanged from Stockyard and Skirmish. See
+`assets/CREDITS.md` for the Kay Lousberg and Quaternius CC0 credits. No artwork was regenerated.

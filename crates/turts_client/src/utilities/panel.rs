@@ -134,7 +134,7 @@ pub fn hover_text(
             let name = super::scene::utility(content, &segment.utility)
                 .map_or("Utility", |utility| utility.name.as_str());
             format!(
-                "{name}\n{}\n{}\nDepth {} · elevation {}\n{}",
+                "{name}\n{}\n{}\nDepth {}, elevation {}\n{}",
                 state_label(content, &segment.utility, segment.state, network),
                 network_text(network),
                 segment.depth,

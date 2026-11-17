@@ -184,6 +184,9 @@ A new package `utility_yard`, from `terrain_stockyard` art, models and credits, 
 `power_line` utility type (`exposure: Disconnect`, depth 1..4, default 2, cost 1 loam per segment), and a map
 with one ridge. The existing workers dig and fill. No new art is generated. Skirmish and the terrain packages
 are unchanged.
+Player-path note (found during the build): a work order digs only down to an observed reference level. So the
+demonstration exposes the depth-1 junction route that lies on the ridge by digging that ridge cell down to the
+flat level, and then fills it back to the ridge level.
 
 ## Acceptance
 

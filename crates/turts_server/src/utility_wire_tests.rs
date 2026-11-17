@@ -312,3 +312,131 @@ fn owner_view_has_only_own_rows_and_deltas_carry_it_only_on_change() {
     };
     assert_eq!(state.records.utilities, None);
 }
+
+fn loam(world: &World2) -> u64 {
+    world
+        .baseline(0)
+        .state
+        .economy
+        .balances
+        .iter()
+        .find(|row| row.resource == "utility_yard:loam")
+        .map(|row| row.on_hand)
+        .unwrap()
+}
+
+fn workshop_short(world: &World2) -> bool {
+    let workshop = UnitId(world.unit(0, "utility_yard:workshop"));
+    world
+        .baseline(0)
+        .state
+        .records
+        .utilities
+        .unwrap()
+        .networks
+        .iter()
+        .find(|row| row.units.contains(&workshop))
+        .unwrap()
+        .short
+}
+
+fn run_until(world: &mut World2, ticks: u32, what: &str, done: impl Fn(&World2) -> bool) {
+    for _ in 0..ticks {
+        world.app.update();
+        if done(world) {
+            return;
+        }
+    }
+    panic!("{what} did not happen in {ticks} ticks");
+}
+
+/// UT2 and UT3 on the real public package: a plan-view crossing stays short, an explicit
+/// split route powers the consumer, a paid dig exposes and disconnects the line, a paid fill
+/// restores it, and the line elevation never moves.
+#[test]
+fn real_package_crossing_connection_exposure_and_paid_fill_keep_elevation_fixed() {
+    let mut world = World2::new();
+    world.app.update();
+    let start_loam = loam(&world);
+    crossing_pair(&mut world, 10);
+    world.app.update();
+    world.app.update();
+    assert!(workshop_short(&world), "a plan-view crossing connected");
+    assert_eq!(loam(&world), start_loam - 2, "each segment costs one loam");
+    assert!(world.route(
+        12,
+        UtilityEndpoint::Split {
+            segment: 1,
+            point: WorldPos { x: 22.55, y: 10.0 },
+        },
+        UtilityEndpoint::Split {
+            segment: 2,
+            point: WorldPos { x: 20.9, y: 10.0 },
+        },
+    ));
+    run_until(&mut world, 3, "split connection", |world| {
+        !workshop_short(world)
+    });
+    let segments = |world: &World2| world.baseline(0).state.records.utilities.unwrap().segments;
+    let elevations = |world: &World2| {
+        segments(world)
+            .iter()
+            .map(|segment| (segment.id, segment.elevation))
+            .collect::<Vec<_>>()
+    };
+    let fixed = elevations(&world);
+    assert_eq!(fixed.len(), 5, "two splits and one new segment");
+    assert!(fixed.iter().all(|(_, elevation)| *elevation == -2));
+    let cell = TerrainCell { x: 10, y: 6 };
+    let before_dig = loam(&world);
+    assert!(world.dig(20, cell, -2));
+    run_until(&mut world, 2400, "exposure by digging", |world| {
+        segments(world)
+            .iter()
+            .any(|segment| segment.state == UtilitySegmentState::Disconnected)
+    });
+    assert!(loam(&world) > before_dig, "excavation credited no loam");
+    run_until(&mut world, 3, "shortage after exposure", workshop_short);
+    assert_eq!(elevations(&world), fixed, "digging moved a line");
+    let porter = world.unit(0, "utility_yard:porter");
+    let before_fill = loam(&world);
+    assert!(world.order(
+        30,
+        "utility_yard:order_work",
+        turts_mod_api::Behaviour::TerrainWork,
+        turts_mod_api::TargetKind::TerrainDesignation,
+        vec![porter],
+        turts_sim::orders::OrderTargetSim::TerrainWork {
+            tool: ContentId::parse("utility_yard:leveler").unwrap(),
+            cells: TerrainRect {
+                min: cell,
+                max: TerrainCell {
+                    x: cell.x + 1,
+                    y: cell.y + 1,
+                },
+            },
+            target_elevation: 1,
+        },
+    ));
+    run_until(&mut world, 2400, "recovery by filling", |world| {
+        segments(world)
+            .iter()
+            .all(|segment| segment.state == UtilitySegmentState::Conducting)
+    });
+    assert!(loam(&world) < before_fill, "fill was not paid");
+    run_until(&mut world, 3, "supply after recovery", |world| {
+        !workshop_short(world)
+    });
+    run_until(&mut world, 2400, "fill above the old surface", |world| {
+        world
+            .baseline(0)
+            .state
+            .records
+            .terrain
+            .unwrap()
+            .surfaces
+            .iter()
+            .any(|row| row.cell == TerrainCell { x: 10, y: 6 } && row.current && row.elevation == 1)
+    });
+    assert_eq!(elevations(&world), fixed, "filling moved a line");
+}

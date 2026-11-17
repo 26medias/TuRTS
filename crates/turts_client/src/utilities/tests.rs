@@ -338,7 +338,7 @@ fn hover_shows_name_label_network_depth_elevation_and_cover() {
         "Power line",
         "Powered",
         "provided 10, consumed 6",
-        "Depth 2 · elevation -2",
+        "Depth 2, elevation -2",
         // No terrain: the surface is 0, so the cover is 2.
         "Cover 2",
     ] {
