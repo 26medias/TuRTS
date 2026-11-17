@@ -76,6 +76,10 @@ pub fn engine_defaults() -> Vec<ActionDef> {
         ("centre_selection", "Space"),
         ("cancel", "Escape"),
         ("toggle_guide", "F1"),
+        // M6: the utility view and the route depth.
+        ("utility_view", "KeyU"),
+        ("utility_deeper", "BracketRight"),
+        ("utility_shallower", "BracketLeft"),
     ] {
         actions.push(key(name.into(), code.into(), vec![]));
     }

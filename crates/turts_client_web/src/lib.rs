@@ -514,6 +514,8 @@ struct FxSceneSources<'w> {
     emitters: Option<Res<'w, turts_client::fx::emitters::Emitters>>,
     warning: Option<Res<'w, turts_client::fx::warnings::WarningPulse>>,
     shared_skins: Option<Res<'w, turts_client::animation::SharedSkinStats>>,
+    /// The interaction state that the utility view entry (M6) of the scene reads.
+    runtime: Option<Res<'w, turts_client::core_adapter::CoreRuntime>>,
 }
 
 fn request_scene() {
@@ -580,6 +582,7 @@ fn publish_scene(
         emitters,
         warning,
         shared_skins,
+        runtime,
     } = fx_scene;
     let active: Vec<_> = cameras
         .iter()
@@ -756,6 +759,31 @@ fn publish_scene(
             .count()
     );
     scene["widgets"] = serde_json::Value::Array(widget_rects);
+    // M6: the utility view for the browser oracle (segments and ports with screen points).
+    if let (Some(runtime), Some(replica), Some(content)) = (
+        runtime.as_ref(),
+        state.replica.as_ref(),
+        state.content.as_ref(),
+    ) {
+        scene["utilities"] = turts_client::utilities::scene::bridge(
+            replica,
+            content,
+            runtime.utility_output(),
+            &|point| {
+                projection_camera.and_then(|(camera, camera_transform)| {
+                    turts_client::render::projected_ground_center_at_height(
+                        camera,
+                        camera_transform,
+                        Pos {
+                            x: point.x,
+                            y: point.z,
+                        },
+                        point.y,
+                    )
+                })
+            },
+        );
+    }
     *SCENE.lock().unwrap() = scene.to_string();
 }
 

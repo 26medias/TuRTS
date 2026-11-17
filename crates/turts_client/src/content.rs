@@ -127,6 +127,16 @@ impl ClientContent {
                     ));
                 }
             }
+            // API 0.2.18 (M6): the utility types of the match, for ports, colours and labels.
+            for (id, value) in part.utilities {
+                if catalog.utilities.insert(id.clone(), value).is_some() {
+                    return Err(ModError::new(
+                        &id.package.0,
+                        "id",
+                        format!("duplicate content id `{id}`"),
+                    ));
+                }
+            }
             for (id, value) in part.terrain_tools {
                 if catalog.terrain_tools.insert(id.clone(), value).is_some() {
                     return Err(ModError::new(

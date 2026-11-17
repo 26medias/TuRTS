@@ -3006,3 +3006,138 @@ fn terrain_wall_picking_keeps_actual_hit_height_and_flat_foundation_refuses_a_cl
     );
     assert_eq!(world.terrain_foundation(Vec2::new(13., 8.), 0.4), Ok(0.));
 }
+
+/// M6: the utility view reaches the core through the adapter. A key or HUD action turns the view
+/// on, a route choice enters route mode, two clicks send one `UtilityRoute` order, and the output
+/// of the core is what presentation reads (`CoreRuntime::utility_output`).
+#[test]
+fn the_utility_view_and_route_mode_work_through_the_adapter() {
+    use std::collections::BTreeMap;
+    use turts_mod_api::{Behaviour, ContentId, TargetKind};
+    let _guard = test_lock();
+    let (mut app, window, px) = fixture_app();
+    app.world_mut().despawn(window);
+    {
+        let mut state = app.world_mut().resource_mut::<ReplicaState>();
+        let content = state.content.as_mut().unwrap();
+        let utility = turts_mod_api::ResolvedUtility {
+            id: ContentId::parse("forge:line").unwrap(),
+            name: "Line".into(),
+            carries: ContentId::parse("forge:power").unwrap(),
+            ports: BTreeMap::new(),
+            depth: turts_mod_api::UtilityDepth {
+                default: 2,
+                min: 1,
+                max: 4,
+            },
+            reach: 30.0,
+            max_segment_length: 16.0,
+            segment_cost: vec![],
+            exposure: turts_mod_api::UtilityExposure::Operate,
+            appearance: turts_mod_api::UtilityAppearance {
+                colour: "#ffcc00".into(),
+                exposed_colour: "#ff4400".into(),
+                junction: turts_mod_api::UtilitySymbol::Circle,
+                labels: turts_mod_api::UtilityLabels {
+                    powered: "On".into(),
+                    short: "Off".into(),
+                    unconnected: "None".into(),
+                    exposed: "Open".into(),
+                },
+            },
+        };
+        content
+            .catalog
+            .utilities
+            .insert(utility.id.clone(), utility);
+        let mut order = content.catalog.orders.values().next().unwrap().clone();
+        order.id = "forge:route".into();
+        order.behaviour = Behaviour::UtilityRoute;
+        order.target = TargetKind::UtilityRoute;
+        order.units = vec!["forge:drone".into()];
+        order.card = None;
+        content
+            .catalog
+            .orders
+            .insert(ContentId::parse("forge:route").unwrap(), order);
+        state.replica.as_mut().unwrap().utilities =
+            Some(turts_net_protocol::UtilityView::default());
+    }
+    app.update();
+    assert!(
+        !app.world()
+            .resource::<CoreRuntime>()
+            .utility_output()
+            .view_on
+    );
+    // The engine action (a key or a HUD button) turns the view on and off.
+    queue_inputs(&mut app, vec![ui_action("utility_view")]);
+    assert!(
+        app.world()
+            .resource::<CoreRuntime>()
+            .utility_output()
+            .view_on
+    );
+    queue_inputs(&mut app, vec![ui_action("utility_view")]);
+    assert!(
+        !app.world()
+            .resource::<CoreRuntime>()
+            .utility_output()
+            .view_on
+    );
+    // A route choice enters route mode and turns the view on.
+    queue_inputs(
+        &mut app,
+        vec![
+            ui_action("ui_select:1"),
+            InputEvent::UtilityRoute(turts_interaction::utility::Input {
+                order: "forge:route".into(),
+                utility: "forge:line".into(),
+            }),
+        ],
+    );
+    {
+        let runtime = app.world().resource::<CoreRuntime>();
+        let output = runtime.utility_output();
+        assert!(output.view_on);
+        assert_eq!(output.route.as_ref().map(|route| route.depth), Some(2));
+        assert_eq!(runtime.pending_order_id(), Some("forge:route"));
+    }
+    queue_inputs(&mut app, left_click(px));
+    assert!(
+        value_effects(&app)
+            .iter()
+            .all(|(kind, _)| kind != "order_intent"),
+        "the first click sends nothing"
+    );
+    queue_inputs(&mut app, left_click(px + Vec2::new(90.0, 0.0)));
+    let effects = value_effects(&app);
+    assert!(
+        effects
+            .iter()
+            .any(|(kind, value)| kind == "order_intent"
+                && value == &serde_json::json!({"units": [1]})),
+        "the second click sends the route: {effects:?}"
+    );
+    assert_eq!(app.world().resource::<PendingCommands>().0.len(), 1);
+    // Right click ends route mode and leaves the view on.
+    queue_inputs(
+        &mut app,
+        vec![
+            InputEvent::PointerDown {
+                button: turts_interaction::Button::Right,
+                px,
+                over_widget: false,
+            },
+            InputEvent::PointerUp {
+                button: turts_interaction::Button::Right,
+                px,
+                over_widget: false,
+            },
+        ],
+    );
+    let runtime = app.world().resource::<CoreRuntime>();
+    assert!(runtime.utility_output().view_on);
+    assert!(runtime.utility_output().route.is_none());
+    assert_eq!(runtime.pending_order_id(), None);
+}

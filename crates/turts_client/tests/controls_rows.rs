@@ -92,7 +92,12 @@ fn mod_actions_come_first_then_camera_and_selection_then_groups() {
         .iter()
         .map(|(label, _)| label.as_str())
         .collect::<Vec<_>>();
-    assert_eq!(labels.len(), 52, "{labels:?}");
+    // 52 rows before M6; the engine actions `utility_view`, `utility_deeper` and
+    // `utility_shallower` add three rows.
+    assert_eq!(labels.len(), 55, "{labels:?}");
+    for label in ["Utility view", "Utility deeper", "Utility shallower"] {
+        assert!(labels.contains(&label), "{labels:?}");
+    }
     assert!(labels.contains(&"Jump to alert"), "{labels:?}");
     let mut orders = forge()
         .catalog

@@ -976,7 +976,11 @@ fn m1_m2_h15_the_match_file() {
 
 #[test]
 fn h1_h2_h3_the_key_lists() {
-    assert_eq!(REASON_KEYS.len(), 49, "design 6.10: 37 + 3 + 9 keys");
+    assert_eq!(
+        REASON_KEYS.len(),
+        51,
+        "design 6.10: 37 + 3 + 9 keys, then 2 of protocol 11"
+    );
     assert_eq!(
         STATE_KEYS.len(),
         23,

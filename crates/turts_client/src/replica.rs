@@ -235,6 +235,8 @@ struct Candidate {
     health_append: Vec<(u32, HealthTraceEntry)>,
     health_latest: HashMap<u32, u64>,
     health_forget: HashSet<u32>,
+    /// The owner utility view (M6). `None` when the catalog has no utility type.
+    utilities: Option<turts_net_protocol::UtilityView>,
     tick: u32,
 }
 
@@ -256,6 +258,8 @@ struct AtomicPatch {
     health_forget: Vec<u32>,
     store: StoreStep,
     terrain: Option<crate::terrain::store::Patch>,
+    /// `Some` replaces the whole owner utility view (a delta with `utilities: Some`).
+    utilities: Option<turts_net_protocol::UtilityView>,
 }
 
 /// A public health value observed in a coherent server tick. Equal values are omitted.
@@ -281,6 +285,9 @@ pub struct Replica {
     /// Event-local permitted identities. These do not become live picking targets.
     pub event_units: Vec<turts_net_protocol::visibility::EventUnitObservation>,
     pub terrain: Option<crate::terrain::store::PermittedTerrain>,
+    /// The owner utility view, committed with the state transaction (M6). It holds only the
+    /// rows of this client's own slot. `None` when the catalog has no utility type.
+    pub utilities: Option<turts_net_protocol::UtilityView>,
     /// Bounded visual events from committed live deltas only. Never replayed by snapshots.
     pub visual_events: VecDeque<VisualEvent>,
     next_visual_event: u64,
@@ -347,6 +354,7 @@ impl Replica {
             knowledge: None,
             event_units: Vec::new(),
             terrain: None,
+            utilities: None,
             visual_events: VecDeque::new(),
             next_visual_event: 0,
             units: HashMap::new(),
@@ -913,6 +921,10 @@ impl Replica {
             }
             _ => return None,
         };
+        let utilities = match delta.records.utilities.as_ref() {
+            None => None,
+            Some(view) => Some(crate::utilities::store::stage_replacement(context, view)?),
+        };
         Some(AtomicPatch {
             spawned,
             positions,
@@ -931,6 +943,7 @@ impl Replica {
             health_forget,
             store,
             terrain,
+            utilities,
         })
     }
 
@@ -1018,6 +1031,9 @@ impl Replica {
         }
         self.unit_orders.extend(patch.orders_changed);
         self.store.apply(patch.store);
+        if let Some(view) = patch.utilities {
+            self.utilities = Some(view);
+        }
         if let Some(terrain) = patch.terrain {
             self.terrain
                 .as_mut()
@@ -1195,6 +1211,7 @@ impl Replica {
 
     pub fn set_context(&mut self, context: ReplicaContext) {
         self.terrain = None;
+        self.utilities = None;
         self.context = Some(context);
     }
 
@@ -1643,6 +1660,10 @@ impl Replica {
             health_append: Vec::new(),
             health_latest: HashMap::new(),
             health_forget: HashSet::new(),
+            utilities: crate::utilities::store::stage_snapshot(
+                context,
+                snapshot.records.utilities.as_ref(),
+            )?,
             tick: snapshot.tick,
         };
         candidate.unit_orders =
@@ -1687,6 +1708,7 @@ impl Replica {
             health_append: Vec::new(),
             health_latest: HashMap::new(),
             health_forget: HashSet::new(),
+            utilities: self.utilities.clone(),
             tick,
         }
     }
@@ -1784,6 +1806,12 @@ impl Replica {
         {
             return None;
         }
+        // A delta with `utilities: Some` replaces the whole owner view; `None` is no change (M6).
+        next.utilities = crate::utilities::store::stage_delta(
+            context,
+            next.utilities.take(),
+            delta.records.utilities.as_ref(),
+        )?;
         // A delta carries the complete record of each unit whose record changed, and
         // `orders_cleared` for each unit whose record left the view (design 6.8). The table is
         // merged in chain order; only a `Snapshot` replaces it (`stage_snapshot`).
@@ -1843,6 +1871,7 @@ impl Replica {
         self.healths = candidate.healths;
         self.research = candidate.research;
         self.unit_orders = candidate.unit_orders;
+        self.utilities = candidate.utilities;
         match store {
             StoreUpdate::Replace(staged) => self.store = staged,
             StoreUpdate::Step(step) => self.store.apply(step),

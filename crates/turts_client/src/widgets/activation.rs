@@ -92,6 +92,12 @@ pub(super) fn activate_widget(
                 tool: tool.clone(),
             }),
         ),
+        primitives::WidgetAction::UtilityRoute { order, utility } => queue.0.push(
+            turts_interaction::InputEvent::UtilityRoute(turts_interaction::utility::Input {
+                order: order.clone(),
+                utility: utility.clone(),
+            }),
+        ),
         primitives::WidgetAction::UnloadResume {
             match_id,
             map,

@@ -140,8 +140,7 @@ pub fn read_source(source: &Source, context: SourceContext<'_>) -> SourceData {
         Source::SelectionUnits => selection_units(context),
         Source::CommandCard => command_card(context),
         Source::TerrainTools { order } => terrain_tools(context, order),
-        // M6: filled by the utility client module; empty until it is wired.
-        Source::UtilityRoutes { .. } => SourceData::default(),
+        Source::UtilityRoutes { order } => utility_routes(context, order),
         Source::BuildMenu => build_menu(context),
         Source::ProductionQueue => production_queue(context),
         Source::ControlGroups => control_groups(context),
@@ -403,6 +402,8 @@ fn command_card(context: SourceContext<'_>) -> SourceData {
         scalar: None,
         items: orders
             .into_iter()
+            // A route needs a utility type: the `UtilityRoutes` list holds it, not the card (M6).
+            .filter(|(_, order)| order.behaviour != Behaviour::UtilityRoute)
             .filter(|(_, order)| {
                 selected.iter().any(|(_, unit)| {
                     unit.owner_slot == context.owner_slot
@@ -802,6 +803,56 @@ fn terrain_tools(context: SourceContext<'_>, order: &str) -> SourceData {
             WidgetAction::TerrainWork {
                 order: order.into(),
                 tool: id.to_string(),
+            },
+        );
+        result.items.push(row);
+    }
+    result
+}
+
+/// One item for each catalog utility type, when the order lists a selected own unit type (M6).
+/// The action enters route mode for that utility with that order.
+fn utility_routes(context: SourceContext<'_>, order: &str) -> SourceData {
+    let mut result = SourceData::default();
+    let Some((order_id, binding)) = ContentId::parse(order).ok().and_then(|id| {
+        let definition = context.content.catalog.orders.get(&id)?;
+        (definition.behaviour == Behaviour::UtilityRoute
+            && definition.target == turts_mod_api::TargetKind::UtilityRoute)
+            .then_some((id, definition))
+    }) else {
+        return result;
+    };
+    let eligible = context.selection.iter().any(|id| {
+        context.replica.units.get(id).is_some_and(|unit| {
+            unit.owner_slot == context.owner_slot && order_unit_matches(binding, &unit.content_id)
+        })
+    });
+    if !eligible {
+        return result;
+    }
+    let enabled = context.replica.utilities.is_some();
+    for (id, utility) in &context.content.catalog.utilities {
+        let mut row = ItemData::default();
+        row.set(ItemField::Name, &utility.name);
+        row.set(
+            ItemField::Icon,
+            qualify_asset(&order_id.package.0, &binding.icon),
+        );
+        row.set(ItemField::Enabled, enabled);
+        row.set(ItemField::Body, &binding.description);
+        row.set(
+            ItemField::Reason,
+            if enabled {
+                "Click two points to place a line. Right click or Escape ends."
+            } else {
+                "Waiting for the utility view"
+            },
+        );
+        row.set(
+            ItemField::Action,
+            WidgetAction::UtilityRoute {
+                order: order.into(),
+                utility: id.to_string(),
             },
         );
         result.items.push(row);

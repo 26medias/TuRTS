@@ -1563,6 +1563,9 @@ fn checked_unit_reference(
 /// The engine actions that API 0.2.4 added. A package of an older edition is refused when it
 /// writes one (the version table), so its hint must not offer one.
 const ENGINE_ACTIONS_SINCE_0_2_4: [&str; 2] = ["leave_match", "toggle_sound"];
+/// The engine actions that API 0.2.18 (M6) added: the utility view and the route depth.
+pub(crate) const UTILITY_ENGINE_ACTIONS: [&str; 3] =
+    ["utility_view", "utility_deeper", "utility_shallower"];
 
 const ENGINE_ACTION_NAMES: &[&str] = &[
     "select",
@@ -1582,6 +1585,10 @@ const ENGINE_ACTION_NAMES: &[&str] = &[
     "leave_match",
     // API 0.2.4, row H25: switches the sound on or off (a client preference).
     "toggle_sound",
+    // API 0.2.18 (M6): the utility view and the route depth.
+    "utility_view",
+    "utility_deeper",
+    "utility_shallower",
 ];
 
 fn is_engine_action(name: &str) -> bool {

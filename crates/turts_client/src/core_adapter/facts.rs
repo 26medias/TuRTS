@@ -10,12 +10,14 @@ use crate::{content::ClientContent, replica::Replica};
 
 pub(super) mod hint;
 pub(super) mod placement;
+pub(super) mod utility;
 
 /// The facts of every owner task, in one value that `CoreRuntime` keeps.
 #[derive(Debug, Default)]
 pub(super) struct OwnerFacts {
     pub(super) placement: turts_interaction::placement::Facts,
     pub(super) hints: turts_interaction::hints::Facts,
+    pub(super) utility: turts_interaction::utility::Facts,
     /// The number of frames that built these facts. Tests only: it shows that the same value
     /// reaches `build` in each frame.
     #[cfg(test)]
@@ -27,6 +29,7 @@ impl OwnerFacts {
     pub(super) fn build(&mut self, replica: &Replica, content: &ClientContent) {
         placement::build(&mut self.placement, replica, content);
         hint::build(&mut self.hints, replica, content);
+        utility::build(&mut self.utility, replica, content);
         #[cfg(test)]
         {
             self.builds += 1;

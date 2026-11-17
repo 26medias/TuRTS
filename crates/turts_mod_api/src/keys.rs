@@ -59,6 +59,9 @@ pub const REASON_KEYS: &[&str] = &[
     "match_not_started",
     "slot_defeated",
     "match_over",
+    // Protocol 11 (M6).
+    "utility_not_observed",
+    "utility_limit_reached",
 ];
 
 /// Cursor contexts of the `cursors` map of an interface file (design 6.10 row H2). `place`,
@@ -120,8 +123,8 @@ mod tests {
     fn the_lists_have_the_counts_of_the_design() {
         assert_eq!(
             REASON_KEYS.len(),
-            49,
-            "design 6.10: 37 wire + 3 client + 9 new"
+            51,
+            "design 6.10: 37 wire + 3 client + 9 new, then 2 of protocol 11"
         );
         assert_eq!(CURSOR_CONTEXTS.len(), 9, "design 6.10 row H2");
         assert_eq!(

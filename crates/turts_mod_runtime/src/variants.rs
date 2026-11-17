@@ -120,6 +120,13 @@ pub(crate) fn collect(_manifest: &Manifest, content: &ParsedMcContent) -> Vec<Va
 /// would then refuse the override at `^0.2.4` too (`docs/research/mp1/errata-sound.md`).
 fn input_uses(uses: &mut Uses, file: &str, input: &turts_mod_api::InputMapDef) {
     for (index, over) in input.engine_overrides.iter().enumerate() {
+        if crate::content_mc_validation::UTILITY_ENGINE_ACTIONS.contains(&over.name.as_str()) {
+            uses.push(
+                "engine action utility view",
+                file,
+                format!("engine_overrides[{index}].name"),
+            );
+        }
         if over.name == "jump_to_alert" {
             uses.push(
                 "engine action jump_to_alert",
@@ -136,6 +143,13 @@ fn input_uses(uses: &mut Uses, file: &str, input: &turts_mod_api::InputMapDef) {
         }
     }
     for (index, action) in input.actions.iter().enumerate() {
+        if crate::content_mc_validation::UTILITY_ENGINE_ACTIONS.contains(&action.name.as_str()) {
+            uses.push(
+                "engine action utility view",
+                file,
+                format!("actions[{index}].name"),
+            );
+        }
         if action.name == "jump_to_alert" {
             uses.push(
                 "engine action jump_to_alert",
@@ -377,6 +391,14 @@ impl InterfaceWalk<'_> {
                 if matches!(action,ButtonAction::Input(name) if name=="jump_to_alert") {
                     self.push(
                         "engine action jump_to_alert",
+                        &format!("{path}.widget.action"),
+                    );
+                }
+                if matches!(action, ButtonAction::Input(name)
+                    if crate::content_mc_validation::UTILITY_ENGINE_ACTIONS.contains(&name.as_str()))
+                {
+                    self.push(
+                        "engine action utility view",
                         &format!("{path}.widget.action"),
                     );
                 }

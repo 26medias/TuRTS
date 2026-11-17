@@ -231,6 +231,7 @@ pub(crate) const VERSION_TABLE: &[VersionTableRow] = &[
     variant_0_2_18("behaviour UtilityRoute"),
     variant_0_2_18("target: UtilityRoute"),
     variant_0_2_18("Source::UtilityRoutes"),
+    variant_0_2_18("engine action utility view"),
     VersionTableRow {
         name: "Source::TerrainTools",
         detect: Detect::Variant("Source::TerrainTools"),

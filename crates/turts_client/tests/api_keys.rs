@@ -14,7 +14,7 @@ const CLIENT_REASON_KEYS: [&str; 3] = [
     "already_researching",
 ];
 /// The wire keys that protocol 5 adds (6.1, 6.7.7); `L0-WIRE` adds the variants.
-const NEW_WIRE_REASON_KEYS: [&str; 9] = [
+const NEW_WIRE_REASON_KEYS: [&str; 11] = [
     "site_outside_map",
     "site_out_of_area",
     "site_blocked",
@@ -24,6 +24,8 @@ const NEW_WIRE_REASON_KEYS: [&str; 9] = [
     "match_not_started",
     "slot_defeated",
     "match_over",
+    "utility_not_observed",
+    "utility_limit_reached",
 ];
 
 #[test]
@@ -47,7 +49,7 @@ fn every_wire_reason_key_is_a_reason_key_in_wire_order() {
     assert_eq!(
         &REASON_KEYS[REASON_KEYS.len() - NEW_WIRE_REASON_KEYS.len()..],
         &NEW_WIRE_REASON_KEYS[..],
-        "the same 9 keys end the mod API list"
+        "the same 11 keys end the mod API list"
     );
 }
 
