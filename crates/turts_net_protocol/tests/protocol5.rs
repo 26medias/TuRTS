@@ -16,8 +16,8 @@ where
 }
 
 #[test]
-fn the_protocol_version_is_10() {
-    assert_eq!(NET_PROTOCOL_VERSION, 10);
+fn the_protocol_version_is_11() {
+    assert_eq!(NET_PROTOCOL_VERSION, 11);
 }
 
 #[test]
@@ -207,6 +207,8 @@ fn the_new_reasons_have_their_keys_in_order() {
             "match_not_started",
             "slot_defeated",
             "match_over",
+            "utility_not_observed",
+            "utility_limit_reached",
         ]
     );
     for reason in CommandRejectReason::ALL {
