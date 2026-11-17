@@ -9,11 +9,10 @@ fn init() {
         rx.push(16000 + p * 28000);
         ry.push(128000);
     }
-    #{ kills: [0, 0, 0, 0, 0, 0, 0, 0], rx: rx, ry: ry, leader: -1, counter: 0 }
+    #{ kills: [0, 0, 0, 0, 0, 0, 0, 0], rx: rx, ry: ry, leader: -1, counter: 0, bounty: [50, 75, 150, 400] }
 }
 
 fn on_tick(ev) {
-    let bounty = [50, 75, 150, 400];
     let n = ev.len();
     let i = 0;
     while i < n {
@@ -22,7 +21,7 @@ fn on_tick(ev) {
         if kind == 1 {
             let killer = ev[i + 4];
             this.kills[killer] += 1;
-            let b = bounty[ev[i + 2]];
+            let b = this.bounty[ev[i + 2]];
             if this.kills[killer] % 10 == 0 {
                 b *= 2;
             }

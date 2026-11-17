@@ -58,7 +58,14 @@ pub const W3_CALLS: i64 = 1_000;
 fn make_world(slot: usize) -> World {
     match slot {
         0 => World::new(1_000, 0x5EED_0001, EventRate { min: 12, spread: 9 }),
-        1 => World::new(5_000, 0x5EED_0002, EventRate { min: 256, spread: 0 }),
+        1 => World::new(
+            5_000,
+            0x5EED_0002,
+            EventRate {
+                min: 256,
+                spread: 0,
+            },
+        ),
         _ => World::new(1_000, 0x5EED_0003, EventRate { min: 12, spread: 9 }),
     }
 }
@@ -82,8 +89,16 @@ impl Bench {
     }
 
     /// As `new`, with another script source (tests).
-    pub fn with_source(kind: Kind, source: &str, limits: Option<Limits>) -> Result<Bench, ScriptError> {
-        let worlds = [Some(make_world(0)), Some(make_world(1)), Some(make_world(2))];
+    pub fn with_source(
+        kind: Kind,
+        source: &str,
+        limits: Option<Limits>,
+    ) -> Result<Bench, ScriptError> {
+        let worlds = [
+            Some(make_world(0)),
+            Some(make_world(1)),
+            Some(make_world(2)),
+        ];
         let limits = limits.unwrap_or_else(|| Limits::for_kind(kind));
         let guard = Guarded::create(kind, &format!("rules.{}", kind.name()), source, limits)?;
         Ok(Bench {
@@ -127,7 +142,8 @@ impl Bench {
     pub fn script(&mut self, w: Workload) {
         match w {
             Workload::W1 | Workload::W2 => {
-                let events = host::with(|h| std::mem::take(&mut h.world.as_mut().expect("world").events));
+                let events =
+                    host::with(|h| std::mem::take(&mut h.world.as_mut().expect("world").events));
                 let r = self.guard.on_tick(&events);
                 host::with(|h| h.world.as_mut().expect("world").events = events);
                 self.record(r);

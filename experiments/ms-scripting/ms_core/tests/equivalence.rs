@@ -47,7 +47,13 @@ fn changed_rule_changes_hash() {
     for k in candidates() {
         let src = rules_source(k).replacen("400", "401", 1);
         assert_ne!(src, rules_source(k));
-        let got = std::thread::spawn(move || hashes(k, Some(&src))).join().unwrap();
-        assert_ne!((got.0, got.1), (want.0, want.1), "{k:?}: the test cannot go red");
+        let got = std::thread::spawn(move || hashes(k, Some(&src)))
+            .join()
+            .unwrap();
+        assert_ne!(
+            (got.0, got.1),
+            (want.0, want.1),
+            "{k:?}: the test cannot go red"
+        );
     }
 }

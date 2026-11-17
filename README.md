@@ -38,7 +38,14 @@ Authored map fog and bounded remembered sightings are now available to mods. Edi
 ## Engine progress
 
 The target is the full RTS engine in the [project specification](RTS-Engine-Project-Specifications.md).
-The skirmish is its playable test bed. This table tracks delivered capabilities, not completion percentages.
+The skirmish is its playable test bed. The table below tracks delivered capabilities.
+
+Accepted milestones of spec section 14 (20 in all): `██████░░░░░░░░░░░░░░` 6 of 20.
+- Accepted: M1, M2, M3, QA0, M4, MS.
+- Partial (capabilities delivered; no recorded acceptance by a person): MC, MP1, MP2.
+- Open: M4b and M5 (in progress on other branches), MB, M6, M7, M8, M9, M10, M11, M12, M13.
+
+The count is of milestones, not of work. Milestones differ in size, so it gives no date.
 
 | Capability | Verified progress | Evidence and remaining work |
 | --- | --- | --- |
@@ -53,7 +60,8 @@ The skirmish is its playable test bed. This table tracks delivered capabilities,
 | Public mod bots | Portable profiles, public Rust controllers, bounded observations, exact account coordination, shared command admission, and headless recorded/regenerated replay are implemented. | [SDK15 report](docs/reports/2026-11-15-public-bot-foundation.md). Final Skirmish and Stockyard browser probes pass. BF8 passed at 4.906851 ms p99 before later financial/profile fixes; those fixes were not remeasured. Full human/reference readiness remains open. |
 | Shared visibility | Authored fog, team sharing, bounded stale sightings, hidden-target command rules, and atomic permitted human/bot state pass acceptance. | [SDK16 report](docs/reports/2026-11-15-shared-visibility.md). API 0.2.16; protocol 9. Independent code-running review, 2,924 native tests, full network acceptance, 60,000 measured server ticks, nine High camera cases, and scripted player probes pass. |
 | Editable terrain | Plateau heights, excavation/fill, private seeded geology, persistent depletion, physical cargo, explicit unloading, permitted surface memory, raised picking, and traversable passages pass acceptance. | [M4 evidence and limits](docs/reports/2026-11-15-terrain-work-orders.md). API 0.2.17; protocol 10. Both public terrain packages, independent code-running review, 80,000 final measured ticks, three High400 views and scripted cold-play probes pass. Fully exposed million-cell maps exceed the decoded-state guard. |
-| Remaining engine scope | Shared group routing, geological discovery and terrain occlusion, scripts, utilities, rooms, durable identity/saves, statistics, and spectator/replay delivery remain open. | M4b routing and M5a surveys are under implementation on separate branches. M5b obstruction has an approved spec and plan. The full project specification remains the target. |
+| Scripting language (MS) | Rune 0.14.2 is selected from measured native and Chrome-wasm runs against budgets set before the runs. Rune adds 13.6 µs (native) and 60 µs (Chrome) script p99 for each tick at 1,000 units and 16 events, and 1,003,799 gzip bytes. | [MS report](docs/reports/2026-11-16-scripting-selection.md), [measurements](docs/measurements/scripting.md). Spike only: no production runtime and no engine change. The selection depends on one configuration decision (core Rune modules only; spec amendment 5). Rhai is selected instead if the CEO accepts its MPL-2.0 dependency. |
+| Remaining engine scope | Shared group routing, geological discovery and terrain occlusion, the production script runtime, utilities, rooms, durable identity/saves, statistics, and spectator/replay delivery remain open. | M4b routing and M5a surveys are under implementation on separate branches. M5b obstruction has an approved spec and plan. The full project specification remains the target. |
 
 Latest accepted build: `target/mc-evidence/skirmish-terrain-route-final-prepared` (API 0.2.17; protocol 10), sealed from source `2073e15e`.
 All three local launchers use the frozen `TuRTS-terrain-play` checkout and this prepared build.

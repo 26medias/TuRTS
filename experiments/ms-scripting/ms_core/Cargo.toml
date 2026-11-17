@@ -7,6 +7,8 @@ publish.workspace = true
 [features]
 rhai = ["dep:rhai"]
 rune = ["dep:rune"]
+# Recorded-only variant `rune-full`: Rune with the broad module set of the first run (spec 9).
+rune_full = ["rune"]
 lua = ["dep:piccolo"]
 
 [dependencies]

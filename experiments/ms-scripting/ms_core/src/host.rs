@@ -16,10 +16,6 @@ pub const MUTANT_NO_REQUEST_CAP: u8 = 2;
 /// No per-instance memory accounting (L3 (d) must go red on Rune).
 pub const MUTANT_NO_ACCOUNTING: u8 = 3;
 
-/// Recorded-only variant (not a mutant): Rhai checks the memory room on every operation
-/// instead of every 256. It does not take part in the selection (report, variant V1).
-pub const VARIANT_RHAI_GUARD_EVERY_OP: u8 = 4;
-
 static MUTANT: AtomicU8 = AtomicU8::new(MUTANT_NONE);
 
 pub fn set_mutant(m: u8) {

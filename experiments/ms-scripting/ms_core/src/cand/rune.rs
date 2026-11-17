@@ -1,5 +1,4 @@
-//! C2: Rune 0.14.2. A context with selected modules only: no `std::io` (print, dbg), no
-//! `std::test`, no futures or streams.
+//! C2: Rune 0.14.2. A context with selected modules only (see `context`).
 
 use std::sync::Arc;
 
@@ -29,9 +28,10 @@ fn host_module() -> Result<Module, rune::ContextError> {
     let mut m = Module::with_crate("host")?;
     m.function("count_owned", host::count_owned).build()?;
     m.function("credits", host::credits).build()?;
-    m.function("units_near", |p: i64, x: i64, y: i64, r: i64, n: i64| -> Vec<i64> {
-        host::units_near(p, x, y, r, n)
-    })
+    m.function(
+        "units_near",
+        |p: i64, x: i64, y: i64, r: i64, n: i64| -> Vec<i64> { host::units_near(p, x, y, r, n) },
+    )
     .build()?;
     m.function("grant", host::grant).build()?;
     m.function("move_to", host::move_to).build()?;
@@ -44,6 +44,34 @@ fn host_module() -> Result<Module, rune::ContextError> {
     Ok(m)
 }
 
+/// C2 context (spec 9, amendment 5): the core language modules only. No `std::io` (print,
+/// dbg), no `std::test`, no futures or streams, no `collections`, `bytes`, `char`, `tuple`,
+/// `hash`, `any`, `mem`, `u64`, generators, or macros.
+#[cfg(not(feature = "rune_full"))]
+fn context() -> Result<Context, rune::ContextError> {
+    use rune::modules as m;
+    let mut cx = Context::new();
+    cx.install(m::iter::module()?)?;
+    cx.install(m::core::module()?)?;
+    cx.install(m::cmp::module()?)?;
+    cx.install(m::clone::module()?)?;
+    cx.install(m::num::module()?)?;
+    cx.install(m::string::module()?)?;
+    cx.install(m::f64::module()?)?;
+    cx.install(m::fmt::module()?)?;
+    cx.install(m::i64::module()?)?;
+    cx.install(m::object::module()?)?;
+    cx.install(m::ops::module()?)?;
+    cx.install(m::option::module()?)?;
+    cx.install(m::result::module()?)?;
+    cx.install(m::vec::module()?)?;
+    cx.install(m::slice::module()?)?;
+    cx.install(host_module()?)?;
+    Ok(cx)
+}
+
+/// Recorded-only variant `rune-full`: the broad module set of the first run.
+#[cfg(feature = "rune_full")]
 fn context() -> Result<Context, rune::ContextError> {
     use rune::modules as m;
     let mut cx = Context::new();
@@ -185,7 +213,9 @@ impl RuneRt {
 fn fatal_span(f: &rune::diagnostics::FatalDiagnostic) -> Option<usize> {
     use rune::ast::Spanned;
     match f.kind() {
-        rune::diagnostics::FatalDiagnosticKind::CompileError(e) => Some(e.span().start.into_usize()),
+        rune::diagnostics::FatalDiagnosticKind::CompileError(e) => {
+            Some(e.span().start.into_usize())
+        }
         _ => None,
     }
 }

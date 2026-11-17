@@ -51,8 +51,12 @@ fn reg_i<'gc, const N: usize>(
                 v => {
                     return Err(piccolo::Value::String(piccolo::String::from_slice(
                         &ctx,
-                        format!("{name}: argument {} must be an integer, got {}", i + 1, v.type_name())
-                            .as_bytes(),
+                        format!(
+                            "{name}: argument {} must be an integer, got {}",
+                            i + 1,
+                            v.type_name()
+                        )
+                        .as_bytes(),
                     ))
                     .into())
                 }
@@ -181,7 +185,10 @@ impl LuaRt {
                 self.last_fuel = used;
                 return Err(ScriptError::new(
                     ScriptErrorKind::Budget,
-                    format!("{}: fuel budget of {} exhausted", self.name, self.limits.budget),
+                    format!(
+                        "{}: fuel budget of {} exhausted",
+                        self.name, self.limits.budget
+                    ),
                     None,
                 ));
             }
@@ -246,14 +253,19 @@ impl LuaRt {
         let Some(f) = f else {
             return Err(ScriptError::new(
                 ScriptErrorKind::Runtime,
-                format!("{}: entry function {} is not defined", self.name, ["on_tick", "bench_calls", "on_unit"][which.min(2) as usize]),
+                format!(
+                    "{}: entry function {} is not defined",
+                    self.name,
+                    ["on_tick", "bench_calls", "on_unit"][which.min(2) as usize]
+                ),
                 None,
             ));
         };
         self.lua.enter(|ctx| {
             let func: Function = ctx.fetch(f);
             let a = args(ctx);
-            ctx.fetch(&self.exec).restart(ctx, func, piccolo::Variadic(a));
+            ctx.fetch(&self.exec)
+                .restart(ctx, func, piccolo::Variadic(a));
         });
         self.drive()
     }

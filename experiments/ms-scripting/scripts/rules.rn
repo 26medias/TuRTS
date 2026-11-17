@@ -9,11 +9,11 @@ pub fn init() {
         rx.push(16000 + p * 28000);
         ry.push(128000);
     }
-    #{ kills: [0, 0, 0, 0, 0, 0, 0, 0], rx: rx, ry: ry, leader: -1, counter: 0 }
+    #{ kills: [0, 0, 0, 0, 0, 0, 0, 0], rx: rx, ry: ry, leader: -1, counter: 0, bounty: [50, 75, 150, 400] }
 }
 
 pub fn on_tick(s, ev) {
-    let bounty = [50, 75, 150, 400];
+    let bounty = s.bounty;
     let n = ev.len();
     let i = 0;
     while i < n {

@@ -127,9 +127,10 @@ impl Limits {
 }
 
 // Calibrated by `ms_native calibrate` (plan Task 3). Recorded in docs/measurements/scripting.md.
-// Calibration 2026-11-16 (out/calibrate/*.json): largest call over W1 to W3 was Rhai 22,480
-// operations (W2), Rune 12,565 instructions (W2), piccolo 31,014 fuel (W3).
-pub const BUDGET_RHAI: u64 = 90_000;
+// Calibration 2026-11-16, final scripts (OUT/meta/calibrate-*.json): largest call over W1 to W3
+// was Rhai 22,772 operations (W2), Rune 12,561 instructions (W2), piccolo 31,014 fuel (W3).
+// (First run: Rhai 22,480 -> 90,000; Rune 12,565 -> 51,000.)
+pub const BUDGET_RHAI: u64 = 92_000;
 pub const BUDGET_RUNE: u64 = 51_000;
 pub const BUDGET_LUA: u64 = 130_000;
 
@@ -241,7 +242,12 @@ pub struct Guarded {
 
 impl Guarded {
     /// Create the runtime under the same accounting as a call.
-    pub fn create(kind: Kind, name: &str, source: &str, limits: Limits) -> Result<Self, ScriptError> {
+    pub fn create(
+        kind: Kind,
+        name: &str,
+        source: &str,
+        limits: Limits,
+    ) -> Result<Self, ScriptError> {
         alloc::reset_peak();
         let base = begin_call(limits.memory);
         let rt = create(kind, name, source, limits);
@@ -305,9 +311,12 @@ impl Guarded {
         let after = alloc::live();
         // Request payloads belong to the host (freed in `apply`): take them out of the delta.
         let host_growth = host::request_heap_bytes() as isize - host_before as isize;
-        self.peak = self
-            .peak
-            .max(retained + alloc::peak().saturating_sub(base).saturating_sub(host_growth.max(0) as usize));
+        self.peak = self.peak.max(
+            retained
+                + alloc::peak()
+                    .saturating_sub(base)
+                    .saturating_sub(host_growth.max(0) as usize),
+        );
         self.retained += after as isize - base as isize - host_growth;
         if r.is_ok() && host::over_request_cap() {
             r = Err(ScriptError::new(

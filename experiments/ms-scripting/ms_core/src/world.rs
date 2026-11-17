@@ -181,8 +181,8 @@ impl World {
             if r < 48 {
                 let id = self.rng.below(units) as usize;
                 let u = self.units[id];
-                let killer = (u32::from(u.owner) + 1 + self.rng.below(PLAYERS as u32 - 1))
-                    % PLAYERS as u32;
+                let killer =
+                    (u32::from(u.owner) + 1 + self.rng.below(PLAYERS as u32 - 1)) % PLAYERS as u32;
                 self.events.extend_from_slice(&[
                     EV_DIED,
                     i64::from(u.owner),

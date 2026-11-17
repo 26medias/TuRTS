@@ -29,11 +29,13 @@ Run from this directory. Builds hold a shared lock; timing holds the exclusive l
 
 ```bash
 # Equivalence test (each script gives the rust_ref hash; a changed rule must change it).
-flock -s /tmp/turts-quiet-performance.lock cargo test --release -p ms_core --all-features
+flock -s /tmp/turts-quiet-performance.lock cargo test --release -p ms_core --features rhai,rune,lua -- --test-threads=1
+
+# One native binary for each candidate (out/bin/ms_native-<name>; no feature unification).
+flock -s /tmp/turts-quiet-performance.lock tools/build_native.sh
 
 # Calibration of the instruction budgets (functional, no timing).
-flock -s /tmp/turts-quiet-performance.lock cargo build --release -p ms_native
-for k in rhai rune lua; do ./target/release/ms_native calibrate --kind $k; done
+for k in rhai rune lua; do out/bin/ms_native-$k calibrate --kind $k; done
 
 # Wasm modules, sizes and import lists (out/wasm/).
 flock -s /tmp/turts-quiet-performance.lock tools/build_wasm.sh
@@ -48,9 +50,6 @@ python3 tools/wasm_imports.py --self-test
 flock -s /tmp/turts-quiet-performance.lock tools/native_probes.sh out/mutant-apply-now apply-now rhai rune lua
 flock -s /tmp/turts-quiet-performance.lock tools/native_probes.sh out/mutant-no-request-cap no-request-cap rhai rune lua
 flock -s /tmp/turts-quiet-performance.lock tools/native_probes.sh out/mutant-no-accounting no-accounting rune
-
-# Recorded-only variant V1: Rhai checks the memory room on every operation.
-flock -s /tmp/turts-quiet-performance.lock tools/native_probes.sh out/variant-rhai-guard rhai-guard-every-op rhai
 ```
 
 The Chrome launcher needs `playwright-core` from `/home/julien/Projects/TuRTS/tests/browser`

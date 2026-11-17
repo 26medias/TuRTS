@@ -8,7 +8,7 @@ cd "$here"
 mkdir -p out/wasm
 echo "[" > out/wasm/sizes.json.tmp
 first=1
-for name in baseline rhai rune lua; do
+for name in baseline rhai rune lua rune-full; do
     feat=()
     [ "$name" != baseline ] && feat=(--features "$name")
     cargo build -p ms_web --profile wasm-release --target wasm32-unknown-unknown "${feat[@]}" 2>&1 | tail -n 2

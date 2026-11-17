@@ -48,10 +48,6 @@ fn set_mutant(args: &[String]) -> &'static str {
             host::set_mutant(host::MUTANT_NO_ACCOUNTING);
             "no-accounting"
         }
-        Some("rhai-guard-every-op") => {
-            host::set_mutant(host::VARIANT_RHAI_GUARD_EVERY_OP);
-            "rhai-guard-every-op"
-        }
         Some(m) => die(&format!("unknown mutant {m}")),
     }
 }
@@ -79,7 +75,8 @@ fn suite(args: &[String]) {
     let run = arg(args, "--run").unwrap_or_else(|| "0".into());
     let live0 = ms_core::alloc::live();
     let t = Instant::now();
-    let mut b = Bench::new(kind, None).unwrap_or_else(|e| die(&format!("create: {} (line {:?})", e.message, e.line)));
+    let mut b = Bench::new(kind, None)
+        .unwrap_or_else(|e| die(&format!("create: {} (line {:?})", e.message, e.line)));
     let create_us = us(t);
     let mut parts = Vec::new();
     let mut peak_after_w2 = 0;

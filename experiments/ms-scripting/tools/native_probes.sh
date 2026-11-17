@@ -11,10 +11,13 @@ mkdir -p "$out"
 # Protect the shared machine: a runaway allocation fails at 8 GiB instead of waking the OOM killer.
 ulimit -v 8388608
 ids=(L1 L2 L3a L3b L3c-map L3c-list L3d L3e L4 L5b L7a L7b L8 L9a L9b)
-for k in "${kinds[@]}"; do
+# A name is a build (out/bin/ms_native-<name>); the kind is the runtime inside it.
+kind_of() { case "$1" in rune-full) echo rune ;; *) echo "$1" ;; esac; }
+for name in "${kinds[@]}"; do
+    k="$(kind_of "$name")"
     for id in "${ids[@]}"; do
-        base="$out/$k-$id"
-        timeout 300 "$here/target/release/ms_native" probe --kind "$k" --id "$id" --mutant "$mutant" \
+        base="$out/$name-$id"
+        timeout 300 "$here/out/bin/ms_native-$name" probe --kind "$k" --id "$id" --mutant "$mutant" \
             --out "$base.json" >"$base.stdout" 2>"$base.stderr"
         echo "$?" >"$base.exit"
     done

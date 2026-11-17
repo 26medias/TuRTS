@@ -10,15 +10,32 @@ use crate::json_str;
 use crate::world::{EventRate, Request, World};
 
 pub const IDS: [&str; 19] = [
-    "L1", "L2", "L3a", "L3b", "L3c-map", "L3c-list", "L3d", "L3e", "L4", "L5b", "L7a", "L7b",
-    "L8", "L9a", "L9b", "L1-prepare", "L1-call", "L1-finish", "L6",
+    "L1",
+    "L2",
+    "L3a",
+    "L3b",
+    "L3c-map",
+    "L3c-list",
+    "L3d",
+    "L3e",
+    "L4",
+    "L5b",
+    "L7a",
+    "L7b",
+    "L8",
+    "L9a",
+    "L9b",
+    "L1-prepare",
+    "L1-call",
+    "L1-finish",
+    "L6",
 ];
 
 /// Probes that the drivers run, in order. (`L1` runs as prepare, call, finish; `L6` is the
 /// recovery field of L1, L2, L3x, L9a.)
 pub const RUN_ORDER: [&str; 15] = [
-    "L1", "L2", "L3a", "L3b", "L3c-map", "L3c-list", "L3d", "L3e", "L4", "L5b", "L7a", "L7b",
-    "L8", "L9a", "L9b",
+    "L1", "L2", "L3a", "L3b", "L3c-map", "L3c-list", "L3d", "L3e", "L4", "L5b", "L7a", "L7b", "L8",
+    "L9a", "L9b",
 ];
 
 const CAP_TOLERANCE: usize = 1024 * 1024;
@@ -27,7 +44,9 @@ const CAP_TOLERANCE: usize = 1024 * 1024;
 fn script(kind: Kind, prelude: &str, body: &str) -> String {
     match kind {
         Kind::Rhai => format!("fn init() {{ #{{}} }}\n{prelude}\nfn on_tick(ev) {{\n{body}\n}}\n"),
-        Kind::Rune => format!("pub fn init() {{ #{{}} }}\n{prelude}\npub fn on_tick(s, ev) {{\n{body}\n}}\n"),
+        Kind::Rune => {
+            format!("pub fn init() {{ #{{}} }}\n{prelude}\npub fn on_tick(s, ev) {{\n{body}\n}}\n")
+        }
         Kind::Lua => format!("{prelude}\nfunction on_tick(ev)\n{body}\nend\n"),
         _ => String::new(),
     }
@@ -262,19 +281,30 @@ fn bounded(kind: Kind, id: &str, max_ticks: u32, memory: bool) -> String {
     let mut g = match create(kind, &name, &src) {
         Ok(g) => g,
         Err(e) => {
-            return record(kind, id, false, &[("detail", json_str("create failed")), ("error", err_json(&Some(e)))]);
+            return record(
+                kind,
+                id,
+                false,
+                &[
+                    ("detail", json_str("create failed")),
+                    ("error", err_json(&Some(e))),
+                ],
+            );
         }
     };
     let mut err = None;
     let mut ticks = 0;
+    // `Guarded::run` resets the allocator peak for each call, so take the maximum over ticks.
+    let mut process_peak = alloc::peak().saturating_sub(base_live);
     while ticks < max_ticks {
         ticks += 1;
-        if let Err(e) = tick(&mut g) {
+        let r = tick(&mut g);
+        process_peak = process_peak.max(alloc::peak().saturating_sub(base_live));
+        if let Err(e) = r {
             err = Some(e);
             break;
         }
     }
-    let process_peak = alloc::peak().saturating_sub(base_live);
     let cap = Limits::MEMORY + CAP_TOLERANCE;
     let requests_left = host::with(|h| h.requests.len());
     let flagged = host::over_request_cap();
@@ -287,7 +317,9 @@ fn bounded(kind: Kind, id: &str, max_ticks: u32, memory: bool) -> String {
         // The cap must be what stopped the call: 5,000 requests fit every instruction budget.
         pass &= requests_left == 0
             && flagged
-            && err.as_ref().is_some_and(|e| e.message.contains("requests in one call"));
+            && err
+                .as_ref()
+                .is_some_and(|e| e.message.contains("requests in one call"));
     }
     let applied = host::with(|h| h.world.as_ref().map_or(0, |w| w.applied));
     record(
@@ -340,7 +372,9 @@ pub fn l1_finish(kind: Kind) -> String {
         let Some((mut g, err)) = c.borrow_mut().take() else {
             return record(kind, "L1", false, &[("detail", json_str("not prepared"))]);
         };
-        let budget_err = err.as_ref().is_some_and(|e| e.kind == ScriptErrorKind::Budget);
+        let budget_err = err
+            .as_ref()
+            .is_some_and(|e| e.kind == ScriptErrorKind::Budget);
         let (rec_ok, rec) = recovery(&mut g);
         record(
             kind,
@@ -380,7 +414,12 @@ pub fn run(kind: Kind, id: &str) -> String {
                 ));
             }
             let applied = host::with(|h| h.world.as_ref().map_or(0, |w| w.applied));
-            record(kind, id, all && applied == 0, &[("variants", format!("[{}]", parts.join(",")))])
+            record(
+                kind,
+                id,
+                all && applied == 0,
+                &[("variants", format!("[{}]", parts.join(",")))],
+            )
         }
         "L5b" => {
             host::install_world(probe_world());
@@ -410,9 +449,9 @@ pub fn run(kind: Kind, id: &str) -> String {
             let want = if id == "L7a" { 3 } else { 4 };
             let r = create(kind, &name, &src).and_then(|mut g| tick(&mut g));
             let e = r.err();
-            let ok = e.as_ref().is_some_and(|e| {
-                e.line == Some(want) && e.message.contains(&name)
-            });
+            let ok = e
+                .as_ref()
+                .is_some_and(|e| e.line == Some(want) && e.message.contains(&name));
             record(
                 kind,
                 id,
@@ -458,7 +497,13 @@ pub fn run(kind: Kind, id: &str) -> String {
             let r = create(kind, &name, &src).and_then(|mut g| tick(&mut g));
             let (rejected, moved) = host::with(|h| {
                 let w = h.world.as_ref().expect("world");
-                (w.rejected, w.units.iter().filter(|u| u.tx == 1000 && u.ty == 1000).count())
+                (
+                    w.rejected,
+                    w.units
+                        .iter()
+                        .filter(|u| u.tx == 1000 && u.ty == 1000)
+                        .count(),
+                )
             });
             record(
                 kind,

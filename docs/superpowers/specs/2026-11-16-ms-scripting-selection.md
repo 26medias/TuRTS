@@ -1,6 +1,6 @@
 # MS: scripting language selection spike
 
-Status: gate 1 and gate 2 findings incorporated (B10 decided as option (b)). Date: 2026-11-16. Track: Foundation (the mod API contract, D34).
+Status: gates 1 and 2 passed; amendments 1 to 5 (section 9) after the first run and the final review. Date: 2026-11-16. Track: Foundation (the mod API contract, D34).
 Spec rows: D34, D18 (scripting open), 5.1, 5.2, 5.3, 5.4, 5.5, 6.2 (G9), 6.9, 13, 14 row 7 (MS),
 15 (Scripts row), G14.
 
@@ -103,7 +103,7 @@ last leader. It handles each event of the batch:
   table; double it on each tenth kill. Query `units_near` around the death point for the
   victim; when fewer than 3 friends are near, send `alert`; else send one `move_group` of the
   returned ids to the rally point.
-- `Produced`: query `count_owned`. Above 20, `set_stance` defend; else `move_to` the rally
+- `Produced`: query `count_owned`. Above 30, `set_stance` defend; else `move_to` the rally
   point.
 - `Researched`: move the rally point of the player by a fixed offset.
 - `Timer`: query `credits` for each of the 8 players; send `alert` when the leader changes.
@@ -156,7 +156,7 @@ The event generator is a seeded PCG; the seed and counts are fixed in the plan.
   allocator: the retained bytes of the instance are the sum, over its calls, of the live bytes
   after the call minus the live bytes before it. One instance runs at a time on a thread. In a
   call, each candidate checks retained bytes plus the growth of the call against the cap:
-  Rhai in `on_progress` every 256 operations; piccolo between fuel steps of 4,096; Rune by
+  Rhai in `on_progress` on every operation (amendment 4; first run: every 256); piccolo between fuel steps of 4,096; Rune by
   `rune_alloc::limit::with(cap - retained)`. After each call the host checks the retained
   bytes again. Before the host reports a cap error for piccolo, it runs a full collection
   (`Lua::gc_collect`) and measures again, because `enter` collects only incrementally.
@@ -267,7 +267,11 @@ MS passes when section 7 exists, every candidate has a number for every row on b
 one candidate is selected by rule 4.1, and one independent review that runs the spike code is
 complete with its material findings fixed.
 
-## 9. Amendments after the first runs (instrument defects only; no budget changed)
+## 9. Amendments after the first runs (instrument defects and one configuration choice; no budget changed)
+
+Amendments 1 to 4 repair instrument or harness defects. Amendment 5 is a configuration
+decision for a candidate, made after B4 failed by 0.4 %; it changes the MS result from RED to
+PASS. It is a decision, not a measurement, and the CEO can reverse it.
 
 1. **Host accounting of request payloads (spec 3.5).** The first full run counted the request
    payloads of a call (for example the id list of `move_group`) as retained bytes of the
@@ -279,3 +283,28 @@ complete with its material findings fixed.
    sends 4,200 requests (over the cap of 4,096, under every instruction budget; 5,000 was over
    the piccolo fuel budget, about 26 fuel for each iteration) and passes only when the
    request-cap error stopped the call.
+3. **One native binary for each candidate (spec 3, 5).** The first full run used one native
+   binary with all three candidates. Cargo then unified the features of `ahash`: piccolo
+   enables `runtime-rng`, so the Rune maps also got per-process seeds (Rune alone uses `ahash`
+   with `default-features = false`). The wasm builds already had one candidate each. The
+   native runs now use `out/bin/ms_native-<candidate>` (`tools/build_native.sh`), as a
+   production build that links one language would.
+4. **Rhai memory-check interval (spec 3.5).** The first run checked the room every 256 Rhai
+   operations. In L3 (c) a script inserts many 512 KiB map keys between two checks, so the peak
+   reached 39,406,943 bytes with the cap unchanged. Rhai already calls `on_progress` on every
+   operation (`rhai data_check.rs:214-217`), so a check each time costs one atomic read. The
+   check interval is a host instrument setting, not a budget: the host now checks on every
+   operation. piccolo keeps its step of 4,096 fuel; each step re-enters the arena, and its other
+   failures (L3 (a) one 4 GiB concatenation, L3 (e), L7 (b), L5 (b) native) do not depend on the
+   step size.
+5. **Rune module set (spec 2.1), a configuration decision.** The spec said "selected modules" but did not fix the list.
+   The first run installed a broad set and added 1,052,743 gzip bytes (B4 over by 4,167). For
+   the final run, C2 installs the core language modules only (`cand/rune.rs` `context`); it has
+   no `collections` (HashMap, HashSet, VecDeque), `bytes`, `char`, `tuple`, `hash`, `any`, `mem`,
+   `u64`, generator or macro modules. The broad set is measured again as the recorded-only
+   variant `rune-full`. This choice was made after the first run; the report states it. The
+   production runtime must keep this core module set, or measure B4 again: `rune-full` adds
+   1,052,498 gzip bytes and fails B4.
+
+The first-run evidence (before amendments 1 to 5) is kept in
+`target/mc-evidence/ms-scripting/first-run/`.

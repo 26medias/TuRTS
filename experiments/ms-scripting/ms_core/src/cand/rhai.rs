@@ -77,12 +77,12 @@ impl RhaiRt {
         engine.set_max_string_size(1024 * 1024);
         engine.set_max_array_size(65_536);
         engine.set_max_map_size(4_096);
-        // Whole-heap guard: Rhai limits each value, not the sum. The host checks the counting
-        // allocator every 256 operations and stops the call over the room of the instance.
+        // Whole-heap guard: Rhai limits each value, not the sum. Rhai calls `on_progress` on
+        // every operation; the host checks the counting allocator each time (spec 9, amendment
+        // 4) and stops the call over the room of the instance.
         engine.on_progress(|ops| {
             LAST_OPS.with(|c| c.set(ops));
-            let mask = if host::mutant() == host::VARIANT_RHAI_GUARD_EVERY_OP { 0 } else { 255 };
-            if ops & mask == 0 && c::call_over_cap() {
+            if c::call_over_cap() {
                 return Some(Dynamic::from_int(MEMORY_TOKEN));
             }
             None
@@ -90,12 +90,15 @@ impl RhaiRt {
 
         engine.register_fn("count_owned", host::count_owned);
         engine.register_fn("credits", host::credits);
-        engine.register_fn("units_near", |p: i64, x: i64, y: i64, r: i64, m: i64| -> Array {
-            host::units_near(p, x, y, r, m)
-                .into_iter()
-                .map(Dynamic::from_int)
-                .collect()
-        });
+        engine.register_fn(
+            "units_near",
+            |p: i64, x: i64, y: i64, r: i64, m: i64| -> Array {
+                host::units_near(p, x, y, r, m)
+                    .into_iter()
+                    .map(Dynamic::from_int)
+                    .collect()
+            },
+        );
         engine.register_fn("grant", host::grant);
         engine.register_fn("move_to", host::move_to);
         engine.register_fn("move_group", |units: Array, x: i64, y: i64| {
@@ -126,9 +129,9 @@ impl RhaiRt {
             .eval_ast(false)
             .rewind_scope(true)
             .bind_this_ptr(&mut self.state);
-        let r = self
-            .engine
-            .call_fn_with_options::<Dynamic>(opts, &mut self.scope, &self.ast, f, args);
+        let r =
+            self.engine
+                .call_fn_with_options::<Dynamic>(opts, &mut self.scope, &self.ast, f, args);
         r.map_err(|e| map_err(&self.name, e))
     }
 }
