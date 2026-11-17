@@ -61,6 +61,7 @@ pub fn to_sim(
                 target_elevation: designation.target_elevation,
             })
             .unwrap_or(OrderTargetSim::Invalid),
+        OrderTarget::UtilityRoute(route) => OrderTargetSim::UtilityRoute(route.clone()),
     };
     let order_package = order_id.package.clone();
     let queue_depth = catalog
@@ -212,6 +213,8 @@ fn wire_reason(reason: RejectReason) -> CommandRejectReason {
     use RejectReason as R;
     match reason {
         R::MatchOver => CommandRejectReason::MatchOver,
+        R::UtilityNotObserved => CommandRejectReason::UtilityNotObserved,
+        R::UtilityLimitReached => CommandRejectReason::UtilityLimitReached,
         R::SlotDefeated => CommandRejectReason::SlotDefeated,
         R::SiteOutsideMap => CommandRejectReason::SiteOutsideMap,
         R::SiteOutOfArea => CommandRejectReason::SiteOutOfArea,
@@ -280,6 +283,7 @@ mod tests {
 
     fn empty_catalog() -> ContentCatalog {
         ContentCatalog {
+            utilities: Default::default(),
             terrain_materials: Default::default(),
             terrain_movement_classes: Default::default(),
             terrain_tools: Default::default(),

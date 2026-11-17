@@ -54,6 +54,15 @@ pub(crate) fn collect(_manifest: &Manifest, content: &ParsedMcContent) -> Vec<Va
         if matches!(resource.kind, ResourceKind::Supply { .. }) {
             uses.push("kind: Supply", file, "kind");
         }
+        if matches!(
+            resource.kind,
+            ResourceKind::Supply {
+                scope: turts_mod_api::SupplyScope::Network,
+                ..
+            }
+        ) {
+            uses.push("SupplyScope::Network", file, "kind.scope");
+        }
     }
     for (file, production) in &content.production {
         if production.payment == PaymentPolicy::ChargeOverTime {
@@ -72,11 +81,15 @@ pub(crate) fn collect(_manifest: &Manifest, content: &ParsedMcContent) -> Vec<Va
         if order.target == TargetKind::TerrainDesignation {
             uses.push("target: TerrainDesignation", file, "target");
         }
+        if order.target == TargetKind::UtilityRoute {
+            uses.push("target: UtilityRoute", file, "target");
+        }
         if order.target == TargetKind::ContentAtPoint {
             uses.push("target: ContentAtPoint", file, "target");
         }
         let name = match order.behaviour {
             Behaviour::TerrainWork => Some("behaviour TerrainWork"),
+            Behaviour::UtilityRoute => Some("behaviour UtilityRoute"),
             Behaviour::UnloadCargo => Some("behaviour UnloadCargo"),
             Behaviour::Construct => Some("behaviour Construct"),
             Behaviour::CancelConstruction => Some("behaviour CancelConstruction"),
@@ -440,6 +453,7 @@ impl InterfaceWalk<'_> {
     fn source(&mut self, source: &Source, path: &str) {
         let name = match source {
             Source::TerrainTools { .. } => Some("Source::TerrainTools"),
+            Source::UtilityRoutes { .. } => Some("Source::UtilityRoutes"),
             Source::ConstructionQueue => Some("Source::ConstructionQueue"),
             Source::Sites => Some("Source::Sites"),
             Source::Notices => Some("Source::Notices"),

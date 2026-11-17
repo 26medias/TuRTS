@@ -270,7 +270,8 @@ fn sim_command_from_envelope(envelope: &turts_net_protocol::OrderEnvelope, seq: 
         OrderTarget::Job(_)
         | OrderTarget::Content(_)
         | OrderTarget::ContentAtPoint { .. }
-        | OrderTarget::TerrainWork(_) => {
+        | OrderTarget::TerrainWork(_)
+        | OrderTarget::UtilityRoute(_) => {
             panic!("smart order fixture has a supported world target")
         }
     };

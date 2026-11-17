@@ -127,6 +127,10 @@ pub enum RejectReason {
     ConstructionQueueFull,
     MatchOver,
     SlotDefeated,
+    /// M6: a touched cell is not currently observed by the slot.
+    UtilityNotObserved,
+    /// M6: the slot has its largest number of junctions or segments.
+    UtilityLimitReached,
 }
 
 impl RejectReason {
@@ -134,6 +138,8 @@ impl RejectReason {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::MatchOver => "match_over",
+            Self::UtilityNotObserved => "utility_not_observed",
+            Self::UtilityLimitReached => "utility_limit_reached",
             Self::SlotDefeated => "slot_defeated",
             Self::SiteOutsideMap => "site_outside_map",
             Self::SiteOutOfArea => "site_out_of_area",

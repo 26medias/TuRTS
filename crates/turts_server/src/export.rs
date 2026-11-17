@@ -227,6 +227,7 @@ fn snapshot_projected_reusing(
         // Reliable baselines project the same completed immutable view as change records.
         records: wire::SnapshotRecords {
             terrain: None,
+            utilities: None,
             repairs: export_repair::snapshot(&view.economy.repairs, slot),
             supply: export_supply::snapshot(view.operating.as_ref(), slot),
             sites: turts_sim::economy::construction::progress_rows_for_slot(view, slot)
@@ -382,6 +383,7 @@ fn delta_projected(batch: &CommittedTick, view: &WorldView, slot: SlotId) -> wir
             .collect(),
         records: wire::DeltaRecords {
             terrain: None,
+            utilities: None,
             repairs,
             repairs_cleared,
             sites_completed: export_sites::sites_completed(batch),
@@ -750,6 +752,8 @@ fn command_reject_reason(reason: turts_sim::RejectReason) -> wire::CommandReject
     use turts_sim::RejectReason as R;
     match reason {
         R::MatchOver => wire::CommandRejectReason::MatchOver,
+        R::UtilityNotObserved => wire::CommandRejectReason::UtilityNotObserved,
+        R::UtilityLimitReached => wire::CommandRejectReason::UtilityLimitReached,
         R::SlotDefeated => wire::CommandRejectReason::SlotDefeated,
         R::SiteOutsideMap => wire::CommandRejectReason::SiteOutsideMap,
         R::SiteOutOfArea => wire::CommandRejectReason::SiteOutOfArea,

@@ -1347,6 +1347,7 @@ fn validate_order_target(
         B::SetRally => matches!(order.target, T::Point | T::Unit | T::PointOrUnit | T::Node),
         B::Repair | B::UnloadCargo => order.target == T::Unit,
         B::TerrainWork => order.target == T::TerrainDesignation,
+        B::UtilityRoute => order.target == T::UtilityRoute,
     };
     if !allowed {
         let expected = match order.behaviour {
@@ -1360,6 +1361,7 @@ fn validate_order_target(
             B::SetRally => "Point, Unit, PointOrUnit or Node",
             B::Repair | B::UnloadCargo => "Unit",
             B::TerrainWork => "TerrainDesignation",
+            B::UtilityRoute => "UtilityRoute",
         };
         return Err(error(
             package,

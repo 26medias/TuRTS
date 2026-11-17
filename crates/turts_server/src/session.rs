@@ -2093,6 +2093,7 @@ mod admission_tests {
             .unwrap();
         let id = ContentId::new(&package, "producer");
         let mut catalog = ContentCatalog {
+            utilities: Default::default(),
             terrain_materials: Default::default(),
             terrain_movement_classes: Default::default(),
             terrain_tools: Default::default(),
@@ -2195,6 +2196,7 @@ mod admission_tests {
     fn test_order_catalog() -> ContentCatalog {
         use turts_mod_api::{Behaviour, ContentId, OrderDef, TargetKind};
         let mut catalog = ContentCatalog {
+            utilities: Default::default(),
             terrain_materials: Default::default(),
             terrain_movement_classes: Default::default(),
             terrain_tools: Default::default(),
@@ -2850,6 +2852,7 @@ mod admission_tests {
             .unwrap();
         let id = ContentId::new(&package, "producer");
         let mut catalog = ContentCatalog {
+            utilities: Default::default(),
             terrain_materials: Default::default(),
             terrain_movement_classes: Default::default(),
             terrain_tools: Default::default(),

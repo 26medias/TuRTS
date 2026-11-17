@@ -209,10 +209,28 @@ const fn variant_0_2_14(name: &'static str) -> VersionTableRow {
     }
 }
 
+const fn variant_0_2_18(name: &'static str) -> VersionTableRow {
+    VersionTableRow {
+        name,
+        detect: Detect::Variant(name),
+        since_api: "0.2.18",
+    }
+}
+
 /// Add one row for each new feature of a released API. A later API adds its rows here with the
 /// detection kind that its design row names, and nowhere else. The order is the order of the
 /// first refusal when one package has several problems.
 pub(crate) const VERSION_TABLE: &[VersionTableRow] = &[
+    raw(
+        "exports.utilities",
+        "0.2.18",
+        RawGroup::Manifest,
+        &["exports", "utilities"],
+    ),
+    variant_0_2_18("SupplyScope::Network"),
+    variant_0_2_18("behaviour UtilityRoute"),
+    variant_0_2_18("target: UtilityRoute"),
+    variant_0_2_18("Source::UtilityRoutes"),
     VersionTableRow {
         name: "Source::TerrainTools",
         detect: Detect::Variant("Source::TerrainTools"),
@@ -1120,6 +1138,7 @@ mod tests {
                 "0.2.4" => ("^0.2.3", "0.2.3"),
                 "0.2.15" => ("^0.2.14", "0.2.14"),
                 "0.2.17" => ("^0.2.16", "0.2.16"),
+                "0.2.18" => ("^0.2.17", "0.2.17"),
                 other => panic!("row {}: the test has no requirement for {other}", row.name),
             };
             let text = manifest_text_with_export(requirement, field)
@@ -1134,8 +1153,9 @@ mod tests {
             );
         }
         // 6 rows of 0.2.1 and 0.2.3, and `exports.combat`, `exports.match`,
-        // `exports.visual_effects` of 0.2.4, plus `exports.bots` of 0.2.15.
-        assert_eq!(raw_rows, 13);
+        // `exports.visual_effects` of 0.2.4, plus `exports.bots` of 0.2.15, plus
+        // `exports.utilities` of 0.2.18.
+        assert_eq!(raw_rows, 14);
     }
 
     /// A row on a `Written` field of an enum variant fires when the key is written, also with

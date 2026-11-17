@@ -819,6 +819,7 @@ mod tests {
         let mut target = unit("target");
         target.health = Some(HealthDef { max: 100 });
         let catalog = ContentCatalog {
+            utilities: Default::default(),
             terrain_materials: Default::default(),
             terrain_movement_classes: Default::default(),
             terrain_tools: Default::default(),

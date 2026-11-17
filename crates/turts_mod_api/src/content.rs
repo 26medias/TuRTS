@@ -193,6 +193,8 @@ pub struct ContentCatalog {
     pub terrain_materials: BTreeMap<ContentId, crate::ResolvedTerrainMaterial>,
     pub terrain_movement_classes: BTreeMap<ContentId, crate::ResolvedTerrainMovementClass>,
     pub terrain_tools: BTreeMap<ContentId, crate::ResolvedTerrainTool>,
+    /// API 0.2.18 (M6): validated utility types.
+    pub utilities: BTreeMap<ContentId, crate::ResolvedUtility>,
     /// Validated profiles with qualified references. Host factories activate separately.
     pub bots: BTreeMap<ContentId, crate::bots::BotDef>,
     pub combat: Option<CombatDef>,

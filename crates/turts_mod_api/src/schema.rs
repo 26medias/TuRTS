@@ -90,6 +90,9 @@ pub struct Exports {
     /// API 0.2.15: portable bot profiles. Loading a profile does not install it.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub bots: Vec<String>,
+    /// API 0.2.18 (M6): underground utility types.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub utilities: Vec<String>,
 }
 
 /// A map that rejects duplicate keys during deserialization.
@@ -158,6 +161,8 @@ pub enum ResourceKind {
 #[serde(deny_unknown_fields)]
 pub enum SupplyScope {
     Slot,
+    /// API 0.2.18 (M6): counted per connected network of the one utility type that carries it.
+    Network,
 }
 
 /// What a `Supply` resource counts. `Queued` is reserved: the packer refuses it (row S1).

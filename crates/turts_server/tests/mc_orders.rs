@@ -43,6 +43,7 @@ fn target_for(kind: TargetKind) -> OrderTarget {
         TargetKind::TerrainDesignation => {
             unreachable!("muster's API 0.2.3 fixture declares no terrain designation order")
         }
+        TargetKind::UtilityRoute => unreachable!("muster's API 0.2.3 fixture has no utility order"),
     }
 }
 
@@ -61,6 +62,7 @@ fn sim_target_for(kind: TargetKind) -> OrderTargetSim {
         TargetKind::TerrainDesignation => {
             unreachable!("muster's API 0.2.3 fixture declares no terrain designation order")
         }
+        TargetKind::UtilityRoute => unreachable!("muster's API 0.2.3 fixture has no utility order"),
     }
 }
 
@@ -145,6 +147,7 @@ fn audit_catalog() -> ContentCatalog {
         )
     };
     ContentCatalog {
+        utilities: Default::default(),
         terrain_materials: Default::default(),
         terrain_movement_classes: Default::default(),
         terrain_tools: Default::default(),
@@ -266,7 +269,7 @@ fn every_behaviour_has_an_envelope() {
             Behaviour::CancelProduction => 6,
             Behaviour::Remove => 7,
             Behaviour::SetEnabled(_) => 8,
-            Behaviour::TerrainWork | Behaviour::UnloadCargo => {
+            Behaviour::TerrainWork | Behaviour::UnloadCargo | Behaviour::UtilityRoute => {
                 unreachable!("muster's flat API 0.2.3 fixture declares no terrain capabilities")
             }
             // API 0.2.4: `muster` has no order of the new behaviours.

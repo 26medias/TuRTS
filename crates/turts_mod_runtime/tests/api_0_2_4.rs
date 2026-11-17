@@ -1080,10 +1080,11 @@ fn a_package_with_no_new_feature_is_accepted_at_both_requirements() {
 
 /// The current release preserves the historical releases used by feature-floor fixtures.
 #[test]
-fn the_engine_api_retains_historical_releases_and_adds_0_2_17() {
-    assert_eq!(ENGINE_API_VERSION, "0.2.17");
-    assert_eq!(RELEASED_ENGINE_APIS.last(), Some(&"0.2.17"));
-    assert_eq!(RELEASED_ENGINE_APIS.len(), 19);
+fn the_engine_api_retains_historical_releases_and_adds_0_2_18() {
+    assert_eq!(ENGINE_API_VERSION, "0.2.18");
+    assert_eq!(RELEASED_ENGINE_APIS.last(), Some(&"0.2.18"));
+    assert_eq!(RELEASED_ENGINE_APIS.len(), 20);
+    assert_eq!(RELEASED_ENGINE_APIS[18], "0.2.17");
     assert_eq!(RELEASED_ENGINE_APIS[15], "0.2.14");
     assert_eq!(RELEASED_ENGINE_APIS[16], "0.2.15");
     assert_eq!(RELEASED_ENGINE_APIS[17], "0.2.16");

@@ -19,6 +19,7 @@ impl Default for ClientContent {
     fn default() -> Self {
         Self {
             catalog: ContentCatalog {
+                utilities: Default::default(),
                 terrain_materials: Default::default(),
                 terrain_movement_classes: Default::default(),
                 terrain_tools: Default::default(),
@@ -62,6 +63,7 @@ impl ClientContent {
     ) -> Result<Self, ModError> {
         let shapes = visuals_by_content(archives)?;
         let mut catalog = ContentCatalog {
+            utilities: Default::default(),
             terrain_materials: Default::default(),
             terrain_movement_classes: Default::default(),
             terrain_tools: Default::default(),

@@ -154,6 +154,7 @@ fn catalog(field: GeometricField, value: f32) -> ContentCatalog {
         );
     }
     ContentCatalog {
+        utilities: Default::default(),
         terrain_materials: Default::default(),
         terrain_movement_classes: Default::default(),
         terrain_tools: Default::default(),

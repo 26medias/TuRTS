@@ -115,6 +115,8 @@ pub fn reason_text(reason: CommandRejectReason, overrides: &BTreeMap<String, Str
         CommandRejectReason::MatchNotStarted => "The match has not started".into(),
         CommandRejectReason::SlotDefeated => "You have been defeated".into(),
         CommandRejectReason::MatchOver => "The match is over".into(),
+        CommandRejectReason::UtilityNotObserved => "That ground is not in view".into(),
+        CommandRejectReason::UtilityLimitReached => "No more lines can be placed".into(),
     }
 }
 

@@ -462,6 +462,7 @@ fn cedar_matches_the_public_ten_file_authoring_example() {
     assert!(archive.manifest.capabilities.is_empty());
     assert_eq!(archive.manifest.license, "LicenseRef-TBD");
     let expected_exports = Exports {
+        utilities: Default::default(),
         terrain_materials: Vec::new(),
         terrain_movement_classes: Vec::new(),
         terrain_tools: Vec::new(),

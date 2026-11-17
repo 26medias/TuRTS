@@ -997,6 +997,8 @@ fn unit_order_summary(order: &crate::orders::Order) -> UnitOrderSummaryView {
                 target_elevation: *target_elevation,
             },
             crate::orders::OrderTargetSim::Invalid => UnitOrderTargetView::None,
+            // M6: a route never stays on a unit queue.
+            crate::orders::OrderTargetSim::UtilityRoute(_) => UnitOrderTargetView::None,
             crate::orders::OrderTargetSim::None => UnitOrderTargetView::None,
             crate::orders::OrderTargetSim::Point(position) => {
                 UnitOrderTargetView::Point(WorldPos {

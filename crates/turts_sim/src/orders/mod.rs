@@ -109,6 +109,8 @@ pub enum OrderTargetSim {
         cells: turts_mod_api::TerrainRect,
         target_elevation: i32,
     },
+    /// M6: one new utility segment, applied on admission by `crate::utilities`.
+    UtilityRoute(turts_mod_api::UtilityRouteTarget),
 }
 
 /// Whether an order replaces or appends to a unit's queue.

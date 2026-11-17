@@ -378,6 +378,8 @@ impl PermittedBaseline {
             unit_orders: changed(&old.unit_orders, &new.unit_orders, |row| row.unit.0),
             records: wire::DeltaRecords {
                 terrain: super::export_terrain::delta(&old.records.terrain, &new.records.terrain),
+                // M6: filled by `export_utilities` when the owner view changed.
+                utilities: None,
                 repairs: changed(&old.records.repairs, &new.records.repairs, |row| {
                     row.repairer.0
                 }),

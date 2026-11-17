@@ -140,6 +140,8 @@ pub fn read_source(source: &Source, context: SourceContext<'_>) -> SourceData {
         Source::SelectionUnits => selection_units(context),
         Source::CommandCard => command_card(context),
         Source::TerrainTools { order } => terrain_tools(context, order),
+        // M6: filled by the utility client module; empty until it is wired.
+        Source::UtilityRoutes { .. } => SourceData::default(),
         Source::BuildMenu => build_menu(context),
         Source::ProductionQueue => production_queue(context),
         Source::ControlGroups => control_groups(context),
@@ -862,6 +864,8 @@ fn capability_matches(order: &turts_mod_api::OrderDef, unit: &turts_mod_api::Res
         Behaviour::CancelConstruction => unit.placement.is_some(),
         Behaviour::Repair => unit.repairer.is_some(),
         Behaviour::Surrender => false,
+        // M6: the order's `units` list names the builders.
+        Behaviour::UtilityRoute => true,
     }
 }
 

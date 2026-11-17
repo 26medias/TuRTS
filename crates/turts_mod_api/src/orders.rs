@@ -51,6 +51,8 @@ pub enum Behaviour {
     Surrender,
     TerrainWork,
     UnloadCargo,
+    /// API 0.2.18 (M6): place one underground utility segment (target `UtilityRoute`).
+    UtilityRoute,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -65,6 +67,8 @@ pub enum TargetKind {
     /// API 0.2.4, row O5: a content id and a point (only with `Construct`).
     ContentAtPoint,
     TerrainDesignation,
+    /// API 0.2.18 (M6): a `UtilityRouteTarget`.
+    UtilityRoute,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

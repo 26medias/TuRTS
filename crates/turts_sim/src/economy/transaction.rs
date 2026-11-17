@@ -2567,6 +2567,7 @@ mod m3_transaction_contract_tests {
     fn install_extraction_node(world: &mut World, item: &ContentId, remaining: u64) {
         let node_id = content("probe:deposit");
         let mut catalog = turts_mod_api::ContentCatalog {
+            utilities: Default::default(),
             terrain_materials: Default::default(),
             terrain_movement_classes: Default::default(),
             terrain_tools: Default::default(),
@@ -3224,6 +3225,7 @@ mod operating_transaction_tests {
         })
         .collect();
         let catalog = ContentCatalog {
+            utilities: Default::default(),
             terrain_materials: Default::default(),
             terrain_movement_classes: Default::default(),
             terrain_tools: Default::default(),
