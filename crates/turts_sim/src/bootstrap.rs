@@ -724,6 +724,11 @@ pub fn install_package(world: &mut World, staged: StagedPackage) {
     world.remove_resource::<crate::terrain::pause::TerrainWorkPauses>();
     world.remove_resource::<crate::visibility::AllVisibleTerrainEvents>();
     world.remove_resource::<crate::terrain::cargo::CargoRuntime>();
+    // M6: utility topology belongs to one match; a reset removes it like terrain.
+    world.remove_resource::<crate::utilities::UtilityState>();
+    if !staged.catalog.0.utilities.is_empty() {
+        world.insert_resource(crate::utilities::UtilityState::default());
+    }
     if let Some(terrain) = staged.terrain {
         world.insert_resource(terrain);
     }

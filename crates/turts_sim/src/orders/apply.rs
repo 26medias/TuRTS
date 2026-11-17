@@ -90,6 +90,10 @@ pub(crate) fn apply_order(
     if command.behaviour == Behaviour::CancelConstruction {
         return cancel_sites(world, slot, command, &unit_ids, &entity_by_unit);
     }
+    // M6: a route is applied on admission and never enters a unit order queue.
+    if command.behaviour == Behaviour::UtilityRoute {
+        return crate::utilities::apply_route(world, slot, command, &unit_ids, &entity_by_unit);
+    }
     let financial = matches!(command.behaviour, Behaviour::Produce | Behaviour::Construct);
     let mut anchors = BTreeMap::new();
     let mut tied = std::collections::BTreeSet::new();

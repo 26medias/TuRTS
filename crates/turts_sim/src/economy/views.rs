@@ -684,6 +684,10 @@ pub struct WorldView {
     pub terrain: Option<std::sync::Arc<crate::terrain::TerrainPhase>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub operating: Option<OperatingView>,
+    /// M6: topology and `effective` network rows of every slot. `None` when the catalog has
+    /// no utility type. Read through `crate::utilities::owner_view`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub utilities: Option<crate::utilities::SharedSnapshot>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub match_outcomes: Option<crate::outcome::MatchOutcomes>,
     #[serde(
@@ -710,6 +714,7 @@ impl PartialEq for WorldView {
         let Self {
             terrain: _,
             operating,
+            utilities,
             match_outcomes,
             construction,
             tick,
@@ -722,6 +727,7 @@ impl PartialEq for WorldView {
         let Self {
             terrain: _,
             operating: other_operating,
+            utilities: other_utilities,
             match_outcomes: other_outcomes,
             construction: other_construction,
             tick: other_tick,
@@ -733,6 +739,7 @@ impl PartialEq for WorldView {
         } = other;
         (
             operating,
+            utilities,
             match_outcomes,
             construction,
             tick,
@@ -743,6 +750,7 @@ impl PartialEq for WorldView {
             economy,
         ) == (
             other_operating,
+            other_utilities,
             other_outcomes,
             other_construction,
             other_tick,
@@ -925,6 +933,7 @@ pub fn world_view(world: &mut World) -> WorldView {
             ..EconomyStateView::default()
         },
         operating: operating_view(world),
+        utilities: crate::utilities::shared_snapshot(world),
         match_outcomes: world
             .get_resource::<crate::outcome::MatchOutcomes>()
             .cloned(),
