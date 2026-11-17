@@ -1,1 +1,0 @@
-(id:"order_hold",name:"Hold",behaviour:Hold,target:None,fire:None,engage:None,icon:"icon_order_move",hotkey:"key_hold",cursor:None,card:None,units:["utility_yard:porter","utility_yard:carrier"],description:"Hold selected units")

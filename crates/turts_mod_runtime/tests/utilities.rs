@@ -499,7 +499,7 @@ fn a_route_order_needs_the_route_target_and_the_list_needs_a_route_order() {
             );
         },
         "interface/hud.ron",
-        "root[7].widget.source.order",
+        "root[4].widget.source.order",
         "behaviour UtilityRoute",
     );
     refused(
@@ -512,7 +512,7 @@ fn a_route_order_needs_the_route_target_and_the_list_needs_a_route_order() {
             );
         },
         "interface/hud.ron",
-        "root[7].widget.source.order",
+        "root[4].widget.source.order",
         "unknown utility route order",
     );
 }
