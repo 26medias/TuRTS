@@ -72,7 +72,7 @@ The two-human and Internet modes retain their tested launch flags. Their full ma
 Default Skirmish uses its existing AllVisible map. Mods can opt into the new shared knowledge provider.
 Tested milestones are merged and pushed to main under the CEO's standing approval.
 Legacy browser fixtures now prove blocked output and real loss recovery with valid current exit rules.
-CI keeps native, WebAssembly, process, browser, and test-tool checks. Historical fault campaigns remain manual. The SDK15 browser oracle now checks owner work and repair data against audit history. The [CI repair report](docs/reports/2026-11-15-ci-product-checks.md) records local validation and limits. The corrected hosted workflow has not run yet. Prior hosted browser runner losses remain unexplained.
+CI keeps native, WebAssembly, process, browser, and test-tool checks. Historical fault campaigns remain manual. The SDK15 browser oracle now checks owner work and repair data against audit history. The [CI repair report](docs/reports/2026-11-15-ci-product-checks.md) records local validation and limits. The terrain schema repair passes 51 helper tests, 159 captured CI snapshots, and one fresh browser selection case. It keeps the strict privacy checks. The [repair report](docs/reports/2026-11-16-browser-debug-schema.md) records the evidence. The full hosted suite on this repair remains pending. Prior hosted browser runner losses remain unexplained.
 See [working rules](AGENTS.md) for parallel delivery, review, and milestone integration.
 
 The older Forge industrial demonstration remains available below. It proves extraction, conveyors, inserters, recipes, research, and ammunition combat through the public mod API. Its two-slot and restart restrictions describe that demonstration.
