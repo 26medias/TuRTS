@@ -244,7 +244,7 @@ test("the sampler needs one projection: equal ticks with different public worlds
 // A replicated world with the permitted keys only (m2-oracle-lib.js PUBLIC_WORLD_KEYS) and one unit.
 function world(tick, x) {
     return { slot: 0, replicated_world: { belts: [], economy: { balances: [], inventories: [], orders: [], queues: [] }, extractors: [],
-        health_trace: [], healths: [], inserters: [], knowledge: null, nodes: [], research: [], tick, unit_orders: [], weapons: [], progress: {sites:[],jobs:[],construction_queues:[]}, repairs: [],
+        health_trace: [], healths: [], inserters: [], knowledge: null, terrain: null, nodes: [], research: [], tick, unit_orders: [], weapons: [], progress: {sites:[],jobs:[],construction_queues:[]}, repairs: [],
         units: [{ content_id: "acme:scout", facing: 0, max_health: 10, owner_slot: 0, pos: [x, 4], unit_id: 1 }] } };
 }
 

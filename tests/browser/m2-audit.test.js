@@ -71,6 +71,7 @@ test("projects a complete owner-only audit world into the browser snapshot schem
     assert.deepEqual(actual, {
         tick: 4,
         knowledge: null,
+        terrain: null,
         units: [
             { unit_id: 1, content_id: "base:command_center", owner_slot: 0, facing: null, pos: [8, 8] },
             { unit_id: 2, content_id: "base:harvester", owner_slot: 0, facing: null, pos: [12, 8] },
@@ -254,4 +255,15 @@ test("AllVisible audit comparison rejects unexpected fog knowledge", () => {
     assert.throws(() => assertOwnerWorldMatchesAudit(actual, state, 0));
     delete actual.knowledge;
     assert.throws(() => assertOwnerWorldMatchesAudit(actual, state, 0));
+});
+
+
+test("flat M2 audit comparison rejects terrain payloads and missing terrain", () => {
+    const state = auditState(4);
+    const actual = projectAuditOwnerWorld(state, 0);
+    assert.equal(actual.terrain, null);
+    actual.terrain = { surfaces: [{ cell: 1, elevation: 2 }] };
+    assert.throws(() => assertOwnerWorldMatchesAudit(actual, state, 0), /owner replica mismatch/);
+    delete actual.terrain;
+    assert.throws(() => assertOwnerWorldMatchesAudit(actual, state, 0), /owner replica mismatch/);
 });

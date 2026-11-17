@@ -138,6 +138,7 @@ test("MC projection permits unit_orders and max_health and still refuses a new p
     world.unit_orders = [];
     world.progress={sites:[],jobs:[],construction_queues:[]};world.repairs=[];
     world.knowledge = null;
+    world.terrain = null;
     for (const unit of world.units) unit.max_health = null;
     const debug = { ...actualPublicDebug, replicated_world: world };
     assertPublicProjectionSchema({ debug });
@@ -158,6 +159,7 @@ test("MC projection refuses the order state of a unit that the client slot does 
     world.unit_orders = [{ unit: own.unit_id }];
     world.progress={sites:[],jobs:[],construction_queues:[]};world.repairs=[];
     world.knowledge = null;
+    world.terrain = null;
     assertPublicProjectionSchema({ debug: { ...actualPublicDebug, slot: 0, replicated_world: world } });
     world.unit_orders = [{ unit: foreign.unit_id }];
     assert.throws(() => assertPublicProjectionSchema({ debug: { ...actualPublicDebug, slot: 0, replicated_world: world } }),
@@ -171,11 +173,28 @@ test("current M2 AllVisible projection requires explicit null knowledge", () => 
     world.progress = { sites: [], jobs: [], construction_queues: [] };
     world.repairs = [];
     world.knowledge = null;
+    world.terrain = null;
     for (const unit of world.units) unit.max_health = null;
     const snapshot = { debug: { ...actualPublicDebug, replicated_world: world } };
     assertPublicProjectionSchema(snapshot, { requireCurrent: true });
     world.knowledge = { observed: [], remembered_units: [] };
     assert.throws(() => assertPublicProjectionSchema(snapshot, { requireCurrent: true }), /AllVisible.*null knowledge/);
     delete world.knowledge;
+    assert.throws(() => assertPublicProjectionSchema(snapshot, { requireCurrent: true }), /permitted M2\/M3 client state only/);
+});
+
+
+test("current flat M2 projection requires explicit null terrain and rejects terrain payloads", () => {
+    const world = structuredClone(actualPublicDebug.replicated_world);
+    Object.assign(world, {
+        unit_orders: [], progress: { sites: [], jobs: [], construction_queues: [] },
+        repairs: [], knowledge: null, terrain: null,
+    });
+    for (const unit of world.units) unit.max_health = null;
+    const snapshot = { debug: { ...actualPublicDebug, replicated_world: world } };
+    assertPublicProjectionSchema(snapshot, { requireCurrent: true });
+    world.terrain = { basis: {}, materials: [], surfaces: [], anchors: [], work: [] };
+    assert.throws(() => assertPublicProjectionSchema(snapshot, { requireCurrent: true }), /flat M2.*null terrain/);
+    delete world.terrain;
     assert.throws(() => assertPublicProjectionSchema(snapshot, { requireCurrent: true }), /permitted M2\/M3 client state only/);
 });
