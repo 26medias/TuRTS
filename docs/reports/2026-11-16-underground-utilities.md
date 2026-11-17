@@ -1,6 +1,6 @@
 # M6 underground utilities
 
-Status: all eight M6 acceptance rows pass. The main integration candidate retains the reviewed feature code and content from `69197698`.
+Status: all eight M6 acceptance rows pass. The integration retains the reviewed feature code and content from `69197698`.
 The standalone milestone uses API 0.2.18 and protocol 11. The separate terrain/discovery development assembly is not part of this milestone merge.
 Spec: `docs/superpowers/specs/2026-11-16-m6-underground-utilities.md`. Plan: `docs/superpowers/plans/2026-11-16-m6-underground-utilities.md`.
 Evidence root: `/home/julien/Projects/TuRTS/target/mc-evidence/m6-utilities/`. Paths below are relative to it.
@@ -125,3 +125,15 @@ Evidence: `review/review.md` and the logs beside it.
 `bash /home/julien/Projects/TuRTS/target/mc-evidence/play-utilities.sh` starts the prepared build of this branch
 with sound off. Its prepared folder must match the worktree HEAD; `mp1-play.sh` refuses a stale folder.
 The smoke result is in `launcher-smoke/`.
+
+
+## Main integration validation
+
+Candidate `9feb778e` has no engine, Cargo, mod, script, workflow or vendor input difference from reviewed source `69197698`.
+All 876 prepared source hashes and 55 artifact hashes match before reuse.
+A fresh `E9-browser-base-selection` run passes with the current strict oracle; all 51 oracle helper checks pass.
+The normal runner repacks the public base package. Chrome uses a fresh profile, private Xvfb and null ALSA.
+Evidence: `/home/julien/Projects/TuRTS/target/mc-evidence/m6-main-integration/`.
+This is one fresh legacy compatibility case, not a repeated full browser matrix.
+The M6 acceptance, independent review and three scripted player probes above remain the milestone evidence.
+Hosted CI on the integration remains pending.
