@@ -1679,7 +1679,7 @@ mod tests {
     #[test]
     fn unknown_protocols_are_refused_before_a_slot_is_claimed() {
         let mut slots = Slots::new(2);
-        for version in [0, 11, u32::MAX] {
+        for version in [0, 12, u32::MAX] {
             assert_eq!(
                 judge_hello(&hello(7, version, HASH), &advertised(), &mut slots, false),
                 Err("protocol version mismatch")
