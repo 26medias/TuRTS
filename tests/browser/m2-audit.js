@@ -112,8 +112,10 @@ function projectAuditOwnerWorld(state, slot) {
     }));
     return {
         tick: world.tick,
-        // These M2 packages use AllVisible. Fog data must fail exact comparison.
+        // These M2 packages are flat and AllVisible. Unexpected terrain/fog data
+        // must fail exact comparison rather than being dropped by normalization.
         knowledge: null,
+        terrain: null,
         units: sortBy(units, (item) => String(item.unit_id).padStart(12, "0")),
         nodes: sortBy(nodes, (item) => String(item.id).padStart(12, "0")),
         economy: {
