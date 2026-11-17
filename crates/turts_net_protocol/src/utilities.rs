@@ -79,17 +79,22 @@ pub struct UtilityView {
 struct WireView {
     utilities: Vec<ContentRef>,
     nodes: Vec<(u32, u16, Pos)>,
-    segments: Vec<(
-        u32,
-        u16,
-        UtilityEndRecord,
-        UtilityEndRecord,
-        i32,
-        u32,
-        UtilitySegmentState,
-    )>,
-    networks: Vec<(u16, Vec<UnitId>, Vec<u32>, u64, u64, bool)>,
+    segments: Vec<WireSegment>,
+    networks: Vec<WireNetwork>,
 }
+
+/// One segment row on the wire: id, utility index, ends, elevation, depth, state.
+type WireSegment = (
+    u32,
+    u16,
+    UtilityEndRecord,
+    UtilityEndRecord,
+    i32,
+    u32,
+    UtilitySegmentState,
+);
+/// One network row on the wire: utility index, units, junctions, provided, consumed, short.
+type WireNetwork = (u16, Vec<UnitId>, Vec<u32>, u64, u64, bool);
 
 impl From<UtilityView> for WireView {
     fn from(view: UtilityView) -> Self {

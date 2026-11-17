@@ -440,3 +440,67 @@ fn real_package_crossing_connection_exposure_and_paid_fill_keep_elevation_fixed(
     });
     assert_eq!(elevations(&world), fixed, "filling moved a line");
 }
+
+/// The AllVisible and `export_observation` delta path (`export::delta_for`) carries the
+/// owner view only on the tick where it changed, and never for the other viewer. The route
+/// enters through the in-tick command queue, as live commands do.
+#[test]
+fn committed_tick_deltas_carry_the_owner_view_only_when_it_changes() {
+    let mut world = World2::new();
+    world.app.update();
+    let generator = world.unit(0, "utility_yard:generator");
+    let depot = world.unit(0, "utility_yard:depot");
+    world
+        .app
+        .world_mut()
+        .resource_mut::<turts_sim::CommandQueue>()
+        .0
+        .push_back(turts_sim::Command {
+            slot: SimSlotId(0),
+            seq: 1,
+            kind: turts_sim::CommandKind::Order(Box::new(turts_sim::orders::OrderCommand {
+                order: ContentId::parse(ROUTE).unwrap(),
+                behaviour: turts_mod_api::Behaviour::UtilityRoute,
+                target_kind: turts_mod_api::TargetKind::UtilityRoute,
+                policy: None,
+                units: vec![depot],
+                target: turts_sim::orders::OrderTargetSim::UtilityRoute(UtilityRouteTarget {
+                    utility: LINE.into(),
+                    depth: 2,
+                    from: UtilityEndpoint::Port(generator),
+                    to: UtilityEndpoint::Free(WorldPos { x: 24.0, y: 8.0 }),
+                }),
+                queue: turts_sim::orders::QueueMode::Replace,
+                group: 0,
+                allowed_units: vec!["utility_yard:depot".into()],
+                queue_depth: 16,
+            })),
+        });
+    let deltas = |world: &World2| {
+        let batch = world.app.world().resource::<turts_sim::CommittedTick>();
+        [0, 1].map(|slot| {
+            crate::export::delta_for(batch, world.view(), SimSlotId(slot))
+                .records
+                .utilities
+        })
+    };
+    world.app.update();
+    let [own, foreign] = deltas(&world);
+    assert_eq!(
+        own.expect("no owner delta on the route tick")
+            .segments
+            .len(),
+        1
+    );
+    assert_eq!(foreign, None, "viewer 1 got a utility delta");
+    let mut quiet = false;
+    for _ in 0..4 {
+        world.app.update();
+        let [own, foreign] = deltas(&world);
+        assert_eq!(foreign, None, "viewer 1 got a utility delta");
+        quiet |= own.is_none();
+    }
+    assert!(quiet, "the owner view was resent on every quiet tick");
+    world.app.update();
+    assert_eq!(deltas(&world), [None, None], "a quiet tick resent the view");
+}

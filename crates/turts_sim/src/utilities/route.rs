@@ -360,6 +360,17 @@ pub(crate) fn apply_route(
     {
         return refuse_all(outcomes, &valid, RejectReason::TargetInvalid);
     }
+    // A split joined to an end of the split segment would duplicate one of its halves.
+    let split_duplicates = |split: Resolved, other: Resolved| match (split, other) {
+        (Resolved::Split { segment, .. }, Resolved::Existing(end, _)) => state
+            .topology(slot.0)
+            .and_then(|topology| topology.segments.get(&segment))
+            .is_some_and(|segment| segment.a == end || segment.b == end),
+        _ => false,
+    };
+    if split_duplicates(from, to) || split_duplicates(to, from) {
+        return refuse_all(outcomes, &valid, RejectReason::TargetInvalid);
+    }
     // Step 5: reach. A unit out of reach of either endpoint is refused on its own.
     let within = |position: bevy_math::Vec2, point: Point| {
         rules::length((position.x, position.y), point) <= def.reach

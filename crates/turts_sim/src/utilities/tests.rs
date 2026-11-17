@@ -1863,3 +1863,27 @@ fn the_world_view_snapshot_round_trips_through_json_and_compares_by_value() {
     changed.utilities = Some(SharedSnapshot(std::sync::Arc::new(snapshot)));
     assert_ne!(changed, view);
 }
+
+#[test]
+fn ut4_a_split_route_to_an_end_of_the_same_segment_is_a_duplicate_pair() {
+    let mut yard = refusal_world();
+    yard.ok_route(free(5.0, 5.0), free(9.0, 5.0));
+    yard.ticks(1);
+    let credits = yard.credits(0);
+    let before = yard.fingerprint();
+    for end in [UtilityEndpoint::Node(2), UtilityEndpoint::Node(3)] {
+        for (from, to) in [(split(2, 7.0, 5.0), end), (end, split(2, 7.0, 5.0))] {
+            let result = yard.route(from, to);
+            assert_eq!(
+                result.outcome,
+                Err(RejectReason::TargetInvalid),
+                "{from:?} {to:?}"
+            );
+        }
+    }
+    assert_eq!(yard.fingerprint(), before);
+    assert_eq!(yard.credits(0), credits);
+    // A split joined to a different junction is a new connection.
+    yard.ok_route(split(2, 7.0, 5.0), UtilityEndpoint::Node(1));
+    assert_eq!(yard.credits(0), credits - 1);
+}
