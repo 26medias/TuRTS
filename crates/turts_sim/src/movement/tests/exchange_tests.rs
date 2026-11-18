@@ -368,3 +368,25 @@ fn resting_body_keeps_its_slot_when_a_cut_off_mover_arrives() {
     assert_eq!(blocked, 0, "no body fails with Blocked");
     assert_eq!(rest[&1], far, "the mover reaches its own slot by a route");
 }
+
+#[test]
+fn a_unit_arriving_earlier_in_the_tick_keeps_its_slot() {
+    for (first_id, later_id) in [(2, 1), (1, 2)] {
+        for reverse in [false, true] {
+            let (mut frame, far, near) = wall_scene(false);
+            frame.units[0].unit_id = later_id;
+            frame.units[0].position = Vec2::new(10.0, near.y - 1.3);
+            frame.units[1].unit_id = first_id;
+            frame.units[1].position = Vec2::new(10.0, near.y - 0.05);
+            if reverse {
+                frame.units.reverse();
+            }
+            let outputs = step_frame_at_tick(&frame, 0.05, 1);
+            let first = outputs.iter().find(|row| row.unit_id == first_id).unwrap();
+            let later = outputs.iter().find(|row| row.unit_id == later_id).unwrap();
+            assert_eq!(first.position, near);
+            assert_eq!(first.target, None, "the first arrival must keep its point");
+            assert_eq!(later.progress.as_ref().unwrap().slot, far);
+        }
+    }
+}
