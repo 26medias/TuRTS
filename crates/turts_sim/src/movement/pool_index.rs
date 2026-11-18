@@ -107,6 +107,15 @@ impl MovementPoolIndex {
         }
     }
 
+    /// The pool slots within `spacings` pool spacings of `origin`, in slot index order.
+    pub(super) fn slots_within(&self, origin: Vec2, spacings: f32) -> Vec<Vec2> {
+        self.grid
+            .within(&self.points, origin, self.spacing * spacings)
+            .into_iter()
+            .map(|index| self.points[index].position)
+            .collect()
+    }
+
     pub(super) fn refresh_slot_clearance(
         &mut self,
         slot_index: usize,

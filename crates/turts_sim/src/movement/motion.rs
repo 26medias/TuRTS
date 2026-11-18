@@ -88,6 +88,13 @@ pub(crate) trait MotionGuide {
         true
     }
 
+    /// True when the frame solver owns pool recovery with no private route state. Then a
+    /// stalled mover may exchange its slot claim with a moving peer (`exchange`). A guide
+    /// that keeps its own destinations must leave this off.
+    fn exchanges_claims(&self) -> bool {
+        false
+    }
+
     /// None retains the old path only for motions outside the new scope.
     /// Eligible model refusals must return the bounded preferred next pose.
     fn next_position(&mut self, request: MotionRequest, budget: &mut SweepBudget) -> Option<Vec2>;
@@ -102,6 +109,9 @@ pub(super) struct NoMotionGuide;
 impl MotionGuide for NoMotionGuide {
     fn kind(&self, _unit_id: u32) -> MotionKind {
         MotionKind::Destination
+    }
+    fn exchanges_claims(&self) -> bool {
+        true
     }
     fn next_position(
         &mut self,

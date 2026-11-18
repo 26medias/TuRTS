@@ -7,6 +7,7 @@ use std::collections::BTreeMap;
 
 mod arrival;
 mod ecs;
+mod exchange;
 mod frame;
 pub(crate) mod motion;
 mod plain;
@@ -16,6 +17,7 @@ mod plain_movement_tests;
 mod pool_index;
 #[cfg(feature = "test-probes")]
 pub mod probe;
+mod route;
 mod search;
 mod spread;
 #[cfg(test)]
