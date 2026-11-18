@@ -37,8 +37,8 @@ const delta=(a,b)=>Math.max(...a.map((n,i)=>Math.abs(n-b[i])));
   d=await wait(read,d=>d.replicated_world.terrain.work.some(w=>w.unit===metadata.work.actor&&w.completed_work>0),'Actual terrain work never progressed');await sleep(metadata.warmup_ms);
   let groupIds=[];
   if(groupMode){
-   const goal=[25,10,0];
-   const candidates=d.replicated_world.units.filter(u=>u.owner_slot===d.slot&&u.unit_id!==metadata.work.actor&&Math.hypot(u.pos[0]-goal[0],u.pos[1]-goal[1])>12);
+   const goal=[25,30,0];
+   const candidates=d.replicated_world.units.filter(u=>u.owner_slot===d.slot&&u.unit_id!==metadata.work.actor&&Math.hypot(u.pos[0]-goal[0],u.pos[1]-goal[1])>12).sort((a,b)=>b.pos[1]-a.pos[1]||a.pos[0]-b.pos[0]);
    assert(candidates.length>=2,'Not enough owned actors for the group move');
    // Select separate owned bodies at their current physical locations.
    for(const u of candidates){

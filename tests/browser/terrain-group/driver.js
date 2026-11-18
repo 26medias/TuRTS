@@ -1,6 +1,7 @@
 // Real GM1-GM4 pointer/key input and public outcome checks. No state/command injection.
 'use strict';
 const assert=(ok,message)=>{if(!ok)throw Error(message);};
+const {SettledTracker}=require('./settled-tracker');
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 // Hold both sides of a gesture across frames. A zero-delay press/release can
 // disappear between Bevy input polls, even when hover picked the correct body.
@@ -123,7 +124,7 @@ function crossed(fixture,state,bindings,labels,right=true){
     for(const label of labels){const actor=fixture.actors.find(a=>a.label===label),unit=world(state).units.find(u=>u.unit_id===bindings.get(label)),radius=Math.fround(actor.profile.radius);assert(right?unit.pos[0]-radius>=34:unit.pos[0]+radius<=30,'Order completed on wrong plateau: '+label);}
 }
 async function drive({pagesBySlot,fixture,capture,record,onPoll}) {
-    const bindings=new Map(),actions=[],samples=[],checks={observed_full_bodies:true,observed_no_overlap:true},original=new Map(),settled=new Map(),owned=new Map();
+    const bindings=new Map(),actions=[],samples=[],checks={observed_full_bodies:true,observed_no_overlap:true},original=new Map(),settled=new SettledTracker(),owned=new Map();
     const first=pagesBySlot.values().next().value;
     for(const [slot,page]of pagesBySlot){
         let state=await wait(page,s=>world(s)?.terrain&&world(s).units.length===fixture.actors.length,'Public fixture did not activate');
@@ -161,8 +162,7 @@ async function drive({pagesBySlot,fixture,capture,record,onPoll}) {
             const ownerTick=world(states.get(fixture.actors.find(a=>a.label===label).slot)).tick;
             if(original.has(label)&&idle(merged,id)&&ownerTick===tick){
                 const position=world(state).units.find(u=>u.unit_id===id).pos;
-                if(settled.has(label))assert(same(settled.get(label),position),'Later arrival displaced settled point: '+label);
-                else settled.set(label,[...position]);
+                settled.observe(label,true,position);
             }
         }
         if(settledBlocker&&relative>=10){const blocker=world(state).units.find(u=>u.unit_id===bindings.get('blocker'));assert(same(blocker.pos,blockerStart),'Traffic displaced permanent settled blocker');}
@@ -204,7 +204,7 @@ async function drive({pagesBySlot,fixture,capture,record,onPoll}) {
             const bySlot=new Map();for(const intent of batch){if(!bySlot.has(intent.slot))bySlot.set(intent.slot,[]);bySlot.get(intent.slot).push(intent);}
             await Promise.all([...bySlot].map(async([slot,intents])=>{for(const intent of intents){
                 monitor();const page=pagesBySlot.get(slot);assert(page,'Missing real peer for slot '+slot);
-                for(const label of intent.actors)settled.delete(label);
+                settled.begin(intent.actors);
                 const before=await read(page),lastSeq=Math.max(0,...(before.debug.command_results||[]).map(r=>r.seq));await issue(page,fixture,bindings,intent,prepared.get(slot)===intent);prepared.delete(slot);
                 const acceptedState=await wait(page,s=>{
                     const results=(s.debug.command_results||[]).filter(r=>r.seq>lastSeq);
@@ -212,6 +212,8 @@ async function drive({pagesBySlot,fixture,capture,record,onPoll}) {
                     return results.some(r=>Number.isInteger(r.applied_tick)&&r.accepted?.length===intent.actors.length&&intent.actors.every(label=>r.accepted.includes(bindings.get(label))));
                 },'Pointer order has no complete ordinary admission receipt',15000);
                 const receipt=acceptedState.debug.command_results.find(r=>r.seq>lastSeq&&Number.isInteger(r.applied_tick)&&r.accepted?.length===intent.actors.length);
+                settled.commit(intent.actors,intent.action);
+                for(const label of intent.actors)original.delete(label);
                 const after=await read(page);actions.push({intended_tick:intent.tick,relative_before_selection:world(before).tick-base,relative_after_input:world(after).tick-base,accepted_tick:receipt.applied_tick,accepted_relative_tick:receipt.applied_tick-base,seq:receipt.seq,intent});
                 await capture?.('input-slot'+slot+'-seq'+receipt.seq,after);
             }}));
