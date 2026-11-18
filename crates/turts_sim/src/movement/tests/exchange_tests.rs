@@ -231,3 +231,140 @@ fn bodies_of_another_owner_out_of_contact_do_not_change_group_motion() {
         "bodies of another owner that touch no mover changed the group motion"
     );
 }
+
+/// A small scene that the old recovery cannot solve. Two own bodies rest side by side on the
+/// pool lattice. The slot `far` lies behind the gap between them (the gap is narrower than a
+/// body), and the slot `near` lies in front of it. Mover A comes first and claims `far`; the
+/// second body claims `near`.
+fn wall_scene(second_rests_on_near: bool) -> (MovementFrame, Vec2, Vec2) {
+    let spacing = 1.1_f32;
+    let rise = spacing * 3.0_f32.sqrt() * 0.5;
+    let far = Vec2::new(10.0, 10.0);
+    let near = Vec2::new(10.0, 10.0 - 2.0 * rise);
+    let wall = [
+        Vec2::new(10.0 - 0.5 * spacing, 10.0 - rise),
+        Vec2::new(10.0 + 0.5 * spacing, 10.0 - rise),
+    ];
+    let member = |unit_id: u32, position: Vec2, slot: Vec2, resting: bool| MovementFrameUnit {
+        unit_id,
+        owner_slot: 0,
+        unit_type: 1,
+        position,
+        radius: RADIUS,
+        speed: Some(3.0),
+        target: (!resting).then_some(slot),
+        progress: Some(MoveProgress {
+            pool_id: 7,
+            slot,
+            activity: if resting {
+                MovementActivity::Resting
+            } else {
+                MovementActivity::Moving
+            },
+            pass_mode: false,
+            stalling_on_group: false,
+            stalled_ticks: 0,
+            best_distance: position.distance(slot),
+            claim_count: 0,
+            follow_origin: None,
+        }),
+        plain_progress: None,
+        physical_escape: None,
+    };
+    let second_start = if second_rests_on_near {
+        near
+    } else {
+        Vec2::new(10.0, 3.5)
+    };
+    let frame = MovementFrame {
+        bounds: Vec2::new(32.0, 32.0),
+        tick_hz: 20,
+        units: vec![
+            member(1, Vec2::new(10.0, 5.0), far, false),
+            member(2, second_start, near, second_rests_on_near),
+            member(3, wall[0], wall[0], true),
+            member(4, wall[1], wall[1], true),
+        ],
+        pools: BTreeMap::from([(
+            7,
+            super::MovementPool {
+                pool_id: 7,
+                point: far,
+                spacing,
+                primary_count: 4,
+                slots: vec![far, near, wall[0], wall[1]],
+            },
+        )]),
+    };
+    (frame, far, near)
+}
+
+/// Step the scene. Returns the last position of each unit id and the number of Blocked reports.
+fn settle(mut frame: MovementFrame, fixed: &[u32]) -> (BTreeMap<u32, Vec2>, usize) {
+    let start: BTreeMap<u32, Vec2> = frame
+        .units
+        .iter()
+        .map(|unit| (unit.unit_id, unit.position))
+        .collect();
+    let mut blocked = 0;
+    for tick in 1..=400 {
+        for output in step_frame_at_tick(&frame, 0.05, tick) {
+            blocked += usize::from(output.failed_blocked);
+            if fixed.contains(&output.unit_id) {
+                assert_eq!(
+                    output.position, start[&output.unit_id],
+                    "tick {tick}: resting unit {} moved",
+                    output.unit_id
+                );
+                assert_eq!(
+                    output.target, None,
+                    "tick {tick}: a resting unit got a target"
+                );
+            }
+            let unit = frame
+                .units
+                .iter_mut()
+                .find(|unit| unit.unit_id == output.unit_id)
+                .unwrap();
+            unit.position = output.position;
+            unit.target = output.target;
+            unit.progress = output.progress;
+            unit.plain_progress = output.plain_progress;
+            unit.physical_escape = output.physical_escape;
+        }
+    }
+    assert!(
+        frame.units.iter().all(|unit| unit.target.is_none()),
+        "every body rests after 400 ticks"
+    );
+    (
+        frame
+            .units
+            .iter()
+            .map(|unit| (unit.unit_id, unit.position))
+            .collect(),
+        blocked,
+    )
+}
+
+/// Rule 1. The first mover cannot reach its slot behind the resting pair, so it takes the slot
+/// in front, which it reaches before the second mover. The second mover gets the slot behind
+/// and walks round the pair. Without the exchange the first mover ends Blocked.
+#[test]
+fn mover_cut_off_by_resting_peers_takes_the_slot_it_reaches_first() {
+    let (frame, far, near) = wall_scene(false);
+    let (rest, blocked) = settle(frame, &[3, 4]);
+    assert_eq!(blocked, 0, "no body fails with Blocked");
+    assert_eq!(rest[&1], near, "the first mover rests on the slot in front");
+    assert_eq!(rest[&2], far, "the second mover rests on the slot behind");
+}
+
+/// Physical first arrival. The slot in front already holds a resting body. The mover must not
+/// take that slot; it walks round the pair to its own slot.
+#[test]
+fn resting_body_keeps_its_slot_when_a_cut_off_mover_arrives() {
+    let (frame, far, _) = wall_scene(true);
+    let (rest, blocked) = settle(frame, &[2, 3, 4]);
+    assert_eq!(blocked, 0, "no body fails with Blocked");
+    assert_eq!(rest[&1], far, "the mover reaches its own slot by a route");
+}

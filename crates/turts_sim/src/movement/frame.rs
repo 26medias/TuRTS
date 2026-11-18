@@ -1059,9 +1059,14 @@ pub(crate) fn step_frame_with_motion_guide(
             }
             if choice.is_none() && !own_clear {
                 let spent = route_spent.entry(unit.owner_slot).or_insert(0usize);
-                steer = super::exchange::route_own(&planner, spent);
+                // The cap can end a search before it knows the answer. Only a search that
+                // ran to its end may report that no slot is reachable.
+                let mut exhausted = false;
+                steer = super::exchange::route_own(&planner, spent, &mut exhausted);
                 // A slot that only stalled movers cut off is still the slot of this mover.
-                if steer.is_none() && super::exchange::route_own(&planner.hard(), spent).is_none() {
+                if steer.is_none()
+                    && super::exchange::route_own(&planner.hard(), spent, &mut exhausted).is_none()
+                {
                     let mut waits = false;
                     if let Some(plan) = super::exchange::route_other(
                         &planner,
@@ -1069,12 +1074,13 @@ pub(crate) fn step_frame_with_motion_guide(
                         claimants.get_or_insert_with(|| super::exchange::claimants(&units)),
                         &assigned_slots,
                         spent,
+                        &mut exhausted,
                         &mut waits,
                     ) {
                         steer = Some(plan.waypoint);
                         choice = plan.claim;
                     } else {
-                        no_route = !waits;
+                        no_route = !waits && !exhausted;
                     }
                 }
             }
@@ -1406,7 +1412,8 @@ pub(crate) fn step_frame_with_motion_guide(
         }
         if progress.stalled_ticks >= hz {
             if no_route {
-                // No slot is reachable. Another blind claim only delays the failure report.
+                // Complete searches found no slot that this mover can reach. Another blind
+                // claim only delays the failure report.
                 progress.activity = MovementActivity::Blocked;
                 failed_blocked = true;
             } else if progress.stalling_on_group && !progress.pass_mode {

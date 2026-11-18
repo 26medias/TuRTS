@@ -22,15 +22,18 @@ use super::frame::MovementFrameUnit;
 const PITCH: f32 = 0.25;
 /// Sagitta of a `PITCH * sqrt(2)` chord on a contact circle of radius 0.6 or more, rounded up.
 const MARGIN: f32 = 0.03;
+/// A flood search tries one direct chord only to a goal within this distance of the mover.
+const DIRECT_REACH: f32 = 3.0;
 pub(super) const NODE_CAP: usize = 2048;
 /// The cap of a flood search for another slot. It covers a radius of about 12 units, enough to
 /// find a free slot on the far side of a formation of some hundred bodies.
 pub(super) const FLOOD_CAP: usize = 8192;
 pub(super) const OWNER_CAP: usize = 65_536;
-/// The straight look-ahead that decides whether a mover needs a route. It stays inside the
-/// radius that one directed search of `NODE_CAP` nodes can resolve. A longer look-ahead asks
-/// for routes that the bounded search cannot find, and a shorter one lets a group walk up to
-/// an obstacle and jam in front of it before the first mover turns.
+/// The straight look-ahead that decides whether a mover needs a route. This value is
+/// empirical and the MC post-ring row is sensitive to it: 7.0 and 8.0 pass that row; 4.0, 6.0,
+/// 10.0 and 12.0 miss its deadline by 10 to 70 ticks; 9.0 ends with Blocked units. A short
+/// look-ahead lets a group walk up to an obstacle and jam in front of it. No argument shows
+/// that 8.0 is right for another scene (see the review record of 2026-11-18).
 pub(super) const LOOK_AHEAD: f32 = 8.0;
 
 type Node = (i32, i32);
@@ -178,27 +181,40 @@ impl Planner<'_> {
 
     /// Search from the mover to `goals`. `toward` is the single goal of a directed search; then
     /// the search stops when it reaches that goal. Without it the search floods and returns each
-    /// goal that it reaches. `spent` counts settled nodes against `cap`.
+    /// goal that it reaches. `spent` counts each settled node and each direct chord against
+    /// `cap`. `exhausted` becomes true when the cap ends the search: then a goal that the
+    /// search did not reach is unknown, not unreachable.
     pub(super) fn search(
         &self,
         goals: &[Vec2],
         toward: bool,
         cap: usize,
         spent: &mut usize,
+        exhausted: &mut bool,
     ) -> Vec<Reached> {
         let start = self.units[self.index].position;
         // A goal that one clear chord reaches needs no lattice node. A body inside a ring of
-        // resting neighbours has no free node near it, but can still step onto its slot.
-        let direct: Vec<Reached> = goals
-            .iter()
-            .enumerate()
-            .filter(|(_, goal)| self.chord_clear(start, **goal))
-            .map(|(goal, point)| Reached {
-                goal,
-                cost: start.distance(*point),
-                waypoint: *point,
-            })
-            .collect();
+        // resting neighbours has no free node near it, but can still step onto its slot. A
+        // flood tries this only for the goals beside the mover.
+        let mut direct: Vec<Reached> = Vec::new();
+        for (goal, point) in goals.iter().enumerate() {
+            let distance = start.distance(*point);
+            if !toward && distance > DIRECT_REACH {
+                continue;
+            }
+            if *spent >= cap {
+                *exhausted = true;
+                return direct;
+            }
+            *spent += 1;
+            if self.chord_clear(start, *point) {
+                direct.push(Reached {
+                    goal,
+                    cost: distance,
+                    waypoint: *point,
+                });
+            }
+        }
         if toward && !direct.is_empty() {
             return direct;
         }
@@ -243,6 +259,7 @@ impl Planner<'_> {
                 continue;
             }
             if *spent >= cap {
+                *exhausted = true;
                 break;
             }
             *spent += 1;

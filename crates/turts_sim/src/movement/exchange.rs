@@ -343,11 +343,15 @@ pub(super) struct Plan {
 }
 
 /// A route to the mover's own slot, if the bounded search finds one.
-pub(super) fn route_own(planner: &super::route::Planner, spent: &mut usize) -> Option<Vec2> {
+pub(super) fn route_own(
+    planner: &super::route::Planner,
+    spent: &mut usize,
+    exhausted: &mut bool,
+) -> Option<Vec2> {
     let (_, own_slot) = moving_member(&planner.units[planner.index])?;
     let cap = super::route::OWNER_CAP.min(*spent + super::route::NODE_CAP);
     planner
-        .search(&[own_slot], true, cap, spent)
+        .search(&[own_slot], true, cap, spent, exhausted)
         .first()
         .map(|reached| reached.waypoint)
 }
@@ -362,6 +366,7 @@ pub(super) fn route_other(
     claimants: &HashMap<SlotKey, usize>,
     assigned: &std::collections::HashSet<SlotKey>,
     spent: &mut usize,
+    exhausted: &mut bool,
     waits: &mut bool,
 ) -> Option<Plan> {
     let units = planner.units;
@@ -397,7 +402,7 @@ pub(super) fn route_other(
         return None;
     }
     let cap = super::route::OWNER_CAP.min(*spent + super::route::FLOOD_CAP);
-    let reached = planner.search(&goals, false, cap, spent);
+    let reached = planner.search(&goals, false, cap, spent, exhausted);
     *waits = !reached.is_empty();
     reached
         .into_iter()
