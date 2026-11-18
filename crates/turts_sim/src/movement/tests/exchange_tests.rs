@@ -461,3 +461,155 @@ fn a_unit_arriving_earlier_in_the_tick_keeps_its_slot() {
         }
     }
 }
+/// One mover of owner 0 at `start` with the slot (10, 12.5), and one body of owner 1 at
+/// (10, 10) on the straight line to the slot. `pool_id` 7 is in the frame.
+fn lone_mover_scene(start: Vec2, pool_id: u64, foreign_moves: bool) -> MovementFrame {
+    let slot = Vec2::new(10.0, 12.5);
+    let body = Vec2::new(10.0, 10.0);
+    MovementFrame {
+        bounds: Vec2::new(32.0, 32.0),
+        tick_hz: 20,
+        units: vec![
+            MovementFrameUnit {
+                unit_id: 1,
+                owner_slot: 0,
+                unit_type: 1,
+                position: start,
+                radius: RADIUS,
+                speed: Some(3.0),
+                target: Some(slot),
+                progress: Some(MoveProgress {
+                    pool_id,
+                    slot,
+                    activity: MovementActivity::Moving,
+                    pass_mode: false,
+                    stalling_on_group: false,
+                    stalled_ticks: 0,
+                    best_distance: start.distance(slot),
+                    claim_count: 0,
+                    follow_origin: None,
+                }),
+                plain_progress: None,
+                physical_escape: None,
+            },
+            MovementFrameUnit {
+                unit_id: 2,
+                owner_slot: 1,
+                unit_type: 2,
+                position: body,
+                radius: RADIUS,
+                speed: Some(3.0),
+                // A body with a target that it cannot leave for: it "moves" but stays.
+                target: foreign_moves.then_some(body),
+                progress: None,
+                plain_progress: None,
+                physical_escape: None,
+            },
+        ],
+        pools: BTreeMap::from([(
+            7,
+            super::MovementPool {
+                pool_id: 7,
+                point: slot,
+                spacing: 1.1,
+                primary_count: 1,
+                slots: vec![slot],
+            },
+        )]),
+    }
+}
+
+/// Step unit 1 for `ticks`. Returns its last row and the largest `claim_count` that it had.
+fn follow_mover(mut frame: MovementFrame, ticks: u32) -> (MovementFrameUnit, u8) {
+    let mut most = 0;
+    for tick in 1..=ticks {
+        for output in step_frame_at_tick(&frame, 0.05, tick) {
+            let unit = frame
+                .units
+                .iter_mut()
+                .find(|unit| unit.unit_id == output.unit_id)
+                .unwrap();
+            unit.position = output.position;
+            unit.target = output.target;
+            unit.progress = output.progress;
+            unit.plain_progress = output.plain_progress;
+            unit.physical_escape = output.physical_escape;
+        }
+        if let Some(progress) = &frame.units[0].progress {
+            most = most.max(progress.claim_count);
+        }
+    }
+    (frame.units[0].clone(), most)
+}
+
+/// The planner contract for a body of another owner, on one chord through that body.
+#[test]
+fn a_route_reads_a_body_of_another_owner_only_at_rest_and_in_contact() {
+    let frame = lone_mover_scene(Vec2::new(10.0, 7.0), 7, false);
+    let points: Vec<_> = frame
+        .units
+        .iter()
+        .map(|unit| crate::grid::GridPoint {
+            id: unit.unit_id,
+            position: unit.position,
+        })
+        .collect();
+    let grid = crate::grid::UniformGrid::new(&points, 1.0);
+    let clear = |stationary: bool, witness: &[u8]| {
+        let witness = [Vec::new(), witness.to_vec()];
+        super::route::Planner {
+            index: 0,
+            units: &frame.units,
+            points: &points,
+            grid: &grid,
+            max_radius: RADIUS,
+            bounds: frame.bounds,
+            stationary_at_start: &[false, stationary],
+            contact_witness: &witness,
+            start_stall: &[Some(0), None],
+            soft: true,
+            stall_ticks: 5,
+        }
+        .chord_clear(Vec2::new(10.0, 7.0), Vec2::new(10.0, 12.5))
+    };
+    assert!(
+        !clear(true, &[0]),
+        "a resting body in contact is an obstacle"
+    );
+    assert!(clear(true, &[]), "a resting body out of contact is unknown");
+    assert!(
+        clear(true, &[1]),
+        "contact of another owner tells this owner nothing"
+    );
+    assert!(
+        clear(false, &[0]),
+        "a moving body is never a route obstacle"
+    );
+}
+
+/// The find of an unknown resting body costs one restart unit, one time. Contact with a body
+/// that the owner knows already costs nothing, so a mover that slides along a known body
+/// keeps its budget. The mover still goes round the body and rests on its slot.
+#[test]
+fn only_the_find_of_an_unknown_body_spends_restart_budget() {
+    // The mover starts in contact range: the body is known at the first tick.
+    let (unit, most) = follow_mover(lone_mover_scene(Vec2::new(10.0, 8.95), 7, false), 200);
+    assert!(unit.target.is_none(), "the mover rests on its slot");
+    assert_eq!(unit.position, Vec2::new(10.0, 12.5));
+    assert_eq!(most, 0, "contact with a known body spent budget");
+    // The mover walks into the body: one find.
+    let (unit, most) = follow_mover(lone_mover_scene(Vec2::new(10.0, 6.0), 7, false), 200);
+    assert!(unit.target.is_none(), "the mover rests on its slot");
+    assert_eq!(
+        most, 4,
+        "one find costs one restart unit (4 in claim_count)"
+    );
+}
+
+/// A mover that the exchange path does not plan for (its pool is not in the frame) keeps its
+/// `claim_count`: the legacy recovery reads that field as a plain spare-claim count.
+#[test]
+fn a_mover_outside_the_exchange_path_spends_no_restart_budget() {
+    let (_, most) = follow_mover(lone_mover_scene(Vec2::new(10.0, 6.0), 99, false), 60);
+    assert_eq!(most & !0b11, 0, "an unplanned mover got restart units");
+}

@@ -13,6 +13,8 @@ pub struct SpreadContext {
     reserved_grid: crate::grid::UniformGrid,
     max_reserved_radius: f32,
     static_footprints: Vec<StaticFootprint>,
+    /// The unit id of each static footprint, when the caller gave one (`set_static_units`).
+    static_units: Vec<Option<u32>>,
     static_points: Vec<crate::grid::GridPoint>,
     static_grid: crate::grid::UniformGrid,
     max_static_radius: f32,
@@ -69,11 +71,24 @@ impl SpreadContext {
             reserved_units,
             reserved_points,
             max_reserved_radius,
+            static_units: vec![None; static_footprints.len()],
             static_footprints,
             static_points,
             max_static_radius,
             reserved_index,
         }
+    }
+
+    /// Give the unit id of each static footprint, in the order of `new`. A spread then ignores
+    /// a static footprint whose id is in its excluded set, as it does for a reserved one. The
+    /// dispatch uses this to leave out each body that the ordering slot may not see.
+    pub fn set_static_units(&mut self, units: Vec<Option<u32>>) {
+        assert_eq!(units.len(), self.static_footprints.len());
+        self.static_units = units;
+    }
+
+    fn static_excluded(&self, index: usize, excluded: &std::collections::HashSet<u32>) -> bool {
+        self.static_units[index].is_some_and(|unit| excluded.contains(&unit))
     }
 
     pub fn reserve_unit(&mut self, unit_id: u32, footprint: ReservedFootprint) {
@@ -443,10 +458,11 @@ fn singleton_free(
         )
         .into_iter()
         .all(|i| {
-            clear(
-                context.static_footprints[i].position,
-                context.static_footprints[i].radius,
-            )
+            context.static_excluded(i, excluded)
+                || clear(
+                    context.static_footprints[i].position,
+                    context.static_footprints[i].radius,
+                )
         })
         && context
             .reserved_grid
@@ -563,6 +579,9 @@ fn nearest_singleton(
         goal,
         reach(context.max_static_radius),
     ) {
+        if context.static_excluded(i, excluded) {
+            continue;
+        }
         let body = context.static_footprints[i];
         circles.push(ArrivalCircle {
             x: f64::from(body.position.x),
@@ -688,8 +707,9 @@ fn free_slot_grid(
             )
             .into_iter()
             .all(|i| {
-                candidate.distance(context.static_footprints[i].position)
-                    >= radius + context.static_footprints[i].radius
+                context.static_excluded(i, excluded_units)
+                    || candidate.distance(context.static_footprints[i].position)
+                        >= radius + context.static_footprints[i].radius
             })
         && context
             .reserved_grid
@@ -739,6 +759,14 @@ const REACH_MARGIN_RINGS: i32 = 2;
 /// two sites beside that step is open as well (the same gate rule as the claim exchange). The
 /// flood starts at the open sites of the outer ring and goes inward. A free site that the
 /// flood does not reach is in a pocket that footprints seal: no body can come to rest there.
+///
+/// The flood is local on purpose. The outer ring counts as open ground, so a group that
+/// stands inside a closed wall, or a point inside one, is not handled (measured: a flood from
+/// the members over 36 rings of bodies off the lattice refused a corner that the group can
+/// reach).
+///
+/// The rule is exact for footprints on the pool lattice. For other footprints it can refuse a
+/// site that a body can reach; it then gives a slot farther out, never an unsafe one.
 ///
 /// The result has the canonical nearest-first order. It is `None` when the reachable sites are
 /// fewer than the members; the caller then keeps the unfiltered pool.

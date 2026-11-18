@@ -42,6 +42,11 @@ pub(super) fn spend_discovery(progress: &mut super::MoveProgress) -> bool {
     true
 }
 
+/// True when the mover has no restart budget left for this order.
+pub(super) fn budget_spent(progress: &super::MoveProgress) -> bool {
+    progress.claim_count / RESTART_UNIT >= RESTART_BUDGET
+}
+
 pub(super) fn spare_claims(progress: &super::MoveProgress) -> u8 {
     progress.claim_count & SPARE_CLAIM_MASK
 }

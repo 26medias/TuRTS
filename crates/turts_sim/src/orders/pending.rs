@@ -804,6 +804,7 @@ pub(super) fn dispatch_pending_movement(world: &mut World) {
         let types = world.resource::<crate::registry::UnitTypes>();
         let mut reserved = Vec::new();
         let mut static_footprints = Vec::new();
+        let mut static_units = Vec::new();
         let mut max_unit_radius = 0.0_f32;
         for entity in world.iter_entities() {
             let (Some(id), Some(position), Some(unit_type)) = (
@@ -822,6 +823,7 @@ pub(super) fn dispatch_pending_movement(world: &mut World) {
                     position: position.0,
                     radius: unit.radius,
                 });
+                static_units.push(Some(id.0));
             } else {
                 reserved.push((
                     Some(id.0),
@@ -835,12 +837,9 @@ pub(super) fn dispatch_pending_movement(world: &mut World) {
         let bounds = world
             .get_resource::<crate::world::MapBounds>()
             .map_or(Vec2::new(64.0, 64.0), |bounds| bounds.size);
-        index_cache.context = Some(SpreadContext::new(
-            reserved,
-            static_footprints,
-            bounds,
-            max_unit_radius,
-        ));
+        let mut context = SpreadContext::new(reserved, static_footprints, bounds, max_unit_radius);
+        context.set_static_units(static_units);
+        index_cache.context = Some(context);
         index_cache.tick = Some(tick);
         #[cfg(test)]
         {
@@ -1112,8 +1111,17 @@ pub(super) fn dispatch_pending_movement(world: &mut World) {
                     ))
                 })
                 .collect();
-            let moving_ids: std::collections::HashSet<_> =
+            let mut moving_ids: std::collections::HashSet<_> =
                 request.unit_ids.iter().copied().collect();
+            // Under fog, a body of another slot that this slot may not see must not change
+            // where the slots lie. The swept certificate still stops a mover at such a body.
+            if let Some(basis) = crate::visibility::active_basis(world) {
+                moving_ids.extend(world.iter_entities().filter_map(|entity| {
+                    let id = entity.get::<crate::world::UnitId>()?.0;
+                    let owner = entity.get::<crate::world::Owner>()?.0.0;
+                    (owner != slot && !basis.unit_permitted(slot, id)).then_some(id)
+                }));
+            }
             let input: Vec<_> = members.iter().map(|(_, member)| *member).collect();
             let (mut pool, assignments) = spread_destinations_with_context(
                 &input,

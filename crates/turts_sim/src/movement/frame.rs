@@ -280,6 +280,7 @@ pub(crate) fn step_frame_with_motion_guide(
     // (`route::Planner`).
     let mut contact_witness: Vec<Vec<u8>> = vec![Vec::new(); units.len()];
     if exchanges_claims
+        && start_stall.iter().any(Option::is_some)
         && units_at_start
             .iter()
             .any(|row| row.0 != units_at_start[0].0)
@@ -1133,8 +1134,13 @@ pub(crate) fn step_frame_with_motion_guide(
                     let peer_distance = units[peer].position.distance(released);
                     if let Some(state) = units[peer].progress.as_mut() {
                         state.slot = released;
-                        state.best_distance = peer_distance;
                         exchanged[peer] = !super::exchange::restart_stall_clock(state);
+                        // With no budget the old best distance stays the measure of progress.
+                        state.best_distance = if exchanged[peer] {
+                            state.best_distance.min(peer_distance)
+                        } else {
+                            peer_distance
+                        };
                     }
                     units[peer].target = Some(released);
                     outputs[peer].progress = units[peer].progress.clone();
@@ -1163,8 +1169,12 @@ pub(crate) fn step_frame_with_motion_guide(
                 }
                 update_target_claims(&mut target_claims, unit.target, Some(slot));
                 progress.slot = slot;
-                progress.best_distance = unit.position.distance(slot);
                 exchanged[index] = !super::exchange::restart_stall_clock(&mut progress);
+                progress.best_distance = if exchanged[index] {
+                    progress.best_distance.min(unit.position.distance(slot))
+                } else {
+                    unit.position.distance(slot)
+                };
                 unit.target = Some(slot);
                 unit.progress = Some(progress.clone());
                 units[index].target = unit.target;
@@ -1438,9 +1448,15 @@ pub(crate) fn step_frame_with_motion_guide(
             // A route does not extend a recovery that is due in this tick. The straight
             // distance of a routed step is no evidence of progress either.
             progress.stalled_ticks = progress.stalled_ticks.saturating_add(1);
-        } else if steer.is_some() && position != unit.position {
+        } else if steer.is_some()
+            && position != unit.position
+            && !super::exchange::budget_spent(&progress)
+        {
             // A route leads away from the slot at first. The straight distance is no measure
             // of its progress. A clipped step gets its stall clock back in `sweep::finish`.
+            // A mover with no restart budget left loses this rule: then only a new best
+            // straight distance restarts its clock, so routes and exchanges that go round in
+            // a circle end in the ordinary recovery.
             progress.best_distance = progress.best_distance.min(next_distance);
             progress.stalled_ticks = 0;
         } else if made_progress && !recovery_due {

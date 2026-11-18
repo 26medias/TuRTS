@@ -1111,3 +1111,50 @@ fn a_pool_keeps_a_site_behind_a_gap_that_a_body_can_pass() {
         pool.slots
     );
 }
+
+/// A closed ring of resting bodies round the point. Each free site inside the ring is sealed,
+/// although the sites inside connect to each other. The pool lies outside the ring. (The flood
+/// runs only when a footprint closes a site that the pool scan examined: a wall far outside
+/// the scanned rings is not seen.)
+#[test]
+fn a_pool_for_members_outside_a_closed_ring_lies_outside_the_ring() {
+    let point = Vec2::new(30.0, 30.0);
+    let spacing = 1.1_f32;
+    // Hex ring 2 of the pool lattice, complete: 12 bodies, each 0.1 from the next.
+    let mut reserved = Vec::new();
+    let ring = 2_i32;
+    for side in 0..6 {
+        for step in 0..ring {
+            let (i, j) = match side {
+                0 => (ring - step, step),
+                1 => (-step, ring),
+                2 => (-ring, ring - step),
+                3 => (-ring + step, -step),
+                4 => (step, -ring),
+                _ => (ring, -ring + step),
+            };
+            reserved.push(super::ReservedFootprint {
+                position: Vec2::new(
+                    point.x + spacing * (i as f32 + 0.5 * j as f32),
+                    point.y + spacing * (3.0_f32.sqrt() * 0.5 * j as f32),
+                ),
+                radius: 0.5,
+            });
+        }
+    }
+    let (pool, assignments) = spread_destinations(
+        &three_members(),
+        point,
+        &reserved,
+        &[],
+        Vec2::new(64.0, 64.0),
+    );
+    assert_eq!(assignments.len(), 3);
+    assert!(
+        pool.slots
+            .iter()
+            .all(|slot| slot.distance(point) > 2.0 * spacing * 0.86),
+        "a slot lies inside the closed ring: {:?}",
+        pool.slots
+    );
+}
