@@ -59,7 +59,7 @@ function elevation(fixture,state,x,y) {
     return surface?.elevation??initialElevation(fixture,[x+.5,y+.5]);
 }
 function permittedTop(fixture,state,point){return elevation(fixture,state,Math.floor(point[0]),Math.floor(point[1]))*.25;}
-async function selectActors(page,fixture,bindings,labels) {
+async function selectActors(page,fixture,bindings,labels,recordClick) {
     if(fixture.scene_name==='GM3-opposing-large'){
         const state=await read(page),wanted=labels.map(label=>bindings.get(label));
         const units=world(state).units;
@@ -76,7 +76,9 @@ async function selectActors(page,fixture,bindings,labels) {
         const unit=world(state).units.find(u=>u.unit_id===id);
         assert(unit&&unit.owner_slot===state.debug.slot,'Selection requires owned live body');
         if(i===1){await page.keyboard.down('Shift');await sleep(PRESS_MS);}
-        await click(page,project(state.scene,[...unit.pos,contact(state,id)+actor.profile.pick_height]));
+        const point=project(state.scene,[...unit.pos,contact(state,id)+actor.profile.pick_height]);
+        await click(page,point);
+        if(recordClick){const after=await read(page);recordClick({label,id,point,tick:world(after).tick,focus:after.debug.focus,selection:after.debug.selection,frames:after.debug.frames?.recent?.map(f=>({frame_index:f.frame_index,tick:f.tick,selection:f.selection,named_dispatches:f.named_dispatches}))});}
     }}finally{await page.keyboard.up('Shift');}
     const wanted=labels.map(label=>bindings.get(label));
     await wait(page,s=>s.debug.selection.length===wanted.length&&wanted.every(id=>s.debug.selection.includes(id)),'Physical body selection differs from frozen cohort');
@@ -153,7 +155,7 @@ async function drive({pagesBySlot,fixture,capture,record,recordInput,onPoll}) {
     for(const [slot,page]of pagesBySlot){const intent=fixture.scene.commands.find(c=>c.slot===slot);if(intent?.tick===0){
         const beforePreselect=await read(page);
         recordInput?.({slot,stage:'preselect-before',wall_ms:Date.now(),tick:world(beforePreselect).tick,dom_focus:await page.evaluate(()=>document.hasFocus()),focus:beforePreselect.debug.focus,selection:beforePreselect.debug.selection});
-        try{await selectActors(page,fixture,bindings,intent.actors);}catch(error){
+        try{await selectActors(page,fixture,bindings,intent.actors,observation=>recordInput?.({slot,stage:'preselect-click',...observation}));}catch(error){
             const state=await read(page);
             recordInput?.({slot,stage:'preselect-failed',wall_ms:Date.now(),tick:world(state).tick,dom_focus:await page.evaluate(()=>document.hasFocus()),focus:state.debug.focus,selection:state.debug.selection,cursor:state.debug.cursor});
             await capture?.('failed-preselection-slot'+slot,state);
