@@ -78,7 +78,7 @@ async function selectActors(page,fixture,bindings,labels,recordClick) {
         if(i===1){await page.keyboard.down('Shift');await sleep(PRESS_MS);}
         const point=project(state.scene,[...unit.pos,contact(state,id)+actor.profile.pick_height]);
         await click(page,point);
-        if(recordClick){const after=await read(page);recordClick({label,id,point,tick:world(after).tick,focus:after.debug.focus,selection:after.debug.selection,frames:after.debug.frames?.recent?.map(f=>({frame_index:f.frame_index,tick:f.tick,selection:f.selection,named_dispatches:f.named_dispatches}))});}
+        if(recordClick){const after=await read(page);recordClick({label:labels[i],id,point,tick:world(after).tick,focus:after.debug.focus,selection:after.debug.selection,frames:after.debug.frames?.recent?.map(f=>({frame_index:f.frame_index,tick:f.tick,selection:f.selection,named_dispatches:f.named_dispatches}))});}
     }}finally{await page.keyboard.up('Shift');}
     const wanted=labels.map(label=>bindings.get(label));
     await wait(page,s=>s.debug.selection.length===wanted.length&&wanted.every(id=>s.debug.selection.includes(id)),'Physical body selection differs from frozen cohort');
