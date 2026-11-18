@@ -232,11 +232,16 @@ async function drive({pagesBySlot,fixture,capture,record,onPoll}) {
                     throw error;
                 }
                 prepared.delete(slot);
-                const acceptedState=await wait(page,s=>{
+                let acceptedState;
+                try{acceptedState=await wait(page,s=>{
                     const results=(s.debug.command_results||[]).filter(r=>r.seq>lastSeq);
                     assert(!results.some(r=>r.rejected||r.envelope||r.refused?.length),'Pointer order was refused: '+JSON.stringify(results));
                     return results.some(r=>Number.isInteger(r.applied_tick)&&r.accepted?.length===intent.actors.length&&intent.actors.every(label=>r.accepted.includes(bindings.get(label))));
-                },'Pointer order has no complete ordinary admission receipt',15000);
+                },'Pointer order has no complete ordinary admission receipt',15000);}catch(error){
+                    const state=await read(page);await capture?.('failed-admission-slot'+slot,state);
+                    error.message+='; prior seq='+lastSeq+'; phase='+JSON.stringify(state?.debug?.phase)+'; selection='+JSON.stringify(state?.debug?.selection)+'; results='+JSON.stringify(state?.debug?.command_results);
+                    throw error;
+                }
                 const receipt=acceptedState.debug.command_results.find(r=>r.seq>lastSeq&&Number.isInteger(r.applied_tick)&&r.accepted?.length===intent.actors.length);
                 settled.commit(intent.actors,intent.action);
                 for(const label of intent.actors)original.delete(label);
