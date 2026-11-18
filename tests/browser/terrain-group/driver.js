@@ -139,7 +139,15 @@ async function drive({pagesBySlot,fixture,capture,record,onPoll}) {
     }
     // Preselect each peer's first cohort before starting the measured action timeline.
     const prepared=new Map();
-    for(const [slot,page]of pagesBySlot){const intent=fixture.scene.commands.find(c=>c.slot===slot);if(intent?.tick===0){await selectActors(page,fixture,bindings,intent.actors);prepared.set(slot,intent);}}
+    for(const [slot,page]of pagesBySlot){const intent=fixture.scene.commands.find(c=>c.slot===slot);if(intent?.tick===0){
+        try{await selectActors(page,fixture,bindings,intent.actors);}catch(error){
+            const state=await read(page);await capture?.('failed-preselection-slot'+slot,state);
+            const picks=intent.actors.map(label=>{const id=bindings.get(label),actor=fixture.actors.find(a=>a.label===label),unit=world(state).units.find(u=>u.unit_id===id);return {label,id,position:unit?.pos,projected:unit?project(state.scene,[...unit.pos,contact(state,id)+actor.profile.pick_height]):null};});
+            error.message+='; actual selection='+JSON.stringify(state?.debug?.selection)+'; intended picks='+JSON.stringify(picks);
+            throw error;
+        }
+        prepared.set(slot,intent);
+    }}
     let base=world(await read(first)).tick,lastTick=-1,gaps=0,closed=false,reopened=false,openingTick=null,stable=null;
     const distant=new DistantOrderTracker();
     const labels=filter=>fixture.actors.filter(filter).map(a=>a.label),large=labels(a=>a.kind==='large'),small=labels(a=>a.kind==='small');
