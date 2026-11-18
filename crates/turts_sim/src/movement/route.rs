@@ -43,6 +43,58 @@ pub(super) fn stationary(unit: &MovementFrameUnit) -> bool {
     unit.target.is_none() || !unit.speed.is_some_and(|speed| speed > 0.0)
 }
 
+#[cfg(test)]
+mod budget_tests {
+    use super::*;
+
+    #[test]
+    fn exhausted_flood_does_not_return_a_partial_goal_set() {
+        let units = [MovementFrameUnit {
+            unit_id: 1,
+            owner_slot: 0,
+            unit_type: 1,
+            position: Vec2::new(5.0, 5.0),
+            radius: 0.5,
+            speed: Some(1.0),
+            target: None,
+            progress: None,
+            plain_progress: None,
+            physical_escape: None,
+        }];
+        let points = [crate::grid::GridPoint {
+            id: 1,
+            position: units[0].position,
+        }];
+        let grid = crate::grid::UniformGrid::new(&points, 1.0);
+        let planner = Planner {
+            index: 0,
+            units: &units,
+            points: &points,
+            grid: &grid,
+            max_radius: 0.5,
+            bounds: Vec2::splat(20.0),
+            stationary_at_start: &[false],
+            start_stall: &[None],
+            soft: false,
+            stall_ticks: 2,
+        };
+        let mut spent = 0;
+        let mut exhausted = false;
+        let reached = planner.search(
+            &[Vec2::new(6.0, 5.0), Vec2::new(7.0, 5.0)],
+            false,
+            1,
+            &mut spent,
+            &mut exhausted,
+        );
+        assert!(exhausted);
+        assert!(
+            reached.is_empty(),
+            "an unfinished flood must not choose from partial goals"
+        );
+    }
+}
+
 #[derive(Clone, Copy)]
 pub(super) struct Planner<'a> {
     pub(super) index: usize,
@@ -192,6 +244,9 @@ impl Planner<'_> {
         spent: &mut usize,
         exhausted: &mut bool,
     ) -> Vec<Reached> {
+        if *exhausted {
+            return Vec::new();
+        }
         let start = self.units[self.index].position;
         // A goal that one clear chord reaches needs no lattice node. A body inside a ring of
         // resting neighbours has no free node near it, but can still step onto its slot. A
@@ -204,7 +259,7 @@ impl Planner<'_> {
             }
             if *spent >= cap {
                 *exhausted = true;
-                return direct;
+                return Vec::new();
             }
             *spent += 1;
             if self.chord_clear(start, *point) {
@@ -302,6 +357,9 @@ impl Planner<'_> {
                     )));
                 }
             }
+        }
+        if *exhausted {
+            return Vec::new();
         }
         reached
             .into_iter()
