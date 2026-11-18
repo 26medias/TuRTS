@@ -2,6 +2,7 @@
 'use strict';
 const assert=(ok,message)=>{if(!ok)throw Error(message);};
 const {SettledTracker,DistantOrderTracker}=require('./settled-tracker');
+const {exactOwnedBox}=require('./selection-box');
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 // Hold both sides of a gesture across frames. A zero-delay press/release can
 // disappear between Bevy input polls, even when hover picked the correct body.
@@ -59,6 +60,16 @@ function elevation(fixture,state,x,y) {
 }
 function permittedTop(fixture,state,point){return elevation(fixture,state,Math.floor(point[0]),Math.floor(point[1]))*.25;}
 async function selectActors(page,fixture,bindings,labels) {
+    if(fixture.scene_name==='GM3-opposing-large'){
+        const state=await read(page),wanted=labels.map(label=>bindings.get(label));
+        const units=world(state).units;
+        const points=state.scene.units.map(unit=>({id:unit.unit_id,center:unit.ground_screen_center,owned:units.find(u=>u.unit_id===unit.unit_id)?.owner_slot===state.debug.slot}));
+        const box=exactOwnedBox(points,wanted);assert(box,'Requested cohort has no exact owned selection box');
+        await page.mouse.move(box[0],box[1]);await page.mouse.down();await sleep(PRESS_MS);
+        await page.mouse.move(box[2],box[3],{steps:8});await sleep(PRESS_MS);await page.mouse.up();await sleep(PRESS_MS);
+        await wait(page,s=>s.debug.selection.length===wanted.length&&wanted.every(id=>s.debug.selection.includes(id)),'Physical box selection differs from frozen cohort');
+        return;
+    }
     // Selection is performed at actual current poses. Shift is held only for additive picks.
     try{for(let i=0;i<labels.length;i++){
         const state=await read(page),actor=fixture.actors.find(a=>a.label===labels[i]),id=bindings.get(labels[i]);

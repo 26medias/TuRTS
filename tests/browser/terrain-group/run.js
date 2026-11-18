@@ -26,7 +26,7 @@ async function ready(url,server){const deadline=Date.now()+30000;while(Date.now(
     // Verify the actual sealed package identity and every canonical source/tool/artifact check.
     checked('python3',['-B',path.join(root,'tests/browser/terrain-prepared.py'),prepared,'--root',root],path.join(output,'prepared-check.log'));
     result.source_head=checked('git',['rev-parse','HEAD'],path.join(output,'source-head.log')).trim();
-    const sourceFiles=['tests/browser/terrain-group/generate.py','tests/browser/terrain-group/scenes.json','tests/browser/terrain-group/driver.js','tests/browser/terrain-group/settled-tracker.js','tests/browser/terrain-group/settled-tracker.test.js','tests/browser/terrain-group/run.js'];
+    const sourceFiles=['tests/browser/terrain-group/generate.py','tests/browser/terrain-group/scenes.json','tests/browser/terrain-group/driver.js','tests/browser/terrain-group/settled-tracker.js','tests/browser/terrain-group/settled-tracker.test.js','tests/browser/terrain-group/selection-box.js','tests/browser/terrain-group/selection-box.test.js','tests/browser/terrain-group/run.js'];
     checked('git',['diff','--exit-code','HEAD','--',...sourceFiles],path.join(output,'driver-source-check.log'));
     const tracked=checked('git',['ls-files','--',...sourceFiles],path.join(output,'driver-tracked.log')).trim().split('\n');
     assert(sourceFiles.every(file=>tracked.includes(file)),'Campaign source must be committed before use');
