@@ -210,7 +210,91 @@ struct Worker {
     excavated: u64,
     filled: u64,
 }
+// Observed after each completed fixed tick, outside the charged service timers.
+// These are maxima of end-of-tick retained gauges, not transient heap peaks.
+fn as_metric(value: impl TryInto<u64>) -> u64 {
+    value.try_into().ok().unwrap_or(u64::MAX)
+}
+macro_rules! define_navigation_peaks {
+    ($($field:ident),+ $(,)?) => {
+        #[derive(Default, serde::Serialize)]
+        struct NavigationPeaks {
+            ticks: u64,
+            retained_bytes: u64,
+            $($field: u64,)+
+        }
+        impl NavigationPeaks {
+            fn observe(&mut self, nav: turts_sim::terrain::NavigationDiagnostics) {
+                self.ticks += 1;
+                self.retained_bytes = self.retained_bytes.max(
+                    as_metric(nav.resident_bytes).saturating_add(as_metric(nav.retired_bytes)),
+                );
+                $(self.$field = self.$field.max(as_metric(nav.$field));)+
+            }
+        }
+    };
+}
+define_navigation_peaks!(
+    resident_fields,
+    resident_bytes,
+    retired_bytes,
+    retired_pages,
+    memberships,
+    pending,
+    max_pending_age_ticks,
+    expansions_this_tick,
+    edge_checks_this_tick,
+    admission_entries_this_tick,
+    invalidation_entries_this_tick,
+    retired_pages_this_tick,
+    ranking_comparisons_this_tick,
+    frame_rows_this_tick,
+    body_index_queries_this_tick,
+    body_index_rank_comparisons_this_tick,
+    body_index_tail_entries_this_tick,
+    body_index_word_ops_this_tick,
+    body_index_build_comparisons_this_tick,
+    body_index_build_prefix_words_this_tick,
+    body_index_build_mask_words_this_tick,
+    body_envelope_filters_this_tick,
+    body_index_rebuilds_this_tick,
+    body_index_updates_this_tick,
+    body_index_update_entries_this_tick,
+    body_support_queries_this_tick,
+    body_support_pairs_this_tick,
+    body_support_failures_this_tick,
+    body_support_accepted_members_this_tick,
+    body_pair_checks_this_tick,
+    neighbor_visits_this_tick,
+    neighbor_overflows_this_tick,
+    neighbor_bucket_visits_this_tick,
+    traffic_index_queries_this_tick,
+    traffic_index_rank_comparisons_this_tick,
+    traffic_index_tail_entries_this_tick,
+    traffic_index_word_ops_this_tick,
+    traffic_index_build_comparisons_this_tick,
+    traffic_index_build_prefix_words_this_tick,
+    traffic_index_build_mask_words_this_tick,
+    traffic_members,
+    traffic_gates,
+    model_attempts_this_tick,
+    model_operations_this_tick,
+    model_fallbacks_this_tick,
+    model_view_refusals_this_tick,
+    coherence_attempts_this_tick,
+    coherence_advice_this_tick,
+    coherence_members_this_tick,
+    coherence_operations_this_tick,
+    local_detour_filter_rows_this_tick,
+    local_detour_scanned_rows_this_tick,
+    local_detour_generator_comparisons_this_tick,
+    local_detour_candidates_this_tick,
+    local_detour_body_checks_this_tick,
+    local_detour_terrain_calls_this_tick,
+);
+
 struct Workload {
+    navigation_peaks: NavigationPeaks,
     workers: Vec<Worker>,
     interval_steps: BTreeMap<u32, u64>,
     steps: u64,
@@ -242,6 +326,7 @@ impl Workload {
             }
         }
         Self {
+            navigation_peaks: NavigationPeaks::default(),
             workers,
             interval_steps: BTreeMap::new(),
             steps: 0,
@@ -273,6 +358,10 @@ impl Workload {
             }
             return;
         }
+        self.navigation_peaks
+            .observe(turts_sim::terrain::privileged_navigation_diagnostics(
+                harness.app.world(),
+            ));
         for event in &harness.app.world().resource::<CommittedTick>().events {
             let EconomyEventKind::TerrainStepCommitted {
                 unit,
@@ -387,13 +476,51 @@ impl Workload {
             assert_eq!(balance.reserved, 0);
         }
         let nav = turts_sim::terrain::privileged_navigation_diagnostics(harness.app.world());
+        let peaks = std::mem::take(&mut self.navigation_peaks);
+        assert_eq!(peaks.ticks, 20, "one navigation sample per completed tick");
         let result = serde_json::json!({"steps":self.interval_steps,"cumulative_steps":self.steps,
             "changed_cells":self.interval_steps.len(),"changed_chunks":changed_chunks,
             "local_navigation":{"searches":nav.searches,"cache_hits":nav.cache_hits,"invalidations":nav.invalidations,"solver_retries":nav.solver_retries,"budget_waits":nav.budget_waits},
+            "group_navigation_per_tick_peaks":peaks,
             "group_navigation_interval_snapshot":{"resident_fields":nav.resident_fields,"resident_bytes":nav.resident_bytes,"retired_bytes":nav.retired_bytes,"memberships":nav.memberships,"pending":nav.pending,"max_pending_age_ticks":nav.max_pending_age_ticks,"expansions_last_tick":nav.expansions_this_tick,"edge_checks_last_tick":nav.edge_checks_this_tick,"invalidation_entries_last_tick":nav.invalidation_entries_this_tick,"neighbor_visits":nav.neighbor_visits,"neighbor_visits_last_tick":nav.neighbor_visits_this_tick,"neighbor_overflows":nav.neighbor_overflows,"traffic_members":nav.traffic_members,"traffic_gates":nav.traffic_gates,"traffic_capacity_waits":nav.traffic_capacity_waits,"traffic_index_queries":nav.traffic_index_queries,"stale_activations":nav.stale_activations}});
         self.interval_steps.clear();
         result
     }
+}
+
+#[test]
+fn navigation_peaks_keep_transient_tick_maximum_and_combined_memory() {
+    use turts_sim::terrain::NavigationDiagnostics;
+    let mut peaks = NavigationPeaks::default();
+    peaks.observe(NavigationDiagnostics {
+        resident_bytes: 80,
+        retired_bytes: 10,
+        expansions_this_tick: 12,
+        neighbor_visits_this_tick: 3,
+        ..Default::default()
+    });
+    peaks.observe(NavigationDiagnostics {
+        resident_bytes: 60,
+        retired_bytes: 50,
+        expansions_this_tick: 2,
+        neighbor_visits_this_tick: 15,
+        ..Default::default()
+    });
+    peaks.observe(NavigationDiagnostics {
+        resident_bytes: 1,
+        retired_bytes: 1,
+        ..Default::default()
+    });
+    let json = serde_json::to_value(peaks).unwrap();
+    assert_eq!(json["ticks"], 3);
+    assert_eq!(json["resident_bytes"], 80);
+    assert_eq!(json["retired_bytes"], 50);
+    assert_eq!(
+        json["retained_bytes"], 110,
+        "combined peak must come from one tick"
+    );
+    assert_eq!(json["expansions_this_tick"], 12);
+    assert_eq!(json["neighbor_visits_this_tick"], 15);
 }
 
 fn run(intervals: usize, acceptance: bool, warmup: usize) {
