@@ -98,9 +98,41 @@ fn positions_of(app: &mut bevy_app::App) -> BTreeMap<u32, Vec2> {
         .collect()
 }
 
-fn run(orders: &[(u32, Vec<u32>, (f32, f32), u32)], ticks: u32) -> Trace {
+fn stop_order(catalog: &turts_mod_api::ContentCatalog, units: Vec<u32>, seq: u32) -> Command {
+    let (order, definition): (ContentId, &OrderDef) = catalog
+        .orders
+        .iter()
+        .find(|(id, _)| id.package.0 == "muster" && id.local == "order_stop")
+        .map(|(id, definition)| (id.clone(), definition))
+        .expect("Muster order_stop exists");
+    Command {
+        slot: SlotId(0),
+        seq,
+        kind: CommandKind::Order(Box::new(OrderCommand {
+            order,
+            behaviour: definition.behaviour,
+            target_kind: definition.target,
+            policy: None,
+            units,
+            target: OrderTargetSim::None,
+            queue: QueueMode::Replace,
+            group: 0,
+            allowed_units: definition.units.clone(),
+            queue_depth: catalog.order_queue_depths[&PackageId("muster".into())],
+        })),
+    }
+}
+
+/// A move order: the command tick, the units, the point and the group.
+type MoveOrder = (u32, Vec<u32>, (f32, f32), u32);
+
+fn run(orders: &[MoveOrder], ticks: u32) -> Trace {
+    run_with_stops(orders, &[], ticks)
+}
+
+fn run_with_stops(orders: &[MoveOrder], stops: &[(u32, Vec<u32>)], ticks: u32) -> Trace {
     let mut fixture = muster();
-    let script: Vec<(u32, Command)> = orders
+    let mut script: Vec<(u32, Command)> = orders
         .iter()
         .map(|(tick, units, point, group)| {
             (
@@ -109,6 +141,12 @@ fn run(orders: &[(u32, Vec<u32>, (f32, f32), u32)], ticks: u32) -> Trace {
             )
         })
         .collect();
+    script.extend(stops.iter().map(|(tick, units)| {
+        (
+            *tick,
+            stop_order(&fixture.catalog, units.clone(), 1000 + *tick),
+        )
+    }));
     let app = &mut fixture.app;
     let mut trace = Trace {
         positions: vec![positions_of(app)],
@@ -498,4 +536,70 @@ fn gmu_post_target_ends_on_a_ring_round_the_post() {
         assert!(distance >= 2.5 - 0.001, "trooper {id} overlaps the post");
     }
     trace.assert_never_overlapping(&ids);
+}
+
+/// Stop and Replace while the group exchanges claims and follows routes (GM40 exchanges run
+/// from about tick 55). The exchange keeps its state in the order progress only, so a Stop
+/// ends it at once and a new order starts clean.
+#[test]
+fn stop_and_replace_during_exchanges_end_clean() {
+    let ids = troopers();
+    let stopped: Vec<u32> = (9..=16).collect();
+    let replaced: Vec<u32> = (25..=40).collect();
+    let kept: Vec<u32> = ids
+        .iter()
+        .copied()
+        .filter(|id| !stopped.contains(id) && !replaced.contains(id))
+        .collect();
+    let trace = run_with_stops(
+        &[
+            (1, ids.clone(), (30.0, 30.0), 1),
+            (80, replaced.clone(), (45.0, 22.0), 2),
+        ],
+        &[(70, stopped.clone())],
+        600,
+    );
+    // A stopped unit does not move after the tick of the Stop.
+    for tick in 71..=600 {
+        for id in &stopped {
+            assert_eq!(
+                trace.positions[tick][id], trace.positions[70][id],
+                "stopped unit {id} moved at tick {tick}"
+            );
+        }
+    }
+    // The Stop must arrive during real motion, or the case proves nothing. The Stop applies
+    // in tick 70, so the last motion is from tick 68 to tick 69.
+    assert!(
+        stopped
+            .iter()
+            .any(|id| trace.positions[68][id] != trace.positions[69][id]),
+        "the stopped units were still moving when the Stop arrived"
+    );
+    assert_eq!(trace.blocked(&replaced), BTreeSet::new(), "replaced group");
+    trace.assert_stationary_and_disjoint(&ids, 40, 600);
+    trace.assert_never_overlapping(&ids);
+    for id in &replaced {
+        let distance = trace.positions[600][id].distance(Vec2::new(45.0, 22.0));
+        assert!(
+            distance <= R_NEAR,
+            "replaced unit {id} rests {distance} away"
+        );
+    }
+    for id in &kept {
+        let distance = trace.positions[600][id].distance(Vec2::new(30.0, 30.0));
+        assert!(
+            distance <= R_NEAR + 1.0,
+            "kept unit {id} rests {distance} away"
+        );
+    }
+}
+
+/// The same commands give the same positions bit for bit.
+#[test]
+fn repeated_gm40_runs_are_bit_identical() {
+    let ids = troopers();
+    let first = run(&[(1, ids.clone(), (30.0, 30.0), 1)], 300);
+    let second = run(&[(1, ids, (30.0, 30.0), 1)], 300);
+    assert!(first.positions == second.positions);
 }

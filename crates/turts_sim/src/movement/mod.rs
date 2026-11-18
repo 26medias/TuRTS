@@ -8,6 +8,9 @@ use std::collections::BTreeMap;
 mod arrival;
 mod ecs;
 mod exchange;
+#[cfg(test)]
+#[path = "tests/exchange_tests.rs"]
+mod exchange_tests;
 mod frame;
 pub(crate) mod motion;
 mod plain;

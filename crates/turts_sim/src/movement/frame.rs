@@ -1045,11 +1045,13 @@ pub(crate) fn step_frame_with_motion_guide(
             if !own_hard_clear || shorter_plan || arriving {
                 choice = super::exchange::select(
                     &planner,
-                    own_hard_clear,
-                    shorter_plan,
-                    arriving,
-                    spacing,
-                    centre,
+                    super::exchange::Request {
+                        own_reachable: own_hard_clear,
+                        shorter_plan,
+                        arriving,
+                        spacing,
+                        centre,
+                    },
                     pool_index,
                     claimants.get_or_insert_with(|| super::exchange::claimants(&units)),
                     &assigned_slots,

@@ -97,6 +97,20 @@ pub(super) struct Choice {
     pub(super) slot: Vec2,
 }
 
+/// The state of the mover that decides which exchange rules apply (`select`).
+#[derive(Debug, Clone, Copy)]
+pub(super) struct Request {
+    /// False when a true stationary body of the owner cuts the mover off from its own slot.
+    pub(super) own_reachable: bool,
+    /// True for a stalled mover that can reach its own slot.
+    pub(super) shorter_plan: bool,
+    /// True for a mover that is about to arrive.
+    pub(super) arriving: bool,
+    /// The pool spacing and the pool point.
+    pub(super) spacing: f32,
+    pub(super) centre: Vec2,
+}
+
 /// The slot that the mover takes, if a rule gives one. The rules apply in this order.
 ///
 /// Rule 1 (arrive first; only if `own_reachable` is false: a true stationary body of the owner
@@ -122,15 +136,18 @@ pub(super) struct Choice {
 /// covers all three, so the acceptance cases check that every group ends.
 pub(super) fn select(
     planner: &super::route::Planner,
-    own_reachable: bool,
-    shorter_plan: bool,
-    arriving: bool,
-    spacing: f32,
-    centre: Vec2,
+    request: Request,
     pool_index: &MovementPoolIndex,
     claimants: &HashMap<SlotKey, usize>,
     assigned: &std::collections::HashSet<SlotKey>,
 ) -> Option<Choice> {
+    let Request {
+        own_reachable,
+        shorter_plan,
+        arriving,
+        spacing,
+        centre,
+    } = request;
     let units = planner.units;
     let index = planner.index;
     let unit = &units[index];

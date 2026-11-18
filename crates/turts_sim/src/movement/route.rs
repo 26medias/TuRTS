@@ -27,8 +27,11 @@ pub(super) const NODE_CAP: usize = 2048;
 /// find a free slot on the far side of a formation of some hundred bodies.
 pub(super) const FLOOD_CAP: usize = 8192;
 pub(super) const OWNER_CAP: usize = 65_536;
-/// The straight look-ahead that decides whether a mover needs a route.
-pub(super) const LOOK_AHEAD: f32 = 4.0;
+/// The straight look-ahead that decides whether a mover needs a route. It stays inside the
+/// radius that one directed search of `NODE_CAP` nodes can resolve. A longer look-ahead asks
+/// for routes that the bounded search cannot find, and a shorter one lets a group walk up to
+/// an obstacle and jam in front of it before the first mover turns.
+pub(super) const LOOK_AHEAD: f32 = 8.0;
 
 type Node = (i32, i32);
 

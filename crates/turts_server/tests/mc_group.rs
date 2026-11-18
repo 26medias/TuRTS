@@ -191,6 +191,81 @@ fn gm40_muster_forty_troopers_rest_disjoint_and_near_the_point() {
     mc::assert_rest_and_geometry_at(positions, &ids, target, 0.5, 4.58, 40, 420);
 }
 
+/// The economy-log replay runs the same frame solver with no private state. The claim
+/// exchanges and routes of a forty-unit group must replay bit for bit, and a forged position
+/// must be refused.
+#[test]
+#[ignore = "MC Task22 process acceptance; run under the assigned compiler lease"]
+fn gm40_and_post_ring_economy_logs_strictly_replay() {
+    for (label, target, ticks) in [
+        ("gm40-replay", (30.0, 30.0), 260),
+        ("post-replay", (21.0, 20.0), 300),
+    ] {
+        let dir = script_dir(label);
+        let script = dir.join("commands.json");
+        let order_log = dir.join("orders.log");
+        let economy_log = dir.join("economy.jsonl");
+        mc::write_script(
+            &script,
+            &[(
+                1,
+                0,
+                mc::point_order(TROOPERS.to_vec(), target.0, target.1, 1),
+            )],
+        );
+        let server = mc::start_muster(
+            &dir,
+            &script,
+            ticks,
+            &[
+                "--order-log",
+                order_log.to_str().unwrap(),
+                "--economy-log",
+                economy_log.to_str().unwrap(),
+            ],
+        );
+        mc::finish(server, &order_log, ticks);
+        let bytes = std::fs::read(&economy_log).expect("economy log is written");
+        let lines = bytes
+            .split(|byte| *byte == b'\n')
+            .filter(|line| !line.is_empty())
+            .collect::<Vec<_>>();
+        let mut records = lines
+            .iter()
+            .map(|line| serde_json::from_slice(line).expect("parse audit log record"))
+            .collect::<Vec<turts_audit::EconomyLogRecord>>();
+        assert!(
+            records.len() > ticks as usize / 2,
+            "{label}: the log covers the run"
+        );
+        let verdict = turts_audit::validate_records(&records);
+        assert!(verdict.is_ok(), "{label}: economy log replays: {verdict:?}");
+
+        // Red control: move one unit by one ULP in the last tick record. The replay must
+        // refuse it. Positions are stored as f32 bit patterns.
+        let (index, line) = lines
+            .iter()
+            .enumerate()
+            .rev()
+            .find(|(_, line)| line.starts_with(br#"{"record":"tick""#))
+            .expect("the log has a tick record");
+        let mut forged: serde_json::Value = serde_json::from_slice(line).unwrap();
+        for path in ["/data/state/raw_units/0/pos/0", "/data/state/units/0/pos/0"] {
+            let x = forged
+                .pointer_mut(path)
+                .expect("tick record holds unit positions");
+            *x = serde_json::json!(x.as_u64().unwrap() ^ 1);
+        }
+        records[index] = serde_json::from_value(forged).expect("forged record parses");
+        assert!(
+            turts_audit::validate_records(&records).is_err(),
+            "{label}: a forged one-ULP position must not replay"
+        );
+        drop(records);
+        let _ = std::fs::remove_file(&economy_log);
+    }
+}
+
 #[test]
 #[ignore = "MC Task22 process acceptance; run under the assigned compiler lease"]
 fn gma_crossing_and_second_group_while_first_moves_leave_no_rest_overlap() {
