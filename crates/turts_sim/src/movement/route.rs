@@ -4,8 +4,10 @@
 //! stationary body of its own owner. The search runs again each tick from the frame alone, so
 //! the economy-log replay gets the same answer with no private route state.
 //!
-//! - Obstacles are stationary bodies of the same owner. A body of another owner never changes
-//!   a route, so a hidden body cannot change one. Final certification still checks all bodies.
+//! - Obstacles are stationary bodies of the same owner, and resting bodies of another owner in
+//!   contact range (`CONTACT_GAP`). A body of another owner that no body of the mover's owner
+//!   touches never changes a route, so a hidden body cannot change one. Final certification
+//!   still checks all bodies.
 //! - The graph is a square lattice with a fixed world origin. A node is free when its centre
 //!   keeps `MARGIN` beyond contact from every obstacle, so an edge between two free nodes
 //!   cannot cut an obstacle. The first and the last leg get the exact swept check.
@@ -35,6 +37,14 @@ pub(super) const OWNER_CAP: usize = 65_536;
 /// look-ahead lets a group walk up to an obstacle and jam in front of it. No argument shows
 /// that 8.0 is right for another scene (see the review record of 2026-11-18).
 pub(super) const LOOK_AHEAD: f32 = 8.0;
+
+/// Contact range: the gap between two bodies at rest on adjacent pool slots, with a float
+/// allowance. A route goes round a stationary body of another owner only while a body of the
+/// mover's owner is this near to it at the start of the tick. The swept certificate already
+/// stops a mover that steps at the same body, so a route gets no fact beyond physical contact.
+/// The rule keeps no memory: a body that no body of the owner touches any more is unknown
+/// again. `exchange::spend_discovery` bounds the steps that find such a body.
+pub(super) const CONTACT_GAP: f32 = 0.1 + 1.0e-3;
 
 type Node = (i32, i32);
 
@@ -107,6 +117,9 @@ pub(super) struct Planner<'a> {
     /// mover. The search reads these, not the rows that the solver has already stepped, so the
     /// processing order inside a tick cannot change an obstacle.
     pub(super) stationary_at_start: &'a [bool],
+    /// For each stationary row, the other owners with a body in contact range of it at the
+    /// start of the tick (sorted).
+    pub(super) contact_witness: &'a [Vec<u8>],
     pub(super) start_stall: &'a [Option<u16>],
     /// Also treat a mover of the same owner as an obstacle while its certified stall clock is
     /// at `stall_ticks` or more. Two movers that press on each other then route round each other.
@@ -126,12 +139,19 @@ impl Planner<'_> {
     fn obstacle(&self, other_index: usize) -> bool {
         let unit = &self.units[self.index];
         let other = &self.units[other_index];
-        other_index != self.index
-            && other.owner_slot == unit.owner_slot
-            && (self.stationary_at_start[other_index]
-                || (self.soft
-                    && self.start_stall[other_index]
-                        .is_some_and(|clock| clock >= self.stall_ticks)))
+        if other_index == self.index {
+            return false;
+        }
+        if other.owner_slot != unit.owner_slot {
+            // A body of another owner: only at rest, and only in contact range of the owner.
+            return self.stationary_at_start[other_index]
+                && self.contact_witness[other_index]
+                    .binary_search(&unit.owner_slot)
+                    .is_ok();
+        }
+        self.stationary_at_start[other_index]
+            || (self.soft
+                && self.start_stall[other_index].is_some_and(|clock| clock >= self.stall_ticks))
     }
 
     /// The same search with true stationary bodies only.

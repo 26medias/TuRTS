@@ -1009,3 +1009,105 @@ fn singleton_nearest_slot_handles_clearance_circle_at_map_edge() {
     assert!(chosen.x >= radius);
     assert!(chosen.distance(holder.position) >= radius + holder.radius);
 }
+
+/// The six lattice sites round `point`, in angular order from the +x side.
+fn ring_one(point: Vec2, spacing: f32) -> [Vec2; 6] {
+    [(1, 0), (0, 1), (-1, 1), (-1, 0), (0, -1), (1, -1)].map(|(i, j): (i32, i32)| {
+        Vec2::new(
+            point.x + spacing * (i as f32 + 0.5 * j as f32),
+            point.y + spacing * (3.0_f32.sqrt() * 0.5 * j as f32),
+        )
+    })
+}
+
+fn three_members() -> Vec<SpreadMember> {
+    (0..3)
+        .map(|index| SpreadMember {
+            id: index,
+            position: Vec2::new(5.0 + 1.2 * index as f32, 5.0),
+            radius: 0.5,
+        })
+        .collect()
+}
+
+/// The gap between two resting neighbours is 0.1: a body cannot pass. A free site that resting
+/// bodies seal on every side is not a destination, although it is the nearest free site.
+#[test]
+fn a_pool_takes_no_slot_in_a_pocket_that_resting_bodies_seal() {
+    let point = Vec2::new(20.0, 20.0);
+    let reserved: Vec<_> = ring_one(point, 1.1)
+        .into_iter()
+        .map(|position| super::ReservedFootprint {
+            position,
+            radius: 0.5,
+        })
+        .collect();
+    let (pool, assignments) = spread_destinations(
+        &three_members(),
+        point,
+        &reserved,
+        &[],
+        Vec2::new(64.0, 64.0),
+    );
+    assert_eq!(assignments.len(), 3);
+    assert_eq!(pool.primary_count, 3);
+    assert!(
+        pool.slots.iter().all(|slot| slot.distance(point) > 1.0),
+        "the sealed centre site is a slot: {:?}",
+        pool.slots
+    );
+    // The canonical order holds: nearest first.
+    assert!(
+        pool.slots
+            .windows(2)
+            .all(|pair| pair[0].distance(point) <= pair[1].distance(point) + 1.0e-4)
+    );
+    for reserved in &reserved {
+        for slot in &pool.slots {
+            assert!(slot.distance(reserved.position) >= 1.1 - 1.0e-4);
+        }
+    }
+}
+
+/// The control of the test above: with two adjacent ring sites open the gap is wide enough
+/// (2.2 between the bodies at its sides), so the centre site is reachable and stays slot zero.
+#[test]
+fn a_pool_keeps_a_site_behind_a_gap_that_a_body_can_pass() {
+    let point = Vec2::new(20.0, 20.0);
+    let reserved: Vec<_> = ring_one(point, 1.1)[2..]
+        .iter()
+        .map(|&position| super::ReservedFootprint {
+            position,
+            radius: 0.5,
+        })
+        .collect();
+    let (pool, assignments) = spread_destinations(
+        &three_members(),
+        point,
+        &reserved,
+        &[],
+        Vec2::new(64.0, 64.0),
+    );
+    assert_eq!(assignments.len(), 3);
+    assert_eq!(pool.slots[0], point, "the open centre site is slot zero");
+    // One open ring site alone is not a gate: both bodies beside it are 1.905 apart.
+    let reserved: Vec<_> = ring_one(point, 1.1)[1..]
+        .iter()
+        .map(|&position| super::ReservedFootprint {
+            position,
+            radius: 0.5,
+        })
+        .collect();
+    let (pool, _) = spread_destinations(
+        &three_members(),
+        point,
+        &reserved,
+        &[],
+        Vec2::new(64.0, 64.0),
+    );
+    assert!(
+        pool.slots.iter().all(|slot| slot.distance(point) > 1.0),
+        "the centre site behind a closed gate is a slot: {:?}",
+        pool.slots
+    );
+}

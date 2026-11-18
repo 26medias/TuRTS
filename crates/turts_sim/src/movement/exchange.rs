@@ -32,6 +32,16 @@ const RESTART_UNIT: u8 = 0b100;
 /// mover that exchanges for ever still reaches the ordinary recovery and then `Blocked`.
 const RESTART_BUDGET: u8 = 12;
 
+/// Count one find of an unknown resting body of another owner against the restart budget.
+/// The stall clock keeps its value. Returns false when the budget is spent.
+pub(super) fn spend_discovery(progress: &mut super::MoveProgress) -> bool {
+    if progress.claim_count / RESTART_UNIT >= RESTART_BUDGET {
+        return false;
+    }
+    progress.claim_count += RESTART_UNIT;
+    true
+}
+
 pub(super) fn spare_claims(progress: &super::MoveProgress) -> u8 {
     progress.claim_count & SPARE_CLAIM_MASK
 }

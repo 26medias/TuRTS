@@ -275,6 +275,41 @@ pub(crate) fn step_frame_with_motion_guide(
         })
         .collect();
     let stationary_at_start: Vec<bool> = units.iter().map(super::route::stationary).collect();
+    // For each stationary row: the other owners that have a body in contact range of it at
+    // the start of the tick (sorted). Only such an owner may plan round this body
+    // (`route::Planner`).
+    let mut contact_witness: Vec<Vec<u8>> = vec![Vec::new(); units.len()];
+    if exchanges_claims
+        && units_at_start
+            .iter()
+            .any(|row| row.0 != units_at_start[0].0)
+    {
+        for index in 0..units.len() {
+            if !stationary_at_start[index] {
+                continue;
+            }
+            let (owner, radius) = units_at_start[index];
+            let mut owners: Vec<u8> = grid
+                .within_unsorted(
+                    &points,
+                    origins[index],
+                    radius + max_radius + super::route::CONTACT_GAP,
+                )
+                .into_iter()
+                .filter(|&other| {
+                    units_at_start[other].0 != owner
+                        && origins[index].distance(origins[other])
+                            <= radius + units_at_start[other].1 + super::route::CONTACT_GAP
+                })
+                .map(|other| units_at_start[other].0)
+                .collect();
+            owners.sort_unstable();
+            owners.dedup();
+            contact_witness[index] = owners;
+        }
+    }
+    // Rows that took the claim exchange and route path in this tick.
+    let mut planned = vec![false; units.len()];
     // A mover in a queue waits for the mover in front of it. Its stall clock must not run
     // while a touching mover of its owner has a smaller clock: that mover still made progress
     // more recently. In a real deadlock the clocks become equal and then run together.
@@ -1014,6 +1049,7 @@ pub(crate) fn step_frame_with_motion_guide(
             && progress.activity == MovementActivity::Moving
             && let Some(pool_index) = pool_indexes.get(&progress.pool_id)
         {
+            planned[index] = true;
             let stall_ticks = exchange_stall;
             let planner = super::route::Planner {
                 index,
@@ -1023,6 +1059,7 @@ pub(crate) fn step_frame_with_motion_guide(
                 max_radius,
                 bounds: frame.bounds,
                 stationary_at_start: &stationary_at_start,
+                contact_witness: &contact_witness,
                 start_stall: &start_stall,
                 soft: true,
                 stall_ticks,
@@ -1568,15 +1605,44 @@ pub(crate) fn step_frame_with_motion_guide(
             };
             let held = queued(index, &grid, &points);
             let clipped = outputs[index].position != raw_positions[index];
+            let at = outputs[index].position;
             let Some(progress) = outputs[index].progress.as_mut() else {
                 continue;
             };
+            // A planning mover ends the tick in contact range of a resting body of another
+            // owner that its owner did not know at the start of the tick. Contact knowledge
+            // has no memory, so such a find can repeat. Each find spends restart budget; a
+            // mover with no budget left becomes due for the ordinary stall recovery.
+            let find_without_budget = planned[index]
+                && grid
+                    .within_unsorted(
+                        &points,
+                        at,
+                        units_at_start[index].1 + max_radius + super::route::CONTACT_GAP,
+                    )
+                    .into_iter()
+                    .any(|other| {
+                        units_at_start[other].0 != units_at_start[index].0
+                            && stationary_at_start[other]
+                            && contact_witness[other]
+                                .binary_search(&units_at_start[index].0)
+                                .is_err()
+                            && at.distance(origins[other])
+                                <= units_at_start[index].1
+                                    + units_at_start[other].1
+                                    + super::route::CONTACT_GAP
+                    })
+                && !super::exchange::spend_discovery(progress);
             if exchanged[index] && clipped {
                 // The certificate refused the step toward the new slot, and this mover has
                 // no restart budget left: the slot change alone is no progress.
                 progress.stalled_ticks = if held { clock } else { clock.saturating_add(1) };
             } else if progress.stalled_ticks > clock && held {
                 progress.stalled_ticks = clock;
+            }
+            if find_without_budget {
+                // After the queue rule: a queue must not hold this clock back.
+                progress.stalled_ticks = progress.stalled_ticks.max(frame.tick_hz);
             }
         }
     }

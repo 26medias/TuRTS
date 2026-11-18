@@ -232,6 +232,77 @@ fn bodies_of_another_owner_out_of_contact_do_not_change_group_motion() {
     );
 }
 
+/// A closed wall of resting bodies of another owner between the group and its pool. The gap
+/// between two wall bodies is 0.05: no body can pass.
+fn foreign_wall() -> Vec<Vec2> {
+    (0..12)
+        .map(|step| Vec2::new(23.2 + 1.05 * step as f32, 25.0))
+        .collect()
+}
+
+/// The group knows a wall body only while one of its bodies is in contact range of it, and it
+/// keeps no memory of the wall. Two contracts:
+/// - Most bodies go round the wall and rest in the pool. Without the contact rule each body
+///   presses on the wall and fails.
+/// - The run ends. A body that finds unknown wall bodies again and again spends its restart
+///   budget and then fails with `Blocked`; it must not move for ever.
+#[test]
+fn group_goes_round_a_resting_wall_of_another_owner_that_it_touches() {
+    let walled = run(|index| index as u32 + 1, false, &foreign_wall());
+    assert_eq!(
+        walled.moving_at_end, 0,
+        "a body still moves at the end ({} Blocked)",
+        walled.blocked
+    );
+    let beyond = walled
+        .positions
+        .last()
+        .unwrap()
+        .iter()
+        .filter(|point| point.y > 26.0)
+        .count();
+    assert!(
+        beyond >= 20,
+        "only {beyond} of {COUNT} bodies went round the wall ({} Blocked)",
+        walled.blocked
+    );
+    assert_eq!(
+        beyond + walled.blocked,
+        COUNT,
+        "each body rests in the pool or fails with Blocked"
+    );
+}
+
+/// Hidden-world invariance: bodies of another owner that no body of the group comes into
+/// contact range of must not change one position, even while the group plans round a wall
+/// that it touches.
+#[test]
+fn untouched_bodies_of_another_owner_do_not_change_a_route_round_a_touched_wall() {
+    let baseline = run(|index| index as u32 + 1, false, &foreign_wall());
+    let mut foreign = foreign_wall();
+    // Inside the search windows of the routes round both wall ends, but never touched.
+    for step in 0..4 {
+        foreign.push(Vec2::new(14.0, 20.0 + 1.05 * step as f32));
+        foreign.push(Vec2::new(44.0, 20.0 + 1.05 * step as f32));
+        foreign.push(Vec2::new(27.0 + 1.05 * step as f32, 38.5));
+    }
+    let hidden = run(|index| index as u32 + 1, false, &foreign);
+    let nearest = hidden
+        .positions
+        .iter()
+        .flatten()
+        .flat_map(|point| foreign[12..].iter().map(|body| body.distance(*point)))
+        .fold(f32::INFINITY, f32::min);
+    assert!(
+        nearest > 2.0 * RADIUS + 0.2,
+        "the scene is wrong: a group body came within {nearest} of an added body"
+    );
+    assert!(
+        baseline.positions == hidden.positions,
+        "untouched bodies of another owner changed the group motion"
+    );
+}
+
 /// A small scene that the old recovery cannot solve. Two own bodies rest side by side on the
 /// pool lattice. The slot `far` lies behind the gap between them (the gap is narrower than a
 /// body), and the slot `near` lies in front of it. Mover A comes first and claims `far`; the

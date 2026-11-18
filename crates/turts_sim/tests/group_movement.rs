@@ -1440,6 +1440,89 @@ fn second_group_same_point() {
     );
 }
 
+/// The cross-owner scene of `second_group_same_point` with opaque inputs changed: the owner
+/// slots swapped (connection order), or the unit ids of each group reversed. The result is the
+/// sorted rest positions of each group, as bit patterns.
+fn second_group_rest_points(swap_owners: bool, reverse_ids: bool) -> [Vec<(u32, u32)>; 2] {
+    let order = |mut group: Vec<(f32, f32)>| {
+        if reverse_ids {
+            group.reverse();
+        }
+        group
+    };
+    let first = order(
+        (0..40)
+            .map(|k| (10.0 + 1.2 * (k % 8) as f32, 10.0 + 1.2 * (k / 8) as f32))
+            .collect(),
+    );
+    let parked: Vec<_> = (0..40)
+        .map(|k| (5.0 + 1.2 * (k % 8) as f32, 50.0 + 1.2 * (k / 8) as f32))
+        .collect();
+    let second = order(
+        (0..40)
+            .map(|k| (10.0 + 1.2 * (k % 8) as f32, 30.0 + 1.2 * (k / 8) as f32))
+            .collect(),
+    );
+    let (first_owner, second_owner) = if swap_owners { (1, 0) } else { (0, 1) };
+    let mut positions = first.clone();
+    positions.extend(parked);
+    let owners: Vec<_> = (0..80)
+        .map(|i| if i < 40 { first_owner } else { second_owner })
+        .collect();
+    let mut app = app_with_units(&positions, &owners);
+    let target = Vec2::new(40.0, 30.0);
+    send_order(
+        &mut app,
+        first_owner,
+        (1..=40).collect(),
+        target,
+        7,
+        QueueMode::Replace,
+    );
+    for _ in 0..horizon_ticks(&first, target) {
+        app.update();
+    }
+    set_positions(&mut app, 41, &second);
+    send_order(
+        &mut app,
+        second_owner,
+        (41..=80).collect(),
+        target,
+        7,
+        QueueMode::Replace,
+    );
+    for _ in 0..horizon_ticks(&second, target) {
+        app.update();
+    }
+    assert_settled(&mut app, &(1..=80).collect::<Vec<_>>());
+    let units = snapshot(app.world_mut());
+    let group = |ids: std::ops::RangeInclusive<u32>| {
+        let mut points: Vec<_> = units
+            .iter()
+            .filter(|unit| ids.contains(&unit.unit_id))
+            .map(|unit| (unit.pos.x.to_bits(), unit.pos.y.to_bits()))
+            .collect();
+        points.sort_unstable();
+        points
+    };
+    [group(1..=40), group(41..=80)]
+}
+
+/// The unit id and the owner slot are opaque: neither may decide where a body rests when a
+/// group moves to a point that a group of another owner holds.
+#[test]
+fn second_group_same_point_ignores_unit_ids_and_owner_slots() {
+    let baseline = second_group_rest_points(false, false);
+    assert!(
+        baseline == second_group_rest_points(true, false),
+        "swapped owner slots changed the rest points"
+    );
+    assert!(
+        baseline == second_group_rest_points(false, true),
+        "reversed unit ids changed the rest points"
+    );
+}
+
 #[test]
 fn new_order_while_moving() {
     let positions: Vec<_> = (0..40)

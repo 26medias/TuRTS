@@ -172,6 +172,9 @@ pub fn spread_destinations_with_context(
     let wanted = members.len() + spare_count;
 
     let mut slots = Vec::with_capacity(wanted);
+    // The axial lattice site of each entry of `slots`, and true when a footprint closed a site.
+    let mut sites: Vec<(i32, i32)> = Vec::with_capacity(wanted);
+    let mut obstructed = false;
     let mut nearest_indices = std::collections::BTreeSet::new();
     let mut pool_points: Vec<crate::grid::GridPoint> = Vec::new();
     let mut pool_grid = crate::grid::UniformGrid::new(&pool_points, spacing);
@@ -185,6 +188,7 @@ pub fn spread_destinations_with_context(
         &pool_grid,
     ) {
         slots.push(point);
+        sites.push((0, 0));
         nearest_indices.insert((0_i64, 0_i64, slots.len() - 1));
         // The origin is slot zero in the canonical nearest-first hex pool.
         pool_points.push(crate::grid::GridPoint {
@@ -192,6 +196,8 @@ pub fn spread_destinations_with_context(
             position: point,
         });
         pool_grid = crate::grid::UniformGrid::new(&pool_points, spacing);
+    } else {
+        obstructed |= inside_bounds(point, max_radius, context);
     }
     let mut ring = 1_i32;
     let max_dx = (point.x - max_radius)
@@ -230,6 +236,7 @@ pub fn spread_destinations_with_context(
                 ) {
                     let index = slots.len();
                     slots.push(candidate);
+                    sites.push((i, j));
                     let ring_key = i64::from(i) * i64::from(i)
                         + i64::from(i) * i64::from(j)
                         + i64::from(j) * i64::from(j);
@@ -243,6 +250,8 @@ pub fn spread_destinations_with_context(
                         position: candidate,
                     });
                     pool_grid.insert(index, candidate);
+                } else {
+                    obstructed |= inside_bounds(candidate, max_radius, context);
                 }
             }
         }
@@ -309,10 +318,30 @@ pub fn spread_destinations_with_context(
         };
         return (pool, Vec::new());
     }
-    slots = nearest_indices
-        .iter()
-        .map(|(_, _, index)| slots[*index])
-        .collect();
+    let reachable = if obstructed && members.len() > 1 {
+        reachable_pool(
+            ReachInput {
+                point,
+                radius: max_radius,
+                spacing,
+                context,
+                excluded_units,
+                first_ring: ring.min(ring_limit),
+                ring_limit,
+            },
+            &sites,
+            members.len(),
+            wanted,
+        )
+    } else {
+        None
+    };
+    slots = reachable.unwrap_or_else(|| {
+        nearest_indices
+            .iter()
+            .map(|(_, _, index)| slots[*index])
+            .collect()
+    });
 
     let primary = &slots[..members.len()];
     let mut spatial_members = members.iter().collect::<Vec<_>>();
@@ -679,6 +708,142 @@ fn free_slot_grid(
             .within_unsorted(pool_points, candidate, radius * 2.0 + 0.1)
             .into_iter()
             .all(|i| candidate.distance(already_in_pool[i]) >= radius * 2.0 + 0.1 - 1.0e-5)
+}
+
+fn inside_bounds(candidate: Vec2, radius: f32, context: &SpreadContext) -> bool {
+    candidate.is_finite()
+        && candidate.x >= radius
+        && candidate.y >= radius
+        && candidate.x <= context.bounds.x - radius
+        && candidate.y <= context.bounds.y - radius
+}
+
+struct ReachInput<'a> {
+    point: Vec2,
+    radius: f32,
+    spacing: f32,
+    context: &'a SpreadContext,
+    excluded_units: &'a std::collections::HashSet<u32>,
+    /// The last ring that the free-site scan examined.
+    first_ring: i32,
+    ring_limit: i32,
+}
+
+/// The rings that the reachability flood adds outside the last ring that gives a slot.
+const REACH_MARGIN_RINGS: i32 = 2;
+
+/// The nearest free lattice sites that a body can reach from outside the pool.
+///
+/// A footprint closes each site that it denies. The gap between two resting neighbours is
+/// narrower than a body, so a body steps between two adjacent open sites only if one of the
+/// two sites beside that step is open as well (the same gate rule as the claim exchange). The
+/// flood starts at the open sites of the outer ring and goes inward. A free site that the
+/// flood does not reach is in a pocket that footprints seal: no body can come to rest there.
+///
+/// The result has the canonical nearest-first order. It is `None` when the reachable sites are
+/// fewer than the members; the caller then keeps the unfiltered pool.
+fn reachable_pool(
+    input: ReachInput<'_>,
+    sites: &[(i32, i32)],
+    members: usize,
+    wanted: usize,
+) -> Option<Vec<Vec2>> {
+    const SIDES: [(i32, i32); 6] = [(1, 0), (0, 1), (-1, 1), (-1, 0), (0, -1), (1, -1)];
+    let position = |(i, j): (i32, i32)| {
+        Vec2::new(
+            input.point.x + input.spacing * (i as f32 + 0.5 * j as f32),
+            input.point.y + input.spacing * (3.0_f32.sqrt() * 0.5 * j as f32),
+        )
+    };
+    let hex_ring = |(i, j): (i32, i32)| i.abs().max(j.abs()).max((i + j).abs());
+    let mut open: std::collections::HashMap<(i32, i32), bool> =
+        sites.iter().map(|site| (*site, true)).collect();
+    let scanned = input.first_ring;
+    let no_pool = crate::grid::UniformGrid::new(&[], input.spacing);
+    let mut is_open = |site: (i32, i32)| {
+        if hex_ring(site) <= scanned {
+            // The scan examined each site of these rings: a site not in `sites` is closed.
+            return open.get(&site).copied().unwrap_or(false);
+        }
+        *open.entry(site).or_insert_with(|| {
+            free_slot_grid(
+                position(site),
+                input.radius,
+                input.context,
+                input.excluded_units,
+                &[],
+                &[],
+                &no_pool,
+            )
+        })
+    };
+    let key = |site: (i32, i32)| {
+        let (i, j) = (i64::from(site.0), i64::from(site.1));
+        let angle_key = if site == (0, 0) {
+            0
+        } else {
+            (angle(position(site), input.point) * 1_000_000.0).round() as i64
+        };
+        (i * i + i * j + j * j, angle_key)
+    };
+    let mut outer = (scanned + REACH_MARGIN_RINGS).min(input.ring_limit + REACH_MARGIN_RINGS);
+    loop {
+        // Flood from the open sites of the outer ring over the rings inside it.
+        let mut seen = std::collections::HashSet::new();
+        let mut queue = std::collections::VecDeque::new();
+        for side in 0..6 {
+            for step in 0..outer {
+                let site = match side {
+                    0 => (outer - step, step),
+                    1 => (-step, outer),
+                    2 => (-outer, outer - step),
+                    3 => (-outer + step, -step),
+                    4 => (step, -outer),
+                    _ => (outer, -outer + step),
+                };
+                if is_open(site) && seen.insert(site) {
+                    queue.push_back(site);
+                }
+            }
+        }
+        while let Some(site) = queue.pop_front() {
+            for side in 0..6 {
+                let step = |side: usize| (site.0 + SIDES[side].0, site.1 + SIDES[side].1);
+                let next = step(side);
+                if hex_ring(next) > outer
+                    || seen.contains(&next)
+                    || !is_open(next)
+                    || !(is_open(step((side + 5) % 6)) || is_open(step((side + 1) % 6)))
+                {
+                    continue;
+                }
+                seen.insert(next);
+                queue.push_back(next);
+            }
+        }
+        let mut reached: Vec<_> = seen
+            .iter()
+            .filter(|site| hex_ring(**site) <= outer - REACH_MARGIN_RINGS)
+            .map(|site| (key(*site), *site))
+            .collect();
+        reached.sort_unstable();
+        reached.truncate(wanted);
+        let inner = i64::from(outer - REACH_MARGIN_RINGS + 1);
+        let minimum_unseen_ring_key = (3 * inner * inner + 3) / 4;
+        let complete = reached.len() == wanted
+            && reached
+                .last()
+                .is_some_and(|((ring_key, _), _)| *ring_key < minimum_unseen_ring_key);
+        if complete || outer - REACH_MARGIN_RINGS >= input.ring_limit {
+            return (reached.len() >= members).then(|| {
+                reached
+                    .into_iter()
+                    .map(|(_, site)| position(site))
+                    .collect()
+            });
+        }
+        outer += 1;
+    }
 }
 
 pub(super) fn minimum_unseen_hex_radius(ring: i32, spacing: f32) -> f32 {

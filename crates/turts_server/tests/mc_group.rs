@@ -193,26 +193,45 @@ fn gm40_muster_forty_troopers_rest_disjoint_and_near_the_point() {
 
 /// The economy-log replay runs the same frame solver with no private state. The claim
 /// exchanges and routes of a forty-unit group must replay bit for bit, and a forged position
-/// must be refused.
+/// must be refused. The two-order rows cover the reachable-site spread and the contact rule.
 #[test]
 #[ignore = "MC Task22 process acceptance; run under the assigned compiler lease"]
 fn gm40_and_post_ring_economy_logs_strictly_replay() {
-    for (label, target, ticks) in [
-        ("gm40-replay", (30.0, 30.0), 260),
-        ("post-replay", (21.0, 20.0), 300),
+    let one = |target: (f32, f32)| {
+        vec![(
+            1,
+            0,
+            mc::point_order(TROOPERS.to_vec(), target.0, target.1, 1),
+        )]
+    };
+    // Two orders to one point: the second pool lies round the bodies of the first order, so
+    // the spread must leave out sealed sites. At the clamped corner the movers also touch
+    // resting bodies of slot 1, so a route reads contact facts of another owner.
+    let two = |target: (f32, f32), first: Vec<u32>, second: Vec<u32>| {
+        vec![
+            (1, 0, mc::point_order(first, target.0, target.1, 2)),
+            (200, 0, mc::point_order(second, target.0, target.1, 3)),
+        ]
+    };
+    for (label, entries, ticks) in [
+        ("gm40-replay", one((30.0, 30.0)), 260),
+        ("post-replay", one((21.0, 20.0)), 300),
+        (
+            "same-point-replay",
+            two((40.0, 30.0), (21..=40).collect(), (1..=20).collect()),
+            420,
+        ),
+        (
+            "corner-replay",
+            two((70.0, 55.0), (1..=20).collect(), (21..=40).collect()),
+            420,
+        ),
     ] {
         let dir = script_dir(label);
         let script = dir.join("commands.json");
         let order_log = dir.join("orders.log");
         let economy_log = dir.join("economy.jsonl");
-        mc::write_script(
-            &script,
-            &[(
-                1,
-                0,
-                mc::point_order(TROOPERS.to_vec(), target.0, target.1, 1),
-            )],
-        );
+        mc::write_script(&script, &entries);
         let server = mc::start_muster(
             &dir,
             &script,
