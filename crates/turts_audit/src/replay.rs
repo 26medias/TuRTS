@@ -9759,8 +9759,12 @@ fn validate_movement_transition(previous: &AuditState, current: &AuditState) -> 
                 .then_some(row.unit_id)
         })
         .collect();
-    let outputs =
-        turts_sim::movement::step_frame_preserving_resting(&frame, delta, &preserve_resting_units);
+    let outputs = turts_sim::movement::step_frame_preserving_resting_at_tick(
+        &frame,
+        delta,
+        &preserve_resting_units,
+        current.economy.tick,
+    );
     let mut movement_progress = Vec::new();
     let mut plain_movement_progress = Vec::new();
     let mut physical_escapes = Vec::new();
@@ -10302,6 +10306,111 @@ mod tests {
             pos: WorldPos { x: 2.0, y: 2.0 },
         }];
         state
+    }
+
+    #[test]
+    fn exhausted_body_guard_replays_the_actual_production_tick_not_epoch_zero() {
+        // Opposing pairs saturate the owner service cap during a real fixed tick.
+        let targets = (1..6000u32)
+            .map(|n| {
+                let pair = n / 2;
+                let side = n % 2;
+                (
+                    n + 1,
+                    bevy::math::Vec2::new(
+                        2. + (pair % 100) as f32 * 2. + side as f32 * 0.1,
+                        2. + (pair / 100) as f32 * 2.,
+                    ),
+                )
+            })
+            .collect::<Vec<_>>();
+        let move_targets = targets
+            .iter()
+            .map(|(id, p)| {
+                (
+                    *id,
+                    *p + bevy::math::Vec2::X * if id % 2 == 1 { 1.0 } else { -1.0 },
+                )
+            })
+            .collect::<Vec<_>>();
+        let records = automatic_move_log_with_pending_on_map(
+            turts_sim::UnitOrders::default(),
+            &targets,
+            vec![],
+            bevy::math::Vec2::splat(2.),
+            0,
+            bevy::math::Vec2::new(300., 300.),
+            0.01,
+            &[],
+            &move_targets,
+            &[],
+            vec![],
+            None,
+            None,
+            Some(bevy::math::Vec2::new(3., 2.)),
+            None,
+        );
+        validate_records(&records)
+            .expect("actual budget-exhausted production stream must replay exactly");
+        let EconomyLogRecord::Initial(initial) = &records[0] else {
+            panic!("initial capture missing");
+        };
+        let frame = turts_sim::movement::MovementFrame {
+            bounds: bevy::math::Vec2::new(300., 300.),
+            tick_hz: 20,
+            pools: Default::default(),
+            units: initial
+                .raw_units
+                .iter()
+                .map(|u| turts_sim::movement::MovementFrameUnit {
+                    unit_id: u.unit_id,
+                    owner_slot: u.owner_slot,
+                    unit_type: u.unit_type,
+                    position: bevy::math::Vec2::new(u.pos.x, u.pos.y),
+                    radius: 0.01,
+                    speed: Some(3.),
+                    target: u.move_target.map(|p| bevy::math::Vec2::new(p.x, p.y)),
+                    progress: None,
+                    plain_progress: None,
+                    physical_escape: None,
+                })
+                .collect(),
+        };
+        let tick = records
+            .iter()
+            .filter_map(|record| match record {
+                EconomyLogRecord::Tick { state, .. } => Some(state.economy.tick),
+                _ => None,
+            })
+            .max()
+            .expect("real fixed tick was captured");
+        let epoch_zero = turts_sim::movement::step_frame(&frame, 0.05);
+        let actual_tick = turts_sim::movement::step_frame_at_tick(&frame, 0.05, tick);
+        let changed = epoch_zero
+            .iter()
+            .zip(&actual_tick)
+            .filter(|(a, b)| a.position != b.position)
+            .count();
+        assert!(
+            changed > 0,
+            "fixture must expose incorrect epoch-zero service recipients"
+        );
+        let moved = actual_tick
+            .iter()
+            .filter(|row| {
+                frame
+                    .units
+                    .iter()
+                    .find(|u| u.unit_id == row.unit_id)
+                    .unwrap()
+                    .position
+                    != row.position
+            })
+            .count();
+        assert!(
+            moved > 0 && moved < frame.units.len(),
+            "fixture must perform real movement and retain budget waits"
+        );
     }
 
     fn automatic_move_log(
