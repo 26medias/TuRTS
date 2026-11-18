@@ -44,6 +44,19 @@ pub(crate) struct WorkState {
     pub(crate) wait: TerrainWorkWait,
     /// Private CAS state. It is never a public surface revision.
     pub(crate) source_revision: Option<u64>,
+    #[serde(default)]
+    pub(crate) approach: Option<Approach>,
+}
+/// Fixed candidate geometry belongs to one cell and order. Refusals are valid
+/// only for the viewer's planning epoch, never a private terrain revision.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub(crate) struct Approach {
+    poses: [bevy_math::Vec2; 8],
+    current: Option<usize>,
+    refused: u8,
+    epoch: u64,
+    select: bool,
+    kind: turts_mod_api::UnitTypeId,
 }
 #[derive(Resource, Default)]
 pub(crate) struct TerrainWorkRuntime {
@@ -167,6 +180,7 @@ pub(crate) fn begin_order(world: &mut World, unit: u32, order: &Order) {
             required: None,
             wait: TerrainWorkWait::Unknown,
             source_revision: None,
+            approach: None,
         },
     );
 }
@@ -276,7 +290,12 @@ fn selected_cell(world: &World, unit: u32, order: &Order) -> Option<Cell> {
     });
     cells_ranked.first().map(|(_, x, y)| Cell { x: *x, y: *y })
 }
-fn approach(world: &mut World, unit: u32, cell: Cell) {
+fn approach(world: &mut World, unit: u32, cell: Cell, state: &mut WorkState) {
+    // Accepted replacements keep the old work order until capped dispatch.
+    // Do not select fresh old-order movement while that replacement is pending.
+    if crate::orders::unit_has_pending_move(world, unit) {
+        return;
+    }
     use turts_rules::terrain::{
         Ratio,
         geometry::{Budget, Point, Traversal},
@@ -349,6 +368,57 @@ fn approach(world: &mut World, unit: u32, cell: Cell) {
         phase: &phase,
         owner,
     };
+    if state
+        .approach
+        .as_ref()
+        .is_some_and(|approach| approach.kind != kind)
+    {
+        state.approach = None;
+        clear_approach_motion(world, unit);
+    }
+    if let Some(saved) = &mut state.approach {
+        if saved.epoch != phase.planning_epoch(owner) {
+            saved.epoch = phase.planning_epoch(owner);
+            saved.refused = 0;
+            saved.select = saved.current.is_none();
+        }
+        if let Some(index) = saved.current {
+            let endpoint = saved.poses[index];
+            // Work still refused at a physically reached approach. That point
+            // cannot reveal or reach the current cell by waiting indefinitely;
+            // try another of the same bounded permitted candidates.
+            let failed = position == endpoint
+                || world
+                    .get_resource::<super::navigation::TerrainNavigation>()
+                    .is_some_and(|navigation| {
+                        navigation.approach_blocked(unit, owner, position, endpoint, &phase)
+                    });
+            if !failed {
+                if world
+                    .get::<crate::MoveTarget>(entity)
+                    .map(|target| target.0)
+                    != Some(endpoint)
+                {
+                    clear_approach_motion(world, unit);
+                    world.entity_mut(entity).insert(crate::MoveTarget(endpoint));
+                }
+                return;
+            }
+            // Projection and midpoint candidates can coincide. Reject that
+            // physical point once, not once per duplicate array entry.
+            for (other, &pose) in saved.poses.iter().enumerate() {
+                if pose == endpoint {
+                    saved.refused |= 1 << other;
+                }
+            }
+            saved.current = None;
+            saved.select = true;
+            clear_approach_motion(world, unit);
+        }
+        if !saved.select {
+            return;
+        }
+    }
     let grid = phase.grid();
     let width = f64::from(grid.cell_width) / f64::from(grid.length_scale);
     let min_x = f64::from(cell.x) * width;
@@ -391,6 +461,15 @@ fn approach(world: &mut World, unit: u32, cell: Cell) {
         bevy_math::Vec2::new(middle_x, north),
         bevy_math::Vec2::new(middle_x, south),
     ];
+    let saved = state.approach.get_or_insert(Approach {
+        poses,
+        current: None,
+        refused: 0,
+        epoch: phase.planning_epoch(owner),
+        select: true,
+        kind,
+    });
+    saved.select = false;
     let point = |value: bevy_math::Vec2| Point {
         x: f64::from(value.x),
         y: f64::from(value.y),
@@ -405,7 +484,10 @@ fn approach(world: &mut World, unit: u32, cell: Cell) {
         )
         .ok();
     let mut candidates = Vec::new();
-    for pose in poses {
+    for (index, &pose) in saved.poses.iter().enumerate() {
+        if saved.refused & (1 << index) != 0 {
+            continue;
+        }
         let Ok(support) = grid.disk_support(
             &surface,
             point(pose),
@@ -433,7 +515,7 @@ fn approach(world: &mut World, unit: u32, cell: Cell) {
         let direct = swept.result.is_ok() && swept.numerator == swept.denominator;
         let dx = f64::from(pose.x) - f64::from(position.x);
         let dy = f64::from(pose.y) - f64::from(position.y);
-        candidates.push((!direct, dx * dx + dy * dy, pose));
+        candidates.push((!direct, dx * dx + dy * dy, pose, index));
     }
     candidates.sort_by(|left, right| {
         left.0
@@ -442,17 +524,23 @@ fn approach(world: &mut World, unit: u32, cell: Cell) {
             .then_with(|| left.2.x.total_cmp(&right.2.x))
             .then_with(|| left.2.y.total_cmp(&right.2.y))
     });
-    if let Some((_, _, point)) = candidates.first() {
+    if let Some((_, _, point, index)) = candidates.first() {
+        saved.current = Some(*index);
+        clear_approach_motion(world, unit);
         // A supported endpoint without a straight connector still uses the
         // existing permitted route search. It never grants straight-line motion.
         world
             .entity_mut(entity)
             .insert(crate::world::MoveTarget(*point));
     } else {
-        world
-            .entity_mut(entity)
-            .remove::<crate::world::MoveTarget>();
+        clear_approach_motion(world, unit);
     }
+}
+fn clear_approach_motion(world: &mut World, unit: u32) {
+    let Some(entity) = unit_entity(world, unit) else {
+        return;
+    };
+    crate::orders::clear_current_motion(world, entity, unit);
 }
 /// After Acquire and before Repair/Combat. Existing claimants retain their cell until completion
 /// or loss of physical eligibility. New equal physical starts remain contested.
@@ -534,6 +622,13 @@ pub(crate) fn run(world: &mut World) {
     let mut occupancy = step::Occupancy::capture(world);
     for (unit, order) in orders {
         let Some(cell) = selected_cell(world, unit, &order) else {
+            if crate::orders::unit_has_pending_move(world, unit) {
+                // Normal order completion cancels old movement envelopes and
+                // promotes queued work. Let the accepted replacement dispatch
+                // first instead; retain the completed old job until that point.
+                clear_approach_motion(world, unit);
+                continue;
+            }
             let may_create_or_remove_body = unit_entity(world, unit)
                 .and_then(|entity| world.get::<UnitOrders>(entity))
                 .is_some_and(|orders| !orders.queue.is_empty());
@@ -563,9 +658,12 @@ pub(crate) fn run(world: &mut World) {
                 required: None,
                 wait: TerrainWorkWait::Unknown,
                 source_revision: None,
+                approach: None,
             });
         let api_cell = Some(step::api_cell(cell));
         if state.cell != api_cell {
+            state.approach = None;
+            clear_approach_motion(world, unit);
             state.cell = api_cell;
             if !state.banked {
                 state.done = 0;
@@ -598,6 +696,12 @@ pub(crate) fn run(world: &mut World) {
                     continue;
                 }
                 state.wait = TerrainWorkWait::Working;
+                if state.approach.take().is_some()
+                    || unit_entity(world, unit)
+                        .is_some_and(|entity| world.get::<crate::MoveTarget>(entity).is_some())
+                {
+                    clear_approach_motion(world, unit);
+                }
                 let entity = unit_entity(world, unit).expect("prepared live work actor");
                 world
                     .entity_mut(entity)
@@ -631,7 +735,7 @@ pub(crate) fn run(world: &mut World) {
                     reason,
                     StepWait::Unknown | StepWait::OutOfReach | StepWait::Blocked
                 ) {
-                    approach(world, unit, cell);
+                    approach(world, unit, cell, &mut state);
                 }
                 if matches!(reason, StepWait::Unknown) {
                     state.required = None;

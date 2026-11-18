@@ -6,7 +6,8 @@ const {spawn,spawnSync}=require('node:child_process'),{chromium}=require('playwr
 const [prepared,fixtures,output]=process.argv.slice(2);if(!output)throw Error('PREPARED TERRAIN_FIXTURES OUTPUT');
 const metadata=JSON.parse(fs.readFileSync(path.join(fixtures,'terrain-fps.json')));fs.mkdirSync(output,{recursive:false});
 const selectedViews=process.env.TURTS_TERRAIN_FPS_VIEWS?process.env.TURTS_TERRAIN_FPS_VIEWS.split(','):metadata.zooms;if(!selectedViews.length||new Set(selectedViews).size!==selectedViews.length||selectedViews.some(view=>!metadata.zooms.includes(view)))throw Error('Invalid selected camera views');
-const result={status:'RUNNING',metadata,selected_views:selectedViews,omitted_views:metadata.zooms.filter(view=>!selectedViews.includes(view)),rows:[],errors:[]},save=()=>fs.writeFileSync(path.join(output,'result.json'),JSON.stringify(result,null,2));
+const groupMode=process.env.TURTS_TERRAIN_FPS_GROUP==='1';
+const result={status:'RUNNING',group_movement:groupMode,metadata,selected_views:selectedViews,omitted_views:metadata.zooms.filter(view=>!selectedViews.includes(view)),rows:[],errors:[]},save=()=>fs.writeFileSync(path.join(output,'result.json'),JSON.stringify(result,null,2));
 const sleep=ms=>new Promise(r=>setTimeout(r,ms)),assert=(ok,message)=>{if(!ok)throw Error(message);};
 const port=()=>new Promise(resolve=>{const listener=net.createServer();listener.listen(0,'127.0.0.1',()=>{const value=listener.address().port;listener.close(()=>resolve(value));});});
 function project(scene,[x,y,z=0]){const m=scene.clip_from_world,v=[x,z,y,1],c=[0,1,2,3].map(r=>v.reduce((n,k,i)=>n+m[i*4+r]*k,0));const [left,top,w,h]=scene.viewport_logical_rect;return[left+(c[0]/c[3]+1)*w/2,top+(1-c[1]/c[3])*h/2];}
@@ -34,6 +35,26 @@ const delta=(a,b)=>Math.max(...a.map((n,i)=>Math.abs(n-b[i])));
   let d=await wait(read,d=>d.replicated_world?.terrain,'No permitted editable terrain');const actor=d.replicated_world.units.find(u=>u.unit_id===metadata.work.actor);assert(actor&&actor.owner_slot===d.slot,'Intended existing tool actor is not owned');const body=project(s,[...actor.pos,.9]);await click(...body);await wait(read,d=>d.selection?.includes(metadata.work.actor),'Real body selection failed');
   const ui=await wait(()=>page.evaluate(()=>JSON.parse(turts_ui())),rows=>rows.some(w=>w.visible&&w.enabled&&w.widget_action?.tool===metadata.work.tool),'Real tool button missing');const tool=ui.find(w=>w.visible&&w.enabled&&w.widget_action?.tool===metadata.work.tool),[x,y,w,h]=tool.rect;await click(x+w/2,y+h/2);s=await scene();await click(...project(s,metadata.work.reference));s=await scene();await click(...project(s,metadata.work.point));
   d=await wait(read,d=>d.replicated_world.terrain.work.some(w=>w.unit===metadata.work.actor&&w.completed_work>0),'Actual terrain work never progressed');await sleep(metadata.warmup_ms);
+  let groupIds=[];
+  if(groupMode){
+   const goal=[25,10,0];
+   const candidates=d.replicated_world.units.filter(u=>u.owner_slot===d.slot&&u.unit_id!==metadata.work.actor&&Math.hypot(u.pos[0]-goal[0],u.pos[1]-goal[1])>12);
+   assert(candidates.length>=2,'Not enough owned actors for the group move');
+   // Select separate owned bodies at their current physical locations.
+   for(const u of candidates){
+    s=await scene();d=await read();const current=d.replicated_world.units.find(v=>v.unit_id===u.unit_id);if(!current)continue;
+    const p=project(s,[...current.pos,.9]);if(p[0]<10||p[0]>1270||p[1]<10||p[1]>710)continue;
+    if(groupIds.length)await page.keyboard.down('Shift');
+    await click(...p);await page.keyboard.up('Shift');
+    d=await read();if(!d.selection?.includes(u.unit_id))continue;
+    groupIds=d.selection.filter(id=>id!==metadata.work.actor);
+    if(groupIds.length>=2)break;
+   }
+   assert(groupIds.length>=2&&!d.selection.includes(metadata.work.actor),'Could not select two owned moving actors');
+   s=await scene();const point=project(s,goal);assert(point[0]>0&&point[0]<1280&&point[1]>0&&point[1]<720,'Group goal outside viewport');
+   await page.mouse.move(...point);await page.mouse.click(...point,{button:'right',delay:80});
+   await wait(read,x=>groupIds.every(id=>x.replicated_world.unit_orders.some(o=>o.unit===id&&o.current?.order?.endsWith(':order_move'))),'Group move was not accepted');
+  }
   if(zoom==='normal') {
    s=await scene();assert(Math.abs(eyeHeight(s)-metadata.camera_bounds.normal)<.05,'Normal authored camera height changed');assert(s.animations.filter(a=>a.visible&&!a.dead).length===400,'Normal sample must keep all400 detailed actors visible');
   } else {
@@ -49,14 +70,19 @@ const delta=(a,b)=>Math.max(...a.map((n,i)=>Math.abs(n-b[i])));
   fs.writeFileSync(path.join(rowOut,'after.json'),JSON.stringify({debug:after,scene:await scene()},null,2));
   assert(zoom!=='normal'||sample.states.every(s=>s.visible===400),'Normal sample lost visible actors');assert(sample.states.every(s=>s.units===400&&s.models.length===400&&s.models.every(m=>m.ready&&m.quality==='high'&&m.level===0)),'400 detailed High actor workload changed');assert(sample.states.every(s=>s.shared_skins?.enabled&&s.shared_skins.matrices<=65536),'Bounded High shared skin path missing');const actors=before.replicated_world.units,melee=actors.filter(u=>/:(warrior|swordsman)$/.test(u.content_id)).length,ranged=actors.filter(u=>u.content_id==='skirmish:soldier').length-1;
   const observedAttack=new Set(sample.states.flatMap(s=>s.attacking_ids));
-  assert(actors.every(u=>u.unit_id===metadata.work.actor||observedAttack.has(u.unit_id)),'A combatant never played its accepted attack animation during the sample');
-  assert(sample.states.some(s=>s.melee===melee&&s.ranged>=ranged),'Accepted mixed attack animation coverage was not observed');
+  if(!groupMode){
+   assert(actors.every(u=>u.unit_id===metadata.work.actor||observedAttack.has(u.unit_id)),'A combatant never played its accepted attack animation during the sample');
+   assert(sample.states.some(s=>s.melee===melee&&s.ranged>=ranged),'Accepted mixed attack animation coverage was not observed');
+  }else{
+   const moved=groupIds.filter(id=>{const a=before.replicated_world.units.find(u=>u.unit_id===id),b=after.replicated_world.units.find(u=>u.unit_id===id);return a&&b&&Math.hypot(a.pos[0]-b.pos[0],a.pos[1]-b.pos[1])>.01;});
+   row.group_ids=groupIds;row.group_moved=moved;assert(moved.length>=2,'Fewer than two selected group members moved during the FPS sample');
+  }
   const commands=JSON.parse(fs.readFileSync(path.join(fixtures,'battle400-commands.json'))),formerTarget=commands.find(c=>c.envelope.units.includes(metadata.work.actor)).envelope.target.Unit;
   const firstHealth=sample.states[0].effects.combat.health,lastHealth=sample.states.at(-1).effects.combat.health;
   row.expected_mix={melee,ranged};row.former_tool_target=formerTarget;row.damaged_units=actors.filter(u=>lastHealth[u.unit_id]<firstHealth[u.unit_id]).map(u=>u.unit_id);
   save();
   assert(sample.states.every(s=>Object.keys(s.effects.combat.health).length===400&&Object.values(s.effects.combat.health).every(h=>h>0)),'Accepted live combat actor set changed');
-  assert(actors.every(u=>u.unit_id===formerTarget||lastHealth[u.unit_id]<firstHealth[u.unit_id]),'A required victim stopped taking damage during mixed combat');assert(fps>=30,'High400 terrain FPS floor failed');assert(!result.errors.length,'Browser errors');
+  if(!groupMode)assert(actors.every(u=>u.unit_id===formerTarget||lastHealth[u.unit_id]<firstHealth[u.unit_id]),'A required victim stopped taking damage during mixed combat');assert(fps>=30,'High400 terrain FPS floor failed');assert(!result.errors.length,'Browser errors');
   fs.writeFileSync(path.join(rowOut,'after.json'),JSON.stringify({debug:after,scene:await scene()},null,2));await page.screenshot({path:path.join(rowOut,'after.png')});row.validation_status='PASS';save();await context.close();context=null;fs.rmSync(profile,{recursive:true,force:true});profile=null;server.kill('SIGTERM');await new Promise(resolve=>server.once('exit',resolve));server=null;
  }
  result.status=selectedViews.length===metadata.zooms.length?'PASS':'PASS_SELECTED';

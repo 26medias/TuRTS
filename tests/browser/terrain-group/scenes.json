@@ -1,0 +1,3240 @@
+{
+  "schema": "turts-public-terrain-group-fixtures-v1",
+  "status": "SOURCE_FROZEN_UNRUN",
+  "predecessor": "merge accepted M4 before final M4b acceptance",
+  "tick_hz": 20,
+  "profiles": {
+    "small": {
+      "radius": 0.4,
+      "speed": 3.5,
+      "max_step": 0,
+      "max_grade": [
+        0,
+        1
+      ],
+      "pick_height": 0.68,
+      "visual_scale": 0.8
+    },
+    "large": {
+      "radius": 1.1,
+      "speed": 2.5,
+      "max_step": 0,
+      "max_grade": [
+        0,
+        1
+      ],
+      "pick_height": 1.2,
+      "visual_scale": 1.423529411764706
+    },
+    "blocker": {
+      "radius": 1.4,
+      "speed": 2.5,
+      "max_step": 0,
+      "max_grade": [
+        0,
+        1
+      ],
+      "pick_height": 1.54,
+      "visual_scale": 1.8117647058823527
+    }
+  },
+  "variants": {
+    "allocation": "authored or reversed placement order, with physical labels unchanged",
+    "members": "authored or reversed envelope units, with actor/order intent unchanged",
+    "connection": "browser tabs connect in authored/reversed sequence and bind commands by actual public receiving slot"
+  },
+  "packages": {
+    "quarry": {
+      "small": "walker",
+      "large": "crawler",
+      "material": "soil_layer",
+      "ore_material": "iron_layer",
+      "resource": "soil",
+      "small_class": "light",
+      "large_class": "wide",
+      "dig": "spade",
+      "fill": "backfill",
+      "destination": "Inventory"
+    },
+    "terrain_stockyard": {
+      "small": "porter",
+      "large": "carrier",
+      "material": "loam_layer",
+      "ore_material": "crystal_layer",
+      "resource": "loam",
+      "small_class": "compact",
+      "large_class": "broad",
+      "dig": "scraper",
+      "fill": "leveler",
+      "destination": "SlotBalances"
+    }
+  },
+  "scenes": {
+    "GM1-wide": {
+      "row": "GM1",
+      "map": {
+        "size": [
+          64,
+          48
+        ],
+        "cell_width": 1,
+        "elevation_step": 0.25,
+        "chunk_width": 8,
+        "floor": -8,
+        "ceiling": 8,
+        "ridge": {
+          "min": [
+            30,
+            0
+          ],
+          "max": [
+            34,
+            48
+          ],
+          "elevation": 4
+        },
+        "visibility": "AllVisible; paired privacy variants belong to GM6 native contracts",
+        "passage_y": [
+          20,
+          28
+        ]
+      },
+      "actors": [
+        {
+          "label": "small.0.0",
+          "kind": "small",
+          "position": [
+            10.0,
+            17.0
+          ],
+          "slot": 0
+        },
+        {
+          "label": "small.0.1",
+          "kind": "small",
+          "position": [
+            11.5,
+            17.0
+          ],
+          "slot": 0
+        },
+        {
+          "label": "small.0.2",
+          "kind": "small",
+          "position": [
+            13.0,
+            17.0
+          ],
+          "slot": 0
+        },
+        {
+          "label": "small.0.3",
+          "kind": "small",
+          "position": [
+            14.5,
+            17.0
+          ],
+          "slot": 0
+        },
+        {
+          "label": "small.0.4",
+          "kind": "small",
+          "position": [
+            16.0,
+            17.0
+          ],
+          "slot": 0
+        },
+        {
+          "label": "small.0.5",
+          "kind": "small",
+          "position": [
+            17.5,
+            17.0
+          ],
+          "slot": 0
+        },
+        {
+          "label": "small.1.0",
+          "kind": "small",
+          "position": [
+            10.0,
+            18.5
+          ],
+          "slot": 0
+        },
+        {
+          "label": "small.1.1",
+          "kind": "small",
+          "position": [
+            11.5,
+            18.5
+          ],
+          "slot": 0
+        },
+        {
+          "label": "small.1.2",
+          "kind": "small",
+          "position": [
+            13.0,
+            18.5
+          ],
+          "slot": 0
+        },
+        {
+          "label": "small.1.3",
+          "kind": "small",
+          "position": [
+            14.5,
+            18.5
+          ],
+          "slot": 0
+        },
+        {
+          "label": "small.1.4",
+          "kind": "small",
+          "position": [
+            16.0,
+            18.5
+          ],
+          "slot": 0
+        },
+        {
+          "label": "small.1.5",
+          "kind": "small",
+          "position": [
+            17.5,
+            18.5
+          ],
+          "slot": 0
+        },
+        {
+          "label": "small.2.0",
+          "kind": "small",
+          "position": [
+            10.0,
+            20.0
+          ],
+          "slot": 0
+        },
+        {
+          "label": "small.2.1",
+          "kind": "small",
+          "position": [
+            11.5,
+            20.0
+          ],
+          "slot": 0
+        },
+        {
+          "label": "small.2.2",
+          "kind": "small",
+          "position": [
+            13.0,
+            20.0
+          ],
+          "slot": 0
+        },
+        {
+          "label": "small.2.3",
+          "kind": "small",
+          "position": [
+            14.5,
+            20.0
+          ],
+          "slot": 0
+        },
+        {
+          "label": "small.2.4",
+          "kind": "small",
+          "position": [
+            16.0,
+            20.0
+          ],
+          "slot": 0
+        },
+        {
+          "label": "small.2.5",
+          "kind": "small",
+          "position": [
+            17.5,
+            20.0
+          ],
+          "slot": 0
+        },
+        {
+          "label": "small.3.0",
+          "kind": "small",
+          "position": [
+            10.0,
+            21.5
+          ],
+          "slot": 0
+        },
+        {
+          "label": "small.3.1",
+          "kind": "small",
+          "position": [
+            11.5,
+            21.5
+          ],
+          "slot": 0
+        },
+        {
+          "label": "small.3.2",
+          "kind": "small",
+          "position": [
+            13.0,
+            21.5
+          ],
+          "slot": 0
+        },
+        {
+          "label": "small.3.3",
+          "kind": "small",
+          "position": [
+            14.5,
+            21.5
+          ],
+          "slot": 0
+        },
+        {
+          "label": "small.3.4",
+          "kind": "small",
+          "position": [
+            16.0,
+            21.5
+          ],
+          "slot": 0
+        },
+        {
+          "label": "small.3.5",
+          "kind": "small",
+          "position": [
+            17.5,
+            21.5
+          ],
+          "slot": 0
+        },
+        {
+          "label": "large.0.0",
+          "kind": "large",
+          "position": [
+            8.0,
+            30.0
+          ],
+          "slot": 0
+        },
+        {
+          "label": "large.0.1",
+          "kind": "large",
+          "position": [
+            10.5,
+            30.0
+          ],
+          "slot": 0
+        },
+        {
+          "label": "large.0.2",
+          "kind": "large",
+          "position": [
+            13.0,
+            30.0
+          ],
+          "slot": 0
+        },
+        {
+          "label": "large.0.3",
+          "kind": "large",
+          "position": [
+            15.5,
+            30.0
+          ],
+          "slot": 0
+        },
+        {
+          "label": "large.1.0",
+          "kind": "large",
+          "position": [
+            8.0,
+            32.5
+          ],
+          "slot": 0
+        },
+        {
+          "label": "large.1.1",
+          "kind": "large",
+          "position": [
+            10.5,
+            32.5
+          ],
+          "slot": 0
+        },
+        {
+          "label": "large.1.2",
+          "kind": "large",
+          "position": [
+            13.0,
+            32.5
+          ],
+          "slot": 0
+        },
+        {
+          "label": "large.1.3",
+          "kind": "large",
+          "position": [
+            15.5,
+            32.5
+          ],
+          "slot": 0
+        },
+        {
+          "label": "large.2.0",
+          "kind": "large",
+          "position": [
+            8.0,
+            35.0
+          ],
+          "slot": 0
+        },
+        {
+          "label": "large.2.1",
+          "kind": "large",
+          "position": [
+            10.5,
+            35.0
+          ],
+          "slot": 0
+        },
+        {
+          "label": "large.2.2",
+          "kind": "large",
+          "position": [
+            13.0,
+            35.0
+          ],
+          "slot": 0
+        },
+        {
+          "label": "large.2.3",
+          "kind": "large",
+          "position": [
+            15.5,
+            35.0
+          ],
+          "slot": 0
+        }
+      ],
+      "commands": [
+        {
+          "tick": 0,
+          "slot": 0,
+          "actors": [
+            "small.0.0",
+            "small.0.1",
+            "small.0.2",
+            "small.0.3",
+            "small.0.4",
+            "small.0.5",
+            "small.1.0",
+            "small.1.1",
+            "small.1.2",
+            "small.1.3",
+            "small.1.4",
+            "small.1.5",
+            "small.2.0",
+            "small.2.1",
+            "small.2.2",
+            "small.2.3",
+            "small.2.4",
+            "small.2.5",
+            "small.3.0",
+            "small.3.1",
+            "small.3.2",
+            "small.3.3",
+            "small.3.4",
+            "small.3.5",
+            "large.0.0",
+            "large.0.1",
+            "large.0.2",
+            "large.0.3",
+            "large.1.0",
+            "large.1.1",
+            "large.1.2",
+            "large.1.3",
+            "large.2.0",
+            "large.2.1",
+            "large.2.2",
+            "large.2.3"
+          ],
+          "action": "move",
+          "point": [
+            50,
+            24
+          ],
+          "queue": "Replace",
+          "group": 1
+        }
+      ],
+      "initial_deadline_ticks": 2400,
+      "deadline_after_open_ticks": null,
+      "expect": {
+        "eligible": "all36",
+        "settle_target": [
+          50,
+          24
+        ],
+        "no_overlap": true,
+        "full_swept_clearance": true,
+        "first_arrival_retains_point": true
+      },
+      "notes": []
+    },
+    "GM2-narrow": {
+      "row": "GM2",
+      "map": {
+        "size": [
+          64,
+          48
+        ],
+        "cell_width": 1,
+        "elevation_step": 0.25,
+        "chunk_width": 8,
+        "floor": -8,
+        "ceiling": 8,
+        "ridge": {
+          "min": [
+            30,
+            0
+          ],
+          "max": [
+            34,
+            48
+          ],
+          "elevation": 4
+        },
+        "visibility": "AllVisible; paired privacy variants belong to GM6 native contracts",
+        "passage_y": [
+          23,
+          25
+        ]
+      },
+      "actors": [
+        {
+          "label": "small.0.0",
+          "kind": "small",
+          "position": [
+            10.0,
+            17.0
+          ],
+          "slot": 0
+        },
+        {
+          "label": "small.0.1",
+          "kind": "small",
+          "position": [
+            11.5,
+            17.0
+          ],
+          "slot": 0
+        },
+        {
+          "label": "small.0.2",
+          "kind": "small",
+          "position": [
+            13.0,
+            17.0
+          ],
+          "slot": 0
+        },
+        {
+          "label": "small.0.3",
+          "kind": "small",
+          "position": [
+            14.5,
+            17.0
+          ],
+          "slot": 0
+        },
+        {
+          "label": "small.0.4",
+          "kind": "small",
+          "position": [
+            16.0,
+            17.0
+          ],
+          "slot": 0
+        },
+        {
+          "label": "small.0.5",
+          "kind": "small",
+          "position": [
+            17.5,
+            17.0
+          ],
+          "slot": 0
+        },
+        {
+          "label": "small.1.0",
+          "kind": "small",
+          "position": [
+            10.0,
+            18.5
+          ],
+          "slot": 0
+        },
+        {
+          "label": "small.1.1",
+          "kind": "small",
+          "position": [
+            11.5,
+            18.5
+          ],
+          "slot": 0
+        },
+        {
+          "label": "small.1.2",
+          "kind": "small",
+          "position": [
+            13.0,
+            18.5
+          ],
+          "slot": 0
+        },
+        {
+          "label": "small.1.3",
+          "kind": "small",
+          "position": [
+            14.5,
+            18.5
+          ],
+          "slot": 0
+        },
+        {
+          "label": "small.1.4",
+          "kind": "small",
+          "position": [
+            16.0,
+            18.5
+          ],
+          "slot": 0
+        },
+        {
+          "label": "small.1.5",
+          "kind": "small",
+          "position": [
+            17.5,
+            18.5
+          ],
+          "slot": 0
+        },
+        {
+          "label": "small.2.0",
+          "kind": "small",
+          "position": [
+            10.0,
+            20.0
+          ],
+          "slot": 0
+        },
+        {
+          "label": "small.2.1",
+          "kind": "small",
+          "position": [
+            11.5,
+            20.0
+          ],
+          "slot": 0
+        },
+        {
+          "label": "small.2.2",
+          "kind": "small",
+          "position": [
+            13.0,
+            20.0
+          ],
+          "slot": 0
+        },
+        {
+          "label": "small.2.3",
+          "kind": "small",
+          "position": [
+            14.5,
+            20.0
+          ],
+          "slot": 0
+        },
+        {
+          "label": "small.2.4",
+          "kind": "small",
+          "position": [
+            16.0,
+            20.0
+          ],
+          "slot": 0
+        },
+        {
+          "label": "small.2.5",
+          "kind": "small",
+          "position": [
+            17.5,
+            20.0
+          ],
+          "slot": 0
+        },
+        {
+          "label": "small.3.0",
+          "kind": "small",
+          "position": [
+            10.0,
+            21.5
+          ],
+          "slot": 0
+        },
+        {
+          "label": "small.3.1",
+          "kind": "small",
+          "position": [
+            11.5,
+            21.5
+          ],
+          "slot": 0
+        },
+        {
+          "label": "small.3.2",
+          "kind": "small",
+          "position": [
+            13.0,
+            21.5
+          ],
+          "slot": 0
+        },
+        {
+          "label": "small.3.3",
+          "kind": "small",
+          "position": [
+            14.5,
+            21.5
+          ],
+          "slot": 0
+        },
+        {
+          "label": "small.3.4",
+          "kind": "small",
+          "position": [
+            16.0,
+            21.5
+          ],
+          "slot": 0
+        },
+        {
+          "label": "small.3.5",
+          "kind": "small",
+          "position": [
+            17.5,
+            21.5
+          ],
+          "slot": 0
+        },
+        {
+          "label": "large.0.0",
+          "kind": "large",
+          "position": [
+            8.0,
+            30.0
+          ],
+          "slot": 0
+        },
+        {
+          "label": "large.0.1",
+          "kind": "large",
+          "position": [
+            10.5,
+            30.0
+          ],
+          "slot": 0
+        },
+        {
+          "label": "large.0.2",
+          "kind": "large",
+          "position": [
+            13.0,
+            30.0
+          ],
+          "slot": 0
+        },
+        {
+          "label": "large.0.3",
+          "kind": "large",
+          "position": [
+            15.5,
+            30.0
+          ],
+          "slot": 0
+        },
+        {
+          "label": "large.1.0",
+          "kind": "large",
+          "position": [
+            8.0,
+            32.5
+          ],
+          "slot": 0
+        },
+        {
+          "label": "large.1.1",
+          "kind": "large",
+          "position": [
+            10.5,
+            32.5
+          ],
+          "slot": 0
+        },
+        {
+          "label": "large.1.2",
+          "kind": "large",
+          "position": [
+            13.0,
+            32.5
+          ],
+          "slot": 0
+        },
+        {
+          "label": "large.1.3",
+          "kind": "large",
+          "position": [
+            15.5,
+            32.5
+          ],
+          "slot": 0
+        },
+        {
+          "label": "large.2.0",
+          "kind": "large",
+          "position": [
+            8.0,
+            35.0
+          ],
+          "slot": 0
+        },
+        {
+          "label": "large.2.1",
+          "kind": "large",
+          "position": [
+            10.5,
+            35.0
+          ],
+          "slot": 0
+        },
+        {
+          "label": "large.2.2",
+          "kind": "large",
+          "position": [
+            13.0,
+            35.0
+          ],
+          "slot": 0
+        },
+        {
+          "label": "large.2.3",
+          "kind": "large",
+          "position": [
+            15.5,
+            35.0
+          ],
+          "slot": 0
+        }
+      ],
+      "commands": [
+        {
+          "tick": 0,
+          "slot": 0,
+          "actors": [
+            "small.0.0",
+            "small.0.1",
+            "small.0.2",
+            "small.0.3",
+            "small.0.4",
+            "small.0.5",
+            "small.1.0",
+            "small.1.1",
+            "small.1.2",
+            "small.1.3",
+            "small.1.4",
+            "small.1.5",
+            "small.2.0",
+            "small.2.1",
+            "small.2.2",
+            "small.2.3",
+            "small.2.4",
+            "small.2.5",
+            "small.3.0",
+            "small.3.1",
+            "small.3.2",
+            "small.3.3",
+            "small.3.4",
+            "small.3.5",
+            "large.0.0",
+            "large.0.1",
+            "large.0.2",
+            "large.0.3",
+            "large.1.0",
+            "large.1.1",
+            "large.1.2",
+            "large.1.3",
+            "large.2.0",
+            "large.2.1",
+            "large.2.2",
+            "large.2.3"
+          ],
+          "action": "move",
+          "point": [
+            50,
+            24
+          ],
+          "queue": "Replace",
+          "group": 1
+        },
+        {
+          "tick": 2401,
+          "slot": 0,
+          "actors": [
+            "small.0.0"
+          ],
+          "action": "excavate",
+          "cells": {
+            "min": [
+              30,
+              20
+            ],
+            "max": [
+              34,
+              28
+            ]
+          },
+          "target_elevation": 0,
+          "queue": "Replace",
+          "group": 0
+        }
+      ],
+      "initial_deadline_ticks": 2400,
+      "deadline_after_open_ticks": 2400,
+      "expect": {
+        "eligible": "small24 initially; large12 only after ordinary widening",
+        "settle_target": [
+          50,
+          24
+        ],
+        "no_overlap": true,
+        "full_swept_clearance": true,
+        "first_arrival_retains_point": true
+      },
+      "notes": [
+        "At tick2401 require all small actors complete and large actors safely waiting; send only the editor work order. Never replace/reissue the large actors move order. Widening removes96 prisms; Quarry worker inventory256 cannot require a hidden resource pool."
+      ]
+    },
+    "GM3-opposing-large": {
+      "row": "GM3",
+      "map": {
+        "size": [
+          64,
+          48
+        ],
+        "cell_width": 1,
+        "elevation_step": 0.25,
+        "chunk_width": 8,
+        "floor": -8,
+        "ceiling": 8,
+        "ridge": {
+          "min": [
+            30,
+            0
+          ],
+          "max": [
+            34,
+            48
+          ],
+          "elevation": 4
+        },
+        "visibility": "AllVisible; paired privacy variants belong to GM6 native contracts",
+        "passage_y": [
+          22,
+          25
+        ]
+      },
+      "actors": [
+        {
+          "label": "left.small.0",
+          "kind": "small",
+          "position": [
+            29.4,
+            25.2
+          ],
+          "slot": 0
+        },
+        {
+          "label": "left.small.1",
+          "kind": "small",
+          "position": [
+            29.4,
+            26.4
+          ],
+          "slot": 0
+        },
+        {
+          "label": "left.small.2",
+          "kind": "small",
+          "position": [
+            29.4,
+            27.6
+          ],
+          "slot": 0
+        },
+        {
+          "label": "left.small.3",
+          "kind": "small",
+          "position": [
+            28.2,
+            25.2
+          ],
+          "slot": 0
+        },
+        {
+          "label": "left.small.4",
+          "kind": "small",
+          "position": [
+            28.2,
+            26.4
+          ],
+          "slot": 0
+        },
+        {
+          "label": "left.small.5",
+          "kind": "small",
+          "position": [
+            28.2,
+            27.6
+          ],
+          "slot": 0
+        },
+        {
+          "label": "left.large.0",
+          "kind": "large",
+          "position": [
+            28.8,
+            21.2
+          ],
+          "slot": 0
+        },
+        {
+          "label": "left.large.1",
+          "kind": "large",
+          "position": [
+            26.4,
+            21.2
+          ],
+          "slot": 0
+        },
+        {
+          "label": "left.large.2",
+          "kind": "large",
+          "position": [
+            26.4,
+            26.8
+          ],
+          "slot": 0
+        },
+        {
+          "label": "right.small.0",
+          "kind": "small",
+          "position": [
+            34.6,
+            25.2
+          ],
+          "slot": 1
+        },
+        {
+          "label": "right.small.1",
+          "kind": "small",
+          "position": [
+            34.6,
+            26.4
+          ],
+          "slot": 1
+        },
+        {
+          "label": "right.small.2",
+          "kind": "small",
+          "position": [
+            34.6,
+            27.6
+          ],
+          "slot": 1
+        },
+        {
+          "label": "right.small.3",
+          "kind": "small",
+          "position": [
+            35.8,
+            25.2
+          ],
+          "slot": 1
+        },
+        {
+          "label": "right.small.4",
+          "kind": "small",
+          "position": [
+            35.8,
+            26.4
+          ],
+          "slot": 1
+        },
+        {
+          "label": "right.small.5",
+          "kind": "small",
+          "position": [
+            35.8,
+            27.6
+          ],
+          "slot": 1
+        },
+        {
+          "label": "right.large.0",
+          "kind": "large",
+          "position": [
+            35.2,
+            21.2
+          ],
+          "slot": 1
+        },
+        {
+          "label": "right.large.1",
+          "kind": "large",
+          "position": [
+            37.6,
+            21.2
+          ],
+          "slot": 1
+        },
+        {
+          "label": "right.large.2",
+          "kind": "large",
+          "position": [
+            37.6,
+            26.8
+          ],
+          "slot": 1
+        }
+      ],
+      "commands": [
+        {
+          "tick": 0,
+          "slot": 0,
+          "actors": [
+            "left.small.0",
+            "left.small.1",
+            "left.small.2",
+            "left.small.3",
+            "left.small.4",
+            "left.small.5",
+            "left.large.0",
+            "left.large.1",
+            "left.large.2"
+          ],
+          "action": "move",
+          "point": [
+            48,
+            23.5
+          ],
+          "queue": "Replace",
+          "group": 1
+        },
+        {
+          "tick": 0,
+          "slot": 1,
+          "actors": [
+            "right.small.0",
+            "right.small.1",
+            "right.small.2",
+            "right.small.3",
+            "right.small.4",
+            "right.small.5",
+            "right.large.0",
+            "right.large.1",
+            "right.large.2"
+          ],
+          "action": "move",
+          "point": [
+            16,
+            23.5
+          ],
+          "queue": "Replace",
+          "group": 2
+        }
+      ],
+      "deadline_ticks": 2400,
+      "bays": {
+        "left": {
+          "min": [
+            24,
+            20
+          ],
+          "max": [
+            30,
+            28
+          ]
+        },
+        "right": {
+          "min": [
+            34,
+            20
+          ],
+          "max": [
+            40,
+            28
+          ]
+        },
+        "clear_centerline": {
+          "y": 23.5,
+          "large_swept_y": [
+            22.4,
+            24.6
+          ]
+        },
+        "feasible_sequence": [
+          "Right cohort waits at its authored bay poses, all outside the central radius1.1 transit strip.",
+          "Left small actors leave their parking columns front-to-back, then the three left large actors join y23.5 and cross.",
+          "Left actors settle in the east plateau near(48,23.5), outside the right bay.",
+          "Right cohort crosses and settles near(16,23.5)."
+        ],
+        "witness_only": "Both actual move commands are issued at tick0. The controller must choose the sequential crossing; the witness is not a scripted Hold workaround."
+      },
+      "expect": {
+        "both_cohorts_complete": true,
+        "opposing_large_bodies_cannot_pass_abreast": "2*(2*1.1)=4.4 >3 corridor width",
+        "stable_blocked_is_failure": true
+      }
+    },
+    "GM3-settled-blocker": {
+      "row": "GM3",
+      "map": {
+        "size": [
+          64,
+          48
+        ],
+        "cell_width": 1,
+        "elevation_step": 0.25,
+        "chunk_width": 8,
+        "floor": -8,
+        "ceiling": 8,
+        "ridge": {
+          "min": [
+            30,
+            0
+          ],
+          "max": [
+            34,
+            48
+          ],
+          "elevation": 4
+        },
+        "visibility": "AllVisible; paired privacy variants belong to GM6 native contracts",
+        "passage_y": [
+          22,
+          25
+        ]
+      },
+      "actors": [
+        {
+          "label": "left.small.0",
+          "kind": "small",
+          "position": [
+            29.4,
+            25.2
+          ],
+          "slot": 0
+        },
+        {
+          "label": "left.small.1",
+          "kind": "small",
+          "position": [
+            29.4,
+            26.4
+          ],
+          "slot": 0
+        },
+        {
+          "label": "left.small.2",
+          "kind": "small",
+          "position": [
+            29.4,
+            27.6
+          ],
+          "slot": 0
+        },
+        {
+          "label": "left.small.3",
+          "kind": "small",
+          "position": [
+            28.2,
+            25.2
+          ],
+          "slot": 0
+        },
+        {
+          "label": "left.small.4",
+          "kind": "small",
+          "position": [
+            28.2,
+            26.4
+          ],
+          "slot": 0
+        },
+        {
+          "label": "left.small.5",
+          "kind": "small",
+          "position": [
+            28.2,
+            27.6
+          ],
+          "slot": 0
+        },
+        {
+          "label": "left.large.0",
+          "kind": "large",
+          "position": [
+            28.8,
+            21.2
+          ],
+          "slot": 0
+        },
+        {
+          "label": "left.large.1",
+          "kind": "large",
+          "position": [
+            26.4,
+            21.2
+          ],
+          "slot": 0
+        },
+        {
+          "label": "left.large.2",
+          "kind": "large",
+          "position": [
+            26.4,
+            26.8
+          ],
+          "slot": 0
+        },
+        {
+          "label": "right.small.0",
+          "kind": "small",
+          "position": [
+            34.6,
+            25.2
+          ],
+          "slot": 1
+        },
+        {
+          "label": "right.small.1",
+          "kind": "small",
+          "position": [
+            34.6,
+            26.4
+          ],
+          "slot": 1
+        },
+        {
+          "label": "right.small.2",
+          "kind": "small",
+          "position": [
+            34.6,
+            27.6
+          ],
+          "slot": 1
+        },
+        {
+          "label": "right.small.3",
+          "kind": "small",
+          "position": [
+            35.8,
+            25.2
+          ],
+          "slot": 1
+        },
+        {
+          "label": "right.small.4",
+          "kind": "small",
+          "position": [
+            35.8,
+            26.4
+          ],
+          "slot": 1
+        },
+        {
+          "label": "right.small.5",
+          "kind": "small",
+          "position": [
+            35.8,
+            27.6
+          ],
+          "slot": 1
+        },
+        {
+          "label": "right.large.0",
+          "kind": "large",
+          "position": [
+            35.2,
+            21.2
+          ],
+          "slot": 1
+        },
+        {
+          "label": "right.large.1",
+          "kind": "large",
+          "position": [
+            37.6,
+            21.2
+          ],
+          "slot": 1
+        },
+        {
+          "label": "right.large.2",
+          "kind": "large",
+          "position": [
+            37.6,
+            26.8
+          ],
+          "slot": 1
+        },
+        {
+          "label": "blocker",
+          "kind": "blocker",
+          "position": [
+            32,
+            23.5
+          ],
+          "slot": 0
+        }
+      ],
+      "commands": [
+        {
+          "tick": 0,
+          "slot": 0,
+          "actors": [
+            "blocker"
+          ],
+          "action": "move",
+          "point": [
+            32,
+            23.5
+          ],
+          "queue": "Replace",
+          "group": 3
+        },
+        {
+          "tick": 10,
+          "slot": 0,
+          "actors": [
+            "left.small.0",
+            "left.small.1",
+            "left.small.2",
+            "left.small.3",
+            "left.small.4",
+            "left.small.5",
+            "left.large.0",
+            "left.large.1",
+            "left.large.2"
+          ],
+          "action": "move",
+          "point": [
+            48,
+            23.5
+          ],
+          "queue": "Replace",
+          "group": 1
+        },
+        {
+          "tick": 10,
+          "slot": 1,
+          "actors": [
+            "right.small.0",
+            "right.small.1",
+            "right.small.2",
+            "right.small.3",
+            "right.small.4",
+            "right.small.5",
+            "right.large.0",
+            "right.large.1",
+            "right.large.2"
+          ],
+          "action": "move",
+          "point": [
+            16,
+            23.5
+          ],
+          "queue": "Replace",
+          "group": 2
+        }
+      ],
+      "blocker_radius": 1.4,
+      "deadline_ticks": 2410,
+      "bays": {
+        "left": {
+          "min": [
+            24,
+            20
+          ],
+          "max": [
+            30,
+            28
+          ]
+        },
+        "right": {
+          "min": [
+            34,
+            20
+          ],
+          "max": [
+            40,
+            28
+          ]
+        },
+        "clear_centerline": {
+          "y": 23.5,
+          "large_swept_y": [
+            22.4,
+            24.6
+          ]
+        },
+        "feasible_sequence": [
+          "Right cohort waits at its authored bay poses, all outside the central radius1.1 transit strip.",
+          "Left small actors leave their parking columns front-to-back, then the three left large actors join y23.5 and cross.",
+          "Left actors settle in the east plateau near(48,23.5), outside the right bay.",
+          "Right cohort crosses and settles near(16,23.5)."
+        ],
+        "witness_only": "Both actual move commands are issued at tick0. The controller must choose the sequential crossing; the witness is not a scripted Hold workaround."
+      },
+      "expect": {
+        "stable_safe_wait": true,
+        "both_cohorts_complete_after_obstruction_moves": false,
+        "blocker_not_displaced_by_later_arrivals": true
+      },
+      "clearance_proof": {
+        "corridor_y": [
+          22,
+          25
+        ],
+        "blocker_center_y": 23.5,
+        "blocker_radius": 1.4,
+        "each_remaining_side_gap": 0.1,
+        "small_diameter": 0.8,
+        "conclusion": "Each side gap0.1 is less than small diameter0.8. Ridge spans the map boundary, so no side route exists. Blocker arrives10 ticks before traffic."
+      }
+    },
+    "GM3-temporary-obstruction": {
+      "row": "GM3",
+      "map": {
+        "size": [
+          64,
+          48
+        ],
+        "cell_width": 1,
+        "elevation_step": 0.25,
+        "chunk_width": 8,
+        "floor": -8,
+        "ceiling": 8,
+        "ridge": {
+          "min": [
+            30,
+            0
+          ],
+          "max": [
+            34,
+            48
+          ],
+          "elevation": 4
+        },
+        "visibility": "AllVisible; paired privacy variants belong to GM6 native contracts",
+        "passage_y": [
+          22,
+          25
+        ]
+      },
+      "actors": [
+        {
+          "label": "mover",
+          "kind": "small",
+          "position": [
+            28.2,
+            23.5
+          ],
+          "slot": 0
+        },
+        {
+          "label": "blocker",
+          "kind": "blocker",
+          "position": [
+            32,
+            23.5
+          ],
+          "slot": 0
+        }
+      ],
+      "commands": [
+        {
+          "tick": 0,
+          "slot": 0,
+          "actors": [
+            "blocker"
+          ],
+          "action": "move",
+          "point": [
+            32,
+            23.5
+          ],
+          "queue": "Replace",
+          "group": 3
+        },
+        {
+          "tick": 10,
+          "slot": 0,
+          "actors": [
+            "mover"
+          ],
+          "action": "move",
+          "point": [
+            48,
+            23.5
+          ],
+          "queue": "Replace",
+          "group": 1
+        },
+        {
+          "tick": 160,
+          "slot": 0,
+          "actors": [
+            "blocker"
+          ],
+          "action": "move",
+          "point": [
+            42,
+            30
+          ],
+          "queue": "Replace",
+          "group": 3
+        }
+      ],
+      "blocker_radius": 1.4,
+      "deadline_ticks": 1200,
+      "expect": {
+        "temporary_blocker_clears_at_tick": 160,
+        "mover_reaches_original_goal": true
+      }
+    },
+    "GM3-movable-blocker": {
+      "row": "GM3",
+      "map": {
+        "size": [
+          64,
+          48
+        ],
+        "cell_width": 1,
+        "elevation_step": 0.25,
+        "chunk_width": 8,
+        "floor": -8,
+        "ceiling": 8,
+        "ridge": {
+          "min": [
+            30,
+            0
+          ],
+          "max": [
+            34,
+            48
+          ],
+          "elevation": 4
+        },
+        "visibility": "AllVisible; paired privacy variants belong to GM6 native contracts",
+        "passage_y": [
+          22,
+          25
+        ]
+      },
+      "actors": [
+        {
+          "label": "left.small.0",
+          "kind": "small",
+          "position": [
+            29.4,
+            25.2
+          ],
+          "slot": 0
+        },
+        {
+          "label": "left.small.1",
+          "kind": "small",
+          "position": [
+            29.4,
+            26.4
+          ],
+          "slot": 0
+        },
+        {
+          "label": "left.small.2",
+          "kind": "small",
+          "position": [
+            29.4,
+            27.6
+          ],
+          "slot": 0
+        },
+        {
+          "label": "left.small.3",
+          "kind": "small",
+          "position": [
+            28.2,
+            25.2
+          ],
+          "slot": 0
+        },
+        {
+          "label": "left.small.4",
+          "kind": "small",
+          "position": [
+            28.2,
+            26.4
+          ],
+          "slot": 0
+        },
+        {
+          "label": "left.small.5",
+          "kind": "small",
+          "position": [
+            28.2,
+            27.6
+          ],
+          "slot": 0
+        },
+        {
+          "label": "left.large.0",
+          "kind": "large",
+          "position": [
+            28.8,
+            21.2
+          ],
+          "slot": 0
+        },
+        {
+          "label": "left.large.1",
+          "kind": "large",
+          "position": [
+            26.4,
+            21.2
+          ],
+          "slot": 0
+        },
+        {
+          "label": "left.large.2",
+          "kind": "large",
+          "position": [
+            26.4,
+            26.8
+          ],
+          "slot": 0
+        },
+        {
+          "label": "right.small.0",
+          "kind": "small",
+          "position": [
+            34.6,
+            25.2
+          ],
+          "slot": 1
+        },
+        {
+          "label": "right.small.1",
+          "kind": "small",
+          "position": [
+            34.6,
+            26.4
+          ],
+          "slot": 1
+        },
+        {
+          "label": "right.small.2",
+          "kind": "small",
+          "position": [
+            34.6,
+            27.6
+          ],
+          "slot": 1
+        },
+        {
+          "label": "right.small.3",
+          "kind": "small",
+          "position": [
+            35.8,
+            25.2
+          ],
+          "slot": 1
+        },
+        {
+          "label": "right.small.4",
+          "kind": "small",
+          "position": [
+            35.8,
+            26.4
+          ],
+          "slot": 1
+        },
+        {
+          "label": "right.small.5",
+          "kind": "small",
+          "position": [
+            35.8,
+            27.6
+          ],
+          "slot": 1
+        },
+        {
+          "label": "right.large.0",
+          "kind": "large",
+          "position": [
+            35.2,
+            21.2
+          ],
+          "slot": 1
+        },
+        {
+          "label": "right.large.1",
+          "kind": "large",
+          "position": [
+            37.6,
+            21.2
+          ],
+          "slot": 1
+        },
+        {
+          "label": "right.large.2",
+          "kind": "large",
+          "position": [
+            37.6,
+            26.8
+          ],
+          "slot": 1
+        },
+        {
+          "label": "blocker",
+          "kind": "small",
+          "position": [
+            32,
+            23.5
+          ],
+          "slot": 0
+        }
+      ],
+      "commands": [
+        {
+          "tick": 0,
+          "slot": 0,
+          "actors": [
+            "blocker"
+          ],
+          "action": "move",
+          "point": [
+            32,
+            23.5
+          ],
+          "queue": "Replace",
+          "group": 3
+        },
+        {
+          "tick": 10,
+          "slot": 0,
+          "actors": [
+            "left.small.0",
+            "left.small.1",
+            "left.small.2",
+            "left.small.3",
+            "left.small.4",
+            "left.small.5",
+            "left.large.0",
+            "left.large.1",
+            "left.large.2"
+          ],
+          "action": "move",
+          "point": [
+            48,
+            23.5
+          ],
+          "queue": "Replace",
+          "group": 1
+        },
+        {
+          "tick": 10,
+          "slot": 1,
+          "actors": [
+            "right.small.0",
+            "right.small.1",
+            "right.small.2",
+            "right.small.3",
+            "right.small.4",
+            "right.small.5",
+            "right.large.0",
+            "right.large.1",
+            "right.large.2"
+          ],
+          "action": "move",
+          "point": [
+            16,
+            23.5
+          ],
+          "queue": "Replace",
+          "group": 2
+        },
+        {
+          "tick": 200,
+          "slot": 0,
+          "actors": [
+            "blocker"
+          ],
+          "action": "move",
+          "point": [
+            42,
+            30
+          ],
+          "queue": "Replace",
+          "group": 3
+        }
+      ],
+      "blocker_radius": 0.4,
+      "deadline_ticks": 2410,
+      "bays": {
+        "left": {
+          "min": [
+            24,
+            20
+          ],
+          "max": [
+            30,
+            28
+          ]
+        },
+        "right": {
+          "min": [
+            34,
+            20
+          ],
+          "max": [
+            40,
+            28
+          ]
+        },
+        "clear_centerline": {
+          "y": 23.5,
+          "large_swept_y": [
+            22.4,
+            24.6
+          ]
+        },
+        "feasible_sequence": [
+          "Right cohort waits at its authored bay poses, all outside the central radius1.1 transit strip.",
+          "Left small actors leave their parking columns front-to-back, then the three left large actors join y23.5 and cross.",
+          "Left actors settle in the east plateau near(48,23.5), outside the right bay.",
+          "Right cohort crosses and settles near(16,23.5)."
+        ],
+        "witness_only": "Both actual move commands are issued at tick0. The controller must choose the sequential crossing; the witness is not a scripted Hold workaround."
+      },
+      "expect": {
+        "stable_safe_wait": false,
+        "both_cohorts_complete_after_obstruction_moves": true,
+        "blocker_not_displaced_by_later_arrivals": false
+      },
+      "clearance_proof": null
+    },
+    "GM3-shared-and-unique": {
+      "row": "GM3",
+      "map": {
+        "size": [
+          64,
+          48
+        ],
+        "cell_width": 1,
+        "elevation_step": 0.25,
+        "chunk_width": 8,
+        "floor": -8,
+        "ceiling": 8,
+        "ridge": {
+          "min": [
+            30,
+            0
+          ],
+          "max": [
+            34,
+            48
+          ],
+          "elevation": 4
+        },
+        "visibility": "AllVisible; paired privacy variants belong to GM6 native contracts",
+        "passage_y": [
+          22,
+          25
+        ]
+      },
+      "actors": [
+        {
+          "label": "front.small.0",
+          "kind": "small",
+          "position": [
+            29.4,
+            25.2
+          ],
+          "slot": 0
+        },
+        {
+          "label": "front.small.1",
+          "kind": "small",
+          "position": [
+            29.4,
+            26.4
+          ],
+          "slot": 0
+        },
+        {
+          "label": "front.small.2",
+          "kind": "small",
+          "position": [
+            29.4,
+            27.6
+          ],
+          "slot": 0
+        },
+        {
+          "label": "front.small.3",
+          "kind": "small",
+          "position": [
+            28.2,
+            25.2
+          ],
+          "slot": 0
+        },
+        {
+          "label": "front.small.4",
+          "kind": "small",
+          "position": [
+            28.2,
+            26.4
+          ],
+          "slot": 0
+        },
+        {
+          "label": "front.small.5",
+          "kind": "small",
+          "position": [
+            28.2,
+            27.6
+          ],
+          "slot": 0
+        },
+        {
+          "label": "front.large.0",
+          "kind": "large",
+          "position": [
+            28.8,
+            21.2
+          ],
+          "slot": 0
+        },
+        {
+          "label": "front.large.1",
+          "kind": "large",
+          "position": [
+            26.4,
+            21.2
+          ],
+          "slot": 0
+        },
+        {
+          "label": "front.large.2",
+          "kind": "large",
+          "position": [
+            26.4,
+            26.8
+          ],
+          "slot": 0
+        },
+        {
+          "label": "rear.small.0",
+          "kind": "small",
+          "position": [
+            19.4,
+            25.2
+          ],
+          "slot": 0
+        },
+        {
+          "label": "rear.small.1",
+          "kind": "small",
+          "position": [
+            19.4,
+            26.4
+          ],
+          "slot": 0
+        },
+        {
+          "label": "rear.small.2",
+          "kind": "small",
+          "position": [
+            19.4,
+            27.6
+          ],
+          "slot": 0
+        },
+        {
+          "label": "rear.small.3",
+          "kind": "small",
+          "position": [
+            18.2,
+            25.2
+          ],
+          "slot": 0
+        },
+        {
+          "label": "rear.small.4",
+          "kind": "small",
+          "position": [
+            18.2,
+            26.4
+          ],
+          "slot": 0
+        },
+        {
+          "label": "rear.small.5",
+          "kind": "small",
+          "position": [
+            18.2,
+            27.6
+          ],
+          "slot": 0
+        },
+        {
+          "label": "rear.large.0",
+          "kind": "large",
+          "position": [
+            18.8,
+            21.2
+          ],
+          "slot": 0
+        },
+        {
+          "label": "rear.large.1",
+          "kind": "large",
+          "position": [
+            16.4,
+            21.2
+          ],
+          "slot": 0
+        },
+        {
+          "label": "rear.large.2",
+          "kind": "large",
+          "position": [
+            16.4,
+            26.8
+          ],
+          "slot": 0
+        }
+      ],
+      "commands": [
+        {
+          "tick": 0,
+          "slot": 0,
+          "actors": [
+            "front.small.0",
+            "front.small.1",
+            "front.small.2",
+            "front.small.3",
+            "front.small.4",
+            "front.small.5",
+            "front.large.0",
+            "front.large.1",
+            "front.large.2"
+          ],
+          "action": "move",
+          "point": [
+            48,
+            23.5
+          ],
+          "queue": "Replace",
+          "group": 1
+        },
+        {
+          "tick": 0,
+          "slot": 0,
+          "actors": [
+            "rear.small.0",
+            "rear.small.1",
+            "rear.small.2",
+            "rear.small.3",
+            "rear.small.4",
+            "rear.small.5",
+            "rear.large.0",
+            "rear.large.1",
+            "rear.large.2"
+          ],
+          "action": "move",
+          "point": [
+            48,
+            23.5
+          ],
+          "queue": "Replace",
+          "group": 2
+        },
+        {
+          "tick": 40,
+          "slot": 0,
+          "actors": [
+            "rear.small.0"
+          ],
+          "action": "move",
+          "point": [
+            20,
+            6
+          ],
+          "queue": "Replace",
+          "group": 4
+        }
+      ],
+      "deadline_ticks": 2400,
+      "expect": {
+        "two_groups_share_one_destination": true,
+        "unique_actor": "rear.small.0",
+        "unique_destination": [
+          20,
+          6
+        ],
+        "all_other_actors_settle_near": [
+          48,
+          23.5
+        ]
+      }
+    },
+    "GM4-edit-during-approach": {
+      "row": "GM4",
+      "map": {
+        "size": [
+          64,
+          48
+        ],
+        "cell_width": 1,
+        "elevation_step": 0.25,
+        "chunk_width": 8,
+        "floor": -8,
+        "ceiling": 8,
+        "ridge": {
+          "min": [
+            30,
+            0
+          ],
+          "max": [
+            34,
+            48
+          ],
+          "elevation": 4
+        },
+        "visibility": "AllVisible; paired privacy variants belong to GM6 native contracts",
+        "passage_y": [
+          20,
+          28
+        ]
+      },
+      "actors": [
+        {
+          "label": "small.0.0",
+          "kind": "small",
+          "position": [
+            28.5,
+            24
+          ],
+          "slot": 0
+        },
+        {
+          "label": "small.0.1",
+          "kind": "small",
+          "position": [
+            11.5,
+            17.0
+          ],
+          "slot": 0
+        },
+        {
+          "label": "small.0.2",
+          "kind": "small",
+          "position": [
+            13.0,
+            17.0
+          ],
+          "slot": 0
+        },
+        {
+          "label": "small.0.3",
+          "kind": "small",
+          "position": [
+            14.5,
+            17.0
+          ],
+          "slot": 0
+        },
+        {
+          "label": "small.0.4",
+          "kind": "small",
+          "position": [
+            16.0,
+            17.0
+          ],
+          "slot": 0
+        },
+        {
+          "label": "small.0.5",
+          "kind": "small",
+          "position": [
+            17.5,
+            17.0
+          ],
+          "slot": 0
+        },
+        {
+          "label": "small.1.0",
+          "kind": "small",
+          "position": [
+            10.0,
+            18.5
+          ],
+          "slot": 0
+        },
+        {
+          "label": "small.1.1",
+          "kind": "small",
+          "position": [
+            11.5,
+            18.5
+          ],
+          "slot": 0
+        },
+        {
+          "label": "small.1.2",
+          "kind": "small",
+          "position": [
+            13.0,
+            18.5
+          ],
+          "slot": 0
+        },
+        {
+          "label": "small.1.3",
+          "kind": "small",
+          "position": [
+            14.5,
+            18.5
+          ],
+          "slot": 0
+        },
+        {
+          "label": "small.1.4",
+          "kind": "small",
+          "position": [
+            16.0,
+            18.5
+          ],
+          "slot": 0
+        },
+        {
+          "label": "small.1.5",
+          "kind": "small",
+          "position": [
+            17.5,
+            18.5
+          ],
+          "slot": 0
+        },
+        {
+          "label": "small.2.0",
+          "kind": "small",
+          "position": [
+            10.0,
+            20.0
+          ],
+          "slot": 0
+        },
+        {
+          "label": "small.2.1",
+          "kind": "small",
+          "position": [
+            11.5,
+            20.0
+          ],
+          "slot": 0
+        },
+        {
+          "label": "small.2.2",
+          "kind": "small",
+          "position": [
+            13.0,
+            20.0
+          ],
+          "slot": 0
+        },
+        {
+          "label": "small.2.3",
+          "kind": "small",
+          "position": [
+            14.5,
+            20.0
+          ],
+          "slot": 0
+        },
+        {
+          "label": "small.2.4",
+          "kind": "small",
+          "position": [
+            16.0,
+            20.0
+          ],
+          "slot": 0
+        },
+        {
+          "label": "small.2.5",
+          "kind": "small",
+          "position": [
+            17.5,
+            20.0
+          ],
+          "slot": 0
+        },
+        {
+          "label": "small.3.0",
+          "kind": "small",
+          "position": [
+            10.0,
+            21.5
+          ],
+          "slot": 0
+        },
+        {
+          "label": "small.3.1",
+          "kind": "small",
+          "position": [
+            11.5,
+            21.5
+          ],
+          "slot": 0
+        },
+        {
+          "label": "small.3.2",
+          "kind": "small",
+          "position": [
+            13.0,
+            21.5
+          ],
+          "slot": 0
+        },
+        {
+          "label": "small.3.3",
+          "kind": "small",
+          "position": [
+            14.5,
+            21.5
+          ],
+          "slot": 0
+        },
+        {
+          "label": "small.3.4",
+          "kind": "small",
+          "position": [
+            16.0,
+            21.5
+          ],
+          "slot": 0
+        },
+        {
+          "label": "small.3.5",
+          "kind": "small",
+          "position": [
+            17.5,
+            21.5
+          ],
+          "slot": 0
+        },
+        {
+          "label": "large.0.0",
+          "kind": "large",
+          "position": [
+            8.0,
+            30.0
+          ],
+          "slot": 0
+        },
+        {
+          "label": "large.0.1",
+          "kind": "large",
+          "position": [
+            10.5,
+            30.0
+          ],
+          "slot": 0
+        },
+        {
+          "label": "large.0.2",
+          "kind": "large",
+          "position": [
+            13.0,
+            30.0
+          ],
+          "slot": 0
+        },
+        {
+          "label": "large.0.3",
+          "kind": "large",
+          "position": [
+            15.5,
+            30.0
+          ],
+          "slot": 0
+        },
+        {
+          "label": "large.1.0",
+          "kind": "large",
+          "position": [
+            8.0,
+            32.5
+          ],
+          "slot": 0
+        },
+        {
+          "label": "large.1.1",
+          "kind": "large",
+          "position": [
+            10.5,
+            32.5
+          ],
+          "slot": 0
+        },
+        {
+          "label": "large.1.2",
+          "kind": "large",
+          "position": [
+            13.0,
+            32.5
+          ],
+          "slot": 0
+        },
+        {
+          "label": "large.1.3",
+          "kind": "large",
+          "position": [
+            15.5,
+            32.5
+          ],
+          "slot": 0
+        },
+        {
+          "label": "large.2.0",
+          "kind": "large",
+          "position": [
+            8.0,
+            35.0
+          ],
+          "slot": 0
+        },
+        {
+          "label": "large.2.1",
+          "kind": "large",
+          "position": [
+            10.5,
+            35.0
+          ],
+          "slot": 0
+        },
+        {
+          "label": "large.2.2",
+          "kind": "large",
+          "position": [
+            13.0,
+            35.0
+          ],
+          "slot": 0
+        },
+        {
+          "label": "large.2.3",
+          "kind": "large",
+          "position": [
+            4,
+            46
+          ],
+          "slot": 0
+        }
+      ],
+      "commands": [
+        {
+          "tick": 0,
+          "slot": 0,
+          "actors": [
+            "small.0.1",
+            "small.0.2",
+            "small.0.3",
+            "small.0.4",
+            "small.0.5",
+            "small.1.0",
+            "small.1.1",
+            "small.1.2",
+            "small.1.3",
+            "small.1.4",
+            "small.1.5",
+            "small.2.0",
+            "small.2.1",
+            "small.2.2",
+            "small.2.3",
+            "small.2.4",
+            "small.2.5",
+            "small.3.0",
+            "small.3.1",
+            "small.3.2",
+            "small.3.3",
+            "small.3.4",
+            "small.3.5",
+            "large.0.0",
+            "large.0.1",
+            "large.0.2",
+            "large.0.3",
+            "large.1.0",
+            "large.1.1",
+            "large.1.2",
+            "large.1.3",
+            "large.2.0",
+            "large.2.1",
+            "large.2.2"
+          ],
+          "action": "move",
+          "point": [
+            50,
+            24
+          ],
+          "queue": "Replace",
+          "group": 1
+        },
+        {
+          "tick": 0,
+          "slot": 0,
+          "actors": [
+            "large.2.3"
+          ],
+          "action": "move",
+          "point": [
+            22,
+            2
+          ],
+          "queue": "Replace",
+          "group": 2
+        },
+        {
+          "tick": 20,
+          "slot": 0,
+          "actors": [
+            "small.0.0"
+          ],
+          "action": "fill",
+          "cells": {
+            "min": [
+              31,
+              20
+            ],
+            "max": [
+              32,
+              28
+            ]
+          },
+          "target_elevation": 4,
+          "queue": "Replace",
+          "group": 0
+        },
+        {
+          "tick": 240,
+          "slot": 0,
+          "actors": [
+            "small.0.0"
+          ],
+          "action": "excavate",
+          "cells": {
+            "min": [
+              31,
+              20
+            ],
+            "max": [
+              32,
+              28
+            ]
+          },
+          "target_elevation": 0,
+          "queue": "Replace",
+          "group": 0
+        }
+      ],
+      "deadline_ticks": 2640,
+      "resources": {
+        "editor": "small.0.0",
+        "fill_input_prisms": 32,
+        "quarry_inventory": 32,
+        "terrain_stockyard_slot_balance": 32,
+        "work_per_prism": 4,
+        "tool_work_per_second": 64
+      },
+      "distant_route": {
+        "actor": "large.2.3",
+        "from": [
+          4,
+          46
+        ],
+        "to": [
+          22,
+          2
+        ],
+        "radius": 1.1,
+        "edit_chunk_x_bounds": [
+          24,
+          32
+        ],
+        "unchanged_while_active_through_tick": 340,
+        "checks": "native region revision/membership assertions; browser captures the unchanged public order and continued physical motion",
+        "authored_swept_x_bounds": [
+          2.9,
+          23.1
+        ],
+        "conservative_native_f32_swept_x_bounds": [
+          2.8999999,
+          23.1000001
+        ]
+      },
+      "expect": {
+        "close_and_reopen_while_main_group_moves": true,
+        "swept_clearance_for_every_committed_segment": true,
+        "relevant_stale_route_never_activates": true,
+        "distant_revision_and_membership_unchanged": true
+      },
+      "notes": [
+        "Fill/excavate times are fixed before observing movement. There is no debug terrain mutation.",
+        "One of36 actors is the editor and another has the distant route; the main group has34 actors.",
+        "At64 work/sec the finite32 fill prisms require128 work. Actual walking/claim/clearance remains authoritative."
+      ]
+    },
+    "GM-legal-step": {
+      "row": "geometry",
+      "map": {
+        "size": [
+          64,
+          48
+        ],
+        "cell_width": 1,
+        "elevation_step": 0.25,
+        "chunk_width": 8,
+        "floor": -8,
+        "ceiling": 8,
+        "ridge": {
+          "min": [
+            30,
+            0
+          ],
+          "max": [
+            34,
+            48
+          ],
+          "elevation": 4
+        },
+        "visibility": "AllVisible; paired privacy variants belong to GM6 native contracts",
+        "passage_y": null,
+        "override_patches": [
+          {
+            "min": [
+              30,
+              0
+            ],
+            "max": [
+              64,
+              48
+            ],
+            "elevation": 1
+          }
+        ]
+      },
+      "actors": [
+        {
+          "label": "probe",
+          "kind": "small",
+          "position": [
+            28,
+            24
+          ],
+          "slot": 0
+        }
+      ],
+      "radius_override": 0.4,
+      "profile_override": {
+        "max_step": 1,
+        "grade": [
+          1,
+          4
+        ]
+      },
+      "commands": [
+        {
+          "tick": 0,
+          "slot": 0,
+          "actors": [
+            "probe"
+          ],
+          "action": "move",
+          "point": [
+            36,
+            24
+          ],
+          "queue": "Replace",
+          "group": 1
+        }
+      ],
+      "deadline_ticks": 2400,
+      "expect": "complete",
+      "radius_f32_bits": null
+    },
+    "GM-step-refusal": {
+      "row": "geometry",
+      "map": {
+        "size": [
+          64,
+          48
+        ],
+        "cell_width": 1,
+        "elevation_step": 0.25,
+        "chunk_width": 8,
+        "floor": -8,
+        "ceiling": 8,
+        "ridge": {
+          "min": [
+            30,
+            0
+          ],
+          "max": [
+            34,
+            48
+          ],
+          "elevation": 4
+        },
+        "visibility": "AllVisible; paired privacy variants belong to GM6 native contracts",
+        "passage_y": null,
+        "override_patches": [
+          {
+            "min": [
+              30,
+              0
+            ],
+            "max": [
+              64,
+              48
+            ],
+            "elevation": 1
+          }
+        ]
+      },
+      "actors": [
+        {
+          "label": "probe",
+          "kind": "small",
+          "position": [
+            28,
+            24
+          ],
+          "slot": 0
+        }
+      ],
+      "radius_override": 0.4,
+      "profile_override": {
+        "max_step": 0,
+        "grade": [
+          1,
+          4
+        ]
+      },
+      "commands": [
+        {
+          "tick": 0,
+          "slot": 0,
+          "actors": [
+            "probe"
+          ],
+          "action": "move",
+          "point": [
+            36,
+            24
+          ],
+          "queue": "Replace",
+          "group": 1
+        }
+      ],
+      "deadline_ticks": 2400,
+      "expect": "blocked",
+      "radius_f32_bits": null
+    },
+    "GM-grade-refusal": {
+      "row": "geometry",
+      "map": {
+        "size": [
+          64,
+          48
+        ],
+        "cell_width": 1,
+        "elevation_step": 0.25,
+        "chunk_width": 8,
+        "floor": -8,
+        "ceiling": 8,
+        "ridge": {
+          "min": [
+            30,
+            0
+          ],
+          "max": [
+            34,
+            48
+          ],
+          "elevation": 4
+        },
+        "visibility": "AllVisible; paired privacy variants belong to GM6 native contracts",
+        "passage_y": null,
+        "override_patches": [
+          {
+            "min": [
+              30,
+              0
+            ],
+            "max": [
+              64,
+              48
+            ],
+            "elevation": 1
+          }
+        ]
+      },
+      "actors": [
+        {
+          "label": "probe",
+          "kind": "small",
+          "position": [
+            28,
+            24
+          ],
+          "slot": 0
+        }
+      ],
+      "radius_override": 0.4,
+      "profile_override": {
+        "max_step": 1,
+        "grade": [
+          249,
+          1000
+        ]
+      },
+      "commands": [
+        {
+          "tick": 0,
+          "slot": 0,
+          "actors": [
+            "probe"
+          ],
+          "action": "move",
+          "point": [
+            36,
+            24
+          ],
+          "queue": "Replace",
+          "group": 1
+        }
+      ],
+      "deadline_ticks": 2400,
+      "expect": "blocked",
+      "radius_f32_bits": null
+    },
+    "GM-exact-tangency": {
+      "row": "geometry",
+      "map": {
+        "size": [
+          64,
+          48
+        ],
+        "cell_width": 1,
+        "elevation_step": 0.25,
+        "chunk_width": 8,
+        "floor": -8,
+        "ceiling": 8,
+        "ridge": {
+          "min": [
+            30,
+            0
+          ],
+          "max": [
+            34,
+            48
+          ],
+          "elevation": 4
+        },
+        "visibility": "AllVisible; paired privacy variants belong to GM6 native contracts",
+        "passage_y": [
+          23,
+          25
+        ]
+      },
+      "actors": [
+        {
+          "label": "probe",
+          "kind": "small",
+          "position": [
+            28,
+            24
+          ],
+          "slot": 0
+        }
+      ],
+      "radius_override": 1.0,
+      "profile_override": {
+        "max_step": 0,
+        "grade": [
+          0,
+          1
+        ]
+      },
+      "commands": [
+        {
+          "tick": 0,
+          "slot": 0,
+          "actors": [
+            "probe"
+          ],
+          "action": "move",
+          "point": [
+            36,
+            24
+          ],
+          "queue": "Replace",
+          "group": 1
+        }
+      ],
+      "deadline_ticks": 2400,
+      "expect": "complete",
+      "radius_f32_bits": null
+    },
+    "GM-next-radius-refusal": {
+      "row": "geometry",
+      "map": {
+        "size": [
+          64,
+          48
+        ],
+        "cell_width": 1,
+        "elevation_step": 0.25,
+        "chunk_width": 8,
+        "floor": -8,
+        "ceiling": 8,
+        "ridge": {
+          "min": [
+            30,
+            0
+          ],
+          "max": [
+            34,
+            48
+          ],
+          "elevation": 4
+        },
+        "visibility": "AllVisible; paired privacy variants belong to GM6 native contracts",
+        "passage_y": [
+          23,
+          25
+        ]
+      },
+      "actors": [
+        {
+          "label": "probe",
+          "kind": "small",
+          "position": [
+            28,
+            24
+          ],
+          "slot": 0
+        }
+      ],
+      "radius_override": 1.0000001192092896,
+      "profile_override": {
+        "max_step": 0,
+        "grade": [
+          0,
+          1
+        ]
+      },
+      "commands": [
+        {
+          "tick": 0,
+          "slot": 0,
+          "actors": [
+            "probe"
+          ],
+          "action": "move",
+          "point": [
+            36,
+            24
+          ],
+          "queue": "Replace",
+          "group": 1
+        }
+      ],
+      "deadline_ticks": 2400,
+      "expect": "blocked",
+      "radius_f32_bits": "0x3f800001"
+    },
+    "GM-diagonal-corner": {
+      "row": "geometry",
+      "map": {
+        "size": [
+          64,
+          48
+        ],
+        "cell_width": 1,
+        "elevation_step": 0.25,
+        "chunk_width": 8,
+        "floor": -8,
+        "ceiling": 8,
+        "ridge": {
+          "min": [
+            30,
+            0
+          ],
+          "max": [
+            34,
+            48
+          ],
+          "elevation": 4
+        },
+        "visibility": "AllVisible; paired privacy variants belong to GM6 native contracts",
+        "passage_y": null,
+        "override_patches": [
+          {
+            "min": [
+              30,
+              24
+            ],
+            "max": [
+              31,
+              25
+            ],
+            "elevation": 4
+          }
+        ]
+      },
+      "actors": [
+        {
+          "label": "probe",
+          "kind": "small",
+          "position": [
+            29,
+            23
+          ],
+          "slot": 0
+        }
+      ],
+      "commands": [
+        {
+          "tick": 0,
+          "slot": 0,
+          "actors": [
+            "probe"
+          ],
+          "action": "move",
+          "point": [
+            32,
+            26
+          ],
+          "queue": "Replace",
+          "group": 1
+        }
+      ],
+      "deadline_ticks": 2400,
+      "expect": "complete by a certified detour; never cut the cliff corner"
+    },
+    "GM-fast-wall": {
+      "row": "geometry",
+      "map": {
+        "size": [
+          64,
+          48
+        ],
+        "cell_width": 1,
+        "elevation_step": 0.25,
+        "chunk_width": 8,
+        "floor": -8,
+        "ceiling": 8,
+        "ridge": {
+          "min": [
+            30,
+            0
+          ],
+          "max": [
+            34,
+            48
+          ],
+          "elevation": 4
+        },
+        "visibility": "AllVisible; paired privacy variants belong to GM6 native contracts",
+        "passage_y": null,
+        "override_patches": [
+          {
+            "min": [
+              30,
+              0
+            ],
+            "max": [
+              31,
+              48
+            ],
+            "elevation": 4
+          }
+        ]
+      },
+      "actors": [
+        {
+          "label": "probe",
+          "kind": "small",
+          "position": [
+            28,
+            24
+          ],
+          "slot": 0
+        }
+      ],
+      "speed_override": 100,
+      "commands": [
+        {
+          "tick": 0,
+          "slot": 0,
+          "actors": [
+            "probe"
+          ],
+          "action": "move",
+          "point": [
+            38,
+            24
+          ],
+          "queue": "Replace",
+          "group": 1
+        }
+      ],
+      "deadline_ticks": 2400,
+      "expect": "safe blocked; no committed swept body may cross the one-cell wall"
+    }
+  }
+}

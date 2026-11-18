@@ -697,7 +697,7 @@ fn validate_member(
         Behaviour::Repair => definition.is_some_and(|unit| unit.repairer.is_some()),
         Behaviour::TerrainWork => definition.is_some_and(|unit| !unit.terrain_tools.is_empty()),
         Behaviour::UnloadCargo => definition.is_some_and(|unit| unit.terrain_cargo.is_some()),
-        // M6: a utility route is applied by `crate::utilities` before per-unit validation.
+        // Utility routes are applied before per-unit validation.
         Behaviour::CancelConstruction | Behaviour::Surrender | Behaviour::UtilityRoute => false,
     };
     if !capable {
@@ -874,7 +874,7 @@ pub(super) fn movement_envelope_capacity_available_after_replacing(
     pending_after.saturating_add(reserved_after) <= 16_384
 }
 
-pub(super) fn unit_has_pending_move(world: &World, unit_id: u32) -> bool {
+pub(crate) fn unit_has_pending_move(world: &World, unit_id: u32) -> bool {
     world
         .resource::<PendingMovementOrders>()
         .pending_member_counts
@@ -1341,11 +1341,21 @@ fn clear_motion_only(
     entity: bevy_ecs::entity::Entity,
     unit_id: u32,
 ) {
-    crate::terrain::navigation::order_changed(world, unit_id);
-    edit_unit_orders(world, entity, |orders| orders.acquired = None);
     world
         .resource_mut::<PendingMovementOrders>()
         .cancel_units(slot.0, &[unit_id]);
+    clear_current_motion(world, entity, unit_id);
+}
+
+/// Retire only active physical guidance. An already accepted replacement may
+/// still be waiting for dispatch; internal work transitions must preserve it.
+pub(crate) fn clear_current_motion(
+    world: &mut World,
+    entity: bevy_ecs::entity::Entity,
+    unit_id: u32,
+) {
+    crate::terrain::navigation::order_changed(world, unit_id);
+    edit_unit_orders(world, entity, |orders| orders.acquired = None);
     let mut movement = world.entity_mut(entity);
     movement.remove::<MoveTarget>();
     movement.remove::<crate::movement::MoveProgress>();

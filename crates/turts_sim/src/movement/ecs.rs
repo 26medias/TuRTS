@@ -75,9 +75,28 @@ pub(crate) fn integrate_movement(world: &mut World) {
         .collect();
     let (outputs, terrain_waiting) =
         crate::terrain::navigation::step(world, &frame, delta, &preserve_resting_units);
+    let owner_changes = crate::terrain::navigation::take_owner_changes(world)
+        .into_iter()
+        .collect::<std::collections::BTreeMap<_, _>>();
     #[cfg(feature = "test-probes")]
     super::probe::store_frame_flags(world, &outputs);
     for ((id, entity, _), output) in units.into_iter().zip(outputs) {
+        if let Some(&previous_owner) = owner_changes.get(&id) {
+            // The navigation fence held this body stationary. Clear the old
+            // authority's intent before releasing that fence through the writer.
+            world.entity_mut(entity).remove::<MoveTarget>();
+            crate::orders::clear_replaced_movement(
+                world,
+                crate::SlotId(previous_owner),
+                entity,
+                id,
+            );
+            crate::orders::writer::clear_unit_orders(world, entity);
+            world
+                .entity_mut(entity)
+                .remove::<crate::terrain::navigation::TerrainMotionWait>();
+            continue;
+        }
         let mut entity_mut = world.entity_mut(entity);
         if terrain_waiting.contains(&id) {
             entity_mut.insert(crate::terrain::navigation::TerrainMotionWait);

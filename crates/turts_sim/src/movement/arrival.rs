@@ -10,6 +10,14 @@ fn eta(unit: &MovementFrameUnit) -> f32 {
 }
 
 pub(super) fn geometry(a: &MovementFrameUnit, b: &MovementFrameUnit) -> std::cmp::Ordering {
+    geometry_goals(a, b, a.target, b.target)
+}
+fn geometry_goals(
+    a: &MovementFrameUnit,
+    b: &MovementFrameUnit,
+    a_goal: Option<Vec2>,
+    b_goal: Option<Vec2>,
+) -> std::cmp::Ordering {
     a.position
         .x
         .total_cmp(&b.position.x)
@@ -17,27 +25,61 @@ pub(super) fn geometry(a: &MovementFrameUnit, b: &MovementFrameUnit) -> std::cmp
         .then(a.radius.total_cmp(&b.radius))
         .then(a.speed.unwrap_or(0.0).total_cmp(&b.speed.unwrap_or(0.0)))
         .then(
-            a.target
+            a_goal
                 .map_or(0.0, |p| p.x)
-                .total_cmp(&b.target.map_or(0.0, |p| p.x)),
+                .total_cmp(&b_goal.map_or(0.0, |p| p.x)),
         )
         .then(
-            a.target
+            a_goal
                 .map_or(0.0, |p| p.y)
-                .total_cmp(&b.target.map_or(0.0, |p| p.y)),
+                .total_cmp(&b_goal.map_or(0.0, |p| p.y)),
         )
 }
 
 /// Compare the remaining arrival time, including arrivals inside this tick. An exact
 /// contested tie has no winner: stop the tied bodies around the point without overlap.
 /// A plan never reserves a point ahead of a body that gets there first.
-pub(super) fn prepare(units: &mut [MovementFrameUnit], dt: f32, bounds: Vec2) {
+/// Private steering connectors never participate in destination ownership.
+/// They retain full physical bodies and transit order uses the real order goal.
+pub(super) fn prepare_with_guide(
+    units: &mut [MovementFrameUnit],
+    dt: f32,
+    bounds: Vec2,
+    guide: &dyn super::motion::MotionGuide,
+) -> Vec<(u32, Vec2)> {
+    let owns = |unit: &MovementFrameUnit| {
+        guide.kind(unit.unit_id) == super::motion::MotionKind::Destination
+    };
+    let order = |a: &MovementFrameUnit, b: &MovementFrameUnit| {
+        let goal = |unit: &MovementFrameUnit| {
+            if owns(unit) {
+                unit.target
+            } else {
+                guide
+                    .arrival_destination(unit.unit_id)
+                    .filter(|p| p.is_finite())
+            }
+        };
+        let arrival = |unit: &MovementFrameUnit, goal: Option<Vec2>| match (goal, unit.speed) {
+            (Some(goal), Some(speed)) if speed > 0. => unit.position.distance(goal) / speed,
+            _ => 0.,
+        };
+        let a_goal = goal(a);
+        let b_goal = goal(b);
+        arrival(a, a_goal)
+            .total_cmp(&arrival(b, b_goal))
+            .then_with(|| geometry_goals(a, b, a_goal, b_goal))
+    };
+    let mut resolved_ties = Vec::new();
     let holders = units
         .iter()
         .filter(|unit| unit.target.is_none())
         .map(|unit| unit.position)
         .collect::<Vec<_>>();
     for unit in units.iter_mut() {
+        if !owns(unit) {
+            continue;
+        }
         if let Some(progress) = unit
             .plain_progress
             .as_mut()
@@ -65,10 +107,13 @@ pub(super) fn prepare(units: &mut [MovementFrameUnit], dt: f32, bounds: Vec2) {
             }
         }
     }
-    units.sort_by(|a, b| eta(a).total_cmp(&eta(b)).then_with(|| geometry(a, b)));
+    units.sort_by(&order);
     let max_radius = units.iter().map(|u| u.radius).fold(0.0_f32, f32::max);
     let mut groups = std::collections::BTreeMap::<(u32, u32), Vec<usize>>::new();
     for (index, unit) in units.iter().enumerate() {
+        if !owns(unit) {
+            continue;
+        }
         let (Some(target), Some(speed)) = (unit.target, unit.speed) else {
             continue;
         };
@@ -146,6 +191,7 @@ pub(super) fn prepare(units: &mut [MovementFrameUnit], dt: f32, bounds: Vec2) {
             {
                 for (index, point) in ordered.iter().zip(destinations) {
                     stop_goal(&mut units[*index], goal, point, false);
+                    resolved_ties.push((units[*index].unit_id, point));
                 }
             }
         }
@@ -160,7 +206,8 @@ pub(super) fn prepare(units: &mut [MovementFrameUnit], dt: f32, bounds: Vec2) {
         }
     }
     // Clear the later approach before moving the earlier body through that space.
-    units.sort_by(|a, b| eta(a).total_cmp(&eta(b)).then_with(|| geometry(a, b)));
+    units.sort_by(&order);
+    resolved_ties
 }
 
 fn stop_goal(unit: &mut MovementFrameUnit, goal: Vec2, point: Vec2, temporary: bool) {
@@ -797,5 +844,105 @@ mod tests {
             frame.units[0].position, goal,
             "an order kept a point that no body reached"
         );
+    }
+    #[test]
+    fn later_plain_mover_stops_at_closest_feasible_point_beside_stationary_holder() {
+        fn run_case(ids: [u32; 2], reverse: bool, mobile_holder: bool) -> Vec<Vec2> {
+            let goal = Vec2::new(31.000_002, 15.999_989);
+            let holder = Vec2::new(32.0, 16.0);
+            let mover_radius = 0.85_f32;
+            let holder_radius = 0.35_f32;
+            let mut mover = unit(ids[0], Vec2::new(18.0, 20.0), 3.0, goal);
+            mover.radius = mover_radius;
+            let mut settled = unit(ids[1], holder, 0.0, holder);
+            settled.owner_slot = 1;
+            settled.radius = holder_radius;
+            settled.speed = mobile_holder.then_some(3.0);
+            settled.target = None;
+            let mut units = vec![mover, settled];
+            if reverse {
+                units.reverse();
+            }
+            let mut frame = MovementFrame {
+                bounds: Vec2::new(48.0, 32.0),
+                tick_hz: 20,
+                pools: Default::default(),
+                units,
+            };
+            let minimum = (f64::from(mover_radius) + f64::from(holder_radius)
+                - (f64::from(goal.x) - f64::from(holder.x))
+                    .hypot(f64::from(goal.y) - f64::from(holder.y)))
+            .max(0.0);
+            let mut trace = Vec::new();
+            let mut completed = None;
+            for tick in 0..600 {
+                for output in step_frame(&frame, 0.05) {
+                    let actor = frame
+                        .units
+                        .iter_mut()
+                        .find(|actor| actor.unit_id == output.unit_id)
+                        .unwrap();
+                    actor.position = output.position;
+                    actor.target = output.target;
+                    actor.progress = output.progress;
+                    actor.plain_progress = output.plain_progress;
+                    actor.physical_escape = output.physical_escape;
+                }
+                let moving = frame
+                    .units
+                    .iter()
+                    .find(|actor| actor.unit_id == ids[0])
+                    .unwrap();
+                let settled = frame
+                    .units
+                    .iter()
+                    .find(|actor| actor.unit_id == ids[1])
+                    .unwrap();
+                assert_eq!(
+                    settled.position, holder,
+                    "first holder moved at tick {tick}"
+                );
+                assert!(
+                    moving.position.distance(holder) >= mover_radius + holder_radius - 1.0e-5,
+                    "overlap at tick {tick}: {:?}",
+                    moving.position
+                );
+                trace.push(moving.position);
+                if moving.target.is_none() {
+                    completed = Some(tick);
+                    break;
+                }
+            }
+            let moving = frame
+                .units
+                .iter()
+                .find(|actor| actor.unit_id == ids[0])
+                .unwrap();
+            assert!(
+                completed.is_some(),
+                "real frame never completed: {moving:?}"
+            );
+            let actual = f64::from(moving.position.distance(goal));
+            eprintln!(
+                "closest arrival ids={ids:?} reverse={reverse} tick={completed:?} position={:?} distance={actual} analytic_minimum={minimum}",
+                moving.position
+            );
+            assert!(
+                actual <= minimum + 0.002,
+                "closest feasible arrival requires {minimum}, got {actual} at {:?}",
+                moving.position
+            );
+            trace
+        }
+        for mobile_holder in [false, true] {
+            let baseline = run_case([1, 99], false, mobile_holder);
+            for (ids, reverse) in [([99, 1], false), ([1, 99], true), ([99, 1], true)] {
+                assert_eq!(
+                    baseline,
+                    run_case(ids, reverse, mobile_holder),
+                    "opaque handles/enumeration changed physical arrival"
+                );
+            }
+        }
     }
 }

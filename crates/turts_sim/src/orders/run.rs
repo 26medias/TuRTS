@@ -27,8 +27,66 @@ struct EngagementIndex<'a> {
     max_radius: f32,
 }
 
+/// Retire accepted intent before it can affect a survivor's spread or target.
+/// Healthless actors have no row and remain eligible. Healths is ordered, so
+/// the returned ids support lookup without choosing a visible outcome by id.
+fn retire_zero_health_orders(world: &mut World) -> Vec<u32> {
+    let dead: Vec<_> = world
+        .get_resource::<crate::economy::combat::Healths>()
+        .map(|healths| {
+            healths
+                .0
+                .iter()
+                .filter_map(|(&id, &health)| (health == 0).then_some(id))
+                .collect()
+        })
+        .unwrap_or_default();
+    if dead.is_empty() {
+        return dead;
+    }
+    let entities: Vec<_> = world
+        .iter_entities()
+        .filter_map(|entity| {
+            let id = entity.get::<crate::UnitId>()?.0;
+            dead.binary_search(&id).is_ok().then_some((id, entity.id()))
+        })
+        .collect();
+    for (unit_id, entity) in entities {
+        let orders = world.get::<UnitOrders>(entity);
+        let active_orders = orders.is_some_and(|orders| {
+            orders.current.is_some() || !orders.queue.is_empty() || orders.acquired.is_some()
+        });
+        let gathering = world
+            .get_resource::<crate::economy::EconomyOrders>()
+            .and_then(|orders| orders.0.get(&unit_id))
+            .is_some_and(|order| order.stage != crate::economy::gather::GatherStage::Idle);
+        let moving = world.get::<MoveTarget>(entity).is_some()
+            || world.get::<crate::movement::MoveProgress>(entity).is_some()
+            || world
+                .get::<crate::movement::PlainMoveProgress>(entity)
+                .is_some()
+            || world
+                .get::<crate::movement::PhysicalEscape>(entity)
+                .is_some();
+        if (unit_has_pending_move(world, unit_id) || active_orders || gathering || moving)
+            && let Some(slot) = world.get::<crate::Owner>(entity).map(|owner| owner.0)
+        {
+            crate::economy::transaction::capture_unit_order_operation(world, unit_id, |world| {
+                crate::orders::apply::clear_replaced_movement(world, slot, entity, unit_id);
+                clear_gather(world, unit_id);
+                world
+                    .entity_mut(entity)
+                    .remove::<crate::movement::PhysicalEscape>();
+                crate::orders::writer::clear_unit_orders(world, entity);
+            });
+        }
+    }
+    dead
+}
+
 /// Run one fixed-tick order phase.
 pub(crate) fn run_orders(world: &mut World) {
+    let dead = retire_zero_health_orders(world);
     dispatch_pending_movement(world);
     let mut unit_entities = BTreeMap::new();
     let mut engagement_points = Vec::new();
@@ -74,6 +132,9 @@ pub(crate) fn run_orders(world: &mut World) {
         max_radius,
     };
     for (&unit_id, &entity) in &unit_entities {
+        if dead.binary_search(&unit_id).is_ok() {
+            continue;
+        }
         let replacement_pending = unit_has_pending_move(world, unit_id);
         let no_plain_move_state = world.entity(entity).get::<MoveTarget>().is_none()
             && world
@@ -158,12 +219,22 @@ pub(crate) fn run_orders(world: &mut World) {
                 forget_plain_move_identity(world, unit_id);
             });
         }
+        let terrain_continues = world.entity(entity).get::<MoveTarget>().is_some()
+            && world
+                .entity(entity)
+                .get::<crate::Owner>()
+                .is_some_and(|owner| {
+                    world
+                        .get_resource::<crate::terrain::navigation::TerrainNavigation>()
+                        .is_some_and(|navigation| navigation.continues_order(unit_id, owner.0.0))
+                });
         let plain_blocked = world
             .entity(entity)
             .get::<crate::movement::PlainMoveProgress>()
             .is_some_and(|progress| {
                 (progress.activity == crate::movement::MovementActivity::Blocked
-                    && !progress.failure_recorded)
+                    && !progress.failure_recorded
+                    && !terrain_continues)
                     || (completed_plain_fallback && gather_still_approaching)
             });
         if plain_blocked && gather_still_approaching {

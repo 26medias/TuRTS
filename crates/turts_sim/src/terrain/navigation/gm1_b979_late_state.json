@@ -1,0 +1,603 @@
+[
+  {
+    "group_progress": null,
+    "label": "small.3.0",
+    "physical_escape": null,
+    "plain_progress": null,
+    "position": [
+      47.70000076293945,
+      24.0
+    ],
+    "target": null,
+    "unit": 19
+  },
+  {
+    "group_progress": null,
+    "label": "small.3.2",
+    "physical_escape": null,
+    "plain_progress": null,
+    "position": [
+      48.849998474121094,
+      25.991857528686523
+    ],
+    "target": null,
+    "unit": 21
+  },
+  {
+    "group_progress": null,
+    "label": "small.3.3",
+    "physical_escape": null,
+    "plain_progress": null,
+    "position": [
+      52.29999923706055,
+      24.0
+    ],
+    "target": null,
+    "unit": 22
+  },
+  {
+    "group_progress": null,
+    "label": "small.3.5",
+    "physical_escape": null,
+    "plain_progress": null,
+    "position": [
+      55.75,
+      25.991857528686523
+    ],
+    "target": null,
+    "unit": 24
+  },
+  {
+    "group_progress": null,
+    "label": "small.0.0",
+    "physical_escape": null,
+    "plain_progress": null,
+    "position": [
+      46.54999923706055,
+      18.024425506591797
+    ],
+    "target": null,
+    "unit": 1
+  },
+  {
+    "group_progress": null,
+    "label": "small.0.1",
+    "physical_escape": null,
+    "plain_progress": null,
+    "position": [
+      47.70000076293945,
+      20.01628303527832
+    ],
+    "target": null,
+    "unit": 2
+  },
+  {
+    "group_progress": null,
+    "label": "small.0.2",
+    "physical_escape": null,
+    "plain_progress": null,
+    "position": [
+      48.849998474121094,
+      18.024425506591797
+    ],
+    "target": null,
+    "unit": 3
+  },
+  {
+    "group_progress": null,
+    "label": "small.0.3",
+    "physical_escape": null,
+    "plain_progress": null,
+    "position": [
+      51.150001525878906,
+      18.024425506591797
+    ],
+    "target": null,
+    "unit": 4
+  },
+  {
+    "group_progress": null,
+    "label": "small.0.4",
+    "physical_escape": null,
+    "plain_progress": null,
+    "position": [
+      53.45000076293945,
+      18.024425506591797
+    ],
+    "target": null,
+    "unit": 5
+  },
+  {
+    "group_progress": null,
+    "label": "small.0.5",
+    "physical_escape": null,
+    "plain_progress": null,
+    "position": [
+      54.599998474121094,
+      20.01628303527832
+    ],
+    "target": null,
+    "unit": 6
+  },
+  {
+    "group_progress": null,
+    "label": "small.1.0",
+    "physical_escape": null,
+    "plain_progress": null,
+    "position": [
+      45.400001525878906,
+      20.01628303527832
+    ],
+    "target": null,
+    "unit": 7
+  },
+  {
+    "group_progress": null,
+    "label": "small.1.1",
+    "physical_escape": null,
+    "plain_progress": null,
+    "position": [
+      46.54999923706055,
+      22.008142471313477
+    ],
+    "target": null,
+    "unit": 8
+  },
+  {
+    "group_progress": null,
+    "label": "small.1.2",
+    "physical_escape": null,
+    "plain_progress": null,
+    "position": [
+      50.0,
+      20.01628303527832
+    ],
+    "target": null,
+    "unit": 9
+  },
+  {
+    "group_progress": null,
+    "label": "small.1.3",
+    "physical_escape": null,
+    "plain_progress": null,
+    "position": [
+      52.29999923706055,
+      20.01628303527832
+    ],
+    "target": null,
+    "unit": 10
+  },
+  {
+    "group_progress": null,
+    "label": "small.1.4",
+    "physical_escape": null,
+    "plain_progress": null,
+    "position": [
+      53.45000076293945,
+      22.008142471313477
+    ],
+    "target": null,
+    "unit": 11
+  },
+  {
+    "group_progress": null,
+    "label": "small.1.5",
+    "physical_escape": null,
+    "plain_progress": null,
+    "position": [
+      55.75,
+      22.008142471313477
+    ],
+    "target": null,
+    "unit": 12
+  },
+  {
+    "group_progress": null,
+    "label": "small.2.0",
+    "physical_escape": null,
+    "plain_progress": null,
+    "position": [
+      44.25,
+      22.008142471313477
+    ],
+    "target": null,
+    "unit": 13
+  },
+  {
+    "group_progress": null,
+    "label": "small.2.1",
+    "physical_escape": null,
+    "plain_progress": null,
+    "position": [
+      50.0,
+      24.0
+    ],
+    "target": null,
+    "unit": 14
+  },
+  {
+    "group_progress": null,
+    "label": "small.2.2",
+    "physical_escape": null,
+    "plain_progress": null,
+    "position": [
+      48.849998474121094,
+      22.008142471313477
+    ],
+    "target": null,
+    "unit": 15
+  },
+  {
+    "group_progress": null,
+    "label": "small.2.3",
+    "physical_escape": null,
+    "plain_progress": null,
+    "position": [
+      51.150001525878906,
+      22.008142471313477
+    ],
+    "target": null,
+    "unit": 16
+  },
+  {
+    "group_progress": null,
+    "label": "small.2.4",
+    "physical_escape": null,
+    "plain_progress": null,
+    "position": [
+      54.599998474121094,
+      24.0
+    ],
+    "target": null,
+    "unit": 17
+  },
+  {
+    "group_progress": null,
+    "label": "small.2.5",
+    "physical_escape": null,
+    "plain_progress": null,
+    "position": [
+      56.900001525878906,
+      24.0
+    ],
+    "target": null,
+    "unit": 18
+  },
+  {
+    "group_progress": null,
+    "label": "small.3.1",
+    "physical_escape": null,
+    "plain_progress": null,
+    "position": [
+      48.849998474121094,
+      29.975574493408203
+    ],
+    "target": null,
+    "unit": 20
+  },
+  {
+    "group_progress": null,
+    "label": "small.3.4",
+    "physical_escape": null,
+    "plain_progress": null,
+    "position": [
+      54.599998474121094,
+      27.98371696472168
+    ],
+    "target": null,
+    "unit": 23
+  },
+  {
+    "group_progress": null,
+    "label": "large.0.0",
+    "physical_escape": null,
+    "plain_progress": null,
+    "position": [
+      45.400001525878906,
+      24.0
+    ],
+    "target": null,
+    "unit": 25
+  },
+  {
+    "group_progress": null,
+    "label": "large.1.2",
+    "physical_escape": null,
+    "plain_progress": null,
+    "position": [
+      50.0,
+      27.98371696472168
+    ],
+    "target": null,
+    "unit": 31
+  },
+  {
+    "group_progress": null,
+    "label": "large.1.3",
+    "physical_escape": null,
+    "plain_progress": null,
+    "position": [
+      52.29999923706055,
+      27.98371696472168
+    ],
+    "target": null,
+    "unit": 32
+  },
+  {
+    "group_progress": null,
+    "label": "large.2.2",
+    "physical_escape": null,
+    "plain_progress": null,
+    "position": [
+      51.150001525878906,
+      29.975574493408203
+    ],
+    "target": null,
+    "unit": 35
+  },
+  {
+    "group_progress": null,
+    "label": "large.2.3",
+    "physical_escape": null,
+    "plain_progress": null,
+    "position": [
+      53.45000076293945,
+      29.975574493408203
+    ],
+    "target": null,
+    "unit": 36
+  },
+  {
+    "group_progress": null,
+    "label": "large.0.3",
+    "physical_escape": null,
+    "plain_progress": null,
+    "position": [
+      47.36805725097656,
+      25.462810516357422
+    ],
+    "target": [
+      53.45000076293945,
+      25.991857528686523
+    ],
+    "unit": 28
+  },
+  {
+    "group_progress": {
+      "activity": "Moving",
+      "best_distance": 0.0,
+      "claim_count": 2,
+      "pass_mode": true,
+      "pool_id": 1,
+      "slot": [
+        44.25,
+        18.024425506591797
+      ],
+      "stalled_ticks": 0,
+      "stalling_on_group": true
+    },
+    "label": "large.1.0",
+    "physical_escape": null,
+    "plain_progress": null,
+    "position": [
+      44.25,
+      25.991857528686523
+    ],
+    "target": null,
+    "unit": 29
+  },
+  {
+    "group_progress": null,
+    "label": "large.2.1",
+    "physical_escape": null,
+    "plain_progress": {
+      "activity": "Blocked",
+      "best_distance": 1.5470786094665527,
+      "claim_count": 3,
+      "failure_recorded": false,
+      "original_point": [
+        46.54999923706055,
+        29.975574493408203
+      ],
+      "pool_slots": [
+        [
+          48.849998474121094,
+          33.95928955078125
+        ],
+        [
+          44.25,
+          33.95928955078125
+        ],
+        [
+          51.14999771118164,
+          29.975574493408203
+        ]
+      ],
+      "slot": [
+        46.54999923706055,
+        29.975574493408203
+      ],
+      "stalled_ticks": 20
+    },
+    "position": [
+      47.73109817504883,
+      30.974742889404297
+    ],
+    "target": [
+      46.54999923706055,
+      29.975574493408203
+    ],
+    "unit": 34
+  },
+  {
+    "group_progress": null,
+    "label": "large.1.1",
+    "physical_escape": null,
+    "plain_progress": {
+      "activity": "Blocked",
+      "best_distance": 5.191887378692627,
+      "claim_count": 3,
+      "failure_recorded": false,
+      "original_point": [
+        47.70000076293945,
+        27.98371696472168
+      ],
+      "pool_slots": [
+        [
+          51.150001525878906,
+          25.991859436035156
+        ],
+        [
+          43.10000228881836,
+          24.0
+        ],
+        [
+          52.29999923706055,
+          31.96743392944336
+        ]
+      ],
+      "slot": [
+        46.83293533325195,
+        31.777738571166992
+      ],
+      "stalled_ticks": 21
+    },
+    "position": [
+      45.74543380737305,
+      29.894134521484375
+    ],
+    "target": [
+      47.70000076293945,
+      27.98371696472168
+    ],
+    "unit": 30
+  },
+  {
+    "group_progress": {
+      "activity": "Moving",
+      "best_distance": 3.547419309616089,
+      "claim_count": 3,
+      "pass_mode": false,
+      "pool_id": 1,
+      "slot": [
+        43.099998474121094,
+        24.0
+      ],
+      "stalled_ticks": 20,
+      "stalling_on_group": true
+    },
+    "label": "large.2.0",
+    "physical_escape": {
+      "target": [
+        43.92430114746094,
+        28.309219360351562
+      ]
+    },
+    "plain_progress": null,
+    "position": [
+      44.12495803833008,
+      28.272933959960938
+    ],
+    "target": [
+      45.400001525878906,
+      27.98371696472168
+    ],
+    "unit": 33
+  },
+  {
+    "group_progress": null,
+    "label": "large.0.2",
+    "physical_escape": {
+      "target": [
+        47.9308967590332,
+        28.636289596557617
+      ]
+    },
+    "plain_progress": {
+      "activity": "Blocked",
+      "best_distance": 4.138527870178223,
+      "claim_count": 3,
+      "failure_recorded": false,
+      "original_point": [
+        51.150001525878906,
+        25.991857528686523
+      ],
+      "pool_slots": [
+        [
+          56.900001525878906,
+          27.983715057373047
+        ],
+        [
+          55.75,
+          29.975574493408203
+        ],
+        [
+          52.30000305175781,
+          31.967432022094727
+        ]
+      ],
+      "slot": [
+        51.150001525878906,
+        25.991857528686523
+      ],
+      "stalled_ticks": 762
+    },
+    "position": [
+      47.86237335205078,
+      28.503864288330078
+    ],
+    "target": [
+      51.150001525878906,
+      25.991857528686523
+    ],
+    "unit": 27
+  },
+  {
+    "group_progress": null,
+    "label": "large.0.1",
+    "physical_escape": {
+      "target": [
+        45.785606384277344,
+        27.579782485961914
+      ]
+    },
+    "plain_progress": {
+      "activity": "Blocked",
+      "best_distance": 4.630045413970947,
+      "claim_count": 3,
+      "failure_recorded": false,
+      "original_point": [
+        46.54999923706055,
+        25.991857528686523
+      ],
+      "pool_slots": [
+        [
+          51.14999771118164,
+          25.991857528686523
+        ],
+        [
+          41.95000076293945,
+          22.008140563964844
+        ],
+        [
+          40.79999923706055,
+          24.0
+        ]
+      ],
+      "slot": [
+        41.95000076293945,
+        29.975574493408203
+      ],
+      "stalled_ticks": 836
+    },
+    "position": [
+      46.06489562988281,
+      27.235315322875977
+    ],
+    "target": [
+      46.54999923706055,
+      25.991857528686523
+    ],
+    "unit": 26
+  }
+]

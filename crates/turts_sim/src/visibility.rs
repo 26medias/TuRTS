@@ -166,6 +166,17 @@ impl VisibilityBasis {
     pub fn unit_permitted(&self, viewer: u8, id: u32) -> bool {
         self.permitted_unit(viewer, id).is_some()
     }
+    /// Enumerate only units permitted by this immutable observation basis.
+    pub(crate) fn permitted_units(&self, viewer: u8) -> impl Iterator<Item = &VisibleUnit> {
+        let slot = self.slots.get(usize::from(viewer));
+        self.units
+            .iter()
+            .enumerate()
+            .filter_map(move |(index, unit)| {
+                slot.filter(|slot| bit(&slot.allowed_units, index as u32))
+                    .map(|_| unit)
+            })
+    }
     pub fn permitted_node(&self, viewer: u8, id: u32) -> Option<&VisibleNode> {
         let row = &self.nodes[self
             .nodes

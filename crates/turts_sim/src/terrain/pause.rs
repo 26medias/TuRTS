@@ -196,6 +196,7 @@ mod tests {
             required: Some(23),
             wait: TerrainWorkWait::CargoFull,
             source_revision: Some(9),
+            approach: None,
         };
         world.insert_resource(TerrainWorkRuntime {
             units: [(17, progress.clone())].into(),

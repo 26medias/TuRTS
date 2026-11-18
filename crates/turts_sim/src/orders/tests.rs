@@ -1360,6 +1360,17 @@ fn missing_unit_target_does_not_consume_virtual_spread_capacity() {
 
 #[test]
 fn dead_first_unit_target_member_does_not_anchor_surviving_envelope() {
+    check_dead_first_member(false, false);
+}
+
+#[test]
+fn retained_zero_health_member_cannot_redirect_a_surviving_pending_order() {
+    for full_order_phase in [false, true] {
+        check_dead_first_member(true, full_order_phase);
+    }
+}
+
+fn check_dead_first_member(retained: bool, full_order_phase: bool) {
     let (mut app, first) = gatherer_app();
     app.world_mut().entity_mut(first).insert(crate::UnitId(2));
     app.world_mut()
@@ -1392,6 +1403,29 @@ fn dead_first_unit_target_member_does_not_anchor_surviving_envelope() {
         target: OrderTargetSim::Unit(4),
         group: 81,
     };
+    let dead = retained.then(|| {
+        app.world_mut()
+            .spawn((
+                crate::UnitId(1),
+                crate::UnitType(mobile_type),
+                crate::Owner(SlotId(0)),
+                crate::Position(Vec2::new(8.0, 8.0)),
+                MoveTarget(Vec2::new(24.0, 24.0)),
+                UnitOrders {
+                    current: Some(dead_member_order.clone()),
+                    queue: VecDeque::from([survivor_order.clone()]),
+                    ..Default::default()
+                },
+            ))
+            .id()
+    });
+    if retained {
+        crate::economy::transaction::transact(app.world_mut(), |tx| {
+            tx.stage_health(1, 0);
+            Ok(())
+        })
+        .unwrap();
+    }
     let mut pending = PendingMovementOrders::default();
     assert!(pending.queue(PendingMovementOrder {
         slot: SlotId(0),
@@ -1407,7 +1441,18 @@ fn dead_first_unit_target_member_does_not_anchor_surviving_envelope() {
     }));
     app.world_mut().insert_resource(pending);
 
-    dispatch_pending_movement(app.world_mut());
+    if full_order_phase {
+        run_orders(app.world_mut());
+        let dead = dead.unwrap();
+        assert!(app.world().get::<MoveTarget>(dead).is_none());
+        assert!(
+            app.world()
+                .get::<UnitOrders>(dead)
+                .is_none_or(|orders| orders.current.is_none() && orders.queue.is_empty())
+        );
+    } else {
+        dispatch_pending_movement(app.world_mut());
+    }
 
     let target = app.world().entity(first).get::<MoveTarget>().unwrap().0;
     assert!(
@@ -1517,8 +1562,8 @@ fn target_gone_queued_hold_refreshes_reservation_before_survivor_spread() {
         .expect("the surviving group member receives a movement pool")
         .slot;
     assert!(
-        allocated.distance(Vec2::new(8.0, 8.0)) >= 1.1 - 1.0e-4,
-        "the survivor's destination respects the failed member's new resting position"
+        (1.0..=1.0001).contains(&allocated.distance(Vec2::new(8.0, 8.0))),
+        "the survivor stops at the nearest non-overlapping boundary of the new Hold position"
     );
 }
 
@@ -1720,8 +1765,8 @@ fn second_dispatch_refreshes_reservations_after_rate_limited_hold_continuation()
         .get::<MoveTarget>()
         .expect("the other envelope must still be dispatched");
     assert!(
-        hold_target_assignee.0.distance(hold_position) >= 1.1 - 1.0e-5,
-        "the new Hold position remains reserved, got {:?}",
+        (1.0..=1.0001).contains(&hold_target_assignee.0.distance(hold_position)),
+        "the new Hold position remains reserved at its closest clear boundary, got {:?}",
         hold_target_assignee.0
     );
     assert_eq!(app.world().resource::<SpreadIndexCache>().context_builds, 1);

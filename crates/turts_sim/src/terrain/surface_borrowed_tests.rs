@@ -94,6 +94,7 @@ fn copied(phase: &TerrainPhase) -> TerrainPhase {
         coverage: phase.coverage.clone(),
         initial: phase.initial.clone(),
         initial_ranges: phase.initial_ranges.clone(),
+        planning_epochs: phase.planning_epochs.clone(),
         materials: phase.materials.clone(),
         ground: phase.ground.clone(),
         work: phase.work.clone(),

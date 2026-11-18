@@ -258,6 +258,47 @@ pub fn spread_destinations_with_context(
         }
         ring += 1;
     }
+    if members.len() == 1 && slots.first() != Some(&point) {
+        let nearest_hex = slots
+            .iter()
+            .copied()
+            .min_by(|a, b| nearest_angle_order(*a, *b, point));
+        if let Some(nearest) =
+            nearest_singleton(&members[0], point, context, excluded_units, nearest_hex)
+        {
+            // A singleton has no formation to preserve. Keep its primary destination
+            // on the nearest physical clearance boundary rather than a coarse hex ring.
+            // Spare destinations still keep the existing group spacing.
+            slots.sort_by(|a, b| {
+                a.distance_squared(point)
+                    .total_cmp(&b.distance_squared(point))
+                    .then_with(|| angle(*a, point).total_cmp(&angle(*b, point)))
+            });
+            let mut refined = Vec::with_capacity(wanted);
+            refined.push(nearest);
+            for candidate in slots {
+                if refined
+                    .iter()
+                    .all(|other: &Vec2| other.distance(candidate) >= spacing - 1.0e-5)
+                {
+                    refined.push(candidate);
+                    if refined.len() == wanted {
+                        break;
+                    }
+                }
+            }
+            return (
+                MovementPool {
+                    pool_id: 0,
+                    point,
+                    spacing,
+                    primary_count: 1,
+                    slots: refined,
+                },
+                vec![(members[0].id, nearest)],
+            );
+        }
+    }
     if slots.len() < members.len() {
         let pool = MovementPool {
             pool_id: 0,
@@ -335,6 +376,264 @@ pub fn spread_destinations_with_context(
         slots,
     };
     (pool, assignments)
+}
+
+#[derive(Clone, Copy)]
+struct ArrivalCircle {
+    x: f64,
+    y: f64,
+    radius: f64,
+}
+fn singleton_free(
+    point: Vec2,
+    radius: f32,
+    context: &SpreadContext,
+    excluded: &std::collections::HashSet<u32>,
+) -> bool {
+    if !point.is_finite()
+        || point.x < radius
+        || point.y < radius
+        || point.x > context.bounds.x - radius
+        || point.y > context.bounds.y - radius
+    {
+        return false;
+    }
+    let clear = |centre: Vec2, other: f32| {
+        let dx = f64::from(point.x) - f64::from(centre.x);
+        let dy = f64::from(point.y) - f64::from(centre.y);
+        let sum = f64::from(radius) + f64::from(other);
+        dx * dx + dy * dy >= sum * sum && point.distance(centre) >= radius + other
+    };
+    let reach = |other: f32| (radius + other).next_up().next_up();
+    context
+        .static_grid
+        .within_unsorted(
+            &context.static_points,
+            point,
+            reach(context.max_static_radius),
+        )
+        .into_iter()
+        .all(|i| {
+            clear(
+                context.static_footprints[i].position,
+                context.static_footprints[i].radius,
+            )
+        })
+        && context
+            .reserved_grid
+            .within_unsorted(
+                &context.reserved_points,
+                point,
+                reach(context.max_reserved_radius),
+            )
+            .into_iter()
+            .all(|i| {
+                context.reserved_units[i].is_some_and(|id| excluded.contains(&id))
+                    || clear(context.reserved[i].position, context.reserved[i].radius)
+            })
+}
+fn consider_singleton(
+    best: &mut Option<Vec2>,
+    candidate: [f64; 2],
+    goal: Vec2,
+    radius: f32,
+    context: &SpreadContext,
+    excluded: &std::collections::HashSet<u32>,
+) {
+    let x = candidate[0] as f32;
+    let y = candidate[1] as f32;
+    // The analytic point may round inward. Test its adjacent representable poses;
+    // every accepted pose is checked against all actual nearby bodies, without
+    // introducing a new collision epsilon or reserving somebody else's destination.
+    for x in [x.next_down(), x, x.next_up()] {
+        for y in [y.next_down(), y, y.next_up()] {
+            let point = Vec2::new(x, y);
+            let order = |a: Vec2, b: Vec2| {
+                let distance = |p: Vec2| {
+                    let dx = f64::from(p.x) - f64::from(goal.x);
+                    let dy = f64::from(p.y) - f64::from(goal.y);
+                    dx * dx + dy * dy
+                };
+                distance(a).total_cmp(&distance(b)).then_with(|| {
+                    (f64::from(a.y) - f64::from(goal.y))
+                        .atan2(f64::from(a.x) - f64::from(goal.x))
+                        .total_cmp(
+                            &(f64::from(b.y) - f64::from(goal.y))
+                                .atan2(f64::from(b.x) - f64::from(goal.x)),
+                        )
+                })
+            };
+            if best.is_some_and(|best| order(point, best).is_ge()) {
+                continue;
+            }
+            if singleton_free(point, radius, context, excluded) {
+                *best = Some(point);
+            }
+        }
+    }
+}
+/// The closest point outside a union of clearance disks is either a radial
+/// projection, an intersection of two disk boundaries, or a map-edge boundary.
+/// The existing free hex destination supplies a local search upper bound.
+fn nearest_singleton(
+    member: &SpreadMember,
+    goal: Vec2,
+    context: &SpreadContext,
+    excluded: &std::collections::HashSet<u32>,
+    hex: Option<Vec2>,
+) -> Option<Vec2> {
+    if singleton_free(goal, member.radius, context, excluded) {
+        return Some(goal);
+    }
+    let mut best = None;
+    if let Some(point) = hex {
+        consider_singleton(
+            &mut best,
+            [f64::from(point.x), f64::from(point.y)],
+            goal,
+            member.radius,
+            context,
+            excluded,
+        );
+    }
+    let low = f64::from(member.radius);
+    let high = [
+        f64::from(context.bounds.x - member.radius),
+        f64::from(context.bounds.y - member.radius),
+    ];
+    if high[0] < low || high[1] < low {
+        return None;
+    }
+    for x in [low, high[0]] {
+        for y in [low, high[1]] {
+            consider_singleton(&mut best, [x, y], goal, member.radius, context, excluded);
+        }
+    }
+    let distance =
+        |p: Vec2| (f64::from(p.x) - f64::from(goal.x)).hypot(f64::from(p.y) - f64::from(goal.y));
+    let limit = best.map_or_else(
+        || {
+            [
+                Vec2::new(low as f32, low as f32),
+                Vec2::new(high[0] as f32, high[1] as f32),
+            ]
+            .into_iter()
+            .map(distance)
+            .fold(0.0, f64::max)
+        },
+        distance,
+    );
+    let reach = |other: f32| {
+        ((limit + f64::from(member.radius) + f64::from(other)) as f32)
+            .next_up()
+            .next_up()
+    };
+    let mut circles = Vec::new();
+    for i in context.static_grid.within_unsorted(
+        &context.static_points,
+        goal,
+        reach(context.max_static_radius),
+    ) {
+        let body = context.static_footprints[i];
+        circles.push(ArrivalCircle {
+            x: f64::from(body.position.x),
+            y: f64::from(body.position.y),
+            radius: f64::from(member.radius) + f64::from(body.radius),
+        });
+    }
+    for i in context.reserved_grid.within_unsorted(
+        &context.reserved_points,
+        goal,
+        reach(context.max_reserved_radius),
+    ) {
+        if context.reserved_units[i].is_some_and(|id| excluded.contains(&id)) {
+            continue;
+        }
+        let body = context.reserved[i];
+        circles.push(ArrivalCircle {
+            x: f64::from(body.position.x),
+            y: f64::from(body.position.y),
+            radius: f64::from(member.radius) + f64::from(body.radius),
+        });
+    }
+    circles.sort_by(|a, b| {
+        a.x.total_cmp(&b.x)
+            .then(a.y.total_cmp(&b.y))
+            .then(a.radius.total_cmp(&b.radius))
+    });
+    circles.dedup_by(|a, b| a.x == b.x && a.y == b.y && a.radius == b.radius);
+    for (index, circle) in circles.iter().enumerate() {
+        let mut dx = f64::from(goal.x) - circle.x;
+        let mut dy = f64::from(goal.y) - circle.y;
+        if dx == 0.0 && dy == 0.0 {
+            dx = f64::from(member.position.x) - circle.x;
+            dy = f64::from(member.position.y) - circle.y;
+        }
+        if dx == 0.0 && dy == 0.0 {
+            dx = 1.0;
+        }
+        let length = dx.hypot(dy);
+        consider_singleton(
+            &mut best,
+            [
+                circle.x + dx / length * circle.radius,
+                circle.y + dy / length * circle.radius,
+            ],
+            goal,
+            member.radius,
+            context,
+            excluded,
+        );
+        for x in [low, high[0]] {
+            let square = circle.radius * circle.radius - (x - circle.x) * (x - circle.x);
+            if square >= 0.0 {
+                let h = square.sqrt();
+                for y in [circle.y - h, circle.y + h] {
+                    consider_singleton(&mut best, [x, y], goal, member.radius, context, excluded);
+                }
+            }
+        }
+        for y in [low, high[1]] {
+            let square = circle.radius * circle.radius - (y - circle.y) * (y - circle.y);
+            if square >= 0.0 {
+                let h = square.sqrt();
+                for x in [circle.x - h, circle.x + h] {
+                    consider_singleton(&mut best, [x, y], goal, member.radius, context, excluded);
+                }
+            }
+        }
+        for other in &circles[..index] {
+            let dx = other.x - circle.x;
+            let dy = other.y - circle.y;
+            let d = dx.hypot(dy);
+            if d == 0.0
+                || d > circle.radius + other.radius
+                || d < (circle.radius - other.radius).abs()
+            {
+                continue;
+            }
+            let along =
+                (circle.radius * circle.radius - other.radius * other.radius + d * d) / (2.0 * d);
+            let height = (circle.radius * circle.radius - along * along)
+                .max(0.0)
+                .sqrt();
+            let mid = [circle.x + dx / d * along, circle.y + dy / d * along];
+            for sign in [-1.0, 1.0] {
+                consider_singleton(
+                    &mut best,
+                    [
+                        mid[0] - dy / d * height * sign,
+                        mid[1] + dx / d * height * sign,
+                    ],
+                    goal,
+                    member.radius,
+                    context,
+                    excluded,
+                );
+            }
+        }
+    }
+    best
 }
 
 fn free_slot_grid(

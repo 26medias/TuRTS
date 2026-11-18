@@ -1,0 +1,614 @@
+[
+  {
+    "group_progress": null,
+    "label": "small.3.0",
+    "physical_escape": null,
+    "plain_progress": null,
+    "position": [
+      47.70000076293945,
+      24.0
+    ],
+    "target": null,
+    "unit": 19
+  },
+  {
+    "group_progress": null,
+    "label": "small.3.2",
+    "physical_escape": null,
+    "plain_progress": null,
+    "position": [
+      48.849998474121094,
+      25.991857528686523
+    ],
+    "target": null,
+    "unit": 21
+  },
+  {
+    "group_progress": null,
+    "label": "small.3.3",
+    "physical_escape": null,
+    "plain_progress": null,
+    "position": [
+      52.29999923706055,
+      24.0
+    ],
+    "target": null,
+    "unit": 22
+  },
+  {
+    "group_progress": null,
+    "label": "small.3.5",
+    "physical_escape": null,
+    "plain_progress": null,
+    "position": [
+      55.75,
+      25.991857528686523
+    ],
+    "target": null,
+    "unit": 24
+  },
+  {
+    "group_progress": null,
+    "label": "large.1.0",
+    "physical_escape": null,
+    "plain_progress": null,
+    "position": [
+      44.25,
+      25.991857528686523
+    ],
+    "target": null,
+    "unit": 29
+  },
+  {
+    "group_progress": null,
+    "label": "small.0.0",
+    "physical_escape": null,
+    "plain_progress": null,
+    "position": [
+      46.54999923706055,
+      18.024425506591797
+    ],
+    "target": null,
+    "unit": 1
+  },
+  {
+    "group_progress": null,
+    "label": "small.0.1",
+    "physical_escape": null,
+    "plain_progress": null,
+    "position": [
+      47.70000076293945,
+      20.01628303527832
+    ],
+    "target": null,
+    "unit": 2
+  },
+  {
+    "group_progress": null,
+    "label": "small.0.2",
+    "physical_escape": null,
+    "plain_progress": null,
+    "position": [
+      48.849998474121094,
+      18.024425506591797
+    ],
+    "target": null,
+    "unit": 3
+  },
+  {
+    "group_progress": null,
+    "label": "small.0.3",
+    "physical_escape": null,
+    "plain_progress": null,
+    "position": [
+      51.150001525878906,
+      18.024425506591797
+    ],
+    "target": null,
+    "unit": 4
+  },
+  {
+    "group_progress": null,
+    "label": "small.0.4",
+    "physical_escape": null,
+    "plain_progress": null,
+    "position": [
+      53.45000076293945,
+      18.024425506591797
+    ],
+    "target": null,
+    "unit": 5
+  },
+  {
+    "group_progress": null,
+    "label": "small.0.5",
+    "physical_escape": null,
+    "plain_progress": null,
+    "position": [
+      54.599998474121094,
+      20.01628303527832
+    ],
+    "target": null,
+    "unit": 6
+  },
+  {
+    "group_progress": null,
+    "label": "small.1.0",
+    "physical_escape": null,
+    "plain_progress": null,
+    "position": [
+      45.400001525878906,
+      20.01628303527832
+    ],
+    "target": null,
+    "unit": 7
+  },
+  {
+    "group_progress": null,
+    "label": "small.1.1",
+    "physical_escape": null,
+    "plain_progress": null,
+    "position": [
+      46.54999923706055,
+      22.008142471313477
+    ],
+    "target": null,
+    "unit": 8
+  },
+  {
+    "group_progress": null,
+    "label": "small.1.2",
+    "physical_escape": null,
+    "plain_progress": null,
+    "position": [
+      50.0,
+      20.01628303527832
+    ],
+    "target": null,
+    "unit": 9
+  },
+  {
+    "group_progress": null,
+    "label": "small.1.3",
+    "physical_escape": null,
+    "plain_progress": null,
+    "position": [
+      52.29999923706055,
+      20.01628303527832
+    ],
+    "target": null,
+    "unit": 10
+  },
+  {
+    "group_progress": null,
+    "label": "small.1.4",
+    "physical_escape": null,
+    "plain_progress": null,
+    "position": [
+      53.45000076293945,
+      22.008142471313477
+    ],
+    "target": null,
+    "unit": 11
+  },
+  {
+    "group_progress": null,
+    "label": "small.1.5",
+    "physical_escape": null,
+    "plain_progress": null,
+    "position": [
+      55.75,
+      22.008142471313477
+    ],
+    "target": null,
+    "unit": 12
+  },
+  {
+    "group_progress": null,
+    "label": "small.2.0",
+    "physical_escape": null,
+    "plain_progress": null,
+    "position": [
+      44.25,
+      22.008142471313477
+    ],
+    "target": null,
+    "unit": 13
+  },
+  {
+    "group_progress": null,
+    "label": "small.2.1",
+    "physical_escape": null,
+    "plain_progress": null,
+    "position": [
+      50.0,
+      24.0
+    ],
+    "target": null,
+    "unit": 14
+  },
+  {
+    "group_progress": null,
+    "label": "small.2.2",
+    "physical_escape": null,
+    "plain_progress": null,
+    "position": [
+      48.849998474121094,
+      22.008142471313477
+    ],
+    "target": null,
+    "unit": 15
+  },
+  {
+    "group_progress": null,
+    "label": "small.2.3",
+    "physical_escape": null,
+    "plain_progress": null,
+    "position": [
+      51.150001525878906,
+      22.008142471313477
+    ],
+    "target": null,
+    "unit": 16
+  },
+  {
+    "group_progress": null,
+    "label": "small.2.4",
+    "physical_escape": null,
+    "plain_progress": null,
+    "position": [
+      54.599998474121094,
+      24.0
+    ],
+    "target": null,
+    "unit": 17
+  },
+  {
+    "group_progress": null,
+    "label": "small.2.5",
+    "physical_escape": null,
+    "plain_progress": null,
+    "position": [
+      56.900001525878906,
+      24.0
+    ],
+    "target": null,
+    "unit": 18
+  },
+  {
+    "group_progress": null,
+    "label": "small.3.1",
+    "physical_escape": null,
+    "plain_progress": null,
+    "position": [
+      48.849998474121094,
+      29.975574493408203
+    ],
+    "target": null,
+    "unit": 20
+  },
+  {
+    "group_progress": null,
+    "label": "small.3.4",
+    "physical_escape": null,
+    "plain_progress": null,
+    "position": [
+      54.599998474121094,
+      27.98371696472168
+    ],
+    "target": null,
+    "unit": 23
+  },
+  {
+    "group_progress": null,
+    "label": "large.0.0",
+    "physical_escape": null,
+    "plain_progress": null,
+    "position": [
+      45.400001525878906,
+      24.0
+    ],
+    "target": null,
+    "unit": 25
+  },
+  {
+    "group_progress": null,
+    "label": "large.1.2",
+    "physical_escape": null,
+    "plain_progress": null,
+    "position": [
+      50.0,
+      27.98371696472168
+    ],
+    "target": null,
+    "unit": 31
+  },
+  {
+    "group_progress": null,
+    "label": "large.1.3",
+    "physical_escape": null,
+    "plain_progress": null,
+    "position": [
+      52.29999923706055,
+      27.98371696472168
+    ],
+    "target": null,
+    "unit": 32
+  },
+  {
+    "group_progress": null,
+    "label": "large.2.2",
+    "physical_escape": null,
+    "plain_progress": null,
+    "position": [
+      51.150001525878906,
+      29.975574493408203
+    ],
+    "target": null,
+    "unit": 35
+  },
+  {
+    "group_progress": null,
+    "label": "large.2.3",
+    "physical_escape": null,
+    "plain_progress": null,
+    "position": [
+      53.45000076293945,
+      29.975574493408203
+    ],
+    "target": null,
+    "unit": 36
+  },
+  {
+    "group_progress": null,
+    "label": "large.2.1",
+    "physical_escape": null,
+    "plain_progress": null,
+    "position": [
+      46.54999923706055,
+      29.975574493408203
+    ],
+    "target": null,
+    "unit": 34
+  },
+  {
+    "group_progress": null,
+    "label": "large.1.1",
+    "physical_escape": null,
+    "plain_progress": {
+      "activity": "Blocked",
+      "best_distance": 3.4246463775634766,
+      "claim_count": 3,
+      "failure_recorded": false,
+      "original_point": [
+        47.70000076293945,
+        27.98371696472168
+      ],
+      "pool_slots": [
+        [
+          51.150001525878906,
+          25.991859436035156
+        ],
+        [
+          43.10000228881836,
+          24.0
+        ],
+        [
+          43.10000228881836,
+          31.96743392944336
+        ]
+      ],
+      "slot": [
+        47.70000076293945,
+        27.98371696472168
+      ],
+      "stalled_ticks": 20
+    },
+    "position": [
+      48.26908493041992,
+      31.360273361206055
+    ],
+    "target": [
+      47.70000076293945,
+      27.98371696472168
+    ],
+    "unit": 30
+  },
+  {
+    "group_progress": null,
+    "label": "large.0.3",
+    "physical_escape": {
+      "target": [
+        47.25616455078125,
+        25.388656616210938
+      ]
+    },
+    "plain_progress": {
+      "activity": "Blocked",
+      "best_distance": 6.347561836242676,
+      "claim_count": 3,
+      "failure_recorded": false,
+      "original_point": [
+        53.45000076293945,
+        25.991857528686523
+      ],
+      "pool_slots": [
+        [
+          58.04999923706055,
+          25.991857528686523
+        ],
+        [
+          58.04999923706055,
+          22.008140563964844
+        ],
+        [
+          59.20000076293945,
+          24.0
+        ]
+      ],
+      "slot": [
+        53.45000076293945,
+        25.991857528686523
+      ],
+      "stalled_ticks": 872
+    },
+    "position": [
+      47.131195068359375,
+      25.388656616210938
+    ],
+    "target": [
+      53.45000076293945,
+      25.991857528686523
+    ],
+    "unit": 28
+  },
+  {
+    "group_progress": null,
+    "label": "large.0.2",
+    "physical_escape": {
+      "target": [
+        47.97645568847656,
+        27.412527084350586
+      ]
+    },
+    "plain_progress": {
+      "activity": "Blocked",
+      "best_distance": 3.6020238399505615,
+      "claim_count": 3,
+      "failure_recorded": false,
+      "original_point": [
+        51.150001525878906,
+        25.991857528686523
+      ],
+      "pool_slots": [
+        [
+          56.900001525878906,
+          27.983715057373047
+        ],
+        [
+          55.75,
+          29.975574493408203
+        ],
+        [
+          58.05000305175781,
+          25.991857528686523
+        ]
+      ],
+      "slot": [
+        51.150001525878906,
+        25.991857528686523
+      ],
+      "stalled_ticks": 787
+    },
+    "position": [
+      47.86236572265625,
+      27.463600158691406
+    ],
+    "target": [
+      51.150001525878906,
+      25.991857528686523
+    ],
+    "unit": 27
+  },
+  {
+    "group_progress": null,
+    "label": "large.2.0",
+    "physical_escape": {
+      "target": null
+    },
+    "plain_progress": {
+      "activity": "Blocked",
+      "best_distance": 1.8339768648147583,
+      "claim_count": 3,
+      "failure_recorded": false,
+      "original_point": [
+        45.400001525878906,
+        27.98371696472168
+      ],
+      "pool_slots": [
+        [
+          43.10000228881836,
+          24.0
+        ],
+        [
+          40.80000305175781,
+          24.0
+        ],
+        [
+          50.0,
+          31.96743392944336
+        ]
+      ],
+      "slot": [
+        45.400001525878906,
+        27.98371696472168
+      ],
+      "stalled_ticks": 21
+    },
+    "position": [
+      44.081512451171875,
+      29.25722312927246
+    ],
+    "target": [
+      45.400001525878906,
+      27.98371696472168
+    ],
+    "unit": 33
+  },
+  {
+    "group_progress": null,
+    "label": "large.0.1",
+    "physical_escape": {
+      "target": [
+        45.56385040283203,
+        27.732934951782227
+      ]
+    },
+    "plain_progress": {
+      "activity": "Moving",
+      "best_distance": 4.1566925048828125,
+      "claim_count": 1,
+      "failure_recorded": false,
+      "original_point": [
+        46.54999923706055,
+        25.991857528686523
+      ],
+      "pool_slots": [
+        [
+          51.14999771118164,
+          25.991857528686523
+        ],
+        [
+          41.95000076293945,
+          22.008140563964844
+        ],
+        [
+          40.79999923706055,
+          24.0
+        ],
+        [
+          40.79999923706055,
+          27.983715057373047
+        ],
+        [
+          53.44999694824219,
+          25.991857528686523
+        ]
+      ],
+      "slot": [
+        46.54999923706055,
+        25.991857528686523
+      ],
+      "stalled_ticks": 20
+    },
+    "position": [
+      45.63790512084961,
+      27.698862075805664
+    ],
+    "target": [
+      46.54999923706055,
+      25.991857528686523
+    ],
+    "unit": 26
+  }
+]

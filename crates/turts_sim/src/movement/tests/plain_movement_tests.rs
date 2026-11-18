@@ -1,3 +1,7 @@
+#![allow(
+    clippy::excessive_precision,
+    reason = "Captures retain their original decimal form for reproducible geometry."
+)]
 use super::{
     MovementActivity, MovementFrame, MovementFrameUnit, MovementInput, PlainMoveProgress, step,
     step_frame,
@@ -379,8 +383,8 @@ fn plain_move_with_zero_legal_primary_slots_blocks_before_moving() {
                 unit_id: 2,
                 owner_slot: 1,
                 unit_type: 2,
-                position: Vec2::new(1.2, 1.2),
-                radius: 0.2,
+                position: Vec2::new(0.75, 0.75),
+                radius: 0.6,
                 speed: None,
                 target: None,
                 progress: None,
@@ -398,4 +402,243 @@ fn plain_move_with_zero_legal_primary_slots_blocks_before_moving() {
     assert!(progress.pool_slots.is_empty());
     assert_eq!(output.position, start);
     assert_eq!(output.target, None);
+}
+
+#[test]
+fn plain_move_finds_nearest_physical_point_when_the_hex_pool_is_empty() {
+    let start = Vec2::new(0.5, 0.5);
+    let frame = MovementFrame {
+        bounds: Vec2::splat(1.5),
+        tick_hz: 20,
+        units: vec![
+            MovementFrameUnit {
+                unit_id: 1,
+                owner_slot: 0,
+                unit_type: 1,
+                position: start,
+                radius: 0.5,
+                speed: Some(3.0),
+                target: Some(Vec2::new(1.0, 1.0)),
+                progress: None,
+                plain_progress: None,
+                physical_escape: None,
+            },
+            MovementFrameUnit {
+                unit_id: 2,
+                owner_slot: 1,
+                unit_type: 2,
+                position: Vec2::new(1.2, 1.2),
+                radius: 0.2,
+                speed: None,
+                target: None,
+                progress: None,
+                plain_progress: None,
+                physical_escape: None,
+            },
+        ],
+        pools: BTreeMap::new(),
+    };
+
+    let output = step_frame(&frame, 0.05).remove(0);
+    let progress = output.plain_progress.unwrap();
+    assert_eq!(progress.activity, MovementActivity::Moving);
+    let centre = f64::from(1.2_f32);
+    let r = f64::from(0.5_f32) + f64::from(0.2_f32);
+    let minimum = r - (centre - 1.0) * 2.0_f64.sqrt();
+    assert!((f64::from(progress.slot.distance(Vec2::ONE)) - minimum).abs() < 0.0001);
+    assert!(
+        progress.slot.x >= 0.5
+            && progress.slot.y >= 0.5
+            && progress.slot.x <= 1.0
+            && progress.slot.y <= 1.0
+    );
+    assert!(progress.slot.distance(Vec2::splat(1.2)) >= 0.7);
+    assert_ne!(output.position, start);
+    assert!(output.position.distance(start) <= 3.0 * 0.05 + 1.0e-6);
+    assert!(output.position.distance(Vec2::splat(1.2)) >= 0.7);
+    assert!(progress.pool_slots.is_empty());
+    assert!(output.target.is_some());
+}
+
+#[test]
+fn certified_stall_deadline_survives_an_optimistic_raw_step() {
+    // The preceding guard has already certified a full second without progress.
+    // Raw projection alone cannot retire that recovery debt.
+    for grouped in [false, true] {
+        let mut frame = stalled_plain_frame(vec![Vec2::new(13., 10.)]);
+        frame.units.truncate(1);
+        frame.units[0].speed = Some(3.);
+        let plain = frame.units[0].plain_progress.as_mut().unwrap();
+        plain.stalled_ticks = 60;
+        if grouped {
+            let p = frame.units[0].plain_progress.take().unwrap();
+            frame.units[0].progress = Some(super::MoveProgress {
+                pool_id: 7,
+                slot: p.slot,
+                activity: MovementActivity::Moving,
+                pass_mode: true,
+                stalling_on_group: false,
+                stalled_ticks: 60,
+                best_distance: p.best_distance,
+                claim_count: 0,
+                follow_origin: None,
+            });
+            frame.pools.insert(
+                7,
+                super::MovementPool {
+                    pool_id: 7,
+                    point: p.slot,
+                    spacing: 1.1,
+                    primary_count: 1,
+                    slots: vec![p.slot, Vec2::new(13., 10.)],
+                },
+            );
+        }
+        let output = step_frame(&frame, 0.05).remove(0);
+        let (slot, claims, stalled) = if grouped {
+            let p = output.progress.unwrap();
+            (p.slot, p.claim_count, p.stalled_ticks)
+        } else {
+            let p = output.plain_progress.unwrap();
+            (p.slot, p.claim_count, p.stalled_ticks)
+        };
+        assert_eq!(slot, Vec2::new(13., 10.));
+        assert_eq!(claims, 1);
+        assert_eq!(
+            stalled, 0,
+            "a deliberate recovery starts a fresh certified clock"
+        );
+    }
+}
+
+struct RecoveryGuide {
+    next: Vec2,
+    calls: usize,
+}
+impl super::motion::MotionGuide for RecoveryGuide {
+    fn kind(&self, _: u32) -> super::motion::MotionKind {
+        super::motion::MotionKind::Destination
+    }
+    fn next_position(
+        &mut self,
+        _: super::motion::MotionRequest,
+        _: &mut super::sweep::SweepBudget,
+    ) -> Option<Vec2> {
+        self.calls += 1;
+        Some(self.next)
+    }
+}
+fn captured_clear_recovery_frame(escape: bool) -> MovementFrame {
+    // Actual GM3 tick2400 recovery inputs. This tests the raw-motion contract,
+    // not a reconstruction of the missing controller/Guide history.
+    let position = Vec2::new(35.365936279296875, 23.531789779663086);
+    let target = Vec2::new(45.70000076293945, 23.5);
+    MovementFrame {
+        bounds: Vec2::new(64., 48.),
+        tick_hz: 20,
+        pools: BTreeMap::new(),
+        units: vec![MovementFrameUnit {
+            unit_id: 9,
+            owner_slot: 0,
+            unit_type: 0,
+            position,
+            radius: 1.1,
+            speed: Some(2.5),
+            target: Some(target),
+            progress: None,
+            plain_progress: Some(PlainMoveProgress {
+                arrival_yield: false,
+                original_point: target,
+                slot: target,
+                pool_slots: vec![
+                    Vec2::new(45.7, 27.483717),
+                    Vec2::new(48., 19.516283),
+                    Vec2::new(48., 27.483717),
+                ],
+                gather_goal: None,
+                activity: MovementActivity::Blocked,
+                stalled_ticks: 681,
+                best_distance: 10.239281,
+                claim_count: 3,
+                failure_recorded: false,
+            }),
+            physical_escape: escape.then_some(super::PhysicalEscape {
+                target: Some(Vec2::new(34.585526, 23.416143)),
+            }),
+        }],
+    }
+}
+#[test]
+fn blocked_plain_clear_body_uses_current_guidance_instead_of_full_retry() {
+    let f = captured_clear_recovery_frame(false);
+    let next = Vec2::new(35.373294830322266, 23.5324764251709);
+    let mut guide = RecoveryGuide { next, calls: 0 };
+    let mut budget = super::sweep::SweepBudget::new(2400);
+    let out = super::frame::step_frame_with_motion_guide(
+        &f,
+        0.05,
+        &Default::default(),
+        &mut budget,
+        &mut guide,
+    );
+    assert_eq!(
+        out[0].position, next,
+        "the clear-body blocked branch must use the current bounded primary"
+    );
+    assert_eq!(guide.calls, 1);
+    assert_eq!(out[0].target, f.units[0].target);
+}
+#[test]
+fn cleared_physical_escape_is_not_restored_by_the_local_unit_copy() {
+    let f = captured_clear_recovery_frame(true);
+    let mut budget = super::sweep::SweepBudget::new(2400);
+    let out = super::frame::step_frame_with_motion_guide(
+        &f,
+        0.05,
+        &Default::default(),
+        &mut budget,
+        &mut super::motion::NoMotionGuide,
+    );
+    assert!(
+        out[0].physical_escape.is_none(),
+        "the current clear body has discharged its old escape obligation"
+    );
+    assert_eq!(out[0].target, f.units[0].target);
+}
+#[test]
+fn overlapping_physical_recovery_keeps_its_obligation_and_bypasses_optional_guidance() {
+    let mut f = captured_clear_recovery_frame(true);
+    f.units[0].position = Vec2::new(10., 10.);
+    f.units[0].physical_escape = Some(super::PhysicalEscape {
+        target: Some(Vec2::new(8., 10.)),
+    });
+    let mut holder = f.units[0].clone();
+    holder.unit_id = 10;
+    holder.owner_slot = 1;
+    holder.position = Vec2::new(10.5, 10.);
+    holder.speed = None;
+    holder.target = None;
+    holder.physical_escape = None;
+    holder.plain_progress = None;
+    f.units.push(holder);
+    let mut guide = RecoveryGuide {
+        next: f.units[0].position,
+        calls: 0,
+    };
+    let mut budget = super::sweep::SweepBudget::new(2400);
+    let out = super::frame::step_frame_with_motion_guide(
+        &f,
+        0.05,
+        &Default::default(),
+        &mut budget,
+        &mut guide,
+    );
+    let actor = out.iter().find(|o| o.unit_id == 9).unwrap();
+    let holder = out.iter().find(|o| o.unit_id == 10).unwrap();
+    assert_eq!(holder.position, f.units[1].position);
+    assert!(
+        actor.position.distance(holder.position) >= f.units[0].position.distance(holder.position)
+    );
+    assert!(actor.physical_escape.is_some());
+    assert_eq!(guide.calls, 0);
 }

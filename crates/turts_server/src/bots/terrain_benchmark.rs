@@ -389,7 +389,8 @@ impl Workload {
         let nav = turts_sim::terrain::privileged_navigation_diagnostics(harness.app.world());
         let result = serde_json::json!({"steps":self.interval_steps,"cumulative_steps":self.steps,
             "changed_cells":self.interval_steps.len(),"changed_chunks":changed_chunks,
-            "local_navigation":{"searches":nav.searches,"cache_hits":nav.cache_hits,"invalidations":nav.invalidations,"solver_retries":nav.solver_retries,"budget_waits":nav.budget_waits}});
+            "local_navigation":{"searches":nav.searches,"cache_hits":nav.cache_hits,"invalidations":nav.invalidations,"solver_retries":nav.solver_retries,"budget_waits":nav.budget_waits},
+            "group_navigation_interval_snapshot":{"resident_fields":nav.resident_fields,"resident_bytes":nav.resident_bytes,"retired_bytes":nav.retired_bytes,"memberships":nav.memberships,"pending":nav.pending,"max_pending_age_ticks":nav.max_pending_age_ticks,"expansions_last_tick":nav.expansions_this_tick,"edge_checks_last_tick":nav.edge_checks_this_tick,"invalidation_entries_last_tick":nav.invalidation_entries_this_tick,"neighbor_visits":nav.neighbor_visits,"neighbor_visits_last_tick":nav.neighbor_visits_this_tick,"neighbor_overflows":nav.neighbor_overflows,"traffic_members":nav.traffic_members,"traffic_gates":nav.traffic_gates,"traffic_capacity_waits":nav.traffic_capacity_waits,"traffic_index_queries":nav.traffic_index_queries,"stale_activations":nav.stale_activations}});
         self.interval_steps.clear();
         result
     }

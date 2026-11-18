@@ -949,3 +949,63 @@ fn step_frame_rejects_fully_occupied_spares_without_pool_wide_stalled_scans() {
     );
     eprintln!("canonical N={count} occupied-spare candidate inspections={inspected}");
 }
+
+#[test]
+fn singleton_nearest_slot_uses_intersecting_holder_clearance_boundaries() {
+    let goal = Vec2::new(20.0, 20.0);
+    let radius = 0.85_f32;
+    let other = 0.2_f32;
+    let holders = [
+        StaticFootprint {
+            position: Vec2::new(19.7, 20.0),
+            radius: other,
+        },
+        StaticFootprint {
+            position: Vec2::new(20.3, 20.0),
+            radius: other,
+        },
+    ];
+    let members = [SpreadMember {
+        id: 7,
+        position: Vec2::new(18.0, 18.0),
+        radius,
+    }];
+    let (pool, _) = spread_destinations(&members, goal, &[], &holders, Vec2::splat(48.0));
+    let chosen = pool.slots[0];
+    let r = f64::from(radius) + f64::from(other);
+    let x = f64::from(goal.x) - f64::from(holders[0].position.x);
+    let expected = (r * r - x * x).sqrt();
+    assert!(
+        (f64::from(chosen.distance(goal)) - expected).abs() < 0.0001,
+        "intersection optimum {expected}, got {chosen:?}"
+    );
+    for holder in holders {
+        assert!(chosen.distance(holder.position) >= radius + holder.radius);
+    }
+}
+#[test]
+fn singleton_nearest_slot_handles_clearance_circle_at_map_edge() {
+    let goal = Vec2::new(0.9, 10.0);
+    let radius = 0.85_f32;
+    let holder = StaticFootprint {
+        position: Vec2::new(1.0, 10.0),
+        radius: 0.35,
+    };
+    let members = [SpreadMember {
+        id: 7,
+        position: Vec2::new(10.0, 18.0),
+        radius,
+    }];
+    let (pool, _) = spread_destinations(&members, goal, &[], &[holder], Vec2::new(48.0, 32.0));
+    let chosen = pool.slots[0];
+    let r = f64::from(radius) + f64::from(holder.radius);
+    let x = f64::from(holder.position.x) - f64::from(radius);
+    let y = (r * r - x * x).sqrt();
+    let expected = (f64::from(goal.x) - f64::from(radius)).hypot(y);
+    assert!(
+        (f64::from(chosen.distance(goal)) - expected).abs() < 0.0001,
+        "edge optimum {expected}, got {chosen:?}"
+    );
+    assert!(chosen.x >= radius);
+    assert!(chosen.distance(holder.position) >= radius + holder.radius);
+}

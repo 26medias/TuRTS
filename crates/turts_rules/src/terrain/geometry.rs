@@ -13,6 +13,9 @@
 use super::Ratio;
 use std::cmp::Ordering;
 
+mod disks_fast;
+mod interval_filter;
+use interval_filter::IntervalFilter;
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Point {
     pub x: f64,
@@ -175,6 +178,22 @@ impl Sweep {
         f64::from(self.numerator) / f64::from(self.denominator)
     }
 }
+/// First simultaneous positive-area support constraint for two translated probe disks.
+/// Fractions refer to the original continuous segment. Overlapping transition bounds
+/// do not establish an ordering. A point transition at zero can certify the infimum
+/// of positive contact immediately after an exact starting tangency; it is not Inside.
+/// No unresolved query is evidence of contact or clearance.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DualSupportContact {
+    Inside,
+    Outside,
+    Transition {
+        lower: u32,
+        upper: u32,
+        denominator: u32,
+    },
+    Unresolved,
+}
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Face {
     Top,
@@ -251,6 +270,22 @@ fn gcd(mut a: u128, mut b: u128) -> u128 {
 #[cfg(test)]
 #[path = "geometry_gcd_tests.rs"]
 mod gcd_tests;
+// Every caller divides by a positive GCD, so the quotient is exact. A
+// signed arithmetic shift equals division in this domain, even for i128::MIN.
+// Keep general division for non-dyadic grids and intermediate fractions.
+#[inline]
+fn exact_quotient(n: i128, divisor: i128) -> i128 {
+    debug_assert!(divisor > 0);
+    if (divisor as u128).is_power_of_two() {
+        n >> divisor.trailing_zeros()
+    } else {
+        n / divisor
+    }
+}
+
+#[cfg(test)]
+#[path = "geometry_arithmetic_tests.rs"]
+mod arithmetic_tests;
 impl Q {
     const ZERO: Self = Self { n: 0, d: 1 };
     fn new(mut n: i128, mut d: i128) -> ResultQ {
@@ -318,8 +353,8 @@ impl Q {
     }
     fn add(self, b: Self) -> ResultQ {
         let g = gcd(self.d as u128, b.d as u128) as i128;
-        let a_scale = b.d / g;
-        let b_scale = self.d / g;
+        let a_scale = exact_quotient(b.d, g);
+        let b_scale = exact_quotient(self.d, g);
         Self::new(
             self.n
                 .checked_mul(a_scale)
@@ -335,14 +370,23 @@ impl Q {
         self.add(b.neg()?)
     }
     fn mul(self, b: Self) -> ResultQ {
+        // Both cross-GCDs and the result denominator are exactly one. Keep
+        // the original checked numerator product, including overflow refusal.
+        if self.d == 1 && b.d == 1 {
+            return self
+                .n
+                .checked_mul(b.n)
+                .map(|n| Self { n, d: 1 })
+                .ok_or(Error::Arithmetic);
+        }
         let g1 = gcd(self.n.unsigned_abs(), b.d as u128) as i128;
         let g2 = gcd(b.n.unsigned_abs(), self.d as u128) as i128;
         Self::new(
-            (self.n / g1)
-                .checked_mul(b.n / g2)
+            exact_quotient(self.n, g1)
+                .checked_mul(exact_quotient(b.n, g2))
                 .ok_or(Error::Arithmetic)?,
-            (self.d / g2)
-                .checked_mul(b.d / g1)
+            exact_quotient(self.d, g2)
+                .checked_mul(exact_quotient(b.d, g1))
                 .ok_or(Error::Arithmetic)?,
         )
     }
@@ -353,12 +397,20 @@ impl Q {
         self.mul(self)
     }
     fn cmp(self, b: Self) -> Result<Ordering, Error> {
+        // Equal positive denominators make both original checked scales one.
+        // This does not require either input fraction to be reduced.
+        if self.d == b.d && self.d > 0 {
+            return Ok(self.n.cmp(&b.n));
+        }
         let g = gcd(self.d as u128, b.d as u128) as i128;
         Ok(self
             .n
-            .checked_mul(b.d / g)
+            .checked_mul(exact_quotient(b.d, g))
             .ok_or(Error::Arithmetic)?
-            .cmp(&b.n.checked_mul(self.d / g).ok_or(Error::Arithmetic)?))
+            .cmp(
+                &b.n.checked_mul(exact_quotient(self.d, g))
+                    .ok_or(Error::Arithmetic)?,
+            ))
     }
     fn le(self, b: Self) -> Result<bool, Error> {
         Ok(self.cmp(b)? != Ordering::Greater)
@@ -404,6 +456,124 @@ impl P {
         self.x.mul(b.x)?.add(self.y.mul(b.y)?)
     }
 }
+struct RelativeDisks {
+    from: P,
+    delta: P,
+    radius2: Q,
+}
+fn relative_disks(
+    a_from: Point,
+    a_to: Point,
+    a_radius: f64,
+    b_from: Point,
+    b_to: Point,
+    b_radius: f64,
+    budget: &mut Budget,
+) -> Result<RelativeDisks, Error> {
+    budget.take()?;
+    if !a_radius.is_finite() || !b_radius.is_finite() || a_radius <= 0.0 || b_radius <= 0.0 {
+        return Err(Error::Invalid);
+    }
+    let a_from = P::point(a_from)?;
+    let a_to = P::point(a_to)?;
+    let b_from = P::point(b_from)?;
+    let b_to = P::point(b_to)?;
+    Ok(RelativeDisks {
+        from: a_from.sub(b_from)?,
+        delta: a_to.sub(a_from)?.sub(b_to.sub(b_from)?)?,
+        radius2: Q::float(a_radius)?.add(Q::float(b_radius)?)?.square()?,
+    })
+}
+/// Certify separation of two linearly swept disks throughout the closed tick.
+/// Exact tangency is clear. Any strict penetration, including initial overlap,
+/// is false even when both endpoints are separated. One pair visit is charged.
+/// Arithmetic/input/budget errors are not clearance and must fail closed at callers.
+pub fn swept_disks_clear(
+    a_from: Point,
+    a_to: Point,
+    a_radius: f64,
+    b_from: Point,
+    b_to: Point,
+    b_radius: f64,
+    budget: &mut Budget,
+) -> Result<bool, Error> {
+    if budget.remaining() != 0
+        && let Some(clear) = disks_fast::clear(a_from, a_to, a_radius, b_from, b_to, b_radius)
+    {
+        budget.take()?;
+        return Ok(clear);
+    }
+    swept_disks_clear_reference(a_from, a_to, a_radius, b_from, b_to, b_radius, budget)
+}
+fn swept_disks_clear_reference(
+    a_from: Point,
+    a_to: Point,
+    a_radius: f64,
+    b_from: Point,
+    b_to: Point,
+    b_radius: f64,
+    budget: &mut Budget,
+) -> Result<bool, Error> {
+    let relative = relative_disks(a_from, a_to, a_radius, b_from, b_to, b_radius, budget)?;
+    let distance2 = relative.from.dot(relative.from)?;
+    if distance2.lt(relative.radius2)? {
+        return Ok(false);
+    }
+    let velocity2 = relative.delta.dot(relative.delta)?;
+    let projection = relative.from.dot(relative.delta)?;
+    if velocity2.n == 0 || projection.n >= 0 {
+        return Ok(true);
+    }
+    if projection.le(velocity2.neg()?)? {
+        let end = relative.from.at(relative.delta, Q::new(1, 1)?)?;
+        return relative.radius2.le(end.dot(end)?);
+    }
+    // At the interior minimum, distance² = cross(relative_start,velocity)²/|v|².
+    // Cross multiplication is exact and avoids constructing/squaring the generally
+    // non-dyadic minimizing time. No endpoint sampling or collision epsilon is used.
+    let cross = relative
+        .from
+        .x
+        .mul(relative.delta.y)?
+        .sub(relative.from.y.mul(relative.delta.x)?)?;
+    relative.radius2.mul(velocity2)?.le(cross.square()?)
+}
+/// The existing invalid overlap does not deepen anywhere in this closed tick.
+/// For squared distance, the derivative is 2*(r·v+|v|²*t); r·v>=0 is necessary
+/// and sufficient for nondecreasing separation on[0,1]. Constant overlap qualifies
+/// as non-deepening, not as progress. Initially legal pairs must use swept_disks_clear.
+pub fn swept_disks_non_deepening_overlap(
+    a_from: Point,
+    a_to: Point,
+    a_radius: f64,
+    b_from: Point,
+    b_to: Point,
+    b_radius: f64,
+    budget: &mut Budget,
+) -> Result<bool, Error> {
+    if budget.remaining() != 0
+        && let Some(clear) =
+            disks_fast::non_deepening(a_from, a_to, a_radius, b_from, b_to, b_radius)
+    {
+        budget.take()?;
+        return Ok(clear);
+    }
+    swept_disks_non_deepening_reference(a_from, a_to, a_radius, b_from, b_to, b_radius, budget)
+}
+fn swept_disks_non_deepening_reference(
+    a_from: Point,
+    a_to: Point,
+    a_radius: f64,
+    b_from: Point,
+    b_to: Point,
+    b_radius: f64,
+    budget: &mut Budget,
+) -> Result<bool, Error> {
+    let relative = relative_disks(a_from, a_to, a_radius, b_from, b_to, b_radius, budget)?;
+    Ok(relative.from.dot(relative.from)?.lt(relative.radius2)?
+        && relative.from.dot(relative.delta)?.n >= 0)
+}
+
 #[derive(Clone, Copy)]
 struct Rect {
     left: Q,
@@ -477,8 +647,25 @@ impl Grid {
         })
     }
     fn cell_q(&self, p: P) -> Result<Cell, Error> {
+        self.cell_impl::<true>(p)
+    }
+    fn cell_impl<const UNIT: bool>(&self, p: P) -> Result<Cell, Error> {
+        if UNIT && self.cell_width != self.length_scale {
+            return self.cell_impl::<false>(p);
+        }
         self.valid()?;
         let axis = |q: Q, count| -> Result<u32, Error> {
+            if UNIT && q.n >= 0 && q.d > 0 && i128::from(count).checked_mul(q.d).is_some() {
+                // Exact floor on a unit-ratio grid, including unreduced Q.
+                // The checked product preserves the old bound comparison's
+                // Arithmetic refusal, including before later invalid inputs.
+                let index = q.n / q.d;
+                let count_q = i128::from(count);
+                if index > count_q || (index == count_q && q.n % q.d != 0) {
+                    return Err(Error::OutOfBounds);
+                }
+                return Ok((index as u32).min(count - 1));
+            }
             if !Q::ZERO.le(q)? || !q.le(self.axis(count)?)? {
                 return Err(Error::OutOfBounds);
             }
@@ -497,8 +684,19 @@ impl Grid {
     pub fn point_to_cell(&self, point: Point) -> Result<Cell, Error> {
         self.cell_q(P::point(point)?)
     }
+    fn validate_read_cell(&self, cell: Cell) -> Result<(), Error> {
+        if cell.x >= self.columns || cell.y >= self.rows {
+            return Err(Error::OutOfBounds);
+        }
+        // rect's u32 index*width products fit i128. Its only remaining
+        // possible failure is the zero denominator, before any charged read.
+        if self.length_scale == 0 {
+            return Err(Error::Arithmetic);
+        }
+        Ok(())
+    }
     fn read(&self, surface: &impl Surface, cell: Cell, budget: &mut Budget) -> Result<i32, Error> {
-        self.rect(cell)?;
+        self.validate_read_cell(cell)?;
         budget.take()?;
         let elevation = surface.elevation(cell).ok_or(Error::Unknown(cell))?;
         if elevation < self.floor || elevation > self.ceiling {
@@ -542,17 +740,37 @@ impl Grid {
         max_step: u32,
         budget: &mut Budget,
     ) -> Result<Support, Error> {
+        self.support_impl::<true>(surface, p, r, max_step, budget)
+    }
+    fn support_impl<const FILTER: bool>(
+        &self,
+        surface: &impl Surface,
+        p: P,
+        r: Q,
+        max_step: u32,
+        budget: &mut Budget,
+    ) -> Result<Support, Error> {
         let center = self.cell_q(p)?;
         let (low, high) = self.bounds(p, p, r)?;
         let r2 = r.square()?;
+        let filter = (FILTER && r.n > 0)
+            .then(|| IntervalFilter::prepare(p, p, r2))
+            .flatten();
         let mut cells = Vec::new();
         let (mut minimum, mut maximum) = (i32::MAX, i32::MIN);
         for y in low.y..=high.y {
             for x in low.x..=high.x {
                 budget.take()?;
                 let cell = Cell { x, y };
-                if cell != center && !distance_rect(p, self.rect(cell)?)?.lt(r2)? {
-                    continue;
+                if cell != center {
+                    let rect = self.rect(cell)?;
+                    let touches = match filter.and_then(|filter| filter.touches(rect)) {
+                        Some(touches) => touches,
+                        None => distance_rect(p, rect)?.lt(r2)?,
+                    };
+                    if !touches {
+                        continue;
+                    }
                 }
                 let elevation = self.read(surface, cell, budget)?;
                 minimum = minimum.min(elevation);
@@ -752,6 +970,187 @@ fn capsule_touches(a: P, delta: P, first: Q, last: Q, rect: Rect, r2: Q) -> Resu
     Ok(false)
 }
 
+// One sweep has immutable a/delta/grid. Candidate ordinals therefore identify
+// exact operands for these terms across event intervals and their refinements.
+// Only successes are retained, at the original first-use operation. Later cells
+// use the unchanged arithmetic; this is not an admission or geometry limit.
+const MEMO_CELLS: usize = 16;
+#[derive(Clone, Copy)]
+struct CellArithmetic {
+    // Slab p/q for x/y, four corner projection times, four corner cross squares.
+    values: [Q; 12],
+    valid: u16,
+}
+impl CellArithmetic {
+    const EMPTY: Self = Self {
+        values: [Q::ZERO; 12],
+        valid: 0,
+    };
+}
+struct SweepArithmetic {
+    cells: [CellArithmetic; MEMO_CELLS],
+    // Same immutable grid and candidate ordinal throughout this sweep. Cache
+    // only successful original first uses; never move a checked operation earlier.
+    rectangles: [Option<Rect>; 4],
+}
+impl SweepArithmetic {
+    fn rectangle(&mut self, grid: &Grid, ordinal: usize, cell: Cell) -> Result<Rect, Error> {
+        let Some(entry) = self.rectangles.get_mut(ordinal) else {
+            return grid.rect(cell);
+        };
+        if let Some(rect) = *entry {
+            return Ok(rect);
+        }
+        let rect = grid.rect(cell)?;
+        *entry = Some(rect);
+        Ok(rect)
+    }
+}
+const _: () = assert!(std::mem::size_of::<SweepArithmetic>() <= 7 * 1024);
+const _: () = assert!(
+    std::mem::size_of::<SweepArithmetic>() + std::mem::size_of::<IntervalCapsule>() <= 8 * 1024
+);
+fn cell_term(
+    memo: &mut Option<&mut CellArithmetic>,
+    index: usize,
+    compute: impl FnOnce() -> ResultQ,
+) -> ResultQ {
+    let Some(memo) = memo.as_deref_mut() else {
+        return compute();
+    };
+    let mask = 1 << index;
+    if memo.valid & mask != 0 {
+        return Ok(memo.values[index]);
+    }
+    let value = compute()?;
+    memo.values[index] = value;
+    memo.valid |= mask;
+    Ok(value)
+}
+fn cell_ray_interval(
+    a: P,
+    delta: P,
+    rect: Rect,
+    mut first: Q,
+    mut last: Q,
+    mut memo: Option<&mut CellArithmetic>,
+) -> Result<bool, Error> {
+    if memo.is_none() {
+        return Ok(ray_interval(
+            &[a.x, a.y],
+            &[delta.x, delta.y],
+            &[rect.left, rect.bottom],
+            &[rect.right, rect.top],
+            first,
+            Some(last),
+        )?
+        .is_some());
+    }
+    for (i, (a, delta, low, high)) in [
+        (a.x, delta.x, rect.left, rect.right),
+        (a.y, delta.y, rect.bottom, rect.top),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        if delta.n == 0 {
+            if a.lt(low)? || high.lt(a)? {
+                return Ok(false);
+            }
+        } else {
+            let p = cell_term(&mut memo, 2 * i, || low.sub(a)?.div(delta))?;
+            let q = cell_term(&mut memo, 2 * i + 1, || high.sub(a)?.div(delta))?;
+            first = first.max(p.min(q)?)?;
+            let end = p.max(q)?;
+            last = last.min(end)?;
+            if last.lt(first)? {
+                return Ok(false);
+            }
+        }
+    }
+    Ok(true)
+}
+
+/// Invariants for one interval whose exact endpoints were already evaluated by
+/// interval_support. Keep fallible corner-only terms lazy: an earlier ray or
+/// endpoint hit must not acquire a new arithmetic refusal.
+struct IntervalCapsule {
+    a: P,
+    delta: P,
+    first: Q,
+    last: Q,
+    start: P,
+    end: P,
+    radius2: Q,
+    length2: Option<ResultQ>,
+    threshold: Option<ResultQ>,
+    filter: Option<IntervalFilter>,
+}
+impl IntervalCapsule {
+    fn touches(
+        &mut self,
+        rect: Rect,
+        mut memo: Option<&mut CellArithmetic>,
+    ) -> Result<bool, Error> {
+        if let Some(result) = self.filter.and_then(|filter| filter.touches(rect)) {
+            return Ok(result);
+        }
+        let Self {
+            a,
+            delta,
+            first,
+            last,
+            start,
+            end,
+            radius2,
+            ..
+        } = *self;
+        if cell_ray_interval(a, delta, rect, first, last, memo.as_deref_mut())? {
+            return Ok(true);
+        }
+        if distance_rect(start, rect)?.lt(radius2)? || distance_rect(end, rect)?.lt(radius2)? {
+            return Ok(true);
+        }
+        let length2 = (*self.length2.get_or_insert_with(|| delta.dot(delta)))?;
+        if length2.n == 0 {
+            return Ok(false);
+        }
+        for (ix, x) in [rect.left, rect.right].into_iter().enumerate() {
+            for (iy, y) in [rect.bottom, rect.top].into_iter().enumerate() {
+                let corner = 2 * ix + iy;
+                let mut offset = None;
+                let t = cell_term(&mut memo, 4 + corner, || {
+                    let value = P { x, y }.sub(a)?;
+                    offset = Some(value);
+                    value.dot(delta)?.div(length2)
+                })?;
+                if first.le(t)? && t.le(last)? {
+                    // A cached projection already proved this offset representable.
+                    // Recompute it only if cross² is first needed in a later interval.
+                    let cross2 = cell_term(&mut memo, 8 + corner, || {
+                        let offset = match offset {
+                            Some(value) => value,
+                            None => P { x, y }.sub(a)?,
+                        };
+                        let cross = offset.x.mul(delta.y)?.sub(offset.y.mul(delta.x)?)?;
+                        cross.square()
+                    })?;
+                    // Preserve cross-square failure before threshold multiplication.
+                    let threshold = (*self.threshold.get_or_insert_with(|| radius2.mul(length2)))?;
+                    if cross2.lt(threshold)? {
+                        return Ok(true);
+                    }
+                }
+            }
+        }
+        Ok(false)
+    }
+}
+
+#[cfg(test)]
+#[path = "geometry_interval_tests.rs"]
+mod interval_tests;
+
 // Dyadic event scheduling does not quantize actor poses. Every scheduled interval
 // is certified as a continuous segment using exact predicates. An unresolved
 // final interval reports Uncertain rather than treating its endpoints as proof.
@@ -776,7 +1175,7 @@ impl Grid {
         clippy::too_many_arguments,
         reason = "Exact sweep coordinates, interval, profile and budget are distinct geometric inputs"
     )]
-    fn interval_support(
+    fn interval_support<const REFERENCE: bool>(
         &self,
         surface: &impl Surface,
         a: P,
@@ -786,16 +1185,35 @@ impl Grid {
         radius2: Q,
         profile: Traversal,
         candidates: &[Cell],
+        arithmetic: &mut SweepArithmetic,
         budget: &mut Budget,
     ) -> Result<(), Error> {
         let (lo, hi) = (time(first), time(last));
-        let start = self.cell_q(a.at(delta, lo)?)?;
-        let end = self.cell_q(a.at(delta, hi)?)?;
+        let start_point = a.at(delta, lo)?;
+        let start = self.cell_q(start_point)?;
+        let end_point = a.at(delta, hi)?;
+        let end = self.cell_q(end_point)?;
         self.transition(surface, start, end, profile, budget)?;
+        let mut capsule = IntervalCapsule {
+            a,
+            delta,
+            first: lo,
+            last: hi,
+            start: start_point,
+            end: end_point,
+            radius2,
+            length2: None,
+            threshold: None,
+            filter: IntervalFilter::prepare(start_point, end_point, radius2),
+        };
         let (mut minimum, mut maximum) = (i32::MAX, i32::MIN);
-        for &cell in candidates {
+        for (ordinal, &cell) in candidates.iter().enumerate() {
             budget.take()?;
-            let rect = self.rect(cell)?;
+            let rect = if REFERENCE {
+                self.rect(cell)?
+            } else {
+                arithmetic.rectangle(self, ordinal, cell)?
+            };
             let potential = if radius2.n == 0 {
                 // Keep only the owning side when a center travels on a grid edge.
                 let constant_outside = (delta.x.n == 0
@@ -803,9 +1221,16 @@ impl Grid {
                     || (delta.y.n == 0
                         && (a.y.lt(rect.bottom)?
                             || (rect.top.le(a.y)? && cell.y + 1 != self.rows)));
-                !constant_outside && capsule_touches(a, delta, lo, hi, rect, radius2)?
-            } else {
+                !constant_outside
+                    && if REFERENCE {
+                        capsule_touches(a, delta, lo, hi, rect, radius2)?
+                    } else {
+                        capsule.touches(rect, arithmetic.cells.get_mut(ordinal))?
+                    }
+            } else if REFERENCE {
                 capsule_touches(a, delta, lo, hi, rect, radius2)?
+            } else {
+                capsule.touches(rect, arithmetic.cells.get_mut(ordinal))?
             };
             if !potential {
                 continue;
@@ -831,13 +1256,30 @@ impl Grid {
         profile: Traversal,
         budget: &mut Budget,
     ) -> Sweep {
+        self.sweep_impl::<false>(surface, from, to, radius, profile, budget)
+    }
+    // REFERENCE selects the unchanged capsule helper only in differential tests.
+    fn sweep_impl<const REFERENCE: bool>(
+        &self,
+        surface: &impl Surface,
+        from: Point,
+        to: Point,
+        radius: f64,
+        profile: Traversal,
+        budget: &mut Budget,
+    ) -> Sweep {
         let mut verified = 0;
         let result = (|| {
             let a = P::point(from)?;
             let b = P::point(to)?;
             let r = Q::float(radius)?;
-            self.support_q(surface, a, r, profile.max_step, budget)?;
-            self.support_q(surface, b, r, profile.max_step, budget)?;
+            if REFERENCE {
+                self.support_impl::<false>(surface, a, r, profile.max_step, budget)?;
+                self.support_impl::<false>(surface, b, r, profile.max_step, budget)?;
+            } else {
+                self.support_q(surface, a, r, profile.max_step, budget)?;
+                self.support_q(surface, b, r, profile.max_step, budget)?;
+            }
             if profile.max_grade.denominator == 0 {
                 return Err(Error::Invalid);
             }
@@ -891,11 +1333,15 @@ impl Grid {
             events.sort_unstable();
             events.dedup();
             let r2 = r.square()?;
+            let mut arithmetic = SweepArithmetic {
+                cells: [CellArithmetic::EMPTY; MEMO_CELLS],
+                rectangles: [None; 4],
+            };
             for pair in events.windows(2) {
                 let mut stack = vec![(pair[0], pair[1])];
                 while let Some((first, last)) = stack.pop() {
                     budget.take()?;
-                    match self.interval_support(
+                    match self.interval_support::<REFERENCE>(
                         surface,
                         a,
                         delta,
@@ -904,6 +1350,7 @@ impl Grid {
                         r2,
                         profile,
                         &candidates,
+                        &mut arithmetic,
                         budget,
                     ) {
                         Ok(()) => verified = last,
@@ -928,6 +1375,280 @@ impl Grid {
             denominator: TIME_PARTS,
             result,
         }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ProbeInterval {
+    Clear,
+    Constrained,
+    Unresolved,
+}
+struct SupportProbe {
+    from: P,
+    delta: P,
+    radius2: Q,
+    cells: Vec<(Rect, i32)>,
+}
+impl SupportProbe {
+    fn classify(
+        &self,
+        first: u32,
+        last: u32,
+        max_step: u32,
+        budget: &mut Budget,
+    ) -> Result<ProbeInterval, Error> {
+        let (lo, hi) = (time(first), time(last));
+        let a = self.from.at(self.delta, lo)?;
+        let b = self.from.at(self.delta, hi)?;
+        let (mut potential_min, mut potential_max) = (i32::MAX, i32::MIN);
+        let (mut persistent_min, mut persistent_max) = (i32::MAX, i32::MIN);
+        for &(rect, height) in &self.cells {
+            budget.take()?;
+            if !capsule_touches(self.from, self.delta, lo, hi, rect, self.radius2)? {
+                continue;
+            }
+            potential_min = potential_min.min(height);
+            potential_max = potential_max.max(height);
+            // A cell's positive-area disk contact times form an interval: the distance
+            // from a moving point to a convex rectangle is convex. Strict contact at
+            // both ends therefore proves strict contact throughout this interval.
+            if distance_rect(a, rect)?.lt(self.radius2)?
+                && distance_rect(b, rect)?.lt(self.radius2)?
+            {
+                persistent_min = persistent_min.min(height);
+                persistent_max = persistent_max.max(height);
+            }
+        }
+        if i64::from(potential_max) - i64::from(potential_min) <= i64::from(max_step) {
+            return Ok(ProbeInterval::Clear);
+        }
+        if i64::from(persistent_max) - i64::from(persistent_min) > i64::from(max_step) {
+            return Ok(ProbeInterval::Constrained);
+        }
+        Ok(ProbeInterval::Unresolved)
+    }
+}
+impl Grid {
+    fn support_probe(
+        &self,
+        surface: &impl Surface,
+        from: P,
+        delta: P,
+        offset: P,
+        radius: Q,
+        budget: &mut Budget,
+    ) -> Result<SupportProbe, Error> {
+        let from = P {
+            x: from.x.add(offset.x)?,
+            y: from.y.add(offset.y)?,
+        };
+        let to = from.at(delta, Q::new(1, 1)?)?;
+        let (min, max) = self.bounds(from, to, radius)?;
+        let radius2 = radius.square()?;
+        let mut cells = Vec::new();
+        for y in min.y..=max.y {
+            for x in min.x..=max.x {
+                budget.take()?;
+                let cell = Cell { x, y };
+                let rect = self.rect(cell)?;
+                if capsule_touches(from, delta, time(0), time(TIME_PARTS), rect, radius2)? {
+                    cells.push((rect, self.read(surface, cell, budget)?));
+                }
+            }
+        }
+        Ok(SupportProbe {
+            from,
+            delta,
+            radius2,
+            cells,
+        })
+    }
+    /// Right-limit support uses only current positive-area cells and cells entered
+    /// immediately from exact tangency. A strictly negative distance derivative
+    /// proves an open contact interval, without mistaking an outward bracket for equality.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "Exact pose, velocity, support and caller budget remain separate inputs"
+    )]
+    fn right_limit_constrained(
+        &self,
+        surface: &impl Surface,
+        point: P,
+        delta: P,
+        radius: Q,
+        max_step: u32,
+        budget: &mut Budget,
+    ) -> Result<bool, Error> {
+        let (min, max) = self.bounds(point, point, radius)?;
+        // A probe that leaves the public map immediately has no complete support
+        // certificate. Known in-map heights cannot substitute for missing support.
+        for (coordinate, velocity, count) in [
+            (point.x, delta.x, self.columns),
+            (point.y, delta.y, self.rows),
+        ] {
+            if (coordinate.sub(radius)?.n == 0 && velocity.n < 0)
+                || (coordinate.add(radius)?.cmp(self.axis(count)?)? == Ordering::Equal
+                    && velocity.n > 0)
+            {
+                return Err(Error::OutOfBounds);
+            }
+        }
+        let radius2 = radius.square()?;
+        let (mut minimum, mut maximum) = (i32::MAX, i32::MIN);
+        // The ordinary lower half-open bound omits the cell just below an exact
+        // tangency. Include its neighbour, then apply the exact contact predicate.
+        for y in min.y.saturating_sub(1)..=max.y {
+            for x in min.x.saturating_sub(1)..=max.x {
+                budget.take()?;
+                let cell = Cell { x, y };
+                let rect = self.rect(cell)?;
+                let contact = match distance_rect(point, rect)?.cmp(radius2)? {
+                    Ordering::Less => true,
+                    Ordering::Greater => false,
+                    Ordering::Equal => {
+                        let component = |value: Q, low: Q, high: Q| -> ResultQ {
+                            if value.lt(low)? {
+                                value.sub(low)
+                            } else if high.lt(value)? {
+                                value.sub(high)
+                            } else {
+                                Ok(Q::ZERO)
+                            }
+                        };
+                        let separation = P {
+                            x: component(point.x, rect.left, rect.right)?,
+                            y: component(point.y, rect.bottom, rect.top)?,
+                        };
+                        // Squared distance to a convex rectangle is differentiable.
+                        // Its derivative is 2*separation.dot(delta); only its exact sign
+                        // matters. Zero/positive derivatives do not prove entry.
+                        separation.dot(delta)?.n < 0
+                    }
+                };
+                if contact {
+                    let height = self.read(surface, cell, budget)?;
+                    minimum = minimum.min(height);
+                    maximum = maximum.max(height);
+                }
+            }
+        }
+        Ok(i64::from(maximum) - i64::from(minimum) > i64::from(max_step))
+    }
+    /// Inspect two fixed-offset disk probes along one continuous segment. A probe
+    /// constrains the actor only when its simultaneous positive-area support heights
+    /// exceed max_step. This does not test path grade or authorize centered movement.
+    ///
+    /// Offsets and poses retain their exact supplied binary values. The caller must
+    /// certify the centered actor segment separately. Unknown/OOB probes, arithmetic
+    /// exhaustion, work exhaustion, and unresolved 2^-20 intervals return Unresolved.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "Two probe offsets, body support and caller-owned budget are separate geometric inputs"
+    )]
+    pub fn first_dual_support_contact(
+        &self,
+        surface: &impl Surface,
+        from: Point,
+        to: Point,
+        offsets: [Point; 2],
+        radius: f64,
+        max_step: u32,
+        budget: &mut Budget,
+    ) -> DualSupportContact {
+        let query = (|| -> Result<DualSupportContact, Error> {
+            self.valid()?;
+            let from = P::point(from)?;
+            let to = P::point(to)?;
+            let delta = to.sub(from)?;
+            let radius = Q::float(radius)?;
+            if radius.n <= 0 {
+                return Err(Error::Invalid);
+            }
+            let offsets = [P::point(offsets[0])?, P::point(offsets[1])?];
+            let constrained = |offset: P, budget: &mut Budget| -> Result<bool, Error> {
+                let point = P {
+                    x: from.x.add(offset.x)?,
+                    y: from.y.add(offset.y)?,
+                };
+                match self.support_q(surface, point, radius, max_step, budget) {
+                    Ok(_) => Ok(false),
+                    Err(Error::Step) => Ok(true),
+                    Err(error) => Err(error),
+                }
+            };
+            // Current contact cannot depend on cells visited only later in the segment.
+            let initial = [
+                constrained(offsets[0], budget)?,
+                constrained(offsets[1], budget)?,
+            ];
+            if initial[0] && initial[1] {
+                return Ok(DualSupportContact::Inside);
+            }
+            let right_limit = |offset: P, budget: &mut Budget| {
+                self.right_limit_constrained(
+                    surface,
+                    P {
+                        x: from.x.add(offset.x)?,
+                        y: from.y.add(offset.y)?,
+                    },
+                    delta,
+                    radius,
+                    max_step,
+                    budget,
+                )
+            };
+            if right_limit(offsets[0], budget)? && right_limit(offsets[1], budget)? {
+                // There are finitely many witnessed support cells. Their strict
+                // contacts share some positive time interval after zero, proving
+                // an exact entry infimum of zero rather than merely overlapping bounds.
+                return Ok(DualSupportContact::Transition {
+                    lower: 0,
+                    upper: 0,
+                    denominator: 1,
+                });
+            }
+            let probes = [
+                self.support_probe(surface, from, delta, offsets[0], radius, budget)?,
+                self.support_probe(surface, from, delta, offsets[1], radius, budget)?,
+            ];
+            let mut stack = vec![(0, TIME_PARTS)];
+            while let Some((first, last)) = stack.pop() {
+                budget.take()?;
+                let left = probes[0].classify(first, last, max_step, budget)?;
+                let right = probes[1].classify(first, last, max_step, budget)?;
+                if left == ProbeInterval::Clear || right == ProbeInterval::Clear {
+                    continue;
+                }
+                if last - first <= 1 {
+                    // Earlier intervals were continuously certified outside. An actual
+                    // simultaneous witness is required before publishing an entry bound.
+                    let at = |part, budget: &mut Budget| -> Result<bool, Error> {
+                        Ok(probes[0].classify(part, part, max_step, budget)?
+                            == ProbeInterval::Constrained
+                            && probes[1].classify(part, part, max_step, budget)?
+                                == ProbeInterval::Constrained)
+                    };
+                    return if at(first, budget)? || at(last, budget)? {
+                        Ok(DualSupportContact::Transition {
+                            lower: first,
+                            upper: last,
+                            denominator: TIME_PARTS,
+                        })
+                    } else {
+                        Err(Error::Uncertain)
+                    };
+                }
+                // Chronological subdivision proves the intersection of both contact
+                // sets, including exits and reentries. Endpoint samples alone never
+                // skip an interval, and no monotonic blocked-pose assumption is made.
+                let middle = first + (last - first) / 2;
+                stack.push((middle, last));
+                stack.push((first, middle));
+            }
+            Ok(DualSupportContact::Outside)
+        })();
+        query.unwrap_or(DualSupportContact::Unresolved)
     }
 }
 
@@ -1207,6 +1928,244 @@ impl Grid {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn unit_cells_match_checked_reference_for_unreduced_extremes_and_invalid_inputs() {
+        for scale in [1, 1000, u32::MAX] {
+            let grid = Grid::checked(12, 1, scale, scale, 1, -8, 8).unwrap();
+            for n in [i128::MIN, -1, 0, 1, 2, 12, 13, i128::MAX / 12, i128::MAX] {
+                for d in [0, 1, 2, 3, 1i128 << 124, i128::MAX / 2, i128::MAX] {
+                    let p = P {
+                        x: Q { n, d },
+                        y: Q::ZERO,
+                    };
+                    let old = grid.cell_impl::<false>(p);
+                    let new = grid.cell_q(p);
+                    assert_eq!(new, old, "n={n},d={d},scale={scale}");
+                }
+            }
+            for x in [
+                0.,
+                f64::from(0.3f32),
+                1.,
+                12f64.next_down(),
+                12.,
+                12f64.next_up(),
+                -0.1,
+            ] {
+                let p = P::point(Point { x, y: 0. }).unwrap();
+                assert_eq!(grid.cell_q(p), grid.cell_impl::<false>(p));
+            }
+            for width in [0, scale.saturating_sub(1), scale.saturating_add(1)] {
+                let other = Grid {
+                    cell_width: width,
+                    ..grid
+                };
+                let p = P::point(Point { x: 0.3, y: 0. }).unwrap();
+                assert_eq!(other.cell_q(p), other.cell_impl::<false>(p));
+            }
+        }
+    }
+    #[test]
+    fn read_validation_matches_rectangle_error_order_on_raw_grids() {
+        for columns in [0, 1, u32::MAX] {
+            for rows in [0, 1, u32::MAX] {
+                for length_scale in [0, 1, 1000, u32::MAX] {
+                    for cell_width in [0, 1, 1000, u32::MAX] {
+                        let g = Grid {
+                            columns,
+                            rows,
+                            length_scale,
+                            cell_width,
+                            elevation_step: 0,
+                            floor: 3,
+                            ceiling: -3,
+                        };
+                        for x in [0, 1, u32::MAX - 1, u32::MAX] {
+                            for y in [0, u32::MAX - 1, u32::MAX] {
+                                let cell = Cell { x, y };
+                                assert_eq!(
+                                    g.validate_read_cell(cell),
+                                    g.rect(cell).map(|_| ()),
+                                    "grid={g:?},cell={cell:?}"
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        use std::cell::Cell as Counter;
+        for scale in [0, 1] {
+            for pos in [Cell { x: 0, y: 0 }, Cell { x: 1, y: 0 }] {
+                for credits in [0, 1] {
+                    let g = Grid {
+                        length_scale: scale,
+                        ..grid()
+                    };
+                    let calls = Counter::new(0);
+                    let surface = |_| {
+                        calls.set(calls.get() + 1);
+                        None
+                    };
+                    let mut b = Budget::new(credits);
+                    let actual = g.read(&surface, pos, &mut b);
+                    let actual_calls = calls.replace(0);
+                    let mut old = Budget::new(credits);
+                    let expected = (|| {
+                        g.rect(pos)?;
+                        old.take()?;
+                        surface(pos).ok_or(Error::Unknown(pos))
+                    })();
+                    assert_eq!(
+                        (actual, b.remaining(), actual_calls),
+                        (expected, old.remaining(), calls.get())
+                    );
+                }
+            }
+        }
+    }
+    #[test]
+    #[ignore = "Independent Python Fraction probe"]
+    fn emit_unit_cell_fraction_cases() {
+        let g = Grid::checked(12, 1, 1000, 1000, 250, -8, 8).unwrap();
+        for n in [0, 1, 12, 13, i128::MAX / 12, i128::MAX] {
+            for d in [1, 2, 3, 1i128 << 124, i128::MAX / 2, i128::MAX] {
+                let result = g.cell_q(P {
+                    x: Q { n, d },
+                    y: Q::ZERO,
+                });
+                println!("UNIT_CELL {n} {d} {result:?}");
+            }
+        }
+    }
+    #[test]
+    #[ignore = "Scoped exact ownership cost"]
+    fn unit_cell_scoped_cost() {
+        use std::{hint::black_box, time::Instant};
+        let mut sums = Vec::new();
+        for unit_grid in [true, false] {
+            for fast in [false, true] {
+                let g = Grid::checked(
+                    32,
+                    32,
+                    if unit_grid { 1000 } else { 3 },
+                    if unit_grid { 1000 } else { 2 },
+                    1,
+                    -8,
+                    8,
+                )
+                .unwrap();
+                let p = P::point(Point {
+                    x: f64::from(12.314f32),
+                    y: f64::from(12.719f32),
+                })
+                .unwrap();
+                let start = Instant::now();
+                let mut sum = 0u64;
+                for _ in 0..200000 {
+                    let cell = if fast {
+                        g.cell_q(black_box(p))
+                    } else {
+                        g.cell_impl::<false>(black_box(p))
+                    }
+                    .unwrap();
+                    sum += u64::from(cell.x + cell.y);
+                }
+                eprintln!(
+                    "unit={unit_grid} fast={fast} elapsed={:?} checksum={sum}",
+                    start.elapsed()
+                );
+                sums.push(sum);
+            }
+        }
+        assert_eq!(sums[0], sums[1]);
+        assert_eq!(sums[2], sums[3]);
+    }
+    #[test]
+    #[ignore = "Scoped cost only; not an engine timing"]
+    fn stationary_support_scoped_cost() {
+        use std::{hint::black_box, time::Instant};
+        let grid = Grid::checked(32, 32, 1000, 1000, 250, -8, 8).unwrap();
+        let point = P::point(Point {
+            x: 12.314,
+            y: 12.719,
+        })
+        .unwrap();
+        let radius = Q::float(1.1).unwrap();
+        let mut checksums = Vec::new();
+        for filtered in [false, true] {
+            let start = Instant::now();
+            let mut checksum = 0;
+            for _ in 0..20000 {
+                let mut budget = Budget::new(256);
+                let result = if filtered {
+                    grid.support_impl::<true>(
+                        &|_| Some(0),
+                        black_box(point),
+                        radius,
+                        0,
+                        &mut budget,
+                    )
+                } else {
+                    grid.support_impl::<false>(
+                        &|_| Some(0),
+                        black_box(point),
+                        radius,
+                        0,
+                        &mut budget,
+                    )
+                }
+                .unwrap();
+                checksum += result.cells.len() + budget.remaining();
+                black_box(result);
+            }
+            eprintln!(
+                "support filtered={filtered} elapsed={:?} checksum={checksum}",
+                start.elapsed()
+            );
+            checksums.push(checksum);
+        }
+        assert_eq!(checksums[0], checksums[1]);
+    }
+    #[test]
+    fn stationary_filtered_support_matches_q_reads_and_budget() {
+        use std::cell::RefCell;
+        for (scale, width) in [(1, 1), (3, 2), (1000, 1000)] {
+            let grid = Grid::checked(12, 12, scale, width, 1, -8, 8).unwrap();
+            let w = f64::from(width) / f64::from(scale);
+            for i in 0..96 {
+                let point = P::point(Point {
+                    x: (2.0 + f64::from(i % 7) * 0.37) * w,
+                    y: (2.0 + f64::from(i % 9) * 0.29) * w,
+                })
+                .unwrap();
+                let radius = Q::float([0.0, 0.3, 0.5, 1.0, 1.1][i as usize % 5] * w).unwrap();
+                for limit in [0, 1, 4, 16, 256] {
+                    for unknown in [false, true] {
+                        let run = |filtered| {
+                            let reads = RefCell::new(Vec::new());
+                            let surface = |cell: Cell| {
+                                reads.borrow_mut().push(cell);
+                                if unknown && (cell.x + cell.y).is_multiple_of(7) {
+                                    None
+                                } else {
+                                    Some(((cell.x + cell.y) % 3) as i32)
+                                }
+                            };
+                            let mut budget = Budget::new(limit);
+                            let result = if filtered {
+                                grid.support_impl::<true>(&surface, point, radius, 2, &mut budget)
+                            } else {
+                                grid.support_impl::<false>(&surface, point, radius, 2, &mut budget)
+                            };
+                            (result, reads.into_inner(), budget.remaining())
+                        };
+                        assert_eq!(run(true), run(false), "scale={scale},i={i},limit={limit}");
+                    }
+                }
+            }
+        }
+    }
     #[test]
     fn bounded_ray_candidates_match_the_original_full_scan_with_unknowns_and_ties() {
         let terrain = grid();
@@ -1910,5 +2869,647 @@ mod tests {
                 .disk_support(&|_| Some(0), p(2.0, 2.0), f64::MAX, 0, &mut budget())
                 .is_err()
         );
+    }
+    fn contact_grid() -> Grid {
+        Grid::checked(16, 8, 1, 1, 1, -8, 8).unwrap()
+    }
+    #[test]
+    fn dual_support_contact_ranks_actual_entry_not_fast_actor_eta() {
+        let g = contact_grid();
+        let surface = |cell: Cell| {
+            Some(if (6..10).contains(&cell.x) && !(2..5).contains(&cell.y) {
+                4
+            } else {
+                0
+            })
+        };
+        let radius = f64::from(1.1_f32);
+        let offsets = [p(0.0, 2.0 * radius), p(0.0, -2.0 * radius)];
+        let query = |from: f32, speed: f32, direction: f32| {
+            g.first_dual_support_contact(
+                &surface,
+                p(f64::from(from), 3.5),
+                p(f64::from(from + direction * speed * 0.05_f32), 3.5),
+                offsets,
+                radius,
+                0,
+                &mut budget(),
+            )
+        };
+        let left = query(4.895, 0.5, 1.0);
+        let right = query(11.18, 2.0, -1.0);
+        let DualSupportContact::Transition {
+            lower: ll,
+            upper: lu,
+            denominator: ld,
+        } = left
+        else {
+            panic!("left {left:?}");
+        };
+        let DualSupportContact::Transition {
+            lower: rl,
+            upper: ru,
+            denominator: rd,
+        } = right
+        else {
+            panic!("right {right:?}");
+        };
+        assert!(
+            u64::from(lu) * u64::from(rd) < u64::from(rl) * u64::from(ld),
+            "{left:?} versus {right:?}"
+        );
+        assert!(f64::from(ll) / f64::from(ld) > 0.19 && f64::from(lu) / f64::from(ld) < 0.21);
+        assert!(f64::from(rl) / f64::from(rd) > 0.79 && f64::from(ru) / f64::from(rd) < 0.81);
+    }
+    #[test]
+    fn dual_support_contact_intersects_non_monotone_flanks_instead_of_first_hit_maximum() {
+        let g = contact_grid();
+        let surface = |cell: Cell| {
+            Some(
+                if (cell.y == 5 && (2..4).contains(&cell.x))
+                    || (cell.y == 2 && (7..9).contains(&cell.x))
+                {
+                    4
+                } else {
+                    0
+                },
+            )
+        };
+        let result = g.first_dual_support_contact(
+            &surface,
+            p(1.0, 4.0),
+            p(11.0, 4.0),
+            [p(0.0, 1.0), p(0.0, -1.0)],
+            0.5,
+            0,
+            &mut budget(),
+        );
+        assert_eq!(result, DualSupportContact::Outside);
+    }
+    #[test]
+    fn dual_support_contact_tangency_and_signed_zero_do_not_forge_inside() {
+        let g = contact_grid();
+        let surface = |cell: Cell| {
+            Some(
+                if (6..10).contains(&cell.x) && (cell.y == 2 || cell.y == 5) {
+                    4
+                } else {
+                    0
+                },
+            )
+        };
+        let offsets = [p(-0.0, 1.0), p(0.0, -1.0)];
+        let tangent = g.first_dual_support_contact(
+            &surface,
+            p(5.5, 4.0),
+            p(5.5, 4.0),
+            offsets,
+            0.5,
+            0,
+            &mut budget(),
+        );
+        assert_eq!(tangent, DualSupportContact::Outside);
+        let inside = g.first_dual_support_contact(
+            &surface,
+            p(6.0, 4.0),
+            p(6.0, 4.0),
+            offsets,
+            0.5,
+            0,
+            &mut budget(),
+        );
+        assert_eq!(inside, DualSupportContact::Inside);
+    }
+    #[test]
+    fn dual_support_contact_unknown_and_exhaustion_never_establish_inside() {
+        let g = contact_grid();
+        let offsets = [p(0.0, 1.0), p(0.0, -1.0)];
+        let unknown = |_: Cell| None;
+        assert_eq!(
+            g.first_dual_support_contact(
+                &unknown,
+                p(4.0, 4.0),
+                p(5.0, 4.0),
+                offsets,
+                0.5,
+                0,
+                &mut budget()
+            ),
+            DualSupportContact::Unresolved
+        );
+        assert_eq!(
+            g.first_dual_support_contact(
+                &|_: Cell| Some(0),
+                p(4.0, 4.0),
+                p(5.0, 4.0),
+                offsets,
+                0.5,
+                0,
+                &mut Budget::new(0)
+            ),
+            DualSupportContact::Unresolved
+        );
+    }
+    #[test]
+    fn dual_support_contact_bounds_match_axis_aligned_positive_area_oracle() {
+        let g = contact_grid();
+        let offsets = [p(0.0, 1.0), p(0.0, -1.0)];
+        for upper in 0u32..16 {
+            for lower in 0u32..16 {
+                let surface = |cell: Cell| {
+                    Some(
+                        if (2..6).contains(&cell.x)
+                            && ((cell.y == 5 && (upper >> (cell.x - 2)) & 1 != 0)
+                                || (cell.y == 2 && (lower >> (cell.x - 2)) & 1 != 0))
+                        {
+                            4
+                        } else {
+                            0
+                        },
+                    )
+                };
+                let mut first: Option<f64> = None;
+                for a in 0..4 {
+                    for b in 0..4 {
+                        if upper >> a & 1 == 0 || lower >> b & 1 == 0 {
+                            continue;
+                        }
+                        let start = (f64::from(a + 2) - 0.5).max(f64::from(b + 2) - 0.5);
+                        let end = (f64::from(a + 3) + 0.5).min(f64::from(b + 3) + 0.5);
+                        if start < end {
+                            first = Some(first.map_or(start, |prior| prior.min(start)));
+                        }
+                    }
+                }
+                let result = g.first_dual_support_contact(
+                    &surface,
+                    p(1.0, 4.0),
+                    p(7.0, 4.0),
+                    offsets,
+                    0.5,
+                    0,
+                    &mut budget(),
+                );
+                match result {
+                    DualSupportContact::Transition {
+                        lower: lo,
+                        upper: hi,
+                        denominator,
+                    } => {
+                        let first = first
+                            .unwrap_or_else(|| panic!("false contact upper={upper},lower={lower}"));
+                        let expected = (first - 1.0) / 6.0;
+                        assert!(
+                            f64::from(lo) / f64::from(denominator) <= expected
+                                && expected <= f64::from(hi) / f64::from(denominator),
+                            "upper={upper},lower={lower}: {result:?}, expected {expected}"
+                        );
+                    }
+                    DualSupportContact::Outside => {
+                        assert!(first.is_none(), "missed upper={upper},lower={lower}")
+                    }
+                    DualSupportContact::Inside => {
+                        panic!("starts clear upper={upper},lower={lower}")
+                    }
+                    // A sub-resolution contact swap without an overlapping witness is
+                    // deliberately unresolved; it never becomes a false traffic winner.
+                    DualSupportContact::Unresolved => {}
+                }
+            }
+        }
+    }
+    #[test]
+    fn dual_support_contact_proves_exact_zero_entry_at_both_binary_mouth_tangencies() {
+        let g = Grid::checked(30, 30, 1, 1, 1, 0, 8).unwrap();
+        let surface = |cell: Cell| {
+            Some(if cell.x == 10 && !(9..12).contains(&cell.y) {
+                4
+            } else {
+                0
+            })
+        };
+        let r = 1.125;
+        let offsets = [p(0.0, 2.0 * r), p(0.0, -2.0 * r)];
+        for (x, direction) in [(8.875, 1.0), (12.125, -1.0)] {
+            let result = g.first_dual_support_contact(
+                &surface,
+                p(x, 10.5),
+                p(x + direction * 0.125, 10.5),
+                offsets,
+                r,
+                0,
+                &mut budget(),
+            );
+            assert_eq!(
+                result,
+                DualSupportContact::Transition {
+                    lower: 0,
+                    upper: 0,
+                    denominator: 1
+                }
+            );
+            for to in [p(x, 10.5), p(x - direction * 0.125, 10.5), p(x, 10.625)] {
+                assert_eq!(
+                    g.first_dual_support_contact(
+                        &surface,
+                        p(x, 10.5),
+                        to,
+                        offsets,
+                        r,
+                        0,
+                        &mut budget()
+                    ),
+                    DualSupportContact::Outside
+                );
+            }
+        }
+    }
+    #[test]
+    fn dual_support_contact_zero_proof_requires_both_known_constraining_flanks() {
+        let g = Grid::checked(30, 30, 1, 1, 1, 0, 8).unwrap();
+        let offsets = [p(0.0, 2.25), p(0.0, -2.25)];
+        let one = |cell: Cell| Some(if cell.x == 10 && cell.y >= 12 { 4 } else { 0 });
+        assert_eq!(
+            g.first_dual_support_contact(
+                &one,
+                p(8.875, 10.5),
+                p(9.0, 10.5),
+                offsets,
+                1.125,
+                0,
+                &mut budget()
+            ),
+            DualSupportContact::Outside
+        );
+        let unknown = |cell: Cell| {
+            if cell.x == 10 && cell.y >= 12 {
+                None
+            } else {
+                Some(if cell.x == 10 && cell.y < 9 { 4 } else { 0 })
+            }
+        };
+        assert_eq!(
+            g.first_dual_support_contact(
+                &unknown,
+                p(8.875, 10.5),
+                p(9.0, 10.5),
+                offsets,
+                1.125,
+                0,
+                &mut budget()
+            ),
+            DualSupportContact::Unresolved
+        );
+        let surface = |cell: Cell| {
+            Some(if cell.x == 10 && !(9..12).contains(&cell.y) {
+                4
+            } else {
+                0
+            })
+        };
+        assert_eq!(
+            g.first_dual_support_contact(
+                &surface,
+                p(8.875, 10.5),
+                p(9.0, 10.5),
+                offsets,
+                1.125,
+                4,
+                &mut budget()
+            ),
+            DualSupportContact::Outside
+        );
+    }
+    #[test]
+    fn dual_support_contact_positive_delay_does_not_become_zero_from_an_overlapping_bracket() {
+        let g = Grid::checked(30, 30, 1, 1, 1, 0, 8).unwrap();
+        let surface = |cell: Cell| {
+            Some(if cell.x == 10 && !(9..12).contains(&cell.y) {
+                4
+            } else {
+                0
+            })
+        };
+        let from = 8.875_f64.next_down();
+        let result = g.first_dual_support_contact(
+            &surface,
+            p(from, 10.5),
+            p(9.0, 10.5),
+            [p(0.0, 2.25), p(0.0, -2.25)],
+            1.125,
+            0,
+            &mut budget(),
+        );
+        assert_ne!(
+            result,
+            DualSupportContact::Transition {
+                lower: 0,
+                upper: 0,
+                denominator: 1
+            }
+        );
+        if let DualSupportContact::Transition { lower, upper, .. } = result {
+            assert!(upper > lower);
+        }
+    }
+    #[test]
+    fn dual_support_contact_zero_entry_uses_exact_corner_derivative_not_tangent_motion() {
+        let g = Grid::checked(30, 30, 1, 1, 1, 0, 8).unwrap();
+        let surface = |cell: Cell| Some(if cell == (Cell { x: 10, y: 9 }) { 4 } else { 0 });
+        let offsets = [p(0.0, 0.0), p(-0.0, 0.0)];
+        let from = p(9.25, 8.0);
+        assert_eq!(
+            g.first_dual_support_contact(
+                &surface,
+                from,
+                p(9.375, 8.125),
+                offsets,
+                1.25,
+                0,
+                &mut budget()
+            ),
+            DualSupportContact::Transition {
+                lower: 0,
+                upper: 0,
+                denominator: 1
+            }
+        );
+        assert_eq!(
+            g.first_dual_support_contact(
+                &surface,
+                from,
+                p(9.375, 7.90625),
+                offsets,
+                1.25,
+                0,
+                &mut budget()
+            ),
+            DualSupportContact::Outside
+        );
+    }
+    #[test]
+    fn swept_disks_clear_rejects_real_gm6_chord_with_separated_endpoints() {
+        let fixed = p(f64::from(29.020_203_f32), 24.5);
+        let large = f64::from(1.1_f32);
+        let small = f64::from(0.4_f32);
+        let from = p(f64::from(29.714_956_f32), f64::from(25.829_517_f32));
+        let to = p(f64::from(29.846_33_f32), f64::from(25.752_123_f32));
+        assert_eq!(
+            swept_disks_clear(from, from, small, fixed, fixed, large, &mut budget()),
+            Ok(true)
+        );
+        assert_eq!(
+            swept_disks_clear(to, to, small, fixed, fixed, large, &mut budget()),
+            Ok(true)
+        );
+        assert_eq!(
+            swept_disks_clear(from, to, small, fixed, fixed, large, &mut budget()),
+            Ok(false)
+        );
+        assert_eq!(
+            swept_disks_clear(fixed, fixed, large, from, to, small, &mut budget()),
+            Ok(false)
+        );
+        assert_eq!(
+            swept_disks_clear(to, from, small, fixed, fixed, large, &mut budget()),
+            Ok(false)
+        );
+    }
+    #[test]
+    fn swept_disks_clear_handles_crossing_and_common_moving_frames() {
+        assert_eq!(
+            swept_disks_clear(
+                p(-2.0, 0.0),
+                p(2.0, 0.0),
+                0.25,
+                p(0.0, -2.0),
+                p(0.0, 2.0),
+                0.75,
+                &mut budget()
+            ),
+            Ok(false)
+        );
+        assert_eq!(
+            swept_disks_clear(
+                p(-2.0, 1.0),
+                p(5.0, -1.0),
+                0.75,
+                p(0.0, 0.0),
+                p(3.0, -2.0),
+                0.25,
+                &mut budget()
+            ),
+            Ok(true)
+        );
+    }
+    #[test]
+    fn swept_disks_clear_preserves_exact_tangency_and_rejects_next_radius() {
+        let fixed = p(0.0, 0.0);
+        let from = p(-2.0, 1.0);
+        let to = p(2.0, 1.0);
+        assert_eq!(
+            swept_disks_clear(from, to, 0.75, fixed, fixed, 0.25, &mut budget()),
+            Ok(true)
+        );
+        assert_eq!(
+            swept_disks_clear(
+                from,
+                to,
+                f64::from(0.75_f32.next_up()),
+                fixed,
+                fixed,
+                0.25,
+                &mut budget()
+            ),
+            Ok(false)
+        );
+        assert_eq!(
+            swept_disks_clear(
+                p(-2.0, -0.0),
+                p(-1.0, 0.0),
+                0.25,
+                fixed,
+                fixed,
+                0.75,
+                &mut budget()
+            ),
+            Ok(true)
+        );
+        assert_eq!(
+            swept_disks_clear(
+                p(-2.0, 0.0),
+                p(-1.0, 0.0),
+                f64::from(0.25_f32.next_up()),
+                fixed,
+                fixed,
+                0.75,
+                &mut budget()
+            ),
+            Ok(false)
+        );
+    }
+    #[test]
+    fn swept_disks_clear_separates_initial_overlap_from_monotone_recovery() {
+        let fixed = p(0.0, 0.0);
+        let initial = p(0.5, 0.0);
+        assert_eq!(
+            swept_disks_clear(
+                initial,
+                p(2.0, 0.0),
+                0.25,
+                fixed,
+                fixed,
+                0.75,
+                &mut budget()
+            ),
+            Ok(false)
+        );
+        assert_eq!(
+            swept_disks_non_deepening_overlap(
+                initial,
+                p(2.0, 0.0),
+                0.25,
+                fixed,
+                fixed,
+                0.75,
+                &mut budget()
+            ),
+            Ok(true)
+        );
+        assert_eq!(
+            swept_disks_non_deepening_overlap(
+                initial,
+                p(-0.5, 0.0),
+                0.25,
+                fixed,
+                fixed,
+                0.75,
+                &mut budget()
+            ),
+            Ok(false)
+        );
+        assert_eq!(
+            swept_disks_non_deepening_overlap(
+                initial,
+                initial,
+                0.25,
+                fixed,
+                fixed,
+                0.75,
+                &mut budget()
+            ),
+            Ok(true)
+        );
+        assert_eq!(
+            swept_disks_non_deepening_overlap(
+                p(2.0, 0.0),
+                p(3.0, 0.0),
+                0.25,
+                fixed,
+                fixed,
+                0.75,
+                &mut budget()
+            ),
+            Ok(false)
+        );
+    }
+    #[test]
+    fn swept_disks_clear_errors_are_not_clearance() {
+        let a = p(0.0, 0.0);
+        let b = p(4.0, 0.0);
+        for invalid in [0.0, -1.0, f64::NAN, f64::INFINITY] {
+            assert_eq!(
+                swept_disks_clear(a, a, invalid, b, b, 0.5, &mut budget()),
+                Err(Error::Invalid)
+            );
+            assert_eq!(
+                swept_disks_clear(a, a, 0.5, b, b, invalid, &mut budget()),
+                Err(Error::Invalid)
+            );
+        }
+        assert_eq!(
+            swept_disks_clear(a, a, 0.5, b, b, 0.5, &mut Budget::new(0)),
+            Err(Error::Budget)
+        );
+        assert_eq!(
+            swept_disks_clear(p(f64::NAN, 0.0), a, 0.5, b, b, 0.5, &mut budget()),
+            Err(Error::Invalid)
+        );
+        assert_eq!(
+            swept_disks_clear(p(2.0_f64.powi(200), 0.0), a, 0.5, b, b, 0.5, &mut budget()),
+            Err(Error::Arithmetic)
+        );
+    }
+    #[test]
+    fn swept_disks_clear_matches_independent_integer_quadratic_oracle() {
+        let mut seed = 0x715c_b49a_8e31_6d02_u64;
+        for _ in 0..4096 {
+            let mut next = || {
+                seed ^= seed << 13;
+                seed ^= seed >> 7;
+                seed ^= seed << 17;
+                (seed % 33) as i128 - 16
+            };
+            let a = [next(), next()];
+            let end_a = [next(), next()];
+            let b = [next(), next()];
+            let end_b = [next(), next()];
+            let ra = next().unsigned_abs() as i128 % 5 + 1;
+            let rb = next().unsigned_abs() as i128 % 5 + 1;
+            let r = [a[0] - b[0], a[1] - b[1]];
+            let v = [
+                end_a[0] - a[0] - end_b[0] + b[0],
+                end_a[1] - a[1] - end_b[1] + b[1],
+            ];
+            let c = r[0] * r[0] + r[1] * r[1] - (ra + rb) * (ra + rb);
+            let linear = 2 * (r[0] * v[0] + r[1] * v[1]);
+            let quadratic = v[0] * v[0] + v[1] * v[1];
+            let expected = if c < 0 || quadratic + linear + c < 0 {
+                false
+            } else if quadratic == 0 || linear >= 0 || linear <= -2 * quadratic {
+                true
+            } else {
+                linear * linear <= 4 * quadratic * c
+            };
+            let point = |q: [i128; 2]| p(q[0] as f64 / 4.0, q[1] as f64 / 4.0);
+            let result = swept_disks_clear(
+                point(a),
+                point(end_a),
+                ra as f64 / 4.0,
+                point(b),
+                point(end_b),
+                rb as f64 / 4.0,
+                &mut budget(),
+            );
+            assert_eq!(
+                result,
+                Ok(expected),
+                "a={a:?}->{end_a:?},b={b:?}->{end_b:?},r={ra}/{rb}"
+            );
+            assert_eq!(
+                swept_disks_clear(
+                    point(b),
+                    point(end_b),
+                    rb as f64 / 4.0,
+                    point(a),
+                    point(end_a),
+                    ra as f64 / 4.0,
+                    &mut budget()
+                ),
+                Ok(expected)
+            );
+            assert_eq!(
+                swept_disks_non_deepening_overlap(
+                    point(a),
+                    point(end_a),
+                    ra as f64 / 4.0,
+                    point(b),
+                    point(end_b),
+                    rb as f64 / 4.0,
+                    &mut budget()
+                ),
+                Ok(c < 0 && linear >= 0)
+            );
+        }
     }
 }

@@ -29,6 +29,7 @@ pub(super) type MemoryTable = PagedChunks<MemoryChunk>;
 #[derive(Clone)]
 struct SlotHistory {
     rows: MemoryTable,
+    planning_epoch: u64,
     surface: ChunkTable,
     permissions: Option<Arc<crate::visibility::VisibilityBasis>>,
     tick: u32,
@@ -125,7 +126,7 @@ pub(crate) struct TerrainHistories {
 }
 struct ChunkEdit {
     rows: Vec<Option<Remembered>>,
-    geometry_changed: bool,
+    planning_changed: bool,
 }
 fn set_row(
     terrain: &TerrainState,
@@ -153,9 +154,18 @@ fn set_row(
             .rows
             .clone()
             .unwrap_or_else(|| vec![None; terrain.chunks[index].elevations.len()]),
-        geometry_changed: false,
+        planning_changed: false,
     });
-    edit.geometry_changed |= current.map(|row| row.facts()) != Some(row.facts());
+    // Unseen movement already uses the public initial height. Learning only a
+    // material, timestamp or observation mask must not invalidate guidance.
+    let prior_height = current.map_or_else(
+        || {
+            terrain.initial
+                [(u64::from(cell.y) * u64::from(terrain.grid.columns) + u64::from(cell.x)) as usize]
+        },
+        |row| row.elevation,
+    );
+    edit.planning_changed |= prior_height != row.elevation;
     edit.rows[offset] = Some(row);
 }
 fn planning_range(terrain: &TerrainState, chunk: usize, rows: &[Option<Remembered>]) -> (i32, i32) {
@@ -270,11 +280,17 @@ fn update_slot(
             );
         }
     }
+    if edits.values().any(|edit| edit.planning_changed) {
+        history.planning_epoch = history
+            .planning_epoch
+            .checked_add(1)
+            .expect("three capture phases per bounded tick");
+    }
     let replacements = edits
         .into_iter()
         .map(|(index, edit)| {
             let previous = &history.rows[index];
-            let revision = if edit.geometry_changed {
+            let revision = if edit.planning_changed {
                 previous
                     .geometry_revision
                     .checked_add(1)
@@ -302,6 +318,7 @@ fn update_slot(
 }
 pub(super) struct CapturedHistory {
     pub(super) slots: BTreeMap<u8, MemoryTable>,
+    pub(super) planning_epochs: BTreeMap<u8, u64>,
     pub(super) coverage: Option<Arc<Coverage>>,
 }
 pub(super) fn capture(world: &mut World, phase: ObservationPhase) -> Option<CapturedHistory> {
@@ -334,6 +351,7 @@ pub(super) fn capture(world: &mut World, phase: ObservationPhase) -> Option<Capt
             // Empty rows are not observations, regardless of this initial mask.
             SlotHistory {
                 rows,
+                planning_epoch: 0,
                 surface: terrain.chunks.clone(),
                 permissions: permissions.clone(),
                 tick,
@@ -371,13 +389,16 @@ pub(super) fn capture(world: &mut World, phase: ObservationPhase) -> Option<Capt
                     );
                 }
             }
+            if edits.values().any(|edit| edit.planning_changed) {
+                slot.planning_epoch += 1;
+            }
             let replacements = edits
                 .into_iter()
                 .map(|(index, edit)| {
                     (
                         index,
                         Arc::new(MemoryChunk {
-                            geometry_revision: 1,
+                            geometry_revision: u64::from(edit.planning_changed),
                             planning_range: Some(planning_range(terrain, index, &edit.rows)),
                             rows: Some(edit.rows),
                         }),
@@ -408,6 +429,11 @@ pub(super) fn capture(world: &mut World, phase: ObservationPhase) -> Option<Capt
             .map(|(&viewer, slot)| (viewer, slot.rows.clone()))
             .collect(),
         coverage: history.coverage.clone(),
+        planning_epochs: history
+            .slots
+            .iter()
+            .map(|(&viewer, slot)| (viewer, slot.planning_epoch))
+            .collect(),
     };
     world.insert_resource(history);
     Some(captured)

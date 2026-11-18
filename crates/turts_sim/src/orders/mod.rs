@@ -10,8 +10,8 @@ mod tests;
 pub mod writer;
 
 pub(crate) use apply::{
-    apply_order, clear_replaced_movement, note_accepted_player_order, unit_order_capable,
-    unit_toggleable,
+    apply_order, clear_current_motion, clear_replaced_movement, note_accepted_player_order,
+    unit_has_pending_move, unit_order_capable, unit_toggleable,
 };
 pub use pending::{MovementDispatchState, PendingMovementOrders};
 pub(crate) use pending::{

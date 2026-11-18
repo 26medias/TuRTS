@@ -8,6 +8,7 @@ use std::collections::BTreeMap;
 mod arrival;
 mod ecs;
 mod frame;
+pub(crate) mod motion;
 mod plain;
 #[cfg(test)]
 #[path = "tests/plain_movement_tests.rs"]
@@ -20,11 +21,13 @@ mod spread;
 #[cfg(test)]
 #[path = "tests/spread_tests.rs"]
 mod spread_tests;
+pub(crate) mod sweep;
+pub(crate) use frame::{step_frame_with_motion_guide, step_frame_with_sweep_budget};
 
 pub(crate) use ecs::integrate_movement;
 pub use frame::{
-    MovementFrame, MovementFrameOutput, MovementFrameUnit, step_frame,
-    step_frame_preserving_resting,
+    MovementFrame, MovementFrameOutput, MovementFrameUnit, step_frame, step_frame_at_tick,
+    step_frame_preserving_resting, step_frame_preserving_resting_at_tick,
 };
 pub use plain::PlainMoveProgress;
 pub use spread::{SpreadContext, spread_destinations, spread_destinations_with_context};

@@ -1,6 +1,36 @@
 use super::*;
 
 #[test]
+fn planning_epoch_changes_only_after_an_authorized_height_change() {
+    let mut fixture = Fixture::new(20, 100, 20);
+    let first = phase(fixture.app.world(), ObservationPhase::Completed).unwrap();
+    let epoch = first.planning_epoch(0);
+    for _ in 0..3 {
+        fixture.tick();
+    }
+    let unchanged = phase(fixture.app.world(), ObservationPhase::Completed).unwrap();
+    assert_eq!(unchanged.planning_epoch(0), epoch);
+    fixture.work("dig", rect(3, 1, 1), 19, QueueMode::Replace);
+    for _ in 0..10 {
+        fixture.tick();
+    }
+    assert_eq!(fixture.height(3, 1), 19);
+    let changed = phase(fixture.app.world(), ObservationPhase::Completed).unwrap();
+    assert!(changed.planning_epoch(0) > epoch);
+    assert_eq!(
+        first.planning_epoch(0),
+        epoch,
+        "retained phases are immutable"
+    );
+    let edited_epoch = changed.planning_epoch(0);
+    for _ in 0..3 {
+        fixture.tick();
+    }
+    let settled = phase(fixture.app.world(), ObservationPhase::Completed).unwrap();
+    assert_eq!(settled.planning_epoch(0), edited_epoch);
+}
+
+#[test]
 fn flat_subrectangle_certificates_exclude_other_heights_in_the_same_chunk() {
     use std::collections::BTreeMap;
     use turts_rules::terrain::geometry::Cell;
@@ -829,7 +859,27 @@ fn ordinary_dig_opens_a_cached_blocked_route_but_distant_edit_does_not_invalidat
     );
     fixture.tick();
     let before = privileged_navigation_diagnostics(fixture.app.world());
-    fixture.work("dig", rect(6, 0, 1), 19, QueueMode::Replace);
+    // The reverse field reads the goal-side component, including (6,0).
+    // Select a genuinely unrelated chunk and prove that it is outside the
+    // complete cached certificate before testing local invalidation.
+    let distant_chunk = phase(fixture.app.world(), ObservationPhase::Completed)
+        .unwrap()
+        .chunk_for(turts_rules::terrain::geometry::Cell { x: 0, y: 0 })
+        .unwrap();
+    let audit = super::privileged_navigation_audit(fixture.app.world());
+    let cached = audit
+        .members
+        .iter()
+        .find(|member| member.unit == walker)
+        .unwrap();
+    assert!(!cached.dependencies.is_empty());
+    assert!(
+        cached
+            .dependencies
+            .iter()
+            .all(|(chunk, _)| *chunk != distant_chunk)
+    );
+    fixture.work("dig", rect(0, 0, 1), 19, QueueMode::Replace);
     fixture.tick();
     fixture.tick();
     let distant = privileged_navigation_diagnostics(fixture.app.world());
@@ -1007,6 +1057,9 @@ fn source_death_fixture(rate: u64, work_density: u32) -> Fixture {
 #[test]
 fn source_death_redacts_partial_work_and_hidden_edits_do_not_refresh_shared_memory() {
     let mut fixture = source_death_fixture(31, 10_000);
+    let initial_epoch = phase(fixture.app.world(), ObservationPhase::Completed)
+        .unwrap()
+        .planning_epoch(0);
     let scout = fixture.unit_at(1.5, 2.5);
     let enemy = fixture.unit_at(2.5, 2.5);
     let cell = TerrainCell { x: 3, y: 1 };
@@ -1037,6 +1090,12 @@ fn source_death_redacts_partial_work_and_hidden_edits_do_not_refresh_shared_memo
         .chunk_for(turts_rules::terrain::geometry::Cell { x: 3, y: 1 })
         .unwrap();
     let revision = completed.knowledge_revision(0, chunk);
+    let planning_epoch = completed.planning_epoch(0);
+    assert_eq!(
+        planning_epoch, initial_epoch,
+        "coverage loss is not a geometry edit"
+    );
+    let enemy_epoch = completed.planning_epoch(1);
     fixture.command_slot(
         SlotId(1),
         vec![enemy],
@@ -1064,6 +1123,8 @@ fn source_death_redacts_partial_work_and_hidden_edits_do_not_refresh_shared_memo
         "hidden edit counters cannot invalidate permitted route caches"
     );
     assert_eq!(after.surface(1, cell).unwrap().elevation, 19);
+    assert_eq!(after.planning_epoch(0), planning_epoch);
+    assert!(after.planning_epoch(1) > enemy_epoch);
 }
 #[test]
 fn committed_surface_witness_survives_a_later_same_tick_sight_source_death() {
@@ -1618,4 +1679,393 @@ fn construction_rejects_cliff_straddling_foundation_before_charge_and_allocator_
             .len(),
         1
     );
+}
+
+#[test]
+fn public_passage_overlapping_entry_brackets_back_out_then_both_moves_finish() {
+    use turts_rules::terrain::geometry::{Budget, DualSupportContact, Point};
+    let mut reference = None;
+    for (reverse, idle_first, swap_owners) in [
+        (false, false, false),
+        (true, false, false),
+        (false, true, false),
+        (false, false, true),
+        (false, true, true),
+    ] {
+        let mut fixture = Fixture::configured(20, 100, 20, |catalog, map| {
+            let actor = catalog.units.get_mut(&id("harvester")).unwrap();
+            actor.footprint = Footprint::Circle { radius: 1.125 };
+            actor.movement = Some(MovementDef { speed: 7.5 });
+            actor.terrain_class = None;
+            map.size = MapSize { x: 64., y: 48. };
+            let terrain = map.terrain.as_mut().unwrap();
+            terrain.columns = 64;
+            terrain.rows = 48;
+            terrain.chunk_width = 8;
+            let TerrainGenerationDef::Version1 { bands } = &mut terrain.generation;
+            bands[0].top = 24;
+            terrain.initial_heights = vec![
+                TerrainHeightRect {
+                    cells: TerrainRect {
+                        min: TerrainCell { x: 30, y: 0 },
+                        max: TerrainCell { x: 34, y: 22 },
+                    },
+                    elevation: 24,
+                },
+                TerrainHeightRect {
+                    cells: TerrainRect {
+                        min: TerrainCell { x: 30, y: 25 },
+                        max: TerrainCell { x: 34, y: 48 },
+                    },
+                    elevation: 24,
+                },
+            ];
+            map.placements[0].pos = WorldPos { x: 28.75, y: 23.5 };
+            map.placements[0].owner_slot = u8::from(swap_owners);
+            map.placements[1].pos = WorldPos { x: 5., y: 5. };
+            let mut right = map.placements[0].clone();
+            right.pos = WorldPos { x: 35.25, y: 23.5 };
+            right.owner_slot = u8::from(!swap_owners);
+            map.placements.push(right);
+            if reverse {
+                map.placements.reverse();
+            }
+        });
+        let left = fixture.unit_at(28.75, 23.5);
+        let right = fixture.unit_at(35.25, 23.5);
+        fixture.command_slot(
+            SlotId(u8::from(swap_owners)),
+            vec![left],
+            Behaviour::Move,
+            OrderTargetSim::Point(crate::Vec2::new(48., 23.5)),
+            QueueMode::Replace,
+        );
+        fixture.command_slot(
+            SlotId(u8::from(!swap_owners)),
+            vec![right],
+            Behaviour::Move,
+            OrderTargetSim::Point(crate::Vec2::new(16., 23.5)),
+            QueueMode::Replace,
+        );
+        let grid = fixture.app.world().resource::<TerrainState>().grid;
+        let p = |x, y| Point { x, y };
+        let mut entries = [None; 2];
+        let position = |f: &Fixture, unit| {
+            f.app
+                .world()
+                .get::<crate::Position>(crate::unit_entity(f.app.world(), unit).unwrap())
+                .unwrap()
+                .0
+        };
+        let mut saw_backout = false;
+        let mut stopped_at = None;
+        let mut retry_start = None;
+        let mut other_service = None;
+        let mut trace = Vec::new();
+        for tick in 0..800 {
+            let before = [position(&fixture, left), position(&fixture, right)];
+            fixture.tick();
+            let after = [position(&fixture, left), position(&fixture, right)];
+            trace.push(after);
+            for i in 0..2 {
+                assert!(
+                    f64::from(after[i].distance(before[i])) <= 0.37501,
+                    "speed at{tick}"
+                );
+                let state = fixture.app.world().resource::<TerrainState>();
+                let sweep = state.grid.sweep(
+                    state,
+                    Point {
+                        x: before[i].x.into(),
+                        y: before[i].y.into(),
+                    },
+                    Point {
+                        x: after[i].x.into(),
+                        y: after[i].y.into(),
+                    },
+                    1.125,
+                    turts_rules::terrain::geometry::Traversal {
+                        max_step: 0,
+                        max_grade: turts_rules::terrain::Ratio {
+                            numerator: 0,
+                            denominator: 1,
+                        },
+                    },
+                    &mut Budget::new(16_384),
+                );
+                assert!(
+                    sweep.result.is_ok() && sweep.numerator == sweep.denominator,
+                    "terrain chord at{tick}: {sweep:?}"
+                );
+                if entries[i].is_none()
+                    && let DualSupportContact::Transition {
+                        lower,
+                        upper,
+                        denominator,
+                    } = grid.first_dual_support_contact(
+                        state,
+                        p(before[i].x.into(), before[i].y.into()),
+                        p(after[i].x.into(), after[i].y.into()),
+                        [p(0., 2.25), p(0., -2.25)],
+                        1.125,
+                        0,
+                        &mut Budget::new(16_384),
+                    )
+                {
+                    entries[i] = Some((tick, lower, upper, denominator));
+                }
+            }
+            assert!(
+                super::super::movement::sweep::pair_clear(
+                    before[0], after[0], 1.125, before[1], after[1], 1.125
+                ),
+                "body chord at{tick}"
+            );
+            saw_backout |= after[0].x < before[0].x || after[1].x > before[1].x;
+            if idle_first
+                && stopped_at.is_none()
+                && (after[0].y - 23.5).abs() >= 2.625
+                && after[0].x < 28.875
+            {
+                fixture.command_slot(
+                    SlotId(u8::from(swap_owners)),
+                    vec![left],
+                    Behaviour::Stop,
+                    OrderTargetSim::None,
+                    QueueMode::Replace,
+                );
+                stopped_at = Some((tick, after[0]));
+            }
+            if stopped_at.is_some()
+                && let Some((side, _, public_tick)) = traffic::public_passage::retry_state(
+                    fixture.app.world().resource::<traffic::TrafficState>(),
+                    usize::from(!swap_owners),
+                )
+            {
+                if side < 0 && retry_start.is_none() {
+                    retry_start = Some(public_tick);
+                }
+                if side > 0 && other_service.is_none() {
+                    other_service = Some(public_tick);
+                }
+            }
+            if idle_first && stopped_at.is_some() && after[1] == crate::Vec2::new(16., 23.5) {
+                break;
+            }
+
+            if after[0] == crate::Vec2::new(48., 23.5) && after[1] == crate::Vec2::new(16., 23.5) {
+                break;
+            }
+        }
+        let a = entries[0].expect("left committed entry");
+        let b = entries[1].expect("right committed entry");
+        assert_eq!(a.0, b.0, "same ordinary committed tick");
+        assert!(
+            a.2 > a.1 && b.2 > b.1,
+            "actual kernel must emit nonzero brackets: {entries:?}"
+        );
+        assert!(
+            u64::from(a.1) * u64::from(b.3) <= u64::from(b.2) * u64::from(a.3)
+                && u64::from(b.1) * u64::from(a.3) <= u64::from(a.2) * u64::from(b.3),
+            "overlapping actual brackets: {entries:?}"
+        );
+        assert!(
+            saw_backout,
+            "overlapping entry chronology requires physical backout"
+        );
+        if idle_first {
+            let (tick, pose) = stopped_at.expect("ordinary Stop in the certified outside bay");
+            assert_eq!(
+                position(&fixture, left),
+                pose,
+                "idle first side stays fixed"
+            );
+            let _ = tick;
+            assert!(
+                other_service.expect("other side selected")
+                    - retry_start.expect("latched retry episode")
+                    <= 4,
+                "repeated empty witnesses must hand the idle opportunity to the other side within four stall ticks"
+            );
+        } else {
+            assert_eq!(
+                position(&fixture, left),
+                crate::Vec2::new(48., 23.5),
+                "right={:?} nav={:?} traffic={}",
+                position(&fixture, right),
+                privileged_navigation_audit(fixture.app.world()),
+                privileged_traffic_debug(fixture.app.world())
+            );
+            if reverse || swap_owners {
+                assert_eq!(
+                    reference.as_ref().unwrap(),
+                    &trace,
+                    "every physical tick is independent of allocation handles and owner IDs"
+                );
+            } else {
+                reference = Some(trace);
+            }
+        }
+        assert_eq!(position(&fixture, right), crate::Vec2::new(16., 23.5));
+    }
+}
+
+#[test]
+fn owned_incompatible_same_side_entrants_use_the_certified_canonical_connector() {
+    use turts_rules::terrain::geometry::{Budget, Point, Traversal};
+    let mut reference = None;
+    for reverse in [false, true] {
+        let mut f = Fixture::configured(20, 100, 20, |catalog, map| {
+            let actor = catalog.units.get_mut(&id("harvester")).unwrap();
+            actor.footprint = Footprint::Circle { radius: 1.125 };
+            actor.movement = Some(MovementDef { speed: 7.5 });
+            actor.terrain_class = None;
+            map.size = MapSize { x: 64., y: 48. };
+            let t = map.terrain.as_mut().unwrap();
+            t.columns = 64;
+            t.rows = 48;
+            t.chunk_width = 8;
+            let TerrainGenerationDef::Version1 { bands } = &mut t.generation;
+            bands[0].top = 24;
+            t.initial_heights = vec![
+                TerrainHeightRect {
+                    cells: TerrainRect {
+                        min: TerrainCell { x: 30, y: 0 },
+                        max: TerrainCell { x: 34, y: 22 },
+                    },
+                    elevation: 24,
+                },
+                TerrainHeightRect {
+                    cells: TerrainRect {
+                        min: TerrainCell { x: 30, y: 25 },
+                        max: TerrainCell { x: 34, y: 48 },
+                    },
+                    elevation: 24,
+                },
+            ];
+            map.placements[0].pos = WorldPos { x: 37., y: 20.875 };
+            map.placements[1].pos = WorldPos { x: 5., y: 5. };
+            let mut upper = map.placements[0].clone();
+            upper.pos = WorldPos { x: 37., y: 26.125 };
+            map.placements.push(upper);
+            if reverse {
+                map.placements.reverse();
+            }
+        });
+        let units = [f.unit_at(37., 20.875), f.unit_at(37., 26.125)];
+        let mut members = units.to_vec();
+        if reverse {
+            members.reverse();
+        }
+        let command = Command {
+            slot: SlotId(0),
+            seq: 1,
+            kind: CommandKind::Order(Box::new(OrderCommand {
+                order: id("fixture"),
+                behaviour: Behaviour::Move,
+                target_kind: TargetKind::Point,
+                policy: None,
+                units: members,
+                target: OrderTargetSim::Point(crate::Vec2::new(16., 23.5)),
+                queue: QueueMode::Replace,
+                group: 1,
+                allowed_units: vec![],
+                queue_depth: 16,
+            })),
+        };
+        assert!(apply_command(f.app.world_mut(), &command).outcome.is_ok());
+        let position = |f: &Fixture, id| {
+            f.app
+                .world()
+                .get::<crate::Position>(crate::unit_entity(f.app.world(), id).unwrap())
+                .unwrap()
+                .0
+        };
+        let point = |p: crate::Vec2| Point {
+            x: p.x.into(),
+            y: p.y.into(),
+        };
+        let mut trace = Vec::new();
+        for tick in 0..800 {
+            let before = units.map(|id| position(&f, id));
+            f.tick();
+            let after = units.map(|id| position(&f, id));
+            trace.push(after);
+            let terrain = f.app.world().resource::<TerrainState>();
+            for i in 0..2 {
+                assert!(
+                    f64::from(after[i].distance(before[i])) <= 0.37501,
+                    "speed at{tick}"
+                );
+                let sweep = terrain.grid.sweep(
+                    terrain,
+                    point(before[i]),
+                    point(after[i]),
+                    1.125,
+                    Traversal {
+                        max_step: 0,
+                        max_grade: turts_rules::terrain::Ratio {
+                            numerator: 0,
+                            denominator: 1,
+                        },
+                    },
+                    &mut Budget::new(16384),
+                );
+                assert!(
+                    sweep.result.is_ok() && sweep.numerator == sweep.denominator,
+                    "terrain at{tick}: {sweep:?}"
+                );
+            }
+            assert!(
+                crate::movement::sweep::pair_clear(
+                    before[0], after[0], 1.125, before[1], after[1], 1.125
+                ),
+                "body at{tick}"
+            );
+            if units.iter().all(|&id| {
+                f.app
+                    .world()
+                    .get::<UnitOrders>(crate::unit_entity(f.app.world(), id).unwrap())
+                    .unwrap()
+                    .current
+                    .is_none()
+            }) {
+                break;
+            }
+        }
+        for id in units {
+            assert!(
+                f.app
+                    .world()
+                    .get::<UnitOrders>(crate::unit_entity(f.app.world(), id).unwrap())
+                    .unwrap()
+                    .last_failure
+                    .is_none(),
+                "ordinary move must complete without rejection"
+            );
+            assert!(
+                f.app
+                    .world()
+                    .get::<UnitOrders>(crate::unit_entity(f.app.world(), id).unwrap())
+                    .unwrap()
+                    .current
+                    .is_none(),
+                "original ordinary move must finish: lower={:?} upper={:?} nav={:?} traffic={}",
+                position(&f, units[0]),
+                position(&f, units[1]),
+                privileged_navigation_audit(f.app.world()),
+                privileged_traffic_debug(f.app.world())
+            );
+            assert!(position(&f, id).x + 1.125 <= 30., "full body crossed");
+        }
+        if reverse {
+            assert_eq!(
+                reference.as_ref().unwrap(),
+                &trace,
+                "allocation/member handles cannot choose entry priority"
+            );
+        } else {
+            reference = Some(trace);
+        }
+    }
 }

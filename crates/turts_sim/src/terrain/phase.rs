@@ -57,6 +57,7 @@ pub struct TerrainPhase {
     chunk_columns: u32,
     surface: ChunkTable,
     memory: BTreeMap<u8, super::history::MemoryTable>,
+    planning_epochs: BTreeMap<u8, u64>,
     coverage: Option<Arc<super::history::Coverage>>,
     initial: Arc<[i32]>,
     initial_ranges: Arc<[(i32, i32)]>,
@@ -83,6 +84,7 @@ impl PartialEq for TerrainPhase {
             && self.chunk_columns == other.chunk_columns
             && self.surface == other.surface
             && self.memory == other.memory
+            && self.planning_epochs == other.planning_epochs
             && self.initial == other.initial
             && self.materials == other.materials
             && self.ground == other.ground
@@ -266,6 +268,11 @@ impl TerrainPhase {
             .iter()
             .all(|(index, revision)| self.knowledge_revision(viewer, *index) == *revision)
     }
+    /// Stable across timestamps and hidden edits. This token belongs to this
+    /// match and viewer; it must never replace validation of local chunk leases.
+    pub(crate) fn planning_epoch(&self, viewer: u8) -> u64 {
+        self.planning_epochs.get(&viewer).copied().unwrap_or(0)
+    }
     pub(crate) fn knowledge_revision(&self, viewer: u8, chunk: usize) -> u64 {
         self.memory
             .get(&viewer)
@@ -371,6 +378,7 @@ pub(crate) fn capture_phase(world: &mut World, phase: ObservationPhase) {
         chunk_columns: terrain.chunk_columns,
         surface: terrain.chunks.clone(),
         memory: history.slots,
+        planning_epochs: history.planning_epochs,
         coverage: history.coverage,
         initial: Arc::clone(&terrain.initial),
         initial_ranges: Arc::clone(&terrain.initial_ranges),
