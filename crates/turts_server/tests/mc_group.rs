@@ -249,14 +249,22 @@ fn gm40_and_post_ring_economy_logs_strictly_replay() {
             .rev()
             .find(|(_, line)| line.starts_with(br#"{"record":"tick""#))
             .expect("the log has a tick record");
-        let mut forged: serde_json::Value = serde_json::from_slice(line).unwrap();
-        for path in ["/data/state/raw_units/0/pos/0", "/data/state/units/0/pos/0"] {
-            let x = forged
-                .pointer_mut(path)
-                .expect("tick record holds unit positions");
-            *x = serde_json::json!(x.as_u64().unwrap() ^ 1);
-        }
-        records[index] = serde_json::from_value(forged).expect("forged record parses");
+        // Edit the bytes in place: a round trip through `serde_json::Value` reorders the
+        // keys, and the tagged record does not parse then. The last `raw_units` list of the
+        // line belongs to `state`.
+        let text = std::str::from_utf8(line).expect("the log is UTF-8");
+        let list = text
+            .rfind(r#""raw_units":[{"#)
+            .expect("state holds raw units");
+        let start = list
+            + text[list..]
+                .find(r#""pos":["#)
+                .expect("a raw unit position")
+            + 7;
+        let end = start + text[start..].find(',').expect("position x ends");
+        let bits: u32 = text[start..end].parse().expect("position x is f32 bits");
+        let forged = format!("{}{}{}", &text[..start], bits ^ 1, &text[end..]);
+        records[index] = serde_json::from_str(&forged).expect("forged record parses");
         assert!(
             turts_audit::validate_records(&records).is_err(),
             "{label}: a forged one-ULP position must not replay"
