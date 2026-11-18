@@ -1065,7 +1065,9 @@ pub(crate) fn step_frame_with_motion_guide(
                 steer = super::exchange::route_own(&planner, spent, &mut exhausted);
                 // A slot that only stalled movers cut off is still the slot of this mover.
                 if steer.is_none()
+                    && !exhausted
                     && super::exchange::route_own(&planner.hard(), spent, &mut exhausted).is_none()
+                    && !exhausted
                 {
                     let mut waits = false;
                     if let Some(plan) = super::exchange::route_other(

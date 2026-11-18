@@ -9,6 +9,16 @@ use super::count_pool_slot_candidates;
 use super::frame::MovementFrameUnit;
 use super::spread::nearest_angle_order;
 
+#[cfg(test)]
+thread_local! {
+    static SLOT_RANGE_QUERIES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+pub(super) fn slot_range_queries() -> usize {
+    SLOT_RANGE_QUERIES.with(|count| count.get())
+}
+
 pub(super) struct MovementPoolIndex {
     pub(super) points: Vec<crate::grid::GridPoint>,
     grid: crate::grid::UniformGrid,
@@ -109,6 +119,8 @@ impl MovementPoolIndex {
 
     /// The pool slots within `spacings` pool spacings of `origin`, in slot index order.
     pub(super) fn slots_within(&self, origin: Vec2, spacings: f32) -> Vec<Vec2> {
+        #[cfg(test)]
+        SLOT_RANGE_QUERIES.with(|count| count.set(count.get() + 1));
         self.grid
             .within(&self.points, origin, self.spacing * spacings)
             .into_iter()

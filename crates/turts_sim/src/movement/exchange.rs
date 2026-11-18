@@ -369,6 +369,10 @@ pub(super) fn route_other(
     exhausted: &mut bool,
     waits: &mut bool,
 ) -> Option<Plan> {
+    // The preceding search did not finish, so no alternate-slot decision is safe.
+    if *exhausted {
+        return None;
+    }
     let units = planner.units;
     let unit = &units[planner.index];
     let (pool_id, own_slot) = moving_member(unit)?;
@@ -425,4 +429,81 @@ pub(super) fn route_other(
                 slot: goals[reached.goal],
             }),
         })
+}
+
+#[cfg(test)]
+mod exhaustion_tests {
+    use super::*;
+    use crate::movement::{MoveProgress, MovementPool};
+    use std::collections::HashSet;
+
+    #[test]
+    fn exhausted_route_never_scans_alternate_slots() {
+        let position = Vec2::new(5.0, 5.0);
+        let slot = Vec2::new(9.0, 5.0);
+        let units = [MovementFrameUnit {
+            unit_id: 1,
+            owner_slot: 0,
+            unit_type: 1,
+            position,
+            radius: 0.5,
+            speed: Some(1.0),
+            target: Some(slot),
+            progress: Some(MoveProgress {
+                pool_id: 7,
+                slot,
+                activity: MovementActivity::Moving,
+                pass_mode: false,
+                stalling_on_group: false,
+                stalled_ticks: 0,
+                best_distance: 4.0,
+                claim_count: 0,
+                follow_origin: None,
+            }),
+            plain_progress: None,
+            physical_escape: None,
+        }];
+        let points = [crate::grid::GridPoint { id: 1, position }];
+        let grid = crate::grid::UniformGrid::new(&points, 1.0);
+        let planner = super::super::route::Planner {
+            index: 0,
+            units: &units,
+            points: &points,
+            grid: &grid,
+            max_radius: 0.5,
+            bounds: Vec2::splat(20.0),
+            stationary_at_start: &[false],
+            start_stall: &[None],
+            soft: false,
+            stall_ticks: 2,
+        };
+        let pool = MovementPool {
+            pool_id: 7,
+            point: slot,
+            spacing: 1.1,
+            primary_count: 1,
+            slots: vec![slot, Vec2::new(6.0, 5.0)],
+        };
+        let index = MovementPoolIndex::new(&pool, Vec2::splat(20.0));
+        let mut spent = super::super::route::OWNER_CAP;
+        let mut exhausted = true;
+        let mut waits = false;
+        let before = super::super::pool_index::slot_range_queries();
+        let plan = route_other(
+            &planner,
+            &index,
+            &HashMap::new(),
+            &HashSet::new(),
+            &mut spent,
+            &mut exhausted,
+            &mut waits,
+        );
+        assert!(plan.is_none());
+        assert!(exhausted && !waits);
+        assert_eq!(
+            super::super::pool_index::slot_range_queries(),
+            before,
+            "an exhausted search must not enumerate alternate pool slots"
+        );
+    }
 }
