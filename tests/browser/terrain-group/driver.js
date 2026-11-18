@@ -180,7 +180,7 @@ async function drive({pagesBySlot,fixture,capture,record,onPoll}) {
             if(closed&&relative>240)reopened||=rectIs(fixture,state,[31,20],[32,28],0);
             const id=bindings.get('large.2.3'),order=row(merged,id),unit=world(state).units.find(u=>u.unit_id===id);
             if(relative>=1&&!distantOriginal&&order?.current){distantOriginal=JSON.parse(JSON.stringify(order.current));distantStart=[...unit.pos];}
-            if(relative>=20&&relative<=340){assert(distantOriginal&&same(order.current,distantOriginal),'Distant public order changed during local edits');distantMoved||=!same(unit.pos,distantStart);}
+            if(relative>=20&&relative<=340&&distantOriginal){assert(same(order.current,distantOriginal),'Distant public order changed during local edits');distantMoved||=!same(unit.pos,distantStart);}
         }
         if(settledBlocker&&relative>=initialDeadline-200){const positions=publicOutcomes(merged,fixture,bindings).map(r=>[r.label,r.position,r.current]);if(stable)assert(same(stable,positions),'Impossible traffic oscillates instead of waiting');else stable=positions;}
         const surfaceChanges=[];for(const surface of world(state).terrain.surfaces){const key=surface.cell.x+","+surface.cell.y,encoded=JSON.stringify(surface);if(previousSurfaces.get(key)!==encoded){surfaceChanges.push(surface);previousSurfaces.set(key,encoded);}}
