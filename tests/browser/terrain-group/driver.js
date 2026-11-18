@@ -1,7 +1,7 @@
 // Real GM1-GM4 pointer/key input and public outcome checks. No state/command injection.
 'use strict';
 const assert=(ok,message)=>{if(!ok)throw Error(message);};
-const {SettledTracker}=require('./settled-tracker');
+const {SettledTracker,DistantOrderTracker}=require('./settled-tracker');
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 // Hold both sides of a gesture across frames. A zero-delay press/release can
 // disappear between Bevy input polls, even when hover picked the correct body.
@@ -140,12 +140,13 @@ async function drive({pagesBySlot,fixture,capture,record,onPoll}) {
     // Preselect each peer's first cohort before starting the measured action timeline.
     const prepared=new Map();
     for(const [slot,page]of pagesBySlot){const intent=fixture.scene.commands.find(c=>c.slot===slot);if(intent?.tick===0){await selectActors(page,fixture,bindings,intent.actors);prepared.set(slot,intent);}}
-    let base=world(await read(first)).tick,lastTick=-1,gaps=0,closed=false,reopened=false,openingTick=null,stable=null,distantOriginal=null,distantStart=null;
+    let base=world(await read(first)).tick,lastTick=-1,gaps=0,closed=false,reopened=false,openingTick=null,stable=null;
+    const distant=new DistantOrderTracker();
     const labels=filter=>fixture.actors.filter(filter).map(a=>a.label),large=labels(a=>a.kind==='large'),small=labels(a=>a.kind==='small');
     const initialDeadline=fixture.scene.initial_deadline_ticks??fixture.scene.deadline_ticks;
     const settledBlocker=fixture.scene_name==='GM3-settled-blocker';
     const blockerStart=fixture.actors.find(a=>a.label==='blocker')?.position;
-    let gm2Initial=false,distantMoved=false;const previousSurfaces=new Map();
+    let gm2Initial=false;const previousSurfaces=new Map();
     async function sample(){
         const state=await read(first);assert(state&&world(state),'Activated state disappeared');onPoll?.();
         const tick=world(state).tick,relative=tick-base;
@@ -179,8 +180,7 @@ async function drive({pagesBySlot,fixture,capture,record,onPoll}) {
             closed||=rectIs(fixture,state,[31,20],[32,28],4);
             if(closed&&relative>240)reopened||=rectIs(fixture,state,[31,20],[32,28],0);
             const id=bindings.get('large.2.3'),order=row(merged,id),unit=world(state).units.find(u=>u.unit_id===id);
-            if(relative>=1&&!distantOriginal&&order?.current){distantOriginal=JSON.parse(JSON.stringify(order.current));distantStart=[...unit.pos];}
-            if(relative>=20&&relative<=340&&distantOriginal){assert(same(order.current,distantOriginal),'Distant public order changed during local edits');distantMoved||=!same(unit.pos,distantStart);}
+            distant.observe(relative,order?.current,unit.pos);
         }
         if(settledBlocker&&relative>=initialDeadline-200){const positions=publicOutcomes(merged,fixture,bindings).map(r=>[r.label,r.position,r.current]);if(stable)assert(same(stable,positions),'Impossible traffic oscillates instead of waiting');else stable=positions;}
         const surfaceChanges=[];for(const surface of world(state).terrain.surfaces){const key=surface.cell.x+","+surface.cell.y,encoded=JSON.stringify(surface);if(previousSurfaces.get(key)!==encoded){surfaceChanges.push(surface);previousSurfaces.set(key,encoded);}}
@@ -205,7 +205,14 @@ async function drive({pagesBySlot,fixture,capture,record,onPoll}) {
             await Promise.all([...bySlot].map(async([slot,intents])=>{for(const intent of intents){
                 monitor();const page=pagesBySlot.get(slot);assert(page,'Missing real peer for slot '+slot);
                 settled.begin(intent.actors);
-                const before=await read(page),lastSeq=Math.max(0,...(before.debug.command_results||[]).map(r=>r.seq));await issue(page,fixture,bindings,intent,prepared.get(slot)===intent);prepared.delete(slot);
+                const before=await read(page),lastSeq=Math.max(0,...(before.debug.command_results||[]).map(r=>r.seq));
+                try{await issue(page,fixture,bindings,intent,prepared.get(slot)===intent);}catch(error){
+                    const state=await read(page);await capture?.('failed-selection-slot'+slot,state);
+                    const picks=intent.actors.map(label=>{const id=bindings.get(label),actor=fixture.actors.find(a=>a.label===label),unit=world(state).units.find(u=>u.unit_id===id);return {label,id,position:unit?.pos,projected:unit?project(state.scene,[...unit.pos,contact(state,id)+actor.profile.pick_height]):null};});
+                    error.message+='; actual selection='+JSON.stringify(state?.debug?.selection)+'; intended picks='+JSON.stringify(picks);
+                    throw error;
+                }
+                prepared.delete(slot);
                 const acceptedState=await wait(page,s=>{
                     const results=(s.debug.command_results||[]).filter(r=>r.seq>lastSeq);
                     assert(!results.some(r=>r.rejected||r.envelope||r.refused?.length),'Pointer order was refused: '+JSON.stringify(results));
@@ -239,7 +246,7 @@ async function drive({pagesBySlot,fixture,capture,record,onPoll}) {
         }else if(fixture.scene_name==='GM2-narrow'){
             crossed(fixture,final,bindings,large);checks.large12_original_move_completed=true;checks.opening_tick=openingTick;
         }else if(fixture.scene_name==='GM4-edit-during-approach'){
-            assert(closed&&reopened&&distantMoved,'Actual fill/reopen or distant motion missing');crossed(fixture,final,bindings,labels(a=>a.label!=='small.0.0'&&a.label!=='large.2.3'));checks.closed_reopened=true;checks.distant_order_unchanged_through_tick=340;
+            assert(closed&&reopened&&distant.moved,'Actual fill/reopen or distant motion missing');crossed(fixture,final,bindings,labels(a=>a.label!=='small.0.0'&&a.label!=='large.2.3'));checks.closed_reopened=true;checks.distant_order_unchanged_through_tick=340;
         }else{
             for(const actor of fixture.actors){const id=bindings.get(actor.label);assert(idle(final,id),'Feasible cohort did not finish: '+actor.label);
                 if(actor.label==='blocker')continue;

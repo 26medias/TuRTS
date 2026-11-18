@@ -17,4 +17,18 @@ class SettledTracker {
         this.positions.set(label, [...position]);
     }
 }
-module.exports = { SettledTracker };
+class DistantOrderTracker {
+    constructor() { this.original = null; this.start = null; this.moved = false; }
+    observe(relative, order, position) {
+        if (relative > 340 && !this.original) throw Error('Distant order not observed by tick 340');
+        if (relative >= 1 && !this.original && order) {
+            this.original = JSON.parse(JSON.stringify(order));
+            this.start = [...position];
+        }
+        if (relative >= 20 && relative <= 340 && this.original) {
+            if (JSON.stringify(order) !== JSON.stringify(this.original)) throw Error('Distant public order changed during local edits');
+            this.moved ||= JSON.stringify(position) !== JSON.stringify(this.start);
+        }
+    }
+}
+module.exports = { SettledTracker, DistantOrderTracker };
