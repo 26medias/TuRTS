@@ -134,7 +134,7 @@ function crossed(fixture,state,bindings,labels,right=true){
     assert(completed(fixture,state,bindings,labels),'Required actors have not completed');
     for(const label of labels){const actor=fixture.actors.find(a=>a.label===label),unit=world(state).units.find(u=>u.unit_id===bindings.get(label)),radius=Math.fround(actor.profile.radius);assert(right?unit.pos[0]-radius>=34:unit.pos[0]+radius<=30,'Order completed on wrong plateau: '+label);}
 }
-async function drive({pagesBySlot,fixture,capture,record,onPoll}) {
+async function drive({pagesBySlot,fixture,capture,record,recordInput,onPoll}) {
     const bindings=new Map(),actions=[],samples=[],checks={observed_full_bodies:true,observed_no_overlap:true},original=new Map(),settled=new SettledTracker(),owned=new Map();
     const first=pagesBySlot.values().next().value;
     for(const [slot,page]of pagesBySlot){
@@ -225,7 +225,9 @@ async function drive({pagesBySlot,fixture,capture,record,onPoll}) {
                 monitor();const page=pagesBySlot.get(slot);assert(page,'Missing real peer for slot '+slot);
                 settled.begin(intent.actors);
                 const before=await read(page),lastSeq=Math.max(0,...(before.debug.command_results||[]).map(r=>r.seq));
-                try{await issue(page,fixture,bindings,intent,prepared.get(slot)===intent);}catch(error){
+                const inputObservation=(stage,state)=>recordInput?.({slot,stage,wall_ms:Date.now(),tick:world(state).tick,focus:state.debug.focus,cursor:state.debug.cursor,selection:state.debug.selection,phase:state.debug.phase,command_results:state.debug.command_results});
+                inputObservation('before',before);
+                try{await issue(page,fixture,bindings,intent,prepared.get(slot)===intent);inputObservation('after',await read(page));}catch(error){
                     const state=await read(page);await capture?.('failed-selection-slot'+slot,state);
                     const picks=intent.actors.map(label=>{const id=bindings.get(label),actor=fixture.actors.find(a=>a.label===label),unit=world(state).units.find(u=>u.unit_id===id);return {label,id,position:unit?.pos,projected:unit?project(state.scene,[...unit.pos,contact(state,id)+actor.profile.pick_height]):null};});
                     error.message+='; actual selection='+JSON.stringify(state?.debug?.selection)+'; intended picks='+JSON.stringify(picks);

@@ -73,7 +73,7 @@ async function ready(url,server){const deadline=Date.now()+30000;while(Date.now(
                 assert(pagesBySlot.has(0)&&(peers===1||pagesBySlot.has(1)),'Required owner peer absent');
                 stream=fs.createWriteStream(path.join(caseOut,'observed-public.jsonl'));
                 const capture=async(name,state)=>{fs.writeFileSync(path.join(caseOut,name+'.json'),JSON.stringify(state,null,2));for(const [slot,page]of pagesBySlot)await page.screenshot({path:path.join(caseOut,`${name}-slot${slot}.png`)});};
-                row.outcome=await drive({pagesBySlot,fixture,capture,record:sample=>stream.write(JSON.stringify(sample)+'\n'),onPoll:()=>assert(row.errors.length===0,'Browser errors: '+row.errors.join('\n'))});
+                row.outcome=await drive({pagesBySlot,fixture,capture,record:sample=>stream.write(JSON.stringify(sample)+'\n'),recordInput:sample=>fs.appendFileSync(path.join(caseOut,'pointer-input-observations.jsonl'),JSON.stringify(sample)+'\n'),onPoll:()=>assert(row.errors.length===0,'Browser errors: '+row.errors.join('\n'))});
                 row.status='PASS';
             }catch(error){row.status='FAIL';row.error=String(error.stack||error);throw error;}
             finally{
