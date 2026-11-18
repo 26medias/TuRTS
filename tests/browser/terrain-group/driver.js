@@ -3,13 +3,13 @@
 const assert=(ok,message)=>{if(!ok)throw Error(message);};
 const {SettledTracker,DistantOrderTracker}=require('./settled-tracker');
 const {exactOwnedBox}=require('./selection-box');
+const {clickPointer}=require('./pointer-gesture');
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 // Hold both sides of a gesture across frames. A zero-delay press/release can
 // disappear between Bevy input polls, even when hover picked the correct body.
 const PRESS_MS=80;
 async function click(page,point,button='left'){
-    await page.mouse.click(...point,{button,delay:PRESS_MS});
-    await sleep(PRESS_MS);
+    await clickPointer(page,point,button,()=>sleep(PRESS_MS));
 }
 const same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
 const world=state=>state.debug.replicated_world;
@@ -65,7 +65,7 @@ async function selectActors(page,fixture,bindings,labels,recordClick) {
         const units=world(state).units;
         const points=state.scene.units.map(unit=>({id:unit.unit_id,center:unit.ground_screen_center,owned:units.find(u=>u.unit_id===unit.unit_id)?.owner_slot===state.debug.slot}));
         const box=exactOwnedBox(points,wanted);assert(box,'Requested cohort has no exact owned selection box');
-        await page.mouse.move(box[0],box[1]);await page.mouse.down();await sleep(PRESS_MS);
+        await page.mouse.move(box[0],box[1]);await sleep(PRESS_MS);await page.mouse.down();await sleep(PRESS_MS);
         await page.mouse.move(box[2],box[3],{steps:8});await sleep(PRESS_MS);await page.mouse.up();await sleep(PRESS_MS);
         await wait(page,s=>s.debug.selection.length===wanted.length&&wanted.every(id=>s.debug.selection.includes(id)),'Physical box selection differs from frozen cohort');
         return;
