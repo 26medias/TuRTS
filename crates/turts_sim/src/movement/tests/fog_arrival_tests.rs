@@ -493,3 +493,95 @@ fn a_hidden_order_that_cannot_move_its_body_changes_nothing() {
     // The first build changed our mover in tick 0 of this fixture.
     assert!(compared >= 2, "the fixture compared {compared} ticks only");
 }
+
+#[test]
+fn general_angle_results_are_independent_of_id_owner_and_row_order() {
+    // Positions within 0.0001 world units count as equal.
+    const POSITION_TOLERANCE: f32 = 0.0001;
+    let mut changed = 0;
+    for i in 0..160 {
+        let angle = i as f32 * std::f32::consts::PI / 180.0;
+        let direction = Vec2::new(angle.cos(), angle.sin());
+        for seen in [false, true] {
+            let mut reference = None;
+            for (start, a, b) in permutations(|a, ao, b, bo| {
+                (
+                    body(a, ao, GOAL - Vec2::X * 3.0, 3.0, Some(GOAL)),
+                    body(b, bo, GOAL + direction * 3.0, 3.0, Some(GOAL)),
+                )
+            }) {
+                let sight = Sight(if seen {
+                    vec![
+                        (unit(&start, a).owner_slot, b),
+                        (unit(&start, b).owner_slot, a),
+                    ]
+                } else {
+                    vec![]
+                });
+                let end = run(start, &sight, 150);
+                let result = (unit(&end, a).position, unit(&end, b).position);
+                if let Some(prior) = reference {
+                    let prior: (Vec2, Vec2) = prior;
+                    if result.0.distance(prior.0) > POSITION_TOLERANCE
+                        || result.1.distance(prior.1) > POSITION_TOLERANCE
+                    {
+                        changed += 1;
+                        eprintln!(
+                            "ANGLE {i} seen {seen} reference {prior:?} result {result:?} ids {a} {b}"
+                        );
+                    }
+                } else {
+                    reference = Some(result);
+                }
+            }
+        }
+    }
+    assert_eq!(changed, 0);
+}
+
+#[test]
+fn actual_first_arrival_keeps_point_at_general_angles() {
+    // A body within 0.0001 world units of the goal counts as arrived.
+    const ARRIVAL_TOLERANCE: f32 = 0.0001;
+    let mut violations = 0;
+    let mut contested = 0;
+    for i in 0..155 {
+        let angle = i as f32 * std::f32::consts::PI / 180.0;
+        let direction = Vec2::new(angle.cos(), angle.sin());
+        for seen in [false, true] {
+            for a_early in [false, true] {
+                let a_distance = if a_early { 2.99 } else { 3.0 };
+                let b_distance = if a_early { 3.0 } else { 2.99 };
+                let sight = Sight(if seen { vec![(0, 2), (1, 1)] } else { vec![] });
+                let mut f = frame(vec![
+                    body(1, 0, GOAL - Vec2::X * a_distance, 3.0, Some(GOAL)),
+                    body(2, 1, GOAL + direction * b_distance, 3.0, Some(GOAL)),
+                ]);
+                let mut first = None;
+                for t in 0..150 {
+                    tick(&mut f, &sight, t);
+                    if first.is_none() {
+                        let a = unit(&f, 1).position.distance(GOAL) < ARRIVAL_TOLERANCE;
+                        let b = unit(&f, 2).position.distance(GOAL) < ARRIVAL_TOLERANCE;
+                        if a != b {
+                            first = Some(if a { 1 } else { 2 });
+                        }
+                    }
+                }
+                if let Some(id) = first {
+                    contested += 1;
+                    if unit(&f, id).position.distance(GOAL) >= ARRIVAL_TOLERANCE {
+                        violations += 1;
+                        eprintln!(
+                            "ANGLE {i} sight {seen} a_early {a_early} first {id} end {:?}",
+                            unit(&f, id).position
+                        );
+                    }
+                }
+            }
+        }
+    }
+    eprintln!("first arrivals {contested} violations {violations}");
+    assert!(contested > 500);
+    assert_eq!(violations, 0);
+}
