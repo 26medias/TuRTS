@@ -800,6 +800,7 @@ fn unavailable_spares_are_not_hidden_by_an_assigned_free_primary() {
             &grid,
             1.0,
             assigned.contains(&(pool.pool_id, point.x.to_bits(), point.y.to_bits())),
+            &[],
         );
     }
     assert!(!index.has_potential_free_slot(1, units[0].position, 0.5, None));
@@ -891,7 +892,7 @@ fn step_frame_rejects_fully_occupied_spares_without_pool_wide_stalled_scans() {
     for (index, &point) in pool.slots.iter().skip(count).enumerate() {
         units.push(MovementFrameUnit {
             unit_id: 20_000 + index as u32,
-            owner_slot: 1,
+            owner_slot: 0,
             unit_type: 4,
             position: point,
             radius: 0.5,
@@ -1156,5 +1157,68 @@ fn a_pool_for_members_outside_a_closed_ring_lies_outside_the_ring() {
             .all(|slot| slot.distance(point) > 2.0 * spacing * 0.86),
         "a slot lies inside the closed ring: {:?}",
         pool.slots
+    );
+}
+
+#[test]
+fn pool_clearance_does_not_let_uncontacted_foreign_body_hide_a_spare() {
+    let slot = Vec2::new(10.0, 10.0);
+    let pool = MovementPool {
+        pool_id: 17,
+        point: slot,
+        spacing: 1.1,
+        primary_count: 1,
+        slots: vec![slot],
+    };
+    let check = |foreign: bool, witnessed: bool| {
+        let units = if foreign {
+            vec![MovementFrameUnit {
+                unit_id: 99,
+                owner_slot: 1,
+                unit_type: 0,
+                position: slot,
+                radius: 0.5,
+                speed: None,
+                target: None,
+                progress: None,
+                plain_progress: None,
+                physical_escape: None,
+            }]
+        } else {
+            vec![]
+        };
+        let points: Vec<_> = units
+            .iter()
+            .map(|unit| crate::grid::GridPoint {
+                id: unit.unit_id,
+                position: unit.position,
+            })
+            .collect();
+        let grid = crate::grid::UniformGrid::new(&points, 2.0);
+        let mut index = MovementPoolIndex::new(&pool, Vec2::splat(64.0));
+        index.restrict_clearance_to_pool_owner();
+        index.note_owner(0);
+        let witnesses = if witnessed { vec![vec![0]] } else { vec![] };
+        index.refresh_slot_clearance(0, &units, &points, &grid, 0.5, false, &witnesses);
+        index.nearest_free(
+            1,
+            Vec2::splat(5.0),
+            pool.pool_id,
+            None,
+            &std::collections::HashSet::new(),
+            0.5,
+            |_| true,
+        )
+    };
+    assert_eq!(check(false, false), Some(slot));
+    assert_eq!(
+        check(true, false),
+        Some(slot),
+        "foreign hidden body changed the permitted result"
+    );
+    assert_eq!(
+        check(true, true),
+        None,
+        "contacted foreign body must remain reserved"
     );
 }

@@ -171,6 +171,21 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
         .iter()
         .map(|(&pool_id, pool)| (pool_id, MovementPoolIndex::new(pool, frame.bounds)))
         .collect();
+    let exchanges_claims = guide.exchanges_claims();
+    if exchanges_claims {
+        for index in pool_indexes.values_mut() {
+            index.restrict_clearance_to_pool_owner();
+        }
+        for unit in &units {
+            if let Some(pool) = unit
+                .progress
+                .as_ref()
+                .and_then(|progress| pool_indexes.get_mut(&progress.pool_id))
+            {
+                pool.note_owner(unit.owner_slot);
+            }
+        }
+    }
     let mut plain_reserved = Vec::new();
     let mut plain_static = Vec::new();
     let mut plain_max_radius = 0.0_f32;
@@ -263,14 +278,6 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
         }
     }
     let slot_grid = crate::grid::UniformGrid::new(&slot_points, 2.0 * max_radius);
-    for (&pool_id, index) in &mut pool_indexes {
-        for slot_index in 0..index.points.len() {
-            let point = index.points[slot_index].position;
-            let assigned =
-                assigned_slots.contains(&(pool_id, point.x.to_bits(), point.y.to_bits()));
-            index.refresh_slot_clearance(slot_index, &units, &points, &grid, max_radius, assigned);
-        }
-    }
     let mut target_claims: std::collections::HashMap<(u32, u32), usize> = units
         .iter()
         .filter(|unit| guide.kind(unit.unit_id) == super::motion::MotionKind::Destination)
@@ -280,7 +287,6 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
             counts
         });
 
-    let exchanges_claims = guide.exchanges_claims();
     // The certified stall clock of each mover at the start of the tick.
     let start_stall: Vec<Option<u16>> = units
         .iter()
@@ -331,6 +337,22 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
             owners.sort_unstable();
             owners.dedup();
             contact_witness[index] = owners;
+        }
+    }
+    for (&pool_id, index) in &mut pool_indexes {
+        for slot_index in 0..index.points.len() {
+            let point = index.points[slot_index].position;
+            let assigned =
+                assigned_slots.contains(&(pool_id, point.x.to_bits(), point.y.to_bits()));
+            index.refresh_slot_clearance(
+                slot_index,
+                &units,
+                &points,
+                &grid,
+                max_radius,
+                assigned,
+                &contact_witness,
+            );
         }
     }
     // Rows that took the claim exchange and route path in this tick.
@@ -535,6 +557,7 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
                     &grid,
                     &assigned_slots,
                     max_radius,
+                    &contact_witness,
                 );
                 continue;
             }
@@ -732,6 +755,7 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
                 &grid,
                 &assigned_slots,
                 max_radius,
+                &contact_witness,
             );
             units[index].target = outputs[index].target;
             units[index].progress = outputs[index].progress.clone();
@@ -797,6 +821,7 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
                 &grid,
                 &assigned_slots,
                 max_radius,
+                &contact_witness,
             );
             continue;
         }
@@ -862,6 +887,7 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
                     &grid,
                     &assigned_slots,
                     max_radius,
+                    &contact_witness,
                 );
                 continue;
             }
@@ -902,6 +928,7 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
                     &grid,
                     &assigned_slots,
                     max_radius,
+                    &contact_witness,
                 );
                 continue;
             }
@@ -1085,6 +1112,7 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
                 &grid,
                 &assigned_slots,
                 max_radius,
+                &contact_witness,
             );
             continue;
         };
@@ -1293,6 +1321,7 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
                     &grid,
                     &assigned_slots,
                     max_radius,
+                    &contact_witness,
                 );
                 continue;
             }
@@ -1503,6 +1532,7 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
                     &grid,
                     &assigned_slots,
                     max_radius,
+                    &contact_witness,
                 );
                 continue;
             }
@@ -1665,6 +1695,7 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
             &grid,
             &assigned_slots,
             max_radius,
+            &contact_witness,
         );
     }
     #[cfg(test)]

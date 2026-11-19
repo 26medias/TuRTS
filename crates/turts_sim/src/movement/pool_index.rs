@@ -19,6 +19,14 @@ pub(super) fn slot_range_queries() -> usize {
     SLOT_RANGE_QUERIES.with(|count| count.get())
 }
 
+#[derive(Clone, Copy)]
+enum ClearanceOwners {
+    All,
+    Unknown,
+    Owner(u8),
+    Mixed,
+}
+
 pub(super) struct MovementPoolIndex {
     pub(super) points: Vec<crate::grid::GridPoint>,
     grid: crate::grid::UniformGrid,
@@ -28,6 +36,7 @@ pub(super) struct MovementPoolIndex {
     pub(super) available_slot_indices: std::collections::HashSet<usize>,
     spacing: f32,
     max_reach: f32,
+    clearance_owners: ClearanceOwners,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -114,7 +123,23 @@ impl MovementPoolIndex {
             available_slot_indices: std::collections::HashSet::new(),
             spacing: pool.spacing.max(0.1),
             max_reach: bounds.length(),
+            clearance_owners: ClearanceOwners::All,
         }
+    }
+
+    /// Claim-exchange planning may only reject a slot from own-body clearance.
+    /// Foreign bodies remain in the final per-slot predicate and physical guard.
+    pub(super) fn restrict_clearance_to_pool_owner(&mut self) {
+        self.clearance_owners = ClearanceOwners::Unknown;
+    }
+
+    pub(super) fn note_owner(&mut self, owner: u8) {
+        self.clearance_owners = match self.clearance_owners {
+            ClearanceOwners::All => ClearanceOwners::All,
+            ClearanceOwners::Unknown => ClearanceOwners::Owner(owner),
+            ClearanceOwners::Owner(previous) if previous == owner => ClearanceOwners::Owner(owner),
+            ClearanceOwners::Owner(_) | ClearanceOwners::Mixed => ClearanceOwners::Mixed,
+        };
     }
 
     /// The pool slots within `spacings` pool spacings of `origin`, in slot index order.
@@ -128,6 +153,10 @@ impl MovementPoolIndex {
             .collect()
     }
 
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the shared indexes and contact state describe one frame"
+    )]
     pub(super) fn refresh_slot_clearance(
         &mut self,
         slot_index: usize,
@@ -136,6 +165,7 @@ impl MovementPoolIndex {
         grid: &crate::grid::UniformGrid,
         max_radius: f32,
         assigned: bool,
+        contact_witness: &[Vec<u8>],
     ) {
         if !assigned {
             self.available_by_clearance.remove(&ClearanceRank {
@@ -147,6 +177,18 @@ impl MovementPoolIndex {
         let mut nearest = [SlotClearance::empty().first; 2];
         for unit_index in grid.within(points, slot, 2.0 * max_radius) {
             let unit = &units[unit_index];
+            if !match self.clearance_owners {
+                ClearanceOwners::All => true,
+                ClearanceOwners::Owner(owner) => {
+                    unit.owner_slot == owner
+                        || contact_witness
+                            .get(unit_index)
+                            .is_some_and(|owners| owners.binary_search(&owner).is_ok())
+                }
+                ClearanceOwners::Unknown | ClearanceOwners::Mixed => false,
+            } {
+                continue;
+            }
             let clearance = f64::from(slot.distance(unit.position)) - f64::from(unit.radius);
             let hit = ClearanceHit {
                 clearance: if clearance > f64::from(max_radius) {
@@ -314,6 +356,7 @@ pub(super) fn refresh_nearby_pool_slot_clearances(
     unit_grid: &crate::grid::UniformGrid,
     assigned_slots: &std::collections::HashSet<(u64, u32, u32)>,
     max_radius: f32,
+    contact_witness: &[Vec<u8>],
 ) {
     let reach = body_radius + max_radius;
     let mut affected = slot_grid
@@ -337,6 +380,7 @@ pub(super) fn refresh_nearby_pool_slot_clearances(
             unit_grid,
             max_radius,
             assigned,
+            contact_witness,
         );
     }
 }
