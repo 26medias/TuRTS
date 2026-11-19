@@ -36,6 +36,7 @@ pub(crate) struct SweepBudget {
     pub(crate) support_pairs: u64,
     pub(crate) support_failures: u64,
     pub(crate) support_accepted_members: u64,
+    pub(crate) recovery: crate::movement::recovery::RecoveryCounters,
 }
 impl SweepBudget {
     pub(crate) fn new(epoch: u32) -> Self {
@@ -64,6 +65,7 @@ impl SweepBudget {
             support_pairs: 0,
             support_failures: 0,
             support_accepted_members: 0,
+            recovery: Default::default(),
         }
     }
     pub(crate) fn can_charge_pair(&self, owner: u8, spent: usize, allowance: usize) -> bool {
@@ -626,6 +628,7 @@ mod tests {
         units
             .iter()
             .map(|u| MovementFrameOutput {
+                recovery: Default::default(),
                 unit_id: u.unit_id,
                 position: u.position + Vec2::X * 0.1,
                 target: u.target,
@@ -1022,6 +1025,7 @@ mod extraction_tests {
         let mut outputs = units
             .iter()
             .map(|u| MovementFrameOutput {
+                recovery: Default::default(),
                 unit_id: u.unit_id,
                 position: Vec2::new(if u.unit_id == 1 { 6. } else { 9. }, 5.),
                 target: None,
@@ -1122,6 +1126,7 @@ mod extraction_tests {
         let mut outputs = units
             .iter()
             .map(|u| MovementFrameOutput {
+                recovery: Default::default(),
                 unit_id: u.unit_id,
                 position: Vec2::new(if u.unit_id == 1 { 6. } else { 9. }, 5.),
                 target: None,
@@ -1325,6 +1330,7 @@ mod extraction_tests {
         let outputs = units
             .iter()
             .map(|u| MovementFrameOutput {
+                recovery: Default::default(),
                 unit_id: u.unit_id,
                 position: u.position,
                 target: None,

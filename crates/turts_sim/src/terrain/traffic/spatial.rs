@@ -263,6 +263,7 @@ mod tests {
     }
     fn scene(units: Vec<MovementFrameUnit>) -> MovementFrame {
         MovementFrame {
+            recovery: Default::default(),
             bounds: Vec2::splat(500_000.),
             tick_hz: 20,
             units,
@@ -603,6 +604,7 @@ mod lazy_tests {
     #[test]
     fn zero_length_chords_pay_self_and_no_credit_does_no_metadata() {
         let frame = MovementFrame {
+            recovery: Default::default(),
             bounds: Vec2::splat(128.),
             tick_hz: 20,
             pools: BTreeMap::new(),
@@ -657,6 +659,7 @@ mod lazy_tests {
             ));
         }
         let frame = MovementFrame {
+            recovery: Default::default(),
             bounds: Vec2::splat(128.),
             tick_hz: 20,
             pools: BTreeMap::new(),

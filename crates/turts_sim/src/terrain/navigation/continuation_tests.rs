@@ -316,6 +316,7 @@ fn cohort_scope_admission_refusal_is_atomic_under_handle_and_enumeration_reversa
     crate::terrain::phase::capture_phase(app.world_mut(), turts_mod_api::ObservationPhase::Start);
     let phase = crate::terrain::phase(app.world(), turts_mod_api::ObservationPhase::Start).unwrap();
     let frame = MovementFrame {
+        recovery: Default::default(),
         bounds: Vec2::splat(64.),
         tick_hz: 20,
         units,

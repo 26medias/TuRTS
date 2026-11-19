@@ -115,6 +115,21 @@ pub struct NavigationDiagnostics {
     pub traffic_capacity_waits: u64,
     pub max_pending_age_ticks: u64,
     pub stale_activations: u64,
+    /// Blocked-recovery accounting (design 2026-11-18-bounded-recovery). Work values are
+    /// the larger owner total of all solver passes in the tick; bytes are counted, not heap.
+    pub recovery_work_this_tick: u64,
+    pub recovery_actual_work_this_tick: u64,
+    pub recovery_candidates_this_tick: u64,
+    pub recovery_visibility_checks_this_tick: u64,
+    pub recovery_digests_this_tick: u64,
+    pub recovery_invalidations_this_tick: u64,
+    pub recovery_relaxed_commits_this_tick: u64,
+    pub recovery_pool_work_this_tick: u64,
+    pub recovery_spare_slot_work_this_tick: u64,
+    pub recovery_jobs: u64,
+    pub recovery_max_age: u64,
+    pub recovery_retained_bytes: u64,
+    pub recovery_phase_bytes: u64,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NavigationMemberState {
@@ -2476,6 +2491,20 @@ impl TerrainNavigation {
         self.diagnostics.body_index_rebuilds_this_tick = budget.index_rebuilds;
         self.diagnostics.body_index_updates_this_tick = budget.index_updates;
         self.diagnostics.body_index_update_entries_this_tick = budget.index_update_entries;
+        let recovery = &budget.recovery;
+        self.diagnostics.recovery_work_this_tick = recovery.peak_owner_work() as u64;
+        self.diagnostics.recovery_actual_work_this_tick = recovery.peak_owner_actual() as u64;
+        self.diagnostics.recovery_candidates_this_tick = recovery.candidates;
+        self.diagnostics.recovery_visibility_checks_this_tick = recovery.visibility_checks;
+        self.diagnostics.recovery_digests_this_tick = recovery.digests;
+        self.diagnostics.recovery_invalidations_this_tick = recovery.invalidations;
+        self.diagnostics.recovery_relaxed_commits_this_tick = recovery.relaxed_commits;
+        self.diagnostics.recovery_pool_work_this_tick = recovery.pool_work;
+        self.diagnostics.recovery_spare_slot_work_this_tick = recovery.spare_slot_work;
+        self.diagnostics.recovery_jobs = recovery.jobs;
+        self.diagnostics.recovery_max_age = u64::from(recovery.max_age);
+        self.diagnostics.recovery_retained_bytes = recovery.retained_bytes as u64;
+        self.diagnostics.recovery_phase_bytes = recovery.phase_bytes as u64;
     }
     pub(super) fn parking_region(
         &self,
@@ -3016,6 +3045,7 @@ mod tests {
             physical_escape: None,
         };
         let mut frame = crate::movement::MovementFrame {
+            recovery: Default::default(),
             bounds: Vec2::splat(64.),
             tick_hz: 20,
             units: vec![actor.clone()],

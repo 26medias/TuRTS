@@ -235,6 +235,7 @@ fn direct_memo_matches_fresh_certificates_on_a_real_movement_tape() {
     a.endpoint = Vec2::new(6.9, 1.5);
     b.endpoint = a.endpoint;
     let initial = MovementFrame {
+        recovery: Default::default(),
         bounds: Vec2::splat(8.0),
         tick_hz: 20,
         pools: BTreeMap::new(),

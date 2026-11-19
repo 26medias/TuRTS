@@ -32,6 +32,7 @@ fn actor(id: u32, point: Vec2, radius: f32, speed: f32, target: Vec2) -> Movemen
 }
 fn frame(units: Vec<MovementFrameUnit>) -> MovementFrame {
     MovementFrame {
+        recovery: Default::default(),
         bounds: Vec2::splat(128.0),
         tick_hz: 20,
         units,

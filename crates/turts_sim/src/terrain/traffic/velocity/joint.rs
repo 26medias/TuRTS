@@ -478,6 +478,7 @@ impl Guide<'_> {
         }
         self.joint_peak = self.joint_peak.max(peak);
         let mut local = MovementFrame {
+            recovery: Default::default(),
             bounds: frame.bounds,
             tick_hz: frame.tick_hz,
             units: Vec::with_capacity(n),
@@ -745,6 +746,7 @@ mod tests {
     }
     fn frame(units: Vec<MovementFrameUnit>) -> MovementFrame {
         MovementFrame {
+            recovery: Default::default(),
             bounds: Vec2::splat(128.),
             tick_hz: 20,
             units,
@@ -1015,6 +1017,7 @@ mod tests {
                 let mut outputs = units
                     .iter()
                     .map(|u| MovementFrameOutput {
+                        recovery: Default::default(),
                         unit_id: u.unit_id,
                         position: u.position + Vec2::X * 0.1,
                         target: u.target,

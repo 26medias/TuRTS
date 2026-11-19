@@ -97,6 +97,7 @@ fn run(handle: impl Fn(usize) -> u32, reverse: bool, foreign: &[Vec2]) -> Run {
         units.reverse();
     }
     let mut frame = MovementFrame {
+        recovery: Default::default(),
         bounds,
         tick_hz: 20,
         units,
@@ -348,6 +349,7 @@ fn wall_scene(second_rests_on_near: bool) -> (MovementFrame, Vec2, Vec2) {
         Vec2::new(10.0, 3.5)
     };
     let frame = MovementFrame {
+        recovery: Default::default(),
         bounds: Vec2::new(32.0, 32.0),
         tick_hz: 20,
         units: vec![
@@ -467,6 +469,7 @@ fn lone_mover_scene(start: Vec2, pool_id: u64, foreign_moves: bool) -> MovementF
     let slot = Vec2::new(10.0, 12.5);
     let body = Vec2::new(10.0, 10.0);
     MovementFrame {
+        recovery: Default::default(),
         bounds: Vec2::new(32.0, 32.0),
         tick_hz: 20,
         units: vec![

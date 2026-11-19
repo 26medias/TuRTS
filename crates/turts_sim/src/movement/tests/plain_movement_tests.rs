@@ -12,6 +12,7 @@ use std::collections::BTreeMap;
 fn stalled_plain_frame(pool_slots: Vec<Vec2>) -> MovementFrame {
     let point = Vec2::new(20.0, 10.0);
     MovementFrame {
+        recovery: Default::default(),
         bounds: Vec2::splat(64.0),
         tick_hz: 20,
         units: vec![
@@ -63,6 +64,7 @@ fn unobstructed_step_keeps_the_legacy_target_until_within_one_step() {
     let speed = 3.0;
     let dt = 0.05;
     let frame = MovementFrame {
+        recovery: Default::default(),
         bounds: Vec2::splat(64.0),
         tick_hz: 20,
         units: vec![MovementFrameUnit {
@@ -100,6 +102,7 @@ fn retained_plain_progress_does_not_add_a_post_step_arrival_snap() {
     let target = Vec2::new(2.0, 1.0);
     let position = Vec2::new(1.83, 1.0);
     let frame = MovementFrame {
+        recovery: Default::default(),
         bounds: Vec2::splat(16.0),
         tick_hz: 20,
         units: vec![MovementFrameUnit {
@@ -152,6 +155,7 @@ fn retained_plain_progress_does_not_add_a_post_step_arrival_snap() {
 fn plain_move_uses_physical_clearance_instead_of_a_future_reservation_buffer() {
     let target = Vec2::new(0.5, 1.2);
     let frame = MovementFrame {
+        recovery: Default::default(),
         bounds: Vec2::splat(2.0),
         tick_hz: 20,
         units: vec![
@@ -195,6 +199,7 @@ fn plain_move_uses_physical_clearance_instead_of_a_future_reservation_buffer() {
 fn blocked_plain_unit_does_not_escape_for_reservation_spacing_alone() {
     let position = Vec2::new(10.0, 10.0);
     let frame = MovementFrame {
+        recovery: Default::default(),
         bounds: Vec2::splat(64.0),
         tick_hz: 20,
         units: vec![
@@ -330,6 +335,7 @@ fn independent_plain_pools_can_approach_a_spare_before_either_body_arrives() {
         ]
     };
     let frame = MovementFrame {
+        recovery: Default::default(),
         bounds: Vec2::splat(64.0),
         tick_hz: 20,
         units: [
@@ -364,6 +370,7 @@ fn independent_plain_pools_can_approach_a_spare_before_either_body_arrives() {
 fn plain_move_with_zero_legal_primary_slots_blocks_before_moving() {
     let start = Vec2::new(0.5, 0.5);
     let frame = MovementFrame {
+        recovery: Default::default(),
         bounds: Vec2::splat(1.5),
         tick_hz: 20,
         units: vec![
@@ -408,6 +415,7 @@ fn plain_move_with_zero_legal_primary_slots_blocks_before_moving() {
 fn plain_move_finds_nearest_physical_point_when_the_hex_pool_is_empty() {
     let start = Vec2::new(0.5, 0.5);
     let frame = MovementFrame {
+        recovery: Default::default(),
         bounds: Vec2::splat(1.5),
         tick_hz: 20,
         units: vec![
@@ -534,6 +542,7 @@ fn captured_clear_recovery_frame(escape: bool) -> MovementFrame {
     let position = Vec2::new(35.365936279296875, 23.531789779663086);
     let target = Vec2::new(45.70000076293945, 23.5);
     MovementFrame {
+        recovery: Default::default(),
         bounds: Vec2::new(64., 48.),
         tick_hz: 20,
         pools: BTreeMap::new(),

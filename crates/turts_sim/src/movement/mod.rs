@@ -35,6 +35,10 @@ mod plain_movement_tests;
 mod pool_index;
 #[cfg(feature = "test-probes")]
 pub mod probe;
+pub(crate) mod recovery;
+#[cfg(test)]
+#[path = "tests/recovery_tests.rs"]
+mod recovery_tests;
 mod route;
 mod search;
 mod spread;
@@ -90,6 +94,48 @@ pub struct MoveProgress {
     pub claim_count: u8,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub follow_origin: Option<FollowMoveOrigin>,
+}
+
+/// One blocked-recovery escape job (design 2026-11-18-bounded-recovery). It is a body
+/// component in the audited state, so replay rebuilds the same schedule and slices.
+/// `pool` names the order it serves; a job of another order is dropped.
+#[derive(Component, Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct RecoverySearch {
+    /// The search this job serves; a job of another kind or pool is dropped.
+    pub kind: RecoveryKind,
+    /// Ticks since the job started. Service is tick-start overlap first, then oldest
+    /// first, then by physical key.
+    pub age: u16,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scan: Option<RecoveryScan>,
+}
+
+/// The escape search that a recovery job continues.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum RecoveryKind {
+    /// The blocked group escape of the pool with this id.
+    Group(u64),
+    /// The blocked plain escape.
+    Plain,
+    /// The body escape after a failed order (`PhysicalEscape`).
+    Physical,
+}
+
+/// The cursor of an unfinished ring scan and the proof data of its examined region.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct RecoveryScan {
+    pub origin: Vec2,
+    pub radius: f32,
+    pub ring: i32,
+    pub side: u8,
+    pub step: i32,
+    pub best: Option<Vec2>,
+    /// The largest distance from `origin` of an examined candidate.
+    pub examined: f32,
+    /// Count and two wrapping sums of the permitted facts in the examined region.
+    pub digest: [u64; 3],
+    pub invalidations: u8,
+    pub relaxed: bool,
 }
 
 /// The live Unit target and per-actor legal goal used for initial spread.

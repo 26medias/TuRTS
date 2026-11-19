@@ -1411,6 +1411,7 @@ mod tests {
     use super::*;
     fn frame(n: usize) -> MovementFrame {
         MovementFrame {
+            recovery: Default::default(),
             bounds: Vec2::splat(1000.),
             tick_hz: 20,
             pools: BTreeMap::new(),
@@ -1434,6 +1435,7 @@ mod tests {
         f.units
             .iter()
             .map(|u| MovementFrameOutput {
+                recovery: Default::default(),
                 unit_id: u.unit_id,
                 position: u.position + delta,
                 target: u.target,

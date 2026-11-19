@@ -681,6 +681,7 @@ mod tests {
         unit.speed = Some(3.5);
         let units = [unit.clone()];
         let frame = MovementFrame {
+            recovery: Default::default(),
             units: units.to_vec(),
             bounds: Vec2::splat(128.),
             tick_hz: 20,
@@ -724,6 +725,7 @@ mod tests {
             unit.speed = speed;
             let units = [unit.clone()];
             let frame = MovementFrame {
+                recovery: Default::default(),
                 units: units.to_vec(),
                 bounds: Vec2::splat(128.),
                 tick_hz: 20,
@@ -767,6 +769,7 @@ mod tests {
                 })
                 .collect::<Vec<_>>();
             let frame = MovementFrame {
+                recovery: Default::default(),
                 bounds: Vec2::new(256., 64.),
                 tick_hz: 20,
                 units: units.clone(),
@@ -829,6 +832,7 @@ mod tests {
                 })
                 .collect::<Vec<_>>();
             let frame = MovementFrame {
+                recovery: Default::default(),
                 bounds: Vec2::splat(2048.),
                 tick_hz: 20,
                 units: units.clone(),
@@ -891,6 +895,7 @@ mod tests {
     }
     fn output(unit: &MovementFrameUnit, position: Vec2) -> MovementFrameOutput {
         MovementFrameOutput {
+            recovery: Default::default(),
             unit_id: unit.unit_id,
             position,
             target: None,
@@ -915,6 +920,7 @@ mod tests {
             .map(|(unit, end)| output(unit, end))
             .collect::<Vec<_>>();
         let mut frame = MovementFrame {
+            recovery: Default::default(),
             bounds: Vec2::splat(64.0),
             tick_hz: 20,
             units: units.clone(),
@@ -1009,6 +1015,7 @@ mod tests {
         for invert in [false, true] {
             let moving = if invert { 1 } else { 99 };
             let mut frame = MovementFrame {
+                recovery: Default::default(),
                 bounds: Vec2::splat(64.0),
                 tick_hz: 20,
                 pools: BTreeMap::new(),
@@ -1227,6 +1234,7 @@ mod planning_tests {
         SweepBudget,
     ) {
         let frame = MovementFrame {
+            recovery: Default::default(),
             bounds: Vec2::splat(32.),
             tick_hz: 20,
             units,
@@ -1266,6 +1274,7 @@ mod planning_tests {
                 }
             }
             let frame = MovementFrame {
+                recovery: Default::default(),
                 bounds: Vec2::splat(32.),
                 tick_hz: 20,
                 units,
@@ -1330,6 +1339,7 @@ mod planning_tests {
             })
             .collect::<Vec<_>>();
         let f = MovementFrame {
+            recovery: Default::default(),
             bounds: Vec2::splat(32.),
             tick_hz: 20,
             units,
@@ -1344,6 +1354,7 @@ mod planning_tests {
             .units
             .iter()
             .map(|u| MovementFrameOutput {
+                recovery: Default::default(),
                 unit_id: u.unit_id,
                 position: u.position,
                 target: u.target,
@@ -1482,6 +1493,7 @@ mod planning_tests {
         assert_eq!(g.visits.get(), 3);
         assert_eq!(b.pairs[0], 3);
         let f = MovementFrame {
+            recovery: Default::default(),
             bounds: Vec2::splat(32.),
             tick_hz: 20,
             units: vec![u],

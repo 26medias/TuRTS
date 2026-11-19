@@ -207,6 +207,60 @@ impl UniformGrid {
         found
     }
 
+    /// Calls `visit` for each point within `reach` of `position`, with no allocation.
+    /// Returns `(cells visited, points tested)`. Both counts and the visited set are
+    /// independent of map iteration order; the visit order is not, so a caller must
+    /// reduce the visits with an order-free operation.
+    pub(crate) fn visit_within(
+        &self,
+        points: &[GridPoint],
+        position: Vec2,
+        reach: f32,
+        mut visit: impl FnMut(usize),
+    ) -> (usize, usize) {
+        debug_assert!(reach >= 0.0, "reach must not be negative: {reach}");
+        let ((min_x, min_y), (max_x, max_y)) = self.cell_range(position, reach);
+        let width = (max_x - min_x + 1) as u128;
+        let height = (max_y - min_y + 1) as u128;
+        let mut cells = 0;
+        let mut tested = 0;
+        let mut scan = |indices: &Vec<usize>| {
+            for &index in indices {
+                tested += 1;
+                if points[index].position.distance_squared(position) <= reach * reach {
+                    visit(index);
+                }
+            }
+        };
+        if width.saturating_mul(height) > self.cells.len() as u128 {
+            for (&key, indices) in &self.cells {
+                cells += 1;
+                let (x, y) = cell_coordinates(key);
+                if i64::from(x) >= min_x
+                    && i64::from(x) <= max_x
+                    && i64::from(y) >= min_y
+                    && i64::from(y) <= max_y
+                {
+                    scan(indices);
+                }
+            }
+        } else {
+            for y in min_y..=max_y {
+                for x in min_x..=max_x {
+                    cells += 1;
+                    if let Some(indices) = i32::try_from(x)
+                        .ok()
+                        .zip(i32::try_from(y).ok())
+                        .and_then(|key| self.cells.get(&cell_key(key)))
+                    {
+                        scan(indices);
+                    }
+                }
+            }
+        }
+        (cells, tested)
+    }
+
     #[cfg(test)]
     fn visited_cells(&self) -> usize {
         self.visited_cells

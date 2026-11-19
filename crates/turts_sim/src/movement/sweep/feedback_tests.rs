@@ -25,6 +25,7 @@ fn captured_gm1_direct_body_refusal_keeps_certified_recovery_feedback() {
         // Preserve all36 captured discs. Hold the other35 to isolate actor28's
         // direct request from unknown pool/model state; this is not a full replay.
         let mut frame = MovementFrame {
+            recovery: Default::default(),
             bounds: Vec2::new(64., 48.),
             tick_hz: 20,
             pools: BTreeMap::new(),

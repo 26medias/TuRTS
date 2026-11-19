@@ -53,7 +53,17 @@ pub(crate) fn integrate_movement(world: &mut World) {
     let tick_hz = world
         .get_resource::<crate::SimClock>()
         .map_or(20, |clock| clock.tick_hz);
+    let recovery = world
+        .iter_entities()
+        .filter_map(|entity| {
+            Some((
+                entity.get::<crate::world::UnitId>()?.0,
+                *entity.get::<super::RecoverySearch>()?,
+            ))
+        })
+        .collect();
     let frame = MovementFrame {
+        recovery,
         bounds,
         tick_hz,
         units: units.iter().map(|(_, _, unit)| unit.clone()).collect(),
@@ -125,6 +135,11 @@ pub(crate) fn integrate_movement(world: &mut World) {
             entity_mut.insert(escape);
         } else {
             entity_mut.remove::<PhysicalEscape>();
+        }
+        if let Some(job) = output.recovery {
+            entity_mut.insert(*job);
+        } else {
+            entity_mut.remove::<super::RecoverySearch>();
         }
     }
     let active_pools: std::collections::BTreeSet<_> = world
