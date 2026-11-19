@@ -3,6 +3,7 @@
 'use strict';
 const fs=require('node:fs'),os=require('node:os'),path=require('node:path'),net=require('node:net'),crypto=require('node:crypto');
 const {spawn,spawnSync}=require('node:child_process'),{chromium}=require('playwright-core');
+const {movementIntervals}=require('./terrain-fps-intervals');
 const [prepared,fixtures,output]=process.argv.slice(2);if(!output)throw Error('PREPARED TERRAIN_FIXTURES OUTPUT');
 const metadata=JSON.parse(fs.readFileSync(path.join(fixtures,'terrain-fps.json')));fs.mkdirSync(output,{recursive:false});
 const selectedViews=process.env.TURTS_TERRAIN_FPS_VIEWS?process.env.TURTS_TERRAIN_FPS_VIEWS.split(','):metadata.zooms;if(!selectedViews.length||new Set(selectedViews).size!==selectedViews.length||selectedViews.some(view=>!metadata.zooms.includes(view)))throw Error('Invalid selected camera views');
@@ -37,8 +38,8 @@ const delta=(a,b)=>Math.max(...a.map((n,i)=>Math.abs(n-b[i])));
   d=await wait(read,d=>d.replicated_world.terrain.work.some(w=>w.unit===metadata.work.actor&&w.completed_work>0),'Actual terrain work never progressed');await sleep(metadata.warmup_ms);
   let groupIds=[];
   if(groupMode){
-   const goal=[25,30,0];
-   const candidates=d.replicated_world.units.filter(u=>u.owner_slot===d.slot&&u.unit_id!==metadata.work.actor&&Math.hypot(u.pos[0]-goal[0],u.pos[1]-goal[1])>12).sort((a,b)=>b.pos[1]-a.pos[1]||a.pos[0]-b.pos[0]);
+   const goal=[14,32,0];
+   const candidates=d.replicated_world.units.filter(u=>u.owner_slot===d.slot&&u.unit_id!==metadata.work.actor&&Math.hypot(u.pos[0]-goal[0],u.pos[1]-goal[1])>10).sort((a,b)=>b.pos[1]-a.pos[1]||Math.abs(a.pos[0]-14)-Math.abs(b.pos[0]-14));
    assert(candidates.length>=2,'Not enough owned actors for the group move');
    // Select separate owned bodies at their current physical locations.
    for(const u of candidates){
@@ -54,6 +55,15 @@ const delta=(a,b)=>Math.max(...a.map((n,i)=>Math.abs(n-b[i])));
    s=await scene();const point=project(s,goal);assert(point[0]>0&&point[0]<1280&&point[1]>0&&point[1]<720,'Group goal outside viewport');
    await page.mouse.move(...point);await page.mouse.click(...point,{button:'right',delay:80});
    await wait(read,x=>groupIds.every(id=>x.replicated_world.unit_orders.some(o=>o.unit===id&&o.current?.order?.endsWith(':order_move'))),'Group move was not accepted');
+   await wait(read,x=>groupIds.every(id=>{const u=x.replicated_world.units.find(v=>v.unit_id===id);return u&&u.pos[1]>29;}),'Group did not reach clear terrain');
+   s=await scene();const onward=project(s,[43,32,0]);await page.mouse.move(...onward);await page.mouse.click(...onward,{button:'right',delay:80});
+   await wait(read,x=>groupIds.every(id=>x.replicated_world.unit_orders.some(o=>o.unit===id&&o.current?.order?.endsWith(':order_move'))),'Onward move was not accepted');
+   // Queue return trips before zoom so the same two units keep moving during the sample.
+   for(const destination of [[2,32,0],[43,32,0]]){
+    s=await scene();const queued=project(s,destination);assert(queued[0]>0&&queued[0]<1280&&queued[1]>0&&queued[1]<720,'Queued goal outside viewport');
+    await page.keyboard.down('Shift');await sleep(150);await page.mouse.move(...queued);await page.mouse.click(...queued,{button:'right',delay:80});await sleep(150);await page.keyboard.up('Shift');await sleep(150);
+   }
+   d=await read();fs.writeFileSync(path.join(rowOut,'queued.json'),JSON.stringify({ids:groupIds,orders:d.replicated_world.unit_orders.filter(o=>groupIds.includes(o.unit))},null,2));assert(groupIds.every(id=>d.replicated_world.unit_orders.some(o=>o.unit===id&&o.queued.length>=1)),'Return moves were not queued');
   }
   if(zoom==='normal') {
    s=await scene();assert(Math.abs(eyeHeight(s)-metadata.camera_bounds.normal)<.05,'Normal authored camera height changed');assert(s.animations.filter(a=>a.visible&&!a.dead).length===400,'Normal sample must keep all400 detailed actors visible');
@@ -61,7 +71,7 @@ const delta=(a,b)=>Math.max(...a.map((n,i)=>Math.abs(n-b[i])));
    await page.mouse.move(640,360);await page.mouse.wheel(0,zoom==='near'?-10000:10000);await sleep(400);const clamped=await scene();await page.mouse.wheel(0,zoom==='near'?-10000:10000);await sleep(200);s=await scene();assert(delta(clamped.clip_from_world,s.clip_from_world)<1e-4,'Camera did not reach '+zoom+' clamp');assert(Math.abs(eyeHeight(s)-metadata.camera_bounds[zoom==='near'?'minimum':'maximum'])<.05,'Authored zoom bound changed');
   }
   const before=await read();fs.writeFileSync(path.join(rowOut,'before.json'),JSON.stringify({debug:before,scene:s},null,2));await page.screenshot({path:path.join(rowOut,'before.png')});
-  const sample=await page.evaluate(duration=>new Promise(resolve=>{let first,last,peak=0;const frames=[],states=[];function frame(now){const due=!states.length||now-states.at(-1).at>=500;peak=Math.max(peak,turts_memory_bytes());if(first===undefined)first=now;if(last!==undefined)frames.push(now-last);last=now;if(due){const s=JSON.parse(turts_scene());states.push({at:now,units:s.units.length,visible:s.animations.filter(a=>a.visible&&!a.dead).length,shooting:s.animations.filter(a=>/2H_Ranged|1H_Melee/.test(a.clip||'')).length,attacking_ids:s.animations.filter(a=>/2H_Ranged|1H_Melee/.test(a.clip||'')).map(a=>a.unit_id),melee:s.animations.filter(a=>/1H_Melee/.test(a.clip||'')).length,ranged:s.animations.filter(a=>/2H_Ranged/.test(a.clip||'')).length,work_clips:s.animations.filter(a=>/Interact/.test(a.clip||'')).length,models:s.models.filter(m=>m.unit_id!=null).map(m=>({unit:m.unit_id,ready:m.ready,quality:m.quality,level:m.level})),shared_skins:s.shared_skins,effects:s.effects,clip_from_world:s.clip_from_world});}if(now-first>=duration)return resolve({frames_ms:frames,states,wasm_high_water_bytes:peak});requestAnimationFrame(frame);}requestAnimationFrame(frame);}),metadata.sample_ms);
+  const sample=await page.evaluate(({duration,groupIds})=>new Promise(resolve=>{let first,last,peak=0;const frames=[],states=[];function frame(now){const due=!states.length||now-states.at(-1).at>=500||(first!==undefined&&now-first>=duration);peak=Math.max(peak,turts_memory_bytes());if(first===undefined)first=now;if(last!==undefined)frames.push(now-last);last=now;if(due){const s=JSON.parse(turts_scene());states.push({at:now,group_positions:s.units.filter(u=>groupIds.includes(u.unit_id)).map(u=>({unit:u.unit_id,position:u.translation})),units:s.units.length,visible:s.animations.filter(a=>a.visible&&!a.dead).length,shooting:s.animations.filter(a=>/2H_Ranged|1H_Melee/.test(a.clip||'')).length,attacking_ids:s.animations.filter(a=>/2H_Ranged|1H_Melee/.test(a.clip||'')).map(a=>a.unit_id),melee:s.animations.filter(a=>/1H_Melee/.test(a.clip||'')).length,ranged:s.animations.filter(a=>/2H_Ranged/.test(a.clip||'')).length,work_clips:s.animations.filter(a=>/Interact/.test(a.clip||'')).length,models:s.models.filter(m=>m.unit_id!=null).map(m=>({unit:m.unit_id,ready:m.ready,quality:m.quality,level:m.level})),shared_skins:s.shared_skins,effects:s.effects,clip_from_world:s.clip_from_world});}if(now-first>=duration)return resolve({frames_ms:frames,states,wasm_high_water_bytes:peak});requestAnimationFrame(frame);}requestAnimationFrame(frame);}),{duration:metadata.sample_ms,groupIds});
   fs.writeFileSync(path.join(rowOut,'raw-sample.json'),JSON.stringify(sample));
   const after=await read(),work=after.replicated_world.terrain.work.find(w=>w.unit===metadata.work.actor),cell=metadata.work.cell,top=d=>d.replicated_world.terrain.surfaces.find(r=>r.cell.x===cell.x&&r.cell.y===cell.y)?.elevation;
   assert(work&&work.required_work!==null&&['Unknown','Occupied','Blocked','Disabled','Invalid','FullCargo'].every(wait=>work.wait!==wait),'Work stopped or was refused during FPS window');assert(top(after)<top(before),'No committed edits during the FPS interval');assert(JSON.stringify(work.designation.cells)===JSON.stringify(before.replicated_world.terrain.work.find(w=>w.unit===metadata.work.actor).designation.cells),'Work target changed');
@@ -76,6 +86,8 @@ const delta=(a,b)=>Math.max(...a.map((n,i)=>Math.abs(n-b[i])));
   }else{
    const moved=groupIds.filter(id=>{const a=before.replicated_world.units.find(u=>u.unit_id===id),b=after.replicated_world.units.find(u=>u.unit_id===id);return a&&b&&Math.hypot(a.pos[0]-b.pos[0],a.pos[1]-b.pos[1])>.01;});
    row.group_ids=groupIds;row.group_moved=moved;assert(moved.length>=2,'Fewer than two selected group members moved during the FPS sample');
+   const intervals=movementIntervals(sample.states,groupIds);
+   row.group_intervals=intervals;assert(intervals.length>=1&&intervals.every(x=>x.active.length>=2),'Fewer than two group members moved in an FPS sample interval');
   }
   const commands=JSON.parse(fs.readFileSync(path.join(fixtures,'battle400-commands.json'))),formerTarget=commands.find(c=>c.envelope.units.includes(metadata.work.actor)).envelope.target.Unit;
   const firstHealth=sample.states[0].effects.combat.health,lastHealth=sample.states.at(-1).effects.combat.health;
