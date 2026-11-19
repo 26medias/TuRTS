@@ -166,6 +166,11 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
     guide: &mut dyn super::motion::MotionGuide,
     visibility: Option<&dyn super::MovementVisibility>,
 ) -> Vec<MovementFrameOutput> {
+    let sorted_unit_ids = visibility.is_some()
+        && frame
+            .units
+            .windows(2)
+            .all(|rows| rows[0].unit_id <= rows[1].unit_id);
     let mut units = frame.units.clone();
     let mut resolved_ties = super::arrival::prepare_with_guide(
         &mut units,
@@ -430,21 +435,25 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
         let mut unit = units[index].clone();
         let owns_destination = guide.kind(unit.unit_id) == super::motion::MotionKind::Destination;
         let Some(speed) = unit.speed else { continue };
-        // The live frame is sorted by id. This adds no index or per-owner allocation.
-        // Hidden bodies become available to this unit at physical contact.
+        // Live frames are sorted by id. Public replay callers may supply any row order.
+        // Use a linear fallback without allocating or using identities for arbitration.
         let known = |id: u32| {
             visibility.is_none_or(|basis| {
-                frame
-                    .units
-                    .binary_search_by_key(&id, |other| other.unit_id)
-                    .ok()
-                    .is_some_and(|row| {
-                        let other = &frame.units[row];
-                        other.owner_slot == unit.owner_slot
-                            || basis.unit_permitted(unit.owner_slot, id)
-                            || unit.position.distance(other.position)
-                                <= unit.radius + other.radius + super::route::CONTACT_GAP
-                    })
+                let other = if sorted_unit_ids {
+                    frame
+                        .units
+                        .binary_search_by_key(&id, |other| other.unit_id)
+                        .ok()
+                        .map(|row| &frame.units[row])
+                } else {
+                    frame.units.iter().find(|other| other.unit_id == id)
+                };
+                other.is_some_and(|other| {
+                    other.owner_slot == unit.owner_slot
+                        || basis.unit_permitted(unit.owner_slot, id)
+                        || unit.position.distance(other.position)
+                            <= unit.radius + other.radius + super::route::CONTACT_GAP
+                })
             })
         };
         if unit.physical_escape.is_some() {
