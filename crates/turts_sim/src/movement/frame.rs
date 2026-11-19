@@ -181,13 +181,15 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
         None
     };
     let mut units = frame.units.clone();
-    let mut resolved_ties = super::arrival::prepare_with_guide(
+    let mut kept_stops = Vec::new();
+    let mut resolved_ties = super::arrival::prepare_with_kept(
         &mut units,
         &frame.units,
         dt,
         frame.bounds,
         guide,
         visibility,
+        &mut kept_stops,
     );
     resolved_ties.sort_unstable_by_key(|(unit, _)| *unit);
     let origins = units.iter().map(|unit| unit.position).collect::<Vec<_>>();
@@ -1874,6 +1876,20 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
         }
     }
     outputs.sort_unstable_by_key(|output| output.unit_id);
+    if let Some(basis) = visibility {
+        // Fog arrival against other owners reads what occurred in this tick, not a plan.
+        super::arrival::settle_foreign(
+            &frame.units,
+            &mut outputs,
+            dt,
+            frame.bounds,
+            guide,
+            basis,
+            &kept_stops,
+            &mut resolved_ties,
+        );
+        resolved_ties.sort_unstable_by_key(|(unit, _)| *unit);
+    }
     for output in &mut outputs {
         output.arrival_slot = resolved_ties
             .binary_search_by_key(&output.unit_id, |(unit, _)| *unit)

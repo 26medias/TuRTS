@@ -23,6 +23,9 @@ mod exchange;
 #[cfg(test)]
 #[path = "tests/exchange_tests.rs"]
 mod exchange_tests;
+#[cfg(test)]
+#[path = "tests/fog_arrival_tests.rs"]
+mod fog_arrival_tests;
 mod frame;
 pub(crate) mod motion;
 mod plain;

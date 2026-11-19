@@ -4815,3 +4815,242 @@ fn fog_cross_owner_first_arrival_keeps_point_without_overlap() {
         );
     }
 }
+
+// Hidden-order arrival privacy (handoff 2026-11-18). A mover may use its own goal and the
+// physical state of a body that it can know. It never uses the goal of another owner.
+
+/// A fogged two-owner world. The fixture units have no sight, so a unit of the other owner
+/// is known only by physical contact.
+fn fog_app(positions: &[(f32, f32)], owners: &[u8]) -> bevy_app::App {
+    use turts_mod_api::{VisibilityDef, VisibilityGrid, VisionSharing};
+    let mut app = app_with_units(positions, owners);
+    let sight = turts_sim::visibility::prepare(
+        0,
+        turts_mod_api::ContentId::parse("fixture_pkg:field").unwrap(),
+        &VisibilityDef {
+            cell_size: 2.0,
+            sharing: VisionSharing::OwnSlot,
+            memory_limit: None,
+        },
+        VisibilityGrid {
+            size: WorldPos { x: 64.0, y: 64.0 },
+            cell_size: 2.0,
+            columns: 32,
+            rows: 32,
+        },
+        &[0, 1],
+    )
+    .unwrap();
+    app.insert_resource(sight);
+    turts_sim::visibility::initialize_context(app.world_mut(), 0, &[0, 1]).unwrap();
+    turts_sim::initialize_completed_world(app.world_mut());
+    app
+}
+
+/// Position, target, and the temporary-stop flag with its point.
+type OwnState = (Vec2, Option<Vec2>, Option<(bool, Vec2)>);
+
+/// The complete movement state of one unit that its owner can see.
+fn own_state(app: &bevy_app::App, unit: u32) -> OwnState {
+    let entity = app
+        .world()
+        .iter_entities()
+        .find(|entity| {
+            entity
+                .get::<turts_sim::UnitId>()
+                .is_some_and(|id| id.0 == unit)
+        })
+        .unwrap();
+    (
+        entity.get::<turts_sim::Position>().unwrap().0,
+        entity.get::<MoveTarget>().map(|target| target.0),
+        entity
+            .get::<turts_sim::movement::PlainMoveProgress>()
+            .map(|progress| (progress.arrival_yield, progress.slot)),
+    )
+}
+
+fn unit_position(app: &bevy_app::App, unit: u32) -> Vec2 {
+    own_state(app, unit).0
+}
+
+fn all_orders_complete(app: &bevy_app::App) -> bool {
+    app.world()
+        .iter_entities()
+        .filter(|entity| entity.contains::<turts_sim::UnitId>())
+        .all(|entity| entity.get::<MoveTarget>().is_none())
+}
+
+/// Two units of two owners get one ordinary point order each, to `GOAL`. Unit 1 belongs to
+/// slot 0 when `reverse` is false. Returns the final positions of `first` and `second`.
+fn fog_contest(first: (f32, f32), second: (f32, f32), reverse: bool) -> (Vec2, Vec2, bool) {
+    let goal = Vec2::splat(50.0);
+    let (positions, owners, first_id, second_id) = if reverse {
+        ([second, first], [1, 0], 2, 1)
+    } else {
+        ([first, second], [0, 1], 1, 2)
+    };
+    let mut app = fog_app(&positions, &owners);
+    send_order(&mut app, 0, vec![first_id], goal, 1, QueueMode::Replace);
+    send_order(&mut app, 1, vec![second_id], goal, 2, QueueMode::Replace);
+    for tick in 0..160 {
+        app.update();
+        let gap = unit_position(&app, 1).distance(unit_position(&app, 2));
+        assert!(
+            gap >= 1.0 - 1e-5,
+            "overlap {gap} at tick {tick}, first={first:?} second={second:?} reverse={reverse}"
+        );
+    }
+    (
+        unit_position(&app, first_id),
+        unit_position(&app, second_id),
+        all_orders_complete(&app),
+    )
+}
+
+#[test]
+fn ordinary_enemy_order_does_not_change_arrival_before_contact() {
+    // The enemy starts 1.0 clear of the mover. Each body moves 0.15 in one tick. When both go
+    // to (50,50), the gap is 0.4 after tick 2 and 0.1 after tick 3. A gap of 0.1 is contact
+    // range (0.101), so tick 3 is the tick of first contact. Ticks 1 and 2 are before contact.
+    fn run(enemy_target: Option<Vec2>, ticks: usize) -> Vec<OwnState> {
+        let mut app = fog_app(&[(49.0, 50.0), (51.0, 50.0)], &[0, 1]);
+        assert!(!turts_sim::visibility::unit_permitted(
+            app.world(),
+            0,
+            2,
+            turts_mod_api::ObservationPhase::Completed
+        ));
+        send_order(
+            &mut app,
+            0,
+            vec![1],
+            Vec2::splat(50.0),
+            1,
+            QueueMode::Replace,
+        );
+        if let Some(target) = enemy_target {
+            send_order(&mut app, 1, vec![2], target, 2, QueueMode::Replace);
+        }
+        (0..ticks)
+            .map(|_| {
+                app.update();
+                own_state(&app, 1)
+            })
+            .collect()
+    }
+    // An enemy order away from our unit never gives contact: compare 40 ticks for those.
+    for (target, ticks) in [
+        (Vec2::splat(50.0), 2),
+        (Vec2::new(55.0, 50.0), 40),
+        (Vec2::new(45.0, 50.0), 2),
+        (Vec2::new(51.0, 55.0), 40),
+    ] {
+        assert_eq!(
+            run(None, ticks),
+            run(Some(target), ticks),
+            "a hidden enemy order to {target:?} changed our unit before contact"
+        );
+    }
+}
+
+#[test]
+fn enemy_goal_behind_the_same_heading_does_not_change_our_arrival() {
+    // The enemy body moves along the same line in both worlds. Only its private goal differs.
+    // While the enemy bodies are at equal positions, our unit must be in equal states.
+    fn run(enemy_target: Vec2) -> Vec<(Vec2, OwnState)> {
+        let mut app = fog_app(&[(49.0, 50.0), (51.0, 50.0)], &[0, 1]);
+        send_order(
+            &mut app,
+            0,
+            vec![1],
+            Vec2::splat(50.0),
+            1,
+            QueueMode::Replace,
+        );
+        send_order(&mut app, 1, vec![2], enemy_target, 2, QueueMode::Replace);
+        (0..12)
+            .map(|_| {
+                app.update();
+                (unit_position(&app, 2), own_state(&app, 1))
+            })
+            .collect()
+    }
+    let contest = run(Vec2::splat(50.0));
+    let through = run(Vec2::new(45.0, 50.0));
+    let mut decided = false;
+    for (tick, (a, b)) in contest.iter().zip(&through).enumerate() {
+        assert_eq!(
+            a.1, b.1,
+            "tick {tick}: equal enemy bodies, different enemy goals, different result"
+        );
+        // Our unit reacts to the enemy body in this tick. The comparison includes it.
+        decided |= a.1.1 != Some(Vec2::splat(50.0));
+        if a.0 != b.0 {
+            break;
+        }
+    }
+    assert!(
+        decided,
+        "the comparison must include the tick in which our unit reacts to the enemy body"
+    );
+}
+
+#[test]
+fn fog_cross_owner_first_arrival_varied_positions() {
+    for (left, right) in [
+        (48.6, 51.8),
+        (48.8, 51.5),
+        (49.0, 51.2),
+        (48.55, 52.0),
+        (49.0, 51.05),
+    ] {
+        for reverse in [false, true] {
+            for perpendicular in [false, true] {
+                let second = if perpendicular {
+                    (50.0, right)
+                } else {
+                    (right, 50.0)
+                };
+                let (first, second_position, complete) = fog_contest((left, 50.0), second, reverse);
+                assert!(
+                    first.distance(Vec2::splat(50.0)) < 1e-4,
+                    "first arrival lost the point: left={left} right={right} reverse={reverse} \
+                     perpendicular={perpendicular} first={first:?} second={second_position:?}"
+                );
+                assert!(
+                    complete,
+                    "an order never completed: left={left} right={right}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn fog_cross_owner_physical_tie_has_no_winner() {
+    let goal = Vec2::splat(50.0);
+    for (first, second) in [
+        ((49.0, 50.0), (50.0, 51.0)),
+        ((49.0, 50.0), (51.0, 50.0)),
+        ((48.0, 50.0), (52.0, 50.0)),
+        ((48.63, 50.0), (50.0, 51.37)),
+    ] {
+        let mut previous = None;
+        for reverse in [false, true] {
+            let (a, b, complete) = fog_contest(first, second, reverse);
+            assert!(
+                complete,
+                "tie never completed: {first:?} {second:?} reverse={reverse}"
+            );
+            assert!(
+                (a.distance(goal) - b.distance(goal)).abs() < 1e-4 && a.distance(goal) > 0.4,
+                "a tie had a winner: {first:?} {second:?} reverse={reverse} a={a:?} b={b:?}"
+            );
+            if let Some(previous) = previous {
+                assert_eq!(previous, (a, b), "unit ids or slots changed a tie result");
+            }
+            previous = Some((a, b));
+        }
+    }
+}
