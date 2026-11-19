@@ -61,7 +61,6 @@ pub(crate) struct RecoveryCounters {
     pub(crate) waits: u64,
     pub(crate) max_age: u16,
     pub(crate) jobs: u64,
-    pub(crate) schedule_work: u64,
     pub(crate) pool_work: u64,
     pub(crate) spare_slot_work: u64,
     pub(crate) phase_bytes: usize,
@@ -98,7 +97,6 @@ impl RecoveryCounters {
         self.waits += other.waits;
         self.max_age = self.max_age.max(other.max_age);
         self.jobs = other.jobs;
-        self.schedule_work += other.schedule_work;
         self.pool_work += other.pool_work;
         self.spare_slot_work += other.spare_slot_work;
         self.phase_bytes = self.phase_bytes.max(other.phase_bytes);

@@ -5,7 +5,8 @@ audited movement state and changes a movement result when a search needs more th
 tick). Source: `target/mc-evidence/handoffs/2026-11-18-bounded-recovery.md`. Base: `3938bd07`.
 
 Gate 1 (simulation-core-engineer, one lens): FAIL, 3 High. All findings are closed in this
-revision; see section 8.
+revision; see section 8. Code review of `a4fbc959` by the same seat, with runs and mutants:
+PASS_WITH_FIXES, 0 High; its findings are closed in section 9.
 
 ## 1. Problem
 
@@ -48,11 +49,15 @@ with an equal key are one batch and share the allowance equally. No unit id and 
 order selects service. Limit: rows still commit in row (unit id) order inside one tick, as in
 the base; when two jobs want the same point in one tick, the lower id commits it.
 
-R5. **Privacy.** A search reads only bodies that `known` admits. The digest and the public
-charge include only admitted bodies, selected by each body's own radius, so hidden bodies and
-the frame maximum radius change neither results, proofs, slice ends nor the schedule.
+R5. **Privacy.** The group and plain searches read only bodies that `known` admits. The
+digest and the public charge include only admitted bodies, selected by each body's own
+radius, so hidden bodies and the frame maximum radius change neither results, proofs, slice
+ends nor the schedule. The schedule reads only the row state, its age, its position and
+its radius. Exception: the body escape after a failed order
+(`PhysicalEscape`) reads all bodies, as in the base, because it resolves an actual overlap;
+its result already depends on hidden bodies in the base, and now its slice ends do too.
 
-R6. **Determinism and replay.** The job is a body component `RecoverySearch` (80 bytes).
+R6. **Determinism and replay.** The job is a body component `RecoverySearch` (88 bytes).
 `MovementFrame.recovery` carries it in; `MovementFrameOutput.recovery` (boxed) carries it out.
 `AuditState.recovery_jobs` serializes it (serde default, skipped when empty). Replay builds the
 frame from the previous audited state, so it rebuilds the same schedule and slices. A job of
@@ -61,8 +66,9 @@ another kind or pool is dropped; a row that leaves the recovery path loses its j
 R7. **No overlap and first arrival.** Unchanged: the committed point goes through the same
 claim, step and certificate code as the base.
 
-R8. **Bounded memory.** Retained: 84 bytes for each job. Phase: one schedule vector (40 bytes
-for each blocked row) and one job map. The scan allocates nothing (`UniformGrid::visit_within`).
+R8. **Bounded memory.** Retained: 92 bytes for each job (component plus id). Phase: one
+schedule vector (24 + 16 bytes for each blocked row, counted with capacity) and one job map.
+The scan allocates nothing (`UniformGrid::visit_within`).
 
 ## 3. Design
 
@@ -73,8 +79,9 @@ radius, ring, side, step, best, examined, digest: [u64; 3], invalidations, relax
 
 ### 3.2 Schedule (tick start, per owner)
 
-Rows: speed set; a physical escape, a blocked group progress with its pool, or a blocked plain
-progress; and overlap with a body at tick start. Fresh rows (no scan) in service order get
+Rows: speed set; and a physical escape, a blocked group progress with its pool, or a blocked
+plain progress. Admission is by state only, not by tick-start overlap: an earlier row can
+overlap a row mid-tick, and the base searched such a row at once (see section 9, GM2). Fresh rows (no scan) in service order get
 `FRESH_SLICE` while half the budget lasts (a first batch that does not fit shares the half).
 The oldest batch of rows with a scan shares the rest. With no such batch, the served fresh
 rows share the rest. A row that needs a search in the tick but has no allowance waits one
@@ -151,3 +158,23 @@ fields, sliced scan, schedule, three call sites, ECS and audit plumbing, diagnos
   fresh job at age 0 (back of the queue).
 - L1: sizes corrected (R6, R8). L2: the ring-limit difference is stated (R2) and T3 checks it.
   L3: `OWNER_WORK` is separate from `route::OWNER_CAP`.
+
+## 9. Code review findings and their closure
+
+- M-2 physical path reads hidden bodies: stated as the R5 exception (base semantics kept).
+- Tick-start overlap charge: removed with the overlap filter (next item).
+- Regression found by the server suite: `terrain_group`
+  `gm2_browser_projected_destination_and_delayed_orders_complete` failed on `a4fbc959` (passes on
+  the base). Trace: 23 waits, all `Physical`: rows with a body escape that started a tick clear
+  were overlapped mid-tick by an earlier row and had no allowance. Fix: admission by state.
+  After the fix the scenario passes (715 s) with 2 physical slices and 0 waits.
+- M-3 tests that could not go red: two new tests. Mutants D (free check stops at the first
+  blocker), E (hidden bodies in the public charge) and G (digest membership by the frame
+  maximum radius) now each turn a test red (`grid_insertion_order_changes_no_result_or_charge`,
+  `hidden_bodies_and_a_large_hidden_radius_leave_the_public_trace_unchanged`).
+- L-1 loose stress bound: the assert now uses 16 fresh slices plus the oldest batch.
+- L1/L-2 sizes: corrected in R6 and R8 from the printed sizes.
+- M-1 stacked identical movers: stated limit, not repaired. They form one batch, share one
+  allowance and contend for the same point. Reviewer measurements in a 40 x 40 crowd: 1 mover,
+  1 tick; 4 movers, 6 ticks; 12 movers, 50 ticks, peak public charge 50,484, 12 of 12 commits
+  relaxed. A repair is one shared scan for each batch that continues after each commit.

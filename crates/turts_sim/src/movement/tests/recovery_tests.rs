@@ -492,7 +492,7 @@ fn stress_frame(movers: usize) -> MovementFrame {
 /// The overshoot terms of design section 4 for these scenes: one candidate and one digest
 /// per served job. A candidate or a digest charges at most `4 + bodies + claims`.
 fn overshoot(frame: &MovementFrame, served: usize) -> usize {
-    served * 2 * (4 + frame.units.len() + 1)
+    served * 2 * (9 + frame.units.len() + 1)
 }
 
 /// T4. Per-owner public charge stays within the bound in every tick; phase and retained
@@ -535,7 +535,15 @@ fn stress_scene_charge_and_memory_stay_bounded() {
         run.candidates,
         run.max_age
     );
-    assert!(run.peak_work <= OWNER_WORK + overshoot(&frame, 101));
+    // 100 fresh rows: 16 fresh slices of 1,024 fill half the budget, plus the oldest
+    // batch of rows with a scan (one row: positions differ).
+    let served = OWNER_WORK / 2 / super::recovery::FRESH_SLICE + 1;
+    assert!(
+        run.peak_work <= OWNER_WORK + overshoot(&frame, served),
+        "{} > {}",
+        run.peak_work,
+        OWNER_WORK + overshoot(&frame, served)
+    );
     assert!(run.peak_phase_bytes <= 100 * 64);
     assert!(run.peak_retained_bytes <= 100 * 96);
 }
@@ -810,4 +818,135 @@ fn small_scene_ends_in_the_first_tick() {
     assert_eq!(run.ticks, 1);
     assert_eq!(movers_escaped(&frame, first), 1);
     let _ = run.outputs;
+}
+
+/// One complete search: (result, public charge, actual charge, visibility checks,
+/// invalidations, slices).
+fn trace(
+    worlds: &[World],
+    known: &dyn Fn(u32) -> bool,
+    allowance: usize,
+) -> (Option<Vec2>, usize, usize, u64, u64, u64) {
+    let mut counters = RecoveryCounters::default();
+    let mut scan = None;
+    for slice in 0..100_000 {
+        let world = &worlds[slice % worlds.len()];
+        match world
+            .scan(None, known, None, true)
+            .run(scan, allowance, 0, &mut counters)
+        {
+            SliceOutcome::Done(point) => {
+                return (
+                    point,
+                    counters.owner_work[0],
+                    counters.owner_actual[0],
+                    counters.visibility_checks,
+                    counters.invalidations,
+                    counters.slices,
+                );
+            }
+            SliceOutcome::Paused(state) => scan = Some(state),
+        }
+    }
+    panic!("the search must end");
+}
+
+/// A packed 9 x 9 crowd round `ORIGIN` with free points outside it; body ids start at 2.
+fn crowd_units() -> Vec<MovementFrameUnit> {
+    let mut units = vec![body(1, ORIGIN, 0.5)];
+    for y in 0..9 {
+        for x in 0..9 {
+            units.push(body(
+                2 + y * 9 + x,
+                Vec2::new(6.0 + x as f32, 6.0 + y as f32),
+                0.5,
+            ));
+        }
+    }
+    units
+}
+
+/// T1c. Hidden bodies next to tested candidates, and a large hidden body that changes the
+/// frame maximum radius, change neither the result nor the public charge, the proofs or
+/// the slices. Catches a public charge or a digest membership that reads hidden facts.
+#[test]
+fn hidden_bodies_and_a_large_hidden_radius_leave_the_public_trace_unchanged() {
+    const HIDDEN: u32 = 1_000;
+    let known = |id: u32| id < HIDDEN;
+    let bounds = Vec2::splat(20.0);
+    let plain = World::new(bounds, crowd_units());
+    let mut near = crowd_units();
+    // Hidden bodies on candidate points of rings 1 to 3 (inside the crowd).
+    for (offset, point) in ring_one().iter().enumerate() {
+        near.push(body(
+            HIDDEN + offset as u32,
+            *point + Vec2::new(0.05, 0.0),
+            0.5,
+        ));
+        near.push(body(
+            HIDDEN + 10 + offset as u32,
+            ORIGIN + (*point - ORIGIN) * 2.0,
+            0.5,
+        ));
+    }
+    let near = World::new(bounds, near);
+    let mut large = crowd_units();
+    large.push(body(HIDDEN + 50, Vec2::new(17.0, 3.0), 2.5));
+    let large = World::new(bounds, large);
+    assert!(large.max_radius > plain.max_radius);
+    for allowance in [60, 400] {
+        let reference = trace(std::slice::from_ref(&plain), &known, allowance);
+        assert!(reference.5 > 1, "the search must span slices");
+        for (name, world) in [("near", &near), ("large", &large)] {
+            let other = trace(std::slice::from_ref(world), &known, allowance);
+            assert_eq!(other.0, reference.0, "{name}: result");
+            assert_eq!(other.1, reference.1, "{name}: public charge");
+            assert_eq!(other.4, reference.4, "{name}: invalidations");
+            assert_eq!(other.5, reference.5, "{name}: slices");
+        }
+        // Alternate the plain and the hidden worlds between slices: no restart.
+        let mixed = trace(
+            &[World::new(bounds, crowd_units()), near_copy(&near)],
+            &known,
+            allowance,
+        );
+        assert_eq!(mixed.4, 0, "hidden motion must not break the proof");
+        assert_eq!(mixed.0, reference.0);
+    }
+}
+
+fn near_copy(world: &World) -> World {
+    World::new(world.bounds, world.units.clone())
+}
+
+/// T3b. The grid insertion order (the row order of the bodies) changes neither the result
+/// nor any charge or visit count. Catches a free check that stops at the first blocker.
+#[test]
+fn grid_insertion_order_changes_no_result_or_charge() {
+    let known = |id: u32| !id.is_multiple_of(7);
+    // A large far body makes the grid cells 5 units wide, so each cell holds many bodies
+    // and the visit order inside a cell differs between the three orders.
+    let mut units = crowd_units();
+    units.push(body(500, Vec2::new(18.0, 2.0), 2.5));
+    let forward = World::new(Vec2::splat(20.0), units.clone());
+    let mut reversed_units = vec![units[0].clone()];
+    reversed_units.extend(units[1..].iter().rev().cloned());
+    let reversed = World::new(Vec2::splat(20.0), reversed_units);
+    let mut rng = Lcg(11);
+    let mut shuffled_units = units[1..].to_vec();
+    for index in (1..shuffled_units.len()).rev() {
+        let other = rng.next() as usize % (index + 1);
+        shuffled_units.swap(index, other);
+    }
+    shuffled_units.insert(0, units[0].clone());
+    let shuffled = World::new(Vec2::splat(20.0), shuffled_units);
+    for allowance in [1, 60, usize::MAX] {
+        let reference = trace(std::slice::from_ref(&forward), &known, allowance);
+        for world in [&reversed, &shuffled] {
+            assert_eq!(
+                trace(std::slice::from_ref(world), &known, allowance),
+                reference
+            );
+        }
+    }
 }

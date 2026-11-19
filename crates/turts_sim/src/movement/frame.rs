@@ -440,19 +440,8 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
             if unit.speed.is_none() || !blocked {
                 continue;
             }
-            let mut overlapping = false;
-            let (cells, tested) =
-                grid.visit_within(&points, unit.position, unit.radius + max_radius, |other| {
-                    overlapping |= other != row
-                        && unit.position.distance(units[other].position)
-                            < unit.radius + units[other].radius - 1.0e-5;
-                });
-            recovery_counters.schedule_work += (cells + tested) as u64;
-            // Tick-start overlap is a physical fact of the row's own body.
-            recovery_counters.charge(unit.owner_slot, cells + tested, cells + tested);
-            if !overlapping {
-                continue;
-            }
+            // Admission is by state only: a row can become overlapped mid-tick by an earlier
+            // row, and it must not wait for a slice that the base would not delay.
             let job = frame.recovery.get(&unit.unit_id);
             rows.push(super::recovery::ScheduleRow {
                 row,
@@ -594,6 +583,9 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
                                 radius: unit.radius,
                                 self_index: index,
                                 slots: None,
+                                // The body escape reads all bodies, as in the base: it
+                                // resolves an actual overlap. Design R5 states this
+                                // exception; its slice ends can depend on hidden bodies.
                                 known: &|_| true,
                                 bound: None,
                                 verify: true,
