@@ -79,6 +79,7 @@ impl MovementSearch<'_> {
         self_index: usize,
         pool_id: u64,
         assigned_slots: &std::collections::HashSet<(u64, u32, u32)>,
+        known: &dyn Fn(u32) -> bool,
     ) -> Option<Vec2> {
         let spacing = 2.0 * radius + 0.1;
         let mut best: Option<Vec2> = None;
@@ -115,6 +116,7 @@ impl MovementSearch<'_> {
                         .into_iter()
                         .all(|index| {
                             index == self_index
+                                || !known(self.units[index].unit_id)
                                 || candidate.distance(self.units[index].position)
                                     >= radius + self.units[index].radius - 1.0e-5
                         });

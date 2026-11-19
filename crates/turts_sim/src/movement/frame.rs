@@ -407,6 +407,23 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
         let mut unit = units[index].clone();
         let owns_destination = guide.kind(unit.unit_id) == super::motion::MotionKind::Destination;
         let Some(speed) = unit.speed else { continue };
+        // The live frame is sorted by id. This adds no index or per-owner allocation.
+        // Hidden bodies become available to this unit at physical contact.
+        let known = |id: u32| {
+            visibility.is_none_or(|basis| {
+                frame
+                    .units
+                    .binary_search_by_key(&id, |other| other.unit_id)
+                    .ok()
+                    .is_some_and(|row| {
+                        let other = &frame.units[row];
+                        other.owner_slot == unit.owner_slot
+                            || basis.unit_permitted(unit.owner_slot, id)
+                            || unit.position.distance(other.position)
+                                <= unit.radius + other.radius + super::route::CONTACT_GAP
+                    })
+            })
+        };
         if unit.physical_escape.is_some() {
             let overlapping = body_overlaps_position(
                 unit.position,
@@ -611,6 +628,7 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
                     .into_iter()
                     .all(|other_index| {
                         other_index == index
+                            || !known(units[other_index].unit_id)
                             || slot.distance(units[other_index].position)
                                 >= unit.radius + units[other_index].radius
                     })
@@ -628,7 +646,7 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
                 grid.within_unsorted(&points, target, unit.radius + max_radius)
                     .into_iter()
                     .any(|other_index| {
-                        if other_index == index {
+                        if other_index == index || !known(units[other_index].unit_id) {
                             return false;
                         }
                         let other = &units[other_index];
@@ -672,6 +690,7 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
                 index,
                 progress.pool_id,
                 &assigned_slots,
+                &known,
             );
             let nearest_new = match (pool_escape, outside_escape) {
                 (Some(pool_point), Some(outside_point)) => Some(
@@ -761,23 +780,6 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
             units[index].progress = outputs[index].progress.clone();
             continue;
         }
-        // The live frame is sorted by id. This adds no index or per-owner allocation.
-        // Hidden bodies become available to this unit at physical contact.
-        let known = |id: u32| {
-            visibility.is_none_or(|basis| {
-                frame
-                    .units
-                    .binary_search_by_key(&id, |other| other.unit_id)
-                    .ok()
-                    .is_some_and(|row| {
-                        let other = &frame.units[row];
-                        other.owner_slot == unit.owner_slot
-                            || basis.unit_permitted(unit.owner_slot, id)
-                            || unit.position.distance(other.position)
-                                <= unit.radius + other.radius + super::route::CONTACT_GAP
-                    })
-            })
-        };
         let planning_context = &plain_spread_context;
         if let Some(progress) = unit.plain_progress.clone() {
             let mut output = step_plain_progress(

@@ -13,3 +13,9 @@ The filter does not add an owner index or exclusion set. Each candidate can perf
 The pool's clearance prefilter also read foreign bodies before the contact-aware slot predicate. A paired index test failed on the previous commit. It passes with the new filter. The prefilter uses own bodies and foreign bodies with the existing contact witness. The final slot predicate and collision certificate remain authoritative. The filter reuses the existing pool index and contact rows. It adds no per-owner pool index.
 
 All 127 movement library tests pass. The occupied-spare performance test uses same-owner blockers. Its earlier foreign blockers were outside contact range and could not legitimately make the mover report blocked. The test still checks that fully occupied known spares avoid repeated pool-wide scans. Mixed-owner pool metadata falls back to a conservative empty clearance index. The possible cost of scanning many such spares is not measured. The earlier Blocked recovery branch still inspects all bodies and needs a separate privacy check.
+
+## Blocked recovery follow-up
+
+A live paired-world test confirmed that a hidden remote body could change the escape target of an overlapping blocked unit. The blocked recovery predicates now use the permitted-body filter for target selection. The existing physical overlap and collision checks still use every body. Paired tests pass for hidden and visible remote bodies. The escape search has no independent work meter. This change adds bounded lookups to its existing candidate checks but does not enforce a new total work cap.
+
+A separate failing probe shows a hidden remote unit with the same movement target can still change blocked recovery. The target-claim counter includes every owner's target. The probe is saved at `target/mc-evidence/singleton-fog-investigation/hidden-remote-target-regression.rs` in the main checkout. This remaining leak is not fixed by the body filter.
