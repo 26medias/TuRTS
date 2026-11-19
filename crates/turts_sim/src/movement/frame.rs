@@ -278,14 +278,13 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
         }
     }
     let slot_grid = crate::grid::UniformGrid::new(&slot_points, 2.0 * max_radius);
-    let mut target_claims: std::collections::HashMap<(u32, u32), usize> = units
-        .iter()
-        .filter(|unit| guide.kind(unit.unit_id) == super::motion::MotionKind::Destination)
-        .filter_map(|unit| unit.target.map(target_key))
-        .fold(std::collections::HashMap::new(), |mut counts, key| {
-            *counts.entry(key).or_default() += 1;
-            counts
-        });
+    let mut target_claims: std::collections::HashMap<(u32, u32), [u32; 2]> =
+        std::collections::HashMap::new();
+    for unit in &units {
+        if guide.kind(unit.unit_id) == super::motion::MotionKind::Destination {
+            update_target_claims(&mut target_claims, unit.owner_slot, None, unit.target);
+        }
+    }
 
     // The certified stall clock of each mover at the start of the tick.
     let start_stall: Vec<Option<u16>> = units
@@ -600,7 +599,7 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
                 });
             if !occupied {
                 if owns_destination {
-                    update_target_claims(&mut target_claims, unit.target, None);
+                    update_target_claims(&mut target_claims, unit.owner_slot, unit.target, None);
                 }
                 let old_key = (
                     progress.pool_id,
@@ -640,7 +639,15 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
             );
             let target_is_claimed_by_other = owns_destination
                 && unit.target.is_some_and(|target| {
-                    target_claims.get(&target_key(target)).copied().unwrap_or(0) > 1
+                    target_claims
+                        .get(&target_key(target))
+                        .is_some_and(|counts| {
+                            if visibility.is_some() {
+                                counts[usize::from(unit.owner_slot != 0)] > 1
+                            } else {
+                                u64::from(counts[0]) + u64::from(counts[1]) > 1
+                            }
+                        })
                 });
             let target_is_blocked_by_stationary = unit.target.is_some_and(|target| {
                 grid.within_unsorted(&points, target, unit.radius + max_radius)
@@ -751,6 +758,7 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
             if owns_destination {
                 update_target_claims(
                     &mut target_claims,
+                    unit.owner_slot,
                     unit.target,
                     (!reached).then_some(escape),
                 );
@@ -803,7 +811,12 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
             }
             outputs[index] = output.clone();
             if owns_destination {
-                update_target_claims(&mut target_claims, unit.target, output.target);
+                update_target_claims(
+                    &mut target_claims,
+                    unit.owner_slot,
+                    unit.target,
+                    output.target,
+                );
             }
             units[index].position = output.position;
             units[index].target = output.target;
@@ -869,7 +882,12 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
                 );
                 outputs[index] = output.clone();
                 if owns_destination {
-                    update_target_claims(&mut target_claims, unit.target, output.target);
+                    update_target_claims(
+                        &mut target_claims,
+                        unit.owner_slot,
+                        unit.target,
+                        output.target,
+                    );
                 }
                 units[index].position = output.position;
                 units[index].target = output.target;
@@ -1094,7 +1112,12 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
                 outputs[index].plain_progress = Some(plain);
             }
             if owns_destination {
-                update_target_claims(&mut target_claims, unit.target, outputs[index].target);
+                update_target_claims(
+                    &mut target_claims,
+                    unit.owner_slot,
+                    unit.target,
+                    outputs[index].target,
+                );
             }
             units[index].position = position;
             units[index].target = outputs[index].target;
@@ -1244,7 +1267,12 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
                     units[peer].target = Some(released);
                     outputs[peer].progress = units[peer].progress.clone();
                     outputs[peer].target = Some(released);
-                    update_target_claims(&mut target_claims, peer_target, Some(released));
+                    update_target_claims(
+                        &mut target_claims,
+                        units[peer].owner_slot,
+                        peer_target,
+                        Some(released),
+                    );
                     if let Some(rows) = claimants.as_mut() {
                         rows.insert(released_key, peer);
                     }
@@ -1266,7 +1294,7 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
                 if let Some(rows) = claimants.as_mut() {
                     rows.insert(taken_key, index);
                 }
-                update_target_claims(&mut target_claims, unit.target, Some(slot));
+                update_target_claims(&mut target_claims, unit.owner_slot, unit.target, Some(slot));
                 progress.slot = slot;
                 exchanged[index] = !super::exchange::restart_stall_clock(&mut progress);
                 progress.best_distance = if exchanged[index] {
@@ -1299,7 +1327,7 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
                 });
             if !occupied {
                 if owns_destination {
-                    update_target_claims(&mut target_claims, unit.target, None);
+                    update_target_claims(&mut target_claims, unit.owner_slot, unit.target, None);
                 }
                 outputs[index].position = movement_target;
                 outputs[index].target = None;
@@ -1510,7 +1538,7 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
                 });
             if !occupied {
                 if owns_destination {
-                    update_target_claims(&mut target_claims, unit.target, None);
+                    update_target_claims(&mut target_claims, unit.owner_slot, unit.target, None);
                 }
                 outputs[index].position = movement_target;
                 outputs[index].target = None;
@@ -1662,7 +1690,12 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
         outputs[index].position = position;
         outputs[index].target = (!failed_blocked).then_some(movement_target);
         if owns_destination {
-            update_target_claims(&mut target_claims, unit.target, outputs[index].target);
+            update_target_claims(
+                &mut target_claims,
+                unit.owner_slot,
+                unit.target,
+                outputs[index].target,
+            );
         }
         outputs[index].failed_blocked = failed_blocked;
         if failed_blocked

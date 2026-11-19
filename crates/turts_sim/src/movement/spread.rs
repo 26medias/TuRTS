@@ -924,23 +924,27 @@ pub(super) fn target_key(target: Vec2) -> (u32, u32) {
 }
 
 pub(super) fn update_target_claims(
-    claims: &mut std::collections::HashMap<(u32, u32), usize>,
+    claims: &mut std::collections::HashMap<(u32, u32), [u32; 2]>,
+    owner: u8,
     old: Option<Vec2>,
     new: Option<Vec2>,
 ) {
     if old == new {
         return;
     }
+    // The live protocol has two slots. Extra test-only owners share the second
+    // bucket; in all-visible mode only the total is used.
+    let row = usize::from(owner != 0);
     if let Some(old) = old {
         let key = target_key(old);
-        if let Some(count) = claims.get_mut(&key) {
-            *count -= 1;
-            if *count == 0 {
+        if let Some(counts) = claims.get_mut(&key) {
+            counts[row] -= 1;
+            if *counts == [0, 0] {
                 claims.remove(&key);
             }
         }
     }
     if let Some(new) = new {
-        *claims.entry(target_key(new)).or_default() += 1;
+        claims.entry(target_key(new)).or_default()[row] += 1;
     }
 }

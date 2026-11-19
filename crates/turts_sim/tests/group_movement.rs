@@ -4298,3 +4298,189 @@ fn visible_remote_body_changes_blocked_recovery() {
         "a visible body must reserve the escape target"
     );
 }
+
+#[test]
+fn hidden_remote_target_does_not_change_blocked_recovery() {
+    use turts_mod_api::{ObservationPhase, VisibilityDef, VisibilityGrid, VisionSharing};
+    use turts_sim::movement::{MoveProgress, MovementActivity, MovementPool, MovementPools};
+    fn run(enemy_moving: bool) -> (Option<Vec2>, Vec2) {
+        let remote = Vec2::new(55.0, 55.0);
+        let mut app = app_with_units(
+            &[(10.0, 10.0), (12.0, 10.0), (remote.x, remote.y)],
+            &[0, 1, 1],
+        );
+        let ids: Vec<_> = app
+            .world()
+            .iter_entities()
+            .filter_map(|entity| {
+                entity
+                    .get::<turts_sim::UnitId>()
+                    .map(|id| (id.0, entity.id()))
+            })
+            .collect();
+        let entity = |id| ids.iter().find(|row| row.0 == id).unwrap().1;
+        app.world_mut()
+            .entity_mut(entity(2))
+            .insert(turts_sim::Position(Vec2::new(10.0, 10.0)));
+        let goal = Vec2::new(50.0, 50.0);
+        if enemy_moving {
+            app.world_mut()
+                .entity_mut(entity(3))
+                .insert(MoveTarget(goal));
+        }
+        app.world_mut().resource_mut::<MovementPools>().0.insert(
+            7,
+            MovementPool {
+                pool_id: 7,
+                point: goal,
+                spacing: 1.1,
+                primary_count: 1,
+                slots: vec![goal],
+            },
+        );
+        app.world_mut().entity_mut(entity(1)).insert((
+            MoveTarget(goal),
+            MoveProgress {
+                pool_id: 7,
+                slot: goal,
+                activity: MovementActivity::Blocked,
+                pass_mode: true,
+                stalling_on_group: false,
+                stalled_ticks: 60,
+                best_distance: 1.0,
+                claim_count: 3,
+                follow_origin: None,
+            },
+        ));
+        let sight = turts_sim::visibility::prepare(
+            0,
+            turts_mod_api::ContentId::parse("fixture_pkg:field").unwrap(),
+            &VisibilityDef {
+                cell_size: 2.0,
+                sharing: VisionSharing::OwnSlot,
+                memory_limit: None,
+            },
+            VisibilityGrid {
+                size: WorldPos { x: 64.0, y: 64.0 },
+                cell_size: 2.0,
+                columns: 32,
+                rows: 32,
+            },
+            &[0, 1],
+        )
+        .unwrap();
+        app.insert_resource(sight);
+        turts_sim::visibility::initialize_context(app.world_mut(), 0, &[0, 1]).unwrap();
+        turts_sim::initialize_completed_world(app.world_mut());
+        assert!(!turts_sim::visibility::unit_permitted(
+            app.world(),
+            0,
+            3,
+            ObservationPhase::Completed
+        ));
+        app.update();
+        let entity = app.world().entity(entity(1));
+        (
+            entity.get::<MoveTarget>().map(|target| target.0),
+            entity.get::<turts_sim::Position>().unwrap().0,
+        )
+    }
+    assert_eq!(
+        run(false),
+        run(true),
+        "an unseen remote unit changed blocked recovery"
+    );
+}
+
+#[test]
+fn same_owner_remote_target_is_reserved_under_fog() {
+    use turts_mod_api::{ObservationPhase, VisibilityDef, VisibilityGrid, VisionSharing};
+    use turts_sim::movement::{MoveProgress, MovementActivity, MovementPool, MovementPools};
+    fn run(enemy_moving: bool) -> (Option<Vec2>, Vec2) {
+        let remote = Vec2::new(55.0, 55.0);
+        let mut app = app_with_units(
+            &[(10.0, 10.0), (12.0, 10.0), (remote.x, remote.y)],
+            &[0, 1, 0],
+        );
+        let ids: Vec<_> = app
+            .world()
+            .iter_entities()
+            .filter_map(|entity| {
+                entity
+                    .get::<turts_sim::UnitId>()
+                    .map(|id| (id.0, entity.id()))
+            })
+            .collect();
+        let entity = |id| ids.iter().find(|row| row.0 == id).unwrap().1;
+        app.world_mut()
+            .entity_mut(entity(2))
+            .insert(turts_sim::Position(Vec2::new(10.0, 10.0)));
+        let goal = Vec2::new(50.0, 50.0);
+        if enemy_moving {
+            app.world_mut()
+                .entity_mut(entity(3))
+                .insert(MoveTarget(goal));
+        }
+        app.world_mut().resource_mut::<MovementPools>().0.insert(
+            7,
+            MovementPool {
+                pool_id: 7,
+                point: goal,
+                spacing: 1.1,
+                primary_count: 1,
+                slots: vec![goal],
+            },
+        );
+        app.world_mut().entity_mut(entity(1)).insert((
+            MoveTarget(goal),
+            MoveProgress {
+                pool_id: 7,
+                slot: goal,
+                activity: MovementActivity::Blocked,
+                pass_mode: true,
+                stalling_on_group: false,
+                stalled_ticks: 60,
+                best_distance: 1.0,
+                claim_count: 3,
+                follow_origin: None,
+            },
+        ));
+        let sight = turts_sim::visibility::prepare(
+            0,
+            turts_mod_api::ContentId::parse("fixture_pkg:field").unwrap(),
+            &VisibilityDef {
+                cell_size: 2.0,
+                sharing: VisionSharing::OwnSlot,
+                memory_limit: None,
+            },
+            VisibilityGrid {
+                size: WorldPos { x: 64.0, y: 64.0 },
+                cell_size: 2.0,
+                columns: 32,
+                rows: 32,
+            },
+            &[0, 1],
+        )
+        .unwrap();
+        app.insert_resource(sight);
+        turts_sim::visibility::initialize_context(app.world_mut(), 0, &[0, 1]).unwrap();
+        turts_sim::initialize_completed_world(app.world_mut());
+        assert!(turts_sim::visibility::unit_permitted(
+            app.world(),
+            0,
+            3,
+            ObservationPhase::Completed
+        ));
+        app.update();
+        let entity = app.world().entity(entity(1));
+        (
+            entity.get::<MoveTarget>().map(|target| target.0),
+            entity.get::<turts_sim::Position>().unwrap().0,
+        )
+    }
+    assert_ne!(
+        run(false),
+        run(true),
+        "a same-owner target claim must remain reserved"
+    );
+}

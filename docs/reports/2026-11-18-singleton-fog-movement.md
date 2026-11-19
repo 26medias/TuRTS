@@ -18,4 +18,6 @@ All 127 movement library tests pass. The occupied-spare performance test uses sa
 
 A live paired-world test confirmed that a hidden remote body could change the escape target of an overlapping blocked unit. The blocked recovery predicates now use the permitted-body filter for target selection. The existing physical overlap and collision checks still use every body. Paired tests pass for hidden and visible remote bodies. The escape search has no independent work meter. This change adds bounded lookups to its existing candidate checks but does not enforce a new total work cap.
 
-A separate failing probe shows a hidden remote unit with the same movement target can still change blocked recovery. The target-claim counter includes every owner's target. The probe is saved at `target/mc-evidence/singleton-fog-investigation/hidden-remote-target-regression.rs` in the main checkout. This remaining leak is not fixed by the body filter.
+A separate failing probe shows a hidden remote unit with the same movement target can still change blocked recovery. The target-claim counter includes every owner's target. The owner-local target-claim fix closes that leak. The hidden-enemy paired test and a same-owner control pass. In all-visible mode the two counts are added. The live protocol has two slots. The existing claim-map value stays eight bytes on native, and grows from four to eight bytes on wasm for each distinct target. No heap peak was measured.
+
+After the target-claim change, all 127 movement library tests and both cross-owner same-point tests pass.
