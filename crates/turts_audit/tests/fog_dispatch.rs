@@ -375,6 +375,50 @@ fn forged_sight_inputs_are_refused() {
     );
 }
 
+/// A lobby server writes `Initial` with the placeholder and finalizes the context at the match
+/// start. That one change is permitted before the first tick only.
+#[test]
+fn sight_may_be_finalized_only_before_the_first_tick() {
+    let fog = captured(true);
+    let placeholder = |sight: &mut Option<SightAudit>| {
+        let sight = sight.as_mut().unwrap();
+        sight.finalized = false;
+        sight.policy.teams.clear();
+    };
+    let mut at_start = fog.clone();
+    each_state(&mut at_start[..1], |state| {
+        placeholder(&mut state.raw_sight)
+    });
+    validate_records(&at_start).unwrap();
+    validate_records_with_sight(&at_start, Some(&trusted_policy())).unwrap();
+
+    let first_tick = fog
+        .iter()
+        .position(|record| matches!(record, EconomyLogRecord::Tick { .. }))
+        .unwrap();
+    let mut late = fog.clone();
+    each_state(&mut late[..=first_tick], |state| {
+        placeholder(&mut state.raw_sight)
+    });
+    refused_for(
+        &late,
+        "sight inputs changed after the Initial record",
+        "a sight context that is finalized after a tick",
+    );
+
+    // The start change may not touch the grid, the sharing rule or the unit types.
+    let mut other = fog.clone();
+    each_state(&mut other[..1], |state| {
+        placeholder(&mut state.raw_sight);
+        state.raw_sight.as_mut().unwrap().types[0].radius = Some(100.0);
+    });
+    refused_for(
+        &other,
+        "sight inputs changed after the Initial record",
+        "a start change of a vision radius",
+    );
+}
+
 /// Not modelled: a pending group move to a unit under fog (the server prunes a hidden
 /// target). The auditor must refuse such a log; it must not certify it with the wrong rule.
 #[test]

@@ -104,10 +104,23 @@ pub fn validate_records_with_sight(
     let Some(EconomyLogRecord::Initial(initial)) = records.first() else {
         return Err("first economy log record must be Initial".into());
     };
+    let finalized = crate::sight::finalized_at_start(records, initial)?;
+    let initial = match finalized.as_deref().and_then(|records| records.first()) {
+        Some(EconomyLogRecord::Initial(initial)) => initial,
+        _ => initial,
+    };
     if initial.raw_sight.as_ref().map(|sight| &sight.policy) != expected {
         return Err("economy log sight policy differs from the trusted policy".into());
     }
-    validate_records(records)
+    // A trusted policy belongs to a started match. The placeholder is not one.
+    if initial
+        .raw_sight
+        .as_ref()
+        .is_some_and(|sight| !sight.finalized)
+    {
+        return Err("economy log sight context is not finalized".into());
+    }
+    validate_records(finalized.as_deref().unwrap_or(records))
 }
 
 /// Check record shape, R14 clock transitions, command-operation association, and
@@ -124,6 +137,9 @@ pub fn validate_records(records: &[EconomyLogRecord]) -> Result<(), String> {
         return Err("economy log contains more than one Initial record".into());
     }
 
+    if let Some(finalized) = crate::sight::finalized_at_start(records, initial)? {
+        return validate_records(&finalized);
+    }
     crate::sight::validate_records(records, initial)?;
     crate::terrain::validate_records(records)?;
     validate_actor_records(records, initial)?;

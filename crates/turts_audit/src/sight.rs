@@ -62,6 +62,69 @@ fn has_pending_unit_target(state: &AuditState) -> bool {
         })
 }
 
+fn states_mut(record: &mut EconomyLogRecord) -> Vec<&mut AuditState> {
+    match record {
+        EconomyLogRecord::Initial(state) => vec![state],
+        EconomyLogRecord::Operation(operation) => {
+            vec![&mut operation.before, &mut operation.after]
+        }
+        EconomyLogRecord::Tick { before, state, .. } => vec![before, state],
+        EconomyLogRecord::Admission { before, after, .. } => vec![before, after],
+        EconomyLogRecord::CommandBoundary(command) => {
+            vec![&mut command.before, &mut command.after]
+        }
+        EconomyLogRecord::Actor(_) | EconomyLogRecord::Claim { .. } => Vec::new(),
+    }
+}
+
+/// A lobby server writes `Initial` before the room fixes the teams: the log starts with the
+/// fail-closed placeholder (`finalized: false`) and each snapshot after the match start has
+/// the final inputs. This is the one permitted change. It must occur before the first `Tick`
+/// and the first `Operation` record, so no dispatch can read the placeholder. It may change
+/// only `finalized` and `teams`. The result is a copy of the log in which the leading
+/// placeholder snapshots have the final inputs; `None` when the log has no such change.
+pub(crate) fn finalized_at_start(
+    records: &[EconomyLogRecord],
+    initial: &AuditState,
+) -> Result<Option<Vec<EconomyLogRecord>>, String> {
+    let Some(placeholder) = initial.raw_sight.as_ref().filter(|sight| !sight.finalized) else {
+        return Ok(None);
+    };
+    let mut started = false;
+    for (index, record) in records.iter().enumerate() {
+        let Some(sight) = states(record).into_iter().find_map(|state| {
+            state
+                .raw_sight
+                .as_ref()
+                .filter(|sight| *sight != placeholder)
+        }) else {
+            started |= matches!(
+                record,
+                EconomyLogRecord::Tick { .. } | EconomyLogRecord::Operation(_)
+            );
+            continue;
+        };
+        if started
+            || !sight.finalized
+            || sight.policy.grid != placeholder.policy.grid
+            || sight.policy.sharing != placeholder.policy.sharing
+            || sight.types != placeholder.types
+            || states(record)
+                .into_iter()
+                .any(|state| state.raw_sight.as_ref() != Some(sight))
+        {
+            return Err("sight inputs changed after the Initial record".into());
+        }
+        let sight = sight.clone();
+        let mut copy = records.to_vec();
+        for state in copy[..index].iter_mut().flat_map(states_mut) {
+            state.raw_sight = Some(sight.clone());
+        }
+        return Ok(Some(copy));
+    }
+    Ok(None)
+}
+
 /// The sight inputs are constant for a match: every snapshot must repeat those of `Initial`.
 /// Under restricted sight, this replay does not model a pending movement order with a Unit
 /// target (the live server prunes a hidden target). It refuses such a log.

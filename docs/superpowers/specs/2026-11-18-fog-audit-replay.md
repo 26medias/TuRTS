@@ -38,10 +38,16 @@ the constant inputs of sight. The log does not need to carry a sight result.
    simulation. A unit that is not in the tick-start state is hidden, as in the live basis. Both
    spread sites use the set: the dispatch and the `Blocked` envelope.
 4. The sight inputs are constant: each snapshot of the log must repeat those of `Initial`.
+   One change is permitted. A lobby server writes `Initial` before the room fixes the teams
+   (`crates/turts_server/src/main.rs:160`, then `lobby.rs:254`), so `Initial` has the
+   placeholder (`finalized: false`). The log may go one time from the placeholder to the final
+   inputs, before the first `Tick` and the first `Operation` record. Only `finalized` and
+   `teams` may change then. No dispatch can read the placeholder of such a log.
 5. `validate_records` trusts the sight inputs of `Initial`, as it trusts the catalog and the
    geology there. `validate_records_with_sight(records, expected)` first compares the policy of
    the log with a `SightPolicy` that the caller builds from a trusted source (the locked package
-   and the room). `None` means AllVisible. A host that holds the package must use this function.
+   and the room). `None` means AllVisible. With a policy, it also refuses a log whose context is
+   never finalized. A host that holds the package must use this function.
 6. Fail closed: under fog, the auditor refuses a log with a pending movement order that has a
    Unit target. That path (the server prunes a hidden target, reason `TargetInvalid`) is not
    modelled.
@@ -74,6 +80,12 @@ passes through its JSON line form.
 - Forged mode in both directions, forged wide and narrow vision, forged shared sight, forged
   placeholder, inputs that change in one snapshot, a grid that differs from its geometry: refused.
 - A fog log with a pending Unit-target group move: refused.
+- Finalization at the start: accepted. Finalization after a tick, or with a changed radius: refused.
+
+`crates/turts_audit/tests/fog_dispatch_scenes.rs` holds the live scenes of the independent
+review: Team sharing, an order on tick 1, the placeholder, units with health, a source and a
+body removed in the dispatch tick, 120 ticks of orders while sight changes, appended legs, a unit
+born in the match, a hidden static body, the lobby start, and 14 more forgeries.
 
 ## Limits
 
@@ -82,5 +94,11 @@ passes through its JSON line form.
    in the auditor by this change.
 2. Item 6 of the contract change: Unit-target group moves under fog are refused, not replayed.
 3. The `Blocked` envelope path uses the same hidden set, but has no live fog test.
-4. The vision radii in `raw_sight` have the trust of the `Initial` catalog. A host check of the
-   radii against the package is not built.
+4. The vision radii, `has_health` and the type list in `raw_sight` have the trust of the
+   `Initial` catalog. A host check of them against the package is not built. A forged radius
+   that changes no spread passes.
+5. The site rule and the health rule of a sight source have no live scene that separates them
+   (cedar has no construction order). A planted fault in those rules, or in the `Blocked` site,
+   turns no test red.
+6. A run of the real `turts_server` with a lobby start under fog is NOT TRACED. The test copies
+   the server sequence in a headless simulation.
