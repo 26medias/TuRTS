@@ -37,8 +37,8 @@ const delta=(a,b)=>Math.max(...a.map((n,i)=>Math.abs(n-b[i])));
   d=await wait(read,d=>d.replicated_world.terrain.work.some(w=>w.unit===metadata.work.actor&&w.completed_work>0),'Actual terrain work never progressed');await sleep(metadata.warmup_ms);
   let groupIds=[];
   if(groupMode){
-   const goal=[25,30,0];
-   const candidates=d.replicated_world.units.filter(u=>u.owner_slot===d.slot&&u.unit_id!==metadata.work.actor&&Math.hypot(u.pos[0]-goal[0],u.pos[1]-goal[1])>12).sort((a,b)=>b.pos[1]-a.pos[1]||a.pos[0]-b.pos[0]);
+   const goal=[14,32,0];
+   const candidates=d.replicated_world.units.filter(u=>u.owner_slot===d.slot&&u.unit_id!==metadata.work.actor&&Math.hypot(u.pos[0]-goal[0],u.pos[1]-goal[1])>10).sort((a,b)=>b.pos[1]-a.pos[1]||Math.abs(a.pos[0]-14)-Math.abs(b.pos[0]-14));
    assert(candidates.length>=2,'Not enough owned actors for the group move');
    // Select separate owned bodies at their current physical locations.
    for(const u of candidates){
@@ -54,6 +54,9 @@ const delta=(a,b)=>Math.max(...a.map((n,i)=>Math.abs(n-b[i])));
    s=await scene();const point=project(s,goal);assert(point[0]>0&&point[0]<1280&&point[1]>0&&point[1]<720,'Group goal outside viewport');
    await page.mouse.move(...point);await page.mouse.click(...point,{button:'right',delay:80});
    await wait(read,x=>groupIds.every(id=>x.replicated_world.unit_orders.some(o=>o.unit===id&&o.current?.order?.endsWith(':order_move'))),'Group move was not accepted');
+   await wait(read,x=>groupIds.every(id=>{const u=x.replicated_world.units.find(v=>v.unit_id===id);return u&&u.pos[1]>29;}),'Group did not reach clear terrain');
+   s=await scene();const onward=project(s,[43,32,0]);await page.mouse.move(...onward);await page.mouse.click(...onward,{button:'right',delay:80});
+   await wait(read,x=>groupIds.every(id=>x.replicated_world.unit_orders.some(o=>o.unit===id&&o.current?.order?.endsWith(':order_move'))),'Onward move was not accepted');
   }
   if(zoom==='normal') {
    s=await scene();assert(Math.abs(eyeHeight(s)-metadata.camera_bounds.normal)<.05,'Normal authored camera height changed');assert(s.animations.filter(a=>a.visible&&!a.dead).length===400,'Normal sample must keep all400 detailed actors visible');
