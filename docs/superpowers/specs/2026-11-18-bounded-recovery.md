@@ -54,11 +54,8 @@ R5. **Privacy.** The group and plain searches read only bodies that `known` admi
 digest and the public charge include only admitted bodies, selected by each body's own
 radius, so hidden bodies and the frame maximum radius change neither results, proofs, slice
 ends nor the schedule. The schedule reads the row state, its age, its position, its radius,
-and its tick-start overlap (bodies in contact range). Exception: the body escape after a failed order
-(`PhysicalEscape`) reads all bodies, as in the base, because it resolves an actual overlap;
-its result already depends on hidden bodies in the base. Now hidden bodies also enter its
-digest and its public charge, so they can change its proofs, invalidations, relax decision
-and slice ends.
+and its tick-start overlap (bodies in contact range). Body escape after a failed order
+also uses the admitted bodies. This applies to new and retained escape destinations.
 
 R6. **Determinism and replay.** The job is a body component `RecoverySearch` (88 bytes).
 `MovementFrame.recovery` carries it in; `MovementFrameOutput.recovery` (boxed) carries it out.
@@ -168,7 +165,8 @@ fields, sliced scan, schedule, three call sites, ECS and audit plumbing, diagnos
 
 ## 9. Code review findings and their closure
 
-- M-2 physical path reads hidden bodies: stated as the R5 exception (base semantics kept).
+- M-2 physical path read hidden bodies: fixed by applying the knowledge filter to escape
+  planning and retained destinations. A paired-world test covers the pre-contact result.
 - Tick-start overlap charge: removed with the overlap filter (next item), then added again
   with the overlap order key (last item; section 4 counts it).
 - Regression found by the server suite: `terrain_group`
