@@ -740,6 +740,7 @@ fn schedule_is_id_free_and_oldest_first() {
             owner: (row % 2) as u8,
             age: (row % 5) as u16,
             has_scan: row % 3 != 0,
+            overlapping: row % 4 != 1,
             position: Vec2::new((row * 7 % 11) as f32, (row * 5 % 7) as f32),
             radius: 0.5,
         })
@@ -788,6 +789,7 @@ fn a_stacked_batch_shares_one_budget() {
             owner: 0,
             age: 3,
             has_scan: true,
+            overlapping: true,
             position: Vec2::splat(5.0),
             radius: 0.5,
         })
@@ -949,4 +951,44 @@ fn grid_insertion_order_changes_no_result_or_charge() {
             );
         }
     }
+}
+
+/// T7c. Rows that are admitted by state but overlap nothing at tick start never take a
+/// fresh slice before a row that overlaps: the searcher escapes in the first tick.
+#[test]
+fn idle_admitted_rows_do_not_delay_an_overlapping_searcher() {
+    let mut units = Vec::new();
+    // 40 idle body-escape rows with smaller x than the searcher, far from every body.
+    for i in 0..40 {
+        let mut idle = body(
+            i + 1,
+            Vec2::new(1.0 + (i % 10) as f32 * 2.0, 2.0 + (i / 10) as f32 * 2.0),
+            0.5,
+        );
+        idle.physical_escape = Some(super::PhysicalEscape { target: None });
+        units.push(idle);
+    }
+    let mut searcher = body(100, Vec2::new(30.0, 30.0), 0.5);
+    searcher.physical_escape = Some(super::PhysicalEscape { target: None });
+    units.push(searcher);
+    let mut blocker = body(101, Vec2::new(30.3, 30.0), 0.5);
+    blocker.speed = None;
+    units.push(blocker);
+    let frame = MovementFrame {
+        bounds: Vec2::splat(40.0),
+        tick_hz: 20,
+        units,
+        pools: BTreeMap::new(),
+        recovery: BTreeMap::new(),
+    };
+    let mut budget = super::sweep::SweepBudget::new(1);
+    let outputs =
+        super::step_frame_with_sweep_budget(&frame, 0.05, &Default::default(), &mut budget);
+    assert_eq!(budget.recovery.waits, 0, "{:?}", budget.recovery);
+    let moved = outputs.iter().find(|output| output.unit_id == 100).unwrap();
+    assert_ne!(
+        moved.position,
+        Vec2::new(30.0, 30.0),
+        "the searcher must move in tick 1"
+    );
 }

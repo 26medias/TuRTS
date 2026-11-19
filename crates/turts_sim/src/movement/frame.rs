@@ -440,14 +440,25 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
             if unit.speed.is_none() || !blocked {
                 continue;
             }
-            // Admission is by state only: a row can become overlapped mid-tick by an earlier
-            // row, and it must not wait for a slice that the base would not delay.
+            // Admission is by state: a row can become overlapped mid-tick by an earlier row,
+            // and it must not wait for a slice that the base would not delay. Tick-start
+            // overlap only orders the fresh rows (see `ScheduleRow::overlapping`).
+            let mut overlapping = false;
+            let (cells, tested) =
+                grid.visit_within(&points, unit.position, unit.radius + max_radius, |other| {
+                    overlapping |= other != row
+                        && unit.position.distance(units[other].position)
+                            < unit.radius + units[other].radius - 1.0e-5;
+                });
+            // Public charge: the fixed cell charge. Hidden visits are actual work only.
+            recovery_counters.charge(unit.owner_slot, 9, cells + tested);
             let job = frame.recovery.get(&unit.unit_id);
             rows.push(super::recovery::ScheduleRow {
                 row,
                 owner: unit.owner_slot,
                 age: job.map_or(0, |job| job.age),
                 has_scan: job.is_some_and(|job| job.scan.is_some()),
+                overlapping,
                 position: unit.position,
                 radius: unit.radius,
             });

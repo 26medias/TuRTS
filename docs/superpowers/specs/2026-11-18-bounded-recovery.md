@@ -44,7 +44,8 @@ nearest. This is the only result change a player can see.
 
 R4. **Fair service, no unit id.** A job has an age (ticks since it started). Fresh jobs get
 `FRESH_SLICE` (1,024) in service order from half the budget. The oldest batch of jobs with a
-scan gets the rest. Service order is age (descending), then x, y, radius (`total_cmp`). Rows
+scan gets the rest. Service order is tick-start overlap first, then age (descending), then
+x, y, radius (`total_cmp`). An overlapping body is in contact range, so `known` admits it. Rows
 with an equal key are one batch and share the allowance equally. No unit id and no hash
 order selects service. Limit: rows still commit in row (unit id) order inside one tick, as in
 the base; when two jobs want the same point in one tick, the lower id commits it.
@@ -52,10 +53,12 @@ the base; when two jobs want the same point in one tick, the lower id commits it
 R5. **Privacy.** The group and plain searches read only bodies that `known` admits. The
 digest and the public charge include only admitted bodies, selected by each body's own
 radius, so hidden bodies and the frame maximum radius change neither results, proofs, slice
-ends nor the schedule. The schedule reads only the row state, its age, its position and
-its radius. Exception: the body escape after a failed order
+ends nor the schedule. The schedule reads the row state, its age, its position, its radius,
+and its tick-start overlap (bodies in contact range). Exception: the body escape after a failed order
 (`PhysicalEscape`) reads all bodies, as in the base, because it resolves an actual overlap;
-its result already depends on hidden bodies in the base, and now its slice ends do too.
+its result already depends on hidden bodies in the base. Now hidden bodies also enter its
+digest and its public charge, so they can change its proofs, invalidations, relax decision
+and slice ends.
 
 R6. **Determinism and replay.** The job is a body component `RecoverySearch` (88 bytes).
 `MovementFrame.recovery` carries it in; `MovementFrameOutput.recovery` (boxed) carries it out.
@@ -178,3 +181,8 @@ fields, sliced scan, schedule, three call sites, ECS and audit plumbing, diagnos
   allowance and contend for the same point. Reviewer measurements in a 40 x 40 crowd: 1 mover,
   1 tick; 4 movers, 6 ticks; 12 movers, 50 ticks, peak public charge 50,484, 12 of 12 commits
   relaxed. A repair is one shared scan for each batch that continues after each commit.
+- Re-check by the same reviewer (`ad549add`): all repaired items CLOSED; one new defect.
+  State-only admission let rows that never search (no overlap) take fresh slices before an
+  overlapping searcher, which then waited one tick (probe: 20 idle rows ahead of 1 searcher).
+  Fix: tick-start overlap orders the fresh tier first (admission stays by state). Test
+  `idle_admitted_rows_do_not_delay_an_overlapping_searcher` goes red without the fix.

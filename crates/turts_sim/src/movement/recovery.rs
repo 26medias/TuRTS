@@ -132,14 +132,19 @@ pub(super) struct ScheduleRow {
     pub(super) owner: u8,
     pub(super) age: u16,
     pub(super) has_scan: bool,
+    /// True when the row overlaps a body at tick start. Such a body is in contact range,
+    /// so `known` admits it. Overlapping fresh rows come first: a row that will not
+    /// search must not take a fresh slice before one that will.
+    pub(super) overlapping: bool,
     pub(super) position: Vec2,
     pub(super) radius: f32,
 }
 
 fn service_order(left: &ScheduleRow, right: &ScheduleRow) -> std::cmp::Ordering {
     right
-        .age
-        .cmp(&left.age)
+        .overlapping
+        .cmp(&left.overlapping)
+        .then_with(|| right.age.cmp(&left.age))
         .then_with(|| left.position.x.total_cmp(&right.position.x))
         .then_with(|| left.position.y.total_cmp(&right.position.y))
         .then_with(|| left.radius.total_cmp(&right.radius))
