@@ -178,6 +178,14 @@ pub(crate) fn hidden_bodies(
         .map(|kind| (kind.type_id, kind))
         .collect();
     let mut observed = vec![false; cells];
+    // Health rows are not guaranteed to be sorted. Index positive health once
+    // so reconstructing many sight sources does not scan all health rows per unit.
+    let alive_units: BTreeSet<_> = start
+        .raw_healths
+        .iter()
+        .filter(|row| row.current > 0)
+        .map(|row| row.unit)
+        .collect();
     let mut start_units = BTreeMap::new();
     // The fail-closed placeholder has an empty basis: it permits no unit of another slot.
     if sight.finalized {
@@ -190,11 +198,7 @@ pub(crate) fn hidden_bodies(
                 continue;
             };
             let site = start.economy.construction.sites.contains_key(&unit.unit_id);
-            let alive = !kind.has_health
-                || start
-                    .raw_healths
-                    .iter()
-                    .any(|row| row.unit == unit.unit_id && row.current > 0);
+            let alive = !kind.has_health || alive_units.contains(&unit.unit_id);
             if site || !alive || !shared(&sight.policy, slot, unit.owner_slot) {
                 continue;
             }
@@ -225,4 +229,69 @@ pub(crate) fn hidden_bodies(
         })
         .map(|unit| unit.unit_id)
         .collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use turts_mod_api::{VisibilityGrid, WorldPos};
+    use turts_sim::economy::{views::RawUnitAudit, views_m3::RawHealthAudit};
+    use turts_sim::visibility::SightTypeAudit;
+
+    #[test]
+    fn sight_sources_require_positive_health_in_any_row() {
+        let mut app = turts_sim::headless_app(20);
+        let mut state = turts_sim::audit_state(app.world_mut());
+        state.raw_sight = Some(SightAudit {
+            policy: SightPolicy {
+                grid: VisibilityGrid {
+                    size: WorldPos { x: 64.0, y: 64.0 },
+                    cell_size: 2.0,
+                    columns: 32,
+                    rows: 32,
+                },
+                sharing: VisionSharing::OwnSlot,
+                teams: vec![0, 1],
+            },
+            finalized: true,
+            types: vec![SightTypeAudit {
+                type_id: 1,
+                radius: Some(6.0),
+                has_health: true,
+            }],
+        });
+        state.raw_units = vec![
+            RawUnitAudit {
+                unit_id: 1,
+                unit_type: 1,
+                owner_slot: 0,
+                pos: WorldPos { x: 5.0, y: 5.0 },
+                move_target: None,
+            },
+            RawUnitAudit {
+                unit_id: 2,
+                unit_type: 1,
+                owner_slot: 1,
+                pos: WorldPos { x: 6.0, y: 5.0 },
+                move_target: None,
+            },
+        ];
+        state.raw_healths = vec![
+            RawHealthAudit {
+                unit: 1,
+                current: 0,
+            },
+            RawHealthAudit {
+                unit: 2,
+                current: 100,
+            },
+            RawHealthAudit {
+                unit: 1,
+                current: 100,
+            },
+        ];
+        assert!(!hidden_bodies(&state, &state, 0).unwrap().contains(&2));
+        state.raw_healths.pop();
+        assert!(hidden_bodies(&state, &state, 0).unwrap().contains(&2));
+    }
 }

@@ -166,11 +166,20 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
     guide: &mut dyn super::motion::MotionGuide,
     visibility: Option<&dyn super::MovementVisibility>,
 ) -> Vec<MovementFrameOutput> {
-    let sorted_unit_ids = visibility.is_some()
-        && frame
+    // Live frames are already sorted. For an unsorted public replay frame,
+    // retain one row index per unit so each identity lookup remains logarithmic.
+    let unsorted_unit_rows = if visibility.is_some()
+        && !frame
             .units
             .windows(2)
-            .all(|rows| rows[0].unit_id <= rows[1].unit_id);
+            .all(|rows| rows[0].unit_id <= rows[1].unit_id)
+    {
+        let mut rows = (0..frame.units.len()).collect::<Vec<_>>();
+        rows.sort_unstable_by_key(|&row| frame.units[row].unit_id);
+        Some(rows)
+    } else {
+        None
+    };
     let mut units = frame.units.clone();
     let mut resolved_ties = super::arrival::prepare_with_guide(
         &mut units,
@@ -435,18 +444,19 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
         let mut unit = units[index].clone();
         let owns_destination = guide.kind(unit.unit_id) == super::motion::MotionKind::Destination;
         let Some(speed) = unit.speed else { continue };
-        // Live frames are sorted by id. Public replay callers may supply any row order.
-        // Use a linear fallback without allocating or using identities for arbitration.
+        // This index resolves identities only; it never chooses an outcome.
         let known = |id: u32| {
             visibility.is_none_or(|basis| {
-                let other = if sorted_unit_ids {
+                let other = if let Some(rows) = &unsorted_unit_rows {
+                    rows.binary_search_by_key(&id, |&row| frame.units[row].unit_id)
+                        .ok()
+                        .map(|index| &frame.units[rows[index]])
+                } else {
                     frame
                         .units
                         .binary_search_by_key(&id, |other| other.unit_id)
                         .ok()
                         .map(|row| &frame.units[row])
-                } else {
-                    frame.units.iter().find(|other| other.unit_id == id)
                 };
                 other.is_some_and(|other| {
                     other.owner_slot == unit.owner_slot
