@@ -568,21 +568,23 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
                 // Clearance ends the obligation. A newly accepted target can
                 // resume through the ordinary movement path on this same tick.
             } else {
+                // Future destinations may use only bodies known to this unit. The
+                // overlap at its present position remains a physical fact.
+                let target_occupied = |target: Vec2| {
+                    let mut occupied = false;
+                    grid.visit_within(&points, target, unit.radius + max_radius, |other| {
+                        occupied |= other != index
+                            && known(units[other].unit_id)
+                            && target.distance(units[other].position)
+                                < unit.radius + units[other].radius - 1.0e-5;
+                    });
+                    occupied
+                };
                 let escape = unit
                     .physical_escape
                     .as_ref()
                     .and_then(|state| state.target)
-                    .filter(|target| {
-                        !body_overlaps_position(
-                            *target,
-                            index,
-                            unit.radius,
-                            &units,
-                            &points,
-                            &grid,
-                            max_radius,
-                        )
-                    })
+                    .filter(|target| !target_occupied(*target))
                     .or_else(|| {
                         recovery.search(
                             super::RecoveryKind::Physical,
@@ -596,10 +598,7 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
                                 radius: unit.radius,
                                 self_index: index,
                                 slots: None,
-                                // The body escape reads all bodies, as in the base: it
-                                // resolves an actual overlap. Design R5 states this
-                                // exception; its slice ends can depend on hidden bodies.
-                                known: &|_| true,
+                                known: &known,
                                 bound: None,
                                 verify: true,
                             },

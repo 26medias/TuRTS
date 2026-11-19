@@ -651,3 +651,77 @@ fn overlapping_physical_recovery_keeps_its_obligation_and_bypasses_optional_guid
     assert!(actor.physical_escape.is_some());
     assert_eq!(guide.calls, 0);
 }
+
+#[test]
+fn physical_recovery_does_not_plan_around_an_uncontacted_hidden_body() {
+    struct Fog;
+    impl super::MovementVisibility for Fog {
+        fn unit_permitted(&self, _: u8, _: u32) -> bool {
+            false
+        }
+    }
+    let mut frame = captured_clear_recovery_frame(true);
+    let actor = &mut frame.units[0];
+    actor.position = Vec2::new(10.0, 10.0);
+    actor.radius = 0.5;
+    actor.speed = Some(1.0);
+    actor.target = None;
+    actor.plain_progress = None;
+    actor.physical_escape = Some(super::PhysicalEscape { target: None });
+    let mut holder = actor.clone();
+    holder.unit_id = 10;
+    holder.speed = None;
+    holder.physical_escape = None;
+    frame.units.push(holder.clone());
+    let mut hidden = holder;
+    hidden.unit_id = 11;
+    hidden.owner_slot = 1;
+    hidden.position = Vec2::new(40.0, 40.0);
+    frame.units.push(hidden);
+    let run = |frame: &MovementFrame| {
+        super::step_frame_preserving_resting_at_tick_with_visibility(
+            frame,
+            0.05,
+            &Default::default(),
+            1,
+            &Fog,
+        )[0]
+        .clone()
+    };
+    let baseline = run(&frame);
+    let destination = baseline.physical_escape.as_ref().unwrap().target.unwrap();
+    let direction = (destination - frame.units[0].position).normalize();
+    frame.units[2].position = frame.units[0].position + direction * 1.15;
+    let hidden_result = run(&frame);
+    assert_eq!(
+        baseline.position, hidden_result.position,
+        "hidden body changes physical recovery before contact"
+    );
+    assert_eq!(baseline.physical_escape, hidden_result.physical_escape);
+
+    frame.units[0].physical_escape.as_mut().unwrap().target = Some(destination);
+    let retained = run(&frame);
+    assert_eq!(
+        baseline.position, retained.position,
+        "hidden body invalidated a retained destination"
+    );
+    assert_eq!(baseline.physical_escape, retained.physical_escape);
+
+    struct Visible;
+    impl super::MovementVisibility for Visible {
+        fn unit_permitted(&self, _: u8, _: u32) -> bool {
+            true
+        }
+    }
+    let visible = super::step_frame_preserving_resting_at_tick_with_visibility(
+        &frame,
+        0.05,
+        &Default::default(),
+        1,
+        &Visible,
+    );
+    assert_ne!(
+        baseline.position, visible[0].position,
+        "a visible body must reserve its space"
+    );
+}
