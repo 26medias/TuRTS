@@ -234,6 +234,55 @@ mod budget_tests {
         assert!(spent <= OWNER_CAP);
     }
 
+    /// The mover stands inside the closed region with the goal. A cap that ends the forward
+    /// search early must leave the answer unknown: the closed region is no proof here.
+    #[test]
+    fn a_closed_region_that_holds_the_mover_is_no_proof() {
+        let centre = Vec2::new(15.0, 10.0);
+        let mut bodies: Vec<Vec2> = (0..19)
+            .map(|step| {
+                let angle = step as f32 * std::f32::consts::TAU / 19.0;
+                centre + 3.0 * Vec2::new(angle.cos(), angle.sin())
+            })
+            .collect();
+        // One body between the mover and the goal: no direct chord.
+        bodies.push(centre);
+        let (mut units, mut points) = ring_scene(&bodies);
+        units[0].position = Vec2::new(13.5, 10.0);
+        points[0].position = units[0].position;
+        let goal = Vec2::new(16.5, 10.0);
+        let grid = crate::grid::UniformGrid::new(&points, 1.0);
+        let stationary: Vec<bool> = (0..units.len()).map(|index| index != 0).collect();
+        let witness = vec![vec![]; units.len()];
+        let stall = vec![None; units.len()];
+        let planner = Planner {
+            index: 0,
+            units: &units,
+            points: &points,
+            grid: &grid,
+            max_radius: 0.5,
+            bounds: Vec2::splat(40.0),
+            stationary_at_start: &stationary,
+            contact_witness: &witness,
+            start_stall: &stall,
+            soft: false,
+            stall_ticks: 2,
+        };
+        let mut spent = 0;
+        let mut exhausted = false;
+        let reached = planner.search(&[goal], true, None, 4, &mut spent, &mut exhausted);
+        assert!(reached.is_empty());
+        assert!(
+            exhausted,
+            "the mover is inside the region: unknown, not cut off"
+        );
+        let mut spent = 0;
+        let mut exhausted = false;
+        let reached = planner.search(&[goal], true, None, NODE_CAP, &mut spent, &mut exhausted);
+        assert!(!exhausted);
+        assert_eq!(reached.len(), 1, "the full search finds the route");
+    }
+
     #[test]
     fn later_goal_connector_can_beat_an_ineligible_first_connector() {
         let start = Vec2::new(5.03, 5.07);
