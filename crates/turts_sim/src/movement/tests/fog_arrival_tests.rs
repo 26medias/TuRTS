@@ -37,6 +37,7 @@ fn frame(units: Vec<MovementFrameUnit>) -> MovementFrame {
         bounds: Vec2::splat(64.0),
         tick_hz: 20,
         pools: Default::default(),
+        recovery: Default::default(),
         units,
     }
 }
