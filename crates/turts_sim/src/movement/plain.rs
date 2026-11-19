@@ -99,18 +99,14 @@ pub(super) fn step_plain_progress(
                 super::RecoveryKind::Plain,
                 &super::recovery::EscapeScan {
                     bounds,
-                    units,
-                    points,
-                    grid,
-                    max_radius,
                     origin: unit.position,
                     radius: unit.radius,
-                    self_index: index,
                     slots: None,
-                    known,
+                    pool: None,
                     bound: None,
                     verify: true,
                 },
+                units,
             )
         });
         let Some(escape) = escape else {
@@ -468,6 +464,7 @@ mod approach_tests {
                     previous: None,
                     next_jobs: &mut Default::default(),
                     counters: &mut Default::default(),
+                    world: &super::super::recovery::RecoveryWorld::new(&units, None),
                 },
             );
             assert!(

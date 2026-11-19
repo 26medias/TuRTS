@@ -10,7 +10,7 @@ use super::pool_index::{
     remove_pool_slot_claim,
 };
 use super::search::body_overlaps_position;
-use super::spread::{SpreadContext, nearest_angle_order, target_key, update_target_claims};
+use super::spread::{SpreadContext, target_key, update_target_claims};
 use super::{
     MoveProgress, MovementActivity, MovementInput, MovementPool, PhysicalEscape, ReservedFootprint,
     StaticFootprint, step,
@@ -309,8 +309,7 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
                 counts
             },
         );
-    let mut assigned_slots: std::collections::HashSet<(u64, u32, u32)> =
-        slot_claim_counts.keys().copied().collect();
+    let mut assigned_slots = super::recovery_view::ClaimSet::new(slot_claim_counts.keys().copied());
     let mut slot_refs = Vec::new();
     let mut slot_points = Vec::new();
     for (&pool_id, index) in &pool_indexes {
@@ -427,6 +426,7 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
                 })
         };
     let mut recovery_counters = super::recovery::RecoveryCounters::default();
+    let recovery_world = super::recovery::RecoveryWorld::new(&frame.units, visibility);
     let recovery_schedule = {
         let mut rows = Vec::new();
         for (row, unit) in units.iter().enumerate() {
@@ -445,15 +445,21 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
             // Admission is by state: a row can become overlapped mid-tick by an earlier row,
             // and it must not wait for a slice that the base would not delay. Tick-start
             // overlap only orders the fresh rows (see `ScheduleRow::overlapping`).
+            // Only a body that `known` admits orders the row: an owner-known body, or a
+            // body in contact range at tick start. This query is frame work.
             let mut overlapping = false;
             let (cells, tested) =
                 grid.visit_within(&points, unit.position, unit.radius + max_radius, |other| {
                     overlapping |= other != row
                         && unit.position.distance(units[other].position)
-                            < unit.radius + units[other].radius - 1.0e-5;
+                            < unit.radius + units[other].radius - 1.0e-5
+                        && (recovery_world.member(unit.owner_slot, other, &units)
+                            || unit
+                                .position
+                                .distance(recovery_world.start_position(other, &units))
+                                <= unit.radius + units[other].radius + super::route::CONTACT_GAP);
                 });
-            // Public charge: the fixed cell charge. Hidden visits are actual work only.
-            recovery_counters.charge(unit.owner_slot, 9, cells + tested);
+            recovery_counters.frame_work += (cells + tested) as u64;
             let job = frame.recovery.get(&unit.unit_id);
             rows.push(super::recovery::ScheduleRow {
                 row,
@@ -465,7 +471,7 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
                 radius: unit.radius,
             });
         }
-        super::recovery::plan(rows, &mut recovery_counters)
+        super::recovery::plan(rows, budget.epoch, &mut recovery_counters)
     };
     let mut next_recovery = BTreeMap::<usize, super::RecoverySearch>::new();
     let mut route_spent = BTreeMap::<u8, usize>::new();
@@ -522,6 +528,7 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
             previous: frame.recovery.get(&unit.unit_id).copied(),
             next_jobs: &mut next_recovery,
             counters: &mut recovery_counters,
+            world: &recovery_world,
         };
         if unit.physical_escape.is_some() {
             let overlapping = body_overlaps_position(
@@ -590,18 +597,14 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
                             super::RecoveryKind::Physical,
                             &super::recovery::EscapeScan {
                                 bounds: frame.bounds,
-                                units: &units,
-                                points: &points,
-                                grid: &grid,
-                                max_radius,
                                 origin: unit.position,
                                 radius: unit.radius,
-                                self_index: index,
                                 slots: None,
-                                known: &known,
+                                pool: None,
                                 bound: None,
                                 verify: true,
                             },
+                            &units,
                         )
                     });
                 let Some(escape) = escape else {
@@ -667,6 +670,7 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
                 units[index].plain_progress = outputs[index].plain_progress.clone();
                 points[index].position = position;
                 grid.move_point(index, unit.position, position);
+                recovery_world.relocate(index, unit.position, position, unit.radius);
                 refresh_nearby_pool_slot_clearances(
                     unit.position,
                     position,
@@ -782,80 +786,28 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
             });
             let kind = super::RecoveryKind::Group(progress.pool_id);
             let escape = retained_escape.or_else(|| {
-                if !recovery.may_search(kind) {
-                    return None;
-                }
-                // Public charge: slot candidates, a fixed cell charge and permitted
-                // bodies that touch the slot. Actual visits go to the diagnostics only.
-                let pool_work = std::cell::Cell::new(0usize);
-                let pool_actual = std::cell::Cell::new(0usize);
-                let counted_free = |slot: Vec2| {
-                    let mut free = true;
-                    let mut checks = 0usize;
-                    let mut touching = 0usize;
-                    let (cells, tested) =
-                        grid.visit_within(&points, slot, unit.radius + max_radius, |other| {
-                            if other == index {
-                                return;
-                            }
-                            checks += 1;
-                            if known(units[other].unit_id) {
-                                let distance = slot.distance(units[other].position);
-                                touching += usize::from(
-                                    distance <= unit.radius + units[other].radius + 1.0e-3,
-                                );
-                                free &= distance >= unit.radius + units[other].radius;
-                            }
-                        });
-                    pool_work.set(pool_work.get() + 4 + touching);
-                    pool_actual.set(pool_actual.get() + cells + tested + checks);
-                    free
-                };
-                let pool_escape = pool_indexes.get(&progress.pool_id).and_then(|pool_index| {
-                    pool_index.nearest_free(
-                        unit.unit_id,
-                        unit.position,
-                        progress.pool_id,
-                        Some(old_slot_key),
-                        &assigned_slots,
-                        unit.radius,
-                        counted_free,
-                        &pool_work,
-                    )
-                });
-                recovery.charge_pool(pool_work.get(), pool_actual.get() + pool_work.get());
-                let outside_escape = recovery.search(
+                // The pool slot search and the ring scan run as one metered job; the job
+                // chooses the nearer point as the base did.
+                let pool = pool_indexes.get(&progress.pool_id);
+                let point = recovery.search(
                     kind,
                     &super::recovery::EscapeScan {
                         bounds: frame.bounds,
-                        units: &units,
-                        points: &points,
-                        grid: &grid,
-                        max_radius,
                         origin: unit.position,
                         radius: unit.radius,
-                        self_index: index,
                         slots: Some((progress.pool_id, &assigned_slots)),
-                        known: &known,
-                        bound: pool_escape,
+                        pool: pool.map(|index| super::recovery::PoolSearch {
+                            index,
+                            unit_id: unit.unit_id,
+                            allowed: Some(old_slot_key),
+                        }),
+                        bound: None,
                         verify: true,
                     },
+                    &units,
                 );
-                if recovery.pending() {
-                    // The outside scan did not end: no choice can be proved yet.
-                    return None;
-                }
-                match (pool_escape, outside_escape) {
-                    (Some(pool_point), Some(outside_point)) => Some(
-                        if nearest_angle_order(pool_point, outside_point, unit.position).is_le() {
-                            pool_point
-                        } else {
-                            outside_point
-                        },
-                    ),
-                    (Some(point), None) | (None, Some(point)) => Some(point),
-                    (None, None) => None,
-                }
+                // An unfinished job proves no choice yet.
+                point.filter(|_| !recovery.pending())
             });
             let Some(escape) = escape else { continue };
             let escape_key = (progress.pool_id, escape.x.to_bits(), escape.y.to_bits());
@@ -915,6 +867,7 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
             units[index].position = position;
             points[index].position = position;
             grid.move_point(index, unit.position, position);
+            recovery_world.relocate(index, unit.position, position, unit.radius);
             refresh_nearby_pool_slot_clearances(
                 unit.position,
                 position,
@@ -970,6 +923,7 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
             units[index].plain_progress = output.plain_progress.clone();
             points[index].position = output.position;
             grid.move_point(index, unit.position, output.position);
+            recovery_world.relocate(index, unit.position, output.position, unit.radius);
             refresh_nearby_pool_slot_clearances(
                 unit.position,
                 output.position,
@@ -1042,6 +996,7 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
                 units[index].plain_progress = output.plain_progress.clone();
                 points[index].position = output.position;
                 grid.move_point(index, unit.position, output.position);
+                recovery_world.relocate(index, unit.position, output.position, unit.radius);
                 refresh_nearby_pool_slot_clearances(
                     unit.position,
                     output.position,
@@ -1083,6 +1038,7 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
                 units[index].progress = outputs[index].progress.clone();
                 points[index].position = destination;
                 grid.move_point(index, unit.position, destination);
+                recovery_world.relocate(index, unit.position, destination, unit.radius);
                 refresh_nearby_pool_slot_clearances(
                     unit.position,
                     destination,
@@ -1272,6 +1228,7 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
             units[index].progress = outputs[index].progress.clone();
             points[index].position = position;
             grid.move_point(index, unit.position, position);
+            recovery_world.relocate(index, unit.position, position, unit.radius);
             refresh_nearby_pool_slot_clearances(
                 unit.position,
                 position,
@@ -1486,6 +1443,7 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
                 units[index].progress = outputs[index].progress.clone();
                 points[index].position = movement_target;
                 grid.move_point(index, unit.position, movement_target);
+                recovery_world.relocate(index, unit.position, movement_target, unit.radius);
                 refresh_nearby_pool_slot_clearances(
                     unit.position,
                     movement_target,
@@ -1697,6 +1655,7 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
                 units[index].progress = outputs[index].progress.clone();
                 points[index].position = movement_target;
                 grid.move_point(index, unit.position, movement_target);
+                recovery_world.relocate(index, unit.position, movement_target, unit.radius);
                 refresh_nearby_pool_slot_clearances(
                     unit.position,
                     movement_target,
@@ -1869,6 +1828,7 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
         units[index].progress = outputs[index].progress.clone();
         points[index].position = position;
         grid.move_point(index, unit.position, position);
+        recovery_world.relocate(index, unit.position, position, unit.radius);
         refresh_nearby_pool_slot_clearances(
             unit.position,
             position,
@@ -1964,6 +1924,10 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
     }
     recovery_counters.jobs = next_recovery.len() as u64;
     recovery_counters.retained_bytes = super::recovery::retained_bytes(next_recovery.len());
+    recovery_counters.frame_work += recovery_world.frame_work();
+    recovery_counters.phase_bytes = recovery_counters
+        .phase_bytes
+        .max(recovery_world.peak_bytes() + assigned_slots.bytes());
     budget.recovery.merge(&recovery_counters);
     let moving_pools: std::collections::BTreeSet<_> = outputs
         .iter()

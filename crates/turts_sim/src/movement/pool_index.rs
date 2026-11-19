@@ -243,6 +243,34 @@ impl MovementPoolIndex {
         }
     }
 
+    pub(super) fn spacing(&self) -> f32 {
+        self.spacing
+    }
+
+    pub(super) fn max_reach(&self) -> f32 {
+        self.max_reach
+    }
+
+    pub(super) fn slot_grid(&self) -> &crate::grid::UniformGrid {
+        &self.grid
+    }
+
+    /// `has_potential_free_slot` and its work: the two rank reads, and the two local slot
+    /// queries (this count and the check) with one check for each local slot.
+    pub(super) fn has_potential_free_slot_counted(
+        &self,
+        unit_id: u32,
+        position: Vec2,
+        radius: f32,
+        allowed_slot: Option<(u32, u32)>,
+    ) -> (bool, usize) {
+        let local = self.grid.within(&self.points, position, 2.0 * radius).len();
+        (
+            self.has_potential_free_slot(unit_id, position, radius, allowed_slot),
+            2 + 3 * local,
+        )
+    }
+
     pub(super) fn has_potential_free_slot(
         &self,
         unit_id: u32,
