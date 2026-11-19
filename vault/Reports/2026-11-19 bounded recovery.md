@@ -36,6 +36,19 @@ Where: branch `codex/bounded-recovery-fair`, worktree `TuRTS-bounded-recovery-fa
   10.9 to 11.2 ms (base) and 0.75 to 0.92 ms (branch). Peak extra allocation: 545 KB to 568 KB
   (100 actors), 791 KB to 874 KB (400 actors).
 
+## Tests on `083e7e39`
+
+- fmt and clippy (`-D warnings`) pass.
+- `turts_sim`, `turts_audit`, `turts_pack`: all pass except 4 tests that fail on the base with
+  the same messages (`gmu_post_target_ends_on_a_ring_round_the_post`,
+  `a_pooled_group_reads_pool_activity_real_flag_separated_and_pool_count`,
+  `m2_operation_stream_matches_baseline`,
+  `authored_force_move_never_fires_and_hold_remains_stationary_while_firing`).
+- `turts_server --test terrain_group`: 37 passed, 0 failed, 7 ignored (8,956 s, debug build).
+- `turts_server --test mc_feedback`: 1 failure,
+  `group_order_uses_muster_unit_types_and_moves_all_eligible_mobile_owners` (63 of 290 moved);
+  the base gives the same failure.
+
 ## Open for the CEO
 
 - A relaxed search (after 2 failed proofs, or when a proof is too costly) commits a free point
