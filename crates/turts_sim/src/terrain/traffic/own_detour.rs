@@ -93,6 +93,7 @@ pub(super) fn apply(
         }; detour::MAX_BLOCKERS];
         let mut count = 0;
         let mut release_peer: Option<&MovementFrameUnit> = None;
+        let mut being_released = false;
         let mut settled_contacts = 0usize;
         let mut widest_contact = 0.0f32;
         for &other in &neighbors[&index] {
@@ -100,6 +101,23 @@ pub(super) fn apply(
             let peer = &frame.units[other];
             let own_peer = other != index && peer.owner_slot == unit.owner_slot;
             let separation = f64::from(unit.radius) + f64::from(peer.radius);
+            if own_peer
+                && state
+                    .members
+                    .get(&peer.unit_id)
+                    .and_then(|member| member.local_detour)
+                    .is_some_and(|route| {
+                        route.witness.is_none()
+                            && route.route.corners[0] == route.route.corners[1]
+                            && route
+                                .requested
+                                .as_dvec2()
+                                .distance(unit.position.as_dvec2())
+                                < separation
+                    })
+            {
+                being_released = true;
+            }
             let in_contact = own_peer
                 && actor_eligible
                 && moving(peer)
@@ -243,7 +261,12 @@ pub(super) fn apply(
                 }
             }
         }
-        if retained.is_none() && !exhausted.get() && actor_eligible && settled_contacts >= 2 {
+        if retained.is_none()
+            && !exhausted.get()
+            && actor_eligible
+            && being_released
+            && settled_contacts >= 2
+        {
             let goal = public_goal(index).map_or(requested, |region| region.goal);
             let away = (unit.position.as_dvec2() - goal.as_dvec2()).normalize_or_zero();
             let reach = f64::from(unit.radius) + f64::from(widest_contact) + 0.1;
@@ -854,7 +877,7 @@ mod tests {
         }
     }
     #[test]
-    fn pinned_mover_escapes_settled_contacts_without_changing_its_order() {
+    fn pinned_mover_does_not_repeat_a_solo_retreat() {
         let capture: serde_json::Value =
             serde_json::from_str(include_str!("captured_gm2_after_release.json")).unwrap();
         let vec2 = |v: &serde_json::Value| {
@@ -884,7 +907,6 @@ mod tests {
                 physical_escape: None,
             })
             .collect();
-        let mut answer = None;
         for reverse in [false, true] {
             if reverse {
                 units.reverse();
@@ -923,34 +945,85 @@ mod tests {
                 },
                 |i| frame.units[i].target.is_none(),
             );
-            let route = state.members[&36]
-                .local_detour
-                .expect("pinned mover must escape the current contacts");
-            assert_eq!(route.requested, frame.units[actor].target.unwrap());
-            assert_eq!(proposed.units[actor].target, Some(route.route.corners[0]));
-            assert_eq!(route.route.corners[0], route.route.corners[1]);
-            assert!(route.route.corners[0].distance(frame.units[actor].position) > 2.2);
-            for (other, peer) in frame.units.iter().enumerate() {
-                if other != actor {
-                    assert_eq!(
-                        swept_disks_clear(
-                            point(frame.units[actor].position),
-                            point(route.route.corners[0]),
-                            f64::from(frame.units[actor].radius),
-                            point(peer.position),
-                            point(peer.position),
-                            f64::from(peer.radius),
-                            &mut Budget::new(1)
-                        ),
-                        Ok(true)
-                    );
-                }
+            assert!(
+                state.members[&36].local_detour.is_none(),
+                "a solo actor must not oscillate on a retreat"
+            );
+        }
+    }
+    #[test]
+    fn solo_mover_does_not_oscillate_after_touching_settled_units() {
+        let capture: serde_json::Value =
+            serde_json::from_str(include_str!("captured_gm3_solo_retreat.json")).unwrap();
+        let vec2 = |v: &serde_json::Value| {
+            Vec2::new(v[0].as_f64().unwrap() as f32, v[1].as_f64().unwrap() as f32)
+        };
+        let stalled: std::collections::BTreeSet<u32> = capture["bodies"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|r| r["plain_progress"]["activity"] == "Blocked")
+            .map(|r| r["id"].as_u64().unwrap() as u32)
+            .collect();
+        let mut units: Vec<_> = capture["bodies"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| MovementFrameUnit {
+                unit_id: r["id"].as_u64().unwrap() as u32,
+                owner_slot: 0,
+                unit_type: 1,
+                position: vec2(&r["position"]),
+                radius: r["radius"].as_f64().unwrap() as f32,
+                target: (!r["target"].is_null()).then(|| vec2(&r["target"])),
+                speed: Some(2.5),
+                progress: None,
+                plain_progress: None,
+                physical_escape: None,
+            })
+            .collect();
+        for reverse in [false, true] {
+            if reverse {
+                units.reverse();
             }
-            assert!(state.members[&36].guidance_pairs <= 4096);
-            if let Some(expected) = answer {
-                assert_eq!(route.route.corners, expected);
-            }
-            answer = Some(route.route.corners);
+            let frame = MovementFrame {
+                bounds: Vec2::new(64., 48.),
+                tick_hz: 20,
+                units: units.clone(),
+                pools: BTreeMap::new(),
+            };
+            let actor = frame.units.iter().position(|u| u.unit_id == 14).unwrap();
+            let mut proposed = frame.clone();
+            let mut state = TrafficState::default();
+            let mut budget = crate::movement::sweep::SweepBudget::new(5860);
+            apply_composed(
+                &frame,
+                &mut proposed,
+                0.05,
+                5860,
+                &mut state,
+                |_, _, _| true,
+                |_, _, _, _| EntranceContact::Outside,
+                |i| stalled.contains(&frame.units[i].unit_id),
+                &mut budget,
+                |_, _| None,
+                |_| false,
+                |_, _| true,
+                true,
+                |i| {
+                    (i == actor).then_some(DestinationRegion {
+                        goal: Vec2::new(48.0, 23.5),
+                        min: Vec2::new(41.099995, 17.524424),
+                        max: Vec2::new(54.900005, 29.475576),
+                        cohort_radius: 1.1,
+                    })
+                },
+                |i| frame.units[i].target.is_none(),
+            );
+            assert!(
+                state.members[&14].local_detour.is_none(),
+                "a solo actor must not oscillate on a retreat"
+            );
         }
     }
 }
