@@ -31,6 +31,9 @@ pub(super) const NODE_CAP: usize = 2048;
 /// find a free slot on the far side of a formation of some hundred bodies.
 pub(super) const FLOOD_CAP: usize = 8192;
 pub(super) const OWNER_CAP: usize = 65_536;
+/// The largest closed region round a goal that `Planner::enclosed` proves. A pocket of a few
+/// pool slots inside resting bodies has far fewer free nodes.
+const ENCLOSED_CAP: usize = 256;
 /// The straight look-ahead that decides whether a mover needs a route. This value is
 /// empirical and the MC post-ring row is sensitive to it: 7.0 and 8.0 pass that row; 4.0, 6.0,
 /// 10.0 and 12.0 miss its deadline by 10 to 70 ticks; 9.0 ends with Blocked units. A short
@@ -104,6 +107,131 @@ mod budget_tests {
             reached.is_empty(),
             "an unfinished flood must not choose from partial goals"
         );
+    }
+
+    /// One mover at (5, 10) and stationary bodies of its owner at `bodies`.
+    fn ring_scene(bodies: &[Vec2]) -> (Vec<MovementFrameUnit>, Vec<crate::grid::GridPoint>) {
+        let body = |unit_id: u32, position: Vec2| MovementFrameUnit {
+            unit_id,
+            owner_slot: 0,
+            unit_type: 1,
+            position,
+            radius: 0.5,
+            speed: Some(1.0),
+            target: None,
+            progress: None,
+            plain_progress: None,
+            physical_escape: None,
+        };
+        let mut units = vec![body(1, Vec2::new(5.0, 10.0))];
+        units.extend(
+            bodies
+                .iter()
+                .enumerate()
+                .map(|(index, &at)| body(2 + index as u32, at)),
+        );
+        let points = units
+            .iter()
+            .map(|unit| crate::grid::GridPoint {
+                id: unit.unit_id,
+                position: unit.position,
+            })
+            .collect();
+        (units, points)
+    }
+
+    /// The six hex neighbours of `centre` at the pool spacing 1.1.
+    fn hex_ring(centre: Vec2) -> Vec<Vec2> {
+        let rise = 1.1 * 3.0_f32.sqrt() * 0.5;
+        [
+            (1.1, 0.0),
+            (0.55, rise),
+            (-0.55, rise),
+            (-1.1, 0.0),
+            (-0.55, -rise),
+            (0.55, -rise),
+        ]
+        .into_iter()
+        .map(|(x, y)| centre + Vec2::new(x, y))
+        .collect()
+    }
+
+    fn toward(
+        bodies: &[Vec2],
+        goal: Vec2,
+        cap: usize,
+        spent: &mut usize,
+        exhausted: &mut bool,
+    ) -> Vec<Reached> {
+        let (units, points) = ring_scene(bodies);
+        let grid = crate::grid::UniformGrid::new(&points, 1.0);
+        let stationary: Vec<bool> = (0..units.len()).map(|index| index != 0).collect();
+        let witness = vec![vec![]; units.len()];
+        let stall = vec![None; units.len()];
+        let planner = Planner {
+            index: 0,
+            units: &units,
+            points: &points,
+            grid: &grid,
+            max_radius: 0.5,
+            bounds: Vec2::splat(40.0),
+            stationary_at_start: &stationary,
+            contact_witness: &witness,
+            start_stall: &stall,
+            soft: false,
+            stall_ticks: 2,
+        };
+        planner.search(&[goal], true, None, cap, spent, exhausted)
+    }
+
+    /// A goal inside a closed ring of stationary bodies. The forward search floods the open
+    /// ground to its cap; the closed region round the goal is the complete answer.
+    #[test]
+    fn a_goal_in_a_closed_ring_is_proven_unreachable_not_unknown() {
+        let goal = Vec2::new(15.0, 10.0);
+        let ring = hex_ring(goal);
+        let mut spent = 0;
+        let mut exhausted = false;
+        let reached = toward(&ring, goal, NODE_CAP, &mut spent, &mut exhausted);
+        assert!(reached.is_empty());
+        assert!(!exhausted, "a closed ring is a complete answer");
+        assert!(spent <= NODE_CAP + ENCLOSED_CAP, "bounded work: {spent}");
+        // Two adjacent ring bodies away: the ring is open and the search finds the route.
+        let mut spent = 0;
+        let mut exhausted = false;
+        let reached = toward(&ring[..4], goal, NODE_CAP, &mut spent, &mut exhausted);
+        assert!(!exhausted);
+        assert_eq!(reached.len(), 1, "the open ring has a route");
+    }
+
+    /// The proof must not turn an unfinished search on open ground into "no route".
+    #[test]
+    fn an_unfinished_search_toward_an_open_goal_stays_unknown() {
+        // A goal with no body near it.
+        let mut spent = 0;
+        let mut exhausted = false;
+        let wall: Vec<Vec2> = (0..40).map(|row| Vec2::new(10.0, row as f32)).collect();
+        let reached = toward(&wall, Vec2::new(15.0, 10.0), 64, &mut spent, &mut exhausted);
+        assert!(reached.is_empty());
+        assert!(
+            exhausted,
+            "an open goal behind a long wall is unknown at this cap"
+        );
+        // A closed ring, but no room under the owner cap for the proof.
+        let goal = Vec2::new(15.0, 10.0);
+        let mut spent = OWNER_CAP - ENCLOSED_CAP + 1;
+        let before = spent;
+        let mut exhausted = false;
+        let reached = toward(
+            &hex_ring(goal),
+            goal,
+            before + 8,
+            &mut spent,
+            &mut exhausted,
+        );
+        assert!(reached.is_empty());
+        assert!(exhausted, "no proof without budget: fail closed");
+        assert!(spent <= OWNER_CAP);
     }
 
     #[test]
@@ -305,6 +433,54 @@ impl Planner<'_> {
         (-1..=2).flat_map(move |dx| (-1..=2).map(move |dy| (x + dx, y + dy)))
     }
 
+    /// True when the lattice nodes that connect to `goal` form a closed region of at most
+    /// `ENCLOSED_CAP` nodes and no first node of the mover at `start` is in it. The forward
+    /// search uses the same nodes and the same steps, so it can never reach such a goal: an
+    /// obstacle ring round a slot makes the forward search flood the open ground to its cap,
+    /// and this check gives the answer that the flood cannot give. The work is bounded by
+    /// `ENCLOSED_CAP` and counts against `spent`; the check does not run when the owner cap
+    /// has no room for it.
+    fn enclosed(
+        &self,
+        goal: Vec2,
+        start: Vec2,
+        free: &mut HashMap<Node, bool>,
+        spent: &mut usize,
+    ) -> bool {
+        if *spent + ENCLOSED_CAP > OWNER_CAP {
+            return false;
+        }
+        let mut region: HashMap<Node, ()> = HashMap::new();
+        let mut queue: Vec<Node> = Vec::new();
+        for node in Self::nodes_near(goal) {
+            if *free.entry(node).or_insert_with(|| self.node_free(node))
+                && self.chord_clear(Self::point(node), goal)
+            {
+                region.insert(node, ());
+                queue.push(node);
+            }
+        }
+        while let Some(node) = queue.pop() {
+            *spent += 1;
+            for dx in -1..=1 {
+                for dy in -1..=1 {
+                    let next = (node.0 + dx, node.1 + dy);
+                    if region.contains_key(&next)
+                        || !*free.entry(next).or_insert_with(|| self.node_free(next))
+                    {
+                        continue;
+                    }
+                    if region.len() >= ENCLOSED_CAP {
+                        return false;
+                    }
+                    region.insert(next, ());
+                    queue.push(next);
+                }
+            }
+        }
+        !Self::nodes_near(start).any(|node| region.contains_key(&node))
+    }
+
     /// Search from the mover to `goals`. `toward` is the single goal of a directed search; then
     /// the search stops when it reaches that goal. Without it the search floods and returns each
     /// goal that it reaches. `spent` counts each settled node and each direct chord against
@@ -452,6 +628,12 @@ impl Planner<'_> {
                     )));
                 }
             }
+        }
+        if *exhausted && toward && self.enclosed(goals[0], start, &mut free, spent) {
+            // The cap ended the forward search, but the goal side is a closed region that
+            // the mover is not in. That is a complete answer: no route exists.
+            *exhausted = false;
+            return Vec::new();
         }
         if *exhausted {
             return Vec::new();

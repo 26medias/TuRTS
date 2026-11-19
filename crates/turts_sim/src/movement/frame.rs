@@ -1351,11 +1351,21 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
                 let mut exhausted = false;
                 steer = super::exchange::route_own(&planner, spent, &mut exhausted);
                 // A slot that only stalled movers cut off is still the slot of this mover.
-                if steer.is_none()
-                    && !exhausted
-                    && super::exchange::route_own(&planner.hard(), spent, &mut exhausted).is_none()
-                    && !exhausted
-                {
+                // Stalled movers can close the slot off for the soft search, and then that
+                // search floods the open ground to its cap. The search round true stationary
+                // bodies is a separate question with its own answer: a route that it finds
+                // proves that the slot is still reachable, so the mover keeps it.
+                let mut own_reachable = false;
+                if steer.is_none() {
+                    let mut hard_exhausted = false;
+                    own_reachable =
+                        super::exchange::route_own(&planner.hard(), spent, &mut hard_exhausted)
+                            .is_some();
+                    exhausted = !own_reachable && (exhausted || hard_exhausted);
+                }
+                // Complete searches found no route to the own slot.
+                let own_cut_off = steer.is_none() && !own_reachable && !exhausted;
+                if own_cut_off {
                     let mut waits = false;
                     if let Some(plan) = super::exchange::route_other(
                         &planner,
@@ -1373,10 +1383,16 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
                         no_route = !waits && !exhausted;
                     }
                 }
-                if steer.is_none() && exhausted && stalled && *spent < super::route::OWNER_CAP {
-                    // The own route is unknown, not unreachable. A separate search may
-                    // only take a proven route to an unclaimed slot, or beat a moving
-                    // claimant's straight-line lower bound. Resting claims remain fixed.
+                if steer.is_none()
+                    && choice.is_none()
+                    && (own_cut_off || (exhausted && stalled))
+                    && *spent < super::route::OWNER_CAP
+                {
+                    // The own slot is cut off, or its route is unknown after a stall. The
+                    // flood above has no bound but its cap, so on open ground it ends with
+                    // no answer. A separate search with eligibility bounds may only take a
+                    // proven route to an unclaimed slot, or beat a moving claimant's
+                    // straight-line lower bound. Resting claims remain fixed.
                     let mut alternate_exhausted = false;
                     let mut waits = false;
                     if let Some(plan) = super::exchange::route_other(
@@ -1391,6 +1407,7 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
                     ) {
                         steer = Some(plan.waypoint);
                         choice = plan.claim;
+                        no_route = false;
                     }
                 }
             }
