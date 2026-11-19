@@ -463,6 +463,107 @@ fn a_unit_arriving_earlier_in_the_tick_keeps_its_slot() {
         }
     }
 }
+/// A mover whose slot lies inside a closed ring of six resting peers, and one free slot
+/// outside the ring. The free slot is out of the reach of rule 1, so only the route search can
+/// give it. `handle` gives the unit ids; `reverse` reverses the input rows.
+fn sealed_slot_scene(handle: impl Fn(u32) -> u32, reverse: bool) -> (MovementFrame, Vec2, Vec2) {
+    let spacing = 1.1_f32;
+    let rise = spacing * 3.0_f32.sqrt() * 0.5;
+    let sealed = Vec2::new(10.0, 10.0);
+    let open = Vec2::new(10.0, 10.0 - 2.0 * rise);
+    let ring = [
+        Vec2::new(10.0 + spacing, 10.0),
+        Vec2::new(10.0 + 0.5 * spacing, 10.0 + rise),
+        Vec2::new(10.0 - 0.5 * spacing, 10.0 + rise),
+        Vec2::new(10.0 - spacing, 10.0),
+        Vec2::new(10.0 - 0.5 * spacing, 10.0 - rise),
+        Vec2::new(10.0 + 0.5 * spacing, 10.0 - rise),
+    ];
+    let member = |unit_id: u32, position: Vec2, slot: Vec2, resting: bool| MovementFrameUnit {
+        unit_id: handle(unit_id),
+        owner_slot: 0,
+        unit_type: 1,
+        position,
+        radius: RADIUS,
+        speed: Some(3.0),
+        target: (!resting).then_some(slot),
+        progress: Some(MoveProgress {
+            pool_id: 7,
+            slot,
+            activity: if resting {
+                MovementActivity::Resting
+            } else {
+                MovementActivity::Moving
+            },
+            pass_mode: false,
+            stalling_on_group: false,
+            stalled_ticks: 0,
+            best_distance: position.distance(slot),
+            claim_count: 0,
+            follow_origin: None,
+        }),
+        plain_progress: None,
+        physical_escape: None,
+    };
+    let mut units = vec![member(1, Vec2::new(10.0, 3.0), sealed, false)];
+    units.extend(
+        ring.iter()
+            .enumerate()
+            .map(|(index, &at)| member(2 + index as u32, at, at, true)),
+    );
+    if reverse {
+        units.reverse();
+    }
+    let mut slots = vec![sealed, open];
+    slots.extend(ring);
+    let frame = MovementFrame {
+        recovery: Default::default(),
+        bounds: Vec2::new(32.0, 32.0),
+        tick_hz: 20,
+        units,
+        pools: BTreeMap::from([(
+            7,
+            super::MovementPool {
+                pool_id: 7,
+                point: sealed,
+                spacing,
+                primary_count: 8,
+                slots,
+            },
+        )]),
+    };
+    (frame, sealed, open)
+}
+
+/// Resting peers close a slot off before its claimant arrives. The search toward that slot
+/// cannot end on open ground, but the closed region round the slot is a complete proof that no
+/// route exists. The claimant must take the free slot in the first tick, not after a stall,
+/// and the result must not depend on unit ids or row order.
+#[test]
+fn claimant_of_a_slot_sealed_by_resting_peers_takes_a_free_slot_at_once() {
+    for reverse in [false, true] {
+        for flip_ids in [false, true] {
+            let handle = |id: u32| if flip_ids { 100 - id } else { id };
+            let (frame, sealed, open) = sealed_slot_scene(handle, reverse);
+            let mover = handle(1);
+            let outputs = step_frame_at_tick(&frame, 0.05, 1);
+            let row = outputs.iter().find(|row| row.unit_id == mover).unwrap();
+            let progress = row.progress.as_ref().unwrap();
+            assert_eq!(
+                progress.slot, open,
+                "reverse={reverse} flip_ids={flip_ids}: the claimant of the sealed slot \
+                 {sealed} takes the free slot in the first tick"
+            );
+            assert_eq!(progress.stalled_ticks, 0, "the slot change needs no stall");
+            assert!(!row.failed_blocked);
+            let fixed: Vec<u32> = (2..=7).map(handle).collect();
+            let (rest, blocked) = settle(frame, &fixed);
+            assert_eq!(blocked, 0, "no body fails with Blocked");
+            assert_eq!(rest[&mover], open, "the mover rests on the free slot");
+        }
+    }
+}
+
 /// One mover of owner 0 at `start` with the slot (10, 12.5), and one body of owner 1 at
 /// (10, 10) on the straight line to the slot. `pool_id` 7 is in the frame.
 fn lone_mover_scene(start: Vec2, pool_id: u64, foreign_moves: bool) -> MovementFrame {

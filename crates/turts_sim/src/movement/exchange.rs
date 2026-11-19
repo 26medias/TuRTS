@@ -140,6 +140,8 @@ pub(super) struct Request {
 /// arrival would cut it off from open ground (`seals`). 3b: the slot lies nearer to the pool
 /// point `centre` than the own slot, and the exchange reduces the sum of the two squared slot
 /// distances by the margin of rule 2. The mover goes in, and the later body gets the outer slot.
+/// 3b never takes a slot from which the mover would seal the slot that it leaves: that is the
+/// reverse of 3a, and the two would exchange the same pair in every tick.
 ///
 /// Rule 2 (shorter plan; only if `shorter_plan`: the caller sets it for a stalled mover that
 /// can reach its own slot): the exchange with a moving peer that most reduces the sum of the
@@ -237,7 +239,10 @@ pub(super) fn select(
             let beside = (slot.distance(own_slot) - spacing).abs() <= spacing * 0.05;
             let deeper = distance <= spacing * 1.5
                 && slot.distance(centre) < own_slot.distance(centre) - spacing * 0.25;
-            if ((beside && seals(&hard, slot, own_slot, spacing)) || (deeper && shorter_step))
+            // Rule 3a decides between a slot and the pocket behind it. Rule 3b must not
+            // reverse that decision, or the mover steps between the two slots for ever.
+            if ((beside && seals(&hard, slot, own_slot, spacing))
+                || (deeper && shorter_step && !seals(&hard, own_slot, slot, spacing)))
                 && inner.is_none_or(|(_, chosen)| geometric(slot, chosen).is_lt())
                 && planner.uncovered(slot)
                 && planner.chord_clear(unit.position, slot)
@@ -630,7 +635,13 @@ mod exhaustion_tests {
             let mut spent = 0;
             let mut own_exhausted = false;
             assert!(route_own(&planner, &mut spent, &mut own_exhausted).is_none());
-            assert!(own_exhausted, "own search must reach its own cap");
+            // A resting body stands on the own slot. The forward search runs to its cap,
+            // and the empty region round the slot then proves that no route exists.
+            assert!(!own_exhausted, "a covered own slot is a proven dead end");
+            assert!(
+                spent >= super::super::route::NODE_CAP,
+                "the forward search ran"
+            );
             assert!(spent < super::super::route::OWNER_CAP);
             let mut alternate_exhausted = false;
             let mut waits = false;

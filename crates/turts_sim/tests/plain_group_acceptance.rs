@@ -88,6 +88,16 @@ struct Trace {
     positions: Vec<BTreeMap<u32, Vec2>>,
     /// `(tick, unit, state)` with state `Moving`, `Blocked`, `Done` or `Failed`.
     transitions: Vec<(u32, u32, &'static str)>,
+    /// `slots[tick]` holds the claimed pool slot of each unit with a group move after that tick.
+    slots: Vec<BTreeMap<u32, Vec2>>,
+}
+
+fn slots_of(app: &mut bevy_app::App) -> BTreeMap<u32, Vec2> {
+    app.world_mut()
+        .query::<(&UnitId, &turts_sim::movement::MoveProgress)>()
+        .iter(app.world())
+        .map(|(id, progress)| (id.0, progress.slot))
+        .collect()
 }
 
 fn positions_of(app: &mut bevy_app::App) -> BTreeMap<u32, Vec2> {
@@ -151,6 +161,7 @@ fn run_with_stops(orders: &[MoveOrder], stops: &[(u32, Vec<u32>)], ticks: u32) -
     let mut trace = Trace {
         positions: vec![positions_of(app)],
         transitions: Vec::new(),
+        slots: vec![slots_of(app)],
     };
     let mut previous = BTreeMap::<u32, &'static str>::new();
     let mut claims = BTreeMap::new();
@@ -168,6 +179,7 @@ fn run_with_stops(orders: &[MoveOrder], stops: &[(u32, Vec<u32>)], ticks: u32) -
         app.update();
         assert_eq!(app.world().resource::<Tick>().0, next);
         trace.positions.push(positions_of(app));
+        trace.slots.push(slots_of(app));
         if std::env::var_os("TURTS_PLAIN_TRACE").is_some() {
             dump_recovery(app, next, &mut claims, &mut slots);
         }
@@ -536,6 +548,38 @@ fn gmu_post_target_ends_on_a_ring_round_the_post() {
         assert!(distance >= 2.5 - 0.001, "trooper {id} overlaps the post");
     }
     trace.assert_never_overlapping(&ids);
+}
+
+/// Two exchange rules must not undo each other. Before the repair the pocket rule (3a) moved a
+/// mover to the slot beside its own and the deeper-slot rule (3b) moved it back, in every tick,
+/// for more than twenty ticks: the mover stepped left and right and did not arrive, and its
+/// peer lost its slot each time. One reversal can be correct (a new resting body changes the
+/// facts). A unit that goes A, B, A, B, A in five successive ticks is in a rule cycle.
+#[test]
+fn gmu_post_ring_movers_do_not_swap_the_same_two_slots_tick_after_tick() {
+    let ids = troopers();
+    let trace = run(&[(1, ids.clone(), (21.0, 20.0), 3)], 260);
+    let mut cycles = Vec::new();
+    for id in &ids {
+        let slot = |tick: usize| trace.slots[tick].get(id).copied();
+        for tick in 4..trace.slots.len() {
+            let (Some(a), Some(b)) = (slot(tick), slot(tick - 1)) else {
+                continue;
+            };
+            if a != b
+                && slot(tick - 2) == Some(a)
+                && slot(tick - 3) == Some(b)
+                && slot(tick - 4) == Some(a)
+            {
+                cycles.push((*id, tick));
+                break;
+            }
+        }
+    }
+    assert!(
+        cycles.is_empty(),
+        "units swap the same two slots tick after tick (unit, tick): {cycles:?}"
+    );
 }
 
 /// Stop and Replace while the group exchanges claims and follows routes (GM40 exchanges run
