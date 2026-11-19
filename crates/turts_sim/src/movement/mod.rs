@@ -27,7 +27,9 @@ mod spread;
 #[path = "tests/spread_tests.rs"]
 mod spread_tests;
 pub(crate) mod sweep;
-pub(crate) use frame::{step_frame_with_motion_guide, step_frame_with_sweep_budget};
+#[cfg(test)]
+pub(crate) use frame::step_frame_with_sweep_budget;
+pub(crate) use frame::{step_frame_with_motion_guide, step_frame_with_motion_guide_and_visibility};
 
 pub(crate) use ecs::integrate_movement;
 pub use frame::{

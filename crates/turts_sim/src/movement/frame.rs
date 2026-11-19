@@ -131,6 +131,24 @@ pub(crate) fn step_frame_with_motion_guide(
     budget: &mut super::sweep::SweepBudget,
     guide: &mut dyn super::motion::MotionGuide,
 ) -> Vec<MovementFrameOutput> {
+    step_frame_with_motion_guide_and_visibility(
+        frame,
+        dt,
+        preserve_resting_units,
+        budget,
+        guide,
+        None,
+    )
+}
+
+pub(crate) fn step_frame_with_motion_guide_and_visibility(
+    frame: &MovementFrame,
+    dt: f32,
+    preserve_resting_units: &std::collections::BTreeSet<u32>,
+    budget: &mut super::sweep::SweepBudget,
+    guide: &mut dyn super::motion::MotionGuide,
+    visibility: Option<&crate::visibility::VisibilityBasis>,
+) -> Vec<MovementFrameOutput> {
     let mut units = frame.units.clone();
     let mut resolved_ties = super::arrival::prepare_with_guide(&mut units, dt, frame.bounds, guide);
     resolved_ties.sort_unstable_by_key(|(unit, _)| *unit);
@@ -182,6 +200,12 @@ pub(crate) fn step_frame_with_motion_guide(
     }
     let mut plain_spread_context =
         SpreadContext::new(plain_reserved, plain_static, frame.bounds, plain_max_radius);
+    plain_spread_context.set_static_units_iter(
+        units
+            .iter()
+            .filter(|unit| unit.speed.is_none())
+            .map(|unit| Some(unit.unit_id)),
+    );
     let max_step = units
         .iter()
         .filter_map(|unit| unit.speed)
@@ -713,6 +737,24 @@ pub(crate) fn step_frame_with_motion_guide(
             units[index].progress = outputs[index].progress.clone();
             continue;
         }
+        // The live frame is sorted by id. This adds no index or per-owner allocation.
+        // Hidden bodies become available to this unit at physical contact.
+        let known = |id: u32| {
+            visibility.is_none_or(|basis| {
+                frame
+                    .units
+                    .binary_search_by_key(&id, |other| other.unit_id)
+                    .ok()
+                    .is_some_and(|row| {
+                        let other = &frame.units[row];
+                        other.owner_slot == unit.owner_slot
+                            || basis.unit_permitted(unit.owner_slot, id)
+                            || unit.position.distance(other.position)
+                                <= unit.radius + other.radius + super::route::CONTACT_GAP
+                    })
+            })
+        };
+        let planning_context = &plain_spread_context;
         if let Some(progress) = unit.plain_progress.clone() {
             let mut output = step_plain_progress(
                 frame.bounds,
@@ -725,7 +767,8 @@ pub(crate) fn step_frame_with_motion_guide(
                 &units,
                 &points,
                 &grid,
-                &plain_spread_context,
+                planning_context,
+                &known,
                 guide,
                 budget,
             );
@@ -759,22 +802,26 @@ pub(crate) fn step_frame_with_motion_guide(
         }
         let Some(target) = unit.target else { continue };
         let Some(mut progress) = unit.progress.clone() else {
-            let target_occupied =
-                plain_spread_context.conflicts_with_reserved(target, unit.radius, unit.unit_id)
-                    || grid
-                        .within_unsorted(&points, target, unit.radius + max_radius)
-                        .into_iter()
-                        .any(|other_index| {
-                            other_index != index
-                                && !units[other_index]
-                                    .plain_progress
-                                    .as_ref()
-                                    .is_some_and(|progress| progress.arrival_yield)
-                                && target.distance(units[other_index].position)
-                                    < unit.radius + units[other_index].radius - 1.0e-5
-                        });
+            let target_occupied = planning_context.conflicts_with_reserved_filtered(
+                target,
+                unit.radius,
+                unit.unit_id,
+                &|id| !known(id),
+            ) || grid
+                .within_unsorted(&points, target, unit.radius + max_radius)
+                .into_iter()
+                .any(|other_index| {
+                    other_index != index
+                        && known(units[other_index].unit_id)
+                        && !units[other_index]
+                            .plain_progress
+                            .as_ref()
+                            .is_some_and(|progress| progress.arrival_yield)
+                        && target.distance(units[other_index].position)
+                            < unit.radius + units[other_index].radius - 1.0e-5
+                });
             if owns_destination && target_occupied {
-                let progress = make_plain_progress(&unit, target, &plain_spread_context);
+                let progress = make_plain_progress(&unit, target, planning_context, &known);
                 let mut plain_unit = unit.clone();
                 plain_unit.target = Some(progress.slot);
                 let output = step_plain_progress(
@@ -788,7 +835,8 @@ pub(crate) fn step_frame_with_motion_guide(
                     &units,
                     &points,
                     &grid,
-                    &plain_spread_context,
+                    planning_context,
+                    &known,
                     guide,
                     budget,
                 );
@@ -991,7 +1039,7 @@ pub(crate) fn step_frame_with_motion_guide(
             });
             if (separated || was_projected || modeled_steering) && !(reached && destination_free) {
                 let mut plain = if owns_destination {
-                    make_plain_progress(&unit, target, &plain_spread_context)
+                    make_plain_progress(&unit, target, planning_context, &known)
                 } else {
                     PlainMoveProgress {
                         arrival_yield: false,

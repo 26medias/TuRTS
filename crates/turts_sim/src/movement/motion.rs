@@ -105,7 +105,7 @@ pub(crate) trait MotionGuide {
 }
 
 /// Legacy entry points remain bit-for-bit on the original steering path.
-pub(super) struct NoMotionGuide;
+pub(crate) struct NoMotionGuide;
 impl MotionGuide for NoMotionGuide {
     fn kind(&self, _unit_id: u32) -> MotionKind {
         MotionKind::Destination

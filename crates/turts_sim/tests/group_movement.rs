@@ -3738,3 +3738,376 @@ fn hidden_unit_of_another_slot_does_not_change_group_dispatch() {
         "a hidden unit of another slot changed the owner movement before contact"
     );
 }
+
+/// Paired worlds under fog (from the independent privacy test of 2026-11-18): slot 0 orders two
+/// units to a point. A unit of slot 1 that slot 0 may not see stands on the point in one world
+/// and far away in the other. The slots and the first step of slot 0 must be equal.
+#[test]
+fn hidden_unit_of_another_slot_does_not_change_singleton_dispatch() {
+    use turts_mod_api::{ObservationPhase, VisibilityDef, VisibilityGrid, VisionSharing};
+    type Rows = Vec<(u32, Vec2)>;
+    fn run(enemy: (f32, f32)) -> (Rows, Rows) {
+        let mut app = app_with_units(&[(5.0, 5.0), enemy], &[0, 1]);
+        let definition = VisibilityDef {
+            cell_size: 2.0,
+            sharing: VisionSharing::OwnSlot,
+            memory_limit: None,
+        };
+        let sight = turts_sim::visibility::prepare(
+            0,
+            turts_mod_api::ContentId::parse("fixture_pkg:field").unwrap(),
+            &definition,
+            VisibilityGrid {
+                size: WorldPos { x: 64.0, y: 64.0 },
+                cell_size: 2.0,
+                columns: 32,
+                rows: 32,
+            },
+            &[0, 1],
+        )
+        .unwrap();
+        app.insert_resource(sight);
+        turts_sim::visibility::initialize_context(app.world_mut(), 0, &[0, 1]).unwrap();
+        turts_sim::initialize_completed_world(app.world_mut());
+        assert!(!turts_sim::visibility::unit_permitted(
+            app.world(),
+            0,
+            2,
+            ObservationPhase::Completed
+        ));
+        let mover = app
+            .world()
+            .iter_entities()
+            .find(|e| e.get::<turts_sim::UnitId>().is_some_and(|id| id.0 == 1))
+            .unwrap()
+            .id();
+        app.world_mut()
+            .entity_mut(mover)
+            .insert(MoveTarget(Vec2::new(30.0, 30.0)));
+        for _ in 0..30 {
+            app.update();
+        }
+        assert!(!turts_sim::visibility::unit_permitted(
+            app.world(),
+            0,
+            2,
+            ObservationPhase::Completed
+        ));
+        let mut targets: Vec<_> = app
+            .world_mut()
+            .iter_entities()
+            .filter_map(|e| {
+                let id = e.get::<turts_sim::UnitId>()?.0;
+                (id == 1).then(|| (id, e.get::<MoveTarget>().unwrap().0))
+            })
+            .collect();
+        targets.sort_by_key(|(id, _)| *id);
+        let positions: Vec<_> = snapshot(app.world_mut())
+            .into_iter()
+            .filter(|u| u.unit_id == 1)
+            .map(|u| (u.unit_id, u.pos))
+            .collect();
+        (targets, positions)
+    }
+    let near_target = run((30.0, 30.0));
+    let remote = run((55.0, 55.0));
+    assert_eq!(
+        near_target.0, remote.0,
+        "a hidden unit of another slot changed the singleton target before contact"
+    );
+    assert_eq!(
+        near_target.1, remote.1,
+        "a hidden unit of another slot changed the owner movement before contact"
+    );
+}
+
+#[test]
+fn hidden_unit_of_another_slot_does_not_change_group_approach() {
+    use turts_mod_api::{ObservationPhase, VisibilityDef, VisibilityGrid, VisionSharing};
+    type Rows = Vec<(u32, Vec2)>;
+    fn run(enemy: (f32, f32)) -> (Rows, Rows) {
+        let mut app = app_with_units(&[(5.0, 5.0), (5.0, 7.0), enemy], &[0, 0, 1]);
+        let definition = VisibilityDef {
+            cell_size: 2.0,
+            sharing: VisionSharing::OwnSlot,
+            memory_limit: None,
+        };
+        let sight = turts_sim::visibility::prepare(
+            0,
+            turts_mod_api::ContentId::parse("fixture_pkg:field").unwrap(),
+            &definition,
+            VisibilityGrid {
+                size: WorldPos { x: 64.0, y: 64.0 },
+                cell_size: 2.0,
+                columns: 32,
+                rows: 32,
+            },
+            &[0, 1],
+        )
+        .unwrap();
+        app.insert_resource(sight);
+        turts_sim::visibility::initialize_context(app.world_mut(), 0, &[0, 1]).unwrap();
+        turts_sim::initialize_completed_world(app.world_mut());
+        assert!(!turts_sim::visibility::unit_permitted(
+            app.world(),
+            0,
+            3,
+            ObservationPhase::Completed
+        ));
+        send_order(
+            &mut app,
+            0,
+            vec![1, 2],
+            Vec2::new(30.0, 30.0),
+            42,
+            QueueMode::Replace,
+        );
+        for _ in 0..100 {
+            app.update();
+        }
+        assert!(!turts_sim::visibility::unit_permitted(
+            app.world(),
+            0,
+            3,
+            ObservationPhase::Completed
+        ));
+        let mut targets: Vec<_> = app
+            .world_mut()
+            .iter_entities()
+            .filter_map(|e| {
+                let id = e.get::<turts_sim::UnitId>()?.0;
+                (id <= 2).then(|| (id, e.get::<MoveTarget>().unwrap().0))
+            })
+            .collect();
+        targets.sort_by_key(|(id, _)| *id);
+        let positions: Vec<_> = snapshot(app.world_mut())
+            .into_iter()
+            .filter(|u| u.unit_id <= 2)
+            .map(|u| (u.unit_id, u.pos))
+            .collect();
+        (targets, positions)
+    }
+    let near_target = run((30.0, 30.0));
+    let remote = run((55.0, 55.0));
+    assert_eq!(
+        near_target.0, remote.0,
+        "a hidden unit of another slot changed the group targets before contact"
+    );
+    assert_eq!(
+        near_target.1, remote.1,
+        "a hidden unit of another slot changed the owner movement before contact"
+    );
+}
+
+#[test]
+fn visible_unit_of_another_slot_reserves_singleton_destination_under_fog() {
+    use turts_mod_api::{ObservationPhase, VisibilityDef, VisibilityGrid, VisionSharing};
+    type Rows = Vec<(u32, Vec2)>;
+    fn run(enemy: (f32, f32)) -> (Rows, Rows) {
+        let mut app = app_with_units(&[(5.0, 5.0), enemy], &[0, 1]);
+        let definition = VisibilityDef {
+            cell_size: 2.0,
+            sharing: VisionSharing::OwnSlot,
+            memory_limit: None,
+        };
+        let sight = turts_sim::visibility::prepare(
+            0,
+            turts_mod_api::ContentId::parse("fixture_pkg:field").unwrap(),
+            &definition,
+            VisibilityGrid {
+                size: WorldPos { x: 64.0, y: 64.0 },
+                cell_size: 2.0,
+                columns: 32,
+                rows: 32,
+            },
+            &[0, 1],
+        )
+        .unwrap();
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../mods/base");
+        let mut catalog = turts_mod_runtime::archive::PackageArchive::parse(
+            &turts_mod_runtime::pack::pack_dir(&root).unwrap(),
+        )
+        .unwrap()
+        .content()
+        .unwrap();
+        let mut definition = catalog.units.values().next().unwrap().clone();
+        definition.id = turts_mod_api::ContentId::parse("fixture_pkg:walker").unwrap();
+        definition.vision = Some(turts_mod_api::VisionDef { radius: 64.0 });
+        definition.health = None;
+        catalog.units.insert(definition.id.clone(), definition);
+        app.insert_resource(turts_sim::bootstrap::InstalledCatalog(catalog));
+        app.insert_resource(sight);
+        turts_sim::visibility::initialize_context(app.world_mut(), 0, &[0, 1]).unwrap();
+        turts_sim::initialize_completed_world(app.world_mut());
+        assert!(turts_sim::visibility::unit_permitted(
+            app.world(),
+            0,
+            2,
+            ObservationPhase::Completed
+        ));
+        let mover = app
+            .world()
+            .iter_entities()
+            .find(|e| e.get::<turts_sim::UnitId>().is_some_and(|id| id.0 == 1))
+            .unwrap()
+            .id();
+        app.world_mut()
+            .entity_mut(mover)
+            .insert(MoveTarget(Vec2::new(30.0, 30.0)));
+        for _ in 0..30 {
+            app.update();
+        }
+        assert!(turts_sim::visibility::unit_permitted(
+            app.world(),
+            0,
+            2,
+            ObservationPhase::Completed
+        ));
+        let mut targets: Vec<_> = app
+            .world_mut()
+            .iter_entities()
+            .filter_map(|e| {
+                let id = e.get::<turts_sim::UnitId>()?.0;
+                (id == 1).then(|| (id, e.get::<MoveTarget>().unwrap().0))
+            })
+            .collect();
+        targets.sort_by_key(|(id, _)| *id);
+        let positions: Vec<_> = snapshot(app.world_mut())
+            .into_iter()
+            .filter(|u| u.unit_id == 1)
+            .map(|u| (u.unit_id, u.pos))
+            .collect();
+        (targets, positions)
+    }
+    let near_target = run((30.0, 30.0));
+    let remote = run((40.0, 40.0));
+    assert_ne!(
+        near_target.0, remote.0,
+        "a visible enemy occupying the goal must remain reserved"
+    );
+}
+
+#[test]
+#[ignore = "representative manual timing"]
+fn singleton_fog_scale_probe() {
+    use turts_mod_api::{VisibilityDef, VisibilityGrid, VisionSharing};
+    let mut positions = Vec::new();
+    let mut owners = Vec::new();
+    for i in 0..500 {
+        let x = 2.0 + 2.3 * (i % 25) as f32;
+        let y = 2.0 + 2.3 * (i / 25) as f32;
+        positions.extend([(x, y), (x + 1.2, y)]);
+        owners.extend([0, 1]);
+    }
+    let mut app = app_with_units(&positions, &owners);
+    if std::env::var("FOG_PROBE").is_ok() {
+        let sight = turts_sim::visibility::prepare(
+            0,
+            turts_mod_api::ContentId::parse("fixture_pkg:field").unwrap(),
+            &VisibilityDef {
+                cell_size: 2.0,
+                sharing: VisionSharing::OwnSlot,
+                memory_limit: None,
+            },
+            VisibilityGrid {
+                size: WorldPos { x: 64.0, y: 64.0 },
+                cell_size: 2.0,
+                columns: 32,
+                rows: 32,
+            },
+            &[0, 1],
+        )
+        .unwrap();
+        app.insert_resource(sight);
+        turts_sim::visibility::initialize_context(app.world_mut(), 0, &[0, 1]).unwrap();
+        turts_sim::initialize_completed_world(app.world_mut());
+    }
+    let movers: Vec<_> = app
+        .world()
+        .iter_entities()
+        .filter_map(|entity| {
+            let id = entity.get::<turts_sim::UnitId>()?.0;
+            (id % 2 == 1).then_some((entity.id(), (id / 2) as usize))
+        })
+        .collect();
+    assert_eq!(movers.len(), 500);
+    for (entity, row) in movers {
+        let (x, y) = positions[2 * row + 1];
+        app.world_mut()
+            .entity_mut(entity)
+            .insert(MoveTarget(Vec2::new(x, y)));
+    }
+    let mut samples = Vec::new();
+    for _ in 0..20 {
+        let now = std::time::Instant::now();
+        app.update();
+        samples.push(now.elapsed().as_secs_f64() * 1000.0);
+    }
+    eprintln!(
+        "fog={} units=1000 movers=500 ticks=20 mean_ms={:.3} max_ms={:.3}",
+        std::env::var("FOG_PROBE").is_ok(),
+        samples.iter().sum::<f64>() / samples.len() as f64,
+        samples.into_iter().fold(0.0, f64::max)
+    );
+}
+
+#[test]
+fn singleton_hidden_target_stops_without_overlap_after_contact() {
+    use turts_mod_api::{VisibilityDef, VisibilityGrid, VisionSharing};
+    let mut app = app_with_units(&[(5.0, 5.0), (30.0, 30.0)], &[0, 1]);
+    let sight = turts_sim::visibility::prepare(
+        0,
+        turts_mod_api::ContentId::parse("fixture_pkg:field").unwrap(),
+        &VisibilityDef {
+            cell_size: 2.0,
+            sharing: VisionSharing::OwnSlot,
+            memory_limit: None,
+        },
+        VisibilityGrid {
+            size: WorldPos { x: 64.0, y: 64.0 },
+            cell_size: 2.0,
+            columns: 32,
+            rows: 32,
+        },
+        &[0, 1],
+    )
+    .unwrap();
+    app.insert_resource(sight);
+    turts_sim::visibility::initialize_context(app.world_mut(), 0, &[0, 1]).unwrap();
+    turts_sim::initialize_completed_world(app.world_mut());
+    let mover = app
+        .world()
+        .iter_entities()
+        .find(|entity| {
+            entity
+                .get::<turts_sim::UnitId>()
+                .is_some_and(|id| id.0 == 1)
+        })
+        .unwrap()
+        .id();
+    app.world_mut()
+        .entity_mut(mover)
+        .insert(MoveTarget(Vec2::new(30.0, 30.0)));
+    for _ in 0..400 {
+        app.update();
+        let rows = snapshot(app.world_mut());
+        assert!(
+            rows[0].pos.distance(rows[1].pos) >= 1.0 - 1e-5,
+            "movement overlapped the hidden body"
+        );
+    }
+    let point = app
+        .world()
+        .entity(mover)
+        .get::<turts_sim::Position>()
+        .unwrap()
+        .0;
+    assert!(
+        point.distance(Vec2::new(30.0, 30.0)) <= 1.1,
+        "unit did not reach the hidden body: {point:?}"
+    );
+    assert!(
+        app.world().entity(mover).get::<MoveTarget>().is_none(),
+        "unit failed to stop"
+    );
+}

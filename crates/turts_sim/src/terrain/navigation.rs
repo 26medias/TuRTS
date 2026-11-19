@@ -422,13 +422,15 @@ pub(crate) fn step(
 ) -> (Vec<MovementFrameOutput>, BTreeSet<u32>) {
     if world.get_resource::<TerrainState>().is_none() {
         return (
-            crate::movement::step_frame_with_sweep_budget(
+            crate::movement::step_frame_with_motion_guide_and_visibility(
                 frame,
                 dt,
                 preserve,
                 &mut crate::movement::sweep::SweepBudget::new(
                     world.get_resource::<crate::Tick>().map_or(0, |tick| tick.0),
                 ),
+                &mut crate::movement::motion::NoMotionGuide,
+                crate::visibility::active_basis(world),
             ),
             BTreeSet::new(),
         );
@@ -901,12 +903,13 @@ pub(crate) fn step(
         let mut first_intent = None;
         let mut accepted = None;
         for _ in 0..MAX_SOLVER_RETRIES {
-            let proposed = crate::movement::step_frame_with_motion_guide(
+            let proposed = crate::movement::step_frame_with_motion_guide_and_visibility(
                 &candidate,
                 dt,
                 preserve,
                 &mut body_budget,
                 &mut model,
+                crate::visibility::active_basis(world),
             );
             if first_intent.is_none() && candidate.units.len() <= super::traffic::index_capacity() {
                 first_intent = Some(

@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use super::arrival::SpatialNeighbors;
 use super::frame::{MovementFrameOutput, MovementFrameUnit};
 use super::search::{MovementSearch, body_overlaps_position};
-use super::spread::{SpreadContext, nearest_angle_order, spread_destinations_with_context};
+use super::spread::{SpreadContext, nearest_angle_order, spread_destinations_with_filter};
 use super::{MovementActivity, MovementInput, PhysicalEscape, PlainGatherGoal, SpreadMember, step};
 
 /// Default-omitted progress for a single legacy move that has encountered an obstacle.
@@ -45,6 +45,7 @@ pub(super) fn step_plain_progress(
     points: &[crate::grid::GridPoint],
     grid: &crate::grid::UniformGrid,
     spread_context: &SpreadContext,
+    known: &dyn Fn(u32) -> bool,
     guide: &mut dyn super::motion::MotionGuide,
     budget: &mut super::sweep::SweepBudget,
 ) -> MovementFrameOutput {
@@ -76,12 +77,14 @@ pub(super) fn step_plain_progress(
             .into_iter()
             .any(|other_index| {
                 other_index != index
+                    && known(units[other_index].unit_id)
                     && point.distance(units[other_index].position)
                         < unit.radius + units[other_index].radius - 1.0e-5
             })
     };
     let occupied = |point: Vec2| {
-        spread_context.conflicts_with_reserved(point, unit.radius, unit.unit_id)
+        spread_context
+            .conflicts_with_reserved_filtered(point, unit.radius, unit.unit_id, &|id| !known(id))
             || body_occupied(point)
     };
 
@@ -350,15 +353,16 @@ pub(super) fn make_plain_progress(
     unit: &MovementFrameUnit,
     original_point: Vec2,
     context: &SpreadContext,
+    known: &dyn Fn(u32) -> bool,
 ) -> PlainMoveProgress {
     let member = [SpreadMember {
         id: unit.unit_id,
         position: unit.position,
         radius: unit.radius,
     }];
-    let excluded_units = std::collections::HashSet::from([unit.unit_id]);
-    let (pool, _) =
-        spread_destinations_with_context(&member, original_point, context, &excluded_units);
+    let (pool, _) = spread_destinations_with_filter(&member, original_point, context, &|id| {
+        id == unit.unit_id || !known(id)
+    });
     let slot = pool.slots.first().copied().unwrap_or(original_point);
     let pool_slots = pool.slots.into_iter().skip(1).take(6).collect();
     PlainMoveProgress {
@@ -443,6 +447,7 @@ mod approach_tests {
                 &points,
                 &grid,
                 &context,
+                &|_| true,
                 &mut super::super::motion::NoMotionGuide,
                 &mut super::super::sweep::SweepBudget::new(1),
             );

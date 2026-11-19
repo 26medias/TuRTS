@@ -87,8 +87,14 @@ impl SpreadContext {
         self.static_units = units;
     }
 
-    fn static_excluded(&self, index: usize, excluded: &std::collections::HashSet<u32>) -> bool {
-        self.static_units[index].is_some_and(|unit| excluded.contains(&unit))
+    pub(super) fn set_static_units_iter(&mut self, units: impl Iterator<Item = Option<u32>>) {
+        for (slot, unit) in self.static_units.iter_mut().zip(units) {
+            *slot = unit;
+        }
+    }
+
+    fn static_excluded(&self, index: usize, excluded: &dyn Fn(u32) -> bool) -> bool {
+        self.static_units[index].is_some_and(excluded)
     }
 
     pub fn reserve_unit(&mut self, unit_id: u32, footprint: ReservedFootprint) {
@@ -112,11 +118,12 @@ impl SpreadContext {
         }
     }
 
-    pub(super) fn conflicts_with_reserved(
+    pub(super) fn conflicts_with_reserved_filtered(
         &self,
         candidate: Vec2,
         radius: f32,
         excluded_unit: u32,
+        excluded: &dyn Fn(u32) -> bool,
     ) -> bool {
         self.reserved_grid
             .within_unsorted(
@@ -127,6 +134,7 @@ impl SpreadContext {
             .into_iter()
             .any(|index| {
                 self.reserved_units[index] != Some(excluded_unit)
+                    && !self.reserved_units[index].is_some_and(excluded)
                     && candidate.distance(self.reserved[index].position)
                         < radius + self.reserved[index].radius - 1.0e-5
             })
@@ -165,6 +173,15 @@ pub fn spread_destinations_with_context(
     point: Vec2,
     context: &SpreadContext,
     excluded_units: &std::collections::HashSet<u32>,
+) -> (MovementPool, Vec<(u32, Vec2)>) {
+    spread_destinations_with_filter(members, point, context, &|id| excluded_units.contains(&id))
+}
+
+pub(super) fn spread_destinations_with_filter(
+    members: &[SpreadMember],
+    point: Vec2,
+    context: &SpreadContext,
+    excluded_units: &dyn Fn(u32) -> bool,
 ) -> (MovementPool, Vec<(u32, Vec2)>) {
     assert!(
         !members.is_empty(),
@@ -432,7 +449,7 @@ fn singleton_free(
     point: Vec2,
     radius: f32,
     context: &SpreadContext,
-    excluded: &std::collections::HashSet<u32>,
+    excluded: &dyn Fn(u32) -> bool,
 ) -> bool {
     if !point.is_finite()
         || point.x < radius
@@ -473,7 +490,7 @@ fn singleton_free(
             )
             .into_iter()
             .all(|i| {
-                context.reserved_units[i].is_some_and(|id| excluded.contains(&id))
+                context.reserved_units[i].is_some_and(excluded)
                     || clear(context.reserved[i].position, context.reserved[i].radius)
             })
 }
@@ -483,7 +500,7 @@ fn consider_singleton(
     goal: Vec2,
     radius: f32,
     context: &SpreadContext,
-    excluded: &std::collections::HashSet<u32>,
+    excluded: &dyn Fn(u32) -> bool,
 ) {
     let x = candidate[0] as f32;
     let y = candidate[1] as f32;
@@ -524,7 +541,7 @@ fn nearest_singleton(
     member: &SpreadMember,
     goal: Vec2,
     context: &SpreadContext,
-    excluded: &std::collections::HashSet<u32>,
+    excluded: &dyn Fn(u32) -> bool,
     hex: Option<Vec2>,
 ) -> Option<Vec2> {
     if singleton_free(goal, member.radius, context, excluded) {
@@ -594,7 +611,7 @@ fn nearest_singleton(
         goal,
         reach(context.max_reserved_radius),
     ) {
-        if context.reserved_units[i].is_some_and(|id| excluded.contains(&id)) {
+        if context.reserved_units[i].is_some_and(excluded) {
             continue;
         }
         let body = context.reserved[i];
@@ -688,7 +705,7 @@ fn free_slot_grid(
     candidate: Vec2,
     radius: f32,
     context: &SpreadContext,
-    excluded_units: &std::collections::HashSet<u32>,
+    excluded_units: &dyn Fn(u32) -> bool,
     already_in_pool: &[Vec2],
     pool_points: &[crate::grid::GridPoint],
     pool_grid: &crate::grid::UniformGrid,
@@ -720,7 +737,7 @@ fn free_slot_grid(
             )
             .into_iter()
             .all(|i| {
-                context.reserved_units[i].is_some_and(|unit| excluded_units.contains(&unit))
+                context.reserved_units[i].is_some_and(excluded_units)
                     || candidate.distance(context.reserved[i].position)
                         >= radius + context.reserved[i].radius + 0.1 - 1.0e-5
             })
@@ -743,7 +760,7 @@ struct ReachInput<'a> {
     radius: f32,
     spacing: f32,
     context: &'a SpreadContext,
-    excluded_units: &'a std::collections::HashSet<u32>,
+    excluded_units: &'a dyn Fn(u32) -> bool,
     /// The last ring that the free-site scan examined.
     first_ring: i32,
     ring_limit: i32,
