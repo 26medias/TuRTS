@@ -78,7 +78,8 @@ pub(super) fn apply(
                     && unit.unit_type == r.kind
             });
         let had_route = retained.is_some();
-        if !had_route && !eligible(index) {
+        let actor_eligible = eligible(index);
+        if !had_route && !actor_eligible {
             continue;
         }
         let Some(requested) = unit.target else {
@@ -91,25 +92,50 @@ pub(super) fn apply(
             radius: 1.,
         }; detour::MAX_BLOCKERS];
         let mut count = 0;
+        let mut release_peer: Option<&MovementFrameUnit> = None;
+        let mut settled_contacts = 0usize;
+        let mut widest_contact = 0.0f32;
         for &other in &neighbors[&index] {
             state.detour_filter_rows += 1;
             let peer = &frame.units[other];
-            // An own body that this tick's plan holds in place (no route yet,
-            // or an earlier traffic wait) stands as surely as a settled one.
-            // Its original order stays intact; only this advice goes around it.
-            if other != index
-                && peer.owner_slot == unit.owner_slot
-                && (!moving(peer) || !moving(&proposed.units[other]))
+            let own_peer = other != index && peer.owner_slot == unit.owner_slot;
+            let separation = f64::from(unit.radius) + f64::from(peer.radius);
+            let in_contact = own_peer
+                && actor_eligible
+                && moving(peer)
+                && unit.position.as_dvec2().distance(peer.position.as_dvec2()) <= separation + 0.1;
+            // The guidance frame intentionally omits progress. The caller's
+            // owner-scoped callback supplies the current stalled state.
+            let stalled_peer = in_contact && eligible(other);
+            if own_peer
+                && actor_eligible
+                && !moving(peer)
+                && unit.position.as_dvec2().distance(peer.position.as_dvec2()) <= separation + 0.01
             {
+                settled_contacts += 1;
+                widest_contact = widest_contact.max(peer.radius);
+            }
+            if stalled_peer {
+                let requested_covered =
+                    requested.as_dvec2().distance(peer.position.as_dvec2()) < separation;
+                let peer_target_free_of_actor = peer.target.is_some_and(|target| {
+                    target.as_dvec2().distance(unit.position.as_dvec2()) >= separation
+                });
+                if requested_covered
+                    && peer_target_free_of_actor
+                    && release_peer.is_none_or(|previous| physical(peer, previous).is_lt())
+                {
+                    release_peer = Some(peer);
+                }
+            }
+            // Own stationary or confirmed-stalled bodies are current obstacles.
+            if own_peer && (!moving(peer) || !moving(&proposed.units[other]) || stalled_peer) {
                 blockers[count] = detour::Blocker {
                     position: peer.position,
                     radius: peer.radius,
                 };
                 count += 1;
             }
-        }
-        if count == 0 && !had_route {
-            continue;
         }
         let blockers = &blockers[..count];
         let mut pairs = state.members[&unit.unit_id].guidance_pairs;
@@ -157,7 +183,151 @@ pub(super) fn apply(
                 }
             }
         }
-        if retained.is_none() && !exhausted.get() && (had_route || eligible(index)) {
+        // A blocked peer can occupy this actor's private endpoint while itself
+        // pinned. Retreat is temporary; the accepted destination stays intact.
+        // Reserve the other scan and terrain credits for the existing detours.
+        if retained.is_none()
+            && !exhausted.get()
+            && actor_eligible
+            && let Some(peer) = release_peer
+        {
+            let away = (unit.position.as_dvec2() - peer.position.as_dvec2()).normalize_or_zero();
+            let reach = f64::from(unit.radius) + f64::from(peer.radius) + 0.1;
+            let destination = (unit.position.as_dvec2() + away * reach).as_vec2();
+            let inside = away != bevy_math::DVec2::ZERO
+                && destination.is_finite()
+                && destination.x >= unit.radius
+                && destination.y >= unit.radius
+                && destination.x <= frame.bounds.x - unit.radius
+                && destination.y <= frame.bounds.y - unit.radius;
+            let mut safe = inside;
+            if inside {
+                for blocker in blockers {
+                    if work.scanned_rows >= detour::MAX_BLOCKERS {
+                        safe = false;
+                        break;
+                    }
+                    work.scanned_rows += 1;
+                    if !charge() {
+                        safe = false;
+                        break;
+                    }
+                    work.body_checks += 1;
+                    if swept_disks_clear(
+                        point(unit.position),
+                        point(destination),
+                        f64::from(unit.radius),
+                        point(blocker.position),
+                        point(blocker.position),
+                        f64::from(blocker.radius),
+                        &mut Budget::new(1),
+                    ) != Ok(true)
+                    {
+                        safe = false;
+                    }
+                }
+            }
+            if safe && work.terrain_calls == 0 {
+                work.terrain_calls += 1;
+                if clear(index, unit.position, destination) {
+                    retained = Some(Retained {
+                        route: detour::Detour {
+                            corners: [destination; 2],
+                        },
+                        corner: 0,
+                        requested,
+                        radius: unit.radius.to_bits(),
+                        kind: unit.unit_type,
+                        witness: None,
+                    });
+                }
+            }
+        }
+        if retained.is_none() && !exhausted.get() && actor_eligible && settled_contacts >= 2 {
+            let goal = public_goal(index).map_or(requested, |region| region.goal);
+            let away = (unit.position.as_dvec2() - goal.as_dvec2()).normalize_or_zero();
+            let reach = f64::from(unit.radius) + f64::from(widest_contact) + 0.1;
+            // Bounded escape directions. Once clear, the original route is retried.
+            const DIRECTIONS: [(f64, f64); 8] = [
+                (1.0, 0.0),
+                (0.9238795325112867, 0.3826834323650898),
+                (0.9238795325112867, -0.3826834323650898),
+                (
+                    std::f64::consts::FRAC_1_SQRT_2,
+                    std::f64::consts::FRAC_1_SQRT_2,
+                ),
+                (
+                    std::f64::consts::FRAC_1_SQRT_2,
+                    -std::f64::consts::FRAC_1_SQRT_2,
+                ),
+                (0.3826834323650898, 0.9238795325112867),
+                (0.3826834323650898, -0.9238795325112867),
+                (-1.0, 0.0),
+            ];
+            if away != bevy_math::DVec2::ZERO {
+                for (cos, sin) in DIRECTIONS {
+                    let heading = bevy_math::DVec2::new(
+                        away.x * cos - away.y * sin,
+                        away.x * sin + away.y * cos,
+                    );
+                    let destination = (unit.position.as_dvec2() + heading * reach).as_vec2();
+                    if !destination.is_finite()
+                        || destination.x < unit.radius
+                        || destination.y < unit.radius
+                        || destination.x > frame.bounds.x - unit.radius
+                        || destination.y > frame.bounds.y - unit.radius
+                    {
+                        continue;
+                    }
+                    let mut safe = true;
+                    for blocker in blockers {
+                        if work.scanned_rows >= detour::MAX_BLOCKERS {
+                            safe = false;
+                            break;
+                        }
+                        work.scanned_rows += 1;
+                        if !charge() {
+                            safe = false;
+                            break;
+                        }
+                        work.body_checks += 1;
+                        if swept_disks_clear(
+                            point(unit.position),
+                            point(destination),
+                            f64::from(unit.radius),
+                            point(blocker.position),
+                            point(blocker.position),
+                            f64::from(blocker.radius),
+                            &mut Budget::new(1),
+                        ) != Ok(true)
+                        {
+                            safe = false;
+                            break;
+                        }
+                    }
+                    if exhausted.get() {
+                        break;
+                    }
+                    if safe && work.terrain_calls == 0 {
+                        work.terrain_calls += 1;
+                        if clear(index, unit.position, destination) {
+                            retained = Some(Retained {
+                                route: detour::Detour {
+                                    corners: [destination; 2],
+                                },
+                                corner: 0,
+                                requested,
+                                radius: unit.radius.to_bits(),
+                                kind: unit.unit_type,
+                                witness: None,
+                            });
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        if retained.is_none() && !exhausted.get() && (had_route || actor_eligible) {
             let axis_goal = public_goal(index)
                 .map(|region| region.goal)
                 .filter(|goal| goal.is_finite() && *goal != unit.position)
@@ -582,5 +752,205 @@ mod tests {
         assert!(state.members[&1].local_detour.is_none());
         assert_eq!(proposed.units[0].target, original.units[0].target);
         assert_eq!(budget.pairs.iter().sum::<usize>(), 0);
+    }
+    #[test]
+    fn blocked_own_mover_can_be_detoured_around_without_changing_its_order() {
+        let capture: serde_json::Value =
+            serde_json::from_str(include_str!("captured_gm2_browser.json")).unwrap();
+        let vec2 = |v: &serde_json::Value| {
+            Vec2::new(v[0].as_f64().unwrap() as f32, v[1].as_f64().unwrap() as f32)
+        };
+        let stalled: std::collections::BTreeSet<u32> = capture["bodies"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|r| r["plain_progress"]["activity"] == "Blocked")
+            .map(|r| r["id"].as_u64().unwrap() as u32)
+            .collect();
+        let mut units: Vec<_> = capture["bodies"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| MovementFrameUnit {
+                unit_id: r["id"].as_u64().unwrap() as u32,
+                owner_slot: 0,
+                unit_type: 1,
+                position: vec2(&r["position"]),
+                radius: r["radius"].as_f64().unwrap() as f32,
+                target: (!r["target"].is_null()).then(|| vec2(&r["target"])),
+                speed: Some(2.5),
+                progress: None,
+                plain_progress: None,
+                physical_escape: None,
+            })
+            .collect();
+        let mut answer = None;
+        for reverse in [false, true] {
+            if reverse {
+                units.reverse();
+            }
+            let frame = MovementFrame {
+                bounds: Vec2::new(64., 48.),
+                tick_hz: 20,
+                units: units.clone(),
+                pools: BTreeMap::new(),
+            };
+            let actor = frame.units.iter().position(|u| u.unit_id == 33).unwrap();
+            let mut proposed = frame.clone();
+            let mut state = TrafficState::default();
+            let mut budget = crate::movement::sweep::SweepBudget::new(5860);
+            apply_composed(
+                &frame,
+                &mut proposed,
+                0.05,
+                5860,
+                &mut state,
+                |_, _, _| true,
+                |_, _, _, _| EntranceContact::Outside,
+                |i| stalled.contains(&frame.units[i].unit_id),
+                &mut budget,
+                |_, _| None,
+                |_| false,
+                |_, _| true,
+                true,
+                |i| {
+                    (i == actor).then_some(DestinationRegion {
+                        goal: Vec2::new(50.000004, 24.000015),
+                        min: Vec2::new(43.100002, 18.024439),
+                        max: Vec2::new(56.900005, 29.975592),
+                        cohort_radius: 1.1,
+                    })
+                },
+                |i| frame.units[i].target.is_none(),
+            );
+            let route = state.members[&33]
+                .local_detour
+                .expect("stalled peer must be treated as a current obstacle");
+            assert_eq!(route.requested, frame.units[actor].target.unwrap());
+            assert_eq!(proposed.units[actor].target, Some(route.route.corners[0]));
+            assert_eq!(route.route.corners[0], route.route.corners[1]);
+            assert!(route.route.corners[0].distance(frame.units[actor].position) > 2.2);
+            for (other, peer) in frame.units.iter().enumerate() {
+                if other != actor {
+                    assert_eq!(
+                        swept_disks_clear(
+                            point(frame.units[actor].position),
+                            point(route.route.corners[0]),
+                            f64::from(frame.units[actor].radius),
+                            point(peer.position),
+                            point(peer.position),
+                            f64::from(peer.radius),
+                            &mut Budget::new(1)
+                        ),
+                        Ok(true)
+                    );
+                }
+            }
+            assert!(state.members[&33].guidance_pairs <= 4096);
+            if let Some(expected) = answer {
+                assert_eq!(route.route.corners, expected);
+            }
+            answer = Some(route.route.corners);
+        }
+    }
+    #[test]
+    fn pinned_mover_escapes_settled_contacts_without_changing_its_order() {
+        let capture: serde_json::Value =
+            serde_json::from_str(include_str!("captured_gm2_after_release.json")).unwrap();
+        let vec2 = |v: &serde_json::Value| {
+            Vec2::new(v[0].as_f64().unwrap() as f32, v[1].as_f64().unwrap() as f32)
+        };
+        let stalled: std::collections::BTreeSet<u32> = capture["bodies"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|r| r["plain_progress"]["activity"] == "Blocked")
+            .map(|r| r["id"].as_u64().unwrap() as u32)
+            .collect();
+        let mut units: Vec<_> = capture["bodies"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| MovementFrameUnit {
+                unit_id: r["id"].as_u64().unwrap() as u32,
+                owner_slot: 0,
+                unit_type: 1,
+                position: vec2(&r["position"]),
+                radius: r["radius"].as_f64().unwrap() as f32,
+                target: (!r["target"].is_null()).then(|| vec2(&r["target"])),
+                speed: Some(2.5),
+                progress: None,
+                plain_progress: None,
+                physical_escape: None,
+            })
+            .collect();
+        let mut answer = None;
+        for reverse in [false, true] {
+            if reverse {
+                units.reverse();
+            }
+            let frame = MovementFrame {
+                bounds: Vec2::new(64., 48.),
+                tick_hz: 20,
+                units: units.clone(),
+                pools: BTreeMap::new(),
+            };
+            let actor = frame.units.iter().position(|u| u.unit_id == 36).unwrap();
+            let mut proposed = frame.clone();
+            let mut state = TrafficState::default();
+            let mut budget = crate::movement::sweep::SweepBudget::new(5860);
+            apply_composed(
+                &frame,
+                &mut proposed,
+                0.05,
+                5860,
+                &mut state,
+                |_, _, _| true,
+                |_, _, _, _| EntranceContact::Outside,
+                |i| stalled.contains(&frame.units[i].unit_id),
+                &mut budget,
+                |_, _| None,
+                |_| false,
+                |_, _| true,
+                true,
+                |i| {
+                    (i == actor).then_some(DestinationRegion {
+                        goal: Vec2::new(50.000004, 24.000015),
+                        min: Vec2::new(43.100002, 18.024439),
+                        max: Vec2::new(56.900005, 29.975592),
+                        cohort_radius: 1.1,
+                    })
+                },
+                |i| frame.units[i].target.is_none(),
+            );
+            let route = state.members[&36]
+                .local_detour
+                .expect("pinned mover must escape the current contacts");
+            assert_eq!(route.requested, frame.units[actor].target.unwrap());
+            assert_eq!(proposed.units[actor].target, Some(route.route.corners[0]));
+            assert_eq!(route.route.corners[0], route.route.corners[1]);
+            assert!(route.route.corners[0].distance(frame.units[actor].position) > 2.2);
+            for (other, peer) in frame.units.iter().enumerate() {
+                if other != actor {
+                    assert_eq!(
+                        swept_disks_clear(
+                            point(frame.units[actor].position),
+                            point(route.route.corners[0]),
+                            f64::from(frame.units[actor].radius),
+                            point(peer.position),
+                            point(peer.position),
+                            f64::from(peer.radius),
+                            &mut Budget::new(1)
+                        ),
+                        Ok(true)
+                    );
+                }
+            }
+            assert!(state.members[&36].guidance_pairs <= 4096);
+            if let Some(expected) = answer {
+                assert_eq!(route.route.corners, expected);
+            }
+            answer = Some(route.route.corners);
+        }
     }
 }

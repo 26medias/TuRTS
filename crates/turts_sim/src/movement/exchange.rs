@@ -375,6 +375,10 @@ pub(super) fn route_own(
 /// of a moving peer whose straight distance to it is longer than the route of this mover.
 /// `waits` becomes true when the search reaches a slot that a nearer moving peer still claims:
 /// then the mover has no slot now, but the answer can change when that peer arrives.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Route selection shares the existing planner, occupancy, and budget inputs"
+)]
 pub(super) fn route_other(
     planner: &super::route::Planner,
     pool_index: &MovementPoolIndex,

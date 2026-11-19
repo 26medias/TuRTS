@@ -641,3 +641,36 @@ fn gm3_shared_unique_single_public_world_keeps_all_physical_assertions() {
     );
     f.write_result(json!({"scope":"one unchanged mixed-radius shared-and-unique corridor", "acceptance":false,"all_actor_completion":true,"physical_and_budget_assertions":"every tick"}));
 }
+
+#[test]
+fn gm2_browser_projected_destination_and_delayed_orders_complete() {
+    let mut f = Fixture::new("quarry", "GM2-narrow", VARIANTS[0]);
+    // These are the actual order application ticks and projected point from
+    // the real-browser failure, not a change to the frozen acceptance row.
+    f.commands[0].tick = 712;
+    f.commands[0].envelope.target = point(50.000_004, 24.000_015);
+    f.commands[1].tick = 3219;
+    let large = f.labels(|a| a.kind == "large");
+    until(&mut f, 3219);
+    let mut opened = None;
+    for _ in 0..=MOVE_BOUND {
+        step(&mut f);
+        if f.surface.rectangle_is([30, 20], [34, 28], 0) {
+            opened = Some(f.tick);
+            break;
+        }
+    }
+    let opened = opened.expect("ordinary work did not open the passage");
+    until(&mut f, opened + MOVE_BOUND);
+    for label in &large {
+        if !f.complete(label) {
+            eprintln!(
+                "INCOMPLETE {label} position={:?} order={:?} member={:?}",
+                f.position(label),
+                f.order(label),
+                diagnostics::member(&f, label)
+            );
+        }
+    }
+    require_crossed(&f, &large, true);
+}
