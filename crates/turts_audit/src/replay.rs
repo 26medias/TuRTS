@@ -9774,6 +9774,11 @@ fn validate_movement_transition(
         .map(|escape| (escape.unit_id, escape.escape.clone()))
         .collect();
     let frame = turts_sim::movement::MovementFrame {
+        recovery: expected
+            .recovery_jobs
+            .iter()
+            .map(|row| (row.unit_id, row.job))
+            .collect(),
         bounds: bevy::math::Vec2::new(bounds.x, bounds.y),
         tick_hz,
         units: expected
@@ -9855,7 +9860,14 @@ fn validate_movement_transition(
     let mut movement_progress = Vec::new();
     let mut plain_movement_progress = Vec::new();
     let mut physical_escapes = Vec::new();
+    let mut recovery_jobs = Vec::new();
     for output in outputs {
+        if let Some(job) = output.recovery.as_deref() {
+            recovery_jobs.push(turts_sim::economy::views::RawRecoveryJobAudit {
+                unit_id: output.unit_id,
+                job: *job,
+            });
+        }
         let expected_unit = expected
             .raw_units
             .iter_mut()
@@ -9893,6 +9905,7 @@ fn validate_movement_transition(
     expected.movement_progress = movement_progress;
     expected.plain_movement_progress = plain_movement_progress;
     expected.physical_escapes = physical_escapes;
+    expected.recovery_jobs = recovery_jobs;
     let active_pools: BTreeSet<_> = expected
         .movement_progress
         .iter()
@@ -10444,6 +10457,7 @@ mod tests {
             panic!("initial capture missing");
         };
         let frame = turts_sim::movement::MovementFrame {
+            recovery: Default::default(),
             bounds: bevy::math::Vec2::new(300., 300.),
             tick_hz: 20,
             pools: Default::default(),

@@ -600,6 +600,9 @@ pub struct AuditState {
     pub plain_movement_progress: Vec<RawPlainMovementProgressAudit>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub physical_escapes: Vec<RawPhysicalEscapeAudit>,
+    /// Blocked-recovery jobs (design 2026-11-18-bounded-recovery), sorted by unit id.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub recovery_jobs: Vec<RawRecoveryJobAudit>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub movement_pools: Vec<crate::movement::MovementPool>,
     #[serde(
@@ -662,6 +665,11 @@ pub struct RawPlainMovementProgressAudit {
 pub struct RawPhysicalEscapeAudit {
     pub unit_id: u32,
     pub escape: crate::movement::PhysicalEscape,
+}
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RawRecoveryJobAudit {
+    pub unit_id: u32,
+    pub job: crate::movement::RecoverySearch,
 }
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct EconomyStateView {
@@ -1591,6 +1599,16 @@ pub fn audit_state(world: &mut World) -> AuditState {
         })
         .collect();
     physical_escapes.sort_by_key(|escape| escape.unit_id);
+    let mut recovery_jobs: Vec<_> = world
+        .iter_entities()
+        .filter_map(|entity| {
+            Some(RawRecoveryJobAudit {
+                unit_id: entity.get::<UnitId>()?.0,
+                job: *entity.get::<crate::movement::RecoverySearch>()?,
+            })
+        })
+        .collect();
+    recovery_jobs.sort_by_key(|job| job.unit_id);
     let mut unit_orders: Vec<_> = world
         .iter_entities()
         .filter_map(|entity| {
@@ -1697,6 +1715,7 @@ pub fn audit_state(world: &mut World) -> AuditState {
         movement_progress,
         plain_movement_progress,
         physical_escapes,
+        recovery_jobs,
         movement_pools: world
             .get_resource::<crate::movement::MovementPools>()
             .map_or_else(Vec::new, |pools| pools.0.values().cloned().collect()),

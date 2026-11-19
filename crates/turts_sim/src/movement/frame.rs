@@ -9,7 +9,7 @@ use super::pool_index::{
     MovementPoolIndex, add_pool_slot_claim, refresh_nearby_pool_slot_clearances,
     remove_pool_slot_claim,
 };
-use super::search::{MovementSearch, body_overlaps_position};
+use super::search::body_overlaps_position;
 use super::spread::{SpreadContext, nearest_angle_order, target_key, update_target_claims};
 use super::{
     MoveProgress, MovementActivity, MovementInput, MovementPool, PhysicalEscape, ReservedFootprint,
@@ -38,6 +38,8 @@ pub struct MovementFrame {
     pub tick_hz: u16,
     pub units: Vec<MovementFrameUnit>,
     pub pools: BTreeMap<u64, MovementPool>,
+    /// Blocked-recovery jobs by unit id. Identity lookup only; never an order of service.
+    pub recovery: BTreeMap<u32, super::RecoverySearch>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -54,6 +56,8 @@ pub struct MovementFrameOutput {
     /// The flags of the last step of this unit. Tests read them through `probe`.
     #[cfg(feature = "test-probes")]
     pub probe: super::probe::FrameFlags,
+    /// The blocked-recovery job after this tick.
+    pub recovery: Option<Box<super::RecoverySearch>>,
 }
 
 fn retain_waypoint_motion(output: &mut MovementFrameOutput, target: Option<Vec2>) {
@@ -268,6 +272,7 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
     let mut outputs: Vec<_> = units
         .iter()
         .map(|unit| MovementFrameOutput {
+            recovery: Default::default(),
             unit_id: unit.unit_id,
             position: unit.position,
             target: unit.target,
@@ -419,6 +424,48 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
                             < units_at_start[index].1 + units_at_start[other].1 + 0.05
                 })
         };
+    let mut recovery_counters = super::recovery::RecoveryCounters::default();
+    let recovery_schedule = {
+        let mut rows = Vec::new();
+        for (row, unit) in units.iter().enumerate() {
+            let blocked = unit.physical_escape.is_some()
+                || unit.progress.as_ref().is_some_and(|progress| {
+                    progress.activity == MovementActivity::Blocked
+                        && frame.pools.contains_key(&progress.pool_id)
+                })
+                || unit
+                    .plain_progress
+                    .as_ref()
+                    .is_some_and(|progress| progress.activity == MovementActivity::Blocked);
+            if unit.speed.is_none() || !blocked {
+                continue;
+            }
+            let mut overlapping = false;
+            let (cells, tested) =
+                grid.visit_within(&points, unit.position, unit.radius + max_radius, |other| {
+                    overlapping |= other != row
+                        && unit.position.distance(units[other].position)
+                            < unit.radius + units[other].radius - 1.0e-5;
+                });
+            recovery_counters.schedule_work += (cells + tested) as u64;
+            // Tick-start overlap is a physical fact of the row's own body.
+            recovery_counters.charge(unit.owner_slot, cells + tested, cells + tested);
+            if !overlapping {
+                continue;
+            }
+            let job = frame.recovery.get(&unit.unit_id);
+            rows.push(super::recovery::ScheduleRow {
+                row,
+                owner: unit.owner_slot,
+                age: job.map_or(0, |job| job.age),
+                has_scan: job.is_some_and(|job| job.scan.is_some()),
+                position: unit.position,
+                radius: unit.radius,
+            });
+        }
+        super::recovery::plan(rows, &mut recovery_counters)
+    };
+    let mut next_recovery = BTreeMap::<usize, super::RecoverySearch>::new();
     let mut route_spent = BTreeMap::<u8, usize>::new();
     // Rows whose slot changed in this tick by an exchange that had no restart budget left.
     let mut exchanged = vec![false; units.len()];
@@ -465,6 +512,14 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
                             <= unit.radius + other.radius + super::route::CONTACT_GAP
                 })
             })
+        };
+        let mut recovery = super::recovery::RowRecovery {
+            row: index,
+            owner: unit.owner_slot,
+            allowance: recovery_schedule.allowance(index),
+            previous: frame.recovery.get(&unit.unit_id).copied(),
+            next_jobs: &mut next_recovery,
+            counters: &mut recovery_counters,
         };
         if unit.physical_escape.is_some() {
             let overlapping = body_overlaps_position(
@@ -527,17 +582,22 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
                         )
                     })
                     .or_else(|| {
-                        MovementSearch {
-                            bounds: frame.bounds,
-                            units: &units,
-                            points: &points,
-                            grid: &grid,
-                            max_radius,
-                        }
-                        .find_free_singleton_destination(
-                            unit.position,
-                            unit.radius,
-                            index,
+                        recovery.search(
+                            super::RecoveryKind::Physical,
+                            &super::recovery::EscapeScan {
+                                bounds: frame.bounds,
+                                units: &units,
+                                points: &points,
+                                grid: &grid,
+                                max_radius,
+                                origin: unit.position,
+                                radius: unit.radius,
+                                self_index: index,
+                                slots: None,
+                                known: &|_| true,
+                                bound: None,
+                                verify: true,
+                            },
                         )
                     });
                 let Some(escape) = escape else {
@@ -716,33 +776,71 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
                     && is_free(*slot)
                     && (!assigned_slots.contains(&key) || key == old_slot_key)
             });
+            let kind = super::RecoveryKind::Group(progress.pool_id);
             let escape = retained_escape.or_else(|| {
-                let pool_escape = pool_indexes.get(&progress.pool_id).and_then(|index| {
-                    index.nearest_free(
+                if !recovery.may_search(kind) {
+                    return None;
+                }
+                // Public charge: slot candidates, a fixed cell charge and permitted
+                // bodies that touch the slot. Actual visits go to the diagnostics only.
+                let pool_work = std::cell::Cell::new(0usize);
+                let pool_actual = std::cell::Cell::new(0usize);
+                let counted_free = |slot: Vec2| {
+                    let mut free = true;
+                    let mut checks = 0usize;
+                    let mut touching = 0usize;
+                    let (cells, tested) =
+                        grid.visit_within(&points, slot, unit.radius + max_radius, |other| {
+                            if other == index {
+                                return;
+                            }
+                            checks += 1;
+                            if known(units[other].unit_id) {
+                                let distance = slot.distance(units[other].position);
+                                touching += usize::from(
+                                    distance <= unit.radius + units[other].radius + 1.0e-3,
+                                );
+                                free &= distance >= unit.radius + units[other].radius;
+                            }
+                        });
+                    pool_work.set(pool_work.get() + 4 + touching);
+                    pool_actual.set(pool_actual.get() + cells + tested + checks);
+                    free
+                };
+                let pool_escape = pool_indexes.get(&progress.pool_id).and_then(|pool_index| {
+                    pool_index.nearest_free(
                         unit.unit_id,
                         unit.position,
                         progress.pool_id,
                         Some(old_slot_key),
                         &assigned_slots,
                         unit.radius,
-                        is_free,
+                        counted_free,
+                        &pool_work,
                     )
                 });
-                let outside_escape = MovementSearch {
-                    bounds: frame.bounds,
-                    units: &units,
-                    points: &points,
-                    grid: &grid,
-                    max_radius,
-                }
-                .find_free_escape_destination(
-                    unit.position,
-                    unit.radius,
-                    index,
-                    progress.pool_id,
-                    &assigned_slots,
-                    &known,
+                recovery.charge_pool(pool_work.get(), pool_actual.get() + pool_work.get());
+                let outside_escape = recovery.search(
+                    kind,
+                    &super::recovery::EscapeScan {
+                        bounds: frame.bounds,
+                        units: &units,
+                        points: &points,
+                        grid: &grid,
+                        max_radius,
+                        origin: unit.position,
+                        radius: unit.radius,
+                        self_index: index,
+                        slots: Some((progress.pool_id, &assigned_slots)),
+                        known: &known,
+                        bound: pool_escape,
+                        verify: true,
+                    },
                 );
+                if recovery.pending() {
+                    // The outside scan did not end: no choice can be proved yet.
+                    return None;
+                }
                 match (pool_escape, outside_escape) {
                     (Some(pool_point), Some(outside_point)) => Some(
                         if nearest_angle_order(pool_point, outside_point, unit.position).is_le() {
@@ -849,6 +947,7 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
                 &known,
                 guide,
                 budget,
+                &mut recovery,
             );
             if !owns_destination && !output.failed_blocked {
                 retain_waypoint_motion(&mut output, unit.target);
@@ -923,6 +1022,7 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
                     &known,
                     guide,
                     budget,
+                    &mut recovery,
                 );
                 outputs[index] = output.clone();
                 if owns_destination {
@@ -1654,6 +1754,7 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
                     progress.slot.x.to_bits(),
                     progress.slot.y.to_bits(),
                 );
+                let spare_work = std::cell::Cell::new(0usize);
                 let spare = pool_indexes.get(&progress.pool_id).and_then(|pool_index| {
                     pool_index.nearest_free(
                         unit.unit_id,
@@ -1684,8 +1785,11 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
                                                 >= unit.radius + units[other_index].radius
                                     })
                         },
+                        &spare_work,
                     )
                 });
+                recovery_counters.spare_slot_work += spare_work.get() as u64;
+                recovery_counters.charge(unit.owner_slot, spare_work.get(), spare_work.get());
                 if let Some(spare) = spare {
                     if owns_destination
                         && remove_pool_slot_claim(
@@ -1851,6 +1955,12 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
             }
         }
     }
+    for (&row, job) in &next_recovery {
+        outputs[row].recovery = Some(Box::new(*job));
+    }
+    recovery_counters.jobs = next_recovery.len() as u64;
+    recovery_counters.retained_bytes = super::recovery::retained_bytes(next_recovery.len());
+    budget.recovery.merge(&recovery_counters);
     let moving_pools: std::collections::BTreeSet<_> = outputs
         .iter()
         .filter_map(|output| {
@@ -1953,6 +2063,7 @@ mod group_approach_tests {
             holder.target = Some(Vec2::new(10., 5.));
             holder.progress = None;
             let frame = MovementFrame {
+                recovery: Default::default(),
                 bounds: Vec2::splat(16.),
                 tick_hz: 20,
                 units: if invert {

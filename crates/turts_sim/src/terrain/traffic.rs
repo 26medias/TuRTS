@@ -1558,6 +1558,7 @@ mod tests {
     }
     fn frame(units: Vec<MovementFrameUnit>) -> MovementFrame {
         MovementFrame {
+            recovery: Default::default(),
             bounds: Vec2::splat(30.0),
             tick_hz: 20,
             units,
@@ -3396,6 +3397,7 @@ mod guided_composition_tests {
             Some(Vec2::new(120., 10.)),
         ));
         MovementFrame {
+            recovery: Default::default(),
             bounds: Vec2::splat(256.),
             tick_hz: 20,
             units,

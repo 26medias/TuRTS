@@ -10,6 +10,7 @@ use std::collections::BTreeMap;
 fn progressless_singleton_move_never_spends_two_steps_in_one_tick() {
     let target = Vec2::new(22.0, 10.0);
     let frame = MovementFrame {
+        recovery: Default::default(),
         bounds: Vec2::new(64.0, 64.0),
         tick_hz: 20,
         units: vec![MovementFrameUnit {
@@ -38,6 +39,7 @@ fn progressless_singleton_move_never_spends_two_steps_in_one_tick() {
 fn progressless_singleton_move_keeps_the_exact_free_step_before_arrival() {
     let target = Vec2::new(22.0, 10.0);
     let frame = MovementFrame {
+        recovery: Default::default(),
         bounds: Vec2::new(64.0, 64.0),
         tick_hz: 20,
         units: vec![MovementFrameUnit {
@@ -74,6 +76,7 @@ fn active_group_progress_does_not_add_a_post_step_arrival_snap() {
     let target = Vec2::new(2.0, 1.0);
     let position = Vec2::new(1.83, 1.0);
     let frame = MovementFrame {
+        recovery: Default::default(),
         bounds: Vec2::splat(16.0),
         tick_hz: 20,
         units: vec![MovementFrameUnit {
@@ -158,6 +161,7 @@ fn contact_correction_does_not_add_a_post_step_arrival_snap() {
 
     for (progress, plain_progress) in modes {
         let frame = MovementFrame {
+            recovery: Default::default(),
             bounds: Vec2::splat(16.0),
             tick_hz: 20,
             units: vec![
@@ -454,6 +458,7 @@ fn blocked_escape_chooses_nearest_free_point_when_old_pool_is_far_and_occupied()
         slots: vec![old_slot],
     };
     let frame = MovementFrame {
+        recovery: Default::default(),
         bounds: Vec2::new(64.0, 64.0),
         tick_hz: 20,
         units: vec![
@@ -535,6 +540,7 @@ fn no_spare_pool_blocks_on_the_first_other_group_stall_deadline() {
         slots: vec![target],
     };
     let frame = MovementFrame {
+        recovery: Default::default(),
         bounds: Vec2::new(64.0, 64.0),
         tick_hz: 20,
         units: vec![
@@ -613,6 +619,7 @@ fn exhausted_claims_become_blocked_at_the_one_second_stall_deadline() {
         slots: vec![point],
     };
     let frame = MovementFrame {
+        recovery: Default::default(),
         bounds: Vec2::new(64.0, 64.0),
         tick_hz: 20,
         units: vec![
@@ -700,10 +707,19 @@ fn zero_available_pool_slots_skip_repeated_grid_queries() {
     let is_free_calls = std::sync::atomic::AtomicUsize::new(0);
     for _ in 0..5_000 {
         assert_eq!(
-            index.nearest_free(1, Vec2::ZERO, pool_id, None, &assigned, 0.5, |_| {
-                is_free_calls.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                true
-            },),
+            index.nearest_free(
+                1,
+                Vec2::ZERO,
+                pool_id,
+                None,
+                &assigned,
+                0.5,
+                |_| {
+                    is_free_calls.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    true
+                },
+                &std::cell::Cell::new(0)
+            ),
             None
         );
     }
@@ -735,6 +751,7 @@ fn nearest_free_checks_the_final_reach_interval() {
             &std::collections::HashSet::new(),
             0.5,
             |_| true,
+            &std::cell::Cell::new(0)
         ),
         Some(Vec2::new(300.0, 0.0))
     );
@@ -931,6 +948,7 @@ fn step_frame_rejects_fully_occupied_spares_without_pool_wide_stalled_scans() {
             .all(|unit| slot.distance(unit.position) + 1.0e-5 >= 0.5 + unit.radius)
     }));
     let frame = MovementFrame {
+        recovery: Default::default(),
         bounds,
         tick_hz: 20,
         units,
@@ -1208,6 +1226,7 @@ fn pool_clearance_does_not_let_uncontacted_foreign_body_hide_a_spare() {
             &std::collections::HashSet::new(),
             0.5,
             |_| true,
+            &std::cell::Cell::new(0),
         )
     };
     assert_eq!(check(false, false), Some(slot));
@@ -1278,6 +1297,7 @@ fn retained_escape_fixture(count: usize) -> MovementFrame {
         });
     }
     MovementFrame {
+        recovery: Default::default(),
         bounds: Vec2::splat(64.0),
         tick_hz: 20,
         units,

@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use super::arrival::SpatialNeighbors;
 use super::frame::{MovementFrameOutput, MovementFrameUnit};
-use super::search::{MovementSearch, body_overlaps_position};
+use super::search::body_overlaps_position;
 use super::spread::{SpreadContext, nearest_angle_order, spread_destinations_with_filter};
 use super::{MovementActivity, MovementInput, PhysicalEscape, PlainGatherGoal, SpreadMember, step};
 
@@ -48,8 +48,10 @@ pub(super) fn step_plain_progress(
     known: &dyn Fn(u32) -> bool,
     guide: &mut dyn super::motion::MotionGuide,
     budget: &mut super::sweep::SweepBudget,
+    recovery: &mut super::recovery::RowRecovery,
 ) -> MovementFrameOutput {
     let mut output = MovementFrameOutput {
+        recovery: Default::default(),
         unit_id: unit.unit_id,
         position: unit.position,
         target: unit.target,
@@ -93,18 +95,22 @@ pub(super) fn step_plain_progress(
             if !body_occupied(unit.position) {
                 return None;
             }
-            MovementSearch {
-                bounds,
-                units,
-                points,
-                grid,
-                max_radius,
-            }
-            .find_free_singleton_destination_known(
-                unit.position,
-                unit.radius,
-                index,
-                known,
+            recovery.search(
+                super::RecoveryKind::Plain,
+                &super::recovery::EscapeScan {
+                    bounds,
+                    units,
+                    points,
+                    grid,
+                    max_radius,
+                    origin: unit.position,
+                    radius: unit.radius,
+                    self_index: index,
+                    slots: None,
+                    known,
+                    bound: None,
+                    verify: true,
+                },
             )
         });
         let Some(escape) = escape else {
@@ -455,6 +461,14 @@ mod approach_tests {
                 &|_| true,
                 &mut super::super::motion::NoMotionGuide,
                 &mut super::super::sweep::SweepBudget::new(1),
+                &mut super::super::recovery::RowRecovery {
+                    row: index,
+                    owner: 0,
+                    allowance: usize::MAX,
+                    previous: None,
+                    next_jobs: &mut Default::default(),
+                    counters: &mut Default::default(),
+                },
             );
             assert!(
                 out.position.x <= target.x,

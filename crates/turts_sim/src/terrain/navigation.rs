@@ -649,6 +649,7 @@ pub(crate) fn step(
                 ));
             } else {
                 let guidance = MovementFrame {
+                    recovery: Default::default(),
                     bounds: frame.bounds,
                     tick_hz: frame.tick_hz,
                     pools: BTreeMap::new(),
@@ -989,6 +990,8 @@ pub(crate) fn step(
                         waiting.insert(unit.unit_id);
                     }
                     MovementFrameOutput {
+                        // A held frame keeps each recovery job unchanged.
+                        recovery: frame.recovery.get(&unit.unit_id).copied().map(Box::new),
                         unit_id: unit.unit_id,
                         position: unit.position,
                         target: unit.target,
@@ -1024,6 +1027,7 @@ pub(crate) fn step(
             let mut contacts = outputs
                 .iter()
                 .map(|output| MovementFrameOutput {
+                    recovery: Default::default(),
                     unit_id: output.unit_id,
                     position: output.position,
                     target: None,

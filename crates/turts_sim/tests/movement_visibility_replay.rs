@@ -28,6 +28,7 @@ fn replay_visibility_does_not_depend_on_frame_row_order() {
         physical_escape: None,
     };
     let mut frame = MovementFrame {
+        recovery: Default::default(),
         bounds: Vec2::splat(64.0),
         tick_hz: 20,
         units: vec![

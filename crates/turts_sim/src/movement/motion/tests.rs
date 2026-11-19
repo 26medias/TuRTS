@@ -75,6 +75,7 @@ fn frame(branch: Branch) -> MovementFrame {
     holder.progress = None;
     holder.plain_progress = None;
     MovementFrame {
+        recovery: Default::default(),
         bounds: Vec2::splat(32.),
         tick_hz: 20,
         units: vec![actor, holder],

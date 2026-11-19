@@ -1728,6 +1728,7 @@ mod retention_tests {
             level: 0,
         };
         let frame = MovementFrame {
+            recovery: Default::default(),
             bounds: Vec2::new(64., 48.),
             tick_hz: 20,
             pools: BTreeMap::new(),
@@ -1828,6 +1829,7 @@ mod retention_tests {
             ..unit()
         };
         let frame = MovementFrame {
+            recovery: Default::default(),
             bounds: Vec2::new(64., 48.),
             tick_hz: 20,
             pools: BTreeMap::new(),
@@ -1947,6 +1949,7 @@ mod retention_tests {
                 .units
                 .iter()
                 .map(|unit| crate::movement::MovementFrameOutput {
+                    recovery: Default::default(),
                     unit_id: unit.unit_id,
                     position: unit.position,
                     target: unit.target,
@@ -2279,6 +2282,7 @@ mod retention_tests {
             level: 0,
         };
         let frame = MovementFrame {
+            recovery: Default::default(),
             bounds: Vec2::new(64., 48.),
             tick_hz: 20,
             pools: BTreeMap::new(),
@@ -2397,6 +2401,7 @@ mod retention_tests {
             };
             units.push(mover.clone());
             let frame = MovementFrame {
+                recovery: Default::default(),
                 bounds: Vec2::new(64., 80.),
                 tick_hz: 20,
                 pools: BTreeMap::new(),
@@ -2521,12 +2526,14 @@ mod retention_tests {
     {
         let original = unit();
         let frame = MovementFrame {
+            recovery: Default::default(),
             bounds: Vec2::new(64., 48.),
             tick_hz: 20,
             pools: BTreeMap::new(),
             units: vec![original.clone()],
         };
         let output = crate::movement::MovementFrameOutput {
+            recovery: Default::default(),
             unit_id: 7,
             position: original.position + Vec2::X * 0.1,
             target: None,

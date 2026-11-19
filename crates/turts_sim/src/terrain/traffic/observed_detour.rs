@@ -784,6 +784,7 @@ mod tests {
             units.reverse();
         }
         MovementFrame {
+            recovery: Default::default(),
             bounds: Vec2::splat(128.),
             tick_hz: 20,
             units,

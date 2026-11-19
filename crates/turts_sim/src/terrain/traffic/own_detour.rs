@@ -502,6 +502,7 @@ mod tests {
         for reverse in [false, true] {
             let actor_id = if reverse { 700 } else { 32 };
             let mut frame = MovementFrame {
+                recovery: Default::default(),
                 bounds: Vec2::new(64., 48.),
                 tick_hz: 20,
                 pools: BTreeMap::new(),
@@ -637,6 +638,7 @@ mod tests {
             units.reverse();
         }
         MovementFrame {
+            recovery: Default::default(),
             bounds: Vec2::splat(30.),
             tick_hz: 20,
             units,
@@ -813,6 +815,7 @@ mod tests {
                 units.reverse();
             }
             let frame = MovementFrame {
+                recovery: Default::default(),
                 bounds: Vec2::new(64., 48.),
                 tick_hz: 20,
                 units: units.clone(),
@@ -912,6 +915,7 @@ mod tests {
                 units.reverse();
             }
             let frame = MovementFrame {
+                recovery: Default::default(),
                 bounds: Vec2::new(64., 48.),
                 tick_hz: 20,
                 units: units.clone(),
@@ -987,6 +991,7 @@ mod tests {
                 units.reverse();
             }
             let frame = MovementFrame {
+                recovery: Default::default(),
                 bounds: Vec2::new(64., 48.),
                 tick_hz: 20,
                 units: units.clone(),

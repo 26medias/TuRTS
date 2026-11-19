@@ -659,6 +659,7 @@ mod tests {
             .collect();
         (
             MovementFrame {
+                recovery: Default::default(),
                 bounds: Vec2::new(64., 48.),
                 tick_hz: 20,
                 units,
@@ -909,6 +910,7 @@ mod tests {
         let target = Vec2::new(51.150001525878906, 25.991857528686523);
         for reverse in [false, true] {
             let mut frame = MovementFrame {
+                recovery: Default::default(),
                 bounds: Vec2::new(64., 48.),
                 tick_hz: 20,
                 pools: BTreeMap::new(),
@@ -1083,6 +1085,7 @@ mod tests {
             .map(|r| r["settled"].as_bool().unwrap())
             .collect();
         let frame = MovementFrame {
+            recovery: Default::default(),
             bounds: Vec2::new(64., 48.),
             tick_hz: 20,
             units,
@@ -1262,6 +1265,7 @@ mod tests {
                 cohort_radius: 1.1,
             };
             let frame = MovementFrame {
+                recovery: Default::default(),
                 bounds: Vec2::splat(64.),
                 tick_hz: 20,
                 units,

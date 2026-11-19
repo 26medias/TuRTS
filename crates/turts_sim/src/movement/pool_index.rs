@@ -296,6 +296,7 @@ impl MovementPoolIndex {
         assigned_slots: &std::collections::HashSet<(u64, u32, u32)>,
         radius: f32,
         is_free: impl Fn(Vec2) -> bool,
+        work: &std::cell::Cell<usize>,
     ) -> Option<Vec2> {
         if !self.has_potential_free_slot(
             unit_id,
@@ -312,6 +313,7 @@ impl MovementPoolIndex {
             let candidates = self.grid.within(&self.points, origin, query_reach);
             #[cfg(test)]
             count_pool_slot_candidates(candidates.len());
+            work.set(work.get() + 1 + 2 * candidates.len());
             for index in candidates {
                 let point = self.points[index].position;
                 let key = (pool_id, point.x.to_bits(), point.y.to_bits());

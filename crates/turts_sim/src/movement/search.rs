@@ -3,8 +3,11 @@
 use bevy_math::Vec2;
 
 use super::frame::MovementFrameUnit;
+#[cfg(test)]
 use super::spread::{finite_hex_ring_limit, minimum_unseen_hex_radius, nearest_angle_order};
 
+/// The stateless search of base `3938bd07`: the test oracle of the bounded recovery.
+#[cfg(test)]
 pub(super) struct MovementSearch<'a> {
     pub(super) bounds: Vec2,
     pub(super) units: &'a [MovementFrameUnit],
@@ -13,16 +16,8 @@ pub(super) struct MovementSearch<'a> {
     pub(super) max_radius: f32,
 }
 
+#[cfg(test)]
 impl MovementSearch<'_> {
-    pub(super) fn find_free_singleton_destination(
-        &self,
-        origin: Vec2,
-        radius: f32,
-        self_index: usize,
-    ) -> Option<Vec2> {
-        self.find_free_singleton_destination_known(origin, radius, self_index, &|_| true)
-    }
-
     pub(super) fn find_free_singleton_destination_known(
         &self,
         origin: Vec2,

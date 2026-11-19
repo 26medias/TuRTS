@@ -128,6 +128,7 @@ fn start_frame(seed: u64) -> MovementFrame {
         })
         .collect();
     MovementFrame {
+        recovery: Default::default(),
         bounds,
         tick_hz: 20,
         units,

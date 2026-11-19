@@ -283,6 +283,7 @@ fn forecast_arrival(
         return None;
     }
     let mut frame = super::MovementFrame {
+        recovery: Default::default(),
         bounds,
         tick_hz: (1.0 / dt).round().max(1.0) as u16,
         pools: Default::default(),
@@ -543,6 +544,7 @@ mod tests {
         let goal = Vec2::new(30.0, 20.0);
         for ids in [[1, 9], [9, 1]] {
             let frame = run(MovementFrame {
+                recovery: Default::default(),
                 bounds: Vec2::splat(64.0),
                 tick_hz: 20,
                 pools: Default::default(),
@@ -565,6 +567,7 @@ mod tests {
         let mut previous = None;
         for ids in [[1, 9], [9, 1]] {
             let frame = run(MovementFrame {
+                recovery: Default::default(),
                 bounds: Vec2::splat(64.0),
                 tick_hz: 20,
                 pools: Default::default(),
@@ -596,6 +599,7 @@ mod tests {
             let mut slow = unit(ids[1], Vec2::new(20.12, 20.0), 4.0, goal);
             slow.radius = 0.05;
             let frame = MovementFrame {
+                recovery: Default::default(),
                 bounds: Vec2::splat(64.0),
                 tick_hz: 20,
                 pools: Default::default(),
@@ -619,6 +623,7 @@ mod tests {
             let mut first = unit(ids[0], goal, 3.0, goal);
             first.target = None;
             let frame = run(MovementFrame {
+                recovery: Default::default(),
                 bounds: Vec2::splat(64.0),
                 tick_hz: 20,
                 pools: Default::default(),
@@ -637,6 +642,7 @@ mod tests {
         let goal = Vec2::new(0.5, 10.0);
         let frame = run_steps(
             MovementFrame {
+                recovery: Default::default(),
                 bounds: Vec2::splat(64.0),
                 tick_hz: 20,
                 pools: Default::default(),
@@ -663,6 +669,7 @@ mod tests {
         holder.target = None;
         let frame = run_steps(
             MovementFrame {
+                recovery: Default::default(),
                 bounds: Vec2::splat(64.0),
                 tick_hz: 20,
                 pools: Default::default(),
@@ -689,6 +696,7 @@ mod tests {
         let goal = Vec2::new(0.5, 10.0);
         let frame = run_steps(
             MovementFrame {
+                recovery: Default::default(),
                 bounds: Vec2::splat(64.0),
                 tick_hz: 20,
                 pools: Default::default(),
@@ -714,6 +722,7 @@ mod tests {
         obstacle.radius = 1.0;
         let frame = run_steps(
             MovementFrame {
+                recovery: Default::default(),
                 bounds: Vec2::splat(64.0),
                 tick_hz: 20,
                 pools: Default::default(),
@@ -738,6 +747,7 @@ mod tests {
         obstacle.speed = None;
         obstacle.target = None;
         MovementFrame {
+            recovery: Default::default(),
             bounds: Vec2::splat(64.0),
             tick_hz: 20,
             pools: Default::default(),
@@ -800,6 +810,7 @@ mod tests {
         for ids in [[1, 2], [2, 1]] {
             let frame = run_steps(
                 MovementFrame {
+                    recovery: Default::default(),
                     bounds: Vec2::splat(64.0),
                     tick_hz: 20,
                     pools: Default::default(),
@@ -822,6 +833,7 @@ mod tests {
     fn a_temporary_yield_does_not_reserve_the_point_after_the_earlier_unit_leaves() {
         let goal = Vec2::new(20.0, 20.0);
         let mut frame = MovementFrame {
+            recovery: Default::default(),
             bounds: Vec2::splat(64.0),
             tick_hz: 20,
             pools: Default::default(),
@@ -873,6 +885,7 @@ mod tests {
                 units.reverse();
             }
             let mut frame = MovementFrame {
+                recovery: Default::default(),
                 bounds: Vec2::new(48.0, 32.0),
                 tick_hz: 20,
                 pools: Default::default(),

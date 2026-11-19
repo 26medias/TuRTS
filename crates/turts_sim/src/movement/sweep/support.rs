@@ -497,6 +497,7 @@ mod tests {
             .iter()
             .zip(positions)
             .map(|(u, &p)| MovementFrameOutput {
+                recovery: Default::default(),
                 unit_id: u.unit_id,
                 position: p,
                 target: u.target,
@@ -519,6 +520,7 @@ mod tests {
     ) -> Vec<MovementFrameOutput> {
         let origins = units.iter().map(|u| u.position).collect::<Vec<_>>();
         let frame = MovementFrame {
+            recovery: Default::default(),
             units: units.clone(),
             bounds: Vec2::splat(64.),
             tick_hz: 20,
@@ -561,6 +563,7 @@ mod tests {
         let mut u = unit(1, 0, Vec2::new(2., 2.));
         u.target = Some(Vec2::new(2.1, 2.));
         let frame = MovementFrame {
+            recovery: Default::default(),
             units: vec![u.clone()],
             bounds: Vec2::splat(64.),
             tick_hz: 20,
@@ -777,6 +780,7 @@ mod closure_tests {
         let raw = vec![Vec2::new(7., 2.), Vec2::new(8., 2.)];
         let mut outputs = rows(&units, &raw);
         let frame = MovementFrame {
+            recovery: Default::default(),
             units: units.clone(),
             bounds: Vec2::splat(64.),
             tick_hz: 20,
@@ -817,6 +821,7 @@ mod arrival_root_tests {
     fn support_cannot_restore_a_raw_step_beyond_the_authored_speed() {
         let units = [unit(1, 0, Vec2::new(2., 2.))];
         let frame = MovementFrame {
+            recovery: Default::default(),
             units: units.to_vec(),
             bounds: Vec2::splat(128.),
             tick_hz: 20,
@@ -854,6 +859,7 @@ mod arrival_root_tests {
             let mut outputs = rows(&units, &raw);
             outputs[0].target = None;
             let mut frame = MovementFrame {
+                recovery: Default::default(),
                 units: units.clone(),
                 bounds: Vec2::splat(128.),
                 tick_hz: 20,
@@ -905,6 +911,7 @@ mod arrival_root_tests {
         let raw = vec![Vec2::new(3.5, 2.), Vec2::new(7.7, 2.), Vec2::new(2.75, 4.)];
         let baseline = vec![Vec2::new(2.1, 2.), raw[1], origins[2]];
         let frame = MovementFrame {
+            recovery: Default::default(),
             units: units.clone(),
             bounds: Vec2::splat(128.),
             tick_hz: 20,
@@ -979,6 +986,7 @@ mod waypoint_tests {
         guide: &Guide,
     ) -> Vec<Vec2> {
         let frame = MovementFrame {
+            recovery: Default::default(),
             units: units.clone(),
             bounds: Vec2::splat(64.),
             tick_hz: 20,

@@ -21,6 +21,7 @@ fn unit(unit_id: u32, position: Vec2, target: Option<Vec2>) -> MovementFrameUnit
 
 fn frame(units: Vec<MovementFrameUnit>) -> MovementFrame {
     MovementFrame {
+        recovery: Default::default(),
         bounds: Vec2::splat(32.0),
         tick_hz: 20,
         units,
@@ -55,6 +56,7 @@ fn retry_group() -> MovementFrameUnit {
 
 fn retry_output(original: &MovementFrameUnit, accepted: Vec2) -> MovementFrameOutput {
     MovementFrameOutput {
+        recovery: Default::default(),
         unit_id: original.unit_id,
         position: accepted,
         target: None,

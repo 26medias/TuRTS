@@ -383,6 +383,7 @@ mod tests {
     }
     fn output(position: Vec2, target: Vec2) -> MovementFrameOutput {
         MovementFrameOutput {
+            recovery: Default::default(),
             unit_id: 1,
             position,
             target: Some(target),
@@ -418,6 +419,7 @@ mod tests {
             serde_json::from_str(include_str!("gm1_late_state.json")).unwrap();
         for reverse in [false, true] {
             let mut frame = MovementFrame {
+                recovery: Default::default(),
                 bounds: Vec2::new(64., 48.),
                 tick_hz: 20,
                 pools: BTreeMap::new(),
