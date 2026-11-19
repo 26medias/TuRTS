@@ -84,6 +84,7 @@ mod budget_tests {
             max_radius: 0.5,
             bounds: Vec2::splat(20.0),
             stationary_at_start: &[false],
+            contact_witness: &[vec![]],
             start_stall: &[None],
             soft: false,
             stall_ticks: 2,
@@ -93,6 +94,7 @@ mod budget_tests {
         let reached = planner.search(
             &[Vec2::new(6.0, 5.0), Vec2::new(7.0, 5.0)],
             false,
+            None,
             1,
             &mut spent,
             &mut exhausted,
@@ -260,6 +262,7 @@ impl Planner<'_> {
         &self,
         goals: &[Vec2],
         toward: bool,
+        eligible_limits: Option<&[f32]>,
         cap: usize,
         spent: &mut usize,
         exhausted: &mut bool,
@@ -293,6 +296,16 @@ impl Planner<'_> {
         if toward && !direct.is_empty() {
             return direct;
         }
+        let eligible =
+            |goal: usize, cost: f32| eligible_limits.is_some_and(|limits| cost < limits[goal]);
+        let mut best_goal = direct
+            .iter()
+            .filter(|r| eligible(r.goal, r.cost))
+            .map(|r| r.cost)
+            .fold(f32::INFINITY, f32::min);
+        let maximum_limit = eligible_limits.map_or(f32::INFINITY, |limits| {
+            limits.iter().copied().fold(0.0, f32::max)
+        });
         let mut attached: HashMap<Node, Vec<usize>> = HashMap::new();
         for (goal_index, goal) in goals.iter().enumerate() {
             for node in Self::nodes_near(*goal) {
@@ -333,6 +346,11 @@ impl Planner<'_> {
             {
                 continue;
             }
+            // No unsettled path can beat an eligible route once its prefix exceeds that
+            // route's total cost. Include equal costs for geometric tie breaking.
+            if !toward && (cost > best_goal || cost >= maximum_limit) {
+                break;
+            }
             if *spent >= cap {
                 *exhausted = true;
                 break;
@@ -344,6 +362,10 @@ impl Planner<'_> {
                     if reached[goal_index].is_none() && self.chord_clear(point, goals[goal_index]) {
                         reached[goal_index] =
                             Some((cost + point.distance(goals[goal_index]), node));
+                        let total = cost + point.distance(goals[goal_index]);
+                        if eligible(goal_index, total) {
+                            best_goal = best_goal.min(total);
+                        }
                         if toward {
                             break 'search;
                         }

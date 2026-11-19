@@ -366,7 +366,7 @@ pub(super) fn route_own(
     let (_, own_slot) = moving_member(&planner.units[planner.index])?;
     let cap = super::route::OWNER_CAP.min(*spent + super::route::NODE_CAP);
     planner
-        .search(&[own_slot], true, cap, spent, exhausted)
+        .search(&[own_slot], true, None, cap, spent, exhausted)
         .first()
         .map(|reached| reached.waypoint)
 }
@@ -383,6 +383,7 @@ pub(super) fn route_other(
     spent: &mut usize,
     exhausted: &mut bool,
     waits: &mut bool,
+    independent: bool,
 ) -> Option<Plan> {
     // The preceding search did not finish, so no alternate-slot decision is safe.
     if *exhausted {
@@ -393,6 +394,7 @@ pub(super) fn route_other(
     let (pool_id, own_slot) = moving_member(unit)?;
     let mut goals = Vec::new();
     let mut peers = Vec::new();
+    let mut limits = Vec::new();
     for slot in pool_index.slots_within(unit.position, FLOOD_SPACINGS) {
         if slot == own_slot {
             continue;
@@ -414,22 +416,27 @@ pub(super) fn route_other(
             None if assigned.contains(&key) => continue,
             None => None,
         };
+        let limit = peer_index.map_or(f32::INFINITY, |peer| units[peer].position.distance(slot));
         goals.push(slot);
         peers.push(peer_index);
+        limits.push(limit);
     }
     if goals.is_empty() {
         return None;
     }
     let cap = super::route::OWNER_CAP.min(*spent + super::route::FLOOD_CAP);
-    let reached = planner.search(&goals, false, cap, spent, exhausted);
+    let reached = planner.search(
+        &goals,
+        false,
+        independent.then_some(limits.as_slice()),
+        cap,
+        spent,
+        exhausted,
+    );
     *waits = !reached.is_empty();
     reached
         .into_iter()
-        .filter(|reached| {
-            peers[reached.goal].is_none_or(|peer| {
-                reached.cost < units[peer].position.distance(goals[reached.goal])
-            })
-        })
+        .filter(|reached| reached.cost < limits[reached.goal])
         .min_by(|a, b| {
             a.cost
                 .total_cmp(&b.cost)
@@ -488,6 +495,7 @@ mod exhaustion_tests {
             max_radius: 0.5,
             bounds: Vec2::splat(20.0),
             stationary_at_start: &[false],
+            contact_witness: &[vec![]],
             start_stall: &[None],
             soft: false,
             stall_ticks: 2,
@@ -512,6 +520,7 @@ mod exhaustion_tests {
             &mut spent,
             &mut exhausted,
             &mut waits,
+            false,
         );
         assert!(plan.is_none());
         assert!(exhausted && !waits);
@@ -520,5 +529,152 @@ mod exhaustion_tests {
             before,
             "an exhausted search must not enumerate alternate pool slots"
         );
+    }
+
+    #[test]
+    fn exhausted_own_route_can_take_a_proven_free_slot_without_displacing_resting_units() {
+        for reverse in [false, true] {
+            let start = Vec2::new(5.0, 5.0);
+            let own = Vec2::new(9.0, 5.0);
+            let free = Vec2::new(6.0, 5.0);
+            let occupied = Vec2::new(7.0, 5.0);
+            let mut units = vec![
+                MovementFrameUnit {
+                    unit_id: if reverse { 99 } else { 1 },
+                    owner_slot: 0,
+                    unit_type: 1,
+                    position: start,
+                    radius: 0.5,
+                    speed: Some(1.0),
+                    target: Some(own),
+                    progress: Some(MoveProgress {
+                        pool_id: 7,
+                        slot: own,
+                        activity: MovementActivity::Moving,
+                        pass_mode: false,
+                        stalling_on_group: false,
+                        stalled_ticks: 0,
+                        best_distance: 4.0,
+                        claim_count: 0,
+                        follow_origin: None,
+                    }),
+                    plain_progress: None,
+                    physical_escape: None,
+                },
+                MovementFrameUnit {
+                    unit_id: if reverse { 1 } else { 99 },
+                    owner_slot: 0,
+                    unit_type: 1,
+                    position: own,
+                    radius: 0.5,
+                    speed: None,
+                    target: None,
+                    progress: None,
+                    plain_progress: None,
+                    physical_escape: None,
+                },
+                MovementFrameUnit {
+                    unit_id: 3,
+                    owner_slot: 0,
+                    unit_type: 1,
+                    position: occupied,
+                    radius: 0.5,
+                    speed: None,
+                    target: None,
+                    progress: None,
+                    plain_progress: None,
+                    physical_escape: None,
+                },
+            ];
+            if reverse {
+                units.reverse();
+            }
+            let mover = units.iter().position(|u| u.target.is_some()).unwrap();
+            let points: Vec<_> = units
+                .iter()
+                .map(|u| crate::grid::GridPoint {
+                    id: u.unit_id,
+                    position: u.position,
+                })
+                .collect();
+            let grid = crate::grid::UniformGrid::new(&points, 1.0);
+            let stationary: Vec<_> = units.iter().map(|u| u.target.is_none()).collect();
+            let witnesses = vec![vec![]; units.len()];
+            let stalls = vec![None; units.len()];
+            let planner = super::super::route::Planner {
+                index: mover,
+                units: &units,
+                points: &points,
+                grid: &grid,
+                max_radius: 0.5,
+                bounds: Vec2::splat(20.0),
+                stationary_at_start: &stationary,
+                contact_witness: &witnesses,
+                start_stall: &stalls,
+                soft: false,
+                stall_ticks: 2,
+            };
+            let pool = MovementPool {
+                pool_id: 7,
+                point: own,
+                spacing: 1.1,
+                primary_count: 1,
+                slots: vec![own, occupied, free],
+            };
+            let index = MovementPoolIndex::new(&pool, Vec2::splat(20.0));
+            let assigned = HashSet::from([slot_key(7, own), slot_key(7, occupied)]);
+            let mut spent = 0;
+            let mut own_exhausted = false;
+            assert!(route_own(&planner, &mut spent, &mut own_exhausted).is_none());
+            assert!(own_exhausted, "own search must reach its own cap");
+            assert!(spent < super::super::route::OWNER_CAP);
+            let mut alternate_exhausted = false;
+            let mut waits = false;
+            let plan = route_other(
+                &planner,
+                &index,
+                &HashMap::new(),
+                &assigned,
+                &mut spent,
+                &mut alternate_exhausted,
+                &mut waits,
+                true,
+            )
+            .expect("free route");
+            assert!(!alternate_exhausted);
+            assert_eq!(
+                plan.claim,
+                Some(Choice {
+                    peer: None,
+                    slot: free
+                })
+            );
+            assert_eq!(
+                units
+                    .iter()
+                    .find(|u| u.position == occupied)
+                    .unwrap()
+                    .target,
+                None
+            );
+            let mut spent = super::super::route::OWNER_CAP - 1;
+            let mut exhausted = false;
+            let mut waits = false;
+            let plan = route_other(
+                &planner,
+                &index,
+                &HashMap::new(),
+                &assigned,
+                &mut spent,
+                &mut exhausted,
+                &mut waits,
+                true,
+            );
+            assert!(exhausted);
+            assert!(
+                plan.is_none(),
+                "an unfinished alternate search cannot claim a partial result"
+            );
+        }
     }
 }

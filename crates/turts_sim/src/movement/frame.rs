@@ -1116,11 +1116,32 @@ pub(crate) fn step_frame_with_motion_guide(
                         spent,
                         &mut exhausted,
                         &mut waits,
+                        false,
                     ) {
                         steer = Some(plan.waypoint);
                         choice = plan.claim;
                     } else {
                         no_route = !waits && !exhausted;
+                    }
+                }
+                if steer.is_none() && exhausted && stalled && *spent < super::route::OWNER_CAP {
+                    // The own route is unknown, not unreachable. A separate search may
+                    // only take a proven route to an unclaimed slot, or beat a moving
+                    // claimant's straight-line lower bound. Resting claims remain fixed.
+                    let mut alternate_exhausted = false;
+                    let mut waits = false;
+                    if let Some(plan) = super::exchange::route_other(
+                        &planner,
+                        pool_index,
+                        claimants.get_or_insert_with(|| super::exchange::claimants(&units)),
+                        &assigned_slots,
+                        spent,
+                        &mut alternate_exhausted,
+                        &mut waits,
+                        true,
+                    ) {
+                        steer = Some(plan.waypoint);
+                        choice = plan.claim;
                     }
                 }
             }
