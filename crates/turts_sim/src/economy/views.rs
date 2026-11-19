@@ -572,6 +572,10 @@ fn operating_view(world: &World) -> Option<OperatingView> {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AuditState {
+    /// The constant inputs of restricted sight. Absent means AllVisible; a log from before
+    /// this field has no restricted dispatch rule, so it replays as AllVisible too.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub raw_sight: Option<crate::visibility::SightAudit>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub raw_terrain: Option<crate::terrain::TerrainAudit>,
     /// Immutable authored cap needed to validate ordinary construction admission.
@@ -1656,6 +1660,7 @@ pub fn audit_state(world: &mut World) -> AuditState {
     };
     let m3 = super::views_m3::m3_audit_state(world);
     AuditState {
+        raw_sight: crate::visibility::audit(world),
         raw_terrain: crate::terrain::privileged_audit(world),
         construction_limit: world
             .get_resource::<super::construction::ConstructionLimit>()

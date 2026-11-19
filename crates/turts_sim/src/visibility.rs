@@ -863,6 +863,76 @@ impl VisibilityState {
     }
 }
 
+/// The sight rule of a match: the part that a host can state from the locked package and
+/// the room (grid, sharing, teams). An auditor compares it with its own trusted copy.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct SightPolicy {
+    pub grid: VisibilityGrid,
+    pub sharing: VisionSharing,
+    pub teams: Vec<u8>,
+}
+/// One unit type that the sight basis lists. `radius` is `None` for a type with no vision.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct SightTypeAudit {
+    pub type_id: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub radius: Option<f32>,
+    pub has_health: bool,
+}
+/// Privileged audit copy of the constant inputs of sight. It holds no result of a sight
+/// computation: no observed cell and no permitted or hidden unit. An auditor computes those.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct SightAudit {
+    pub policy: SightPolicy,
+    /// False for the fail-closed placeholder: no slot may see a unit of another slot.
+    pub finalized: bool,
+    pub types: Vec<SightTypeAudit>,
+}
+/// `(content id, vision, has health)` for each unit type; `None` for a type that the basis
+/// cannot list. The one source for `capture_units` and for the audit copy.
+type SightTypeRow = Option<(Arc<ContentId>, Option<turts_mod_api::VisionDef>, bool)>;
+fn sight_type_rows(world: &World) -> Vec<SightTypeRow> {
+    let Some(types) = world.get_resource::<crate::UnitTypes>() else {
+        return Vec::new();
+    };
+    let catalog = world.get_resource::<crate::bootstrap::InstalledCatalog>();
+    types
+        .entries()
+        .iter()
+        .map(|entry| {
+            let id = ContentId::parse(&entry.content_id).ok()?;
+            let definition = catalog.and_then(|catalog| catalog.0.units.get(&id));
+            let vision = definition.and_then(|unit| unit.vision);
+            let has_health = definition.is_some_and(|unit| unit.health.is_some());
+            Some((Arc::new(id), vision, has_health))
+        })
+        .collect()
+}
+/// None means explicit AllVisible, as everywhere in this module.
+pub fn audit(world: &World) -> Option<SightAudit> {
+    let state = world.get_resource::<VisibilityState>()?;
+    Some(SightAudit {
+        policy: SightPolicy {
+            grid: state.grid,
+            sharing: state.definition.sharing,
+            teams: state.teams.clone(),
+        },
+        finalized: state.context_finalized,
+        types: sight_type_rows(world)
+            .into_iter()
+            .enumerate()
+            .filter_map(|(type_id, row)| {
+                let (_, vision, has_health) = row?;
+                Some(SightTypeAudit {
+                    type_id: type_id as u32,
+                    radius: vision.map(|vision| vision.radius),
+                    has_health,
+                })
+            })
+            .collect(),
+    })
+}
+
 /// None means only explicit AllVisible. Installed restricted phases always exist.
 pub fn basis(world: &World, phase: ObservationPhase) -> Option<Arc<VisibilityBasis>> {
     world
@@ -923,21 +993,10 @@ fn capture_units(world: &mut World) -> (Vec<VisibleUnit>, Vec<SightSource>) {
         &crate::Position,
         Option<&crate::world::UnitFacing>,
     )>();
-    let Some(types) = world.get_resource::<crate::UnitTypes>() else {
+    if !world.contains_resource::<crate::UnitTypes>() {
         return (Vec::new(), Vec::new());
-    };
-    let catalog = world.get_resource::<crate::bootstrap::InstalledCatalog>();
-    let definitions = types
-        .entries()
-        .iter()
-        .map(|entry| {
-            let id = ContentId::parse(&entry.content_id).ok()?;
-            let definition = catalog.and_then(|catalog| catalog.0.units.get(&id));
-            let vision = definition.and_then(|unit| unit.vision);
-            let has_health = definition.is_some_and(|unit| unit.health.is_some());
-            Some((Arc::new(id), vision, has_health))
-        })
-        .collect::<Vec<_>>();
+    }
+    let definitions = sight_type_rows(world);
     let sites = world.get_resource::<crate::economy::construction::ConstructionState>();
     let healths = world.get_resource::<crate::economy::combat::Healths>();
     let mut units = Vec::new();

@@ -93,6 +93,23 @@ pub fn read_jsonl_file(path: impl AsRef<std::path::Path>) -> Result<Vec<EconomyL
     read_jsonl(BufReader::new(file))
 }
 
+/// `validate_records`, after a check of the sight policy of the log against the copy that
+/// the caller holds from a trusted source (the locked package and the room). `None` means
+/// AllVisible. `validate_records` alone trusts the policy of the `Initial` record, as it
+/// trusts the catalog there.
+pub fn validate_records_with_sight(
+    records: &[EconomyLogRecord],
+    expected: Option<&turts_sim::visibility::SightPolicy>,
+) -> Result<(), String> {
+    let Some(EconomyLogRecord::Initial(initial)) = records.first() else {
+        return Err("first economy log record must be Initial".into());
+    };
+    if initial.raw_sight.as_ref().map(|sight| &sight.policy) != expected {
+        return Err("economy log sight policy differs from the trusted policy".into());
+    }
+    validate_records(records)
+}
+
 /// Check record shape, R14 clock transitions, command-operation association, and
 /// the published tick boundary. Operation expectations remain external to this log.
 pub fn validate_records(records: &[EconomyLogRecord]) -> Result<(), String> {
@@ -107,6 +124,7 @@ pub fn validate_records(records: &[EconomyLogRecord]) -> Result<(), String> {
         return Err("economy log contains more than one Initial record".into());
     }
 
+    crate::sight::validate_records(records, initial)?;
     crate::terrain::validate_records(records)?;
     validate_actor_records(records, initial)?;
     crate::paid::validate_published_state(initial)?;
@@ -710,6 +728,7 @@ pub fn validate_records(records: &[EconomyLogRecord]) -> Result<(), String> {
                                 &plain_candidates,
                                 legacy_pending_move_to.contains(&unit_id),
                                 &mut pending_dispatch_members,
+                                &tick_start,
                             )?;
                             if legacy_pending_move_to.contains(&unit_id)
                                 && is_movement_pool_member_dispatch_operation(operation)
@@ -3804,6 +3823,7 @@ fn validate_automatic_order_operation(
     plain_candidates: &BTreeMap<u32, PlainCandidateReplay>,
     legacy_pending_move_to: bool,
     pending_dispatch_members: &mut BTreeMap<(u8, u64), PendingDispatchReplay>,
+    tick_start: &AuditState,
 ) -> Result<(), String> {
     if operation.phase == turts_sim::economy::transaction::AuditPhase::PostMovementOrders
         && operation.unit_id.is_some_and(|unit| {
@@ -4498,7 +4518,7 @@ fn validate_automatic_order_operation(
                 && row.progress.failure_recorded
         })
     {
-        validate_pending_movement_failure(operation, unit_id, request, &mut expected)?;
+        validate_pending_movement_failure(operation, unit_id, request, tick_start, &mut expected)?;
         return Ok(());
     }
     if !prior_plain_failure_ack
@@ -4510,7 +4530,13 @@ fn validate_automatic_order_operation(
     {
         match recorded_orders_after.last_failure.as_ref().unwrap().reason {
             turts_sim::RejectReason::Blocked => {
-                validate_pending_movement_failure(operation, unit_id, request, &mut expected)?;
+                validate_pending_movement_failure(
+                    operation,
+                    unit_id,
+                    request,
+                    tick_start,
+                    &mut expected,
+                )?;
                 return Ok(());
             }
             turts_sim::RejectReason::TargetGone => {
@@ -4590,6 +4616,7 @@ fn validate_automatic_order_operation(
             plain_candidates,
             legacy_pending_move_to,
             pending_dispatch_members,
+            tick_start,
             &mut expected,
         )?;
         return Ok(());
@@ -5560,6 +5587,7 @@ fn validate_pending_movement_dispatch(
     plain_candidates: &BTreeMap<u32, PlainCandidateReplay>,
     legacy_pending_move_to: bool,
     pending_dispatch_members: &mut BTreeMap<(u8, u64), PendingDispatchReplay>,
+    tick_start: &AuditState,
     expected: &mut AuditState,
 ) -> Result<(), String> {
     use turts_sim::movement::{
@@ -5623,7 +5651,14 @@ fn validate_pending_movement_dispatch(
                 "movement dispatch for unit {unit_id} does not match its pending envelope"
             ));
         }
-        let moving: std::collections::BTreeSet<_> = request.unit_ids.iter().copied().collect();
+        // Under restricted sight, the live spread leaves out each body that the ordering
+        // slot may not see. The auditor computes that set; the log does not supply it.
+        let mut moving: std::collections::BTreeSet<_> = request.unit_ids.iter().copied().collect();
+        moving.extend(crate::sight::hidden_bodies(
+            tick_start,
+            &operation.before,
+            slot,
+        )?);
         let members: Vec<_> = request
             .unit_ids
             .iter()
@@ -6214,12 +6249,18 @@ fn validate_pending_movement_failure(
     operation: &OperationAudit,
     unit_id: u32,
     request: &turts_sim::orders::PendingMovementOrder,
+    tick_start: &AuditState,
     expected: &mut AuditState,
 ) -> Result<(), String> {
     use turts_sim::movement::{ReservedFootprint, SpreadMember, StaticFootprint};
 
     let slot = request.slot.0;
-    let moving: std::collections::BTreeSet<_> = request.unit_ids.iter().copied().collect();
+    let mut moving: std::collections::BTreeSet<_> = request.unit_ids.iter().copied().collect();
+    moving.extend(crate::sight::hidden_bodies(
+        tick_start,
+        &operation.before,
+        slot,
+    )?);
     let members: Vec<_> = request
         .unit_ids
         .iter()
@@ -17741,6 +17782,7 @@ mod tests {
             &std::collections::BTreeMap::new(),
             true,
             &mut std::collections::BTreeMap::new(),
+            &prior_waiting_for_legacy_b.before,
         );
         assert!(
             ack_replay.is_ok(),
@@ -17755,6 +17797,7 @@ mod tests {
             &std::collections::BTreeMap::new(),
             true,
             &mut std::collections::BTreeMap::new(),
+            &prior_waiting_for_legacy_b.before,
         )
         .expect_err("replay rejects a forged old-A identity while B waits");
         assert!(
