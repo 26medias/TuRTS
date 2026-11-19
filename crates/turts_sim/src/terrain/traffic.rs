@@ -10,6 +10,7 @@ mod observed_detour;
 mod own_detour;
 mod parking;
 pub(crate) mod public_passage;
+mod retained_accounting;
 pub(crate) use parking::DestinationRegion;
 use public_passage::Rows as GateRows;
 mod spatial;
@@ -56,7 +57,8 @@ const RETAINED_ALLOWANCE: usize = std::mem::size_of::<TrafficState>()
     + MEMBERS * std::mem::size_of::<velocity::HistoryRow>()
     + SLOTS * 32
     + GATES * std::mem::size_of::<Gate>()
-    + GATES * BATCH * 256;
+    + GATES * BATCH * 256
+    + retained_accounting::root_allowance(true, GATES);
 const _: () = assert!(
     RETAINED_ALLOWANCE
         + INDEX_BODIES * PER_BODY_SCRATCH
@@ -323,6 +325,13 @@ impl TrafficState {
                 .map(|gate| gate.admitted.len())
                 .sum::<usize>()
                 * 256
+            + retained_accounting::root_allowance(
+                !self.members.is_empty(),
+                self.gates
+                    .iter()
+                    .filter(|gate| !gate.admitted.is_empty())
+                    .count(),
+            )
     }
     pub(crate) fn scratch_bytes(&self) -> usize {
         self.scratch_bound
