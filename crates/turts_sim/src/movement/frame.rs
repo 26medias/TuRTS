@@ -150,7 +150,14 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
     visibility: Option<&crate::visibility::VisibilityBasis>,
 ) -> Vec<MovementFrameOutput> {
     let mut units = frame.units.clone();
-    let mut resolved_ties = super::arrival::prepare_with_guide(&mut units, dt, frame.bounds, guide);
+    let mut resolved_ties = super::arrival::prepare_with_guide(
+        &mut units,
+        &frame.units,
+        dt,
+        frame.bounds,
+        guide,
+        visibility,
+    );
     resolved_ties.sort_unstable_by_key(|(unit, _)| *unit);
     let origins = units.iter().map(|unit| unit.position).collect::<Vec<_>>();
     let units_at_start: Vec<(u8, f32)> = units

@@ -424,12 +424,15 @@ fn shortening_a_private_connector_keeps_actual_destination_service_order() {
         for connector in [Vec2::new(8., 5.), Vec2::new(3.1, 5.)] {
             let mut units = frame.units.clone();
             units.iter_mut().find(|u| u.position.x < 4.).unwrap().target = Some(connector);
+            let original = units.clone();
             assert!(
                 crate::movement::arrival::prepare_with_guide(
                     &mut units,
+                    &original,
                     0.05,
                     frame.bounds,
-                    &guide
+                    &guide,
+                    None,
                 )
                 .is_empty()
             );
@@ -455,7 +458,15 @@ fn private_waypoints_skip_arrival_yield_recovery_but_remain_physical_bodies() {
         arrive: false,
     };
     let mut units = frame.units.clone();
-    crate::movement::arrival::prepare_with_guide(&mut units, 0.05, frame.bounds, &guide);
+    let original = units.clone();
+    crate::movement::arrival::prepare_with_guide(
+        &mut units,
+        &original,
+        0.05,
+        frame.bounds,
+        &guide,
+        None,
+    );
     assert_eq!(units.iter().find(|u| u.unit_id == 7).unwrap(), &before);
     assert!(
         units

@@ -29,3 +29,11 @@ At integration commit `6aa77235`, an instrumented release fixture filled a 16-by
 The 351,276 candidate count exceeds the existing 65,536 owner route-work envelope. The all-visible control also generated 351,276 candidates, so the ring search predates the fog filter. The fog filter adds the permitted-body lookups. Results and the diagnostic patch are in `target/mc-evidence/singleton-fog-investigation/` in the main checkout. A simple cap would restart incomplete searches and can starve movers. No such cap is included. The existing continuation spike also failed its liveness check; see `target/mc-evidence/m4b-route-spike/REPORT.md`.
 
 The same investigation found that a hidden body changed plain blocked recovery. The plain escape search now applies the permitted-body filter. The physical escape path still checks all bodies. Hidden and visible paired-world tests pass. All 127 movement library tests pass. The plain and pool escape searches still need bounded, fair continuation.
+
+## Arrival-yield holder privacy
+
+A hidden body at the original destination made a yielding mover stop before contact. The holder check now accepts own, visible, and contact-range bodies. It indexes the existing input rows instead of copying their positions. The index element is no larger than the prior copied position on native or wasm. It adds no second body index. The existing holder scan is still not work-metered; no peak heap or scale timing was measured for this change.
+
+Live paired-world tests pass for hidden, visible, and contact-range holders. A test using ordinary point orders confirms that the yielding state can arise in play. A fog cross-owner first-arrival test passes with the unit IDs reversed. All 127 movement library tests pass.
+
+Another live test shows that an unseen enemy's order target can still change arrival arbitration before physical contact. The failing test is saved as `target/mc-evidence/singleton-fog-investigation/hidden-enemy-arrival-order-regression.rs` in the main checkout. Splitting arrivals by owner fixed that test but caused the earlier cross-owner mover to stop 0.19 units short. That attempted change was rejected. Safe collision arbitration remains open.

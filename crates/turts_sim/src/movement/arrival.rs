@@ -43,9 +43,11 @@ fn geometry_goals(
 /// They retain full physical bodies and transit order uses the real order goal.
 pub(super) fn prepare_with_guide(
     units: &mut [MovementFrameUnit],
+    original: &[MovementFrameUnit],
     dt: f32,
     bounds: Vec2,
     guide: &dyn super::motion::MotionGuide,
+    visibility: Option<&crate::visibility::VisibilityBasis>,
 ) -> Vec<(u32, Vec2)> {
     let owns = |unit: &MovementFrameUnit| {
         guide.kind(unit.unit_id) == super::motion::MotionKind::Destination
@@ -71,10 +73,11 @@ pub(super) fn prepare_with_guide(
             .then_with(|| geometry_goals(a, b, a_goal, b_goal))
     };
     let mut resolved_ties = Vec::new();
-    let holders = units
+    // Reuse the input rows. A holder index uses no more space than a position.
+    let holders = original
         .iter()
-        .filter(|unit| unit.target.is_none())
-        .map(|unit| unit.position)
+        .enumerate()
+        .filter_map(|(index, unit)| unit.target.is_none().then_some(index))
         .collect::<Vec<_>>();
     for unit in units.iter_mut() {
         if !owns(unit) {
@@ -85,10 +88,16 @@ pub(super) fn prepare_with_guide(
             .as_mut()
             .filter(|progress| progress.arrival_yield)
         {
-            if holders
-                .iter()
-                .any(|position| position.distance(progress.original_point) < 1e-5)
-            {
+            if holders.iter().any(|&index| {
+                let holder = &original[index];
+                holder.position.distance(progress.original_point) < 1e-5
+                    && visibility.is_none_or(|basis| {
+                        holder.owner_slot == unit.owner_slot
+                            || basis.unit_permitted(unit.owner_slot, holder.unit_id)
+                            || unit.position.distance(holder.position)
+                                <= unit.radius + holder.radius + super::route::CONTACT_GAP
+                    })
+            }) {
                 progress.arrival_yield = false;
                 progress.activity = MovementActivity::Resting;
                 progress.slot = unit.position;

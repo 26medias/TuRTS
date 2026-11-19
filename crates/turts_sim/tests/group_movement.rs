@@ -4641,3 +4641,177 @@ fn visible_body_changes_plain_blocked_recovery() {
         "visible body must affect singleton blocked recovery"
     );
 }
+
+fn arrival_yield_fog_fixture(enemy: Vec2, visible: bool, actor: Vec2) -> (Option<Vec2>, Vec2) {
+    use turts_mod_api::{ObservationPhase, VisibilityDef, VisibilityGrid, VisionSharing};
+    use turts_sim::movement::{MovementActivity, PlainMoveProgress};
+    let mut app = app_with_units(&[(actor.x, actor.y), (enemy.x, enemy.y)], &[0, 1]);
+    let mover = app
+        .world()
+        .iter_entities()
+        .find(|e| e.get::<turts_sim::UnitId>().is_some_and(|id| id.0 == 1))
+        .unwrap()
+        .id();
+    app.world_mut().entity_mut(mover).insert((
+        MoveTarget(Vec2::new(47.0, 50.0)),
+        PlainMoveProgress {
+            arrival_yield: true,
+            original_point: Vec2::splat(50.0),
+            slot: Vec2::new(47.0, 50.0),
+            pool_slots: vec![],
+            gather_goal: None,
+            activity: MovementActivity::Moving,
+            stalled_ticks: 0,
+            best_distance: 1.0,
+            claim_count: 1,
+            failure_recorded: false,
+        },
+    ));
+    let sight = turts_sim::visibility::prepare(
+        0,
+        turts_mod_api::ContentId::parse("fixture_pkg:field").unwrap(),
+        &VisibilityDef {
+            cell_size: 2.0,
+            sharing: VisionSharing::OwnSlot,
+            memory_limit: None,
+        },
+        VisibilityGrid {
+            size: WorldPos { x: 64.0, y: 64.0 },
+            cell_size: 2.0,
+            columns: 32,
+            rows: 32,
+        },
+        &[0, 1],
+    )
+    .unwrap();
+    if visible {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../mods/base");
+        let mut catalog = turts_mod_runtime::archive::PackageArchive::parse(
+            &turts_mod_runtime::pack::pack_dir(&root).unwrap(),
+        )
+        .unwrap()
+        .content()
+        .unwrap();
+        let mut definition = catalog.units.values().next().unwrap().clone();
+        definition.id = turts_mod_api::ContentId::parse("fixture_pkg:walker").unwrap();
+        definition.vision = Some(turts_mod_api::VisionDef { radius: 64.0 });
+        definition.health = None;
+        catalog.units.insert(definition.id.clone(), definition);
+        app.insert_resource(turts_sim::bootstrap::InstalledCatalog(catalog));
+    }
+    app.insert_resource(sight);
+    turts_sim::visibility::initialize_context(app.world_mut(), 0, &[0, 1]).unwrap();
+    turts_sim::initialize_completed_world(app.world_mut());
+    assert_eq!(
+        turts_sim::visibility::unit_permitted(app.world(), 0, 2, ObservationPhase::Completed),
+        visible
+    );
+    app.update();
+    let mover = app.world().entity(mover);
+    (
+        mover.get::<MoveTarget>().map(|target| target.0),
+        mover.get::<turts_sim::Position>().unwrap().0,
+    )
+}
+
+#[test]
+fn arrival_yield_ignores_hidden_remote_holder() {
+    assert_eq!(
+        arrival_yield_fog_fixture(Vec2::splat(55.0), false, Vec2::new(48.0, 50.0)),
+        arrival_yield_fog_fixture(Vec2::splat(50.0), false, Vec2::new(48.0, 50.0))
+    );
+}
+
+#[test]
+fn arrival_yield_respects_visible_holder() {
+    assert_ne!(
+        arrival_yield_fog_fixture(Vec2::splat(55.0), true, Vec2::new(48.0, 50.0)),
+        arrival_yield_fog_fixture(Vec2::splat(50.0), true, Vec2::new(48.0, 50.0))
+    );
+}
+
+#[test]
+fn ordinary_orders_can_create_arrival_yield() {
+    let mut app = app_with_units(&[(48.4, 50.0), (51.7, 50.0)], &[0, 0]);
+    let goal = Vec2::splat(50.0);
+    send_order(&mut app, 0, vec![1], goal, 1, QueueMode::Replace);
+    send_order(&mut app, 0, vec![2], goal, 2, QueueMode::Replace);
+    let mut found = false;
+    for _ in 0..30 {
+        app.update();
+        found |= app.world().iter_entities().any(|e| {
+            e.get::<turts_sim::movement::PlainMoveProgress>()
+                .is_some_and(|p| p.arrival_yield)
+        });
+    }
+    assert!(
+        found,
+        "ordinary point orders did not create a temporary yield in this scene"
+    );
+}
+
+#[test]
+fn arrival_yield_respects_contact_with_hidden_holder() {
+    let contact = arrival_yield_fog_fixture(Vec2::splat(50.0), false, Vec2::new(48.95, 50.0));
+    assert_eq!(contact.0, None, "a body at contact must retain the point");
+}
+
+#[test]
+fn fog_cross_owner_first_arrival_keeps_point_without_overlap() {
+    use turts_mod_api::{VisibilityDef, VisibilityGrid, VisionSharing};
+    for reverse in [false, true] {
+        let (positions, owners, first, second) = if reverse {
+            ([(52.0, 50.0), (48.8, 50.0)], [1, 0], 2, 1)
+        } else {
+            ([(48.8, 50.0), (52.0, 50.0)], [0, 1], 1, 2)
+        };
+        let mut app = app_with_units(&positions, &owners);
+        let sight = turts_sim::visibility::prepare(
+            0,
+            turts_mod_api::ContentId::parse("fixture_pkg:field").unwrap(),
+            &VisibilityDef {
+                cell_size: 2.0,
+                sharing: VisionSharing::OwnSlot,
+                memory_limit: None,
+            },
+            VisibilityGrid {
+                size: WorldPos { x: 64.0, y: 64.0 },
+                cell_size: 2.0,
+                columns: 32,
+                rows: 32,
+            },
+            &[0, 1],
+        )
+        .unwrap();
+        app.insert_resource(sight);
+        turts_sim::visibility::initialize_context(app.world_mut(), 0, &[0, 1]).unwrap();
+        turts_sim::initialize_completed_world(app.world_mut());
+        send_order(
+            &mut app,
+            0,
+            vec![first],
+            Vec2::splat(50.0),
+            1,
+            QueueMode::Replace,
+        );
+        send_order(
+            &mut app,
+            1,
+            vec![second],
+            Vec2::splat(50.0),
+            2,
+            QueueMode::Replace,
+        );
+        for _ in 0..120 {
+            app.update();
+            let rows = snapshot(app.world_mut());
+            assert!(rows[0].pos.distance(rows[1].pos) >= 1.0 - 1e-5);
+        }
+        let rows = snapshot(app.world_mut());
+        let first_pos = rows.iter().find(|r| r.unit_id == first).unwrap().pos;
+        assert!(
+            first_pos.distance(Vec2::splat(50.0)) < 1e-4,
+            "first arrival lost point, reverse={reverse}, rows={rows:?}"
+        );
+    }
+}
