@@ -4939,16 +4939,16 @@ fn ordinary_enemy_order_does_not_change_arrival_before_contact() {
             })
             .collect()
     }
-    let alone = run(None, 2);
-    for target in [
-        Vec2::splat(50.0),
-        Vec2::new(55.0, 50.0),
-        Vec2::new(45.0, 50.0),
-        Vec2::new(51.0, 55.0),
+    // An enemy order away from our unit never gives contact: compare 40 ticks for those.
+    for (target, ticks) in [
+        (Vec2::splat(50.0), 2),
+        (Vec2::new(55.0, 50.0), 40),
+        (Vec2::new(45.0, 50.0), 2),
+        (Vec2::new(51.0, 55.0), 40),
     ] {
         assert_eq!(
-            alone,
-            run(Some(target), 2),
+            run(None, ticks),
+            run(Some(target), ticks),
             "a hidden enemy order to {target:?} changed our unit before contact"
         );
     }

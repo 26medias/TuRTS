@@ -80,8 +80,8 @@ the cut, so a hidden body or an own body cannot push a known body of another own
 The bound is not linear in one case: each row examines each mover whose goal is in the cells
 near it. Many movers with goals in one cell and many bodies near that cell give (movers ×
 bodies) distance checks. The shared rule of the base build has the same shape. The review
-measured 2,000 bodies of two owners at one goal on the first build: fog was not slower than
-the path with no basis.
+measured 2,000 bodies of two owners, each with its own goal one step away (debug build, 3
+ticks, machine under load): 15.8 s with fog, 139.6 s with no basis.
 
 ## What a test must show
 
@@ -110,7 +110,10 @@ the path with no basis.
 4. A body that the sweep stops with no motion at all in the tick of first contact is not a
    contender in that tick. The 900 tie cases on one axis show no such case.
 5. An exact tie at an angle to the axes can have a winner when float error makes the two times
-   differ by more than 1e-6 s. The base build with no basis has the same limit.
+   differ by more than 1e-6 s. The base build with no basis has the same kind of limit, at a
+   lower rate with sight. The review measured 340 ties at general angles: 33 have a winner
+   with no basis, 32 under fog with no sight, 67 under fog with mutual sight. The cause of
+   the higher rate with sight is not traced.
 6. Asymmetric sight: when only one owner sees the other body, only that owner decides before
    contact. The two results are then not symmetric.
 7. With sight, the closest-arrival rule of the base build gives a body another point as soon as
