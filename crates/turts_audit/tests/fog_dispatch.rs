@@ -59,19 +59,24 @@ struct Run {
 }
 impl Run {
     fn new(fog: bool) -> Self {
+        Self::with_placements(fog, None, false)
+    }
+    fn with_placements(fog: bool, placements: Option<Vec<Placement>>, overlap: bool) -> Self {
         let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../mods/cedar");
         let archive = PackageArchive::parse(&pack_dir(&path).unwrap()).unwrap();
         let mut catalog = archive.content().unwrap();
         let mut map = archive.maps().unwrap().remove(0).1;
         catalog.units.get_mut(&cid("worker")).unwrap().vision = Some(VisionDef { radius: VISION });
         map.nodes.clear();
-        map.placements = GROUP_1
-            .iter()
-            .chain(&GROUP_2)
-            .chain([&OBSERVER])
-            .map(|at| placement(0, *at))
-            .chain([placement(1, HIDDEN_POINT), placement(1, SEEN_POINT)])
-            .collect();
+        map.placements = placements.unwrap_or_else(|| {
+            GROUP_1
+                .iter()
+                .chain(&GROUP_2)
+                .chain([&OBSERVER])
+                .map(|at| placement(0, *at))
+                .chain([placement(1, HIDDEN_POINT), placement(1, SEEN_POINT)])
+                .collect()
+        });
         map.visibility = fog.then_some(VisibilityDef {
             cell_size: 2.0,
             sharing: VisionSharing::OwnSlot,
@@ -92,6 +97,18 @@ impl Run {
         turts_sim::visibility::initialize_context(app.world_mut(), 7, &[0, 1]).unwrap();
         turts_sim::initialize_completed_world(app.world_mut());
         app.update();
+        if overlap {
+            let world = app.world_mut();
+            let mut positions = world.query::<&mut turts_sim::Position>();
+            let mut changed = false;
+            for mut position in positions.iter_mut(world) {
+                if position.0 == Vec2::new(15.0, 15.0) {
+                    position.0 = Vec2::new(10.0, 10.0);
+                    changed = true;
+                }
+            }
+            assert!(changed);
+        }
         app.world_mut().resource_mut::<AuditTrail>().enable();
         let records = vec![EconomyLogRecord::Initial(turts_sim::audit_state(
             app.world_mut(),
@@ -279,6 +296,61 @@ fn live_fog_capture_replays_with_auditor_computed_sight() {
     let records = captured(true);
     validate_records(&records).unwrap();
     validate_records_with_sight(&records, Some(&trusted_policy())).unwrap();
+}
+
+#[test]
+fn fog_physical_escape_from_a_post_failure_snapshot_replays() {
+    let mut positions = vec![placement(0, (10.0, 10.0)), placement(0, (15.0, 15.0))];
+    for i in 0..6 {
+        let angle = i as f32 * std::f32::consts::TAU / 6.0;
+        positions.push(placement(
+            0,
+            (10.0 + 1.05 * angle.cos(), 10.0 + 1.05 * angle.sin()),
+        ));
+    }
+    positions.push(placement(1, HIDDEN_POINT));
+    let mut run = Run::with_placements(true, Some(positions), true);
+    let hidden = run.unit_at(HIDDEN_POINT);
+    assert!(!turts_sim::visibility::unit_permitted(
+        run.app.world(),
+        0,
+        hidden,
+        ObservationPhase::Start
+    ));
+    run.order(1, &[(10.0, 10.0)], (40.0, 10.0));
+    run.ticks(30);
+    // Start the capture with an overlapping unit already in physical escape. This is a
+    // constructed post-failure snapshot; the following recovery ticks are live.
+    {
+        let world = run.app.world_mut();
+        let mut query = world.query::<(bevy::prelude::Entity, &turts_sim::UnitId)>();
+        let (entity, _) = query.iter(world).find(|(_, id)| id.0 == 1).unwrap();
+        let mut actor = world.entity_mut(entity);
+        actor.remove::<turts_sim::MoveTarget>();
+        actor.insert(turts_sim::movement::PhysicalEscape { target: None });
+    }
+    run.records = vec![EconomyLogRecord::Initial(turts_sim::audit_state(
+        run.app.world_mut(),
+    ))];
+    run.ticks(30);
+    assert!(run.records.iter().any(|r| matches!(r, EconomyLogRecord::Tick {state, ..} if state.physical_escapes.iter().any(|row| row.escape.target.is_some()))), "a live tick must choose an escape target");
+    validate_records_with_sight(&run.records, Some(&trusted_policy())).unwrap();
+    let mut forged = run.records.clone();
+    let target = forged
+        .iter_mut()
+        .find_map(|record| match record {
+            EconomyLogRecord::Tick { state, .. } => state
+                .physical_escapes
+                .iter_mut()
+                .find_map(|row| row.escape.target.as_mut()),
+            _ => None,
+        })
+        .unwrap();
+    target.x += 1.0;
+    assert!(
+        validate_records_with_sight(&forged, Some(&trusted_policy())).is_err(),
+        "a forged escape target must be refused"
+    );
 }
 
 #[test]
