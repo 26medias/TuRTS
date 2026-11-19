@@ -1,4 +1,4 @@
-//! Fog arrival against bodies of other owners (`arrival::foreign_arrivals`).
+//! Fog arrival against bodies of other owners (`arrival::settle_foreign`).
 //! A mover uses its own goal and the physical state of a body that it can know.
 use crate::movement::{
     MovementActivity, MovementFrame, MovementFrameUnit, MovementVisibility,
@@ -423,4 +423,73 @@ fn a_hidden_building_at_the_goal_does_not_change_our_own_contest() {
         hidden.iter().flatten().any(yielding),
         "fixture error: the contest was not decided before contact"
     );
+}
+
+#[test]
+fn exact_ties_on_one_axis_have_no_winner_at_any_distance_radius_or_speed() {
+    // Bit-equal distances on one axis. The contact tick falls at a different part of a
+    // step in each case, so the sweep stops a different body first. No sight, and sight.
+    let mut cases = 0;
+    for radius in [0.3_f32, 0.5, 1.0] {
+        for speed in [0.7_f32, 3.0, 6.0] {
+            for eighths in 0..=24 {
+                let offset = 2.0 * radius + 0.5 + eighths as f32 / 8.0;
+                for axis in [Vec2::X, Vec2::Y] {
+                    for seen in [false, true] {
+                        let sight = Sight(if seen { vec![(0, 2), (1, 1)] } else { vec![] });
+                        let mut a = body(1, 0, GOAL - axis * offset, speed, Some(GOAL));
+                        let mut b = body(2, 1, GOAL + axis * offset, speed, Some(GOAL));
+                        a.radius = radius;
+                        b.radius = radius;
+                        let end = run(frame(vec![a, b]), &sight, 400);
+                        let (da, db) = (
+                            unit(&end, 1).position.distance(GOAL),
+                            unit(&end, 2).position.distance(GOAL),
+                        );
+                        assert!(
+                            (da - db).abs() < 1e-4 && end.units.iter().all(|u| u.target.is_none()),
+                            "radius {radius} speed {speed} offset {offset} axis {axis:?} \
+                             sight {seen}: a tie had a winner: {da} {db}"
+                        );
+                        cases += 1;
+                    }
+                }
+            }
+        }
+    }
+    assert_eq!(cases, 900);
+}
+
+#[test]
+fn a_hidden_order_that_cannot_move_its_body_changes_nothing() {
+    // A hidden enemy stands behind our resting body. In one world it has an order through
+    // our mover; in the other world it has no order. While the enemy body is at the same
+    // place in the two worlds, and there is no contact, our mover must be the same.
+    let world = |enemy_goal: Option<Vec2>| {
+        let mut wall = body(4, 0, Vec2::new(20.3, 20.0), 0.0, None);
+        wall.radius = 0.1;
+        let mut frame = frame(vec![
+            body(1, 0, Vec2::new(18.85, 20.0), 3.0, Some(GOAL)),
+            body(2, 1, Vec2::new(20.95, 20.0), 20.0, enemy_goal),
+            wall,
+        ]);
+        (0..40)
+            .map(|index| {
+                tick(&mut frame, &Sight(vec![]), index);
+                (unit(&frame, 1).clone(), unit(&frame, 2).position)
+            })
+            .collect::<Vec<_>>()
+    };
+    let ordered = world(Some(Vec2::new(10.0, 20.0)));
+    let idle = world(None);
+    let mut compared = 0;
+    for (index, (a, b)) in ordered.iter().zip(&idle).enumerate() {
+        if a.1 != b.1 || a.0.position.distance(a.1) <= 1.0 + 0.101 {
+            break;
+        }
+        assert_eq!(a.0, b.0, "tick {index}: a hidden order changed our mover");
+        compared += 1;
+    }
+    // The first build changed our mover in tick 0 of this fixture.
+    assert!(compared >= 2, "the fixture compared {compared} ticks only");
 }

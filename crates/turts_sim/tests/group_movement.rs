@@ -4910,7 +4910,9 @@ fn fog_contest(first: (f32, f32), second: (f32, f32), reverse: bool) -> (Vec2, V
 
 #[test]
 fn ordinary_enemy_order_does_not_change_arrival_before_contact() {
-    // The enemy starts 1.0 clear of the mover. They touch in tick 4 when both go to (50,50).
+    // The enemy starts 1.0 clear of the mover. Each body moves 0.15 in one tick. When both go
+    // to (50,50), the gap is 0.4 after tick 2 and 0.1 after tick 3. A gap of 0.1 is contact
+    // range (0.101), so tick 3 is the tick of first contact. Ticks 1 and 2 are before contact.
     fn run(enemy_target: Option<Vec2>, ticks: usize) -> Vec<OwnState> {
         let mut app = fog_app(&[(49.0, 50.0), (51.0, 50.0)], &[0, 1]);
         assert!(!turts_sim::visibility::unit_permitted(
@@ -4937,7 +4939,7 @@ fn ordinary_enemy_order_does_not_change_arrival_before_contact() {
             })
             .collect()
     }
-    let alone = run(None, 3);
+    let alone = run(None, 2);
     for target in [
         Vec2::splat(50.0),
         Vec2::new(55.0, 50.0),
@@ -4946,7 +4948,7 @@ fn ordinary_enemy_order_does_not_change_arrival_before_contact() {
     ] {
         assert_eq!(
             alone,
-            run(Some(target), 3),
+            run(Some(target), 2),
             "a hidden enemy order to {target:?} changed our unit before contact"
         );
     }

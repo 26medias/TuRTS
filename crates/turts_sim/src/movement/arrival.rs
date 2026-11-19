@@ -41,6 +41,7 @@ fn geometry_goals(
 /// A plan never reserves a point ahead of a body that gets there first.
 /// Private steering connectors never participate in destination ownership.
 /// They retain full physical bodies and transit order uses the real order goal.
+#[cfg(test)]
 pub(super) fn prepare_with_guide(
     units: &mut [MovementFrameUnit],
     original: &[MovementFrameUnit],
@@ -48,6 +49,28 @@ pub(super) fn prepare_with_guide(
     bounds: Vec2,
     guide: &dyn super::motion::MotionGuide,
     visibility: Option<&dyn super::MovementVisibility>,
+) -> Vec<(u32, Vec2)> {
+    prepare_with_kept(
+        units,
+        original,
+        dt,
+        bounds,
+        guide,
+        visibility,
+        &mut Vec::new(),
+    )
+}
+
+/// `kept` receives the ids, in increasing order, of the bodies that keep a temporary stop
+/// from `settle_foreign` through this tick.
+pub(super) fn prepare_with_kept(
+    units: &mut [MovementFrameUnit],
+    original: &[MovementFrameUnit],
+    dt: f32,
+    bounds: Vec2,
+    guide: &dyn super::motion::MotionGuide,
+    visibility: Option<&dyn super::MovementVisibility>,
+    kept: &mut Vec<u32>,
 ) -> Vec<(u32, Vec2)> {
     let owns = |unit: &MovementFrameUnit| {
         guide.kind(unit.unit_id) == super::motion::MotionKind::Destination
@@ -88,6 +111,8 @@ pub(super) fn prepare_with_guide(
         })
     };
     let mut resolved_ties = Vec::new();
+    // Under fog: (unit, goal, stop point) of each temporary stop that this tick resets.
+    let mut carried = Vec::new();
     // Reuse the input rows. A holder index uses no more space than a position.
     let holders = original
         .iter()
@@ -122,6 +147,11 @@ pub(super) fn prepare_with_guide(
                     cohort.activity = MovementActivity::Resting;
                 }
             } else {
+                if visibility.is_some()
+                    && let Some(point) = unit.target
+                {
+                    carried.push((unit.unit_id, progress.original_point, point));
+                }
                 unit.target = Some(progress.original_point);
                 if let Some(cohort) = &mut unit.progress {
                     cohort.slot = progress.original_point;
@@ -134,7 +164,7 @@ pub(super) fn prepare_with_guide(
     units.sort_by(&order);
     let max_radius = units.iter().map(|u| u.radius).fold(0.0_f32, f32::max);
     // Under fog a destination is private to its owner. Only bodies of one owner share a
-    // group. `foreign_arrivals` handles the bodies of other owners from physical state.
+    // group. `settle_foreign` handles the bodies of other owners from physical state.
     let fog_owner = |unit: &MovementFrameUnit| {
         if visibility.is_some() {
             u16::from(unit.owner_slot)
@@ -142,8 +172,6 @@ pub(super) fn prepare_with_guide(
             u16::MAX
         }
     };
-    let mut own_tied = Vec::new();
-    let mut own_yields: Vec<OwnYield> = Vec::new();
     let mut groups = std::collections::BTreeMap::<(u32, u32, u16), Vec<usize>>::new();
     for (index, unit) in units.iter().enumerate() {
         if !owns(unit) {
@@ -228,7 +256,6 @@ pub(super) fn prepare_with_guide(
                 for (index, point) in ordered.iter().zip(destinations) {
                     stop_goal(&mut units[*index], goal, point, false);
                     resolved_ties.push((units[*index].unit_id, point));
-                    own_tied.push(*index);
                 }
             }
         }
@@ -240,307 +267,471 @@ pub(super) fn prepare_with_guide(
             ) {
                 reserved.push((point, units[*index].radius));
                 stop_goal(&mut units[*index], goal, point, true);
-                if visibility.is_some() {
-                    own_yields.push(OwnYield {
-                        goal,
-                        owner: units[*index].owner_slot,
-                        point,
-                        radius: units[*index].radius,
-                    });
-                }
             }
         }
     }
-    if let Some(basis) = visibility {
-        foreign_arrivals(
-            units,
-            dt,
-            bounds,
-            max_radius,
-            &owns,
-            basis,
-            &own_tied,
-            &mut own_yields,
-            &mut resolved_ties,
-        );
+    if let Some(basis) = visibility
+        && !carried.is_empty()
+    {
+        keep_foreign_yields(units, &carried, dt, max_radius, basis, kept);
+        kept.sort_unstable();
     }
     // Clear the later approach before moving the earlier body through that space.
     units.sort_by(&order);
     resolved_ties
 }
 
-/// A temporary stop point that one owner already gave to one of its bodies in this tick.
-struct OwnYield {
-    goal: Vec2,
-    owner: u8,
-    point: Vec2,
-    radius: f32,
-}
-
-/// The most bodies near one goal that one mover examines in one tick.
+/// The most bodies of one kind near one goal that one mover examines in one tick.
 const FOREIGN_CANDIDATES: usize = 16;
 
-/// The straight displacement that a body tries to make in this tick.
-fn tick_motion(unit: &MovementFrameUnit, dt: f32) -> Vec2 {
-    match (unit.target, unit.speed) {
-        (Some(target), Some(speed)) if speed > 0.0 => {
-            let offset = target - unit.position;
-            let distance = offset.length();
-            if distance <= speed * dt || distance <= 0.0 {
-                offset
-            } else {
-                offset * (speed * dt / distance)
-            }
-        }
-        _ => Vec2::ZERO,
-    }
+/// The physical facts of one body in one tick: where it was and where it is.
+/// It holds no goal. A decision about a body of another owner reads only this.
+struct Body {
+    id: u32,
+    owner: u8,
+    radius: f32,
+    /// Zero for a body that cannot move.
+    speed: f32,
+    before: Vec2,
+    after: Vec2,
+    /// True for a body that has no order or cannot move. Read only for the owner of the body.
+    resting: bool,
 }
 
-/// True when the two bodies are in contact range now, or touch during this tick on their
-/// straight motions. Contact is physical knowledge for both owners. The second case keeps
-/// the result free of the order in which the sweep moves the two bodies in that tick.
-fn touches_this_tick(a: &MovementFrameUnit, b: &MovementFrameUnit, dt: f32) -> bool {
-    let gap = a.position - b.position;
-    let touching = a.radius + b.radius;
-    if gap.length() <= touching + super::route::CONTACT_GAP {
-        return true;
-    }
-    let closing = tick_motion(a, dt) - tick_motion(b, dt);
-    let length = closing.length_squared();
-    let fraction = if length > 0.0 {
-        (-gap.dot(closing) / length).clamp(0.0, 1.0)
-    } else {
-        0.0
-    };
-    (gap + closing * fraction).length() <= touching + 1.0e-5
+/// One mover near its goal, with the short lists of the bodies near that goal.
+struct GoalWatch {
+    row: usize,
+    goal: Vec2,
+    /// (distance to the goal, row) of the known bodies of other owners, nearest first.
+    foreign: Vec<(f32, usize)>,
+    /// (distance to the goal, row) of the resting bodies of the same owner, nearest first.
+    own_resting: Vec<(f32, usize)>,
 }
 
-/// Fog arrival against bodies of other owners.
-///
-/// A mover uses three things only: its own goal, and the position, radius and speed of each
-/// body that its owner can know. It never reads the goal of a body of another owner. A body
-/// is known when the visibility basis permits it, or when it is in contact range, or when it
-/// comes into contact range during this tick (`touches_this_tick`).
-///
-/// A known moving body that stands in the mover's goal and is nearer to that goal in time
-/// arrived there first. The mover stops next to the goal for as long as that is true. When
-/// the two times are equal there is no winner: the mover stops halfway. A body that does
-/// not move is not a contender here; the holder rule and the closest-arrival rule own it.
-///
-/// Work: one pass on all rows, then at most `FOREIGN_CANDIDATES` bodies for each mover that
-/// is near its goal. Memory: one small list for each such mover.
-#[allow(clippy::too_many_arguments)]
-fn foreign_arrivals(
-    units: &mut [MovementFrameUnit],
-    dt: f32,
-    bounds: Vec2,
+/// True when the body can come into the goal in about one tick: the arrival window that
+/// the shared rule uses for a group, measured on the body.
+fn in_window(body: &Body, distance: f32, max_radius: f32, dt: f32) -> bool {
+    body.speed > 0.0 && distance <= body.radius + max_radius + body.speed * dt + 0.05
+}
+
+/// Fill the short lists of each watch. Work: one pass on all bodies, with a constant number
+/// of cell probes for each body. Memory: at most `2 * FOREIGN_CANDIDATES` rows for each watch.
+/// A body of another owner goes into a list only when the owner of the mover can know it:
+/// by sight (the basis) or by contact range now. So a hidden body cannot push a known body
+/// out of a list.
+fn watch_goals(
+    bodies: &[Body],
+    watches: &mut [GoalWatch],
     max_radius: f32,
-    owns: &dyn Fn(&MovementFrameUnit) -> bool,
+    max_speed: f32,
+    dt: f32,
     basis: &dyn super::MovementVisibility,
-    own_tied: &[usize],
-    own_yields: &mut Vec<OwnYield>,
-    resolved_ties: &mut Vec<(u32, Vec2)>,
 ) {
-    let Some(first_owner) = units.first().map(|unit| unit.owner_slot) else {
-        return;
-    };
-    if units.iter().all(|unit| unit.owner_slot == first_owner) {
-        return;
-    }
-    struct Mover {
-        index: usize,
-        goal: Vec2,
-        reach: f32,
-        // (distance to the goal, row), nearest first.
-        near: Vec<(f32, usize)>,
-    }
-    let mut movers = Vec::new();
-    for (index, unit) in units.iter().enumerate() {
-        let (Some(target), Some(speed)) = (unit.target, unit.speed) else {
-            continue;
-        };
-        if !owns(unit) || speed <= 0.0 || own_tied.contains(&index) {
-            continue;
-        }
-        let goal = unit
-            .plain_progress
-            .as_ref()
-            .filter(|progress| progress.arrival_yield)
-            .map_or(target, |progress| progress.original_point);
-        if goal.is_finite()
-            && unit.position.distance(goal) <= unit.radius + max_radius + speed * dt + 0.05
-        {
-            movers.push(Mover {
-                index,
-                goal,
-                reach: 2.0 * (unit.radius + max_radius) + 0.01,
-                near: Vec::new(),
-            });
-        }
-    }
-    if movers.is_empty() {
-        return;
-    }
-    // One cell is wider than two times the largest reach, so a body looks in at most four
-    // cells for the goals that it can be near.
-    let cell = (2.0 * (4.0 * max_radius + 0.01)).max(f32::EPSILON);
+    // The widest distance from a goal that a decision reads: a stop ring with a blocker on
+    // it, or the arrival window of the fastest body.
+    let reach = (4.0 * max_radius + 0.01).max(2.0 * max_radius + max_speed * dt + 0.05);
+    let cell = (2.0 * reach).max(f32::EPSILON);
     let key = |value: f32| (value / cell).floor() as i64;
     let mut goals = std::collections::HashMap::<(i64, i64), Vec<usize>>::new();
-    for (slot, mover) in movers.iter().enumerate() {
+    for (slot, watch) in watches.iter().enumerate() {
         goals
-            .entry((key(mover.goal.x), key(mover.goal.y)))
+            .entry((key(watch.goal.x), key(watch.goal.y)))
             .or_default()
             .push(slot);
     }
-    let reach = cell * 0.5;
-    for (row, body) in units.iter().enumerate() {
-        if !body.position.is_finite() {
+    let insert = |list: &mut Vec<(f32, usize)>, distance: f32, row: usize| {
+        let place = list.partition_point(|&(other, other_row)| {
+            other
+                .total_cmp(&distance)
+                .then_with(|| bodies[other_row].after.x.total_cmp(&bodies[row].after.x))
+                .then_with(|| bodies[other_row].after.y.total_cmp(&bodies[row].after.y))
+                .is_le()
+        });
+        if place < FOREIGN_CANDIDATES {
+            list.insert(place, (distance, row));
+            list.truncate(FOREIGN_CANDIDATES);
+        }
+    };
+    for (row, body) in bodies.iter().enumerate() {
+        if !body.after.is_finite() {
             continue;
         }
-        for x in key(body.position.x - reach)..=key(body.position.x + reach) {
-            for y in key(body.position.y - reach)..=key(body.position.y + reach) {
+        for x in key(body.after.x - reach)..=key(body.after.x + reach) {
+            for y in key(body.after.y - reach)..=key(body.after.y + reach) {
                 let Some(slots) = goals.get(&(x, y)) else {
                     continue;
                 };
                 for &slot in slots {
-                    let mover = &movers[slot];
-                    let actor = &units[mover.index];
-                    let distance = body.position.distance(mover.goal);
-                    if row == mover.index || distance > mover.reach {
+                    let watch = &mut watches[slot];
+                    let actor = &bodies[watch.row];
+                    let distance = body.after.distance(watch.goal);
+                    if row == watch.row || distance > reach {
                         continue;
                     }
-                    // A hidden body must not push a known body out of the short list.
-                    if body.owner_slot != actor.owner_slot
-                        && !basis.unit_permitted(actor.owner_slot, body.unit_id)
-                        && !touches_this_tick(actor, body, dt)
+                    if body.owner == actor.owner {
+                        if body.resting {
+                            insert(&mut watch.own_resting, distance, row);
+                        }
+                    } else if basis.unit_permitted(actor.owner, body.id)
+                        || actor.after.distance(body.after)
+                            <= actor.radius + body.radius + super::route::CONTACT_GAP
                     {
-                        continue;
-                    }
-                    let near = &mut movers[slot].near;
-                    let place = near.partition_point(|&(other, other_row)| {
-                        other
-                            .total_cmp(&distance)
-                            .then_with(|| geometry_goals(&units[other_row], body, None, None))
-                            .is_le()
-                    });
-                    if place < FOREIGN_CANDIDATES {
-                        near.insert(place, (distance, row));
-                        near.truncate(FOREIGN_CANDIDATES);
+                        insert(&mut watch.foreign, distance, row);
                     }
                 }
             }
         }
     }
-    for mover in movers {
-        let actor = units[mover.index].clone();
-        let goal = mover.goal;
-        let speed = actor.speed.unwrap_or(0.0);
-        let own_time = actor.position.distance(goal) / speed;
-        // The largest body that arrived first, and the nearest body in an exact tie.
+}
+
+/// Keep a stop that `settle_foreign` gave in the tick before. The stop stays while a known
+/// body of another owner that can move is in the arrival window of the goal. The check
+/// reads positions only. `settle_foreign` decides at the end of this tick if the stop ends.
+fn keep_foreign_yields(
+    units: &mut [MovementFrameUnit],
+    carried: &[(u32, Vec2, Vec2)],
+    dt: f32,
+    max_radius: f32,
+    basis: &dyn super::MovementVisibility,
+    kept: &mut Vec<u32>,
+) {
+    let rows = units
+        .iter()
+        .enumerate()
+        .map(|(row, unit)| (unit.unit_id, row))
+        .collect::<std::collections::HashMap<_, _>>();
+    let mut watches = Vec::new();
+    let mut points = Vec::new();
+    for &(id, goal, point) in carried {
+        let Some(&row) = rows.get(&id) else {
+            continue;
+        };
+        // The shared rule of the owner gave this body a new stop in this tick. It has precedence.
+        if units[row].target != Some(goal) || units[row].plain_progress.is_some() {
+            continue;
+        }
+        watches.push(GoalWatch {
+            row,
+            goal,
+            foreign: Vec::new(),
+            own_resting: Vec::new(),
+        });
+        points.push(point);
+    }
+    if watches.is_empty() {
+        return;
+    }
+    let bodies = units
+        .iter()
+        .map(|unit| Body {
+            id: unit.unit_id,
+            owner: unit.owner_slot,
+            radius: unit.radius,
+            speed: unit.speed.filter(|speed| *speed > 0.0).unwrap_or(0.0),
+            before: unit.position,
+            after: unit.position,
+            resting: false,
+        })
+        .collect::<Vec<_>>();
+    let max_speed = bodies.iter().map(|body| body.speed).fold(0.0_f32, f32::max);
+    watch_goals(&bodies, &mut watches, max_radius, max_speed, dt, basis);
+    for (watch, point) in watches.iter().zip(points) {
+        if watch
+            .foreign
+            .iter()
+            .any(|&(distance, row)| in_window(&bodies[row], distance, max_radius, dt))
+        {
+            stop_goal(&mut units[watch.row], watch.goal, point, true);
+            kept.push(units[watch.row].unit_id);
+        }
+    }
+}
+
+/// The nearest free point to `from` on the ring of radius `distance` round `goal`.
+#[allow(clippy::too_many_arguments)]
+fn ring_point(
+    goal: Vec2,
+    distance: f32,
+    from: Vec2,
+    radius: f32,
+    bounds: Vec2,
+    blockers: &[(Vec2, f32)],
+    taken: &[(Vec2, f32, usize)],
+    own_row: usize,
+) -> Option<Vec2> {
+    let phase = (from - goal).to_angle();
+    let mut best: Option<(f32, Vec2)> = None;
+    for turn in 0..65 {
+        let angle = if turn == 0 {
+            phase
+        } else {
+            std::f32::consts::TAU * (turn - 1) as f32 / 64.0
+        };
+        let point = goal + Vec2::from_angle(angle) * distance;
+        let inside = point.is_finite()
+            && point.x >= radius
+            && point.y >= radius
+            && point.x <= bounds.x - radius
+            && point.y <= bounds.y - radius;
+        if !inside
+            || !blockers
+                .iter()
+                .all(|(other, other_radius)| point.distance(*other) >= radius + other_radius)
+            || !taken.iter().all(|(other, other_radius, row)| {
+                *row == own_row || point.distance(*other) >= radius + other_radius
+            })
+        {
+            continue;
+        }
+        let cost = point.distance_squared(from);
+        if best.as_ref().is_none_or(|(previous, _)| cost < *previous) {
+            best = Some((cost, point));
+        }
+    }
+    best.map(|(_, point)| point)
+}
+
+/// Fog arrival against bodies of other owners. It runs after the sweep of each tick.
+///
+/// A mover uses its own goal, and three physical facts of each body that its owner can know
+/// (by sight, or by contact range now): the radius, the speed, and the positions before and
+/// after the sweep of this tick. It never reads the goal or the order of a body of another
+/// owner. Contact and motion are thus facts that occurred, not a prediction.
+///
+/// A contender for the goal of the mover is a known body of another owner that is in the
+/// arrival window of that goal and came nearer to it in this tick. A body that the sweep
+/// stopped against the mover in the tick of first contact is a contender too.
+///
+/// - Start. The mover compares its time to the goal with the time of each contender, from
+///   the positions before the sweep (the sweep order of the contact tick does not change
+///   them). An earlier contender arrived first: the mover gets a temporary stop on the ring
+///   round the goal. Equal times: no winner, a permanent stop halfway. A contender that was
+///   in contact range before the sweep starts nothing: that contest is already decided.
+/// - Keep. A temporary stop stays while there is a contender, or a known body of another
+///   owner that moves in the goal. If not, the mover gets its goal back. When the contender
+///   stops on the goal, the holder rule makes the stop final.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn settle_foreign(
+    before: &[MovementFrameUnit],
+    outputs: &mut [super::MovementFrameOutput],
+    dt: f32,
+    bounds: Vec2,
+    guide: &dyn super::motion::MotionGuide,
+    basis: &dyn super::MovementVisibility,
+    kept: &[u32],
+    ties: &mut Vec<(u32, Vec2)>,
+) {
+    let Some(first_owner) = before.first().map(|unit| unit.owner_slot) else {
+        return;
+    };
+    if before.iter().all(|unit| unit.owner_slot == first_owner) {
+        return;
+    }
+    let own_ties = ties.len();
+    let mut out_rows = Vec::with_capacity(before.len());
+    let mut bodies = Vec::with_capacity(before.len());
+    for unit in before {
+        let Ok(out) = outputs.binary_search_by_key(&unit.unit_id, |output| output.unit_id) else {
+            continue;
+        };
+        out_rows.push(out);
+        bodies.push(Body {
+            id: unit.unit_id,
+            owner: unit.owner_slot,
+            radius: unit.radius,
+            speed: unit.speed.filter(|speed| *speed > 0.0).unwrap_or(0.0),
+            before: unit.position,
+            after: outputs[out].position,
+            resting: unit.speed.is_none() || outputs[out].target.is_none(),
+        });
+    }
+    let max_radius = bodies
+        .iter()
+        .map(|body| body.radius)
+        .fold(0.0_f32, f32::max);
+    let max_speed = bodies.iter().map(|body| body.speed).fold(0.0_f32, f32::max);
+    let mut watches = Vec::new();
+    // The temporary stops of each owner at each goal: (point, radius, row).
+    let mut stops = std::collections::HashMap::<(u32, u32, u8), Vec<(Vec2, f32, usize)>>::new();
+    for (row, body) in bodies.iter().enumerate() {
+        let output = &outputs[out_rows[row]];
+        let Some(target) = output.target else {
+            continue;
+        };
+        if body.speed <= 0.0 || guide.kind(body.id) != super::motion::MotionKind::Destination {
+            continue;
+        }
+        let yielding = output
+            .plain_progress
+            .as_ref()
+            .filter(|progress| progress.arrival_yield);
+        if let Some(progress) = yielding {
+            let goal = progress.original_point;
+            stops
+                .entry((goal.x.to_bits(), goal.y.to_bits(), body.owner))
+                .or_default()
+                .push((target, body.radius, row));
+        }
+        // A stop from the shared rule of the owner, and a tie that it resolved in this
+        // tick, stay as they are.
+        if (yielding.is_some() && kept.binary_search(&body.id).is_err())
+            || ties[..own_ties]
+                .binary_search_by_key(&body.id, |(unit, _)| *unit)
+                .is_ok()
+        {
+            continue;
+        }
+        // The goal is the point of the order, also when the closest-arrival rule already
+        // gave this body another point near it.
+        let goal = output
+            .plain_progress
+            .as_ref()
+            .map_or(target, |progress| progress.original_point);
+        if goal.is_finite()
+            && (yielding.is_some() || in_window(body, body.after.distance(goal), max_radius, dt))
+        {
+            watches.push(GoalWatch {
+                row,
+                goal,
+                foreign: Vec::new(),
+                own_resting: Vec::new(),
+            });
+        }
+    }
+    if watches.is_empty() {
+        return;
+    }
+    watch_goals(&bodies, &mut watches, max_radius, max_speed, dt, basis);
+    // The order of the decisions is physical. It does not come from a row or a unit id.
+    watches.sort_by(|a, b| {
+        let (pa, pb) = (bodies[a.row].after, bodies[b.row].after);
+        pa.x.total_cmp(&pb.x).then(pa.y.total_cmp(&pb.y))
+    });
+    for watch in &watches {
+        let actor = &bodies[watch.row];
+        let goal = watch.goal;
+        let key = (goal.x.to_bits(), goal.y.to_bits(), actor.owner);
+        let output = &mut outputs[out_rows[watch.row]];
+        let yielding = output
+            .plain_progress
+            .as_ref()
+            .is_some_and(|progress| progress.arrival_yield);
+        let new_contact = |body: &Body| {
+            actor.before.distance(body.before)
+                > actor.radius + body.radius + super::route::CONTACT_GAP
+                && actor.after.distance(body.after)
+                    <= actor.radius + body.radius + super::route::CONTACT_GAP
+        };
+        // In the tick of first contact the sweep stops the second of the two bodies, or
+        // turns it to the side. Its motion in that tick is thus not a measure of where it
+        // was going. So each body that comes into contact with the mover in this tick is a
+        // contender, if it moved at all. A body that rests is never a contender.
+        let contenders = watch
+            .foreign
+            .iter()
+            .map(|&(distance, row)| (distance, &bodies[row]))
+            .filter(|(distance, body)| {
+                in_window(body, *distance, max_radius, dt)
+                    && (body.before.distance(goal) - distance > 1.0e-6
+                        || (body.before != body.after && new_contact(body)))
+            })
+            .collect::<Vec<_>>();
+        let blockers = watch
+            .own_resting
+            .iter()
+            .map(|&(_, row)| &bodies[row])
+            .chain(
+                watch
+                    .foreign
+                    .iter()
+                    .map(|&(_, row)| &bodies[row])
+                    .filter(|body| body.before == body.after),
+            )
+            .map(|body| (body.after, body.radius))
+            .collect::<Vec<_>>();
+        // The largest contender that the mover must stay clear of.
         let mut first: Option<f32> = None;
-        let mut tied: Option<usize> = None;
+        let mut tied: Option<&Body> = None;
         let mut tied_count = 0usize;
-        for &(distance, row) in &mover.near {
-            let body = &units[row];
-            let (Some(body_speed), Some(_)) = (body.speed, body.target) else {
-                continue;
-            };
-            if body.owner_slot == actor.owner_slot
-                || body_speed <= 0.0
-                || distance >= actor.radius + body.radius - 1.0e-5
-            {
+        if yielding {
+            // A body that goes through the goal keeps the stop until it is out of the goal.
+            first = watch
+                .foreign
+                .iter()
+                .map(|&(distance, row)| (distance, &bodies[row]))
+                .filter(|(distance, body)| {
+                    body.before != body.after
+                        && (*distance < actor.radius + body.radius - 1.0e-5
+                            || (in_window(body, *distance, max_radius, dt)
+                                && body.before.distance(goal) - distance > 1.0e-6))
+                })
+                .map(|(_, body)| body.radius)
+                .max_by(f32::total_cmp);
+            if first.is_none() {
+                output.target = Some(goal);
+                if let Some(cohort) = &mut output.progress {
+                    cohort.slot = goal;
+                    cohort.activity = MovementActivity::Moving;
+                }
+                output.plain_progress = None;
+                if let Some(list) = stops.get_mut(&key) {
+                    list.retain(|(_, _, row)| *row != watch.row);
+                }
                 continue;
             }
-            let time = distance / body_speed;
-            if (time - own_time).abs() <= 1e-6 {
-                // A body that moves away from the goal in this tick does not contest it.
-                if tick_motion(body, dt).dot(goal - body.position) > 0.0 {
-                    tied_count += 1;
-                    tied.get_or_insert(row);
+        } else {
+            let own_time = actor.before.distance(goal) / actor.speed;
+            for (_, body) in &contenders {
+                if actor.before.distance(body.before)
+                    <= actor.radius + body.radius + super::route::CONTACT_GAP
+                {
+                    continue;
                 }
-            } else if time < own_time {
-                first = Some(first.map_or(body.radius, |radius| radius.max(body.radius)));
+                let time = body.before.distance(goal) / body.speed;
+                if (time - own_time).abs() <= 1e-6 {
+                    tied_count += 1;
+                    tied.get_or_insert(*body);
+                } else if time < own_time {
+                    first = Some(first.map_or(body.radius, |radius| radius.max(body.radius)));
+                }
             }
         }
-        let blockers = mover
-            .near
-            .iter()
-            .map(|&(_, row)| &units[row])
-            .filter(|body| body.speed.is_none() || body.target.is_none())
-            .map(|body| (body.position, body.radius))
-            .collect::<Vec<_>>();
-        let inside = |point: Vec2| {
-            point.is_finite()
-                && point.x >= actor.radius
-                && point.y >= actor.radius
-                && point.x <= bounds.x - actor.radius
-                && point.y <= bounds.y - actor.radius
-        };
-        let clear = |point: Vec2| {
-            blockers
-                .iter()
-                .all(|(other, radius)| point.distance(*other) >= actor.radius + radius)
-        };
         if let Some(first_radius) = first {
             let distance = actor.radius + first_radius + 0.0001;
-            let yielding = actor
-                .plain_progress
-                .as_ref()
-                .is_some_and(|progress| progress.arrival_yield);
             if yielding
-                && actor
+                && output
                     .target
-                    .is_some_and(|point| point.distance(goal) >= distance)
+                    .is_some_and(|point| point.distance(goal) >= distance - 1.0e-6)
             {
                 continue;
             }
-            let phase = (actor.position - goal).to_angle();
-            let mut best: Option<(f32, Vec2)> = None;
-            for turn in 0..65 {
-                let angle = if turn == 0 {
-                    phase
-                } else {
-                    std::f32::consts::TAU * (turn - 1) as f32 / 64.0
-                };
-                let point = goal + Vec2::from_angle(angle) * distance;
-                if !inside(point) || !clear(point) {
-                    continue;
-                }
-                if !own_yields.iter().all(|other| {
-                    other.owner != actor.owner_slot
-                        || other.goal != goal
-                        || Some(other.point) == actor.target
-                        || point.distance(other.point) >= actor.radius + other.radius
-                }) {
-                    continue;
-                }
-                let cost = point.distance_squared(actor.position);
-                if best.as_ref().is_none_or(|(previous, _)| cost < *previous) {
-                    best = Some((cost, point));
-                }
-            }
-            if let Some((_, point)) = best {
-                if yielding {
-                    own_yields.retain(|other| {
-                        other.owner != actor.owner_slot
-                            || other.goal != goal
-                            || Some(other.point) != actor.target
-                    });
-                }
-                own_yields.push(OwnYield {
+            let taken = stops.get(&key).map_or(&[][..], Vec::as_slice);
+            if let Some(point) = ring_point(
+                goal,
+                distance,
+                actor.after,
+                actor.radius,
+                bounds,
+                &blockers,
+                taken,
+                watch.row,
+            ) {
+                let list = stops.entry(key).or_default();
+                list.retain(|(_, _, row)| *row != watch.row);
+                list.push((point, actor.radius, watch.row));
+                stop_parts(
+                    actor.after,
+                    &mut output.target,
+                    &mut output.progress,
+                    &mut output.plain_progress,
                     goal,
-                    owner: actor.owner_slot,
                     point,
-                    radius: actor.radius,
-                });
-                stop_goal(&mut units[mover.index], goal, point, true);
+                    true,
+                );
             }
-        } else if let Some(row) = tied
-            && actor.target == Some(goal)
-        {
-            let other = &units[row];
+        } else if let Some(other) = tied {
             let point = if tied_count == 1 {
-                (actor.position - other.position)
+                (actor.after - other.after)
                     .try_normalize()
                     .map(|direction| {
                         goal + direction * ((actor.radius + other.radius) * 0.5 + 0.0001)
@@ -548,31 +739,69 @@ fn foreign_arrivals(
             } else {
                 // Three or more bodies in one exact tie: each keeps its own side of a ring.
                 let radius = actor.radius.max(other.radius) + 0.0001;
-                (actor.position - goal).try_normalize().map(|direction| {
+                (actor.after - goal).try_normalize().map(|direction| {
                     goal + direction
                         * (radius / (std::f32::consts::PI / (tied_count + 1) as f32).sin())
                 })
             };
-            if let Some(point) = point.filter(|point| inside(*point) && clear(*point)) {
-                stop_goal(&mut units[mover.index], goal, point, false);
-                resolved_ties.push((actor.unit_id, point));
+            let free = |point: &Vec2| {
+                point.is_finite()
+                    && point.x >= actor.radius
+                    && point.y >= actor.radius
+                    && point.x <= bounds.x - actor.radius
+                    && point.y <= bounds.y - actor.radius
+                    && blockers
+                        .iter()
+                        .all(|(other, radius)| point.distance(*other) >= actor.radius + radius)
+            };
+            if let Some(point) = point.filter(free) {
+                stop_parts(
+                    actor.after,
+                    &mut output.target,
+                    &mut output.progress,
+                    &mut output.plain_progress,
+                    goal,
+                    point,
+                    false,
+                );
+                ties.push((actor.id, point));
             }
         }
     }
 }
 
 fn stop_goal(unit: &mut MovementFrameUnit, goal: Vec2, point: Vec2, temporary: bool) {
-    unit.target = Some(point);
-    if let Some(cohort) = &mut unit.progress {
+    stop_parts(
+        unit.position,
+        &mut unit.target,
+        &mut unit.progress,
+        &mut unit.plain_progress,
+        goal,
+        point,
+        temporary,
+    );
+}
+
+fn stop_parts(
+    position: Vec2,
+    target: &mut Option<Vec2>,
+    progress: &mut Option<super::MoveProgress>,
+    plain_progress: &mut Option<PlainMoveProgress>,
+    goal: Vec2,
+    point: Vec2,
+    temporary: bool,
+) {
+    *target = Some(point);
+    if let Some(cohort) = progress {
         cohort.slot = point;
         cohort.activity = MovementActivity::Moving;
-        cohort.best_distance = unit.position.distance(point);
+        cohort.best_distance = position.distance(point);
         if !temporary {
-            unit.plain_progress = None;
+            *plain_progress = None;
             return;
         }
     }
-    unit.plain_progress = Some(PlainMoveProgress {
+    *plain_progress = Some(PlainMoveProgress {
         arrival_yield: temporary,
         original_point: goal,
         slot: point,
@@ -580,7 +809,7 @@ fn stop_goal(unit: &mut MovementFrameUnit, goal: Vec2, point: Vec2, temporary: b
         gather_goal: None,
         activity: MovementActivity::Moving,
         stalled_ticks: 0,
-        best_distance: unit.position.distance(point),
+        best_distance: position.distance(point),
         claim_count: 1,
         failure_recorded: false,
     });
