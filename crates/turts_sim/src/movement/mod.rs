@@ -100,7 +100,8 @@ pub struct MoveProgress {
 pub struct RecoverySearch {
     /// The search this job serves; a job of another kind or pool is dropped.
     pub kind: RecoveryKind,
-    /// Ticks since the job started. Service is oldest first, then by physical key.
+    /// Ticks since the job started. Service is tick-start overlap first, then oldest
+    /// first, then by physical key.
     pub age: u16,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub scan: Option<RecoveryScan>,

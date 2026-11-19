@@ -133,8 +133,8 @@ pub(super) struct ScheduleRow {
     pub(super) age: u16,
     pub(super) has_scan: bool,
     /// True when the row overlaps a body at tick start. Such a body is in contact range,
-    /// so `known` admits it. Overlapping fresh rows come first: a row that will not
-    /// search must not take a fresh slice before one that will.
+    /// so `known` admits it. Overlapping rows come first in both tiers: a row that does
+    /// not search in this tick must not take a slice before one that does.
     pub(super) overlapping: bool,
     pub(super) position: Vec2,
     pub(super) radius: f32,

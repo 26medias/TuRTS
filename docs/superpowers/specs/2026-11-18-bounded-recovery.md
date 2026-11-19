@@ -109,9 +109,13 @@ near 2^-64 for each check; it is not a proof. This is a stated limit.
 
 ### 3.4 Liveness
 
-- A fresh job is served within `ceil(n_fresh / 16)` ticks (age order).
-- Jobs with a scan are served first in, first out: a job waits for the remaining work of the
-  jobs ahead of it, divided by the continuation budget.
+- Service order puts rows in tick-start overlap first, in both tiers. A row with no overlap
+  at tick start can search in the tick only when an earlier row overlaps it mid-tick. That
+  overlap stays at the next tick start, so the overlap key delays such a row by one tick at
+  most (reviewer analysis; NOT TRACED by a run).
+- Among overlapping rows, a fresh job is served within `ceil(n_fresh / 16)` ticks (age
+  order), and jobs with a scan are served first in, first out: a job waits for the remaining
+  work of the jobs ahead of it, divided by the continuation budget.
 - A served job ends after at most `ceil(C / S)` services in a stable region when a proof costs
   at most `S / 2`; else it relaxes. A relaxed job ends after `ceil(C / S)` services; its
   commit fails only when another body took the point first, and it then restarts.
@@ -165,7 +169,8 @@ fields, sliced scan, schedule, three call sites, ECS and audit plumbing, diagnos
 ## 9. Code review findings and their closure
 
 - M-2 physical path reads hidden bodies: stated as the R5 exception (base semantics kept).
-- Tick-start overlap charge: removed with the overlap filter (next item).
+- Tick-start overlap charge: removed with the overlap filter (next item), then added again
+  with the overlap order key (last item; section 4 counts it).
 - Regression found by the server suite: `terrain_group`
   `gm2_browser_projected_destination_and_delayed_orders_complete` failed on `a4fbc959` (passes on
   the base). Trace: 23 waits, all `Physical`: rows with a body escape that started a tick clear
@@ -184,5 +189,11 @@ fields, sliced scan, schedule, three call sites, ECS and audit plumbing, diagnos
 - Re-check by the same reviewer (`ad549add`): all repaired items CLOSED; one new defect.
   State-only admission let rows that never search (no overlap) take fresh slices before an
   overlapping searcher, which then waited one tick (probe: 20 idle rows ahead of 1 searcher).
-  Fix: tick-start overlap orders the fresh tier first (admission stays by state). Test
+  Fix (`083e7e39`): tick-start overlap is the first service key (admission stays by state).
+  The key orders both tiers: an old scan job with no overlap does not search in the tick, so
+  it must not take the continuation budget. Test
   `idle_admitted_rows_do_not_delay_an_overlapping_searcher` goes red without the fix.
+- Second re-check (`083e7e39`): CLOSED. Probe with 20, 40, 100 and 300 idle rows: 0 waits,
+  the searcher moves in tick 1. Doc findings closed: the overlap key orders both tiers
+  (3.4 and the `RecoverySearch.age` comment corrected), and T7 now has an old row with no
+  overlap behind a young overlapping row in each tier.

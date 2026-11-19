@@ -23,6 +23,9 @@ Where: branch `codex/bounded-recovery-fair`, worktree `TuRTS-bounded-recovery-fa
   the server suite found).
 - `083e7e39`: the re-check found one new defect (idle rows took fresh slices before an
   overlapping searcher). Overlapping rows now come first in the fresh tier.
+- Second re-check of `083e7e39` by the same reviewer: CLOSED (probe with 20 to 300 idle rows:
+  0 waits). Two doc findings (the overlap key orders both tiers; a stale charge note) are
+  closed in the next commit, with an extra T7 case that fails without the overlap key.
 - Spec: `docs/superpowers/specs/2026-11-18-bounded-recovery.md` (Foundation track; gate 1 FAIL,
   then closed; code review PASS_WITH_FIXES, then closed).
 
@@ -34,7 +37,8 @@ Where: branch `codex/bounded-recovery-fair`, worktree `TuRTS-bounded-recovery-fa
 - Release probe (`crates/turts_sim/tests/recovery_probe.rs`, 40 ticks, 3 rounds, exclusive
   lock): 100 actors, median tick 2.61 ms (base) and 0.23 to 0.38 ms (branch); 400 actors,
   10.9 to 11.2 ms (base) and 0.75 to 0.92 ms (branch). Peak extra allocation: 545 KB to 568 KB
-  (100 actors), 791 KB to 874 KB (400 actors).
+  (100 actors), 791 KB to 874 KB (400 actors). Repeated on `daa9d0e7` after the reboot: the
+  same ranges (branch 0.24 to 0.39 ms and 0.77 to 0.79 ms median).
 
 ## Tests on `083e7e39`
 

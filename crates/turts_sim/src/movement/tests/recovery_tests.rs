@@ -1,7 +1,9 @@
 //! Tests of the bounded blocked-recovery search (design `2026-11-18-bounded-recovery`).
 
 use super::frame::{MovementFrame, MovementFrameOutput, MovementFrameUnit};
-use super::recovery::{EscapeScan, OWNER_WORK, RecoveryCounters, ScheduleRow, SliceOutcome, plan};
+use super::recovery::{
+    EscapeScan, FRESH_SLICE, OWNER_WORK, RecoveryCounters, ScheduleRow, SliceOutcome, plan,
+};
 use super::search::MovementSearch;
 use super::spread::nearest_angle_order;
 use super::{MoveProgress, MovementActivity, MovementPool, RecoveryScan};
@@ -731,9 +733,37 @@ fn a_job_under_permanent_churn_relaxes_and_commits_a_free_point() {
 }
 
 /// T7. The schedule gives the same allowance to the same physical row under any unit id
-/// order, and serves the oldest job first.
+/// order. It serves overlapping jobs first, then the oldest job.
 #[test]
 fn schedule_is_id_free_and_oldest_first() {
+    // An old job with no overlap does not search in this tick, so a young overlapping
+    // job gets the continuation budget. The same rule applies to fresh rows.
+    let row = |row, age, has_scan, overlapping, x| ScheduleRow {
+        row,
+        owner: 0,
+        age,
+        has_scan,
+        overlapping,
+        position: Vec2::new(x, 1.0),
+        radius: 0.5,
+    };
+    let mut counters = RecoveryCounters::default();
+    let tiers = plan(
+        vec![
+            row(0, 50, true, false, 1.0),
+            row(1, 1, true, true, 2.0),
+            row(2, 30, false, false, 3.0),
+        ]
+        .into_iter()
+        .chain((3..19).map(|id| row(id, 0, false, true, 4.0 + id as f32)))
+        .collect(),
+        &mut counters,
+    );
+    assert_eq!(tiers.allowance(0), 0, "old scan job with no overlap");
+    assert!(tiers.allowance(1) > 0, "young overlapping scan job");
+    assert_eq!(tiers.allowance(2), 0, "old fresh row with no overlap");
+    assert!((3..19).all(|id| tiers.allowance(id) == FRESH_SLICE));
+
     let rows: Vec<ScheduleRow> = (0..12)
         .map(|row| ScheduleRow {
             row,
@@ -766,10 +796,19 @@ fn schedule_is_id_free_and_oldest_first() {
             .iter()
             .filter(|row| row.owner == owner && row.has_scan)
             .collect();
-        let oldest = continuing.iter().map(|row| row.age).max().unwrap();
+        let first = continuing
+            .iter()
+            .map(|row| (row.overlapping, row.age))
+            .max()
+            .unwrap();
         for row in continuing {
             let served = reference.allowance(row.row) > 0;
-            assert_eq!(served, row.age == oldest, "row {}", row.row);
+            assert_eq!(
+                served,
+                (row.overlapping, row.age) == first,
+                "row {}",
+                row.row
+            );
         }
         let total: usize = rows
             .iter()
