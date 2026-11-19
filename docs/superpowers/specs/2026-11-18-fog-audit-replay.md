@@ -100,5 +100,9 @@ born in the match, a hidden static body, the lobby start, and 14 more forgeries.
 5. The site rule and the health rule of a sight source have no live scene that separates them
    (cedar has no construction order). A planted fault in those rules, or in the `Blocked` site,
    turns no test red.
-6. A run of the real `turts_server` with a lobby start under fog is NOT TRACED. The test copies
+   Two guards of the start change (`!sight.finalized`, one sight value in the change record)
+   have no test that needs them: the constancy check refuses the same logs.
+6. A snapshot with no `raw_sight` before the start change is rewritten to the final inputs.
+   The copy is then validated with the final rule, so no wrong spread passes.
+7. A run of the real `turts_server` with a lobby start under fog is NOT TRACED. The test copies
    the server sequence in a headless simulation.

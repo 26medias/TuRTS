@@ -724,3 +724,201 @@ fn c10_lobby_start_finalizes_sight_after_initial() {
         }
     }
 }
+
+// ---------- The permitted start change (lobby start) ----------
+
+fn placeholder(sight: &mut Option<SightAudit>) {
+    let sight = sight.as_mut().unwrap();
+    sight.finalized = false;
+    sight.policy.teams.clear();
+}
+fn show(name: &str, records: &[EconomyLogRecord]) -> (bool, bool) {
+    let plain = validate_records(records);
+    let with = validate_records_with_sight(records, Some(&policy(VisionSharing::OwnSlot, &[0, 1])));
+    println!("Z {name}: validate_records={plain:?} | with_sight={with:?}");
+    (plain.is_ok(), with.is_ok())
+}
+fn kinds(records: &[EconomyLogRecord]) -> String {
+    records
+        .iter()
+        .take(12)
+        .map(|record| match record {
+            EconomyLogRecord::Initial(_) => "I",
+            EconomyLogRecord::Operation(_) => "O",
+            EconomyLogRecord::Tick { .. } => "T",
+            EconomyLogRecord::Admission { .. } => "A",
+            EconomyLogRecord::CommandBoundary(_) => "C",
+            EconomyLogRecord::Actor(_) => "a",
+            EconomyLogRecord::Claim { .. } => "c",
+        })
+        .collect()
+}
+
+/// A live lobby start with both order points (one hidden body, one seen body).
+fn lobby(fog: bool) -> Run {
+    let mut scene = Scene::base(fog);
+    scene.teams = None;
+    scene.warm = false;
+    let mut run = Run::new(&scene);
+    turts_sim::visibility::initialize_context(run.app.world_mut(), 7, &[0, 1]).unwrap();
+    turts_sim::initialize_completed_world(run.app.world_mut());
+    let g1 = GROUP_1.iter().map(|at| run.unit_at(*at)).collect();
+    let g2 = GROUP_2.iter().map(|at| run.unit_at(*at)).collect();
+    run.order(0, 1, g1, HIDDEN_POINT, QueueMode::Replace);
+    run.ticks(1);
+    run.order(0, 2, g2, SEEN_POINT, QueueMode::Replace);
+    run.ticks(8);
+    run
+}
+
+#[test]
+fn z1_live_lobby_start_with_hidden_and_seen_bodies() {
+    let run = lobby(true);
+    assert_eq!(run.pools(), 2);
+    let log = run.log();
+    println!("Z z1 record kinds: {}", kinds(&log));
+    assert_eq!(show("z1_lobby_live", &log), (true, true));
+    // The scene is not weak: the AllVisible rule gives another spread.
+    assert!(validate_records(&forged(&log, |sight| *sight = None)).is_err());
+    // A wrong trusted policy is refused.
+    assert!(
+        validate_records_with_sight(&log, Some(&policy(VisionSharing::OwnSlot, &[0, 0]))).is_err()
+    );
+    assert!(validate_records_with_sight(&log, None).is_err());
+}
+
+#[test]
+fn z2_forgeries_through_the_start_change() {
+    let live = lobby(true).log();
+    let fog = base_capture(&Scene::base(true)).log();
+    println!("Z z2 record kinds fog: {}", kinds(&fog));
+    let first = |records: &[EconomyLogRecord], want: &str| {
+        records
+            .iter()
+            .position(|record| match record {
+                EconomyLogRecord::Operation(_) => want == "O",
+                EconomyLogRecord::Tick { .. } => want == "T",
+                EconomyLogRecord::CommandBoundary(_) => want == "C",
+                _ => false,
+            })
+            .unwrap()
+    };
+    let op = first(&fog, "O");
+    let tick = first(&fog, "T");
+    let boundary = first(&fog, "C");
+    println!("Z z2 first C={boundary} O={op} T={tick}");
+
+    // a. The first operations (the dispatch) read the placeholder; the change comes after.
+    let mut a = fog.clone();
+    each_state(&mut a[..=op], |state| placeholder(&mut state.raw_sight));
+    assert_eq!(show("a_dispatch_reads_placeholder", &a), (false, false));
+    // a2. Only the `before` of the first operation is the placeholder.
+    let mut a2 = fog.clone();
+    each_state(&mut a2[..op], |state| placeholder(&mut state.raw_sight));
+    if let EconomyLogRecord::Operation(operation) = &mut a2[op] {
+        placeholder(&mut operation.before.raw_sight);
+    }
+    assert_eq!(show("a2_operation_before_placeholder", &a2), (false, false));
+
+    // b. The change is inside a CommandBoundary before the first tick (two sight values).
+    assert!(
+        boundary < op.min(tick),
+        "the scene needs a CommandBoundary before the first operation"
+    );
+    let mut b = fog.clone();
+    each_state(&mut b[..boundary], |state| {
+        placeholder(&mut state.raw_sight)
+    });
+    if let EconomyLogRecord::CommandBoundary(command) = &mut b[boundary] {
+        placeholder(&mut command.before.raw_sight);
+    }
+    assert_eq!(show("b_change_inside_command_boundary", &b), (false, false));
+    // b2. The whole CommandBoundary keeps the placeholder; the change is at the operation.
+    // No dispatch reads the placeholder, so the log replays with the final rule.
+    let mut b2 = fog.clone();
+    each_state(&mut b2[..=boundary], |state| {
+        placeholder(&mut state.raw_sight)
+    });
+    assert_eq!(show("b2_boundary_under_placeholder", &b2), (true, true));
+
+    // c. The first Tick record has the placeholder in `before` and the final value in `state`.
+    let mut c = fog.clone();
+    each_state(&mut c[..tick], |state| placeholder(&mut state.raw_sight));
+    if let EconomyLogRecord::Tick { before, .. } = &mut c[tick] {
+        placeholder(&mut before.raw_sight);
+    }
+    assert_eq!(show("c_change_inside_first_tick", &c), (false, false));
+
+    // d. Teams forged at the change. The trusted policy must refuse; a spread that the
+    // forged teams change must refuse in validate_records too.
+    let mut team_scene = Scene::base(true);
+    team_scene.fog = Some(VisionSharing::Team);
+    team_scene.teams = Some(vec![0, 0]);
+    let team = base_capture(&team_scene).log();
+    let mut d = forged(&team, |sight| {
+        sight.as_mut().unwrap().policy.teams = vec![0, 1]
+    });
+    each_state(&mut d[..1], |state| placeholder(&mut state.raw_sight));
+    assert!(
+        validate_records(&d).is_err(),
+        "forged teams change the spread"
+    );
+    assert!(validate_records_with_sight(&d, Some(&policy(VisionSharing::Team, &[0, 0]))).is_err());
+    // d2. Teams have no effect under OwnSlot: only the trusted policy refuses.
+    let mut d2 = live.clone();
+    each_state(&mut d2[1..], |state| {
+        state.raw_sight.as_mut().unwrap().policy.teams = vec![1, 0];
+    });
+    assert_eq!(show("d2_teams_forged_own_slot", &d2), (true, false));
+
+    // e. The placeholder returns after the change.
+    let mut e = live.clone();
+    let last = e.len() - 1;
+    each_state(&mut e[last..], |state| placeholder(&mut state.raw_sight));
+    assert_eq!(show("e_placeholder_returns", &e), (false, false));
+    // e2. A second change of teams after the first one.
+    let mut e2 = live.clone();
+    each_state(&mut e2[last..], |state| {
+        state.raw_sight.as_mut().unwrap().policy.teams = vec![0, 0];
+    });
+    assert_eq!(show("e2_second_change", &e2), (false, false));
+
+    // f. Placeholder in Initial, then every later snapshot claims AllVisible.
+    let mut f = live.clone();
+    each_state(&mut f[1..], |state| state.raw_sight = None);
+    assert_eq!(show("f_placeholder_then_all_visible", &f), (false, false));
+
+    // g. An AllVisible live capture that claims a lobby fog start.
+    let clear = lobby(false).log();
+    let final_sight = live[1..]
+        .iter()
+        .find_map(|record| match record {
+            EconomyLogRecord::Tick { state, .. } => state.raw_sight.clone(),
+            _ => None,
+        })
+        .expect("the final sight inputs");
+    let mut g = forged(&clear, |sight| *sight = Some(final_sight.clone()));
+    each_state(&mut g[..1], |state| placeholder(&mut state.raw_sight));
+    assert_eq!(show("g_all_visible_claims_lobby_fog", &g), (false, false));
+
+    // h. The change touches the grid, the sharing rule, `has_health`, or the type list.
+    for case in ["grid", "sharing", "health", "extra_type"] {
+        let mut h = live.clone();
+        each_state(&mut h[..1], |state| {
+            let sight = state.raw_sight.as_mut().unwrap();
+            match case {
+                "grid" => {
+                    sight.policy.grid.cell_size = 4.0;
+                    sight.policy.grid.columns = 16;
+                    sight.policy.grid.rows = 16;
+                }
+                "sharing" => sight.policy.sharing = VisionSharing::Team,
+                "health" => sight.types[0].has_health = !sight.types[0].has_health,
+                _ => {
+                    sight.types.pop();
+                }
+            }
+        });
+        assert_eq!(show(&format!("h_{case}"), &h), (false, false));
+    }
+}
