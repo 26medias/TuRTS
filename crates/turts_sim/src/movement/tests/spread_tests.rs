@@ -1222,3 +1222,102 @@ fn pool_clearance_does_not_let_uncontacted_foreign_body_hide_a_spare() {
         "contacted foreign body must remain reserved"
     );
 }
+
+fn retained_escape_fixture(count: usize) -> MovementFrame {
+    let mut units = Vec::with_capacity(count * 2);
+    let mut pools = BTreeMap::new();
+    for i in 0..count {
+        let x = 4.0 + (i % 10) as f32 * 5.0;
+        let y = 4.0 + (i / 10) as f32 * 5.0;
+        let origin = Vec2::new(x, y);
+        let target = origin + Vec2::new(1.2, 0.0);
+        let pool_id = i as u64 + 1;
+        pools.insert(
+            pool_id,
+            MovementPool {
+                pool_id,
+                point: target,
+                spacing: 1.1,
+                primary_count: 1,
+                slots: vec![target],
+            },
+        );
+        units.push(MovementFrameUnit {
+            unit_id: (2 * i + 1) as u32,
+            owner_slot: 0,
+            unit_type: 1,
+            position: origin,
+            radius: 0.5,
+            speed: Some(3.0),
+            target: Some(target),
+            progress: Some(MoveProgress {
+                pool_id,
+                slot: target,
+                activity: MovementActivity::Blocked,
+                pass_mode: true,
+                stalling_on_group: false,
+                stalled_ticks: 60,
+                best_distance: 1.0,
+                claim_count: 3,
+                follow_origin: None,
+            }),
+            plain_progress: None,
+            physical_escape: None,
+        });
+        units.push(MovementFrameUnit {
+            unit_id: (2 * i + 2) as u32,
+            owner_slot: 0,
+            unit_type: 1,
+            position: origin,
+            radius: 0.5,
+            speed: None,
+            target: None,
+            progress: None,
+            plain_progress: None,
+            physical_escape: None,
+        });
+    }
+    MovementFrame {
+        bounds: Vec2::splat(64.0),
+        tick_hz: 20,
+        units,
+        pools,
+    }
+}
+
+#[test]
+fn blocked_recovery_keeps_an_available_existing_escape() {
+    let frame = retained_escape_fixture(4);
+    let output = step_frame(&frame, 0.05);
+    for (before, after) in frame
+        .units
+        .iter()
+        .zip(output.iter())
+        .filter(|(unit, _)| unit.progress.is_some())
+    {
+        assert_eq!(after.target, before.target);
+        assert!(after.position.distance(before.position) <= 0.15 + 1e-5);
+    }
+}
+
+#[test]
+#[ignore = "manual isolated timing of retained blocked escapes"]
+fn retained_escape_timing_probe() {
+    let frame = retained_escape_fixture(100);
+    for _ in 0..5 {
+        std::hint::black_box(step_frame(&frame, 0.05));
+    }
+    let mut samples = Vec::new();
+    for _ in 0..40 {
+        let start = std::time::Instant::now();
+        let result = step_frame(&frame, 0.05);
+        samples.push(start.elapsed().as_nanos());
+        assert_eq!(result.iter().filter(|x| x.target.is_some()).count(), 100);
+        std::hint::black_box(result);
+    }
+    samples.sort_unstable();
+    eprintln!(
+        "retained_escape actors=100 samples=40 median_ns={} max_ns={}",
+        samples[20], samples[39]
+    );
+}

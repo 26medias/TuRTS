@@ -716,44 +716,45 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
                     && is_free(*slot)
                     && (!assigned_slots.contains(&key) || key == old_slot_key)
             });
-            let pool_escape = pool_indexes.get(&progress.pool_id).and_then(|index| {
-                index.nearest_free(
-                    unit.unit_id,
+            let escape = retained_escape.or_else(|| {
+                let pool_escape = pool_indexes.get(&progress.pool_id).and_then(|index| {
+                    index.nearest_free(
+                        unit.unit_id,
+                        unit.position,
+                        progress.pool_id,
+                        Some(old_slot_key),
+                        &assigned_slots,
+                        unit.radius,
+                        is_free,
+                    )
+                });
+                let outside_escape = MovementSearch {
+                    bounds: frame.bounds,
+                    units: &units,
+                    points: &points,
+                    grid: &grid,
+                    max_radius,
+                }
+                .find_free_escape_destination(
                     unit.position,
-                    progress.pool_id,
-                    Some(old_slot_key),
-                    &assigned_slots,
                     unit.radius,
-                    is_free,
-                )
+                    index,
+                    progress.pool_id,
+                    &assigned_slots,
+                    &known,
+                );
+                match (pool_escape, outside_escape) {
+                    (Some(pool_point), Some(outside_point)) => Some(
+                        if nearest_angle_order(pool_point, outside_point, unit.position).is_le() {
+                            pool_point
+                        } else {
+                            outside_point
+                        },
+                    ),
+                    (Some(point), None) | (None, Some(point)) => Some(point),
+                    (None, None) => None,
+                }
             });
-            let outside_escape = MovementSearch {
-                bounds: frame.bounds,
-                units: &units,
-                points: &points,
-                grid: &grid,
-                max_radius,
-            }
-            .find_free_escape_destination(
-                unit.position,
-                unit.radius,
-                index,
-                progress.pool_id,
-                &assigned_slots,
-                &known,
-            );
-            let nearest_new = match (pool_escape, outside_escape) {
-                (Some(pool_point), Some(outside_point)) => Some(
-                    if nearest_angle_order(pool_point, outside_point, unit.position).is_le() {
-                        pool_point
-                    } else {
-                        outside_point
-                    },
-                ),
-                (Some(point), None) | (None, Some(point)) => Some(point),
-                (None, None) => None,
-            };
-            let escape = retained_escape.or(nearest_new);
             let Some(escape) = escape else { continue };
             let escape_key = (progress.pool_id, escape.x.to_bits(), escape.y.to_bits());
             if escape_key != old_slot_key {
