@@ -21,3 +21,11 @@ A live paired-world test confirmed that a hidden remote body could change the es
 A separate failing probe shows a hidden remote unit with the same movement target can still change blocked recovery. The target-claim counter includes every owner's target. The owner-local target-claim fix closes that leak. The hidden-enemy paired test and a same-owner control pass. In all-visible mode the two counts are added. The live protocol has two slots. The existing claim-map value stays eight bytes on native, and grows from four to eight bytes on wasm for each distinct target. No heap peak was measured.
 
 After the target-claim change, all 127 movement library tests and both cross-owner same-point tests pass.
+
+## Recovery work measurement
+
+At integration commit `6aa77235`, an instrumented release fixture filled a 16-by-16 map with 256 own stationary bodies. It placed 100 own blocked movers in overlap, to exercise recovery. One fog tick generated 351,276 escape candidates and 22,115 permitted-body lookups. It took 8.237 ms in one run. The allocator observed a maximum of 820,956 extra bytes above the start of that whole tick. This was a stress fixture, not a normal game or a GM7 result. It does not prove the 8 MiB traffic phase limit.
+
+The 351,276 candidate count exceeds the existing 65,536 owner route-work envelope. The all-visible control also generated 351,276 candidates, so the ring search predates the fog filter. The fog filter adds the permitted-body lookups. Results and the diagnostic patch are in `target/mc-evidence/singleton-fog-investigation/` in the main checkout. A simple cap would restart incomplete searches and can starve movers. No such cap is included. The existing continuation spike also failed its liveness check; see `target/mc-evidence/m4b-route-spike/REPORT.md`.
+
+The same investigation found that a hidden body changed plain blocked recovery. The plain escape search now applies the permitted-body filter. The physical escape path still checks all bodies. Hidden and visible paired-world tests pass. All 127 movement library tests pass. The plain and pool escape searches still need bounded, fair continuation.

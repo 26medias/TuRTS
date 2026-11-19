@@ -20,6 +20,16 @@ impl MovementSearch<'_> {
         radius: f32,
         self_index: usize,
     ) -> Option<Vec2> {
+        self.find_free_singleton_destination_known(origin, radius, self_index, &|_| true)
+    }
+
+    pub(super) fn find_free_singleton_destination_known(
+        &self,
+        origin: Vec2,
+        radius: f32,
+        self_index: usize,
+        known: &dyn Fn(u32) -> bool,
+    ) -> Option<Vec2> {
         let spacing = 2.0 * radius + 0.1;
         let ring_limit = finite_hex_ring_limit(origin, radius, self.bounds, spacing);
         let mut best = None;
@@ -51,6 +61,7 @@ impl MovementSearch<'_> {
                         .into_iter()
                         .all(|index| {
                             index == self_index
+                                || !known(self.units[index].unit_id)
                                 || candidate.distance(self.units[index].position)
                                     >= radius + self.units[index].radius - 1.0e-5
                         });

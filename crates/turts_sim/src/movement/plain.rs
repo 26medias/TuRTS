@@ -100,7 +100,12 @@ pub(super) fn step_plain_progress(
                 grid,
                 max_radius,
             }
-            .find_free_singleton_destination(unit.position, unit.radius, index)
+            .find_free_singleton_destination_known(
+                unit.position,
+                unit.radius,
+                index,
+                known,
+            )
         });
         let Some(escape) = escape else {
             output.target = None;
