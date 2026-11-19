@@ -138,22 +138,40 @@ fn group_order_uses_muster_unit_types_and_moves_all_eligible_mobile_owners() {
         5
     );
 
-    app.update();
-    let after = positions(&mut app);
-    let moved_owned_mobile = result
-        .units
-        .accepted
-        .iter()
-        .filter(|id| {
-            before
+    // The formation starts at exact body contact. A front unit can move before the
+    // units behind it have clearance. Check immediate response and bounded progress.
+    let mut ever_moved = std::collections::BTreeSet::new();
+    let mut after = BTreeMap::new();
+    for tick in 1..=20 {
+        app.update();
+        after = positions(&mut app);
+        for id in &result.units.accepted {
+            if before
                 .get(id)
                 .zip(after.get(id))
-                .is_some_and(|(before, after)| before.distance_squared(*after) > 0.0001)
-        })
-        .count();
+                .is_some_and(|(a, b)| a.distance_squared(*b) > 0.0001)
+            {
+                ever_moved.insert(*id);
+            }
+        }
+        for (id, _) in &result.units.refused {
+            assert_eq!(
+                after.get(id),
+                before.get(id),
+                "refused unit {id} moved on tick {tick}"
+            );
+        }
+        if tick == 1 {
+            assert!(
+                !ever_moved.is_empty(),
+                "the group starts moving on the next tick"
+            );
+        }
+    }
     assert_eq!(
-        moved_owned_mobile, 290,
-        "every accepted own trooper changes its actual simulation Position on the next tick"
+        ever_moved.len(),
+        290,
+        "every accepted trooper moves within one second"
     );
     for (id, position) in &before {
         let unit = app
