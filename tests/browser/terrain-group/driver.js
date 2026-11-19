@@ -7,7 +7,11 @@ const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 // Hold both sides of a gesture across frames. A zero-delay press/release can
 // disappear between Bevy input polls, even when hover picked the correct body.
 const PRESS_MS=80;
+// Xvfb has one real pointer shared by the peer windows. Activate the target
+// before CDP input so Chrome delivers the native pointer position before down.
+async function activatePage(page){await page.bringToFront();await sleep(150);}
 async function click(page,point,button='left'){
+    await activatePage(page);
     await page.mouse.click(...point,{button,delay:PRESS_MS});
     await sleep(PRESS_MS);
 }
@@ -65,6 +69,7 @@ async function selectActors(page,fixture,bindings,labels,recordClick) {
         const units=world(state).units;
         const points=state.scene.units.map(unit=>({id:unit.unit_id,center:unit.ground_screen_center,owned:units.find(u=>u.unit_id===unit.unit_id)?.owner_slot===state.debug.slot}));
         const box=exactOwnedBox(points,wanted);assert(box,'Requested cohort has no exact owned selection box');
+        await activatePage(page);
         await page.mouse.move(box[0],box[1]);await page.mouse.down();await sleep(PRESS_MS);
         await page.mouse.move(box[2],box[3],{steps:8});await sleep(PRESS_MS);await page.mouse.up();await sleep(PRESS_MS);
         await wait(page,s=>s.debug.selection.length===wanted.length&&wanted.every(id=>s.debug.selection.includes(id)),'Physical box selection differs from frozen cohort');
@@ -98,6 +103,7 @@ async function issue(page,fixture,bindings,intent,preselected=false) {
             state=await read(page);assert(permittedTop(fixture,state,reference)===intent.target_elevation*.25,'Permitted reference level changed');
             await click(page,project(state.scene,[...reference,intent.target_elevation*.25]));
             state=await read(page);const a=intent.cells.min.map(n=>n+.5),b=intent.cells.max.map(n=>n-.5);
+            await activatePage(page);
             await page.mouse.move(...project(state.scene,[...a,permittedTop(fixture,state,a)]));await page.mouse.down();await sleep(PRESS_MS);
             await page.mouse.move(...project(state.scene,[...b,permittedTop(fixture,state,b)]),{steps:8});await sleep(PRESS_MS);await page.mouse.up();await sleep(PRESS_MS);
         }
@@ -291,4 +297,4 @@ async function drive({pagesBySlot,fixture,capture,record,recordInput,onPoll}) {
             limits:['Browser checks observed complete bodies and permitted terrain. Native acceptance certifies every actual committed sweep; polling can skip ticks.','Real pointer acceptance ticks are recorded and may differ from native script ticks.','Internal order identity/route lease and same-seed trajectory proof remain native checks.'],skipped_observation_ticks:gaps};
     }finally{clearInterval(timer);while(inPoll)await sleep(10);await pollTail;}
 }
-module.exports={project,read,actorBindings,permittedTop,selectActors,issue,publicOutcomes,physical,drive};
+module.exports={activatePage,project,read,actorBindings,permittedTop,selectActors,issue,publicOutcomes,physical,drive};
