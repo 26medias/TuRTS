@@ -760,13 +760,11 @@ const REACH_MARGIN_RINGS: i32 = 2;
 /// flood starts at the open sites of the outer ring and goes inward. A free site that the
 /// flood does not reach is in a pocket that footprints seal: no body can come to rest there.
 ///
-/// The flood is local on purpose. The outer ring counts as open ground, so a group that
-/// stands inside a closed wall, or a point inside one, is not handled (measured: a flood from
-/// the members over 36 rings of bodies off the lattice refused a corner that the group can
-/// reach).
-///
-/// The rule is exact for footprints on the pool lattice. For other footprints it can refuse a
-/// site that a body can reach; it then gives a slot farther out, never an unsafe one.
+/// The flood is local on purpose. The ring two beyond the last scanned ring counts as open
+/// ground. A closed wall inside the scanned rings is handled. A closed wall farther out is not
+/// seen, so the result changes with the group size: a small group gets sites inside such a
+/// wall, a large group whose scan reaches the wall does not. (Measured: a flood from the
+/// members over 36 rings of bodies off the lattice refused a corner that the group can reach.)
 ///
 /// The result has the canonical nearest-first order. It is `None` when the reachable sites are
 /// fewer than the members; the caller then keeps the unfiltered pool.

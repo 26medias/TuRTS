@@ -1518,6 +1518,16 @@ pub(crate) fn step_frame_with_motion_guide(
                                     .into_iter()
                                     .all(|other_index| {
                                         other_index == index
+                                            // In exchange mode a body of another owner
+                                            // counts only at rest and in contact range of
+                                            // this owner, as for a route.
+                                            || (exchanges_claims
+                                                && units_at_start[other_index].0
+                                                    != unit.owner_slot
+                                                && !(stationary_at_start[other_index]
+                                                    && contact_witness[other_index]
+                                                        .binary_search(&unit.owner_slot)
+                                                        .is_ok()))
                                             || slot.distance(units[other_index].position)
                                                 >= unit.radius + units[other_index].radius
                                     })
