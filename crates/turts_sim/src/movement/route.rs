@@ -105,6 +105,58 @@ mod budget_tests {
             "an unfinished flood must not choose from partial goals"
         );
     }
+
+    #[test]
+    fn later_goal_connector_can_beat_an_ineligible_first_connector() {
+        let start = Vec2::new(5.03, 5.07);
+        let goal = Vec2::new(8.838_02, 6.864_918);
+        let units = [MovementFrameUnit {
+            unit_id: 1,
+            owner_slot: 0,
+            unit_type: 1,
+            position: start,
+            radius: 0.5,
+            speed: Some(1.0),
+            target: None,
+            progress: None,
+            plain_progress: None,
+            physical_escape: None,
+        }];
+        let points = [crate::grid::GridPoint {
+            id: 1,
+            position: start,
+        }];
+        let grid = crate::grid::UniformGrid::new(&points, 1.0);
+        let planner = Planner {
+            index: 0,
+            units: &units,
+            points: &points,
+            grid: &grid,
+            max_radius: 0.5,
+            bounds: Vec2::splat(20.0),
+            stationary_at_start: &[false],
+            contact_witness: &[vec![]],
+            start_stall: &[None],
+            soft: false,
+            stall_ticks: 2,
+        };
+        let mut spent = 0;
+        let mut exhausted = false;
+        // The first settled connector costs about 4.518. A later connector costs 4.482.
+        let reached = planner.search(
+            &[goal],
+            false,
+            Some(&[4.5]),
+            8192,
+            &mut spent,
+            &mut exhausted,
+        );
+        assert!(!exhausted);
+        assert!(
+            reached.iter().any(|r| r.cost < 4.5),
+            "later eligible connector was lost: {reached:?}"
+        );
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -359,10 +411,11 @@ impl Planner<'_> {
             let point = Self::point(node);
             if let Some(goal_indexes) = attached.get(&node) {
                 for &goal_index in goal_indexes {
-                    if reached[goal_index].is_none() && self.chord_clear(point, goals[goal_index]) {
-                        reached[goal_index] =
-                            Some((cost + point.distance(goals[goal_index]), node));
-                        let total = cost + point.distance(goals[goal_index]);
+                    let total = cost + point.distance(goals[goal_index]);
+                    if reached[goal_index].is_none_or(|(previous, _)| total < previous)
+                        && self.chord_clear(point, goals[goal_index])
+                    {
+                        reached[goal_index] = Some((total, node));
                         if eligible(goal_index, total) {
                             best_goal = best_goal.min(total);
                         }
