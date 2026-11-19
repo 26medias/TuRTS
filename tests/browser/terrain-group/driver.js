@@ -187,6 +187,7 @@ async function drive({pagesBySlot,fixture,capture,record,recordInput,onPoll}) {
     const initialDeadline=fixture.scene.initial_deadline_ticks??fixture.scene.deadline_ticks;
     const settledBlocker=fixture.scene_name==='GM3-settled-blocker';
     const blockerStart=fixture.actors.find(a=>a.label==='blocker')?.position;
+    let blockerSettledPoint=null;
     let gm2Initial=false;const previousSurfaces=new Map();
     async function sample(){
         const state=await read(first);assert(state&&world(state),'Activated state disappeared');onPoll?.();
@@ -207,7 +208,7 @@ async function drive({pagesBySlot,fixture,capture,record,recordInput,onPoll}) {
                 settled.observe(label,true,position);
             }
         }
-        if(settledBlocker&&relative>=10){const blocker=world(state).units.find(u=>u.unit_id===bindings.get('blocker'));assert(same(blocker.pos,blockerStart),'Traffic displaced permanent settled blocker: actual='+JSON.stringify(blocker.pos)+' authored='+JSON.stringify(blockerStart));}
+        if(settledBlocker&&blockerSettledPoint){const blocker=world(state).units.find(u=>u.unit_id===bindings.get('blocker'));assert(same(blocker.pos,blockerSettledPoint),'Traffic displaced permanent settled blocker: actual='+JSON.stringify(blocker.pos)+' settled='+JSON.stringify(blockerSettledPoint));}
         if(fixture.scene_name==='GM2-narrow'){
             if(relative>=2400&&!gm2Initial){
                 crossed(fixture,merged,bindings,small);
@@ -267,6 +268,16 @@ async function drive({pagesBySlot,fixture,capture,record,recordInput,onPoll}) {
                     throw error;
                 }
                 const receipt=acceptedState.debug.command_results.find(r=>r.seq>lastSeq&&Number.isInteger(r.applied_tick)&&r.accepted?.length===intent.actors.length);
+                if(settledBlocker&&intent.tick===0&&intent.actors.length===1&&intent.actors[0]==='blocker'){
+                    const id=bindings.get('blocker');
+                    const state=await wait(page,s=>world(s).tick>=receipt.applied_tick&&idle(s,id),'Blocker did not settle at its starting point');
+                    const position=world(state).units.find(u=>u.unit_id===id).pos;
+                    const offset=Math.hypot(position[0]-blockerStart[0],position[1]-blockerStart[1]);
+                    // Pointer projection is floating point. This small bound preserves
+                    // the frozen passage geometry before exact retention begins.
+                    assert(offset<0.001,'Blocker initial point differs from fixture: '+offset);
+                    blockerSettledPoint=[...position];checks.blocker_projection_offset=offset;checks.blocker_settled_position=blockerSettledPoint;
+                }
                 settled.commit(intent.actors,intent.action);
                 for(const label of intent.actors)original.delete(label);
                 const after=await read(page);actions.push({intended_tick:intent.tick,relative_before_selection:world(before).tick-base,relative_after_input:world(after).tick-base,accepted_tick:receipt.applied_tick,accepted_relative_tick:receipt.applied_tick-base,seq:receipt.seq,intent});
