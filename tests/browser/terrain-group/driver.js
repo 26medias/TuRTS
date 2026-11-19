@@ -93,7 +93,17 @@ async function issue(page,fixture,bindings,intent,preselected=false) {
     if(intent.queue==='Append'){await page.keyboard.down('Shift');await sleep(PRESS_MS);}
     try{
         if(intent.action==='move'){
-            const state=await read(page);await click(page,project(state.scene,[...intent.point,permittedTop(fixture,state,intent.point)]),'right');
+            // A smart right-click on the blocker's own body has no Ground
+            // action. The ordinary Move button targets the same ground point.
+            if(intent.tick===0&&intent.actors.length===1&&intent.actors[0]==='blocker'){
+                const order=fixture.package+':order_move';
+                const state=await wait(page,s=>s.ui.some(w=>w.visible&&w.enabled&&w.widget_action?.id===order),'Move button absent');
+                const button=state.ui.find(w=>w.visible&&w.enabled&&w.widget_action?.id===order),[x,y,w,h]=button.rect;
+                await click(page,[x+w/2,y+h/2]);
+                const target=await read(page);await click(page,project(target.scene,[...intent.point,permittedTop(fixture,target,intent.point)]));
+            }else{
+                const state=await read(page);await click(page,project(state.scene,[...intent.point,permittedTop(fixture,state,intent.point)]),'right');
+            }
         }else{
             const tool=fixture.package+':'+fixture.bindings[intent.action==='fill'?'fill':'dig'];
             let state=await wait(page,s=>s.ui.some(w=>w.visible&&w.enabled&&w.widget_action?.tool===tool),'Bound public TerrainTools button absent');
