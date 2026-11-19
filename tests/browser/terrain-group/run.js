@@ -34,8 +34,14 @@ async function ready(url,server){const deadline=Date.now()+30000;while(Date.now(
     for(const packageName of options.packages){
         checked('python3',['-B',path.join(root,'tests/browser/terrain-prepared.py'),prepared,'--root',root,'--fixture',path.join(root,'mods',packageName),'--record',path.join(output,packageName+'-public-source.json')],path.join(output,packageName+'-public-check.log'));
     }
-    xvfb=spawn('Xvfb',['-displayfd','3','-screen','0','1280x720x24','-nolisten','tcp'],{stdio:['ignore','ignore','pipe','pipe']});children.push(xvfb);
-    const display=await new Promise((resolve,reject)=>{let text='';const timeout=setTimeout(()=>reject(Error('Owned Xvfb startup timeout')),10000);xvfb.stdio[3].on('data',data=>{text+=data;if(text.includes('\n')){clearTimeout(timeout);resolve(':'+text.trim());}});xvfb.once('error',reject);xvfb.once('exit',code=>reject(Error('Owned Xvfb exited '+code)));});
+    // Each peer needs its own X pointer and active window. Otherwise concurrent
+    // input in another peer can activate a background window during a gesture.
+    const displays=[];
+    for(let peer=0;peer<2;peer++){
+        xvfb=spawn('Xvfb',['-displayfd','3','-screen','0','1280x720x24','-nolisten','tcp'],{stdio:['ignore','ignore','pipe','pipe']});children.push(xvfb);
+        const instance=xvfb;
+        displays.push(await new Promise((resolve,reject)=>{let text='';const timeout=setTimeout(()=>reject(Error('Owned Xvfb startup timeout')),10000);instance.stdio[3].on('data',data=>{text+=data;if(text.includes('\n')){clearTimeout(timeout);resolve(':'+text.trim());}});instance.once('error',reject);instance.once('exit',code=>reject(Error('Owned Xvfb exited '+code)));}));
+    }
     for(const packageName of options.packages)for(const scene of options.scenes){
         const peers=['GM3-opposing-large','GM3-settled-blocker','GM3-movable-blocker'].includes(scene)?2:1;
         const connections=peers===2&&options.connections==='both'?['normal','reversed']:[options.connections==='reversed'?'reversed':'normal'];
@@ -61,7 +67,7 @@ async function ready(url,server){const deadline=Date.now()+30000;while(Date.now(
                 // sequence genuinely reverses peer connection order while slots remain observed.
                 for(let peer=0;peer<peers;peer++){
                     const profile=fs.mkdtempSync(path.join(os.tmpdir(),'turts-terrain-group-'));profiles.push(profile);caseProfiles.push(profile);row.profiles.push(profile);
-                    const context=await chromium.launchPersistentContext(profile,{executablePath:options.chrome,headless:false,viewport:{width:1280,height:720},env:{...process.env,DISPLAY:display},ignoreDefaultArgs:['--enable-unsafe-swiftshader'],args:['--enable-gpu','--alsa-output-device=null','--enable-unsafe-webgpu','--enable-features=Vulkan','--use-angle=vulkan','--disable-vulkan-surface','--no-first-run','--no-default-browser-check']});contexts.push(context);caseContexts.push(context);
+                    const context=await chromium.launchPersistentContext(profile,{executablePath:options.chrome,headless:false,viewport:{width:1280,height:720},env:{...process.env,DISPLAY:displays[peer]},ignoreDefaultArgs:['--enable-unsafe-swiftshader'],args:['--enable-gpu','--alsa-output-device=null','--enable-unsafe-webgpu','--enable-features=Vulkan','--use-angle=vulkan','--disable-vulkan-surface','--no-first-run','--no-default-browser-check']});contexts.push(context);caseContexts.push(context);
                     await context.addInitScript(()=>localStorage.setItem('turts.v1.settings',JSON.stringify({controls:{quality:'high'}})));
                     const page=context.pages()[0];page.on('pageerror',error=>row.errors.push(String(error)));page.on('requestfailed',request=>row.errors.push('Request failed '+request.url()+': '+request.failure()?.errorText));page.on('response',response=>{if(response.status()>=400)row.errors.push('HTTP '+response.status()+' '+response.url());});
                 }
