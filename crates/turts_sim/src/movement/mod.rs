@@ -5,6 +5,18 @@ use bevy_math::Vec2;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+/// Visibility facts used by the deterministic movement replay kernel.
+/// Implementations must derive permissions from the trusted observation basis.
+pub trait MovementVisibility {
+    fn unit_permitted(&self, viewer: u8, unit: u32) -> bool;
+}
+
+impl MovementVisibility for crate::visibility::VisibilityBasis {
+    fn unit_permitted(&self, viewer: u8, unit: u32) -> bool {
+        self.unit_permitted(viewer, unit)
+    }
+}
+
 mod arrival;
 mod ecs;
 mod exchange;
@@ -35,6 +47,7 @@ pub(crate) use ecs::integrate_movement;
 pub use frame::{
     MovementFrame, MovementFrameOutput, MovementFrameUnit, step_frame, step_frame_at_tick,
     step_frame_preserving_resting, step_frame_preserving_resting_at_tick,
+    step_frame_preserving_resting_at_tick_with_visibility,
 };
 pub use plain::PlainMoveProgress;
 pub use spread::{SpreadContext, spread_destinations, spread_destinations_with_context};

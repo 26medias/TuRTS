@@ -430,7 +430,8 @@ pub(crate) fn step(
                     world.get_resource::<crate::Tick>().map_or(0, |tick| tick.0),
                 ),
                 &mut crate::movement::motion::NoMotionGuide,
-                crate::visibility::active_basis(world),
+                crate::visibility::active_basis(world)
+                    .map(|basis| basis as &dyn crate::movement::MovementVisibility),
             ),
             BTreeSet::new(),
         );
@@ -909,7 +910,8 @@ pub(crate) fn step(
                 preserve,
                 &mut body_budget,
                 &mut model,
-                crate::visibility::active_basis(world),
+                crate::visibility::active_basis(world)
+                    .map(|basis| basis as &dyn crate::movement::MovementVisibility),
             );
             if first_intent.is_none() && candidate.units.len() <= super::traffic::index_capacity() {
                 first_intent = Some(

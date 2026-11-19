@@ -328,6 +328,7 @@ pub fn validate_records(records: &[EconomyLogRecord]) -> Result<(), String> {
                             &operation.before,
                             movement_pending,
                             operation.phase,
+                            &tick_start,
                         )?;
                     }
                     turts_sim::economy::transaction::AuditPhase::Other => {
@@ -366,6 +367,7 @@ pub fn validate_records(records: &[EconomyLogRecord]) -> Result<(), String> {
                                 &operation.before,
                                 movement_pending,
                                 operation.phase,
+                                &tick_start,
                             )?;
                             movement_pending = false;
                         }
@@ -388,6 +390,7 @@ pub fn validate_records(records: &[EconomyLogRecord]) -> Result<(), String> {
                             &operation.before,
                             movement_pending,
                             operation.phase,
+                            &tick_start,
                         )?;
                         movement_pending = false;
                     }
@@ -892,7 +895,7 @@ pub fn validate_records(records: &[EconomyLogRecord]) -> Result<(), String> {
                         "tick {tick} did not drain and reset pending events"
                     ));
                 }
-                validate_tick_state(&cursor, state, *tick, movement_pending)?;
+                validate_tick_state(&cursor, state, *tick, movement_pending, &tick_start)?;
                 reconcile_plain_move_identities(state, &mut plain_move_identities);
                 plain_candidates.clear();
                 cursor = state.clone();
@@ -9451,9 +9454,10 @@ fn validate_operation_continuity(
     previous: &AuditState,
     current: &AuditState,
     movement_pending: bool,
+    tick_start: &AuditState,
 ) -> Result<(), String> {
     if movement_pending {
-        return validate_movement_transition(previous, current);
+        return validate_movement_transition(previous, current, tick_start);
     }
     validate_clock_continuity(previous, current, "operation")
 }
@@ -9463,6 +9467,7 @@ fn validate_operation_phase(
     current: &AuditState,
     movement_pending: bool,
     phase: turts_sim::economy::transaction::AuditPhase,
+    tick_start: &AuditState,
 ) -> Result<(), String> {
     match phase {
         turts_sim::economy::transaction::AuditPhase::Command
@@ -9470,10 +9475,10 @@ fn validate_operation_phase(
             validate_clock_continuity(previous, current, "orders operation")
         }
         turts_sim::economy::transaction::AuditPhase::PostMovementOrders => {
-            validate_operation_continuity(previous, current, movement_pending)
+            validate_operation_continuity(previous, current, movement_pending, tick_start)
         }
         turts_sim::economy::transaction::AuditPhase::Other => {
-            validate_operation_continuity(previous, current, movement_pending)
+            validate_operation_continuity(previous, current, movement_pending, tick_start)
         }
     }
 }
@@ -9695,7 +9700,11 @@ fn audit_gather_interaction_reached(
 /// Validate exactly one fixed movement phase. Identity, ownership, economy,
 /// orders, and events stay exact; positions and targets must follow prior targets,
 /// catalog speed, and tick rate.
-fn validate_movement_transition(previous: &AuditState, current: &AuditState) -> Result<(), String> {
+fn validate_movement_transition(
+    previous: &AuditState,
+    current: &AuditState,
+    tick_start: &AuditState,
+) -> Result<(), String> {
     let previous_tick = previous.economy.tick;
     if current.economy.tick != previous_tick
         && previous_tick.checked_add(1) != Some(current.economy.tick)
@@ -9816,12 +9825,33 @@ fn validate_movement_transition(previous: &AuditState, current: &AuditState) -> 
                 .then_some(row.unit_id)
         })
         .collect();
-    let outputs = turts_sim::movement::step_frame_preserving_resting_at_tick(
-        &frame,
-        delta,
-        &preserve_resting_units,
-        current.economy.tick,
-    );
+    struct AuditedMovementSight(Vec<BTreeSet<u32>>);
+    impl turts_sim::movement::MovementVisibility for AuditedMovementSight {
+        fn unit_permitted(&self, viewer: u8, unit: u32) -> bool {
+            self.0
+                .get(usize::from(viewer))
+                .is_some_and(|hidden| !hidden.contains(&unit))
+        }
+    }
+    let outputs = if expected.raw_sight.is_some() {
+        let hidden = (0..turts_mod_api::SLOT_COUNT)
+            .map(|slot| crate::sight::hidden_bodies(tick_start, &expected, slot))
+            .collect::<Result<Vec<_>, _>>()?;
+        turts_sim::movement::step_frame_preserving_resting_at_tick_with_visibility(
+            &frame,
+            delta,
+            &preserve_resting_units,
+            current.economy.tick,
+            &AuditedMovementSight(hidden),
+        )
+    } else {
+        turts_sim::movement::step_frame_preserving_resting_at_tick(
+            &frame,
+            delta,
+            &preserve_resting_units,
+            current.economy.tick,
+        )
+    };
     let mut movement_progress = Vec::new();
     let mut plain_movement_progress = Vec::new();
     let mut physical_escapes = Vec::new();
@@ -9932,6 +9962,7 @@ fn validate_tick_state(
     state: &AuditState,
     tick: u32,
     movement_pending: bool,
+    tick_start: &AuditState,
 ) -> Result<(), String> {
     let mut expected = previous.clone();
     if expected.economy.tick != tick {
@@ -9943,7 +9974,7 @@ fn validate_tick_state(
     expected.next_event_ordinal = Some(0);
     crate::terrain::reconcile_verified(&mut expected, state);
     if movement_pending {
-        validate_movement_transition(&expected, state)?;
+        validate_movement_transition(&expected, state, tick_start)?;
     } else if expected != *state {
         return Err(format!(
             "tick {tick} after snapshot differs from the prior operation state"
@@ -21604,9 +21635,13 @@ mod tests {
             raw_slots: Vec::new(),
             pieces: Vec::new(),
         });
-        let error =
-            validate_operation_continuity(&previous_operation_after, &next_operation_before, false)
-                .unwrap_err();
+        let error = validate_operation_continuity(
+            &previous_operation_after,
+            &next_operation_before,
+            false,
+            &previous_operation_after,
+        )
+        .unwrap_err();
         assert!(error.contains("discontinuous"));
     }
 

@@ -47,7 +47,7 @@ pub(super) fn prepare_with_guide(
     dt: f32,
     bounds: Vec2,
     guide: &dyn super::motion::MotionGuide,
-    visibility: Option<&crate::visibility::VisibilityBasis>,
+    visibility: Option<&dyn super::MovementVisibility>,
 ) -> Vec<(u32, Vec2)> {
     let owns = |unit: &MovementFrameUnit| {
         guide.kind(unit.unit_id) == super::motion::MotionKind::Destination

@@ -109,6 +109,23 @@ pub fn step_frame_preserving_resting_at_tick(
         &mut super::sweep::SweepBudget::new(tick),
     )
 }
+/// Replay a movement tick against independently reconstructed visibility facts.
+pub fn step_frame_preserving_resting_at_tick_with_visibility(
+    frame: &MovementFrame,
+    dt: f32,
+    preserve: &std::collections::BTreeSet<u32>,
+    tick: u32,
+    visibility: &dyn super::MovementVisibility,
+) -> Vec<MovementFrameOutput> {
+    step_frame_with_motion_guide_and_visibility(
+        frame,
+        dt,
+        preserve,
+        &mut super::sweep::SweepBudget::new(tick),
+        &mut super::motion::NoMotionGuide,
+        Some(visibility),
+    )
+}
 pub(crate) fn step_frame_with_sweep_budget(
     frame: &MovementFrame,
     dt: f32,
@@ -147,7 +164,7 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
     preserve_resting_units: &std::collections::BTreeSet<u32>,
     budget: &mut super::sweep::SweepBudget,
     guide: &mut dyn super::motion::MotionGuide,
-    visibility: Option<&crate::visibility::VisibilityBasis>,
+    visibility: Option<&dyn super::MovementVisibility>,
 ) -> Vec<MovementFrameOutput> {
     let mut units = frame.units.clone();
     let mut resolved_ties = super::arrival::prepare_with_guide(

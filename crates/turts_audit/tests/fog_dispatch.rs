@@ -433,3 +433,42 @@ fn fog_group_move_to_a_unit_is_refused_not_certified() {
         "a pending Unit-target group move under fog",
     );
 }
+
+#[test]
+fn fog_singleton_move_to_hidden_body_replays() {
+    let mut run = Run::new(true);
+    run.order(1, &GROUP_1[..1], HIDDEN_POINT);
+    run.ticks(2);
+    validate_records(&run.records).unwrap();
+}
+
+#[test]
+fn fog_direct_move_to_hidden_body_replays() {
+    let mut run = Run::new(true);
+    let id = run.unit_at(GROUP_1[0]);
+    let entity = run
+        .app
+        .world()
+        .iter_entities()
+        .find(|e| e.get::<turts_sim::UnitId>().is_some_and(|i| i.0 == id))
+        .unwrap()
+        .id();
+    run.app
+        .world_mut()
+        .entity_mut(entity)
+        .insert(turts_sim::world::MoveTarget(Vec2::new(
+            HIDDEN_POINT.0,
+            HIDDEN_POINT.1,
+        )));
+    run.records = vec![EconomyLogRecord::Initial(turts_sim::audit_state(
+        run.app.world_mut(),
+    ))];
+    run.ticks(180);
+    validate_records(&run.records).unwrap();
+    let stripped = forged(&run.records, |sight| *sight = None);
+    let error = validate_records(&stripped).expect_err("a false all-visible movement basis");
+    assert!(
+        error.contains("movement transition changed nonmovement state"),
+        "{error}"
+    );
+}
