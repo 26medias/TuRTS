@@ -1214,7 +1214,7 @@ fn pool_clearance_does_not_let_uncontacted_foreign_body_hide_a_spare() {
             .collect();
         let grid = crate::grid::UniformGrid::new(&points, 2.0);
         let mut index = MovementPoolIndex::new(&pool, Vec2::splat(64.0));
-        index.restrict_clearance_to_pool_owner();
+        index.restrict_clearance_to_pool_owner(true);
         index.note_owner(0);
         let witnesses = if witnessed { vec![vec![0]] } else { vec![] };
         index.refresh_slot_clearance(0, &units, &points, &grid, 0.5, false, &witnesses);

@@ -37,6 +37,7 @@ pub(super) struct MovementPoolIndex {
     spacing: f32,
     max_reach: f32,
     clearance_owners: ClearanceOwners,
+    include_owner_contacts: bool,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -124,13 +125,15 @@ impl MovementPoolIndex {
             spacing: pool.spacing.max(0.1),
             max_reach: bounds.length(),
             clearance_owners: ClearanceOwners::All,
+            include_owner_contacts: false,
         }
     }
 
     /// Claim-exchange planning may only reject a slot from own-body clearance.
     /// Foreign bodies remain in the final per-slot predicate and physical guard.
-    pub(super) fn restrict_clearance_to_pool_owner(&mut self) {
+    pub(super) fn restrict_clearance_to_pool_owner(&mut self, include_owner_contacts: bool) {
         self.clearance_owners = ClearanceOwners::Unknown;
+        self.include_owner_contacts = include_owner_contacts;
     }
 
     pub(super) fn note_owner(&mut self, owner: u8) {
@@ -181,9 +184,10 @@ impl MovementPoolIndex {
                 ClearanceOwners::All => true,
                 ClearanceOwners::Owner(owner) => {
                     unit.owner_slot == owner
-                        || contact_witness
-                            .get(unit_index)
-                            .is_some_and(|owners| owners.binary_search(&owner).is_ok())
+                        || (self.include_owner_contacts
+                            && contact_witness
+                                .get(unit_index)
+                                .is_some_and(|owners| owners.binary_search(&owner).is_ok()))
                 }
                 ClearanceOwners::Unknown | ClearanceOwners::Mixed => false,
             } {

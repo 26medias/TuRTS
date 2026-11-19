@@ -216,9 +216,12 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
         .map(|(&pool_id, pool)| (pool_id, MovementPoolIndex::new(pool, frame.bounds)))
         .collect();
     let exchanges_claims = guide.exchanges_claims();
-    if exchanges_claims {
+    if exchanges_claims || visibility.is_some() {
         for index in pool_indexes.values_mut() {
-            index.restrict_clearance_to_pool_owner();
+            // Under fog the pool precheck may reject a slot only from facts
+            // known to every actor of the pool. Actor-specific contacts and
+            // visible foreign bodies are checked by the exact predicate.
+            index.restrict_clearance_to_pool_owner(visibility.is_none());
         }
         for unit in &units {
             if let Some(pool) = unit
@@ -1792,6 +1795,7 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
                                     .into_iter()
                                     .all(|other_index| {
                                         other_index == index
+                                            || !known(units[other_index].unit_id)
                                             // In exchange mode a body of another owner
                                             // counts only at rest and in contact range of
                                             // this owner, as for a route.

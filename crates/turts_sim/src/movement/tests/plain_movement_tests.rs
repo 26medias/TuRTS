@@ -523,6 +523,101 @@ struct RecoveryGuide {
     next: Vec2,
     calls: usize,
 }
+
+#[test]
+fn guided_group_recovery_ignores_hidden_spare_but_reserves_visible_and_contact_bodies() {
+    struct Fog;
+    impl super::MovementVisibility for Fog {
+        fn unit_permitted(&self, _: u8, _: u32) -> bool {
+            false
+        }
+    }
+    let origin = Vec2::new(10., 10.);
+    let goal = Vec2::new(20., 10.);
+    let spare = Vec2::new(10.8, 10.);
+    let mut f = captured_clear_recovery_frame(false);
+    let actor = &mut f.units[0];
+    actor.position = origin;
+    actor.radius = 0.5;
+    actor.speed = Some(1.0);
+    actor.target = None;
+    actor.plain_progress = None;
+    actor.progress = Some(super::MoveProgress {
+        pool_id: 7,
+        slot: goal,
+        activity: MovementActivity::Blocked,
+        pass_mode: false,
+        stalling_on_group: false,
+        stalled_ticks: 20,
+        best_distance: 10.,
+        claim_count: 0,
+        follow_origin: None,
+    });
+    let mut holder = actor.clone();
+    holder.unit_id = 10;
+    holder.position = Vec2::new(9.4, 10.);
+    holder.speed = None;
+    holder.progress = None;
+    f.units.push(holder.clone());
+    holder.unit_id = 11;
+    holder.position = goal;
+    f.units.push(holder.clone());
+    holder.unit_id = 12;
+    holder.owner_slot = 1;
+    holder.radius = 0.01;
+    holder.position = Vec2::new(40., 40.);
+    f.units.push(holder);
+    f.pools.insert(
+        7,
+        super::MovementPool {
+            pool_id: 7,
+            point: goal,
+            spacing: 1.1,
+            primary_count: 1,
+            slots: vec![goal, spare],
+        },
+    );
+    let run = |f: &MovementFrame, visibility: &dyn super::MovementVisibility| {
+        let mut guide = RecoveryGuide {
+            next: origin,
+            calls: 0,
+        };
+        let mut budget = super::sweep::SweepBudget::new(1);
+        super::frame::step_frame_with_motion_guide_and_visibility(
+            f,
+            0.05,
+            &Default::default(),
+            &mut budget,
+            &mut guide,
+            Some(visibility),
+        )[0]
+        .clone()
+    };
+    let far = run(&f, &Fog);
+    f.units[3].position = spare;
+    let hidden = run(&f, &Fog);
+    assert_eq!(far.position, hidden.position);
+    assert_eq!(far.progress, hidden.progress);
+    struct Visible;
+    impl super::MovementVisibility for Visible {
+        fn unit_permitted(&self, _: u8, _: u32) -> bool {
+            true
+        }
+    }
+    let visible = run(&f, &Visible);
+    assert_ne!(
+        far.progress.as_ref().unwrap().slot,
+        visible.progress.as_ref().unwrap().slot,
+        "visible body must reserve the spare"
+    );
+    f.units[3].position = Vec2::new(10.55, 10.);
+    let contact = run(&f, &Fog);
+    assert_ne!(
+        far.progress.as_ref().unwrap().slot,
+        contact.progress.as_ref().unwrap().slot,
+        "contact body must reserve the spare"
+    );
+}
 impl super::motion::MotionGuide for RecoveryGuide {
     fn kind(&self, _: u32) -> super::motion::MotionKind {
         super::motion::MotionKind::Destination
