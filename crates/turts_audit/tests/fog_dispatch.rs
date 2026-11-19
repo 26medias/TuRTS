@@ -3,7 +3,10 @@
 use std::path::Path;
 
 use bevy_app::App;
-use turts_audit::{EconomyLogRecord, validate_records, validate_records_with_sight};
+use turts_audit::{
+    EconomyLogRecord, validate_records, validate_records_with_sight,
+    validate_records_with_trusted_sight,
+};
 use turts_mod_api::*;
 use turts_mod_runtime::{archive::PackageArchive, pack::pack_dir};
 use turts_sim::visibility::{SightAudit, SightPolicy};
@@ -279,6 +282,46 @@ fn live_fog_capture_replays_with_auditor_computed_sight() {
 }
 
 #[test]
+fn trusted_sight_rejects_inconsequential_forged_radius_and_health_rule() {
+    let records = captured(true);
+    // This test saves the expected context from an honest capture. Production
+    // callers must construct it independently from the package and room.
+    let EconomyLogRecord::Initial(initial) = &records[0] else {
+        panic!("initial record");
+    };
+    let trusted = initial.raw_sight.clone().unwrap();
+    validate_records_with_trusted_sight(&records, Some(&trusted)).unwrap();
+
+    let changed_radius = forged(&records, |sight| {
+        let radius = sight
+            .as_mut()
+            .unwrap()
+            .types
+            .iter_mut()
+            .find_map(|kind| kind.radius.as_mut())
+            .unwrap();
+        *radius = f32::from_bits(radius.to_bits() + 1);
+    });
+    // A change that does not alter this scene passes the older policy-only API.
+    validate_records_with_sight(&changed_radius, Some(&trusted_policy())).unwrap();
+    assert_eq!(
+        validate_records_with_trusted_sight(&changed_radius, Some(&trusted)).unwrap_err(),
+        "economy log sight inputs differ from the trusted inputs"
+    );
+
+    let changed_health = forged(&records, |sight| {
+        let kind = &mut sight.as_mut().unwrap().types[0];
+        kind.has_health = !kind.has_health;
+    });
+    validate_records_with_sight(&changed_health, Some(&trusted_policy())).unwrap();
+    assert_eq!(
+        validate_records_with_trusted_sight(&changed_health, Some(&trusted)).unwrap_err(),
+        "economy log sight inputs differ from the trusted inputs"
+    );
+    validate_records_with_trusted_sight(&captured(false), None).unwrap();
+}
+
+#[test]
 fn live_all_visible_capture_replays_unchanged() {
     let records = captured(false);
     validate_records(&records).unwrap();
@@ -391,6 +434,10 @@ fn sight_may_be_finalized_only_before_the_first_tick() {
     });
     validate_records(&at_start).unwrap();
     validate_records_with_sight(&at_start, Some(&trusted_policy())).unwrap();
+    let EconomyLogRecord::Initial(initial) = &fog[0] else {
+        panic!("initial record");
+    };
+    validate_records_with_trusted_sight(&at_start, initial.raw_sight.as_ref()).unwrap();
 
     let first_tick = fog
         .iter()

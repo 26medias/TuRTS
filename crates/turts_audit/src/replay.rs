@@ -123,6 +123,35 @@ pub fn validate_records_with_sight(
     validate_records(finalized.as_deref().unwrap_or(records))
 }
 
+/// Validate the log against the complete sight inputs from a trusted match setup.
+///
+/// Unlike [`validate_records_with_sight`], this also checks per-type vision radii
+/// and health rules. The expected value must come from the locked package and
+/// room, never from the log being validated. A host with a separately created
+/// simulation can install the locked package, initialize the room's visibility
+/// context, and call `turts_sim::visibility::audit` on that trusted world.
+/// `None` means all-visible mode.
+pub fn validate_records_with_trusted_sight(
+    records: &[EconomyLogRecord],
+    expected: Option<&turts_sim::visibility::SightAudit>,
+) -> Result<(), String> {
+    let Some(EconomyLogRecord::Initial(initial)) = records.first() else {
+        return Err("first economy log record must be Initial".into());
+    };
+    let finalized = crate::sight::finalized_at_start(records, initial)?;
+    let effective_records = finalized.as_deref().unwrap_or(records);
+    let Some(EconomyLogRecord::Initial(effective_initial)) = effective_records.first() else {
+        unreachable!("initial record checked above");
+    };
+    if effective_initial.raw_sight.as_ref() != expected {
+        return Err("economy log sight inputs differ from the trusted inputs".into());
+    }
+    if expected.is_some_and(|sight| !sight.finalized) {
+        return Err("trusted sight context is not finalized".into());
+    }
+    validate_records(effective_records)
+}
+
 /// Check record shape, R14 clock transitions, command-operation association, and
 /// the published tick boundary. Operation expectations remain external to this log.
 pub fn validate_records(records: &[EconomyLogRecord]) -> Result<(), String> {
