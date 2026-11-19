@@ -83,7 +83,7 @@ fn defer_entry(
     entry: Option<own_detour::Retained>,
 ) {
     if let Some(saved) = entry {
-        proposed.units[index].target = Some(saved.route.corners[saved.corner]);
+        proposed.units[index].target = Some(saved.route.corners[usize::from(saved.corner)]);
         proposed.units[index].speed = unit.speed;
         state.members.get_mut(&unit.unit_id).unwrap().passing = None;
     }
@@ -610,7 +610,9 @@ pub(super) fn apply(
                     // is still blocked, a new fully certified local route follows.
                     saved.corner = 2;
                 }
-                while saved.corner < 2 && unit.position == saved.route.corners[saved.corner] {
+                while saved.corner < 2
+                    && unit.position == saved.route.corners[usize::from(saved.corner)]
+                {
                     saved.corner += 1;
                 }
                 if saved.corner == 2 {
@@ -620,7 +622,7 @@ pub(super) fn apply(
                     let mut from = unit.position;
                     let mut valid = true;
 
-                    for &to in &saved.route.corners[saved.corner..] {
+                    for &to in &saved.route.corners[usize::from(saved.corner)..] {
                         match bodies_clear(from, to, &mut work) {
                             Some(true) => {
                                 work.terrain_calls += 1;
@@ -739,7 +741,7 @@ pub(super) fn apply(
             }
             if let Some(saved) = retained {
                 proposed.units[i].target =
-                    Some(continuation.unwrap_or(saved.route.corners[saved.corner]));
+                    Some(continuation.unwrap_or(saved.route.corners[usize::from(saved.corner)]));
                 proposed.units[i].speed = unit.speed;
                 state.members.get_mut(&unit.unit_id).unwrap().passing = None;
             }
@@ -1297,7 +1299,7 @@ mod deferred_intent_tests {
                 .find(|u| u.unit_id == id)
                 .unwrap()
                 .target,
-            Some(entry.route.corners[entry.corner])
+            Some(entry.route.corners[usize::from(entry.corner)])
         );
     }
     #[test]
@@ -1402,7 +1404,7 @@ mod deferred_intent_tests {
                 quota,
                 &mut budget,
                 |_, a, b| {
-                    if a == from && b == entry.route.corners[entry.corner] {
+                    if a == from && b == entry.route.corners[usize::from(entry.corner)] {
                         negative = true;
                         false
                     } else {

@@ -411,7 +411,8 @@ pub(super) fn apply(
         }
         let member = state.members.get_mut(&actor.unit_id).unwrap();
         let mut charge = || {
-            let allowed = budget.charge_guidance_pair(actor.owner_slot, &mut member.guidance_pairs);
+            let allowed =
+                budget.charge_guidance_pair_compact(actor.owner_slot, &mut member.guidance_pairs);
             if allowed {
                 member.attempts.set(Attempt::Parking, Some(tick));
             }

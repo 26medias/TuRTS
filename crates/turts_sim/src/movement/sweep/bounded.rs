@@ -120,6 +120,14 @@ impl SweepBudget {
         }
         self.charge_pair(owner, actor, PAIRS_PER_ACTOR)
     }
+    /// Same accounting for the compact retained traffic-member counter.
+    pub(crate) fn charge_guidance_pair_compact(&mut self, owner: u8, actor: &mut u32) -> bool {
+        const _: () = assert!(PAIRS_PER_ACTOR <= u32::MAX as usize);
+        let mut expanded = *actor as usize;
+        let accepted = self.charge_guidance_pair(owner, &mut expanded);
+        *actor = u32::try_from(expanded).expect("guidance count fits u32");
+        accepted
+    }
     pub(crate) fn body(&mut self, owner: u8) -> bool {
         charge(&mut self.bodies, owner)
     }
@@ -610,6 +618,26 @@ pub(super) fn collect_guided_deferred(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn compact_guidance_counter_matches_existing_budget() {
+        for owner in [0, 1, 2] {
+            for initial in [0usize, PAIRS_PER_ACTOR - 1, PAIRS_PER_ACTOR] {
+                for owner_work in [0, OWNER_WORK / 2 - 1, OWNER_WORK / 2] {
+                    let mut original = SweepBudget::new(0);
+                    original.pairs[0] = owner_work;
+                    let mut compact = original.clone();
+                    let mut wide = initial;
+                    let mut narrow = initial as u32;
+                    assert_eq!(
+                        original.charge_guidance_pair(owner, &mut wide),
+                        compact.charge_guidance_pair_compact(owner, &mut narrow)
+                    );
+                    assert_eq!(wide, narrow as usize);
+                    assert_eq!(original.pairs, compact.pairs);
+                }
+            }
+        }
+    }
     pub(super) fn body(id: u32, owner: u8, position: Vec2, radius: f32) -> MovementFrameUnit {
         MovementFrameUnit {
             unit_id: id,

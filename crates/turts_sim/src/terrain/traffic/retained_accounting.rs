@@ -1,14 +1,19 @@
-//! Root-node allowances for independently allocated retained B-tree maps.
+//! Conservative B-tree node accounting for the locked Rust toolchain.
 //!
-//! The per-entry allowances cover non-root nodes under the locked toolchain's
-//! minimum occupancy. A root may have just one entry, so it needs its own
-//! allowance. The root bounds match the existing layout assertions in the
-//! parent and public-passage modules.
-pub(super) const MEMBER_ROOT_BYTES: usize = 5 * 512;
-pub(super) const GATE_ROOT_BYTES: usize = 5 * 256;
+//! A non-root node holds at least five entries. A root may hold just one.
+//! This toolchain can retain an allocated root even after its map is empty.
+//! Reserve one full root for the member map and each live gate map.
+use super::Member;
+use std::mem::size_of;
 
-pub(super) const fn root_allowance(has_members: bool, nonempty_gates: usize) -> usize {
-    (has_members as usize) * MEMBER_ROOT_BYTES + nonempty_gates * GATE_ROOT_BYTES
+const MEMBER_NODE_BYTES: usize = 11 * (size_of::<Member>() + size_of::<u32>()) + 128;
+pub(super) const MEMBER_ROW_BYTES: usize = MEMBER_NODE_BYTES.div_ceil(5);
+const GATE_ROW_BYTES: usize = 256;
+const GATE_NODE_BYTES: usize = super::public_passage::root_node_bound();
+const _: () = assert!(GATE_NODE_BYTES <= 5 * GATE_ROW_BYTES);
+
+pub(super) const fn root_allowance(gates: usize) -> usize {
+    MEMBER_NODE_BYTES + gates * GATE_NODE_BYTES
 }
 
 #[cfg(test)]
@@ -16,10 +21,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn each_independent_nonempty_map_reserves_a_root() {
-        assert_eq!(root_allowance(false, 0), 0);
-        assert_eq!(root_allowance(true, 0), 2560);
-        assert_eq!(root_allowance(false, 128), 163_840);
-        assert_eq!(root_allowance(true, 128), 166_400);
+    fn empty_maps_still_reserve_their_possible_roots() {
+        assert_eq!(root_allowance(0), MEMBER_NODE_BYTES);
+        assert_eq!(root_allowance(1), MEMBER_NODE_BYTES + GATE_NODE_BYTES);
+        assert_eq!(
+            root_allowance(128),
+            MEMBER_NODE_BYTES + 128 * GATE_NODE_BYTES
+        );
     }
 }

@@ -4,7 +4,7 @@ use turts_rules::terrain::geometry::{Budget, Point, swept_disks_clear};
 #[derive(Clone, Copy, Debug)]
 pub(super) struct Retained {
     pub(super) route: detour::Detour,
-    pub(super) corner: usize,
+    pub(super) corner: u8,
     pub(super) requested: Vec2,
     pub(super) radius: u32,
     pub(super) kind: u32,
@@ -160,18 +160,20 @@ pub(super) fn apply(
         let exhausted = std::cell::Cell::new(false);
         let mut work = detour::Work::default();
         let mut charge = || {
-            let allowed = budget.charge_guidance_pair(unit.owner_slot, &mut pairs);
+            let allowed = budget.charge_guidance_pair_compact(unit.owner_slot, &mut pairs);
             exhausted.set(exhausted.get() || !allowed);
             allowed
         };
         if let Some(route) = retained.as_mut() {
-            while route.corner < 2 && unit.position == route.route.corners[route.corner] {
+            while route.corner < 2
+                && unit.position == route.route.corners[usize::from(route.corner)]
+            {
                 route.corner += 1;
             }
             if route.corner == 2 {
                 retained = None;
             } else {
-                let next = route.route.corners[route.corner];
+                let next = route.route.corners[usize::from(route.corner)];
                 let mut bodies_clear = true;
                 for blocker in blockers {
                     work.scanned_rows += 1;
@@ -419,7 +421,7 @@ pub(super) fn apply(
             waiting.insert(unit.unit_id);
             stopped(proposed, index);
         } else if let Some(route) = retained {
-            proposed.units[index].target = Some(route.route.corners[route.corner]);
+            proposed.units[index].target = Some(route.route.corners[usize::from(route.corner)]);
             proposed.units[index].speed = unit.speed;
             guided[index] = true;
             state.members.get_mut(&unit.unit_id).unwrap().passing = None;

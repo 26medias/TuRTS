@@ -364,6 +364,9 @@ enum Value {
     Body(BodyStamp),
     Episode(Episode),
 }
+pub(super) const fn root_node_bound() -> usize {
+    11 * (std::mem::size_of::<Key>() + std::mem::size_of::<Value>()) + 128
+}
 #[derive(Debug, Default)]
 pub(super) struct Rows(BTreeMap<Key, Value>);
 impl Rows {
@@ -855,7 +858,8 @@ pub(crate) fn apply(
             let Some(member) = state.members.get_mut(&unit.unit_id) else {
                 continue;
             };
-            let mut charge = || budget.charge_guidance_pair(viewer, &mut member.guidance_pairs);
+            let mut charge =
+                || budget.charge_guidance_pair_compact(viewer, &mut member.guidance_pairs);
             let mut physical_radius = unit.radius;
             let mut complete_radius = true;
             for row in &rows {
@@ -903,7 +907,7 @@ pub(crate) fn apply(
             let mut probe_radius = 0_f32;
             let mut admitted_work = true;
             for row in &rows {
-                if !budget.charge_guidance_pair(viewer, &mut witness.guidance_pairs) {
+                if !budget.charge_guidance_pair_compact(viewer, &mut witness.guidance_pairs) {
                     admitted_work = false;
                     break;
                 }
@@ -923,7 +927,7 @@ pub(crate) fn apply(
             }
             if !room_for(&state.gates, resource, owner, &rows) {
                 let mut charge =
-                    || budget.charge_guidance_pair(viewer, &mut witness.guidance_pairs);
+                    || budget.charge_guidance_pair_compact(viewer, &mut witness.guidance_pairs);
                 if !retire_inert(&mut state.gates, owner, tick, &rows, &mut charge)
                     || !room_for(&state.gates, resource, owner, &rows)
                 {
@@ -1003,7 +1007,7 @@ pub(crate) fn apply(
                 });
                 discontinuity |= prior.is_some_and(|p| p.inside) && consecutive.is_none();
                 let is_inside = if resource.inside(row.body.position, row.body.radius) {
-                    if !budget.charge_guidance_pair(viewer, &mut witness.guidance_pairs) {
+                    if !budget.charge_guidance_pair_compact(viewer, &mut witness.guidance_pairs) {
                         role_complete = false;
                         break;
                     }
@@ -1073,7 +1077,10 @@ pub(crate) fn apply(
                     consecutive.and_then(|p| {
                         p.entry.or_else(|| {
                             if p.inside
-                                || !budget.charge_guidance_pair(viewer, &mut witness.guidance_pairs)
+                                || !budget.charge_guidance_pair_compact(
+                                    viewer,
+                                    &mut witness.guidance_pairs,
+                                )
                             {
                                 return None;
                             }
@@ -1151,7 +1158,7 @@ pub(crate) fn apply(
                         .count();
                 let mut finished = true;
                 for _ in 0..cross {
-                    if !budget.charge_guidance_pair(viewer, &mut witness.guidance_pairs) {
+                    if !budget.charge_guidance_pair_compact(viewer, &mut witness.guidance_pairs) {
                         finished = false;
                         break;
                     }
@@ -1243,7 +1250,7 @@ pub(crate) fn apply(
             let mut carriers = [None::<usize>; 2];
             let mut complete_carriers = true;
             for &index in &own_order {
-                if !budget.charge_guidance_pair(viewer, &mut witness.guidance_pairs) {
+                if !budget.charge_guidance_pair_compact(viewer, &mut witness.guidance_pairs) {
                     complete_carriers = false;
                     break;
                 }
@@ -1347,7 +1354,8 @@ pub(crate) fn apply(
                 let Some(member) = state.members.get_mut(&unit.unit_id) else {
                     continue;
                 };
-                let mut charge = || budget.charge_guidance_pair(viewer, &mut member.guidance_pairs);
+                let mut charge =
+                    || budget.charge_guidance_pair_compact(viewer, &mut member.guidance_pairs);
                 let mut selected = None;
                 let mut body_checks = 0;
                 let mut terrain_calls = 0;

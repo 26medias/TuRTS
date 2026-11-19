@@ -53,12 +53,12 @@ const FIXED_SCRATCH: usize = MEMBERS * 128
     + INDEX_BODIES * std::mem::size_of::<bool>();
 const RETAINED_ALLOWANCE: usize = std::mem::size_of::<TrafficState>()
     + 4096
-    + MEMBERS * 512
+    + MEMBERS * retained_accounting::MEMBER_ROW_BYTES
     + MEMBERS * std::mem::size_of::<velocity::HistoryRow>()
     + SLOTS * 32
     + GATES * std::mem::size_of::<Gate>()
     + GATES * BATCH * 256
-    + retained_accounting::root_allowance(true, GATES);
+    + retained_accounting::root_allowance(GATES);
 const _: () = assert!(
     RETAINED_ALLOWANCE
         + INDEX_BODIES * PER_BODY_SCRATCH
@@ -79,6 +79,7 @@ enum Attempt {
     Lazy,
     Parking,
 }
+#[repr(C, packed)]
 #[derive(Clone, Debug, Default)]
 struct Attempts {
     values: [u32; 4],
@@ -87,19 +88,22 @@ struct Attempts {
 impl Attempts {
     fn get(&self, which: Attempt) -> Option<u32> {
         let i = which as usize;
-        (self.present & (1 << i) != 0).then_some(self.values[i])
+        let values = self.values;
+        (self.present & (1 << i) != 0).then_some(values[i])
     }
     fn set(&mut self, which: Attempt, value: Option<u32>) {
         let i = which as usize;
         if let Some(tick) = value {
-            self.values[i] = tick;
+            let mut values = self.values;
+            values[i] = tick;
+            self.values = values;
             self.present |= 1 << i;
         } else {
             self.present &= !(1 << i);
         }
     }
 }
-const _: () = assert!(std::mem::size_of::<Attempts>() == 20);
+const _: () = assert!(std::mem::size_of::<Attempts>() == 17);
 
 #[test]
 fn packed_attempt_clocks_preserve_all_tick_bits_and_independent_presence() {
@@ -144,12 +148,11 @@ struct Member {
     lazy_plan: lazy::Plan,
     parking: Option<Vec2>,
     parking_retained: bool,
-    guidance_pairs: usize,
+    guidance_pairs: u32,
     motion_profile: [u32; 3],
     attempts: Attempts,
 }
-const _: () =
-    assert!(11 * (std::mem::size_of::<Member>() + std::mem::size_of::<u32>()) + 128 <= 5 * 512);
+const _: () = assert!(retained_accounting::MEMBER_ROW_BYTES <= 512);
 #[derive(Clone, Copy, Debug)]
 struct Passing {
     point: Vec2,
@@ -307,11 +310,11 @@ impl TrafficState {
         self.gates.len()
     }
     /// Conservative locked-toolchain node+allocator allowances, not just payload sizes.
-    /// Member nodes reserve 512 bytes each; u32 gate-set rows reserve 256 bytes each.
+    /// Per-entry bounds and separate root reserves cover retained B-tree nodes.
     pub(crate) fn retained_bytes(&self) -> usize {
         std::mem::size_of::<Self>()
             + 4096
-            + self.members.len() * 512
+            + self.members.len() * retained_accounting::MEMBER_ROW_BYTES
             + self
                 .motion_history
                 .iter()
@@ -325,13 +328,7 @@ impl TrafficState {
                 .map(|gate| gate.admitted.len())
                 .sum::<usize>()
                 * 256
-            + retained_accounting::root_allowance(
-                !self.members.is_empty(),
-                self.gates
-                    .iter()
-                    .filter(|gate| !gate.admitted.is_empty())
-                    .count(),
-            )
+            + retained_accounting::root_allowance(self.gates.len())
     }
     pub(crate) fn scratch_bytes(&self) -> usize {
         self.scratch_bound
@@ -3531,7 +3528,7 @@ mod guided_composition_tests {
                 .find(|u| u.unit_id == id)
                 .unwrap()
                 .target;
-            assert_eq!(target, Some(route.route.corners[route.corner]));
+            assert_eq!(target, Some(route.route.corners[usize::from(route.corner)]));
             assert!(state.members[&id].attempts.get(Attempt::Detour).is_some());
             normalized.push((route.route.corners, target));
             // Undisclosed geometry cannot select a route even under the same pressure.
