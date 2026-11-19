@@ -1031,3 +1031,94 @@ fn idle_admitted_rows_do_not_delay_an_overlapping_searcher() {
         "the searcher must move in tick 1"
     );
 }
+
+#[test]
+fn recovery_physical_outcomes_do_not_depend_on_unit_ids() {
+    fn run(swapped: bool, a: Vec2, b: Vec2) -> [Vec2; 2] {
+        let mut left = body(if swapped { 2 } else { 1 }, a, 0.5);
+        let mut right = body(if swapped { 1 } else { 2 }, b, 0.5);
+        left.physical_escape = Some(super::PhysicalEscape { target: None });
+        right.physical_escape = Some(super::PhysicalEscape { target: None });
+        let mut obstacle = body(3, Vec2::new(10.0, 10.0), 0.5);
+        obstacle.speed = None;
+        let mut units = vec![left, right, obstacle];
+        units.sort_by_key(|unit| unit.unit_id);
+        let mut frame = MovementFrame {
+            bounds: Vec2::splat(20.0),
+            tick_hz: 20,
+            units,
+            pools: BTreeMap::new(),
+            recovery: BTreeMap::new(),
+        };
+        let mut outputs = Vec::new();
+        for tick in 0..30 {
+            let mut budget = super::sweep::SweepBudget::new(tick);
+            outputs =
+                super::step_frame_with_sweep_budget(&frame, 0.05, &Default::default(), &mut budget);
+            advance(&mut frame, &outputs);
+        }
+        let pos = |id| {
+            outputs
+                .iter()
+                .find(|out| out.unit_id == id)
+                .unwrap()
+                .position
+        };
+        [
+            pos(if swapped { 2 } else { 1 }),
+            pos(if swapped { 1 } else { 2 }),
+        ]
+    }
+    for i in 0..17 {
+        for j in 0..17 {
+            let a = Vec2::new(9.3 + i as f32 * 0.1, 9.9);
+            let b = Vec2::new(9.3 + j as f32 * 0.1, 10.1);
+            if a == b {
+                continue;
+            }
+            assert_eq!(run(false, a, b), run(true, a, b), "a={a:?} b={b:?}");
+        }
+    }
+}
+
+#[test]
+fn stacked_blocked_crowd_keeps_unordered_targets_and_positions_under_id_swap() {
+    let mut a = crowd_frame(2, 2);
+    let n = a.units.len();
+    a.units[n - 1].position = a.units[n - 2].position;
+    let mut b = a.clone();
+    b.units[n - 2].unit_id = n as u32;
+    b.units[n - 1].unit_id = n as u32 - 1;
+    b.units.sort_by_key(|u| u.unit_id);
+    for tick in 0..200 {
+        let mut x = super::sweep::SweepBudget::new(tick);
+        let mut y = super::sweep::SweepBudget::new(tick);
+        let ax = super::step_frame_with_sweep_budget(&a, 0.05, &Default::default(), &mut x);
+        let by = super::step_frame_with_sweep_budget(&b, 0.05, &Default::default(), &mut y);
+        let get = |out: &[MovementFrameOutput], id: u32| {
+            out.iter().find(|o| o.unit_id == id).unwrap().clone()
+        };
+        for (i, j) in [(n as u32 - 1, n as u32), (n as u32, n as u32 - 1)] {
+            let left = get(&ax, i);
+            let right = get(&by, j);
+            assert_eq!(
+                left.position, right.position,
+                "tick={tick} ids={i} {j} targets={:?} {:?}",
+                left.target, right.target
+            );
+        }
+        let target_set = |rows: &[MovementFrameOutput]| {
+            let mut targets = [rows[n - 2].target, rows[n - 1].target];
+            targets.sort_by(|a, b| match (a, b) {
+                (Some(a), Some(b)) => a.x.total_cmp(&b.x).then_with(|| a.y.total_cmp(&b.y)),
+                (None, Some(_)) => std::cmp::Ordering::Less,
+                (Some(_), None) => std::cmp::Ordering::Greater,
+                (None, None) => std::cmp::Ordering::Equal,
+            });
+            targets
+        };
+        assert_eq!(target_set(&ax), target_set(&by), "tick={tick}");
+        advance(&mut a, &ax);
+        advance(&mut b, &by);
+    }
+}
