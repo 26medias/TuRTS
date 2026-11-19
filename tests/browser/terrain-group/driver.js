@@ -207,7 +207,7 @@ async function drive({pagesBySlot,fixture,capture,record,recordInput,onPoll}) {
                 settled.observe(label,true,position);
             }
         }
-        if(settledBlocker&&relative>=10){const blocker=world(state).units.find(u=>u.unit_id===bindings.get('blocker'));assert(same(blocker.pos,blockerStart),'Traffic displaced permanent settled blocker');}
+        if(settledBlocker&&relative>=10){const blocker=world(state).units.find(u=>u.unit_id===bindings.get('blocker'));assert(same(blocker.pos,blockerStart),'Traffic displaced permanent settled blocker: actual='+JSON.stringify(blocker.pos)+' authored='+JSON.stringify(blockerStart));}
         if(fixture.scene_name==='GM2-narrow'){
             if(relative>=2400&&!gm2Initial){
                 crossed(fixture,merged,bindings,small);
