@@ -576,7 +576,10 @@ pub(crate) fn step(
                             }) || navigation.borrow().waypoint_needs_detour(
                                 unit.unit_id,
                                 unit.owner_slot,
-                                frame.tick_hz,
+                                // The local solver retries a blocked waypoint at one
+                                // second. Admit detours before that restart so peers
+                                // whose clocks differ can both be recognized as stalled.
+                                (frame.tick_hz / 2).max(1),
                             )
                         },
                         body_budget,
