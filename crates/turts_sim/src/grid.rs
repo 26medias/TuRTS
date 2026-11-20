@@ -207,6 +207,53 @@ impl UniformGrid {
         found
     }
 
+    /// Return as soon as a matching point satisfies `predicate`.
+    /// The predicate must be order-independent: cell traversal is not ordered.
+    pub(crate) fn any_within(
+        &self,
+        points: &[GridPoint],
+        position: Vec2,
+        reach: f32,
+        mut predicate: impl FnMut(usize) -> bool,
+    ) -> bool {
+        debug_assert!(reach >= 0.0, "reach must not be negative: {reach}");
+        let ((min_x, min_y), (max_x, max_y)) = self.cell_range(position, reach);
+        let width = (max_x - min_x + 1) as u128;
+        let height = (max_y - min_y + 1) as u128;
+        let mut matches = |indices: &[usize]| {
+            indices.iter().copied().any(|index| {
+                points[index].position.distance_squared(position) <= reach * reach
+                    && predicate(index)
+            })
+        };
+        if width.saturating_mul(height) > self.cells.len() as u128 {
+            self.cells.iter().any(|(&key, indices)| {
+                let (x, y) = cell_coordinates(key);
+                i64::from(x) >= min_x
+                    && i64::from(x) <= max_x
+                    && i64::from(y) >= min_y
+                    && i64::from(y) <= max_y
+                    && matches(indices)
+            })
+        } else {
+            for y in min_y..=max_y {
+                for x in min_x..=max_x {
+                    let Some(indices) = i32::try_from(x)
+                        .ok()
+                        .zip(i32::try_from(y).ok())
+                        .and_then(|key| self.cells.get(&cell_key(key)))
+                    else {
+                        continue;
+                    };
+                    if matches(indices) {
+                        return true;
+                    }
+                }
+            }
+            false
+        }
+    }
+
     /// Calls `visit` for each point within `reach` of `position`, with no allocation.
     /// Returns `(cells visited, points tested)`. Both counts and the visited set are
     /// independent of map iteration order; the visit order is not, so a caller must
@@ -347,6 +394,45 @@ mod tests {
             .map(|i| points[i].id)
             .collect();
         assert_eq!(ids, vec![2, 9]);
+    }
+
+    #[test]
+    fn any_query_matches_brute_force_and_stops_on_a_match() {
+        let points: Vec<_> = (0..400_u32)
+            .map(|id| GridPoint {
+                id,
+                position: Vec2::new((id % 20) as f32 * 0.21, (id / 20) as f32 * 0.21),
+            })
+            .collect();
+        for size in [0.05, 0.5, 10.0] {
+            let grid = UniformGrid::new(&points, size);
+            for x in [-2.0, 0.0, 1.05, 3.99, 6.0] {
+                for y in [-2.0, 0.0, 1.05, 3.99, 6.0] {
+                    let position = Vec2::new(x, y);
+                    for reach in [0.0, 0.3, 2.0, 100.0] {
+                        let expected = points.iter().any(|point| {
+                            point.position.distance_squared(position) <= reach * reach
+                                && point.id % 7 == 0
+                        });
+                        assert_eq!(
+                            grid.any_within(&points, position, reach, |i| points[i].id % 7 == 0),
+                            expected,
+                            "size={size} position={position:?} reach={reach}"
+                        );
+                    }
+                }
+            }
+        }
+        let grid = UniformGrid::new(&points, 10.0);
+        let mut calls = 0;
+        assert!(grid.any_within(&points, Vec2::splat(2.0), 10.0, |_| {
+            calls += 1;
+            true
+        }));
+        assert_eq!(
+            calls, 1,
+            "a proven hit should not scan the remaining bodies"
+        );
     }
 
     #[test]

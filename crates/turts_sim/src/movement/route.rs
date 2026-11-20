@@ -140,6 +140,71 @@ mod budget_tests {
         (units, points)
     }
 
+    #[test]
+    fn route_queries_ignore_foreign_noncontact_bodies_in_output_and_budget() {
+        fn run(hidden: &[Vec2]) -> (bool, Vec<Reached>, usize, bool) {
+            let (mut units, _) = ring_scene(&[Vec2::new(10.0, 10.0)]);
+            units.extend(
+                hidden
+                    .iter()
+                    .enumerate()
+                    .map(|(i, &position)| MovementFrameUnit {
+                        unit_id: 100 + i as u32,
+                        owner_slot: 1,
+                        unit_type: 1,
+                        position,
+                        radius: 0.01,
+                        speed: None,
+                        target: None,
+                        progress: None,
+                        plain_progress: None,
+                        physical_escape: None,
+                    }),
+            );
+            let points: Vec<_> = units
+                .iter()
+                .map(|u| crate::grid::GridPoint {
+                    id: u.unit_id,
+                    position: u.position,
+                })
+                .collect();
+            let grid = crate::grid::UniformGrid::new(&points, 1.0);
+            let stationary: Vec<_> = (0..units.len()).map(|i| i != 0).collect();
+            let witness = vec![vec![]; units.len()];
+            let stall = vec![None; units.len()];
+            let planner = Planner {
+                index: 0,
+                units: &units,
+                points: &points,
+                grid: &grid,
+                max_radius: 0.5,
+                bounds: Vec2::splat(40.0),
+                stationary_at_start: &stationary,
+                contact_witness: &witness,
+                start_stall: &stall,
+                soft: false,
+                stall_ticks: 2,
+            };
+            let chord = planner.chord_clear(Vec2::new(5.0, 10.0), Vec2::new(8.0, 10.0));
+            let mut spent = 0;
+            let mut exhausted = false;
+            let reached = planner.search(
+                &[Vec2::new(15.0, 10.0)],
+                true,
+                None,
+                NODE_CAP,
+                &mut spent,
+                &mut exhausted,
+            );
+            (chord, reached, spent, exhausted)
+        }
+        let hidden = [Vec2::new(7.0, 10.4), Vec2::new(8.0, 10.4)];
+        let mut reversed = hidden;
+        reversed.reverse();
+        assert_eq!(run(&[]), run(&hidden));
+        assert_eq!(run(&[]), run(&reversed));
+    }
+
     /// The six hex neighbours of `centre` at the pool spacing 1.1.
     fn hex_ring(centre: Vec2) -> Vec<Vec2> {
         let rise = 1.1 * 3.0_f32.sqrt() * 0.5;
@@ -398,13 +463,12 @@ impl Planner<'_> {
         let unit = &self.units[self.index];
         let middle = (from + to) * 0.5;
         let reach = from.distance(to) * 0.5 + unit.radius + self.max_radius;
-        self.grid
-            .within_unsorted(self.points, middle, reach)
-            .into_iter()
-            .all(|other_index| {
+        !self
+            .grid
+            .any_within(self.points, middle, reach, |other_index| {
                 let other = &self.units[other_index];
-                !self.obstacle(other_index)
-                    || super::sweep::pair_clear(
+                self.obstacle(other_index)
+                    && !super::sweep::pair_clear(
                         from,
                         to,
                         unit.radius,
