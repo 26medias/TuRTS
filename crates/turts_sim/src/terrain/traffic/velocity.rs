@@ -349,28 +349,19 @@ fn bounded_forecast(
         if row.stationary || row.agent.velocity == DVec2::ZERO {
             continue;
         }
-        // Charge each comparison; IDs are only lookup keys.
-        let (mut lo, mut hi) = (0, service.len());
-        while lo < hi {
+        // A fixed lookup charge keeps ID order out of admission decisions.
+        let lookup_work = usize::BITS - service.len().leading_zeros();
+        for _ in 0..lookup_work {
             if !admin_charge(budget) {
                 return bytes;
             }
-            let mid = lo + (hi - lo) / 2;
-            if actors[service[mid]].id < row.unit {
-                lo = mid + 1;
-            } else {
-                hi = mid;
-            }
         }
-        let Some(&index) = service.get(lo) else {
+        let Ok(at) = service.binary_search_by_key(&row.unit, |&index| actors[index].id) else {
             continue;
         };
+        let index = service[at];
         let actor = &actors[index];
-        if actor.id != row.unit
-            || usize::from(actor.owner) != owner
-            || actor.advice.is_none()
-            || actor.ambiguous
-        {
+        if usize::from(actor.owner) != owner || actor.advice.is_none() || actor.ambiguous {
             continue;
         }
         flags[k] = 1;
@@ -1048,13 +1039,16 @@ impl<'a> Guide<'a> {
         let mut views = views;
         let mut forecast_bytes = 0;
         if dt.is_finite() && dt > 0. {
-            service.sort_unstable_by_key(|&i| actors[i].id);
+            service.sort_unstable_by_key(|&i| (actors[i].owner, actors[i].id));
             for (owner, view) in views.iter_mut().enumerate() {
                 if let Some(view) = view {
+                    // Lookup work must be independent of foreign intent and IDs.
+                    let start = service.partition_point(|&i| usize::from(actors[i].owner) < owner);
+                    let end = service.partition_point(|&i| usize::from(actors[i].owner) <= owner);
                     forecast_bytes = forecast_bytes.max(bounded_forecast(
                         view,
                         &mut actors,
-                        &service,
+                        &service[start..end],
                         owner,
                         dt,
                         &mut visits[owner],
