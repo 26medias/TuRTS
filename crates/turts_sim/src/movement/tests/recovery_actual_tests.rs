@@ -2,12 +2,15 @@
 
 use super::frame::{MovementFrame, MovementFrameOutput, MovementFrameUnit};
 use super::recovery::{
-    EscapeScan, MIN_SLICE, OWNER_WORK, PoolSearch, RecoveryCounters, RecoveryWorld, RowRecovery,
-    SLICE_CANDIDATES, ScheduleRow, SliceOutcome, plan,
+    Check, EscapeScan, MIN_SLICE, OWNER_WORK, PoolSearch, RecoveryCounters, RecoveryWorld,
+    RowRecovery, SLICE_CANDIDATES, ScheduleRow, SliceOutcome, plan,
 };
+use super::recovery_oracle::take_compared;
 use super::recovery_view::{ClaimSet, Contacts, KnownSet, KnownView, body_key};
 use super::search::MovementSearch;
-use super::{MovementVisibility, PhysicalEscape, RecoveryKind, RecoveryScan, RecoveryStage};
+use super::{
+    MovementVisibility, PhysicalEscape, RecoveryKind, RecoveryScan, RecoverySearch, RecoveryStage,
+};
 use bevy_math::Vec2;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -97,6 +100,7 @@ impl World {
             view,
             contacts: &contacts,
             own_key: Some(body_key(mover.position, mover.radius)),
+            ignore_soft: false,
         };
         EscapeScan {
             bounds: self.bounds,
@@ -106,6 +110,7 @@ impl World {
             pool: None,
             bound: None,
             verify: true,
+            pool_only: false,
         }
         .run(&known, previous, allowance, 0, counters)
     }
@@ -306,6 +311,8 @@ fn row(row: usize, age: u16, has_scan: bool, x: f32) -> ScheduleRow {
         overlapping: true,
         position: Vec2::new(x, 1.0),
         radius: 0.5,
+        spare: false,
+        retained: false,
     }
 }
 
@@ -453,6 +460,9 @@ fn observable(counters: &RecoveryCounters) -> Vec<u64> {
         counters.waits,
         u64::from(counters.max_age),
         counters.jobs,
+        counters.pool_work,
+        counters.spare_slot_work,
+        counters.checks,
     ]
 }
 
@@ -701,6 +711,7 @@ fn pool_slice(
         view,
         contacts: &contacts,
         own_key: Some(body_key(units[0].position, units[0].radius)),
+        ignore_soft: false,
     };
     EscapeScan {
         bounds: Vec2::splat(20.0),
@@ -710,6 +721,7 @@ fn pool_slice(
         pool,
         bound: None,
         verify: true,
+        pool_only: false,
     }
     .run(&known, previous, allowance, 0, counters)
 }
@@ -745,6 +757,7 @@ fn a_paused_check_sees_a_new_claim_or_body_on_its_point() {
         view: &view,
         contacts: &contacts,
         own_key: None,
+        ignore_soft: false,
     }
     .cell_bits();
     assert_eq!(
@@ -753,6 +766,7 @@ fn a_paused_check_sees_a_new_claim_or_body_on_its_point() {
             view: &body_view,
             contacts: &contacts,
             own_key: None,
+            ignore_soft: false,
         }
         .cell_bits()
     );
@@ -926,6 +940,7 @@ fn the_pool_precheck_stays_inside_each_slice() {
             index: &index,
             unit_id: 1,
             allowed: None,
+            skip: None,
         })
     };
     let mut wide = RecoveryCounters::default();
@@ -970,8 +985,7 @@ fn a_move_earlier_in_the_tick_is_in_the_view() {
         still(1, 0, ORIGIN, 0.5),
         still(2, 0, Vec2::new(18.0, 18.0), 0.5),
     ];
-    let start = units.clone();
-    let world = RecoveryWorld::new(&start, None);
+    let world = RecoveryWorld::new(None, None);
     let scan = EscapeScan {
         bounds: Vec2::splat(20.0),
         origin: ORIGIN,
@@ -980,6 +994,7 @@ fn a_move_earlier_in_the_tick_is_in_the_view() {
         pool: None,
         bound: None,
         verify: true,
+        pool_only: false,
     };
     let mut counters = RecoveryCounters::default();
     let mut search = |units: &[MovementFrameUnit]| {
@@ -988,7 +1003,9 @@ fn a_move_earlier_in_the_tick_is_in_the_view() {
             row: 0,
             owner: 0,
             allowance: WIDE,
+            check_only: false,
             previous: None,
+            consumed: false,
             next_jobs: &mut jobs,
             counters: &mut counters,
             world: &world,
@@ -1034,6 +1051,7 @@ fn the_mover_does_not_block_a_pool_slot_under_itself() {
         index: &index,
         unit_id: 1,
         allowed: None,
+        skip: None,
     };
     let mut counters = RecoveryCounters::default();
     let outcome = pool_slice(
@@ -1088,4 +1106,1508 @@ fn a_new_claim_in_the_examined_region_invalidates_the_proof() {
     });
     assert_ne!(result.0, Some(winner));
     assert!(result.1 > 0);
+}
+
+/// The stress scene of `tests/recovery_probe.rs`: a packed 16 x 16 map and 100 blocked
+/// group movers outside it.
+fn probe_stress_frame() -> MovementFrame {
+    let goal = Vec2::splat(0.5);
+    let mut units = Vec::new();
+    for y in 0..16 {
+        for x in 0..16 {
+            units.push(body(
+                units.len() as u32 + 1,
+                0,
+                Vec2::new(x as f32 + 0.5, y as f32 + 0.5),
+                0.6,
+            ));
+        }
+    }
+    for n in 0..100 {
+        let mut unit = blocked(
+            units.len() as u32 + 1,
+            Vec2::new((n % 32) as f32 + 0.5, 20.0 + (n / 32) as f32),
+            goal,
+        );
+        unit.radius = 0.6;
+        units.push(unit);
+    }
+    MovementFrame {
+        bounds: Vec2::splat(16.0),
+        tick_hz: 20,
+        units,
+        pools: BTreeMap::from([(
+            7,
+            super::MovementPool {
+                pool_id: 7,
+                point: goal,
+                spacing: 1.1,
+                primary_count: 100,
+                slots: vec![goal],
+            },
+        )]),
+        recovery: BTreeMap::new(),
+    }
+}
+
+/// Report (no time claim): the work of 40 ticks of the stress scene, by class.
+#[test]
+fn stress_scene_work_report() {
+    let mut frame = probe_stress_frame();
+    let mut peak_owner = 0;
+    let mut total_owner = 0;
+    let mut frame_work = 0;
+    let mut peak_frame = 0;
+    for tick in 1..=40 {
+        let mut budget = super::sweep::SweepBudget::new(tick);
+        let outputs =
+            super::step_frame_with_sweep_budget(&frame, 0.05, &Default::default(), &mut budget);
+        let counters = &budget.recovery;
+        peak_owner = peak_owner.max(counters.owner_work[0]);
+        total_owner += counters.owner_work[0];
+        frame_work += counters.frame_work;
+        peak_frame = peak_frame.max(counters.frame_work);
+        advance(&mut frame, &outputs);
+    }
+    eprintln!(
+        "STRESSWORK ticks=40 k_peak={peak_owner} k_total={total_owner} frame_peak={peak_frame} frame_total={frame_work}"
+    );
+    assert!(peak_owner <= OWNER_WORK);
+}
+
+// ---- Section 7 of the design: the work outside the owner allowance (R15 to R24). ----
+
+/// One row turn of the actor `units[0]` (owner 0) with `allowance`. `job` is the job of
+/// the last turn and becomes the job that this turn keeps.
+fn row_turn<T>(
+    world: &RecoveryWorld,
+    job: &mut Option<RecoverySearch>,
+    allowance: usize,
+    counters: &mut RecoveryCounters,
+    run: impl FnOnce(&mut RowRecovery) -> T,
+) -> T {
+    let mut jobs = BTreeMap::new();
+    let result = run(&mut RowRecovery {
+        row: 0,
+        owner: 0,
+        allowance,
+        check_only: false,
+        previous: *job,
+        consumed: false,
+        next_jobs: &mut jobs,
+        counters,
+        world,
+    });
+    *job = jobs.remove(&0);
+    result
+}
+
+/// The actor at `ORIGIN` and 2,000 tiny own bodies 0.6 from `point`: they do not block
+/// the point, but a query of the point must read all of them (one view cell).
+fn dense_round(point: Vec2) -> Vec<MovementFrameUnit> {
+    let mut units = vec![still(1, 0, ORIGIN, 0.5)];
+    for n in 0..2_000u32 {
+        units.push(still(
+            2 + n,
+            0,
+            point + Vec2::new(0.6 + (n % 40) as f32 * 0.0025, (n / 40) as f32 * 0.0025),
+            0.001,
+        ));
+    }
+    units
+}
+
+fn one_slot_pool(slot: Vec2) -> super::pool_index::MovementPoolIndex {
+    super::pool_index::MovementPoolIndex::new(
+        &super::MovementPool {
+            pool_id: 7,
+            point: slot,
+            spacing: 1.1,
+            primary_count: 1,
+            slots: vec![slot],
+        },
+        Vec2::splat(20.0),
+    )
+}
+
+/// The check scan of the actor at `ORIGIN` for a group row (`slot`) or another row.
+fn check_scan<'a>(
+    slot: bool,
+    claims: &'a ClaimSet,
+    index: &'a super::pool_index::MovementPoolIndex,
+    allowed: Option<(u64, u32, u32)>,
+) -> EscapeScan<'a> {
+    EscapeScan {
+        bounds: Vec2::splat(20.0),
+        origin: ORIGIN,
+        radius: 0.5,
+        slots: slot.then_some((7, claims)),
+        pool: slot.then_some(PoolSearch {
+            index,
+            unit_id: 1,
+            allowed,
+            skip: None,
+        }),
+        bound: None,
+        verify: true,
+        pool_only: false,
+    }
+}
+
+const KINDS: [(&str, RecoveryKind, bool); 3] = [
+    ("group", RecoveryKind::Group(7), true),
+    ("physical", RecoveryKind::Physical, false),
+    ("plain", RecoveryKind::Plain, false),
+];
+
+/// Runs the check of `point` in slices of `MIN_SLICE` until it ends. Returns the result
+/// and the count of slices. Each slice stays within its allowance.
+fn sliced_check(
+    units: &[MovementFrameUnit],
+    scan: &EscapeScan,
+    kind: RecoveryKind,
+    point: Vec2,
+    slot: bool,
+) -> (Check, usize) {
+    let world = RecoveryWorld::new(None, None);
+    let mut counters = RecoveryCounters::default();
+    let mut job = None;
+    for slices in 1..10_000 {
+        let before = counters.owner_work[0];
+        let result = row_turn(&world, &mut job, MIN_SLICE, &mut counters, |row| {
+            row.check(kind, scan, point, slot, false, units)
+        });
+        assert!(counters.owner_work[0] - before <= MIN_SLICE);
+        if result != Check::Pending {
+            assert!(job.is_none(), "a check that ended keeps no job");
+            return (result, slices);
+        }
+        let stored = job.and_then(|job| job.scan).expect("a paused check");
+        assert!(stored.is_check());
+        assert_eq!(job.map(|job| job.age), Some(slices as u16));
+    }
+    panic!("the check must end");
+}
+
+/// R15. A retained target whose query box holds more known bodies than one slice can
+/// read: the check pauses with a cursor, resumes and ends with the unsliced result, for
+/// each kind of blocked row. No slice is above its allowance.
+#[test]
+fn a_retained_target_in_a_cell_larger_than_a_slice_resumes_and_ends() {
+    let target = ORIGIN + Vec2::new(2.5, 0.0);
+    let clear = dense_round(target);
+    // A blocker that is the last key of the cell in canonical order.
+    let mut blocked = clear.clone();
+    blocked.push(still(9_000, 0, target + Vec2::new(0.9, 0.0), 0.5));
+    let claims = ClaimSet::default();
+    let index = one_slot_pool(target);
+    for (name, kind, slot) in KINDS {
+        let scan = check_scan(slot, &claims, &index, None);
+        for (units, expected) in [(&clear, Check::Clear), (&blocked, Check::Blocked)] {
+            let world = RecoveryWorld::new(None, None);
+            let whole = row_turn(
+                &world,
+                &mut None,
+                OWNER_WORK,
+                &mut RecoveryCounters::default(),
+                |row| row.check(kind, &scan, target, slot, false, units),
+            );
+            assert_eq!(whole, expected, "{name}: one wide slice");
+            let (result, slices) = sliced_check(units, &scan, kind, target, slot);
+            assert_eq!(result, expected, "{name}");
+            assert!(slices > 8, "{name}: the check spans slices: {slices}");
+        }
+    }
+}
+
+/// The owner-0 group row of pool 7 at `ORIGIN`, blocked on a body under it, with the
+/// retained escape target `target`.
+fn retained_group_scene(target: Vec2) -> MovementFrame {
+    let mut mover = blocked(1, ORIGIN, target);
+    mover.speed = Some(10.0);
+    let mut units = vec![mover, still(2, 0, ORIGIN + Vec2::new(-0.6, 0.0), 0.5)];
+    // 36,000 tiny own bodies in one view cell, 0.6 from the target: more than the
+    // allowance of one owner.
+    for n in 0..36_000u32 {
+        units.push(still(
+            10 + n,
+            0,
+            target + Vec2::new(0.6 + (n % 200) as f32 * 0.0005, (n / 200) as f32 * 0.0005),
+            0.001,
+        ));
+    }
+    let mut frame = frame(units);
+    frame.pools.insert(
+        7,
+        super::MovementPool {
+            pool_id: 7,
+            point: target,
+            spacing: 1.1,
+            primary_count: 1,
+            slots: vec![target],
+        },
+    );
+    frame
+}
+
+/// R15, in the frame. The check of a retained target that costs more than the owner
+/// allowance: the row holds its position and its target, keeps a check job, and moves in
+/// a later tick. No tick is above the owner allowance.
+#[test]
+fn a_frame_row_holds_its_position_while_its_retained_check_is_paused() {
+    let target = ORIGIN + Vec2::new(2.5, 0.0);
+    let mut frame = retained_group_scene(target);
+    let mut held = 0;
+    for tick in 0..6 {
+        let mut budget = super::sweep::SweepBudget::new(tick);
+        let outputs =
+            super::step_frame_with_sweep_budget(&frame, 0.05, &Default::default(), &mut budget);
+        assert!(budget.recovery.owner_work[0] <= OWNER_WORK);
+        let mover = outputs.iter().find(|output| output.unit_id == 1).unwrap();
+        if let Some(job) = mover.recovery.as_deref() {
+            assert!(job.scan.is_some_and(|scan| scan.is_check()), "{job:?}");
+            assert_eq!(mover.position, ORIGIN, "a paused check holds the row");
+            assert_eq!(
+                mover.target,
+                Some(target),
+                "a paused check keeps the target"
+            );
+            held += 1;
+        } else {
+            assert!(held >= 1, "the check costs more than one owner allowance");
+            // The check ended and found the target clear: the row keeps it and starts
+            // no search. (The dense cell makes the sweep guard refuse the step itself.)
+            assert_eq!(mover.target, Some(target));
+            assert_eq!((budget.recovery.checks, budget.recovery.slices), (1, 0));
+            return;
+        }
+        advance(&mut frame, &outputs);
+    }
+    panic!("the retained check must end");
+}
+
+/// R16. The check of a retained target pauses inside a dense cell. Then a body, or a
+/// claim of another mover, appears on the target. The resumed check must not report the
+/// target as clear.
+#[test]
+fn a_paused_retained_check_sees_a_new_body_or_claim_on_its_target() {
+    let target = ORIGIN + Vec2::new(2.5, 0.0);
+    let units = dense_round(target);
+    // The new body is the first key of its cell: a cursor that just continues is past it.
+    let mut with_body = units.clone();
+    with_body.insert(1, still(9_000, 0, target + Vec2::new(0.55, 0.0), 0.5));
+    let empty = ClaimSet::default();
+    let mut claimed = ClaimSet::default();
+    claimed.insert((7, target.x.to_bits(), target.y.to_bits()));
+    let index = one_slot_pool(target);
+    for (name, kind, slot) in KINDS {
+        for change in ["body", "claim"] {
+            if change == "claim" && !slot {
+                continue;
+            }
+            let scan = check_scan(slot, &empty, &index, None);
+            let world = RecoveryWorld::new(None, None);
+            let mut counters = RecoveryCounters::default();
+            let mut job = None;
+            let first = row_turn(&world, &mut job, MIN_SLICE, &mut counters, |row| {
+                row.check(kind, &scan, target, slot, false, &units)
+            });
+            assert_eq!(first, Check::Pending, "{name}");
+            assert!(
+                job.and_then(|job| job.scan)
+                    .and_then(|scan| scan.query)
+                    .is_some_and(|query| query.started),
+                "{name}: the check pauses inside its query"
+            );
+            let later_units = if change == "body" { &with_body } else { &units };
+            let later_scan = check_scan(
+                slot,
+                if change == "claim" { &claimed } else { &empty },
+                &index,
+                None,
+            );
+            let later_world = RecoveryWorld::new(None, None);
+            let mut result = Check::Pending;
+            for _ in 0..10_000 {
+                result = row_turn(&later_world, &mut job, MIN_SLICE, &mut counters, |row| {
+                    row.check(kind, &later_scan, target, slot, false, later_units)
+                });
+                if result != Check::Pending {
+                    break;
+                }
+            }
+            assert_eq!(result, Check::Blocked, "{name}, new {change}");
+        }
+    }
+}
+
+/// A guide with no claim exchange: the frame solver of the terrain navigation.
+struct NoExchange;
+
+impl super::motion::MotionGuide for NoExchange {
+    fn kind(&self, _unit_id: u32) -> super::motion::MotionKind {
+        super::motion::MotionKind::Destination
+    }
+
+    fn next_position(
+        &mut self,
+        _request: super::motion::MotionRequest,
+        _budget: &mut super::sweep::SweepBudget,
+    ) -> Option<Vec2> {
+        None
+    }
+}
+
+/// One tick of `frame` with or without the claim exchange and a visibility basis.
+fn step_mode(
+    frame: &MovementFrame,
+    basis: Option<&Basis>,
+    exchange: bool,
+    tick: u32,
+) -> (Vec<MovementFrameOutput>, RecoveryCounters) {
+    let mut budget = super::sweep::SweepBudget::new(tick);
+    let mut no_exchange = NoExchange;
+    let mut with_exchange = super::motion::NoMotionGuide;
+    let guide: &mut dyn super::motion::MotionGuide = if exchange {
+        &mut with_exchange
+    } else {
+        &mut no_exchange
+    };
+    let outputs = super::frame::step_frame_with_motion_guide_and_visibility(
+        frame,
+        0.05,
+        &Default::default(),
+        &mut budget,
+        guide,
+        basis.map(|basis| basis as &dyn MovementVisibility),
+    );
+    (outputs, budget.recovery)
+}
+
+const OWN_SLOT: Vec2 = Vec2::new(14.0, 10.0);
+/// The spare slots of the stalled mover at `ORIGIN`, nearest first.
+const SPARES: [Vec2; 3] = [
+    Vec2::new(10.0, 11.5),
+    Vec2::new(10.0, 8.2),
+    Vec2::new(7.5, 10.0),
+];
+
+/// A group mover of pool 7 whose stall clock becomes due in the next tick. It makes no
+/// progress (its best distance is 0), so it runs the spare-slot search.
+fn stalled(unit_id: u32, position: Vec2, slot: Vec2) -> MovementFrameUnit {
+    stalled_in(7, unit_id, position, slot)
+}
+
+fn stalled_in(pool_id: u64, unit_id: u32, position: Vec2, slot: Vec2) -> MovementFrameUnit {
+    MovementFrameUnit {
+        target: Some(slot),
+        progress: Some(super::MoveProgress {
+            pool_id,
+            slot,
+            activity: super::MovementActivity::Moving,
+            pass_mode: true,
+            stalling_on_group: false,
+            stalled_ticks: 19,
+            best_distance: 0.0,
+            claim_count: 0,
+            follow_origin: None,
+        }),
+        ..body(unit_id, 0, position, 0.5)
+    }
+}
+
+fn spare_frame(extra: Vec<MovementFrameUnit>) -> MovementFrame {
+    let mut units = vec![stalled(1, ORIGIN, OWN_SLOT)];
+    units.extend(extra);
+    let mut frame = frame(units);
+    let mut slots = vec![OWN_SLOT];
+    slots.extend(SPARES);
+    frame.pools.insert(
+        7,
+        super::MovementPool {
+            pool_id: 7,
+            point: OWN_SLOT,
+            spacing: 1.1,
+            primary_count: 1,
+            slots,
+        },
+    );
+    frame
+}
+
+/// The slot of the stalled mover (unit 1) after one tick.
+fn spare_of(frame: &MovementFrame, basis: Option<&Basis>, exchange: bool) -> Option<Vec2> {
+    let (outputs, _) = step_mode(frame, basis, exchange, 1);
+    let mover = outputs.iter().find(|output| output.unit_id == 1).unwrap();
+    assert!(mover.recovery.is_none(), "the search ends in one slice");
+    let progress = mover.progress.as_ref().unwrap();
+    (progress.activity == super::MovementActivity::Moving).then_some(progress.slot)
+}
+
+/// One case of R17: the name, the bodies, the permitted units under fog (`None`: no
+/// basis), and the slot with and without the claim exchange.
+type SpareCase<'a> = (
+    &'a str,
+    Vec<MovementFrameUnit>,
+    Option<&'a BTreeSet<(u8, u32)>>,
+    Vec2,
+    Vec2,
+);
+
+/// R17. The metered spare-slot search gives the slot of `nearest_free` with the base
+/// predicate, for each class of body on the nearest spare slot, with and without the
+/// claim exchange. The frame compares each search with `nearest_free` (`recovery_oracle`).
+#[test]
+fn the_spare_search_gives_the_slot_of_nearest_free() {
+    let on_first = SPARES[0];
+    let foreign = |unit_id: u32, position: Vec2| still(unit_id, 1, position, 0.5);
+    let nothing = BTreeSet::new();
+    let sees_50 = BTreeSet::from([(0u8, 50u32)]);
+    // (name, bodies, permitted units under fog, slot with the exchange, slot without).
+    let cases: Vec<SpareCase> = vec![
+        ("no body", vec![], None, SPARES[0], SPARES[0]),
+        (
+            "own body",
+            vec![still(50, 0, on_first, 0.5)],
+            None,
+            SPARES[1],
+            SPARES[1],
+        ),
+        // A body of another owner at rest that no own body touches: soft in exchange mode.
+        (
+            "foreign at rest, no witness",
+            vec![foreign(50, on_first)],
+            None,
+            SPARES[0],
+            SPARES[1],
+        ),
+        // The same body with an own body in contact range of it: it blocks.
+        (
+            "foreign at rest, own witness",
+            vec![
+                foreign(50, on_first),
+                still(51, 0, on_first + Vec2::new(0.0, 1.05), 0.5),
+            ],
+            None,
+            SPARES[1],
+            SPARES[1],
+        ),
+        // A body of another owner that moves: soft in exchange mode.
+        (
+            "foreign mover",
+            vec![MovementFrameUnit {
+                target: Some(on_first + Vec2::new(0.0, 6.0)),
+                speed: Some(0.2),
+                ..foreign(50, on_first)
+            }],
+            None,
+            SPARES[0],
+            SPARES[1],
+        ),
+        (
+            "fog: hidden, no contact",
+            vec![foreign(50, on_first)],
+            Some(&nothing),
+            SPARES[0],
+            SPARES[0],
+        ),
+        // 1.05 from the mover: in contact range (1.101), and 0.45 from the first slot.
+        (
+            "fog: hidden, in contact",
+            vec![foreign(50, ORIGIN + Vec2::new(0.0, 1.05))],
+            Some(&nothing),
+            SPARES[1],
+            SPARES[1],
+        ),
+        (
+            "fog: visible at rest, no witness",
+            vec![foreign(50, on_first)],
+            Some(&sees_50),
+            SPARES[0],
+            SPARES[1],
+        ),
+        (
+            "fog: visible at rest, own witness",
+            vec![
+                foreign(50, on_first),
+                still(51, 0, on_first + Vec2::new(0.0, 1.05), 0.5),
+            ],
+            Some(&sees_50),
+            SPARES[1],
+            SPARES[1],
+        ),
+    ];
+    take_compared();
+    for (name, bodies, permitted, with_exchange, without) in cases {
+        let frame = spare_frame(bodies);
+        let basis = permitted.map(|permitted| Basis {
+            permitted: permitted.clone(),
+        });
+        for (exchange, expected) in [(true, with_exchange), (false, without)] {
+            assert_eq!(
+                spare_of(&frame, basis.as_ref(), exchange),
+                Some(expected),
+                "{name}, exchange {exchange}"
+            );
+        }
+    }
+    assert_eq!(
+        take_compared()[2],
+        18,
+        "each search is compared with nearest_free"
+    );
+}
+
+/// A pool of 289 slots 0.15 apart round `ORIGIN` and one slot far away. A known body
+/// blocks every near slot.
+fn blocked_dense_pool() -> (super::MovementPool, Vec<MovementFrameUnit>, Vec2) {
+    let far = ORIGIN + Vec2::new(6.0, 0.0);
+    let mut pool = dense_pool();
+    pool.slots.push(far);
+    let units = vec![
+        still(1, 0, ORIGIN + Vec2::new(-4.0, 0.0), 0.5),
+        still(2, 0, ORIGIN, 2.5),
+    ];
+    (pool, units, far)
+}
+
+/// R18. A spare-slot search that reads more slots than one slice pays is resumable: each
+/// slice stays within its allowance, the job keeps its kind and ages, and the result is
+/// the slot of the unsliced search and of `nearest_free`.
+#[test]
+fn a_spare_search_larger_than_a_slice_resumes() {
+    let (pool, units, far) = blocked_dense_pool();
+    let mut index = super::pool_index::MovementPoolIndex::new(&pool, Vec2::splat(20.0));
+    let points: Vec<_> = units
+        .iter()
+        .map(|unit| crate::grid::GridPoint {
+            id: unit.unit_id,
+            position: unit.position,
+        })
+        .collect();
+    let grid = crate::grid::UniformGrid::new(&points, 5.0);
+    let witness = vec![Vec::new(); units.len()];
+    for slot in 0..pool.slots.len() {
+        index.refresh_slot_clearance(slot, &units, &points, &grid, 2.5, false, &witness);
+    }
+    let claims = ClaimSet::default();
+    let origin = units[0].position;
+    let scan = EscapeScan {
+        bounds: Vec2::splat(20.0),
+        origin,
+        radius: 0.5,
+        slots: Some((7, &claims)),
+        pool: Some(PoolSearch {
+            index: &index,
+            unit_id: 1,
+            allowed: None,
+            skip: None,
+        }),
+        bound: None,
+        verify: true,
+        pool_only: true,
+    };
+    let kind = RecoveryKind::Spare(7);
+    let oracle = index.nearest_free(
+        1,
+        origin,
+        7,
+        None,
+        &claims,
+        0.5,
+        |slot| slot.distance(units[1].position) >= 0.5 + units[1].radius,
+        &std::cell::Cell::new(0),
+    );
+    assert_eq!(oracle, Some(far));
+    let world = RecoveryWorld::new(None, None);
+    let mut counters = RecoveryCounters::default();
+    let mut job = None;
+    let mut slices = 0;
+    let result = loop {
+        let before = counters.owner_work[0];
+        let point = row_turn(&world, &mut job, MIN_SLICE, &mut counters, |row| {
+            row.search(kind, &scan, &units)
+        });
+        assert!(counters.owner_work[0] - before <= MIN_SLICE);
+        slices += 1;
+        assert!(slices < 10_000, "the search must end");
+        match job {
+            None => break point,
+            Some(job) => {
+                assert_eq!(point, None, "an unfinished search gives no slot");
+                assert_eq!((job.kind, job.age), (kind, slices as u16));
+            }
+        }
+    };
+    assert!(slices > 8, "the search spans slices: {slices}");
+    assert_eq!(result, oracle);
+    assert_eq!(counters.spare_slot_work, counters.owner_work[0] as u64);
+    // The slot that the mover leaves is never the answer, with or without a claim on it.
+    let leaving = EscapeScan {
+        pool: Some(PoolSearch {
+            index: &index,
+            unit_id: 1,
+            allowed: None,
+            skip: Some((7, far.x.to_bits(), far.y.to_bits())),
+        }),
+        ..scan
+    };
+    let point = row_turn(&world, &mut None, OWNER_WORK, &mut counters, |row| {
+        row.search(kind, &leaving, &units)
+    });
+    assert_eq!(point, None);
+}
+
+fn schedule_row(row: usize, spare: bool, age: u16, overlapping: bool, x: f32) -> ScheduleRow {
+    ScheduleRow {
+        row,
+        owner: 0,
+        age,
+        has_scan: false,
+        overlapping,
+        position: Vec2::new(x, 1.0),
+        radius: 0.5,
+        spare,
+        retained: false,
+    }
+}
+
+/// R19. More spare rows than one tick serves: blocked rows get the fresh slices first,
+/// each spare row is served within `ceil(rows / served)` ticks, and no tick gives more
+/// than the owner allowance.
+#[test]
+fn spare_rows_take_turns_after_blocked_rows() {
+    // 40 blocked rows that sort last by every other key, and 600 older spare rows.
+    let blocked_rows: Vec<_> = (0..40)
+        .map(|row| schedule_row(row, false, 0, false, 1_000.0 + row as f32))
+        .collect();
+    let mut waiting: Vec<_> = (0..600)
+        .map(|row| schedule_row(40 + row, true, 5, true, row as f32))
+        .collect();
+    let per_tick = (OWNER_WORK - OWNER_WORK / 2) / 2 / MIN_SLICE;
+    let mut ticks = 0;
+    while !waiting.is_empty() {
+        let mut rows = blocked_rows.clone();
+        rows.extend(waiting.iter().copied());
+        let schedule = plan(rows, ticks, &mut RecoveryCounters::default());
+        let total: usize = (0..640).map(|row| schedule.allowance(row)).sum();
+        assert!(total <= OWNER_WORK, "{total}");
+        // Blocked rows first: they take every fresh slice, and no spare row gets more
+        // than the floor.
+        let served_blocked = (0..40)
+            .filter(|&row| schedule.allowance(row) >= super::recovery::FRESH_SLICE)
+            .count();
+        assert_eq!(served_blocked, 16);
+        assert!(
+            waiting.iter().all(
+                |row| schedule.allowance(row.row) <= MIN_SLICE && !schedule.check_only(row.row)
+            )
+        );
+        let before = waiting.len();
+        // A served spare search ends; a row that waits is one tick older.
+        waiting.retain(|row| schedule.allowance(row.row) == 0);
+        for row in &mut waiting {
+            row.age += 1;
+        }
+        assert_eq!(before - waiting.len(), per_tick.min(before), "tick {ticks}");
+        ticks += 1;
+    }
+    assert_eq!(ticks as usize, 600_usize.div_ceil(per_tick));
+}
+
+/// R19, in the frame. 200 stalled movers with no free spare slot at first: more than one
+/// tick serves. A mover that waits keeps its order, its stall state and a spare job;
+/// every mover gets its answer in a few ticks (no slot, or the slot that an earlier
+/// failure set free); no tick is above the owner allowance.
+#[test]
+fn stalled_movers_wait_for_their_spare_search_and_all_get_an_answer() {
+    let mut units = Vec::new();
+    let mut slots = Vec::new();
+    for n in 0..200u32 {
+        let at = Vec2::new(5.0 + (n % 20) as f32 * 3.0, 5.0 + (n / 20) as f32 * 3.0);
+        let slot = at + Vec2::new(1.5, 1.5);
+        units.push(stalled_in(8, 1 + n, at, slot));
+        slots.push(slot);
+    }
+    let mut frame = frame(units);
+    frame.bounds = Vec2::splat(80.0);
+    frame.pools.insert(
+        8,
+        super::MovementPool {
+            pool_id: 8,
+            point: Vec2::new(30.0, 20.0),
+            spacing: 1.1,
+            primary_count: 200,
+            slots,
+        },
+    );
+    let mut answered = BTreeSet::new();
+    let mut waited = 0;
+    for tick in 0..12 {
+        let (outputs, counters) = step_mode(&frame, None, false, tick);
+        assert!(counters.owner_work[0] <= OWNER_WORK);
+        assert_eq!(counters.spare_slot_work, counters.owner_work[0] as u64);
+        for output in &outputs {
+            let claimed = output
+                .progress
+                .as_ref()
+                .is_some_and(|progress| progress.claim_count & 3 == 1);
+            if answered.contains(&output.unit_id) {
+                continue;
+            }
+            if output.failed_blocked || claimed {
+                answered.insert(output.unit_id);
+                assert!(output.recovery.is_none());
+            } else {
+                // No answer yet: the mover keeps its order, its stall state and its job.
+                let progress = output.progress.as_ref().unwrap();
+                waited += 1;
+                assert_eq!(progress.activity, super::MovementActivity::Moving);
+                assert!(progress.stalled_ticks >= 20, "tick {tick}");
+                assert!(output.target.is_some());
+                let job = output.recovery.as_deref().expect("a waiting spare job");
+                assert_eq!(job.kind, RecoveryKind::Spare(8));
+            }
+        }
+        advance(&mut frame, &outputs);
+        if answered.len() == 200 {
+            assert!(tick >= 1 && waited > 0, "200 rows need more than one tick");
+            return;
+        }
+    }
+    panic!("every stalled mover must get an answer: {}", answered.len());
+}
+
+fn plain_blocked(unit_id: u32, position: Vec2, target: Vec2) -> MovementFrameUnit {
+    MovementFrameUnit {
+        target: Some(target),
+        plain_progress: Some(super::PlainMoveProgress {
+            arrival_yield: false,
+            original_point: target,
+            slot: target,
+            pool_slots: Vec::new(),
+            gather_goal: None,
+            activity: super::MovementActivity::Blocked,
+            stalled_ticks: 0,
+            best_distance: 0.0,
+            claim_count: 3,
+            failure_recorded: true,
+        }),
+        ..body(unit_id, 0, position, 0.5)
+    }
+}
+
+/// The places of the three stalled movers of the mixed scene.
+fn spare_place(n: u32) -> Vec2 {
+    Vec2::new(10.0 + 8.0 * n as f32, 40.0)
+}
+
+/// An owner-0 scene with each class of recovery row: the physical escapes of
+/// `escape_scene`, `group` blocked group movers of pool 7 inside a packed crowd, three
+/// blocked plain rows with a retained target under a body, and three stalled movers of
+/// pool 8 (one with an own body on its nearest spare slot).
+fn mixed_scene(group: u32) -> MovementFrame {
+    let mut units = escape_scene();
+    let goal = Vec2::new(30.0, 6.0);
+    for n in 0..49u32 {
+        units.push(still(
+            600 + n,
+            0,
+            Vec2::new(30.0 + (n % 7) as f32, 6.0 + (n / 7) as f32),
+            0.5,
+        ));
+    }
+    for n in 0..group {
+        units.push(blocked(
+            1_000 + n,
+            Vec2::new(33.0 + (n % 10) as f32 * 0.07, 9.0 + (n / 10) as f32 * 0.07),
+            goal,
+        ));
+    }
+    units.push(still(810, 0, Vec2::new(47.0, 45.0), 0.5));
+    for n in 0..3u32 {
+        units.push(plain_blocked(
+            800 + n,
+            Vec2::new(44.0 + n as f32 * 0.1, 45.0),
+            Vec2::new(47.0, 45.0),
+        ));
+    }
+    let mut slots = Vec::new();
+    for n in 0..3u32 {
+        let at = spare_place(n);
+        units.push(stalled_in(8, 900 + n, at, at + Vec2::new(4.0, 0.0)));
+        slots.push(at + Vec2::new(4.0, 0.0));
+    }
+    for n in 0..3u32 {
+        slots.push(spare_place(n) + Vec2::new(0.0, 1.5));
+        slots.push(spare_place(n) + Vec2::new(0.0, -1.8));
+    }
+    units.push(still(950, 0, spare_place(0) + Vec2::new(0.0, 1.5), 0.5));
+    let mut frame = frame(units);
+    frame.bounds = Vec2::splat(60.0);
+    frame.pools.insert(
+        7,
+        super::MovementPool {
+            pool_id: 7,
+            point: goal,
+            spacing: 1.1,
+            primary_count: group,
+            slots: vec![goal],
+        },
+    );
+    frame.pools.insert(
+        8,
+        super::MovementPool {
+            pool_id: 8,
+            point: spare_place(1),
+            spacing: 1.1,
+            primary_count: 3,
+            slots,
+        },
+    );
+    frame
+}
+
+/// Hidden owner-1 bodies for `mixed_scene`: the bodies of `hidden_bodies`, and patches of
+/// tiny bodies inside the query boxes of the group crowd, the plain target and a spare
+/// slot. None comes in contact range of an owner-0 mover.
+fn mixed_hidden() -> Vec<MovementFrameUnit> {
+    let mut units = hidden_bodies();
+    let patches = [
+        Vec2::new(30.42, 6.42),
+        Vec2::new(47.0, 45.62),
+        spare_place(1) + Vec2::new(0.62, 1.5),
+        spare_place(2) + Vec2::new(-0.3, -2.45),
+    ];
+    for (patch, corner) in patches.into_iter().enumerate() {
+        for n in 0..1_000u32 {
+            units.push(still(
+                30_000 + patch as u32 * 1_000 + n,
+                1,
+                corner + Vec2::new((n % 40) as f32 * 0.0022, (n / 40) as f32 * 0.0022),
+                0.001,
+            ));
+        }
+    }
+    units
+}
+
+fn with_hidden(mut frame: MovementFrame, hidden: Vec<MovementFrameUnit>) -> MovementFrame {
+    frame.units.extend(hidden);
+    frame.units.sort_by_key(|unit| unit.unit_id);
+    frame
+}
+
+/// True when a hidden body (owner 1) is in contact range of an owner-0 body that can move.
+fn hidden_contact(frame: &MovementFrame) -> bool {
+    let movers: Vec<_> = frame
+        .units
+        .iter()
+        .filter(|unit| unit.owner_slot == 0 && unit.speed.is_some())
+        .collect();
+    frame
+        .units
+        .iter()
+        .filter(|unit| unit.owner_slot == 1)
+        .any(|hidden| {
+            movers.iter().any(|mover| {
+                mover.position.distance(hidden.position) <= mover.radius + hidden.radius + 0.11
+            })
+        })
+}
+
+/// R20. Hidden-world pairs with each class of recovery row (physical, group, plain,
+/// spare): hidden bodies near and far, never in contact, change no owner output, job or
+/// owner counter in 60 ticks, with and without the claim exchange. They change only the
+/// physical work and the view work.
+#[test]
+fn hidden_bodies_out_of_contact_change_no_row_of_any_class() {
+    let basis = Basis {
+        permitted: BTreeSet::new(),
+    };
+    for exchange in [true, false] {
+        let mut plain = mixed_scene(12);
+        let mut hidden = with_hidden(mixed_scene(12), mixed_hidden());
+        let mut seen = [0u64; 4];
+        let mut unpaid = (0, 0);
+        for tick in 0..60 {
+            assert!(
+                !hidden_contact(&hidden),
+                "tick {tick}: the scene keeps apart"
+            );
+            let (a, ca) = step_mode(&plain, Some(&basis), exchange, tick);
+            let (b, cb) = step_mode(&hidden, Some(&basis), exchange, tick);
+            assert_eq!(own_outputs(&a), own_outputs(&b), "tick {tick}");
+            assert_eq!(observable(&ca), observable(&cb), "tick {tick}");
+            assert_eq!(ca.physical_reads, cb.physical_reads, "tick {tick}");
+            seen[0] += ca.checks;
+            seen[1] += ca.spare_slot_work;
+            seen[2] += ca.slices;
+            seen[3] += ca.pool_work;
+            unpaid = (
+                unpaid.0 + ca.physical_work + ca.view_work,
+                unpaid.1 + cb.physical_work + cb.view_work,
+            );
+            advance(&mut plain, &a);
+            advance(&mut hidden, &b);
+        }
+        eprintln!("HIDDENMIXED exchange={exchange} seen={seen:?} unpaid={unpaid:?}");
+        assert!(seen.iter().all(|&count| count > 0), "{seen:?}");
+        assert!(unpaid.1 > unpaid.0, "hidden bodies cost frame work only");
+    }
+}
+
+/// R21. A hidden body in contact range of the actor at tick start gives the result of the
+/// same body when visible, for the check of a retained target and for the spare-slot
+/// search. A hidden body out of contact range gives the result of no body.
+#[test]
+fn a_contacted_hidden_body_counts_for_the_retained_check_and_the_spare_search() {
+    let target = ORIGIN + Vec2::new(1.3, 0.0);
+    // Blocks the target (0.354 from it); 1.079 from the actor: in contact range (1.101).
+    let touching = ORIGIN + Vec2::new(1.05, 0.25);
+    // Blocks the target (0.6 from it); 1.9 from the actor: out of contact range.
+    let apart = target + Vec2::new(0.6, 0.0);
+    let retained = |hidden_at: Option<Vec2>, visible: bool| {
+        let mut units = vec![
+            MovementFrameUnit {
+                physical_escape: Some(PhysicalEscape {
+                    target: Some(target),
+                }),
+                ..escaping(1, 0, ORIGIN, 0.5)
+            },
+            still(2, 0, ORIGIN + Vec2::new(-0.05, 0.0), 0.5),
+        ];
+        units.extend(hidden_at.map(|at| still(3, 1, at, 0.5)));
+        let basis = Basis {
+            permitted: BTreeSet::from_iter(visible.then_some((0, 3))),
+        };
+        let (outputs, counters) = step(&frame(units), &basis, 1);
+        assert_eq!(counters.checks, 1);
+        // A search slice runs only when the check of the retained target fails. (The
+        // escape target of the output is no witness: the sweep guard restores the old
+        // target when it clips the step.)
+        (outputs[0].clone(), counters.slices)
+    };
+    let free = retained(None, false);
+    assert_eq!(free.1, 0, "a clear retained target needs no search");
+    assert_eq!(
+        free.0.physical_escape,
+        Some(PhysicalEscape {
+            target: Some(target)
+        })
+    );
+    assert_eq!(
+        retained(Some(touching), false).1,
+        1,
+        "contact: the check fails"
+    );
+    assert_eq!(
+        retained(Some(touching), false),
+        retained(Some(touching), true)
+    );
+    assert_eq!(retained(Some(apart), false), free);
+    assert_eq!(
+        retained(Some(apart), true).1,
+        1,
+        "a visible body fails the check"
+    );
+
+    // The spare-slot search. 1.05 from the mover and 0.45 from the first spare slot.
+    let touching = ORIGIN + Vec2::new(0.0, 1.05);
+    for exchange in [true, false] {
+        let spare = |hidden_at: Option<Vec2>, visible: bool| {
+            let frame = spare_frame(
+                hidden_at
+                    .map(|at| still(50, 1, at, 0.5))
+                    .into_iter()
+                    .collect(),
+            );
+            let basis = Basis {
+                permitted: BTreeSet::from_iter(visible.then_some((0, 50))),
+            };
+            let (outputs, _) = step_mode(&frame, Some(&basis), exchange, 1);
+            outputs
+                .into_iter()
+                .find(|output| output.unit_id == 1)
+                .unwrap()
+        };
+        let slot = |output: &MovementFrameOutput| output.progress.as_ref().unwrap().slot;
+        assert_eq!(slot(&spare(None, false)), SPARES[0]);
+        assert_eq!(slot(&spare(Some(touching), false)), SPARES[1]);
+        assert_eq!(spare(Some(touching), false), spare(Some(touching), true));
+        // On the first spare slot, 1.5 from the mover: out of contact range.
+        assert_eq!(spare(Some(SPARES[0]), false), spare(None, false));
+    }
+}
+
+/// The count of rows of each class at tick start: physical escape, blocked group, blocked
+/// plain. The same rule as the schedule of the frame.
+fn blocked_classes(frame: &MovementFrame) -> [u64; 3] {
+    let mut classes = [0; 3];
+    for unit in frame.units.iter().filter(|unit| unit.speed.is_some()) {
+        let group = unit.progress.as_ref().is_some_and(|progress| {
+            progress.activity == super::MovementActivity::Blocked
+                && frame.pools.contains_key(&progress.pool_id)
+        });
+        let plain = unit
+            .plain_progress
+            .as_ref()
+            .is_some_and(|progress| progress.activity == super::MovementActivity::Blocked);
+        if unit.physical_escape.is_some() {
+            classes[0] += 1;
+        } else if group {
+            classes[1] += 1;
+        } else if plain {
+            classes[2] += 1;
+        }
+    }
+    classes
+}
+
+/// R22. A scene with blocked rows of each class and spare rows, with more work than one
+/// owner allowance: the metered work of the owner is never above `OWNER_WORK`, and the
+/// neighbourhood reads of each row are the fixed count of its class (physical escape 2
+/// or 3, blocked group 2, blocked plain 1, spare 1).
+#[test]
+fn owner_work_and_neighbourhood_reads_stay_within_their_bounds() {
+    let mut frame = mixed_scene(100);
+    let mut peak = 0;
+    let mut classes_seen = [0u64; 4];
+    for tick in 0..80 {
+        let [physical, group, plain] = blocked_classes(&frame);
+        // A spare row: a group mover whose stall clock can be due, or that has a spare job.
+        let spare = frame
+            .units
+            .iter()
+            .filter(|unit| {
+                unit.physical_escape.is_none()
+                    && unit.plain_progress.is_none()
+                    && unit.target.is_some()
+                    && unit.progress.as_ref().is_some_and(|progress| {
+                        progress.activity != super::MovementActivity::Blocked
+                            && progress.claim_count & 3 < 3
+                            && (progress.stalled_ticks >= 19
+                                || frame.recovery.get(&unit.unit_id).is_some_and(|job| {
+                                    job.kind == RecoveryKind::Spare(progress.pool_id)
+                                }))
+                    })
+            })
+            .count() as u64;
+        let (outputs, counters) = step_mode(&frame, None, true, tick);
+        peak = peak.max(counters.owner_work[0]);
+        assert!(counters.owner_work[0] <= OWNER_WORK, "tick {tick}");
+        let least = 2 * physical + 2 * group + plain + spare;
+        assert!(
+            (least..=least + physical).contains(&counters.physical_reads),
+            "tick {tick}: {} reads for {physical} physical, {group} group, {plain} plain, \
+             {spare} spare rows",
+            counters.physical_reads
+        );
+        assert_eq!(
+            counters.frame_work,
+            counters.physical_work + counters.view_work
+        );
+        for (seen, count) in classes_seen.iter_mut().zip([physical, group, plain, spare]) {
+            *seen += count;
+        }
+        advance(&mut frame, &outputs);
+    }
+    eprintln!("MIXEDBOUND peak_owner_work={peak} class_row_ticks={classes_seen:?}");
+    assert!(
+        classes_seen.iter().all(|&count| count > 0),
+        "{classes_seen:?}"
+    );
+    assert!(
+        peak > OWNER_WORK / 2,
+        "the scene uses the allowance: {peak}"
+    );
+}
+
+/// R22, one row. The check and the search of one row turn share one allowance: a check
+/// that ends does not give the search a new allowance.
+#[test]
+fn a_check_and_a_search_of_one_row_share_one_allowance() {
+    let target = ORIGIN + Vec2::new(2.5, 0.0);
+    // A blocker on the target that is the first key of its cell, then a dense search.
+    let mut units = vec![still(1, 0, ORIGIN, 0.5)];
+    units.push(still(2, 0, target + Vec2::new(-0.2, 0.0), 0.5));
+    for n in 0..2_000u32 {
+        units.push(still(
+            10 + n,
+            0,
+            ORIGIN
+                + Vec2::new(
+                    0.62 + (n % 20) as f32 * 0.0022,
+                    0.55 + (n / 20) as f32 * 0.0022,
+                ),
+            0.001,
+        ));
+    }
+    let claims = ClaimSet::default();
+    let index = one_slot_pool(target);
+    let scan = check_scan(false, &claims, &index, None);
+    let world = RecoveryWorld::new(None, None);
+    let mut counters = RecoveryCounters::default();
+    let mut job = None;
+    let allowance = 256;
+    let (checked, point) = row_turn(&world, &mut job, allowance, &mut counters, |row| {
+        let checked = row.check(RecoveryKind::Physical, &scan, target, false, false, &units);
+        (checked, row.search(RecoveryKind::Physical, &scan, &units))
+    });
+    assert_eq!(checked, Check::Blocked);
+    assert_eq!(point, None);
+    assert!(job.is_some_and(|job| job.scan.is_some_and(|scan| !scan.is_check())));
+    assert_eq!((counters.checks, counters.slices), (1, 1));
+    assert!(
+        counters.owner_work[0] <= allowance,
+        "{} > {allowance}",
+        counters.owner_work[0]
+    );
+    assert!(
+        counters.owner_work[0] > allowance - 32,
+        "the search uses the rest"
+    );
+}
+
+fn unit_mut(frame: &mut MovementFrame, unit_id: u32) -> &mut MovementFrameUnit {
+    frame
+        .units
+        .iter_mut()
+        .find(|unit| unit.unit_id == unit_id)
+        .unwrap()
+}
+
+/// R23. A stop order, a new order and a death drop the job of a row: the paused check of
+/// a retained target, and a waiting spare job. Only the unchanged order continues it.
+#[test]
+fn a_stop_order_a_new_order_and_a_death_drop_the_job() {
+    let target = ORIGIN + Vec2::new(2.5, 0.0);
+    let mut frame = retained_group_scene(target);
+    frame.pools.insert(
+        9,
+        super::MovementPool {
+            pool_id: 9,
+            point: target,
+            spacing: 1.1,
+            primary_count: 1,
+            slots: vec![target],
+        },
+    );
+    let outputs = super::step_frame_at_tick(&frame, 0.05, 0);
+    advance(&mut frame, &outputs);
+    let paused = frame.recovery[&1];
+    assert_eq!((paused.kind, paused.age), (RecoveryKind::Group(7), 1));
+    assert!(
+        paused
+            .scan
+            .is_some_and(|scan| scan.is_check() && scan.query.is_some())
+    );
+    let run = |change: &dyn Fn(&mut MovementFrame)| {
+        let mut frame = frame.clone();
+        change(&mut frame);
+        let mut budget = super::sweep::SweepBudget::new(1);
+        let outputs =
+            super::step_frame_with_sweep_budget(&frame, 0.05, &Default::default(), &mut budget);
+        let job = outputs
+            .iter()
+            .find(|output| output.unit_id == 1)
+            .and_then(|output| output.recovery.as_deref().copied());
+        (job, budget.recovery, outputs.len())
+    };
+    // The unchanged order resumes the cursor: the rest of the check is small.
+    let (job, counters, _) = run(&|_| {});
+    assert_eq!(job, None);
+    assert!(counters.checks == 1 && counters.owner_work[0] < OWNER_WORK / 2);
+    let resumed = counters.owner_work[0];
+    // A stop order: no order, no blocked row, no job.
+    let (job, counters, _) = run(&|frame| {
+        let unit = unit_mut(frame, 1);
+        unit.target = None;
+        unit.progress = None;
+    });
+    assert_eq!(job, None);
+    assert_eq!((counters.checks, counters.owner_work[0]), (0, 0));
+    // A new order of another pool with the same target: the check starts again.
+    let (job, counters, _) = run(&|frame| {
+        unit_mut(frame, 1).progress.as_mut().unwrap().pool_id = 9;
+    });
+    let job = job.expect("the new check does not end in one tick");
+    assert_eq!((job.kind, job.age), (RecoveryKind::Group(9), 1));
+    assert!(
+        counters.owner_work[0] > resumed,
+        "no cursor of the old order"
+    );
+    // A death: the row is gone, its job has no reader.
+    let (job, counters, rows) = run(&|frame| frame.units.retain(|unit| unit.unit_id != 1));
+    assert_eq!(job, None);
+    assert_eq!((counters.checks, rows), (0, frame.units.len() - 1));
+
+    // A waiting spare job of pool 8.
+    let waiting = RecoverySearch {
+        kind: RecoveryKind::Spare(8),
+        age: 4,
+        scan: None,
+    };
+    let spare = |change: &dyn Fn(&mut MovementFrame)| {
+        let mut frame = mixed_scene(1);
+        frame.recovery.insert(900, waiting);
+        // Only unit 901 has a free allowance in this probe: unit 900 must wait or end.
+        change(&mut frame);
+        let (outputs, counters) = step_mode(&frame, None, false, 1);
+        let job = outputs
+            .iter()
+            .find(|output| output.unit_id == 900)
+            .and_then(|output| output.recovery.as_deref().copied());
+        (job, counters)
+    };
+    // The unchanged order ends its search in this tick (the job is served).
+    let (job, counters) = spare(&|_| {});
+    assert_eq!(job, None);
+    let searched = counters.spare_slot_work;
+    assert!(searched > 0);
+    // A stop order.
+    let (job, counters) = spare(&|frame| {
+        let unit = unit_mut(frame, 900);
+        unit.target = None;
+        unit.progress = None;
+    });
+    assert_eq!(job, None);
+    assert!(
+        counters.spare_slot_work < searched,
+        "no search for the stopped mover"
+    );
+    // A new order with a fresh stall clock: no spare search, no job.
+    let (job, counters) = spare(&|frame| {
+        let progress = unit_mut(frame, 900).progress.as_mut().unwrap();
+        progress.stalled_ticks = 0;
+        progress.best_distance = 100.0;
+    });
+    assert_eq!(job, None);
+    assert!(counters.spare_slot_work < searched);
+    // A death.
+    let (job, _) = spare(&|frame| frame.units.retain(|unit| unit.unit_id != 900));
+    assert_eq!(job, None);
+}
+
+/// R24. The mixed scene with hidden bodies, with reversed unit ids, reversed input rows
+/// and swapped owner slots: the same physical outcome and the same owner work in each
+/// tick. And the audit replay kernel, from jobs that went through the log encoding,
+/// gives the outputs and the jobs of the live frame.
+#[test]
+fn mirrored_ids_rows_and_owners_and_the_replay_kernel_agree() {
+    let scene = |reverse_ids: bool, swap_owner: bool| {
+        // One hidden body in eight: each patch and the large far body are there.
+        let hidden = mixed_hidden().into_iter().step_by(8).collect();
+        let mut frame = with_hidden(mixed_scene(40), hidden);
+        for unit in &mut frame.units {
+            if reverse_ids {
+                unit.unit_id = 90_000 - unit.unit_id;
+            }
+            if swap_owner {
+                unit.owner_slot = 1 - unit.owner_slot;
+            }
+        }
+        frame.units.sort_by_key(|unit| unit.unit_id);
+        if reverse_ids {
+            frame.units.reverse();
+        }
+        frame
+    };
+    let basis = Basis {
+        permitted: BTreeSet::new(),
+    };
+    let run = |reverse_ids: bool, swap_owner: bool, replay: bool| {
+        let mut frame = scene(reverse_ids, swap_owner);
+        let owner = usize::from(swap_owner);
+        let mut work = Vec::new();
+        let mut jobs = 0;
+        for tick in 0..40 {
+            let (outputs, counters) = step(&frame, &basis, tick);
+            work.push((
+                counters.owner_work[owner],
+                counters.slices,
+                counters.completions,
+                counters.checks,
+                counters.spare_slot_work,
+                counters.physical_reads,
+            ));
+            if replay {
+                // The auditor reads the jobs from the log and runs the public kernel.
+                let logged = serde_json::to_string(&frame.recovery).unwrap();
+                let mut audited = frame.clone();
+                audited.recovery = serde_json::from_str(&logged).unwrap();
+                assert_eq!(audited.recovery, frame.recovery, "tick {tick}");
+                jobs += audited.recovery.len();
+                let replayed = super::step_frame_preserving_resting_at_tick_with_visibility(
+                    &audited,
+                    0.05,
+                    &Default::default(),
+                    tick,
+                    &basis,
+                );
+                assert_eq!(replayed, outputs, "tick {tick}");
+            }
+            advance(&mut frame, &outputs);
+        }
+        if replay {
+            assert!(jobs > 0, "the replay reads recovery jobs");
+        }
+        let mut positions: Vec<_> = frame
+            .units
+            .iter()
+            .map(|unit| (unit.position.x.to_bits(), unit.position.y.to_bits()))
+            .collect();
+        positions.sort_unstable();
+        (positions, work)
+    };
+    let reference = run(false, false, true);
+    assert!(reference.1.iter().any(|tick| tick.3 > 0 && tick.4 > 0));
+    assert_eq!(run(true, false, false), reference, "reversed ids and rows");
+    assert_eq!(run(false, true, false), reference, "swapped owners");
+    assert_eq!(run(true, true, false), reference, "both");
+}
+
+/// R15, the schedule. Rows with a retained target that get no search slice get the floor
+/// for their check: no row on the way to its target waits for a slice, the floor starts
+/// no search, and the owner total stays within `OWNER_WORK`.
+#[test]
+fn rows_with_a_retained_target_get_a_check_floor() {
+    let rows: Vec<_> = (0..300)
+        .map(|row| ScheduleRow {
+            retained: row % 3 != 0,
+            ..schedule_row(row, false, 0, true, row as f32)
+        })
+        .collect();
+    let schedule = plan(rows.clone(), 3, &mut RecoveryCounters::default());
+    let total: usize = (0..300).map(|row| schedule.allowance(row)).sum();
+    assert!(total <= OWNER_WORK, "{total}");
+    let floor = (OWNER_WORK - OWNER_WORK / 2) / 2 / MIN_SLICE;
+    let mut on_floor = 0;
+    for row in &rows {
+        let allowance = schedule.allowance(row.row);
+        if row.row < 16 {
+            // The first rows in service order get the fresh slices.
+            assert!(allowance >= super::recovery::FRESH_SLICE);
+            assert!(!schedule.check_only(row.row));
+        } else if row.retained && on_floor < floor {
+            on_floor += 1;
+            assert_eq!(allowance, MIN_SLICE, "row {}", row.row);
+            assert!(schedule.check_only(row.row));
+        } else {
+            assert_eq!(allowance, 0, "row {}", row.row);
+        }
+    }
+    assert_eq!(on_floor, floor);
+}
+
+/// R15, the schedule in the frame. Sixty blocked plain rows walk to clear retained
+/// targets: more rows than fresh slices. Each row moves in each tick.
+#[test]
+fn rows_on_the_way_to_a_retained_target_do_not_stop() {
+    let mut units = Vec::new();
+    for n in 0..60u32 {
+        let at = Vec2::new(5.0 + (n % 10) as f32 * 5.0, 5.0 + (n / 10) as f32 * 5.0);
+        units.push(plain_blocked(1 + n, at, at + Vec2::new(2.0, 0.0)));
+    }
+    let mut frame = frame(units);
+    frame.bounds = Vec2::splat(60.0);
+    let start = frame.clone();
+    for tick in 0..10 {
+        let (outputs, counters) = step_mode(&frame, None, true, tick);
+        assert!(counters.owner_work[0] <= OWNER_WORK);
+        assert_eq!(counters.jobs, 0, "tick {tick}: no row waits");
+        advance(&mut frame, &outputs);
+    }
+    for (unit, before) in frame.units.iter().zip(&start.units) {
+        let moved = unit.position.x - before.position.x;
+        assert!(
+            (moved - 0.5).abs() < 1.0e-3,
+            "unit {} moved {moved}",
+            unit.unit_id
+        );
+    }
+}
+
+/// B1. A retained group target that the metered check reports as clear has no known body
+/// at rest on it: the base test `target_is_blocked_by_stationary` is implied. Random
+/// bodies round the target, at rest and moving, at the tolerance edges too.
+#[test]
+fn a_clear_retained_group_target_has_no_resting_body_on_it() {
+    let target = ORIGIN + Vec2::new(2.5, 0.0);
+    let claims = ClaimSet::default();
+    let index = one_slot_pool(target);
+    let scan = check_scan(true, &claims, &index, None);
+    let mut seed = 0x2545_f491_4f6c_dd1d_u64;
+    let mut random = || {
+        seed ^= seed << 13;
+        seed ^= seed >> 7;
+        seed ^= seed << 17;
+        (seed >> 40) as f32 / (1u64 << 24) as f32
+    };
+    let (mut clear, mut resting_blocks, mut edge) = (0, 0, 0);
+    for case in 0..3_000u32 {
+        let mut units = vec![still(1, 0, ORIGIN, 0.5)];
+        for n in 0..3u32 {
+            let radius = [0.2, 0.5, 0.8][(case + n) as usize % 3];
+            let angle = random() * std::f32::consts::TAU;
+            // Every third case puts one body inside the tolerance band of the two tests.
+            let distance = if case % 3 == 0 && n == 0 {
+                0.5 + radius - [2.0e-5, 5.0e-6, 0.0, -1.0e-6][case as usize / 3 % 4]
+            } else {
+                0.5 + radius + (random() - 0.5) * 0.6
+            };
+            let mut other = still(
+                2 + n,
+                0,
+                target + Vec2::from_angle(angle) * distance,
+                radius,
+            );
+            if random() < 0.5 {
+                // A mover is not at rest.
+                other.speed = Some(1.0);
+                other.target = Some(Vec2::splat(1.0));
+            }
+            units.push(other);
+        }
+        let points: Vec<_> = units
+            .iter()
+            .map(|unit| crate::grid::GridPoint {
+                id: unit.unit_id,
+                position: unit.position,
+            })
+            .collect();
+        let grid = crate::grid::UniformGrid::new(&points, 1.6);
+        let oracle = super::recovery_oracle::Oracle {
+            units: &units,
+            points: &points,
+            grid: &grid,
+            max_radius: 0.8,
+            index: 0,
+            known: &|_| true,
+        };
+        let world = RecoveryWorld::new(None, None);
+        let checked = row_turn(
+            &world,
+            &mut None,
+            WIDE,
+            &mut RecoveryCounters::default(),
+            |row| row.check(RecoveryKind::Group(7), &scan, target, true, false, &units),
+        );
+        // The metered check is the base `is_free` (tolerance 0).
+        assert_eq!(
+            checked == Check::Clear,
+            !oracle.occupied(target, 0.0),
+            "case {case}"
+        );
+        if checked == Check::Clear {
+            clear += 1;
+            assert!(!oracle.blocked_by_stationary(target), "case {case}");
+        }
+        resting_blocks += usize::from(oracle.blocked_by_stationary(target));
+        edge += usize::from(oracle.occupied(target, 0.0) && !oracle.occupied(target, 1.0e-5));
+    }
+    assert!(
+        clear > 100 && resting_blocks > 100 && edge > 50,
+        "{clear} {resting_blocks} {edge}"
+    );
 }

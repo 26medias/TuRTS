@@ -124,6 +124,7 @@ impl Scanner<'_> {
             view: &self.view,
             contacts: &self.contacts,
             own_key: Some(body_key(mover.position, mover.radius)),
+            ignore_soft: false,
         };
         EscapeScan {
             bounds: self.world.bounds,
@@ -133,6 +134,7 @@ impl Scanner<'_> {
             pool: None,
             bound: self.bound,
             verify: self.verify,
+            pool_only: false,
         }
         .run(&known, previous, allowance, owner, counters)
     }
@@ -822,6 +824,8 @@ fn schedule_is_id_free_and_oldest_first() {
         overlapping,
         position: Vec2::new(x, 1.0),
         radius: 0.5,
+        spare: false,
+        retained: false,
     };
     let mut counters = RecoveryCounters::default();
     let tiers = plan(
@@ -850,6 +854,8 @@ fn schedule_is_id_free_and_oldest_first() {
             overlapping: row % 4 != 1,
             position: Vec2::new((row * 7 % 11) as f32, (row * 5 % 7) as f32),
             radius: 0.5,
+            spare: false,
+            retained: false,
         })
         .collect();
     let mut counters = RecoveryCounters::default();
@@ -908,6 +914,8 @@ fn a_stacked_batch_shares_one_budget() {
             overlapping: true,
             position: Vec2::splat(5.0),
             radius: 0.5,
+            spare: false,
+            retained: false,
         })
         .collect();
     let schedule = plan(rows, 0, &mut RecoveryCounters::default());

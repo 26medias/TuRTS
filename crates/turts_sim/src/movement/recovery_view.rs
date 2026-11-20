@@ -4,7 +4,9 @@
 //! - A `KnownView` holds the bodies that an owner may know: its own bodies and the bodies
 //!   that its visibility basis permits (all bodies with no basis). Hidden bodies are not in
 //!   it, so they cannot change a query, a charge or a proof. The frame keeps it live: each
-//!   move of a member updates it.
+//!   move of a member updates it. A member can be *soft* (design section 7, B2): a body
+//!   of another owner that the claim exchange does not treat as an obstacle. A query that
+//!   sets `ignore_soft` (the stall spare-slot search) does not count soft copies.
 //! - Cells are keyed by `(cy, cx)` in a `BTreeMap`; a cell holds a multiset of body keys
 //!   `(ordered x, ordered y, radius bits)`. That order is the canonical physical order of a
 //!   query; no unit id, row index or hash order decides it. Equal keys are one entry with a
@@ -30,6 +32,8 @@ pub(crate) type BodyKey = [u32; 3];
 
 const DIGEST_SEEDS: [u64; 2] = [0x243f_6a88_85a3_08d3, 0x1319_8a2e_0370_7344];
 pub(super) const BODY_TAG: u64 = 1 << 63;
+/// Marks the fact of a soft copy: a body that changes class changes the digest.
+const SOFT_TAG: u64 = 1 << 62;
 /// The claim cell size of `ClaimSet`, in world units. Fixed: it depends on no body.
 const CLAIM_CELL: f32 = 4.0;
 /// The smallest half cell of a view: a view of tiny bodies keeps a sane cell count.
@@ -105,6 +109,11 @@ fn key_fact(key: &BodyKey) -> (u64, u64) {
     )
 }
 
+fn copy_fact(key: &BodyKey, soft: bool) -> (u64, u64) {
+    let (a, b) = key_fact(key);
+    (if soft { a | SOFT_TAG } else { a }, b)
+}
+
 fn grow(reach: f32) -> f32 {
     reach.abs() + EDGE_MARGIN * reach.abs().max(1.0)
 }
@@ -149,9 +158,15 @@ impl Meter {
 
 #[derive(Debug, Default)]
 struct ViewCell {
-    bodies: BTreeMap<BodyKey, u32>,
+    /// The copies of each key: `[hard, soft]`.
+    bodies: BTreeMap<BodyKey, [u32; 2]>,
     digest: Digest,
 }
+
+/// The class of a frame row in a view.
+const NOT_MEMBER: u8 = 0;
+const HARD: u8 = 1;
+const SOFT: u8 = 2;
 
 /// The bodies that one owner may know, with live positions.
 #[derive(Debug)]
@@ -159,7 +174,8 @@ pub(crate) struct KnownView {
     half: f32,
     cell: f32,
     cells: BTreeMap<(i32, i32), ViewCell>,
-    members: Vec<bool>,
+    /// One byte for each frame row: not a member, a hard member or a soft member.
+    members: Vec<u8>,
     entries: usize,
 }
 
@@ -168,7 +184,18 @@ type CellBox = (i32, i32, i32, i32);
 
 impl KnownView {
     /// Builds the view from `(row, position, radius)` members of a frame of `rows` rows.
+    #[cfg(test)]
     pub(crate) fn build(members: &[(usize, Vec2, f32)], rows: usize) -> Self {
+        let members: Vec<_> = members
+            .iter()
+            .map(|&(row, position, radius)| (row, position, radius, false))
+            .collect();
+        Self::build_soft(&members, rows)
+    }
+
+    /// Builds the view from `(row, position, radius, soft)` members of a frame of `rows`
+    /// rows.
+    pub(crate) fn build_soft(members: &[(usize, Vec2, f32, bool)], rows: usize) -> Self {
         let max_radius = members.iter().map(|m| m.2).fold(0.0_f32, f32::max);
         // A power of two: the cell size changes only when the largest known radius crosses
         // one, so a proof survives ordinary visibility changes.
@@ -177,12 +204,12 @@ impl KnownView {
             half,
             cell: 2.0 * half,
             cells: BTreeMap::new(),
-            members: vec![false; rows],
+            members: vec![NOT_MEMBER; rows],
             entries: 0,
         };
-        for &(row, position, radius) in members {
-            view.members[row] = true;
-            view.insert(position, radius);
+        for &(row, position, radius, soft) in members {
+            view.members[row] = if soft { SOFT } else { HARD };
+            view.insert(position, radius, soft);
         }
         view
     }
@@ -194,7 +221,9 @@ impl KnownView {
     }
 
     pub(crate) fn contains(&self, row: usize) -> bool {
-        self.members.get(row).copied().unwrap_or(false)
+        self.members
+            .get(row)
+            .is_some_and(|&class| class != NOT_MEMBER)
     }
 
     fn cell_of(&self, position: Vec2) -> (i32, i32) {
@@ -211,19 +240,19 @@ impl KnownView {
         (low_y, high_y, low_x, high_x)
     }
 
-    fn insert(&mut self, position: Vec2, radius: f32) {
+    fn insert(&mut self, position: Vec2, radius: f32, soft: bool) {
         let key = body_key(position, radius);
         let cell = self.cells.entry(self.cell_of(position)).or_default();
         let count = cell.bodies.entry(key).or_default();
-        if *count == 0 {
+        if *count == [0, 0] {
             self.entries += 1;
         }
-        *count += 1;
-        let (a, b) = key_fact(&key);
+        count[usize::from(soft)] += 1;
+        let (a, b) = copy_fact(&key, soft);
         change_facts(&mut cell.digest, a, b, 1, false);
     }
 
-    fn remove(&mut self, position: Vec2, radius: f32) {
+    fn remove(&mut self, position: Vec2, radius: f32, soft: bool) {
         let key = body_key(position, radius);
         let at = self.cell_of(position);
         let Some(cell) = self.cells.get_mut(&at) else {
@@ -234,12 +263,16 @@ impl KnownView {
             debug_assert!(false, "a view member must have its key");
             return;
         };
-        *count -= 1;
-        if *count == 0 {
+        if count[usize::from(soft)] == 0 {
+            debug_assert!(false, "a view member must have a copy of its class");
+            return;
+        }
+        count[usize::from(soft)] -= 1;
+        if *count == [0, 0] {
             cell.bodies.remove(&key);
             self.entries -= 1;
         }
-        let (a, b) = key_fact(&key);
+        let (a, b) = copy_fact(&key, soft);
         change_facts(&mut cell.digest, a, b, 1, true);
         if cell.bodies.is_empty() {
             self.cells.remove(&at);
@@ -253,13 +286,14 @@ impl KnownView {
         {
             return;
         }
-        self.remove(from, radius);
-        self.insert(to, radius);
+        let soft = self.members[row] == SOFT;
+        self.remove(from, radius, soft);
+        self.insert(to, radius, soft);
     }
 
     /// An upper bound of the bytes the view holds (B-tree nodes at half fill).
     pub(crate) fn bytes(&self) -> usize {
-        let entry = std::mem::size_of::<(BodyKey, u32)>();
+        let entry = std::mem::size_of::<(BodyKey, [u32; 2])>();
         let cell = std::mem::size_of::<((i32, i32), ViewCell)>();
         2 * (self.entries * entry + self.cells.len() * cell) + self.members.capacity()
     }
@@ -488,6 +522,9 @@ pub(crate) struct KnownSet<'a> {
     pub(crate) contacts: &'a Contacts,
     /// The key of the actor in its view: one copy of it is not an obstacle.
     pub(crate) own_key: Option<BodyKey>,
+    /// True for the stall spare-slot search: a soft copy is not an obstacle. The actor is
+    /// a hard member of its own view.
+    pub(crate) ignore_soft: bool,
 }
 
 impl KnownSet<'_> {
@@ -551,12 +588,15 @@ impl KnownSet<'_> {
                         Some(key) => Bound::Excluded(key),
                         None => Bound::Included(low_key),
                     };
-                    for (key, &count) in cell.bodies.range((low, Bound::Included(high_key))) {
+                    for (key, &[hard, soft]) in cell.bodies.range((low, Bound::Included(high_key)))
+                    {
                         if !meter.step() {
                             return Probe::Pending(query);
                         }
                         meter.bodies += 1;
-                        let others = count - u32::from(self.own_key == Some(*key));
+                        // The actor is a hard copy of its own key.
+                        let own = u32::from(self.own_key == Some(*key)).min(hard);
+                        let others = hard - own + if self.ignore_soft { 0 } else { soft };
                         if others > 0 && blocks(key) {
                             return Probe::Blocked;
                         }
@@ -681,6 +721,7 @@ mod tests {
                 view,
                 contacts: &set,
                 own_key: None,
+                ignore_soft: false,
             }
             .region_digest(Vec2::splat(2.0), 3.0, None, &mut Meter::new(usize::MAX))
             .unwrap()
@@ -712,6 +753,7 @@ mod tests {
             view: &view,
             contacts: &contacts,
             own_key: Some(body_key(bodies[0].0, 0.5)),
+            ignore_soft: false,
         };
         let point = Vec2::new(6.1, 5.2);
         let whole = known.probe(

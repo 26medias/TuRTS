@@ -7,6 +7,7 @@ use super::MovementPool;
 #[cfg(test)]
 use super::count_pool_slot_candidates;
 use super::frame::MovementFrameUnit;
+#[cfg(test)]
 use super::spread::nearest_angle_order;
 
 #[cfg(test)]
@@ -303,6 +304,8 @@ impl MovementPoolIndex {
         clearance.first.unit_id == Some(unit_id) && clearance.second.clearance >= threshold
     }
 
+    /// The unmetered precheck: the test oracle of `EscapeScan::precheck`.
+    #[cfg(test)]
     pub(super) fn has_potential_free_slot(
         &self,
         unit_id: u32,
@@ -314,13 +317,15 @@ impl MovementPoolIndex {
             return true;
         }
         let local = self.grid.within(&self.points, position, 2.0 * radius);
-        #[cfg(test)]
         count_pool_slot_candidates(local.len());
         local
             .into_iter()
             .any(|slot_index| self.local_slot_supports(slot_index, unit_id, radius))
     }
 
+    /// The unmetered slot search: the test oracle of the metered pool stage
+    /// (`EscapeScan::pool_levels`) and of the stall spare-slot job.
+    #[cfg(test)]
     #[expect(
         clippy::too_many_arguments,
         reason = "pool candidate lookup needs exact caller, reservation and collision context"
@@ -349,7 +354,6 @@ impl MovementPoolIndex {
             let query_reach = reach.min(self.max_reach);
             let mut best: Option<(usize, Vec2)> = None;
             let candidates = self.grid.within(&self.points, origin, query_reach);
-            #[cfg(test)]
             count_pool_slot_candidates(candidates.len());
             work.set(work.get() + 1 + 2 * candidates.len());
             for index in candidates {

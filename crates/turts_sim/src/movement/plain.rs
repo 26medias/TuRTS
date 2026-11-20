@@ -91,23 +91,63 @@ pub(super) fn step_plain_progress(
     };
 
     if progress.activity == MovementActivity::Blocked {
-        let escape = unit.target.filter(|target| !occupied(*target)).or_else(|| {
-            if !body_occupied(unit.position) {
-                return None;
-            }
-            recovery.search(
-                super::RecoveryKind::Plain,
-                &super::recovery::EscapeScan {
-                    bounds,
-                    origin: unit.position,
-                    radius: unit.radius,
-                    slots: None,
-                    pool: None,
-                    bound: None,
-                    verify: true,
-                },
-                units,
+        // A blocked row reads bodies through metered queries of its known set (design
+        // `2026-11-19-recovery-actual-work` section 7, B1). `reserved` is the part of
+        // `occupied` that reads no body position of the frame.
+        use super::recovery::Check;
+        let kind = super::RecoveryKind::Plain;
+        let scan = super::recovery::EscapeScan {
+            bounds,
+            origin: unit.position,
+            radius: unit.radius,
+            slots: None,
+            pool: None,
+            bound: None,
+            verify: true,
+            pool_only: false,
+        };
+        let reserved = |point: Vec2| {
+            spread_context.conflicts_with_reserved_filtered(
+                point,
+                unit.radius,
+                unit.unit_id,
+                &|id| !known(id),
             )
+        };
+        #[cfg(test)]
+        let oracle = super::recovery_oracle::Oracle {
+            units,
+            points,
+            grid,
+            max_radius,
+            index,
+            known,
+        };
+        let retained = unit.target.filter(|target| !reserved(*target));
+        let checked =
+            retained.map(|target| recovery.check(kind, &scan, target, false, false, units));
+        #[cfg(test)]
+        if let (Some(target), Some(result)) = (retained, checked) {
+            oracle.compare_check(result, target, 1.0e-5, false);
+        }
+        if checked == Some(Check::Pending) {
+            // The check did not end: the row holds its position and its target.
+            output.plain_progress = Some(progress);
+            return output;
+        }
+        let retained = retained.filter(|_| checked == Some(Check::Clear));
+        // The check of the own position: `Some(true)` when a known body overlaps it.
+        let mut here = None;
+        let escape = retained.or_else(|| {
+            let result = recovery.check(kind, &scan, unit.position, false, true, units);
+            #[cfg(test)]
+            oracle.compare_check(result, unit.position, 1.0e-5, false);
+            here = Some(result != Check::Clear);
+            match result {
+                // Nothing to escape from, or the check did not end: the row holds.
+                Check::Clear | Check::Pending => None,
+                Check::Blocked | Check::Unpaid => recovery.search(kind, &scan, units),
+            }
         });
         let Some(escape) = escape else {
             output.target = None;
@@ -119,7 +159,16 @@ pub(super) fn step_plain_progress(
         // Exhausting local claims does not exempt a clear body from current
         // bounded steering. Initial-overlap recovery keeps its original path.
         // Guide output still receives the unchanged final exact certificates.
-        let guided = if body_occupied(unit.position) {
+        // A query that the allowance cannot pay does not report the position as clear.
+        let overlapped = here.unwrap_or_else(|| {
+            let clear = recovery.peek(unit.position, unit.radius, 1.0e-5, units);
+            #[cfg(test)]
+            if let Some(clear) = clear {
+                oracle.compare_reached(clear, unit.position, 1.0e-5, recovery.allowance);
+            }
+            clear != Some(true)
+        });
+        let guided = if overlapped {
             None
         } else {
             super::motion::guided_position(unit, escape, bounds, dt, guide, budget)
@@ -133,7 +182,17 @@ pub(super) fn step_plain_progress(
                 unit.position
             }
         });
-        let reached = position == escape && !occupied(escape);
+        // The body part of `occupied(escape)` is known: the retained check or the search
+        // proved that no known body overlaps the point, with the same tolerance.
+        let reached = position == escape && (retained.is_some() || !reserved(escape));
+        #[cfg(test)]
+        if position == escape {
+            assert_eq!(
+                reached,
+                !occupied(escape),
+                "the reached test of a plain row"
+            );
+        }
         output.position = position;
         output.target = (!reached).then_some(escape);
         progress.slot = escape;
@@ -461,10 +520,12 @@ mod approach_tests {
                     row: index,
                     owner: 0,
                     allowance: usize::MAX,
+                    check_only: false,
                     previous: None,
+                    consumed: false,
                     next_jobs: &mut Default::default(),
                     counters: &mut Default::default(),
-                    world: &super::super::recovery::RecoveryWorld::new(&units, None),
+                    world: &super::super::recovery::RecoveryWorld::new(None, None),
                 },
             );
             assert!(

@@ -40,6 +40,8 @@ pub(crate) mod recovery;
 #[path = "tests/recovery_actual_tests.rs"]
 mod recovery_actual_tests;
 #[cfg(test)]
+mod recovery_oracle;
+#[cfg(test)]
 #[path = "tests/recovery_tests.rs"]
 mod recovery_tests;
 pub(crate) mod recovery_view;
@@ -123,6 +125,9 @@ pub enum RecoveryKind {
     Plain,
     /// The body escape after a failed order (`PhysicalEscape`).
     Physical,
+    /// The spare-slot search of a stalled group mover of the pool with this id (design
+    /// `2026-11-19-recovery-actual-work` section 7, B2).
+    Spare(u64),
 }
 
 /// The cursor of an unfinished escape search and the proof data of its examined region
@@ -131,6 +136,9 @@ pub enum RecoveryKind {
 pub struct RecoveryScan {
     pub origin: Vec2,
     pub radius: f32,
+    /// The hex ring of the scan, from 1. Ring 0 marks the check of one point with no
+    /// search (a retained target or the own position; design section 7, B1): the stage is
+    /// `Verify` and `query` is its cursor.
     pub ring: i32,
     pub side: u8,
     pub step: i32,
@@ -157,6 +165,13 @@ pub struct RecoveryScan {
     /// current state.
     #[serde(default)]
     pub spanned: bool,
+}
+
+impl RecoveryScan {
+    /// True for the stored check of one point (ring 0), false for a search.
+    pub(crate) fn is_check(&self) -> bool {
+        self.ring == 0
+    }
 }
 
 /// The stage of an escape search.

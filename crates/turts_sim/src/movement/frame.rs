@@ -429,41 +429,96 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
                 })
         };
     let mut recovery_counters = super::recovery::RecoveryCounters::default();
-    let recovery_world = super::recovery::RecoveryWorld::new(&frame.units, visibility);
+    let recovery_world = super::recovery::RecoveryWorld::new(
+        visibility,
+        exchanges_claims.then_some(super::recovery::SoftRule {
+            stationary: &stationary_at_start,
+            witness: &contact_witness,
+        }),
+    );
+    // `arrival::prepare_with_kept` sorts the rows and writes no position. So each solver
+    // row is at its tick-start position here, the base grid holds the tick-start
+    // positions, and the contact rule of `known` (which finds the row by unit id) reads
+    // the same positions as the schedule read below.
+    #[cfg(debug_assertions)]
+    {
+        let mut by_id: Vec<(u32, [u32; 2])> = frame
+            .units
+            .iter()
+            .map(|unit| (unit.unit_id, unit.position.to_array().map(f32::to_bits)))
+            .collect();
+        by_id.sort_unstable();
+        for (row, unit) in units.iter().enumerate() {
+            let bits = unit.position.to_array().map(f32::to_bits);
+            debug_assert!(
+                origins[row].to_array().map(f32::to_bits) == bits
+                    && by_id.binary_search(&(unit.unit_id, bits)).is_ok(),
+                "solver row {row} must be at the tick-start position of unit {}",
+                unit.unit_id
+            );
+        }
+    }
     let recovery_schedule = {
         let mut rows = Vec::new();
+        let mut reads = super::recovery::ScheduleReads::default();
+        let hz = frame.tick_hz.max(1);
         for (row, unit) in units.iter().enumerate() {
-            let blocked = unit.physical_escape.is_some()
-                || unit.progress.as_ref().is_some_and(|progress| {
-                    progress.activity == MovementActivity::Blocked
+            let blocked_order = unit.progress.as_ref().is_some_and(|progress| {
+                progress.activity == MovementActivity::Blocked
+                    && frame.pools.contains_key(&progress.pool_id)
+            }) || unit
+                .plain_progress
+                .as_ref()
+                .is_some_and(|progress| progress.activity == MovementActivity::Blocked);
+            let blocked = unit.physical_escape.is_some() || blocked_order;
+            // A group mover whose stall clock can become due in this tick may run the
+            // spare-slot search (the stall branch of the group step below).
+            let job = frame.recovery.get(&unit.unit_id);
+            let spare = !blocked
+                && unit.target.is_some()
+                && unit.plain_progress.is_none()
+                && unit.progress.as_ref().is_some_and(|progress| {
+                    (progress.stalled_ticks >= hz - 1
+                        || job.is_some_and(|job| {
+                            job.kind == super::RecoveryKind::Spare(progress.pool_id)
+                        }))
+                        && super::exchange::spare_claims(progress) < 3
                         && frame.pools.contains_key(&progress.pool_id)
-                })
-                || unit
-                    .plain_progress
-                    .as_ref()
-                    .is_some_and(|progress| progress.activity == MovementActivity::Blocked);
-            if unit.speed.is_none() || !blocked {
+                });
+            if unit.speed.is_none() || !(blocked || spare) {
                 continue;
             }
             // Admission is by state: a row can become overlapped mid-tick by an earlier row,
             // and it must not wait for a slice that the base would not delay. Tick-start
             // overlap only orders the fresh rows (see `ScheduleRow::overlapping`).
-            // Only a body that `known` admits orders the row: an owner-known body, or a
-            // body in contact range at tick start. This query is frame work.
+            //
+            // The schedule read: one neighbourhood read of the base grid, before any row
+            // moves. It gives the tick-start overlap and the contacts of the row (the
+            // bodies in contact range that the owner view does not hold). A body that
+            // overlaps is in contact range, so `known` admits it.
+            reads.begin(row);
             let mut overlapping = false;
-            let (cells, tested) =
-                grid.visit_within(&points, unit.position, unit.radius + max_radius, |other| {
-                    overlapping |= other != row
-                        && unit.position.distance(units[other].position)
-                            < unit.radius + units[other].radius - 1.0e-5
-                        && (recovery_world.member(unit.owner_slot, other, &units)
-                            || unit
-                                .position
-                                .distance(recovery_world.start_position(other, &units))
-                                <= unit.radius + units[other].radius + super::route::CONTACT_GAP);
-                });
-            recovery_counters.frame_work += (cells + tested) as u64;
-            let job = frame.recovery.get(&unit.unit_id);
+            let (cells, tested) = grid.visit_within(
+                &points,
+                unit.position,
+                unit.radius + max_radius + super::route::CONTACT_GAP,
+                |other| {
+                    if other == row {
+                        return;
+                    }
+                    let (overlap, contact) =
+                        super::recovery::touch(unit.position, unit.radius, &units[other]);
+                    overlapping |= overlap;
+                    if visibility.is_some()
+                        && contact
+                        && !recovery_world.member(unit.owner_slot, other, &units)
+                    {
+                        reads.contact(other);
+                    }
+                },
+            );
+            reads.overlap(overlapping);
+            recovery_counters.physical_read(cells, tested);
             rows.push(super::recovery::ScheduleRow {
                 row,
                 owner: unit.owner_slot,
@@ -472,8 +527,15 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
                 overlapping,
                 position: unit.position,
                 radius: unit.radius,
+                spare,
+                retained: unit
+                    .physical_escape
+                    .as_ref()
+                    .is_some_and(|escape| escape.target.is_some())
+                    || (blocked_order && unit.target.is_some()),
             });
         }
+        recovery_world.set_reads(reads);
         super::recovery::plan(rows, budget.epoch, &mut recovery_counters)
     };
     let mut next_recovery = BTreeMap::<usize, super::RecoverySearch>::new();
@@ -528,13 +590,16 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
             row: index,
             owner: unit.owner_slot,
             allowance: recovery_schedule.allowance(index),
+            check_only: recovery_schedule.check_only(index),
             previous: frame.recovery.get(&unit.unit_id).copied(),
+            consumed: false,
             next_jobs: &mut next_recovery,
             counters: &mut recovery_counters,
             world: &recovery_world,
         };
         if unit.physical_escape.is_some() {
-            let overlapping = body_overlaps_position(
+            // The exit read: the overlap at the present position is a physical fact.
+            let overlapping = overlap_read(
                 unit.position,
                 index,
                 unit.radius,
@@ -542,6 +607,7 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
                 &points,
                 &grid,
                 max_radius,
+                recovery.counters,
             );
             if !overlapping {
                 outputs[index].physical_escape = None;
@@ -578,38 +644,42 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
                 // Clearance ends the obligation. A newly accepted target can
                 // resume through the ordinary movement path on this same tick.
             } else {
-                // Future destinations may use only bodies known to this unit. The
-                // overlap at its present position remains a physical fact.
-                let target_occupied = |target: Vec2| {
-                    let mut occupied = false;
-                    grid.visit_within(&points, target, unit.radius + max_radius, |other| {
-                        occupied |= other != index
-                            && known(units[other].unit_id)
-                            && target.distance(units[other].position)
-                                < unit.radius + units[other].radius - 1.0e-5;
-                    });
-                    occupied
+                // Future destinations may use only bodies known to this unit. The check
+                // of the retained target is a metered query of the known bodies, with
+                // the tolerance of a ring candidate and no claim.
+                let kind = super::RecoveryKind::Physical;
+                let scan = super::recovery::EscapeScan {
+                    bounds: frame.bounds,
+                    origin: unit.position,
+                    radius: unit.radius,
+                    slots: None,
+                    pool: None,
+                    bound: None,
+                    verify: true,
+                    pool_only: false,
                 };
-                let escape = unit
-                    .physical_escape
-                    .as_ref()
-                    .and_then(|state| state.target)
-                    .filter(|target| !target_occupied(*target))
-                    .or_else(|| {
-                        recovery.search(
-                            super::RecoveryKind::Physical,
-                            &super::recovery::EscapeScan {
-                                bounds: frame.bounds,
-                                origin: unit.position,
-                                radius: unit.radius,
-                                slots: None,
-                                pool: None,
-                                bound: None,
-                                verify: true,
-                            },
-                            &units,
-                        )
-                    });
+                let retained = unit.physical_escape.as_ref().and_then(|state| state.target);
+                let checked = retained
+                    .map(|target| recovery.check(kind, &scan, target, false, false, &units));
+                #[cfg(test)]
+                if let (Some(target), Some(result)) = (retained, checked) {
+                    super::recovery_oracle::Oracle {
+                        units: &units,
+                        points: &points,
+                        grid: &grid,
+                        max_radius,
+                        index,
+                        known: &known,
+                    }
+                    .compare_check(result, target, 1.0e-5, false);
+                }
+                if checked == Some(super::recovery::Check::Pending) {
+                    // The check did not end: the row holds its position and its target.
+                    continue;
+                }
+                let escape = retained
+                    .filter(|_| checked == Some(super::recovery::Check::Clear))
+                    .or_else(|| recovery.search(kind, &scan, &units));
                 let Some(escape) = escape else {
                     outputs[index].physical_escape = Some(PhysicalEscape { target: None });
                     units[index].physical_escape = outputs[index].physical_escape.clone();
@@ -631,7 +701,8 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
                     .y
                     .clamp(unit.radius, (frame.bounds.y - unit.radius).max(unit.radius));
 
-                let still_overlapping = body_overlaps_position(
+                // The read at the new position.
+                let still_overlapping = overlap_read(
                     position,
                     index,
                     unit.radius,
@@ -639,6 +710,7 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
                     &points,
                     &grid,
                     max_radius,
+                    recovery.counters,
                 );
                 outputs[index].position = position;
                 outputs[index].physical_escape = still_overlapping.then_some(PhysicalEscape {
@@ -703,14 +775,17 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
             let Some(_pool) = frame.pools.get(&progress.pool_id) else {
                 continue;
             };
-            let occupied = grid
-                .within_unsorted(&points, unit.position, unit.radius + max_radius)
-                .into_iter()
-                .any(|other_index| {
-                    other_index != index
-                        && unit.position.distance(units[other_index].position)
-                            < unit.radius + units[other_index].radius - 1.0e-5
-                });
+            // The exit read: the overlap at the present position is a physical fact.
+            let occupied = overlap_read(
+                unit.position,
+                index,
+                unit.radius,
+                &units,
+                &points,
+                &grid,
+                max_radius,
+                recovery.counters,
+            );
             if !occupied {
                 if owns_destination {
                     update_target_claims(&mut target_claims, unit.owner_slot, unit.target, None);
@@ -736,16 +811,6 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
                 units[index].progress = None;
                 continue;
             }
-            let is_free = |slot: Vec2| {
-                grid.within_unsorted(&points, slot, unit.radius + max_radius)
-                    .into_iter()
-                    .all(|other_index| {
-                        other_index == index
-                            || !known(units[other_index].unit_id)
-                            || slot.distance(units[other_index].position)
-                                >= unit.radius + units[other_index].radius
-                    })
-            };
             let old_slot_key = (
                 progress.pool_id,
                 progress.slot.x.to_bits(),
@@ -763,52 +828,63 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
                             }
                         })
                 });
-            let target_is_blocked_by_stationary = unit.target.is_some_and(|target| {
-                grid.within_unsorted(&points, target, unit.radius + max_radius)
-                    .into_iter()
-                    .any(|other_index| {
-                        if other_index == index || !known(units[other_index].unit_id) {
-                            return false;
-                        }
-                        let other = &units[other_index];
-                        let stationary = other.target.is_none()
-                            || other
-                                .progress
-                                .as_ref()
-                                .is_some_and(|state| state.activity == MovementActivity::Resting);
-                        stationary
-                            && target.distance(other.position) < unit.radius + other.radius - 1.0e-5
-                    })
-            });
-            let retained_escape = unit.target.filter(|slot| {
-                let key = (progress.pool_id, slot.x.to_bits(), slot.y.to_bits());
-                !target_is_claimed_by_other
-                    && !target_is_blocked_by_stationary
-                    && is_free(*slot)
-                    && (!assigned_slots.contains(&key) || key == old_slot_key)
-            });
             let kind = super::RecoveryKind::Group(progress.pool_id);
-            let escape = retained_escape.or_else(|| {
-                // The pool slot search and the ring scan run as one metered job; the job
-                // chooses the nearer point as the base did.
-                let pool = pool_indexes.get(&progress.pool_id);
-                let point = recovery.search(
-                    kind,
-                    &super::recovery::EscapeScan {
-                        bounds: frame.bounds,
-                        origin: unit.position,
-                        radius: unit.radius,
-                        slots: Some((progress.pool_id, &assigned_slots)),
-                        pool: pool.map(|index| super::recovery::PoolSearch {
-                            index,
-                            unit_id: unit.unit_id,
-                            allowed: Some(old_slot_key),
-                        }),
-                        bound: None,
-                        verify: true,
-                    },
-                    &units,
+            // The pool slot search and the ring scan run as one metered job; the job
+            // chooses the nearer point as the base did.
+            let scan = super::recovery::EscapeScan {
+                bounds: frame.bounds,
+                origin: unit.position,
+                radius: unit.radius,
+                slots: Some((progress.pool_id, &assigned_slots)),
+                pool: pool_indexes.get(&progress.pool_id).map(|index| {
+                    super::recovery::PoolSearch {
+                        index,
+                        unit_id: unit.unit_id,
+                        allowed: Some(old_slot_key),
+                        skip: None,
+                    }
+                }),
+                bound: None,
+                verify: true,
+                pool_only: false,
+            };
+            // The check of the retained target is a metered query of the known bodies
+            // with the tolerance of a pool slot, and the claim check of a slot: no claim
+            // but the own one. A known body at rest on the target fails this check, so
+            // no other test of resting bodies is needed.
+            let retained = unit.target.filter(|_| !target_is_claimed_by_other);
+            let checked =
+                retained.map(|target| recovery.check(kind, &scan, target, true, false, &units));
+            #[cfg(test)]
+            if let (Some(target), Some(result)) = (retained, checked) {
+                super::recovery_oracle::Oracle {
+                    units: &units,
+                    points: &points,
+                    grid: &grid,
+                    max_radius,
+                    index,
+                    known: &known,
+                }
+                .compare_check(
+                    result,
+                    target,
+                    0.0,
+                    assigned_slots.contains(&(
+                        progress.pool_id,
+                        target.x.to_bits(),
+                        target.y.to_bits(),
+                    )) && (progress.pool_id, target.x.to_bits(), target.y.to_bits())
+                        != old_slot_key,
                 );
+            }
+            if checked == Some(super::recovery::Check::Pending) {
+                // The check did not end: the row holds its position and its target.
+                continue;
+            }
+            let retained_escape =
+                retained.filter(|_| checked == Some(super::recovery::Check::Clear));
+            let escape = retained_escape.or_else(|| {
+                let point = recovery.search(kind, &scan, &units);
                 // An unfinished job proves no choice yet.
                 point.filter(|_| !recovery.pending())
             });
@@ -855,7 +931,26 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
                 .y
                 .clamp(unit.radius, (frame.bounds.y - unit.radius).max(unit.radius));
 
-            let reached = position == escape && is_free(escape);
+            // A point at the slot tolerance. The retained check proved it; a search result
+            // can be a ring point, which has the ring tolerance, so it needs a query. A
+            // query that the allowance cannot pay does not report the point as clear:
+            // the row keeps its target and ends at its next exit read.
+            let free = position == escape
+                && (retained_escape.is_some()
+                    || recovery.peek(escape, unit.radius, 0.0, &units) == Some(true));
+            #[cfg(test)]
+            if position == escape {
+                super::recovery_oracle::Oracle {
+                    units: &units,
+                    points: &points,
+                    grid: &grid,
+                    max_radius,
+                    index,
+                    known: &known,
+                }
+                .compare_reached(free, escape, 0.0, recovery.allowance);
+            }
+            let reached = free;
             if owns_destination {
                 update_target_claims(
                     &mut target_claims,
@@ -1728,44 +1823,63 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
                     progress.slot.x.to_bits(),
                     progress.slot.y.to_bits(),
                 );
-                let spare_work = std::cell::Cell::new(0usize);
+                // The spare-slot search is a metered, resumable job over the known bodies
+                // (the pool stage of the escape search). In claim exchange mode a body of
+                // another owner counts only at rest and in contact range of this owner,
+                // as for a route: the search ignores the soft bodies of the view.
+                let kind = super::RecoveryKind::Spare(progress.pool_id);
+                // A search that continues keeps its origin (`spare_origin`).
+                let spare_origin = recovery.spare_origin(kind, position, unit.radius);
                 let spare = pool_indexes.get(&progress.pool_id).and_then(|pool_index| {
-                    pool_index.nearest_free(
-                        unit.unit_id,
-                        position,
-                        progress.pool_id,
-                        None,
-                        &assigned_slots,
-                        unit.radius,
-                        |slot| {
-                            let key = (progress.pool_id, slot.x.to_bits(), slot.y.to_bits());
-                            key != old_slot_key
-                                && grid
-                                    .within_unsorted(&points, slot, unit.radius + max_radius)
-                                    .into_iter()
-                                    .all(|other_index| {
-                                        other_index == index
-                                            || !known(units[other_index].unit_id)
-                                            // In exchange mode a body of another owner
-                                            // counts only at rest and in contact range of
-                                            // this owner, as for a route.
-                                            || (exchanges_claims
-                                                && units_at_start[other_index].0
-                                                    != unit.owner_slot
-                                                && !(stationary_at_start[other_index]
-                                                    && contact_witness[other_index]
-                                                        .binary_search(&unit.owner_slot)
-                                                        .is_ok()))
-                                            || slot.distance(units[other_index].position)
-                                                >= unit.radius + units[other_index].radius
-                                    })
+                    recovery.search(
+                        kind,
+                        &super::recovery::EscapeScan {
+                            bounds: frame.bounds,
+                            origin: spare_origin,
+                            radius: unit.radius,
+                            slots: Some((progress.pool_id, &assigned_slots)),
+                            pool: Some(super::recovery::PoolSearch {
+                                index: pool_index,
+                                unit_id: unit.unit_id,
+                                allowed: None,
+                                skip: Some(old_slot_key),
+                            }),
+                            bound: None,
+                            verify: true,
+                            pool_only: true,
                         },
-                        &spare_work,
+                        &units,
                     )
                 });
-                recovery_counters.spare_slot_work += spare_work.get() as u64;
-                recovery_counters.charge(unit.owner_slot, spare_work.get(), spare_work.get());
-                if let Some(spare) = spare {
+                #[cfg(test)]
+                if !recovery.pending()
+                    && recovery.fresh(kind)
+                    && let Some(pool_index) = pool_indexes.get(&progress.pool_id)
+                {
+                    super::recovery_oracle::Oracle {
+                        units: &units,
+                        points: &points,
+                        grid: &grid,
+                        max_radius,
+                        index,
+                        known: &known,
+                    }
+                    .compare_spare(
+                        spare,
+                        pool_index,
+                        spare_origin,
+                        old_slot_key,
+                        &assigned_slots,
+                        exchanges_claims.then_some((
+                            stationary_at_start.as_slice(),
+                            contact_witness.as_slice(),
+                        )),
+                    );
+                }
+                if recovery.pending() {
+                    // No allowance, or the search did not end: the mover keeps its stall
+                    // state and its job. The job ages, so service takes turns.
+                } else if let Some(spare) = spare {
                     if owns_destination
                         && remove_pool_slot_claim(
                             &mut slot_claim_counts,
@@ -1936,7 +2050,8 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
     }
     recovery_counters.jobs = next_recovery.len() as u64;
     recovery_counters.retained_bytes = super::recovery::retained_bytes(next_recovery.len());
-    recovery_counters.frame_work += recovery_world.frame_work();
+    recovery_counters.add_view_work(recovery_world.view_work());
+    recovery_counters.add_physical_work(recovery_world.contact_work() as usize);
     recovery_counters.phase_bytes = recovery_counters
         .phase_bytes
         .max(recovery_world.peak_bytes() + assigned_slots.bytes());
@@ -1985,6 +2100,33 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
             .map(|index| resolved_ties[index].1);
     }
     outputs
+}
+
+/// One neighbourhood read of the base grid (design `2026-11-19-recovery-actual-work`
+/// section 7, class P): true when a body of the frame overlaps a disc of `radius` at
+/// `position`. It reads hidden bodies: an overlap is a physical fact. It is charged to no
+/// owner and it is counted.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the read takes the shared frame indexes and the counters"
+)]
+fn overlap_read(
+    position: Vec2,
+    self_index: usize,
+    radius: f32,
+    units: &[MovementFrameUnit],
+    points: &[crate::grid::GridPoint],
+    grid: &crate::grid::UniformGrid,
+    max_radius: f32,
+    counters: &mut super::recovery::RecoveryCounters,
+) -> bool {
+    let mut overlapping = false;
+    let (cells, tested) = grid.visit_within(points, position, radius + max_radius, |other| {
+        overlapping |= other != self_index
+            && position.distance(units[other].position) < radius + units[other].radius - 1.0e-5;
+    });
+    counters.physical_read(cells, tested);
+    overlapping
 }
 
 /// These loops read fixed initial body positions. All effects require distance

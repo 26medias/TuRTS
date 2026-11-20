@@ -126,6 +126,12 @@ pub struct NavigationDiagnostics {
     pub recovery_relaxed_commits_this_tick: u64,
     pub recovery_pool_work_this_tick: u64,
     pub recovery_spare_slot_work_this_tick: u64,
+    /// Recovery work that no owner allowance pays (design 2026-11-19-recovery-actual-work
+    /// section 7): the neighbourhood reads of the base grid, their cells and bodies, and
+    /// the owner view builds. Sums of all solver passes in the tick.
+    pub recovery_physical_reads_this_tick: u64,
+    pub recovery_physical_work_this_tick: u64,
+    pub recovery_view_work_this_tick: u64,
     pub recovery_jobs: u64,
     pub recovery_max_age: u64,
     pub recovery_retained_bytes: u64,
@@ -2501,6 +2507,9 @@ impl TerrainNavigation {
         self.diagnostics.recovery_relaxed_commits_this_tick = recovery.relaxed_commits;
         self.diagnostics.recovery_pool_work_this_tick = recovery.pool_work;
         self.diagnostics.recovery_spare_slot_work_this_tick = recovery.spare_slot_work;
+        self.diagnostics.recovery_physical_reads_this_tick = recovery.physical_reads;
+        self.diagnostics.recovery_physical_work_this_tick = recovery.physical_work;
+        self.diagnostics.recovery_view_work_this_tick = recovery.view_work;
         self.diagnostics.recovery_jobs = recovery.jobs;
         self.diagnostics.recovery_max_age = u64::from(recovery.max_age);
         self.diagnostics.recovery_retained_bytes = recovery.retained_bytes as u64;

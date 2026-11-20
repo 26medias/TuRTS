@@ -954,9 +954,13 @@ fn step_frame_rejects_fully_occupied_spares_without_pool_wide_stalled_scans() {
         units,
         pools: BTreeMap::from([(9, pool)]),
     };
-    super::POOL_SLOT_CANDIDATE_CHECKS.with(|checks| checks.set(0));
-    let output = step_frame(&frame, 0.05);
-    let inspected = super::POOL_SLOT_CANDIDATE_CHECKS.with(std::cell::Cell::get);
+    // The stall spare-slot search is a metered job now: count its slot candidates in the
+    // recovery counters (the old counter reads only the test oracle `nearest_free`).
+    let mut budget = super::sweep::SweepBudget::new(0);
+    let output =
+        super::step_frame_with_sweep_budget(&frame, 0.05, &Default::default(), &mut budget);
+    let inspected = budget.recovery.candidates as usize;
+    assert!(budget.recovery.owner_work[0] <= super::recovery::OWNER_WORK);
     assert!(
         output[..count].iter().all(|row| row.failed_blocked),
         "stalled outputs: {:?}",

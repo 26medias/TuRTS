@@ -15,17 +15,22 @@
 //!   unchanged (a digest of cell digests). A changed region restarts the scan. After
 //!   `RELAX_AFTER` restarts, or when a proof costs more than half the slice, the scan runs
 //!   relaxed and commits only a point that is free now.
-//! - Frame work that is not charged to an owner: the owner view build, the contact query of
-//!   each actor and the tick-start overlap of each row. Hidden bodies change only this
-//!   frame work, never a charge, a result or a schedule.
+//! - Three classes of work (design `2026-11-19-recovery-actual-work` section 7). K: a read
+//!   of a known fact, metered by the row allowance; it includes the retained-target checks
+//!   and the stall spare-slot search. P: a neighbourhood read of the base grid (the schedule
+//!   read, the exit read, the read at a new position); a fixed count for each row. V: the
+//!   owner view build. Hidden bodies out of contact change only P and V work, never a
+//!   charge, a result or a schedule.
 
 use bevy_math::Vec2;
 use std::cell::{Cell, OnceCell, RefCell};
 use std::collections::BTreeMap;
+use std::ops::Range;
 
 use super::frame::MovementFrameUnit;
 use super::pool_index::MovementPoolIndex;
 use super::recovery_view::{ClaimSet, Contacts, KnownSet, KnownView, Meter, Probe, body_key};
+use super::route::CONTACT_GAP;
 use super::spread::{finite_hex_ring_limit, minimum_unseen_hex_radius, nearest_angle_order};
 use super::{RecoveryKind, RecoveryPoolCursor, RecoveryScan, RecoverySearch, RecoveryStage};
 
@@ -80,9 +85,19 @@ pub(crate) struct RecoveryCounters {
     pub(crate) max_age: u16,
     pub(crate) jobs: u64,
     pub(crate) pool_work: u64,
+    /// The metered work of the stall spare-slot jobs. It is inside `owner_work`.
     pub(crate) spare_slot_work: u64,
-    /// Work charged to no owner: view builds (one membership check for each row and
-    /// owner), contact queries and tick-start overlap queries (cells and bodies visited).
+    /// Metered point checks with no search: retained targets and own positions.
+    pub(crate) checks: u64,
+    /// Neighbourhood reads of the base grid (class P): the schedule read, the exit read
+    /// and the read at a new position.
+    pub(crate) physical_reads: u64,
+    /// The cells and bodies of the neighbourhood reads, and the contacts they gave.
+    pub(crate) physical_work: u64,
+    /// The view builds (class V): one membership check for each row and one insert for
+    /// each member, for each owner with a served row.
+    pub(crate) view_work: u64,
+    /// Work charged to no owner: `physical_work + view_work`.
     pub(crate) frame_work: u64,
     pub(crate) phase_bytes: usize,
     pub(crate) retained_bytes: usize,
@@ -120,6 +135,10 @@ impl RecoveryCounters {
         self.jobs = other.jobs;
         self.pool_work += other.pool_work;
         self.spare_slot_work += other.spare_slot_work;
+        self.checks += other.checks;
+        self.physical_reads += other.physical_reads;
+        self.physical_work += other.physical_work;
+        self.view_work += other.view_work;
         self.frame_work += other.frame_work;
         self.phase_bytes = self.phase_bytes.max(other.phase_bytes);
         self.retained_bytes = other.retained_bytes;
@@ -133,6 +152,22 @@ impl RecoveryCounters {
         self.owner_actual.iter().copied().max().unwrap_or(0)
     }
 
+    /// Counts one neighbourhood read of `cells` cells and `bodies` bodies.
+    pub(crate) fn physical_read(&mut self, cells: usize, bodies: usize) {
+        self.physical_reads += 1;
+        self.add_physical_work(cells + bodies);
+    }
+
+    pub(crate) fn add_physical_work(&mut self, work: usize) {
+        self.physical_work += work as u64;
+        self.frame_work += work as u64;
+    }
+
+    pub(crate) fn add_view_work(&mut self, work: u64) {
+        self.view_work += work;
+        self.frame_work += work;
+    }
+
     fn absorb(&mut self, meter: &Meter) {
         self.cells += meter.cells;
         self.bodies += meter.bodies;
@@ -144,6 +179,8 @@ impl RecoveryCounters {
 /// The work allowances of one tick, sorted by frame row.
 pub(super) struct RecoverySchedule {
     allowances: Vec<(usize, usize)>,
+    /// The rows whose allowance pays point checks only (the check floor), sorted.
+    check_only: Vec<usize>,
 }
 
 impl RecoverySchedule {
@@ -151,6 +188,11 @@ impl RecoverySchedule {
         self.allowances
             .binary_search_by_key(&row, |entry| entry.0)
             .map_or(0, |at| self.allowances[at].1)
+    }
+
+    /// True when the allowance of `row` is the check floor: it starts no search.
+    pub(super) fn check_only(&self, row: usize) -> bool {
+        self.check_only.binary_search(&row).is_ok()
     }
 }
 
@@ -167,12 +209,18 @@ pub(super) struct ScheduleRow {
     pub(super) overlapping: bool,
     pub(super) position: Vec2,
     pub(super) radius: f32,
+    /// True for a stalled group mover that may run the spare-slot search in this tick.
+    /// Blocked rows are served before spare rows in both tiers.
+    pub(super) spare: bool,
+    /// True when the row has a retained escape target: its check needs `MIN_SLICE` at
+    /// most in the common case, and the row must not stop on the way to its target.
+    pub(super) retained: bool,
 }
 
 fn service_order(left: &ScheduleRow, right: &ScheduleRow) -> std::cmp::Ordering {
-    right
-        .overlapping
-        .cmp(&left.overlapping)
+    left.spare
+        .cmp(&right.spare)
+        .then_with(|| right.overlapping.cmp(&left.overlapping))
         .then_with(|| right.age.cmp(&left.age))
         .then_with(|| left.position.x.total_cmp(&right.position.x))
         .then_with(|| left.position.y.total_cmp(&right.position.y))
@@ -204,6 +252,13 @@ fn share(batch: &[ScheduleRow], credit: usize, tick: u32, out: &mut Vec<(usize, 
 /// order, from half the budget; a first batch that does not fit shares that half. The
 /// oldest batch of jobs with a scan shares the rest. With no such job, the served fresh
 /// jobs share the rest too. The allowances of one owner sum to at most `OWNER_WORK`.
+///
+/// The floor: a row that gets no slice above gets `MIN_SLICE` from at most half the rest,
+/// in service order, when it has a retained target or is a spare row. For a row with a
+/// retained target the floor pays point checks only, so a row on the way to its escape
+/// target does not stop while other rows search, and a failed check waits for a search
+/// slice as before. For a spare row the floor is a search slice: most spare searches end
+/// in it. A batch that does not fit takes turns by tick, as `share`.
 pub(super) fn plan(
     mut rows: Vec<ScheduleRow>,
     tick: u32,
@@ -216,29 +271,58 @@ pub(super) fn plan(
             .then_with(|| service_order(left, right))
     });
     let mut allowances = Vec::with_capacity(rows.len());
+    let mut check_only = Vec::new();
     let mut served = Vec::new();
+    let mut waiting: Vec<ScheduleRow> = Vec::new();
+    let mut floor = Vec::new();
     for owner_rows in rows.chunk_by(|left, right| left.owner == right.owner) {
         let split = owner_rows.partition_point(|row| !row.has_scan);
         let (fresh, continuing) = owner_rows.split_at(split);
         served.clear();
         let mut fresh_spent = 0usize;
+        // The fresh rows that the loop below gave a slice or a turn.
+        let mut covered = 0usize;
         for batch in fresh.chunk_by(|left, right| service_order(left, right).is_eq()) {
             let cost = FRESH_SLICE * batch.len();
             if fresh_spent + cost <= OWNER_WORK / 2 {
                 fresh_spent += cost;
+                covered += batch.len();
                 served.extend(batch.iter().map(|row| (row.row, FRESH_SLICE)));
             } else {
                 if served.is_empty() {
                     fresh_spent += share(batch, OWNER_WORK / 2, tick, &mut served);
+                    covered += batch.len();
                 }
                 break;
             }
         }
-        let rest = OWNER_WORK.saturating_sub(fresh_spent);
+        let mut rest = OWNER_WORK.saturating_sub(fresh_spent);
         let oldest = continuing
             .chunk_by(|left, right| service_order(left, right).is_eq())
             .next()
             .unwrap_or(&[]);
+        waiting.clear();
+        waiting.extend(
+            fresh[covered..]
+                .iter()
+                .chain(&continuing[oldest.len()..])
+                .filter(|row| row.retained || row.spare),
+        );
+        floor.clear();
+        let mut credit = rest / 2;
+        for batch in waiting.chunk_by(|left, right| service_order(left, right).is_eq()) {
+            if credit < MIN_SLICE {
+                break;
+            }
+            let from = floor.len();
+            credit -= share(batch, credit.min(batch.len() * MIN_SLICE), tick, &mut floor);
+            // The rows of a batch are all spare rows or none is (the service key).
+            if !batch[0].spare {
+                check_only.extend(floor[from..].iter().map(|entry| entry.0));
+            }
+        }
+        rest -= floor.len() * MIN_SLICE;
+        allowances.append(&mut floor);
         let fresh_extra = if oldest.is_empty() && !served.is_empty() {
             rest / served.len()
         } else {
@@ -252,11 +336,17 @@ pub(super) fn plan(
         share(oldest, rest, tick, &mut allowances);
     }
     allowances.sort_unstable();
+    check_only.sort_unstable();
     counters.phase_bytes = counters.phase_bytes.max(
-        rows.capacity() * std::mem::size_of::<ScheduleRow>()
-            + (allowances.capacity() + served.capacity()) * std::mem::size_of::<(usize, usize)>(),
+        (rows.capacity() + waiting.capacity()) * std::mem::size_of::<ScheduleRow>()
+            + (allowances.capacity() + served.capacity() + floor.capacity())
+                * std::mem::size_of::<(usize, usize)>()
+            + check_only.capacity() * std::mem::size_of::<usize>(),
     );
-    RecoverySchedule { allowances }
+    RecoverySchedule {
+        allowances,
+        check_only,
+    }
 }
 
 pub(super) enum SliceOutcome {
@@ -266,6 +356,16 @@ pub(super) enum SliceOutcome {
     Paused(RecoveryScan),
 }
 
+/// The result of a metered point check with no search.
+pub(super) enum PointCheck {
+    Clear,
+    Blocked,
+    /// The slice is spent; keep this check.
+    Paused(RecoveryScan),
+    /// The slice is spent and the check keeps no cursor.
+    Unpaid,
+}
+
 /// The pool slot search of a group escape.
 #[derive(Clone, Copy)]
 pub(super) struct PoolSearch<'a> {
@@ -273,6 +373,8 @@ pub(super) struct PoolSearch<'a> {
     pub(super) unit_id: u32,
     /// The claim key that this mover may keep.
     pub(super) allowed: Option<(u64, u32, u32)>,
+    /// A slot that the search never takes (the slot that a stalled mover leaves).
+    pub(super) skip: Option<(u64, u32, u32)>,
 }
 
 /// One escape search over the current movement state.
@@ -288,6 +390,9 @@ pub(super) struct EscapeScan<'a> {
     pub(super) bound: Option<Vec2>,
     /// Test hook. Production is always `true`.
     pub(super) verify: bool,
+    /// True for the stall spare-slot search: the pool stage only, and soft bodies are no
+    /// obstacle (`KnownSet::ignore_soft`).
+    pub(super) pool_only: bool,
 }
 
 /// One step of a slice.
@@ -318,6 +423,22 @@ impl EscapeScan<'_> {
             && scan.origin.y.to_bits() == self.origin.y.to_bits()
             && scan.radius.to_bits() == self.radius.to_bits()
             && scan.pool.is_some() == self.pool.is_some()
+            && !scan.is_check()
+    }
+
+    /// True when `scan` is the stored check of `point` for this actor.
+    fn same_check(&self, scan: &RecoveryScan, point: Vec2, slot: bool) -> bool {
+        scan.is_check()
+            && scan.origin.x.to_bits() == self.origin.x.to_bits()
+            && scan.origin.y.to_bits() == self.origin.y.to_bits()
+            && scan.radius.to_bits() == self.radius.to_bits()
+            && matches!(
+                scan.stage,
+                RecoveryStage::Verify { point: stored, slot: stored_slot }
+                    if stored.x.to_bits() == point.x.to_bits()
+                        && stored.y.to_bits() == point.y.to_bits()
+                        && stored_slot == slot
+            )
     }
 
     fn fresh(&self, known: &KnownSet, invalidations: u8, relaxed: bool) -> RecoveryScan {
@@ -496,12 +617,12 @@ impl EscapeScan<'_> {
         }
     }
 
-    /// Restores the reserve of a probe that a slice resumes.
+    /// Restores the reserve of a slice that resumes: for its paused probe, or for the
+    /// region that it examined. The pool stage reads cells with no slot in them before it
+    /// starts the next slot, so it needs the reserve from its first unit.
     fn resume_query(&self, known: &KnownSet, state: &mut RecoveryScan, slice: &mut Slice) -> bool {
-        let Some(query) = state.query else {
-            return true;
-        };
-        self.reserve(known, state, query.point, slice)
+        let point = state.query.map_or(self.origin, |query| query.point);
+        self.reserve(known, state, point, slice)
     }
 
     /// The pool slot search. `None` when the slice paused.
@@ -586,7 +707,12 @@ impl EscapeScan<'_> {
                                 return None;
                             }
                             slice.counters.candidates += 1;
-                            if !self.claimed(point, pool.allowed, &mut slice.meter) {
+                            let skipped = pool.skip.is_some_and(|key| {
+                                self.slots.is_some_and(|(id, _)| {
+                                    key == (id, point.x.to_bits(), point.y.to_bits())
+                                })
+                            });
+                            if !skipped && !self.claimed(point, pool.allowed, &mut slice.meter) {
                                 state.query = Some(KnownSet::fresh_query(point));
                             }
                         } else if !slice.meter.step() {
@@ -787,18 +913,27 @@ impl EscapeScan<'_> {
         }
     }
 
-    /// Checks a relaxed point against the current state. `None` when the slice paused.
+    /// Checks a point against the current state: its claim (a slot keeps the allowed
+    /// claim) and the known bodies, with the tolerance of a slot or of a ring candidate.
+    /// `None` when the slice paused. `reserve` keeps the local proof of a pause.
     fn verify_point(
         &self,
         known: &KnownSet,
         state: &mut RecoveryScan,
         point: Vec2,
         slot: bool,
+        reserve: bool,
         slice: &mut Slice,
     ) -> Option<bool> {
         if state.query.is_none() {
-            if !self.reserve(known, state, point, slice) || slice.meter.left < slice.meter.floor + 2
-            {
+            if reserve {
+                if !self.reserve(known, state, point, slice) {
+                    return None;
+                }
+            } else {
+                slice.meter.floor = 0;
+            }
+            if slice.meter.left < slice.meter.floor + 2 {
                 return None;
             }
             let allowed = if slot {
@@ -828,8 +963,13 @@ impl EscapeScan<'_> {
                     state.stage = RecoveryStage::Ring;
                 }
                 RecoveryStage::Ring => {
-                    let Some(ring) = self.ring_stage(known, state, slice) else {
-                        return Step::Pause;
+                    let ring = if self.pool_only {
+                        None
+                    } else {
+                        let Some(ring) = self.ring_stage(known, state, slice) else {
+                            return Step::Pause;
+                        };
+                        ring
                     };
                     let chosen = self.choose(state, ring);
                     match chosen {
@@ -840,7 +980,7 @@ impl EscapeScan<'_> {
                     }
                 }
                 RecoveryStage::Verify { point, slot } => {
-                    return match self.verify_point(known, state, point, slot, slice) {
+                    return match self.verify_point(known, state, point, slot, true, slice) {
                         None => Step::Pause,
                         Some(true) => {
                             slice.counters.relaxed_commits += 1;
@@ -854,6 +994,7 @@ impl EscapeScan<'_> {
     }
 
     /// Runs one slice of at most `allowance` metered work.
+    #[cfg(test)]
     pub(super) fn run(
         &self,
         known: &KnownSet,
@@ -862,6 +1003,121 @@ impl EscapeScan<'_> {
         owner: u8,
         counters: &mut RecoveryCounters,
     ) -> SliceOutcome {
+        self.run_metered(known, previous, allowance, owner, counters)
+            .0
+    }
+
+    /// The check state of `point`: no ring, no proof of a region, one point to verify.
+    fn check_state(&self, known: &KnownSet, point: Vec2, slot: bool) -> RecoveryScan {
+        RecoveryScan {
+            origin: self.origin,
+            radius: self.radius,
+            ring: 0,
+            side: 0,
+            step: 0,
+            best: None,
+            examined: 0.0,
+            digest: [0; 3],
+            invalidations: 0,
+            relaxed: true,
+            cell: known.cell_bits(),
+            stage: RecoveryStage::Verify { point, slot },
+            pool: None,
+            query: None,
+            spanned: true,
+        }
+    }
+
+    /// Runs the metered check of one point with no search (a retained target, or the own
+    /// position): the predicate of `verify_point`. `previous` is the stored check of this
+    /// point; it resumes only with its local proof. A `resumable` check keeps the reserve
+    /// of that proof and returns `Paused` when the slice is spent; another check returns
+    /// `Unpaid`. Returns the result and the work used. A partial query is never `Clear`.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "one point check needs the actor, the point, the slice and the accounting"
+    )]
+    pub(super) fn check_point(
+        &self,
+        known: &KnownSet,
+        previous: Option<RecoveryScan>,
+        point: Vec2,
+        slot: bool,
+        allowance: usize,
+        resumable: bool,
+        owner: u8,
+        counters: &mut RecoveryCounters,
+    ) -> (PointCheck, usize) {
+        let mut slice = Slice {
+            meter: Meter::new(allowance),
+            allowance,
+            started: 0,
+            counters,
+        };
+        slice.counters.checks += 1;
+        let mut state = previous
+            .filter(|scan| resumable && self.same_check(scan, point, slot))
+            .unwrap_or_else(|| self.check_state(known, point, slot));
+        if state.cell != known.cell_bits() {
+            // The view cell size changed: the cursor is void.
+            state.cell = known.cell_bits();
+            state.query = None;
+        }
+        let mut result = None;
+        if let Some(query) = state.query {
+            match self.local_digest(known, query.point, &mut slice.meter) {
+                // The proof holds: restore the reserve of the next pause. A slice that
+                // cannot do more keeps the cursor as it is.
+                Some(digest) if digest == query.digest => {
+                    if !self.reserve(known, &mut state, query.point, &mut slice) {
+                        result = Some(PointCheck::Paused(state));
+                    }
+                }
+                Some(_) => state.query = None,
+                // The slice cannot pay the proof: keep the cursor as it is.
+                None => result = Some(PointCheck::Paused(state)),
+            }
+        }
+        let result = result.unwrap_or_else(|| {
+            match self.verify_point(known, &mut state, point, slot, resumable, &mut slice) {
+                Some(true) => PointCheck::Clear,
+                Some(false) => PointCheck::Blocked,
+                None if !resumable => PointCheck::Unpaid,
+                None => {
+                    slice.meter.floor = 0;
+                    if let Some(mut query) = state.query {
+                        match self.local_digest(known, query.point, &mut slice.meter) {
+                            Some(digest) => {
+                                query.digest = digest;
+                                state.query = Some(query);
+                            }
+                            None => {
+                                debug_assert!(false, "the local reserve covers the pause digest");
+                                state.query = None;
+                            }
+                        }
+                    }
+                    PointCheck::Paused(state)
+                }
+            }
+        });
+        let Slice {
+            meter, counters, ..
+        } = slice;
+        counters.absorb(&meter);
+        counters.charge(owner, meter.used, meter.used);
+        (result, meter.used)
+    }
+
+    /// Runs one slice of at most `allowance` metered work. Returns the work used too.
+    pub(super) fn run_metered(
+        &self,
+        known: &KnownSet,
+        previous: Option<RecoveryScan>,
+        allowance: usize,
+        owner: u8,
+        counters: &mut RecoveryCounters,
+    ) -> (SliceOutcome, usize) {
         let mut slice = Slice {
             meter: Meter::new(allowance),
             allowance,
@@ -962,7 +1218,7 @@ impl EscapeScan<'_> {
         self.finish(owner, slice, outcome)
     }
 
-    fn finish(&self, owner: u8, slice: Slice, outcome: SliceOutcome) -> SliceOutcome {
+    fn finish(&self, owner: u8, slice: Slice, outcome: SliceOutcome) -> (SliceOutcome, usize) {
         let Slice {
             meter, counters, ..
         } = slice;
@@ -972,42 +1228,113 @@ impl EscapeScan<'_> {
         }
         counters.absorb(&meter);
         counters.charge(owner, meter.used, meter.used);
-        outcome
+        (outcome, meter.used)
+    }
+}
+
+/// The claim exchange rule of a soft body (design section 7, B2): the tick-start facts
+/// that `route::Planner` reads.
+#[derive(Clone, Copy)]
+pub(super) struct SoftRule<'f> {
+    /// True for each solver row that was at rest at tick start.
+    pub(super) stationary: &'f [bool],
+    /// For each resting row: the other owners with a body in contact range of it at tick
+    /// start (sorted).
+    pub(super) witness: &'f [Vec<u8>],
+}
+
+/// The schedule read of one row: its contacts and its tick-start overlap.
+struct RowRead {
+    row: usize,
+    contacts: Range<u32>,
+    overlapping: bool,
+}
+
+/// The reads of the schedule rows, in row order.
+#[derive(Default)]
+pub(super) struct ScheduleReads {
+    rows: Vec<RowRead>,
+    contact_rows: Vec<u32>,
+}
+
+impl ScheduleReads {
+    /// Starts the read of solver row `row`. Rows come in increasing order.
+    pub(super) fn begin(&mut self, row: usize) {
+        debug_assert!(self.rows.last().is_none_or(|last| last.row < row));
+        let at = self.contact_rows.len() as u32;
+        self.rows.push(RowRead {
+            row,
+            contacts: at..at,
+            overlapping: false,
+        });
+    }
+
+    /// Adds a contact of the row of the last `begin`: a solver row in contact range that
+    /// the owner view does not hold.
+    pub(super) fn contact(&mut self, other: usize) {
+        self.contact_rows.push(other as u32);
+        if let Some(read) = self.rows.last_mut() {
+            read.contacts.end = self.contact_rows.len() as u32;
+        }
+    }
+
+    pub(super) fn overlap(&mut self, overlapping: bool) {
+        if let Some(read) = self.rows.last_mut() {
+            read.overlapping = overlapping;
+        }
+    }
+
+    fn find(&self, row: usize) -> Option<&RowRead> {
+        self.rows
+            .binary_search_by_key(&row, |read| read.row)
+            .ok()
+            .map(|at| &self.rows[at])
+    }
+
+    fn bytes(&self) -> usize {
+        self.rows.capacity() * std::mem::size_of::<RowRead>()
+            + self.contact_rows.capacity() * std::mem::size_of::<u32>()
     }
 }
 
 /// The known-body indexes of one solver pass, shared by all rows. Built on first use.
 pub(super) struct RecoveryWorld<'f> {
-    /// The rows at tick start: the contact rule of `known` reads them, by unit id.
-    start_units: &'f [MovementFrameUnit],
-    /// The tick-start position of each solver row (the solver sorts its rows).
-    start_positions: OnceCell<Vec<Vec2>>,
     visibility: Option<&'f dyn super::MovementVisibility>,
-    /// One view for each owner; one shared view (key `None`) without a visibility basis.
+    soft: Option<SoftRule<'f>>,
+    /// One view for each owner; one shared view (key `None`) with no visibility basis and
+    /// no claim exchange.
     views: RefCell<BTreeMap<Option<u8>, KnownView>>,
-    start_grid: OnceCell<(Vec<crate::grid::GridPoint>, crate::grid::UniformGrid, f32)>,
-    frame_work: Cell<u64>,
+    reads: OnceCell<ScheduleReads>,
+    view_work: Cell<u64>,
+    contact_work: Cell<u64>,
     peak_bytes: Cell<usize>,
 }
 
 impl<'f> RecoveryWorld<'f> {
     pub(super) fn new(
-        start_units: &'f [MovementFrameUnit],
         visibility: Option<&'f dyn super::MovementVisibility>,
+        soft: Option<SoftRule<'f>>,
     ) -> Self {
         Self {
-            start_units,
-            start_positions: OnceCell::new(),
             visibility,
+            soft,
             views: RefCell::new(BTreeMap::new()),
-            start_grid: OnceCell::new(),
-            frame_work: Cell::new(0),
+            reads: OnceCell::new(),
+            view_work: Cell::new(0),
+            contact_work: Cell::new(0),
             peak_bytes: Cell::new(0),
         }
     }
 
+    /// Stores the schedule reads of this pass (one time).
+    pub(super) fn set_reads(&self, reads: ScheduleReads) {
+        let stored = self.reads.set(reads).is_ok();
+        debug_assert!(stored, "one schedule for each pass");
+        self.note_bytes(0);
+    }
+
     fn view_key(&self, owner: u8) -> Option<u8> {
-        self.visibility.map(|_| owner)
+        (self.visibility.is_some() || self.soft.is_some()).then_some(owner)
     }
 
     /// True when `owner` may know solver row `row` without contact: its own body, or a
@@ -1019,30 +1346,29 @@ impl<'f> RecoveryWorld<'f> {
         })
     }
 
-    /// The tick-start position of solver row `row`, found by unit id as `known` does.
-    pub(super) fn start_position(&self, row: usize, units: &[MovementFrameUnit]) -> Vec2 {
-        self.start_positions(units)[row]
+    /// True when solver row `row` is a soft body for `owner`: in claim exchange mode, a
+    /// body of another owner that was not at rest at tick start, or that no body of
+    /// `owner` had in contact range then. The stall spare-slot search ignores it.
+    pub(super) fn soft(&self, owner: u8, row: usize, units: &[MovementFrameUnit]) -> bool {
+        self.soft.is_some_and(|rule| {
+            units[row].owner_slot != owner
+                && !(rule.stationary[row] && rule.witness[row].binary_search(&owner).is_ok())
+        })
     }
 
-    fn start_positions(&self, units: &[MovementFrameUnit]) -> &[Vec2] {
-        self.start_positions.get_or_init(|| {
-            let mut by_id: Vec<(u32, usize)> = self
-                .start_units
-                .iter()
-                .enumerate()
-                .map(|(index, unit)| (unit.unit_id, index))
-                .collect();
-            by_id.sort_unstable();
-            self.add_frame_work(by_id.len());
-            units
-                .iter()
-                .map(|unit| {
-                    by_id
-                        .binary_search_by_key(&unit.unit_id, |entry| entry.0)
-                        .map_or(unit.position, |at| self.start_units[by_id[at].1].position)
-                })
-                .collect()
-        })
+    /// True when `row` is a schedule row of this pass (it has a schedule read).
+    fn scheduled(&self, row: usize) -> bool {
+        self.reads
+            .get()
+            .is_some_and(|reads| reads.find(row).is_some())
+    }
+
+    /// True when the schedule read of `row` found an overlap at tick start.
+    fn start_overlap(&self, row: usize) -> bool {
+        self.reads
+            .get()
+            .and_then(|reads| reads.find(row))
+            .is_some_and(|read| read.overlapping)
     }
 
     /// Follows the move of frame row `row` in every view that holds it.
@@ -1061,81 +1387,77 @@ impl<'f> RecoveryWorld<'f> {
             .iter()
             .enumerate()
             .filter(|(row, _)| self.member(owner, *row, units))
-            .map(|(row, unit)| (row, unit.position, unit.radius))
+            .map(|(row, unit)| {
+                (
+                    row,
+                    unit.position,
+                    unit.radius,
+                    key.is_some() && self.soft(owner, row, units),
+                )
+            })
             .collect();
-        self.add_frame_work(units.len());
-        let view = KnownView::build(&members, units.len());
+        // One membership check for each row and one insert for each member.
+        self.view_work
+            .set(self.view_work.get() + (units.len() + members.len()) as u64);
+        let view = KnownView::build_soft(&members, units.len());
         self.views.borrow_mut().insert(key, view);
-        self.note_bytes(members.capacity() * std::mem::size_of::<(usize, Vec2, f32)>());
-    }
-
-    fn add_frame_work(&self, work: usize) {
-        self.frame_work.set(self.frame_work.get() + work as u64);
+        self.note_bytes(members.capacity() * std::mem::size_of::<(usize, Vec2, f32, bool)>());
     }
 
     fn note_bytes(&self, scratch: usize) {
         let views: usize = self.views.borrow().values().map(KnownView::bytes).sum();
-        let grid = self.start_grid.get().map_or(0, |(points, _, _)| {
-            points.capacity() * (std::mem::size_of::<crate::grid::GridPoint>() + 32)
-        });
+        let reads = self.reads.get().map_or(0, ScheduleReads::bytes);
         self.peak_bytes
-            .set(self.peak_bytes.get().max(views + grid + scratch));
+            .set(self.peak_bytes.get().max(views + reads + scratch));
     }
 
-    /// The bodies that the actor of row `row` touches at tick start and its owner view
-    /// does not hold (the contact rule of `known`). One physical query of frame work.
+    /// The contacts of the actor of row `row`, from its schedule read: the bodies in
+    /// contact range at tick start that its owner view does not hold (the contact rule of
+    /// `known`), at their positions now. `hard_only` leaves out the soft ones.
     fn contacts(
         &self,
         owner: u8,
         row: usize,
-        position: Vec2,
-        radius: f32,
         units: &[MovementFrameUnit],
+        hard_only: bool,
     ) -> Contacts {
         if self.visibility.is_none() {
             return Contacts::default();
         }
-        let starts = self.start_positions(units);
-        let (points, grid, max_radius) = self.start_grid.get_or_init(|| {
-            // Solver rows at their tick-start positions.
-            let points: Vec<_> = units
-                .iter()
-                .zip(starts)
-                .map(|(unit, &position)| crate::grid::GridPoint {
-                    id: unit.unit_id,
-                    position,
-                })
-                .collect();
-            let max_radius = units.iter().map(|unit| unit.radius).fold(0.0_f32, f32::max);
-            let grid = crate::grid::UniformGrid::new(&points, 2.0 * max_radius);
-            (points, grid, max_radius)
-        });
-        let views = self.views.borrow();
-        let view = views.get(&self.view_key(owner));
-        let mut bodies = Vec::new();
-        let (cells, tested) = grid.visit_within(
-            points,
-            position,
-            radius + max_radius + super::route::CONTACT_GAP,
-            |other| {
-                if other != row
-                    && !view.is_some_and(|view| view.contains(other))
-                    && position.distance(starts[other])
-                        <= radius + units[other].radius + super::route::CONTACT_GAP
-                {
-                    bodies.push((units[other].position, units[other].radius));
-                }
-            },
+        let Some((reads, read)) = self
+            .reads
+            .get()
+            .and_then(|reads| Some((reads, reads.find(row)?)))
+        else {
+            debug_assert!(
+                false,
+                "a known-body query needs the schedule read of its row"
+            );
+            return Contacts::default();
+        };
+        let rows = &reads.contact_rows[read.contacts.start as usize..read.contacts.end as usize];
+        if rows.is_empty() {
+            return Contacts::default();
+        }
+        self.contact_work
+            .set(self.contact_work.get() + rows.len() as u64);
+        let contacts = Contacts::new(
+            rows.iter()
+                .map(|&other| other as usize)
+                .filter(|&other| !(hard_only && self.soft(owner, other, units)))
+                .map(|other| (units[other].position, units[other].radius)),
         );
-        drop(views);
-        self.add_frame_work(cells + tested);
-        let contacts = Contacts::new(bodies);
         self.note_bytes(contacts.bytes());
         contacts
     }
 
-    pub(super) fn frame_work(&self) -> u64 {
-        self.frame_work.get()
+    pub(super) fn view_work(&self) -> u64 {
+        self.view_work.get()
+    }
+
+    /// The contacts that the rows read from their schedule reads (class P).
+    pub(super) fn contact_work(&self) -> u64 {
+        self.contact_work.get()
     }
 
     pub(super) fn peak_bytes(&self) -> usize {
@@ -1143,12 +1465,39 @@ impl<'f> RecoveryWorld<'f> {
     }
 }
 
+/// True when a body of the frame overlaps a disc of `radius` at `position`, and the contact
+/// rule of `known`: `(overlap, contact)` of solver row `other` for an actor at `position`.
+pub(super) fn touch(position: Vec2, radius: f32, other: &MovementFrameUnit) -> (bool, bool) {
+    let distance = position.distance(other.position);
+    let reach = radius + other.radius;
+    (distance < reach - 1.0e-5, distance <= reach + CONTACT_GAP)
+}
+
+/// The result of a metered point check of a row.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Check {
+    /// No known body and no claim blocks the point.
+    Clear,
+    Blocked,
+    /// The check did not end and keeps its place (or the row has no allowance): the row
+    /// holds its position for this tick.
+    Pending,
+    /// The slice could not pay a check that keeps no cursor: the stored job continues
+    /// without it. Never treat it as `Clear`.
+    Unpaid,
+}
+
 /// The recovery state of one frame row in one tick.
 pub(super) struct RowRecovery<'c, 'f> {
     pub(super) row: usize,
     pub(super) owner: u8,
+    /// The metered work that this row may still do in this tick.
     pub(super) allowance: usize,
+    /// True when the allowance pays point checks only (the check floor).
+    pub(super) check_only: bool,
     pub(super) previous: Option<RecoverySearch>,
+    /// True when a check of this tick ended or dropped the stored scan.
+    pub(super) consumed: bool,
     pub(super) next_jobs: &'c mut BTreeMap<usize, RecoverySearch>,
     pub(super) counters: &'c mut RecoveryCounters,
     pub(super) world: &'c RecoveryWorld<'f>,
@@ -1157,6 +1506,14 @@ pub(super) struct RowRecovery<'c, 'f> {
 impl RowRecovery<'_, '_> {
     fn same_kind(&self, kind: RecoveryKind) -> Option<RecoverySearch> {
         self.previous.filter(|job| job.kind == kind)
+    }
+
+    /// The scan that the job of this row still stores.
+    fn stored(&self, kind: RecoveryKind) -> Option<RecoveryScan> {
+        if self.consumed {
+            return None;
+        }
+        self.same_kind(kind).and_then(|job| job.scan)
     }
 
     fn keep(&mut self, kind: RecoveryKind, scan: Option<RecoveryScan>) {
@@ -1168,20 +1525,156 @@ impl RowRecovery<'_, '_> {
             .insert(self.row, RecoverySearch { kind, age, scan });
     }
 
-    /// True when this row may run a slice now. Otherwise it keeps the job one tick older.
+    /// Keeps the job one tick older: the row has no allowance for its next step.
+    fn wait(&mut self, kind: RecoveryKind) {
+        self.counters.waits += 1;
+        let scan = self.stored(kind);
+        self.keep(kind, scan);
+    }
+
+    /// True when this row may run a search slice now. Otherwise it keeps the job one tick
+    /// older.
     pub(super) fn may_search(&mut self, kind: RecoveryKind) -> bool {
-        if self.allowance > 0 {
+        if self.allowance > 0 && !self.check_only {
             return true;
         }
-        self.counters.waits += 1;
-        let scan = self.same_kind(kind).and_then(|job| job.scan);
-        self.keep(kind, scan);
+        self.wait(kind);
         false
     }
 
-    /// Runs one slice of `scan` for `kind` over the known bodies of this row. `None` when
-    /// the search found no point or did not end in this slice; an unfinished job stays for
-    /// the next tick.
+    /// Runs `run` over the known bodies of this row: its owner view and its contacts.
+    fn with_known<R>(
+        &mut self,
+        units: &[MovementFrameUnit],
+        ignore_soft: bool,
+        run: impl FnOnce(&KnownSet, &mut RecoveryCounters) -> R,
+    ) -> R {
+        self.world.ensure_view(self.owner, units);
+        let contacts = self
+            .world
+            .contacts(self.owner, self.row, units, ignore_soft);
+        let views = self.world.views.borrow();
+        let known = KnownSet {
+            view: &views[&self.world.view_key(self.owner)],
+            contacts: &contacts,
+            own_key: Some(body_key(units[self.row].position, units[self.row].radius)),
+            ignore_soft,
+        };
+        run(&known, self.counters)
+    }
+
+    /// The metered check of `point` for the actor of `scan`, with the predicate of
+    /// `EscapeScan::verify_point` (design section 7, B1).
+    ///
+    /// - With no stored scan, the check uses the whole allowance. When the slice is spent
+    ///   it stores its cursor as the job of the row (`Pending`) and resumes in a later
+    ///   tick.
+    /// - With a stored search scan, or the stored check of the own position, the check
+    ///   uses at most half the allowance and stores nothing (`Unpaid` when it does not
+    ///   end): the stored job continues without it.
+    /// - With no allowance the row waits (`Pending`). `idle` is for the check of the own
+    ///   position: a row with no job and no overlap at tick start then keeps no job.
+    pub(super) fn check(
+        &mut self,
+        kind: RecoveryKind,
+        scan: &EscapeScan,
+        point: Vec2,
+        slot: bool,
+        idle: bool,
+        units: &[MovementFrameUnit],
+    ) -> Check {
+        let stored = self.stored(kind);
+        let mine = stored.filter(|stored| scan.same_check(stored, point, slot));
+        let other = stored.is_some_and(|stored| {
+            mine.is_none() && (!stored.is_check() || scan.same_check(&stored, scan.origin, false))
+        });
+        if stored.is_some() && mine.is_none() && !other {
+            // The check of a point that the row left: drop it.
+            self.consumed = true;
+        }
+        if self.allowance == 0 {
+            if !self.world.scheduled(self.row) {
+                // The row became blocked in this tick: it has no schedule read and no
+                // allowance. Nothing is proved; the search that follows makes it wait.
+                return Check::Unpaid;
+            }
+            if !idle || self.previous.is_some() || self.world.start_overlap(self.row) {
+                self.wait(kind);
+            }
+            return Check::Pending;
+        }
+        let owner = self.owner;
+        if other {
+            let allowance = self.allowance / 2;
+            let (result, used) = self.with_known(units, false, |known, counters| {
+                scan.check_point(known, None, point, slot, allowance, false, owner, counters)
+            });
+            self.allowance -= used;
+            return match result {
+                PointCheck::Clear => Check::Clear,
+                PointCheck::Blocked => Check::Blocked,
+                PointCheck::Paused(_) | PointCheck::Unpaid => Check::Unpaid,
+            };
+        }
+        let allowance = self.allowance;
+        let (result, used) = self.with_known(units, false, |known, counters| {
+            scan.check_point(known, mine, point, slot, allowance, true, owner, counters)
+        });
+        self.allowance -= used;
+        match result {
+            PointCheck::Clear => {
+                self.consumed = true;
+                Check::Clear
+            }
+            PointCheck::Blocked => {
+                self.consumed = true;
+                Check::Blocked
+            }
+            PointCheck::Paused(state) => {
+                self.keep(kind, Some(state));
+                Check::Pending
+            }
+            PointCheck::Unpaid => {
+                debug_assert!(false, "a resumable check pauses");
+                self.wait(kind);
+                Check::Pending
+            }
+        }
+    }
+
+    /// A metered query of the known bodies at `point` with the rest of the allowance and
+    /// no cursor: `Some(true)` when none is within `radius + its radius - epsilon`.
+    /// `None` when the allowance cannot pay it; never treat that as clear.
+    pub(super) fn peek(
+        &mut self,
+        point: Vec2,
+        radius: f32,
+        epsilon: f32,
+        units: &[MovementFrameUnit],
+    ) -> Option<bool> {
+        if self.allowance == 0 {
+            return None;
+        }
+        let (allowance, owner) = (self.allowance, self.owner);
+        let (result, used) = self.with_known(units, false, |known, counters| {
+            let mut meter = Meter::new(allowance);
+            let result = known.probe(KnownSet::fresh_query(point), radius, epsilon, &mut meter);
+            counters.checks += 1;
+            counters.absorb(&meter);
+            counters.charge(owner, meter.used, meter.used);
+            (result, meter.used)
+        });
+        self.allowance -= used;
+        match result {
+            Probe::Clear => Some(true),
+            Probe::Blocked => Some(false),
+            Probe::Pending(_) => None,
+        }
+    }
+
+    /// Runs one slice of `scan` for `kind` over the known bodies of this row, with the
+    /// rest of its allowance. `None` when the search found no point or did not end in this
+    /// slice; an unfinished job stays for the next tick.
     pub(super) fn search(
         &mut self,
         kind: RecoveryKind,
@@ -1191,20 +1684,15 @@ impl RowRecovery<'_, '_> {
         if !self.may_search(kind) {
             return None;
         }
-        let previous = self.same_kind(kind).and_then(|job| job.scan);
-        let allowance = std::mem::take(&mut self.allowance);
-        self.world.ensure_view(self.owner, units);
-        let contacts = self
-            .world
-            .contacts(self.owner, self.row, scan.origin, scan.radius, units);
-        let views = self.world.views.borrow();
-        let known = KnownSet {
-            view: &views[&self.world.view_key(self.owner)],
-            contacts: &contacts,
-            own_key: Some(body_key(units[self.row].position, units[self.row].radius)),
-        };
-        let outcome = scan.run(&known, previous, allowance, self.owner, self.counters);
-        drop(views);
+        let previous = self.stored(kind).filter(|stored| !stored.is_check());
+        let (allowance, owner) = (self.allowance, self.owner);
+        let (outcome, used) = self.with_known(units, scan.pool_only, |known, counters| {
+            scan.run_metered(known, previous, allowance, owner, counters)
+        });
+        self.allowance -= used;
+        if matches!(kind, RecoveryKind::Spare(_)) {
+            self.counters.spare_slot_work += used as u64;
+        }
         match outcome {
             SliceOutcome::Done(point) => {
                 self.next_jobs.remove(&self.row);
@@ -1217,9 +1705,29 @@ impl RowRecovery<'_, '_> {
         }
     }
 
-    /// True when the last search of this row did not end.
+    /// The origin of the spare-slot search of a mover at `position`: the origin of its
+    /// stored search while the mover stays within its radius of it, so a stalled mover
+    /// that creeps does not start its search again in each tick.
+    pub(super) fn spare_origin(&self, kind: RecoveryKind, position: Vec2, radius: f32) -> Vec2 {
+        self.stored(kind)
+            .filter(|scan| {
+                !scan.is_check()
+                    && scan.radius.to_bits() == radius.to_bits()
+                    && scan.origin.distance(position) <= radius
+            })
+            .map_or(position, |scan| scan.origin)
+    }
+
+    /// True when the last search or check of this row did not end.
     pub(super) fn pending(&self) -> bool {
         self.next_jobs.contains_key(&self.row)
+    }
+
+    /// True when the job of the last tick stores no scan of `kind`: a search that ends in
+    /// this tick read only the state of this tick.
+    #[cfg(test)]
+    pub(super) fn fresh(&self, kind: RecoveryKind) -> bool {
+        self.same_kind(kind).is_none_or(|job| job.scan.is_none())
     }
 }
 
