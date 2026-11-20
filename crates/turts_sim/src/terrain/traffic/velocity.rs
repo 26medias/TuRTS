@@ -267,6 +267,185 @@ impl View {
         }
         true
     }
+
+    // As `query`, but expose stable frozen-view indices for the forecast.
+    fn query_indices(
+        &self,
+        p: DVec2,
+        r: f64,
+        charge: &mut dyn FnMut() -> bool,
+        admit: &mut dyn FnMut() -> bool,
+        mut visit: impl FnMut(usize),
+    ) -> bool {
+        if !admit() || !charge() {
+            return false;
+        }
+        let low = self.cell(p - DVec2::splat(r));
+        let high = self.cell(p + DVec2::splat(r));
+        let mut start = self
+            .rows
+            .partition_point(|a| self.cell(a.agent.position).0 < low.0);
+        while start < self.rows.len() && self.cell(self.rows[start].agent.position).0 <= high.0 {
+            if !charge() {
+                return false;
+            }
+            let x = self.cell(self.rows[start].agent.position).0;
+            let end =
+                start + self.rows[start..].partition_point(|a| self.cell(a.agent.position).0 == x);
+            let lo = start
+                + self.rows[start..end].partition_point(|a| self.cell(a.agent.position).1 < low.1);
+            let hi = start
+                + self.rows[start..end]
+                    .partition_point(|a| self.cell(a.agent.position).1 <= high.1);
+            for index in lo..hi {
+                if !admit() || !charge() {
+                    return false;
+                }
+                visit(index);
+            }
+            start = end;
+        }
+        true
+    }
+}
+
+/// Freeze the coherent advice of moving own rows. A complete owner pass is
+/// published atomically; exhausted discovery retains the captured forecast.
+fn bounded_forecast(
+    view: &mut View,
+    actors: &mut [Actor],
+    service: &[usize],
+    owner: usize,
+    dt: f32,
+    visits: &mut usize,
+    budget: &mut SweepBudget,
+) -> usize {
+    let n = view.rows.len();
+    let mut flags = vec![0u8; n]; // 0 held, 1 active, 2 held next round
+    let mut actor_for = vec![usize::MAX; n];
+    let mut active = Vec::with_capacity(n);
+    let bytes = flags.capacity()
+        + actor_for.capacity() * std::mem::size_of::<usize>()
+        + active.capacity() * std::mem::size_of::<usize>();
+    let admin_charge = |budget: &mut SweepBudget| {
+        let mut work = 0;
+        if !budget.charge_guidance_pair(owner as u8, &mut work) {
+            return false;
+        }
+        budget.model_operations += 1;
+        true
+    };
+    for (k, row) in view.rows.iter().enumerate() {
+        if !admin_charge(budget) {
+            return bytes;
+        }
+        if k > 0
+            && agent_cmp(view.rows[k - 1].agent, row.agent) == Ordering::Equal
+            && view.rows[k - 1].stationary == row.stationary
+        {
+            // Equal physical rows cannot be given different service by handle.
+            return bytes;
+        }
+        if row.stationary || row.agent.velocity == DVec2::ZERO {
+            continue;
+        }
+        // Charge each comparison; IDs are only lookup keys.
+        let (mut lo, mut hi) = (0, service.len());
+        while lo < hi {
+            if !admin_charge(budget) {
+                return bytes;
+            }
+            let mid = lo + (hi - lo) / 2;
+            if actors[service[mid]].id < row.unit {
+                lo = mid + 1;
+            } else {
+                hi = mid;
+            }
+        }
+        let Some(&index) = service.get(lo) else {
+            continue;
+        };
+        let actor = &actors[index];
+        if actor.id != row.unit
+            || usize::from(actor.owner) != owner
+            || actor.advice.is_none()
+            || actor.ambiguous
+        {
+            continue;
+        }
+        flags[k] = 1;
+        actor_for[k] = index;
+        active.push(k);
+    }
+    for _ in 0..8 {
+        let mut changed = false;
+        for &k in &active {
+            if flags[k] == 0 {
+                continue;
+            }
+            let index = actor_for[k];
+            let actor = &actors[index];
+            let row = view.rows[k];
+            let plan =
+                (actor.advice.unwrap().as_dvec2() - actor.position.as_dvec2()) / f64::from(dt);
+            let reach = row.agent.radius + view.max_radius + 0.05;
+            let mut spent = actor.spent;
+            let mut charge = || {
+                if spent >= TICKET || !budget.charge_guidance_pair(owner as u8, &mut spent) {
+                    return false;
+                }
+                budget.model_operations += 1;
+                true
+            };
+            let mut admit = || {
+                if *visits >= OWNER_VISITS {
+                    return false;
+                }
+                *visits += 1;
+                true
+            };
+            let mut blocked = false;
+            let complete =
+                view.query_indices(row.agent.position, reach, &mut charge, &mut admit, |j| {
+                    if j != k && flags[j] == 0 {
+                        let other = view.rows[j];
+                        let offset = other.agent.position - row.agent.position;
+                        blocked |= offset.length() <= row.agent.radius + other.agent.radius + 0.05
+                            && offset.dot(plan) > 0.;
+                    }
+                });
+            actors[index].spent = spent;
+            if !complete {
+                return bytes;
+            }
+            if blocked {
+                flags[k] = 2;
+                changed = true;
+            }
+        }
+        for &k in &active {
+            if flags[k] == 2 {
+                flags[k] = 0;
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+    // Pay for publication before changing any row, preserving all-or-none.
+    for _ in &active {
+        if !admin_charge(budget) {
+            return bytes;
+        }
+    }
+    for &k in &active {
+        if flags[k] == 1 {
+            let actor = &actors[actor_for[k]];
+            view.rows[k].agent.velocity =
+                (actor.advice.unwrap().as_dvec2() - actor.position.as_dvec2()) / f64::from(dt);
+        }
+    }
+    bytes
 }
 /// Complete static-only proof. Offsets preserve the frozen view's spatial order;
 /// moving rows cannot consume proof credit or conceal a stopped foreign body.
@@ -481,6 +660,10 @@ const JOINT_BASE_BYTES: usize = RETAINED_ALLOWANCE
     + std::mem::size_of::<Guide<'static>>()
     + std::mem::size_of::<Vec<super::coherence::Member>>()
     + 16384;
+const _: () = assert!(
+    MEMBERS * std::mem::size_of::<super::coherence::Member>()
+        >= INDEX_BODIES * (1 + 2 * std::mem::size_of::<usize>())
+);
 const _: () = assert!(
     RETAINED_ALLOWANCE
         + INDEX_BODIES * PER_BODY_SCRATCH
@@ -861,34 +1044,22 @@ impl<'a> Guide<'a> {
             }
         }
         drop(members);
-        // Diagnostic comparison only: freeze the completed own coherence plan
-        // before any predictive solve; never consume a peer's predictive output.
-        #[cfg(feature = "test-probes")]
+        // Publish only a complete owner-local forecast. No hidden inputs enter it.
         let mut views = views;
-        #[cfg(feature = "test-probes")]
-        if std::env::var("TURTS_TEST_COHERENT_FORECAST").is_ok_and(|value| value == "1")
-            && dt.is_finite()
-            && dt > 0.
-        {
+        let mut forecast_bytes = 0;
+        if dt.is_finite() && dt > 0. {
             service.sort_unstable_by_key(|&i| actors[i].id);
             for (owner, view) in views.iter_mut().enumerate() {
-                let Some(view) = view else { continue };
-                for row in &mut view.rows {
-                    if row.stationary {
-                        continue;
-                    }
-                    let Ok(at) = service.binary_search_by_key(&row.unit, |&i| actors[i].id) else {
-                        continue;
-                    };
-                    let actor = &actors[service[at]];
-                    if usize::from(actor.owner) != owner {
-                        continue;
-                    }
-                    let next = actor
-                        .advice
-                        .unwrap_or_else(|| actor.request(frame.bounds, dt).preferred_position());
-                    row.agent.velocity =
-                        (next.as_dvec2() - actor.position.as_dvec2()) / f64::from(dt);
+                if let Some(view) = view {
+                    forecast_bytes = forecast_bytes.max(bounded_forecast(
+                        view,
+                        &mut actors,
+                        &service,
+                        owner,
+                        dt,
+                        &mut visits[owner],
+                        budget,
+                    ));
                 }
             }
         }
@@ -1020,7 +1191,9 @@ impl<'a> Guide<'a> {
             + guide.actors.capacity() * std::mem::size_of::<Actor>()
             + service.capacity() * 8
             + guide.fallback_ids.capacity() * std::mem::size_of::<Fallback>()
-            + std::mem::size_of::<Ticket>().max(member_bytes)
+            + std::mem::size_of::<Ticket>()
+                .max(member_bytes)
+                .max(forecast_bytes)
             + guide
                 .views
                 .iter()
@@ -1034,7 +1207,11 @@ impl<'a> Guide<'a> {
         let joint_live_bytes = bytes
             .saturating_sub(frame.units.len().min(INDEX_BODIES) * PER_BODY_SCRATCH)
             .saturating_sub(FIXED_SCRATCH)
-            .saturating_sub(std::mem::size_of::<Ticket>().max(member_bytes))
+            .saturating_sub(
+                std::mem::size_of::<Ticket>()
+                    .max(member_bytes)
+                    .max(forecast_bytes),
+            )
             + MEMBERS * 128
             + 4096
             + std::mem::size_of::<Ticket>()
@@ -2160,6 +2337,97 @@ mod tests {
             u.target = Some(u.position + Vec2::new(20., if i % 2 == 0 { 4. } else { -2. }));
         }
         f
+    }
+    #[test]
+    fn bounded_forecast_is_atomic_on_owner_credit_exhaustion() {
+        let f = coherent_frame(2);
+        let mut state = TrafficState::default();
+        let mut initial = SweepBudget::new(1);
+        let mut clear = |_, _, _| true;
+        let mut guide = Guide::capture(
+            &f,
+            0.05,
+            1,
+            &mut state,
+            &mut initial,
+            &mut none,
+            |_| true,
+            |_| MotionKind::Waypoint,
+            |i| f.units[i].target.unwrap(),
+            |_| Some(7),
+            &mut clear,
+        );
+        let mut view = guide.views[0].take().unwrap();
+        let before: Vec<_> = view.rows.iter().map(|r| r.agent.velocity).collect();
+        let mut service: Vec<_> = (0..guide.actors.len()).collect();
+        service.sort_unstable_by_key(|&i| guide.actors[i].id);
+        let mut budget = SweepBudget::new(1);
+        budget.pairs[0] = OWNER_VISITS - 1;
+        let mut visits = 0;
+        bounded_forecast(
+            &mut view,
+            &mut guide.actors,
+            &service,
+            0,
+            0.05,
+            &mut visits,
+            &mut budget,
+        );
+        assert_eq!(
+            before,
+            view.rows
+                .iter()
+                .map(|r| r.agent.velocity)
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(budget.model_available(0), 0);
+    }
+    #[test]
+    fn bounded_forecast_publishes_free_advised_rows() {
+        let f = coherent_frame(2);
+        let mut state = TrafficState::default();
+        let mut initial = SweepBudget::new(1);
+        let mut clear = |_, _, _| true;
+        let mut guide = Guide::capture(
+            &f,
+            0.05,
+            1,
+            &mut state,
+            &mut initial,
+            &mut none,
+            |_| true,
+            |_| MotionKind::Waypoint,
+            |i| f.units[i].target.unwrap(),
+            |_| Some(7),
+            &mut clear,
+        );
+        let mut view = guide.views[0].take().unwrap();
+        for row in &mut view.rows {
+            row.agent.velocity = DVec2::X;
+        }
+        for actor in &mut guide.actors {
+            actor.advice = Some(actor.position + Vec2::Y * 0.05);
+            actor.spent = 0;
+        }
+        let mut service: Vec<_> = (0..guide.actors.len()).collect();
+        service.sort_unstable_by_key(|&i| guide.actors[i].id);
+        let mut budget = SweepBudget::new(1);
+        let mut visits = 0;
+        bounded_forecast(
+            &mut view,
+            &mut guide.actors,
+            &service,
+            0,
+            0.05,
+            &mut visits,
+            &mut budget,
+        );
+        assert!(
+            view.rows
+                .iter()
+                .all(|r| r.agent.velocity.x == 0. && r.agent.velocity.y > 0.9)
+        );
+        assert!(budget.model_operations > 0 && visits > 0);
     }
     #[test]
     fn complete_coherence_batch_and_cached_target_bound_advice() {
