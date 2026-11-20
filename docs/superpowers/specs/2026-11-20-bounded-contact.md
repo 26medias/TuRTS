@@ -1,8 +1,9 @@
 # Bounded recovery contact reads
 
 Status: Baseline (implemented; one independent review, section 8). Date: 2026-11-20. Track:
-Foundation (it changes the cost of audited movement reads; no read gives another answer;
-the metered cost of the pool stage changes, section 3). Source:
+Foundation (it changes the cost of audited movement reads; it adds contacts that the old
+read missed at the f32 edge of the contact rule; the metered cost of the pool stage
+changes; section 3). Source:
 `target/mc-evidence/handoffs/2026-11-20-bounded-contact-design.md`. Base: `5f18ef1c` on
 `codex/dense-acceptance-integration`. Branch: `codex/bounded-contact`. This note replaces
 the bound of `2026-11-19-recovery-actual-work.md` section 7.3 and changes 7.1 (class P),
@@ -28,12 +29,15 @@ Section 7.3 said that one neighbourhood read visits at most 16 cells. That is fa
 ## 2. Rules
 
 G1. **Grid boxes.** `UniformGrid` computes cells and query boxes in f64, with a margin
-of `1e-4 * reach` (relative). Each f32 subtraction is correctly rounded, so the f32 filter
+of `1e-4 * reach` (relative), and at least `2^-70` (below `2^-75` a squared f32 distance
+underflows to 0, so the filter accepts such points for any reach, also reach 0). Each f32 subtraction is correctly rounded, so the f32 filter
 `distance_squared <= reach * reach` accepts a point only within `reach * (1 + 2^-21)` on
 each axis; the margin is larger. So every accepted point is in the box. A read whose reach
 is at most the cell size scans at most 4 cells on each axis, 16 cells, at every finite
 coordinate. A coordinate whose cell index is outside the i32 range saturates; those points
-share an edge cell, and the exact filter still decides.
+share an edge cell, and the exact filter still decides. Limit (as on the base): a reach
+above about 1.8e19 has an infinite square; the filter then accepts points that the box does
+not hold. Movement reaches are bounded by the map size.
 
 G2. **Two schedule reads.** Before any row moves, each schedule row does:
 
@@ -68,8 +72,17 @@ index. `phase_bytes` adds the membership vectors and the hidden indexes.
 
 ## 3. What changes and what does not
 
-Each read gives the same answer as before: the new reads give the same overlap flags and
-the same contact sets as the old read, and every grid query gives the same points.
+Each grid query gives the same points as before (every point that the f32 filter accepts
+is in the box). The overlap flags are the same.
+
+The contact sets follow the contact rule of `known` and `touch`
+(`distance <= radius + other radius + CONTACT_GAP`) exactly. The old read was not exact at
+the f32 edge: it first filtered with `distance_squared <= (radius + max radius +
+CONTACT_GAP)^2`, and when `other radius == max radius` that filter can reject a body that
+`touch` accepts. The new reach has the factor `1 + 1e-6`, so the contact read finds that
+body. In such a scene the escape changes: it is now the escape of the same body when
+visible, as section 7 (A2) requires. Test:
+`a_hidden_body_at_the_f32_edge_of_contact_range_is_a_contact` (review finding 1).
 
 One metered cost changes. The pool stage and the pool precheck of a recovery job walk the
 cell box of the slot grid (`EscapeScan::pool_levels` and `precheck`, `UniformGrid::cell_box`)
@@ -102,9 +115,10 @@ For one owner in one solver pass, with `N` frame rows and `S` schedule rows of t
   and tests the hidden bodies of the owner in those cells only.
 
 Memory of a pass: as section 7.3, plus one byte for each row and each owner with a
-membership vector, plus the hidden index (`HiddenIndex::bytes`: 4 bytes of row, 12 bytes
-of point and 64 bytes of grid entry for each hidden body). The index is dropped when the
-schedule reads end.
+membership vector, plus the hidden index (`HiddenIndex::bytes`, from capacities: 4 bytes
+of row and 12 bytes of point for each hidden body, plus `UniformGrid::bytes`). The index is
+dropped when the schedule reads end. Under fog, the hidden indexes of all owners with a
+schedule row exist together during the schedule reads: at most `owners * N` entries.
 
 ## 5. What has no constant bound, and why
 
@@ -136,7 +150,9 @@ A constant bound needs a rule change that a player can see. Options for the CEO:
   do not overlap in a contact range. Stacks of overlapping bodies stay unbounded, so this
   alone is not enough.
 
-This branch implements none of them.
+This branch implements none of them. Note also that the exact contact set of one row can
+itself hold M bodies (a stack). Any exact design is bounded by its output size at best; a
+constant bound was never possible without a rule change.
 
 ## 6. Limits
 
@@ -166,10 +182,9 @@ rows touch them. Work is in units of the counters (one cell or one body test).
 | radius 0.001, blocked, no fog | 828,287 | 3,434 (0) |
 | radius 0.001, blocked, hidden | 828,287 | 216,649 (213,215) |
 
-- K work is unchanged in each scene (`owner` 759, 117, 216 or 0). The base and the branch
-  give different K work only in the tiny spare scenes (132 to 117, 231 to 216): the frame
-  hash and the oracle show that no result changed, so this is NOT TRACED further; the
-  likely cause is the order of the cells that a check reads after the f64 cell change.
+- K work (`owner`) is the same in the radius-0.4 scenes (759, 0) and in the tiny blocked
+  scenes (0). In the tiny spare scenes it changes from 132 to 117 (no fog) and from 231 to
+  216 (fog): the pool precheck reads fewer slot-grid cells (section 3).
 - V work: 10,220 (radius 0.4) and 10,106 (radius 0.001) with no fog. Under fog a blocked
   scene now has 5,041 or 7,511 units of V work (the membership pass and the hidden index)
   where the base had 0: the base read the same rows in its schedule read as P work.
@@ -190,4 +205,30 @@ rows touch them. Work is in units of the counters (one cell or one body test).
 
 ## 8. Review
 
-Filled after the review.
+One review (`simulation-core-engineer`, runs and mutants) of `bd0c46e0` gave
+`VERDICT=FAIL FINDINGS=6 HIGH=0`. It confirmed: `any_within` matches a full scan; a box of
+reach at most one cell has at most 4 cells on each axis; the contact read tests only hidden
+bodies; R5, R7 and R20 and three new hidden layouts keep owner outputs and counters;
+`frame_hash` is equal; the section 5 argument holds. Repairs:
+
+1. Medium. The contact sets differ from the old read at the f32 edge (the new read is
+   exact, the old one missed contacts). Section 3 now says so. New test with the edge body
+   (red when the reach factor is `1 - 1e-6`).
+2. Medium. Reach 0 or an underflowing reach missed points that the f32 filter accepts.
+   The box now has a floor of `2^-70` (G1). New grid test (red with no floor).
+3. Medium. No test checked the 16-cell bound of the contact read (the sparse scan hid
+   it). New test with 1,600 hidden bodies round one row (red when the index cell is a
+   quarter).
+4. Medium. The oracle skipped frames above 4,096 rows, so R5 (4,176 rows) was not checked.
+   The limit is now 8,192. The edge test of item 1 makes the oracle go red.
+5. Low. The view work, the bytes and the shared membership pass had no test, and
+   `HiddenIndex::bytes` undercounted. Bytes now come from capacities
+   (`UniformGrid::bytes`). New test (red with no view work for the index, zero bytes, or
+   no membership cache).
+6. Low. A reach above about 1.8e19 overflows (as on the base). Stated in G1 and the code.
+
+The review also asked whether a hidden body just out of contact changes an escape. A probe
+at seven angles round the free escape direction (distance one f32 step above the contact
+reach) found a change only where `touch` reports contact, because the f32 position falls
+inside the reach. Bodies with no contact changed no own output. Each repair mutant turns
+its test red (`target/mc-evidence/bounded-contact/mutants-repair.log`).

@@ -3289,3 +3289,104 @@ fn a_stack_of_escaping_bodies_reads_a_few_bodies_for_each_overlap_read() {
         counters.physical_work
     );
 }
+
+/// Review finding 1: a hidden body at the f32 edge of the contact rule. `touch` admits it
+/// (`distance <= r + r' + CONTACT_GAP`) while its squared distance is above the square of
+/// that reach. The contact read finds it (the oracle checks the set), so the escape is the
+/// escape of the same body when visible. The base read missed this contact.
+#[test]
+fn a_hidden_body_at_the_f32_edge_of_contact_range_is_a_contact() {
+    let base_units = || {
+        vec![
+            MovementFrameUnit {
+                speed: Some(1.0),
+                ..escaping(1, 0, ORIGIN, 0.5)
+            },
+            still(2, 0, ORIGIN + Vec2::new(0.05, 0.0), 0.5),
+        ]
+    };
+    let escape = |units: Vec<MovementFrameUnit>, visible: bool| {
+        let basis = Basis {
+            permitted: if visible {
+                BTreeSet::from([(0, 3)])
+            } else {
+                BTreeSet::new()
+            },
+        };
+        let (outputs, _) = step(&frame(units), &basis, 1);
+        outputs[0].physical_escape.clone().and_then(|e| e.target)
+    };
+    let free = escape(base_units(), false).expect("an escape point");
+    let theta = (free - ORIGIN).to_angle();
+    let reach = 0.5_f32 + 0.5 + super::route::CONTACT_GAP;
+    let edge = (0..200_000_i32)
+        .flat_map(|i| (-4_i32..=4).map(move |delta| (i, delta)))
+        .find_map(|(i, delta)| {
+            let angle = theta + (i - 100_000) as f32 * 1.0e-7;
+            let distance = f32::from_bits((reach.to_bits() as i32 + delta) as u32);
+            let at = ORIGIN + Vec2::from_angle(angle) * distance;
+            let contact = super::recovery::touch(ORIGIN, 0.5, &still(3, 1, at, 0.5)).1;
+            (contact && at.distance_squared(ORIGIN) > reach * reach).then_some(at)
+        })
+        .expect("an f32 edge point");
+    let mut units = base_units();
+    units.push(still(3, 1, edge, 0.5));
+    let _ = super::recovery_oracle::take_schedule_compared();
+    let hidden = escape(units.clone(), false);
+    assert!(super::recovery_oracle::take_schedule_compared() > 0);
+    assert_eq!(hidden, escape(units, true));
+}
+
+/// Review finding 3: a contact read scans at most 16 cells of the hidden index. 1,600
+/// hidden bodies 0.06 apart round one row fill more than 16 cells of the index (cells
+/// about 0.104 wide), so the grid uses its box scan. A cell holds at most 4 of them.
+#[test]
+fn a_contact_read_scans_at_most_16_cells_of_a_dense_hidden_index() {
+    let mut units = vec![MovementFrameUnit {
+        speed: Some(1.0),
+        ..escaping(1, 0, Vec2::splat(5.0), 0.001)
+    }];
+    for n in 0..1_600_u32 {
+        let at = Vec2::new(
+            3.8 + (n % 40) as f32 * 0.06 + 0.013,
+            3.8 + (n / 40) as f32 * 0.06 + 0.017,
+        );
+        units.push(still(10 + n, 1, at, 0.001));
+    }
+    let basis = Basis {
+        permitted: BTreeSet::new(),
+    };
+    let (_, counters) = step(&tiny_frame(units, 10.0), &basis, 1);
+    assert_eq!(counters.contact_reads, 1);
+    assert!(
+        counters.contact_work <= 16 + 4 * 16,
+        "contact work {}",
+        counters.contact_work
+    );
+}
+
+/// Review finding 5: the view work and the phase memory of the hidden index and of the
+/// membership pass are counted, and the membership pass runs one time for each owner.
+#[test]
+fn the_hidden_index_and_the_membership_pass_are_counted_once() {
+    let mut units: Vec<_> = (0..10)
+        .map(|n| escaping(n + 1, 0, Vec2::new(2.0 + n as f32, 2.0), 0.4))
+        .collect();
+    units.extend((0..20).map(|n| still(100 + n, 1, Vec2::new(2.0 + n as f32 * 0.5, 2.6), 0.4)));
+    let basis = Basis {
+        permitted: BTreeSet::new(),
+    };
+    let world = RecoveryWorld::new(Some(&basis), None, 0.4);
+    let _ = world.contact_read(0, &units, |_| {});
+    // One membership check for each row and one insert for each hidden row.
+    assert_eq!(world.view_work(), 30 + 20);
+    // The bytes of the membership vector and of the hidden index (at least 4 bytes of row,
+    // 12 of point and 8 of spatial key for each hidden body).
+    assert!(world.peak_bytes() >= 30 + 20 * 24, "{}", world.peak_bytes());
+    let _ = world.contact_read(1, &units, |_| {});
+    assert_eq!(world.view_work(), 50, "the second read reuses the index");
+    world.end_contact_reads();
+    world.build_view(0, &units);
+    // The view reuses the membership pass: one insert for each member only.
+    assert_eq!(world.view_work(), 50 + 10);
+}

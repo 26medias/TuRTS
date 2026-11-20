@@ -41,7 +41,7 @@ pub(super) fn take_schedule_compared() -> usize {
 
 /// The largest frame that `check_schedule_read` scans in full (it costs one test for each
 /// row of the frame).
-const SCHEDULE_ORACLE_ROWS: usize = 4_096;
+const SCHEDULE_ORACLE_ROWS: usize = 8_192;
 
 /// Compares the schedule reads of row `row` (design `2026-11-20-bounded-contact`) with a
 /// test of every row of the frame: the overlap flag is true when a row overlaps the actor,

@@ -1538,6 +1538,12 @@ impl<'f> RecoveryWorld<'f> {
         )
     }
 
+    /// Test hook: builds the owner view of `owner` as a row query does.
+    #[cfg(test)]
+    pub(super) fn build_view(&self, owner: u8, units: &[MovementFrameUnit]) {
+        self.ensure_view(owner, units);
+    }
+
     /// Drops the hidden indexes: the schedule reads are done.
     pub(super) fn end_contact_reads(&self) {
         self.note_bytes(0);
@@ -1655,9 +1661,7 @@ impl HiddenIndex {
     fn bytes(&self) -> usize {
         self.rows.capacity() * std::mem::size_of::<u32>()
             + self.points.capacity() * std::mem::size_of::<crate::grid::GridPoint>()
-            // The grid: one index and one spatial key for each body, and the cell map.
-            + self.points.len()
-                * (std::mem::size_of::<usize>() + std::mem::size_of::<u64>() + 2 * 24)
+            + self.grid.bytes()
     }
 }
 

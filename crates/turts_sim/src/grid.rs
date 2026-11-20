@@ -54,6 +54,10 @@ fn spatial_key(position: Vec2) -> u64 {
 /// computed in f64, so they add no f32 rounding at large coordinates. The margin is
 /// relative: a tiny reach gives a tiny box (bounded-contact design, rule G1).
 const EDGE_MARGIN: f64 = 1e-4;
+/// The smallest half width of a query box. Below `2^-75` a squared f32 distance underflows
+/// to 0, so the filter accepts points that close for any reach (also reach 0). Every grid
+/// cell is at least `f32::EPSILON` wide, so this floor adds no cell to a box of the bound.
+const MIN_HALF: f64 = 1.0 / (1_u128 << 70) as f64;
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct GridPoint {
@@ -127,7 +131,10 @@ impl UniformGrid {
     /// the f32 error of the distance filter in `within`, so every point that
     /// the filter accepts is in a scanned cell (ruling 3, G1).
     fn cell_range(&self, position: Vec2, reach: f32) -> ((i64, i64), (i64, i64)) {
-        let half = f64::from(reach.abs()) * (1.0 + EDGE_MARGIN);
+        // Limit: a reach above about 1.8e19 has an infinite square, so the filter accepts
+        // every point but the box does not hold them all (as on the base). The movement
+        // reaches are bounded by the map size.
+        let half = (f64::from(reach.abs()) * (1.0 + EDGE_MARGIN)).max(MIN_HALF);
         let (x, y) = (f64::from(position.x), f64::from(position.y));
         (
             (
@@ -323,6 +330,19 @@ impl UniformGrid {
             }
         }
         (false, cells, tested)
+    }
+
+    /// An upper bound of the heap bytes of the grid, from capacities: the spatial keys,
+    /// the cell map (key, vector header and one control byte for each bucket) and the
+    /// index vectors.
+    pub(crate) fn bytes(&self) -> usize {
+        self.spatial_keys.capacity() * std::mem::size_of::<u64>()
+            + self.cells.capacity() * (std::mem::size_of::<(u64, Vec<usize>)>() + 1)
+            + self
+                .cells
+                .values()
+                .map(|indices| indices.capacity() * std::mem::size_of::<usize>())
+                .sum::<usize>()
     }
 
     /// The cell box of a query, as `cell_range` (both ends included).
@@ -984,5 +1004,39 @@ mod tests {
         let grid = UniformGrid::new(&stack, 0.5);
         let (found, cells, tested) = grid.any_within(&stack, Vec2::splat(1.0), 0.5, |_| true);
         assert!(found && cells <= 16 && tested == 1, "{cells} {tested}");
+    }
+
+    /// Reach 0 and subnormal reaches near the origin: the f32 filter accepts points whose
+    /// squared distance underflows, and the box floor keeps them (review finding 2).
+    #[test]
+    fn a_zero_or_subnormal_reach_keeps_every_point_that_the_filter_accepts() {
+        let values = [
+            0.0_f32, 1.0e-30, -1.0e-30, 1.0e-38, 3.0e-23, -2.0e-24, 1.0e-45,
+        ];
+        let mut points = Vec::new();
+        for &x in &values {
+            for &y in &values {
+                points.push(GridPoint {
+                    id: points.len() as u32,
+                    position: Vec2::new(x, 0.5 + y),
+                });
+            }
+        }
+        for cell_size in [f32::EPSILON, 0.002, 1.0] {
+            let grid = UniformGrid::new(&points, cell_size);
+            for query in &points {
+                for reach in [0.0_f32, 1.0e-40, 1.0e-30, 1.0e-24] {
+                    let expected = brute_force_ids(&points, query.position, reach);
+                    assert_eq!(
+                        within_ids(&grid, &points, query.position, reach),
+                        expected,
+                        "cell {cell_size} reach {reach} at {}",
+                        query.position
+                    );
+                    let any = grid.any_within(&points, query.position, reach, |_| true).0;
+                    assert_eq!(any, !expected.is_empty());
+                }
+            }
+        }
     }
 }
