@@ -2,13 +2,15 @@
 
 use super::frame::{MovementFrame, MovementFrameOutput, MovementFrameUnit};
 use super::recovery::{
-    EscapeScan, FRESH_SLICE, OWNER_WORK, RecoveryCounters, ScheduleRow, SliceOutcome, plan,
+    EscapeScan, FRESH_SLICE, OWNER_WORK, RecoveryCounters, SLICE_CANDIDATES, ScheduleRow,
+    SliceOutcome, plan,
 };
+use super::recovery_view::{ClaimSet, Contacts, KnownSet, KnownView, body_key};
 use super::search::MovementSearch;
 use super::spread::nearest_angle_order;
 use super::{MoveProgress, MovementActivity, MovementPool, RecoveryScan};
 use bevy_math::Vec2;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::BTreeMap;
 
 fn body(unit_id: u32, position: Vec2, radius: f32) -> MovementFrameUnit {
     MovementFrameUnit {
@@ -53,24 +55,30 @@ impl World {
         }
     }
 
+    /// The known view of the mover (row 0): itself and the bodies that `known` admits.
+    fn view(&self, known: &dyn Fn(u32) -> bool) -> KnownView {
+        let members: Vec<_> = self
+            .units
+            .iter()
+            .enumerate()
+            .filter(|(row, unit)| *row == 0 || known(unit.unit_id))
+            .map(|(row, unit)| (row, unit.position, unit.radius))
+            .collect();
+        KnownView::build(&members, self.units.len())
+    }
+
     fn scan<'a>(
         &'a self,
-        slots: Option<(u64, &'a super::recovery::AssignedSlots)>,
+        slots: Option<(u64, &'a ClaimSet)>,
         known: &'a dyn Fn(u32) -> bool,
         bound: Option<Vec2>,
         verify: bool,
-    ) -> EscapeScan<'a> {
-        EscapeScan {
-            bounds: self.bounds,
-            units: &self.units,
-            points: &self.points,
-            grid: &self.grid,
-            max_radius: self.max_radius,
-            origin: self.units[0].position,
-            radius: self.units[0].radius,
-            self_index: 0,
+    ) -> Scanner<'a> {
+        Scanner {
+            world: self,
+            view: self.view(known),
+            contacts: Contacts::default(),
             slots,
-            known,
             bound,
             verify,
         }
@@ -92,6 +100,54 @@ impl World {
         )
     }
 }
+
+/// One search of the mover of a `World` over its known view.
+struct Scanner<'a> {
+    world: &'a World,
+    view: KnownView,
+    contacts: Contacts,
+    slots: Option<(u64, &'a ClaimSet)>,
+    bound: Option<Vec2>,
+    verify: bool,
+}
+
+impl Scanner<'_> {
+    fn run(
+        &self,
+        previous: Option<RecoveryScan>,
+        allowance: usize,
+        owner: u8,
+        counters: &mut RecoveryCounters,
+    ) -> SliceOutcome {
+        let mover = &self.world.units[0];
+        let known = KnownSet {
+            view: &self.view,
+            contacts: &self.contacts,
+            own_key: Some(body_key(mover.position, mover.radius)),
+        };
+        EscapeScan {
+            bounds: self.world.bounds,
+            origin: mover.position,
+            radius: mover.radius,
+            slots: self.slots,
+            pool: None,
+            bound: self.bound,
+            verify: self.verify,
+        }
+        .run(&known, previous, allowance, owner, counters)
+    }
+}
+
+/// Runs `body` with at most `cap` candidates started in each slice.
+fn with_candidate_cap<T>(cap: usize, body: impl FnOnce() -> T) -> T {
+    SLICE_CANDIDATES.with(|limit| limit.set(cap));
+    let result = body();
+    SLICE_CANDIDATES.with(|limit| limit.set(usize::MAX));
+    result
+}
+
+/// The slice allowance of the one-candidate tests: large enough for any proof.
+const WIDE: usize = 4_096;
 
 const ORIGIN: Vec2 = Vec2::new(10.0, 10.0);
 
@@ -137,18 +193,20 @@ fn run_to_end(
 ) -> Option<Vec2> {
     let known = |_: u32| true;
     let mut scan: Option<RecoveryScan> = None;
-    for tick in 0.. {
-        let world = &worlds[tick.min(worlds.len() - 1)];
-        match world
-            .scan(None, &known, None, verify)
-            .run(scan, allowance, 0, counters)
-        {
-            SliceOutcome::Done(point) => return point,
-            SliceOutcome::Paused(state) => scan = Some(state),
+    with_candidate_cap(allowance, || {
+        for tick in 0.. {
+            let world = &worlds[tick.min(worlds.len() - 1)];
+            match world
+                .scan(None, &known, None, verify)
+                .run(scan, WIDE, 0, counters)
+            {
+                SliceOutcome::Done(point) => return point,
+                SliceOutcome::Paused(state) => scan = Some(state),
+            }
+            assert!(tick < 10_000, "the search must end");
         }
-        assert!(tick < 10_000, "the search must end");
-    }
-    unreachable!()
+        unreachable!()
+    })
 }
 
 /// T1. The first slice sees A blocked. Before the second slice, A's blocker leaves. A
@@ -212,18 +270,20 @@ fn hidden_bodies_change_neither_the_proof_nor_the_public_charge() {
         let mut counters = RecoveryCounters::default();
         let mut scan = None;
         let mut result = None;
-        for world in worlds.iter().cycle().take(64) {
-            match world
-                .scan(None, &hidden, None, true)
-                .run(scan, 1, 0, &mut counters)
-            {
-                SliceOutcome::Done(point) => {
-                    result = point;
-                    break;
+        with_candidate_cap(1, || {
+            for world in worlds.iter().cycle().take(64) {
+                match world
+                    .scan(None, &hidden, None, true)
+                    .run(scan, WIDE, 0, &mut counters)
+                {
+                    SliceOutcome::Done(point) => {
+                        result = point;
+                        break;
+                    }
+                    SliceOutcome::Paused(state) => scan = Some(state),
                 }
-                SliceOutcome::Paused(state) => scan = Some(state),
             }
-        }
+        });
         (
             result,
             counters.owner_work[0],
@@ -277,7 +337,15 @@ fn sliced_search_equals_the_stateless_search_in_a_stable_world() {
         let world = World::new(bounds, units);
         let hidden_every = 2 + (case % 3) as u32;
         let known = move |id: u32| !id.is_multiple_of(hidden_every);
-        let allowance = 1 + rng.next() as usize % 40;
+        let allowance = super::recovery::MIN_SLICE + rng.next() as usize % 48;
+        // Odd cases also cap the candidates of a slice, so they pause between candidates
+        // as well as inside a probe.
+        let cap = if case % 2 == 1 {
+            1 + rng.next() as usize % 4
+        } else {
+            usize::MAX
+        };
+        SLICE_CANDIDATES.with(|limit| limit.set(cap));
 
         // Singleton: oracle vs slices.
         let oracle = world.oracle(&known);
@@ -299,7 +367,7 @@ fn sliced_search_equals_the_stateless_search_in_a_stable_world() {
         // Group escape: assigned slots on some lattice points and a pool bound.
         let spacing = 1.1;
         let origin = world.units[0].position;
-        let mut assigned = HashSet::new();
+        let mut assigned = ClaimSet::default();
         for step in 0..(rng.next() % 6) {
             let point = Vec2::new(origin.x + spacing * (1.0 + step as f32), origin.y);
             assigned.insert((7, point.x.to_bits(), point.y.to_bits()));
@@ -345,6 +413,7 @@ fn sliced_search_equals_the_stateless_search_in_a_stable_world() {
         if full.is_some() || sliced.is_none() {
             assert_eq!(choose(sliced), choose(full), "case {case}: group");
         }
+        SLICE_CANDIDATES.with(|limit| limit.set(usize::MAX));
         compared += 1;
     }
     assert_eq!(compared, 400);
@@ -491,12 +560,6 @@ fn stress_frame(movers: usize) -> MovementFrame {
     }
 }
 
-/// The overshoot terms of design section 4 for these scenes: one candidate and one digest
-/// per served job. A candidate or a digest charges at most `4 + bodies + claims`.
-fn overshoot(frame: &MovementFrame, served: usize) -> usize {
-    served * 2 * (9 + frame.units.len() + 1)
-}
-
 /// T4. Per-owner public charge stays within the bound in every tick; phase and retained
 /// bytes stay small.
 #[test]
@@ -537,17 +600,29 @@ fn stress_scene_charge_and_memory_stay_bounded() {
         run.candidates,
         run.max_age
     );
-    // 100 fresh rows: 16 fresh slices of 1,024 fill half the budget, plus the oldest
-    // batch of rows with a scan (one row: positions differ).
-    let served = OWNER_WORK / 2 / super::recovery::FRESH_SLICE + 1;
+    // Metered work never exceeds the owner allowance. The actual work adds one pool
+    // precheck for each served pool search (2 + 3 local slots; this pool has 1 slot), and
+    // no served row has less than `MIN_SLICE`.
+    assert!(run.peak_work <= OWNER_WORK, "{}", run.peak_work);
+    let served = OWNER_WORK / super::recovery::MIN_SLICE;
     assert!(
-        run.peak_work <= OWNER_WORK + overshoot(&frame, served),
-        "{} > {}",
-        run.peak_work,
-        OWNER_WORK + overshoot(&frame, served)
+        run.peak_actual <= OWNER_WORK + served * 5,
+        "{}",
+        run.peak_actual
     );
-    assert!(run.peak_phase_bytes <= 100 * 64);
-    assert!(run.peak_retained_bytes <= 100 * 96);
+    // Phase memory: the schedule, one owner view (an entry and a cell for each body at
+    // most) and the claim set.
+    let units = frame.units.len();
+    assert!(
+        run.peak_phase_bytes <= units * 256,
+        "{} > {}",
+        run.peak_phase_bytes,
+        units * 256
+    );
+    assert!(
+        run.peak_retained_bytes
+            <= 100 * (std::mem::size_of::<super::RecoverySearch>() + std::mem::size_of::<u32>())
+    );
 }
 
 /// A packed stationary crowd of `side x side` bodies with `movers` blocked bodies stacked
@@ -632,7 +707,7 @@ fn deep_stable_crowd_resolves_every_mover() {
         );
         assert_eq!(movers_escaped(&frame, first), movers, "side {side}");
         assert!(run.ticks < 400);
-        assert!(run.peak_work <= OWNER_WORK + overshoot(&frame, movers + 1));
+        assert!(run.peak_work <= OWNER_WORK);
     }
 }
 
@@ -696,9 +771,9 @@ fn a_job_under_permanent_churn_relaxes_and_commits_a_free_point() {
         })
         .collect();
     let known = |_: u32| true;
-    // 400: the proof is cheap and fails by churn. 40: the proof costs more than half the
-    // slice, so the job relaxes by cost.
-    for allowance in [400, 40] {
+    // 400: the proof is cheap and fails by churn. `MIN_SLICE`: the proof costs more than
+    // half the slice, so the job relaxes by cost.
+    for allowance in [400, super::recovery::MIN_SLICE] {
         let mut counters = RecoveryCounters::default();
         let mut scan = None;
         let mut result = None;
@@ -715,7 +790,8 @@ fn a_job_under_permanent_churn_relaxes_and_commits_a_free_point() {
                 SliceOutcome::Paused(state) => scan = Some(state),
             }
         }
-        let (point, last) = result.expect("a relaxed job must finish");
+        let (point, last) =
+            result.unwrap_or_else(|| panic!("a relaxed job must finish: {counters:?}"));
         if allowance == 400 {
             assert!(counters.invalidations >= 2, "{counters:?}");
         } else {
@@ -757,6 +833,7 @@ fn schedule_is_id_free_and_oldest_first() {
         .into_iter()
         .chain((3..19).map(|id| row(id, 0, false, true, 4.0 + id as f32)))
         .collect(),
+        0,
         &mut counters,
     );
     assert_eq!(tiers.allowance(0), 0, "old scan job with no overlap");
@@ -776,7 +853,7 @@ fn schedule_is_id_free_and_oldest_first() {
         })
         .collect();
     let mut counters = RecoveryCounters::default();
-    let reference = plan(rows.clone(), &mut counters);
+    let reference = plan(rows.clone(), 0, &mut counters);
     // Permute the rows: a different id order gives a different row order.
     let order: Vec<usize> = (0..12).rev().collect();
     let permuted: Vec<ScheduleRow> = order
@@ -787,7 +864,7 @@ fn schedule_is_id_free_and_oldest_first() {
             ..rows[old]
         })
         .collect();
-    let other = plan(permuted, &mut counters);
+    let other = plan(permuted, 0, &mut counters);
     for (new_row, &old) in order.iter().enumerate() {
         assert_eq!(reference.allowance(old), other.allowance(new_row));
     }
@@ -833,7 +910,7 @@ fn a_stacked_batch_shares_one_budget() {
             radius: 0.5,
         })
         .collect();
-    let schedule = plan(rows, &mut RecoveryCounters::default());
+    let schedule = plan(rows, 0, &mut RecoveryCounters::default());
     let total: usize = (0..500).map(|row| schedule.allowance(row)).sum();
     assert!(total <= OWNER_WORK);
     assert!((0..500).all(|row| schedule.allowance(row) == schedule.allowance(0)));
@@ -981,7 +1058,7 @@ fn grid_insertion_order_changes_no_result_or_charge() {
     }
     shuffled_units.insert(0, units[0].clone());
     let shuffled = World::new(Vec2::splat(20.0), shuffled_units);
-    for allowance in [1, 60, usize::MAX] {
+    for allowance in [super::recovery::MIN_SLICE, 100, usize::MAX] {
         let reference = trace(std::slice::from_ref(&forward), &known, allowance);
         for world in [&reversed, &shuffled] {
             assert_eq!(

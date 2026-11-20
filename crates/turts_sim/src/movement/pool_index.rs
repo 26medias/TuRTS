@@ -247,10 +247,23 @@ impl MovementPoolIndex {
         }
     }
 
-    pub(super) fn has_potential_free_slot(
+    pub(super) fn spacing(&self) -> f32 {
+        self.spacing
+    }
+
+    pub(super) fn max_reach(&self) -> f32 {
+        self.max_reach
+    }
+
+    pub(super) fn slot_grid(&self) -> &crate::grid::UniformGrid {
+        &self.grid
+    }
+
+    /// The constant-time part of `has_potential_free_slot`: the best available clearance
+    /// and the clearance of the allowed slot without the mover.
+    pub(super) fn potential_free_without_local(
         &self,
         unit_id: u32,
-        position: Vec2,
         radius: f32,
         allowed_slot: Option<(u32, u32)>,
     ) -> bool {
@@ -275,16 +288,37 @@ impl MovementPoolIndex {
                 return true;
             }
         }
+        false
+    }
+
+    /// The local part of `has_potential_free_slot` for one slot within `2 * radius` of the
+    /// mover: an available slot whose nearest body is the mover and whose second body
+    /// leaves room.
+    pub(super) fn local_slot_supports(&self, slot_index: usize, unit_id: u32, radius: f32) -> bool {
+        if !self.available_slot_indices.contains(&slot_index) {
+            return false;
+        }
+        let threshold = f64::from(radius) - 1.0e-5;
+        let clearance = self.clearances[slot_index];
+        clearance.first.unit_id == Some(unit_id) && clearance.second.clearance >= threshold
+    }
+
+    pub(super) fn has_potential_free_slot(
+        &self,
+        unit_id: u32,
+        position: Vec2,
+        radius: f32,
+        allowed_slot: Option<(u32, u32)>,
+    ) -> bool {
+        if self.potential_free_without_local(unit_id, radius, allowed_slot) {
+            return true;
+        }
         let local = self.grid.within(&self.points, position, 2.0 * radius);
         #[cfg(test)]
         count_pool_slot_candidates(local.len());
-        local.into_iter().any(|slot_index| {
-            if !self.available_slot_indices.contains(&slot_index) {
-                return false;
-            }
-            let clearance = self.clearances[slot_index];
-            clearance.first.unit_id == Some(unit_id) && clearance.second.clearance >= threshold
-        })
+        local
+            .into_iter()
+            .any(|slot_index| self.local_slot_supports(slot_index, unit_id, radius))
     }
 
     #[expect(

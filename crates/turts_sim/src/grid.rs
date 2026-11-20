@@ -261,6 +261,20 @@ impl UniformGrid {
         (cells, tested)
     }
 
+    /// The cell box of a query, as `cell_range` (both ends included).
+    pub(crate) fn cell_box(&self, position: Vec2, reach: f32) -> ((i64, i64), (i64, i64)) {
+        self.cell_range(position, reach)
+    }
+
+    /// The point indices of one cell, in insertion order (empty when the cell is empty).
+    pub(crate) fn cell_members(&self, x: i64, y: i64) -> &[usize] {
+        i32::try_from(x)
+            .ok()
+            .zip(i32::try_from(y).ok())
+            .and_then(|key| self.cells.get(&cell_key(key)))
+            .map_or(&[], Vec::as_slice)
+    }
+
     #[cfg(test)]
     fn visited_cells(&self) -> usize {
         self.visited_cells

@@ -37,8 +37,12 @@ mod pool_index;
 pub mod probe;
 pub(crate) mod recovery;
 #[cfg(test)]
+#[path = "tests/recovery_actual_tests.rs"]
+mod recovery_actual_tests;
+#[cfg(test)]
 #[path = "tests/recovery_tests.rs"]
 mod recovery_tests;
+pub(crate) mod recovery_view;
 mod route;
 mod search;
 mod spread;
@@ -121,7 +125,8 @@ pub enum RecoveryKind {
     Physical,
 }
 
-/// The cursor of an unfinished ring scan and the proof data of its examined region.
+/// The cursor of an unfinished escape search and the proof data of its examined region
+/// (designs `2026-11-18-bounded-recovery` and `2026-11-19-recovery-actual-work`).
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct RecoveryScan {
     pub origin: Vec2,
@@ -130,12 +135,71 @@ pub struct RecoveryScan {
     pub side: u8,
     pub step: i32,
     pub best: Option<Vec2>,
-    /// The largest distance from `origin` of an examined candidate.
+    /// The largest distance from `origin` of an examined or started candidate or slot.
     pub examined: f32,
-    /// Count and two wrapping sums of the permitted facts in the examined region.
+    /// Count and two wrapping sums of the known facts in the examined region.
     pub digest: [u64; 3],
     pub invalidations: u8,
     pub relaxed: bool,
+    /// The cell size bits of the owner view that the digest covers.
+    #[serde(default)]
+    pub cell: u32,
+    /// The search stage.
+    #[serde(default)]
+    pub stage: RecoveryStage,
+    /// The pool slot search of a group escape.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pool: Option<RecoveryPoolCursor>,
+    /// The point query that a slice paused inside.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub query: Option<RecoveryQuery>,
+    /// True after the first pause: a relaxed result must then be checked against the
+    /// current state.
+    #[serde(default)]
+    pub spanned: bool,
+}
+
+/// The stage of an escape search.
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
+pub enum RecoveryStage {
+    /// The pool slot search of a group escape (skipped by other searches).
+    #[default]
+    Pool,
+    /// The hex ring scan.
+    Ring,
+    /// A relaxed search checks its chosen point against the current state.
+    Verify { point: Vec2, slot: bool },
+}
+
+/// The cursor of a pool slot search: the reach level, the position inside the level
+/// (a cell index of the level box, or a slot index), and the best free slot so far.
+/// Before `checked`, `at` and `item` are the position of the local precheck, which runs
+/// when `local` is set (its constant-time part found no slot).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct RecoveryPoolCursor {
+    pub level: u8,
+    pub at: u32,
+    pub item: u32,
+    pub best: Option<(u32, Vec2)>,
+    pub checked: bool,
+    #[serde(default)]
+    pub local: bool,
+    pub done: bool,
+}
+
+/// The cursor of a metered point query: the cell row and column of the owner view, the
+/// last body key done in that cell, and the next contact. `digest` is the proof of the
+/// query region of a relaxed search.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct RecoveryQuery {
+    pub point: Vec2,
+    pub stage: u8,
+    pub cy: i32,
+    pub cx: i32,
+    pub key: Option<[u32; 3]>,
+    pub contact: u32,
+    pub started: bool,
+    pub digest: [u64; 3],
 }
 
 /// The live Unit target and per-actor legal goal used for initial spread.
