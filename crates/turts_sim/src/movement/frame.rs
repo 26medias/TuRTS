@@ -1995,6 +1995,7 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
         Vec::new()
     };
     guide.finish_prediction(budget);
+    let second_turn = super::sweep::second_turn_under_fog(visibility.is_some());
     super::sweep::certify_guided(
         frame,
         &units,
@@ -2006,6 +2007,7 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
         max_radius,
         budget,
         guide,
+        second_turn,
     );
     if exchanges_claims {
         for index in 0..units.len() {

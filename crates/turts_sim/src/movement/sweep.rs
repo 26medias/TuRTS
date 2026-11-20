@@ -160,6 +160,73 @@ pub(crate) fn progress(
         (best, stalled.saturating_add(1))
     }
 }
+/// Under fog the rows are in one fixed physical order (`arrival::prepare_with_kept`, by
+/// position), and the order has no term from a goal. A body is certified against the start
+/// disc of each body that has no turn yet. So a fixed order moves a dense group in one
+/// world direction front first, and in the opposite direction rear first: there each body
+/// gets only the gap to the body ahead, and the rear of the group does not move.
+///
+/// With second turns, a body does not search in its first turn when the start disc of a
+/// body of its own owner that had no first turn yet stops its straight step. It keeps its
+/// start disc and its unused pair allowance. It gets its second turn immediately after
+/// that body has its certified chord. The decision reads two bodies of one owner and the
+/// turn order only: no unit id, and no fact of another owner. A body that a body of
+/// another owner stops keeps the one-turn rule, so the physical order alone decides which
+/// of two bodies of two owners moves first.
+pub(super) fn second_turn_under_fog(fog: bool) -> bool {
+    fog
+}
+
+/// The bodies that wait for a second turn. For each row: the newest body that waits for
+/// it, the next body that waits for the same row, and the wait flag. `woken` holds the
+/// rows whose second turn is due. Each row waits one time at most, so no list holds more
+/// than one entry for each row.
+struct Waiters {
+    newest: Vec<u32>,
+    next: Vec<u32>,
+    waiting: Vec<bool>,
+    woken: Vec<u32>,
+}
+
+impl Waiters {
+    const NONE: u32 = u32::MAX;
+    /// The bytes of the lists for `rows` rows.
+    const fn bytes(rows: usize) -> usize {
+        rows * (3 * std::mem::size_of::<u32>() + 1)
+    }
+    fn new(rows: usize) -> Self {
+        Self {
+            newest: vec![Self::NONE; rows],
+            next: vec![Self::NONE; rows],
+            waiting: vec![false; rows],
+            woken: Vec::with_capacity(rows),
+        }
+    }
+    /// Let `body` wait for `blocker`. False when second turns are off, or when `blocker`
+    /// waits itself: its first turn is done, so a wait for it can make a cycle.
+    fn wait(&mut self, body: usize, blocker: usize) -> bool {
+        if blocker >= self.waiting.len() || body >= self.waiting.len() || self.waiting[blocker] {
+            return false;
+        }
+        self.waiting[body] = true;
+        self.next[body] = self.newest[blocker];
+        self.newest[blocker] = body as u32;
+        true
+    }
+    /// `row` has its certified chord. Its waiters get their turns next, in the order in
+    /// which they started to wait (the row order).
+    fn wake(&mut self, row: usize) {
+        let Some(newest) = self.newest.get_mut(row) else {
+            return;
+        };
+        let mut body = std::mem::replace(newest, Self::NONE);
+        while body != Self::NONE {
+            self.waiting[body as usize] = false;
+            self.woken.push(body);
+            body = std::mem::replace(&mut self.next[body as usize], Self::NONE);
+        }
+    }
+}
 /// The existing solver's physical arrival order is retained. Earlier certified
 /// trajectories are fixed. Later bodies remain stationary until their own turn.
 /// Rechecking all relative paths therefore cannot roll a committed peer back
@@ -191,6 +258,7 @@ pub(super) fn certify(
         max_radius,
         budget,
         &super::motion::NoMotionGuide,
+        false,
     );
 }
 
@@ -209,6 +277,7 @@ pub(super) fn certify_guided(
     _max_radius: f32,
     budget: &mut SweepBudget,
     guide: &dyn super::motion::MotionGuide,
+    second_turn: bool,
 ) {
     // Flat scalar arrays only; never clone nested command or progress buffers.
     let admitted = units.len() <= crate::terrain::traffic::index_capacity();
@@ -267,7 +336,26 @@ pub(super) fn certify_guided(
         points[index].position = *origin;
         grid.move_point(index, old, *origin);
     }
-    for index in 0..units.len() {
+    // Second turns (see `second_turn_under_fog`). The lists are counted in the scratch
+    // peak. A frame with no room for them keeps the one-turn order.
+    let count = units.len();
+    let second_turn = second_turn
+        && budget.peak_bytes.saturating_add(Waiters::bytes(count)) <= bounded::SCRATCH_BYTES;
+    if second_turn {
+        budget.peak_bytes += Waiters::bytes(count);
+    }
+    let mut waiters = Waiters::new(if second_turn { count } else { 0 });
+    let mut next_row = 0;
+    loop {
+        // A due second turn comes before the first turn of the next row.
+        let (index, first) = if let Some(row) = waiters.woken.pop() {
+            (row as usize, false)
+        } else if next_row < count {
+            next_row += 1;
+            (next_row - 1, true)
+        } else {
+            break;
+        };
         let from = origins[index];
         // Keep raw[] unchanged for finish(): a clipped raw arrival must regain
         // its unfinished order. Every geometric alternative uses this limit.
@@ -289,6 +377,7 @@ pub(super) fn certify_guided(
             outputs[index].position = from;
             committed[index] = true;
             candidates.borrow_mut().mark_committed(index);
+            waiters.wake(index);
             continue;
         }
         // A stationary body is already protected by every earlier certificate.
@@ -298,6 +387,7 @@ pub(super) fn certify_guided(
                 committed[index] = true;
                 candidates.borrow_mut().mark_committed(index);
             }
+            waiters.wake(index);
             continue;
         }
         // Candidate storage is bounded before certification starts. Query failures
@@ -315,8 +405,12 @@ pub(super) fn certify_guided(
                 .then(a.cmp(&b))
         });
         let seen = std::cell::RefCell::new(neighbors.clone());
-        let used = std::cell::Cell::new(0usize);
+        // A second turn continues the pair count of the first turn.
+        let used = std::cell::Cell::new(spent[index]);
         let exhausted = std::cell::Cell::new(false);
+        // The last body of the same owner with no certified chord yet that stopped a
+        // checked step.
+        let unturned = std::cell::Cell::new(None);
         #[cfg(feature = "test-probes")]
         let traced_pairs = std::cell::Cell::new(0usize);
         let budget = std::cell::RefCell::new(&mut *budget);
@@ -333,7 +427,8 @@ pub(super) fn certify_guided(
                 return false;
             }
             used.set(count);
-            let peer_to = if committed.get(other).copied().unwrap_or(false) {
+            let turned = committed.get(other).copied().unwrap_or(false);
+            let peer_to = if turned {
                 outputs[other].position
             } else {
                 origins[other]
@@ -346,6 +441,9 @@ pub(super) fn certify_guided(
                 peer_to,
                 units[other].radius,
             );
+            if !clear && !turned && units[other].owner_slot == units[index].owner_slot {
+                unturned.set(Some(other));
+            }
             #[cfg(feature = "test-probes")]
             if tracing && !clear && traced_pairs.get() < 8 {
                 traced_pairs.set(traced_pairs.get() + 1);
@@ -382,7 +480,19 @@ pub(super) fn certify_guided(
             rows.into_iter().all(|other| check(to, other))
         };
         let mut accepted = proposed;
-        if !clear(proposed) {
+        let straight = clear(proposed);
+        // One check ran, and it stops at the first pair that is not clear.
+        if !straight
+            && first
+            && !exhausted.get()
+            && let Some(blocker) = unturned.get()
+            && waiters.wait(index, blocker)
+        {
+            // Not committed: each other body is certified against this start disc.
+            spent[index] = used.get();
+            continue;
+        }
+        if !straight {
             accepted = from;
             if guide.certificate_search_enabled() {
                 let limit = length(from, proposed);
@@ -526,6 +636,7 @@ pub(super) fn certify_guided(
         let old = points[index].position;
         points[index].position = accepted;
         grid.move_point(index, old, accepted);
+        waiters.wake(index);
     }
     if let Some(index) = candidates.borrow_mut().index_work() {
         budget.index_work.add(index);
@@ -1250,6 +1361,125 @@ mod planning_tests {
             &mut guide,
         );
         (frame, out, guide, budget)
+    }
+    /// Each body asks for its straight step, as a mover of the terrain traffic model does.
+    struct Straight;
+    impl MotionGuide for Straight {
+        fn kind(&self, _: u32) -> MotionKind {
+            MotionKind::Destination
+        }
+        fn next_position(&mut self, request: MotionRequest, _: &mut SweepBudget) -> Option<Vec2> {
+            Some(request.preferred_position())
+        }
+    }
+    /// Fog with no sight: a body of another owner is known by contact only.
+    struct NoSight;
+    impl crate::movement::MovementVisibility for NoSight {
+        fn unit_permitted(&self, _: u8, _: u32) -> bool {
+            false
+        }
+    }
+    /// One tick under fog of a column of one owner: six bodies 0.1 apart, each with a
+    /// point 40 along the column. `east` gives the world direction. A body of the same
+    /// owner that does not move stands 2.0 ahead of the front, so the front cannot make
+    /// its full step and the column is not one complete support group. With `enemy_goal`,
+    /// a body of another owner 6.0 to the side of the column moves to that goal. Returns
+    /// the outputs of the column from its rear to its front, and the travel of each.
+    fn fog_column(east: bool, enemy_goal: Option<Vec2>) -> (Vec<MovementFrameOutput>, Vec<f32>) {
+        let side = if east { 1. } else { -1. };
+        let place = |rank: u32| Vec2::new(64. + side * (0.7 * rank as f32 - 20.), 20.);
+        let mut units = (0..6)
+            .map(|rank| {
+                let mut body = unit(
+                    rank + 1,
+                    place(rank),
+                    place(rank) + Vec2::new(side * 40., 0.),
+                    100.,
+                );
+                body.radius = 0.3;
+                body
+            })
+            .collect::<Vec<_>>();
+        let mut wall = unit(8, place(5) + Vec2::new(side * 2.6, 0.), place(5), 100.);
+        wall.radius = 0.3;
+        wall.speed = None;
+        wall.target = None;
+        units.push(wall);
+        if let Some(goal) = enemy_goal {
+            let mut enemy = unit(9, Vec2::new(64., 26.), goal, 100.);
+            enemy.owner_slot = 1;
+            enemy.radius = 0.3;
+            units.push(enemy);
+        }
+        units.sort_by_key(|body| body.unit_id);
+        let frame = MovementFrame {
+            recovery: Default::default(),
+            bounds: Vec2::splat(128.),
+            tick_hz: 20,
+            units,
+            pools: BTreeMap::new(),
+        };
+        let outputs = crate::movement::step_frame_with_motion_guide_and_visibility(
+            &frame,
+            0.05,
+            &BTreeSet::new(),
+            &mut SweepBudget::new(1),
+            &mut Straight,
+            Some(&NoSight),
+        );
+        for (index, a) in outputs.iter().enumerate() {
+            for b in &outputs[..index] {
+                assert!(
+                    a.position.distance(b.position) >= 0.6 - 1e-5,
+                    "bodies {} and {} overlap",
+                    a.unit_id,
+                    b.unit_id
+                );
+            }
+        }
+        let column = (0..6)
+            .map(|rank| {
+                outputs
+                    .iter()
+                    .find(|output| output.unit_id == rank + 1)
+                    .unwrap()
+                    .clone()
+            })
+            .collect::<Vec<_>>();
+        let travel = column
+            .iter()
+            .zip(0..)
+            .map(|(output, rank)| output.position.distance(place(rank)))
+            .collect();
+        (column, travel)
+    }
+    #[test]
+    fn a_fog_column_moves_equally_in_both_world_directions() {
+        // The sweep order under fog is physical (by position). In a column toward +x the
+        // body ahead has its turn after the body behind. The body behind must not get only
+        // the gap to the start disc of the body ahead: the mirror column moves a full step.
+        let (_, east) = fog_column(true, None);
+        let (_, west) = fog_column(false, None);
+        for (rank, (east, west)) in east.iter().zip(&west).enumerate() {
+            assert!(
+                (east - west).abs() < 1e-3,
+                "rank {rank} from the rear: travel {east} toward +x, {west} toward -x"
+            );
+        }
+        assert!(
+            east[0] > 1.9,
+            "the rear of the column toward +x did not follow the front: {east:?}"
+        );
+    }
+    #[test]
+    fn a_hidden_body_out_of_contact_does_not_change_a_fog_column() {
+        // Paired worlds: the hidden body of the other owner has two different goals, and
+        // its motion does not come near the column. The column is equal in the two worlds.
+        for east in [true, false] {
+            let (near, _) = fog_column(east, Some(Vec2::new(64., 60.)));
+            let (far, _) = fog_column(east, Some(Vec2::new(100., 26.)));
+            assert_eq!(near, far);
+        }
     }
     #[test]
     fn deferred_dense_convoy_uses_one_complete_support_proof_under_same_ticket() {
