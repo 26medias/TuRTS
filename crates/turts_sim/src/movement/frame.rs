@@ -463,14 +463,15 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
         let mut reads = super::recovery::ScheduleReads::default();
         let hz = frame.tick_hz.max(1);
         for (row, unit) in units.iter().enumerate() {
-            let blocked_order = unit.progress.as_ref().is_some_and(|progress| {
+            let blocked_group = unit.progress.as_ref().is_some_and(|progress| {
                 progress.activity == MovementActivity::Blocked
                     && frame.pools.contains_key(&progress.pool_id)
-            }) || unit
+            });
+            let blocked_plain = unit
                 .plain_progress
                 .as_ref()
                 .is_some_and(|progress| progress.activity == MovementActivity::Blocked);
-            let blocked = unit.physical_escape.is_some() || blocked_order;
+            let blocked = unit.physical_escape.is_some() || blocked_group || blocked_plain;
             // A group mover whose stall clock can become due in this tick may run the
             // spare-slot search (the stall branch of the group step below).
             let job = frame.recovery.get(&unit.unit_id);
@@ -528,11 +529,23 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
                 position: unit.position,
                 radius: unit.radius,
                 spare,
+                // A group target that another mover claims gets no check (the group
+                // step below), so it needs no floor.
                 retained: unit
                     .physical_escape
                     .as_ref()
                     .is_some_and(|escape| escape.target.is_some())
-                    || (blocked_order && unit.target.is_some()),
+                    || (blocked_plain && unit.target.is_some())
+                    || (blocked_group
+                        && unit.target.is_some_and(|target| {
+                            !target_claimed_by_other(
+                                &target_claims,
+                                guide.kind(unit.unit_id) == super::motion::MotionKind::Destination,
+                                visibility.is_some(),
+                                unit.owner_slot,
+                                target,
+                            )
+                        })),
             });
         }
         recovery_world.set_reads(reads);
@@ -816,18 +829,15 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
                 progress.slot.x.to_bits(),
                 progress.slot.y.to_bits(),
             );
-            let target_is_claimed_by_other = owns_destination
-                && unit.target.is_some_and(|target| {
-                    target_claims
-                        .get(&target_key(target))
-                        .is_some_and(|counts| {
-                            if visibility.is_some() {
-                                counts[usize::from(unit.owner_slot != 0)] > 1
-                            } else {
-                                u64::from(counts[0]) + u64::from(counts[1]) > 1
-                            }
-                        })
-                });
+            let target_is_claimed_by_other = unit.target.is_some_and(|target| {
+                target_claimed_by_other(
+                    &target_claims,
+                    owns_destination,
+                    visibility.is_some(),
+                    unit.owner_slot,
+                    target,
+                )
+            });
             let kind = super::RecoveryKind::Group(progress.pool_id);
             // The pool slot search and the ring scan run as one metered job; the job
             // chooses the nearer point as the base did.
@@ -2100,6 +2110,27 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
             .map(|index| resolved_ties[index].1);
     }
     outputs
+}
+
+/// True when another mover claims the target of a destination owner: under fog, another
+/// mover of the same owner class; with no basis, any other mover.
+fn target_claimed_by_other(
+    target_claims: &std::collections::HashMap<(u32, u32), [u32; 2]>,
+    owns_destination: bool,
+    fog: bool,
+    owner: u8,
+    target: Vec2,
+) -> bool {
+    owns_destination
+        && target_claims
+            .get(&target_key(target))
+            .is_some_and(|counts| {
+                if fog {
+                    counts[usize::from(owner != 0)] > 1
+                } else {
+                    u64::from(counts[0]) + u64::from(counts[1]) > 1
+                }
+            })
 }
 
 /// One neighbourhood read of the base grid (design `2026-11-19-recovery-actual-work`

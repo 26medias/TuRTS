@@ -1150,29 +1150,51 @@ fn probe_stress_frame() -> MovementFrame {
     }
 }
 
-/// Report (no time claim): the work of 40 ticks of the stress scene, by class.
+/// Report (no time claim): the work of 40 ticks of the stress scene, by class (K: owner
+/// work; P: neighbourhood reads; V: view builds).
 #[test]
 fn stress_scene_work_report() {
     let mut frame = probe_stress_frame();
-    let mut peak_owner = 0;
-    let mut total_owner = 0;
-    let mut frame_work = 0;
-    let mut peak_frame = 0;
+    let mut peak = RecoveryCounters::default();
+    let mut total = RecoveryCounters::default();
     for tick in 1..=40 {
         let mut budget = super::sweep::SweepBudget::new(tick);
         let outputs =
             super::step_frame_with_sweep_budget(&frame, 0.05, &Default::default(), &mut budget);
         let counters = &budget.recovery;
-        peak_owner = peak_owner.max(counters.owner_work[0]);
-        total_owner += counters.owner_work[0];
-        frame_work += counters.frame_work;
-        peak_frame = peak_frame.max(counters.frame_work);
+        assert!(counters.owner_work[0] <= OWNER_WORK);
+        assert_eq!(
+            counters.frame_work,
+            counters.physical_work + counters.view_work
+        );
+        peak.owner_work[0] = peak.owner_work[0].max(counters.owner_work[0]);
+        peak.physical_reads = peak.physical_reads.max(counters.physical_reads);
+        peak.physical_work = peak.physical_work.max(counters.physical_work);
+        peak.view_work = peak.view_work.max(counters.view_work);
+        total.owner_work[0] += counters.owner_work[0];
+        total.physical_reads += counters.physical_reads;
+        total.physical_work += counters.physical_work;
+        total.view_work += counters.view_work;
+        total.checks += counters.checks;
         advance(&mut frame, &outputs);
     }
     eprintln!(
-        "STRESSWORK ticks=40 k_peak={peak_owner} k_total={total_owner} frame_peak={peak_frame} frame_total={frame_work}"
+        "STRESSWORK ticks=40 k_peak={} k_total={} physical_reads_peak={} physical_reads_total={} \
+         physical_work_peak={} physical_work_total={} view_work_peak={} view_work_total={} \
+         frame_total={} checks_total={}",
+        peak.owner_work[0],
+        total.owner_work[0],
+        peak.physical_reads,
+        total.physical_reads,
+        peak.physical_work,
+        total.physical_work,
+        peak.view_work,
+        total.view_work,
+        total.physical_work + total.view_work,
+        total.checks
     );
-    assert!(peak_owner <= OWNER_WORK);
+    // 100 blocked group rows: two reads for each row and tick at most.
+    assert!(peak.physical_reads <= 200);
 }
 
 // ---- Section 7 of the design: the work outside the owner allowance (R15 to R24). ----
