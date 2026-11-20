@@ -1,7 +1,8 @@
 # Bounded recovery contact reads
 
 Status: Baseline (implemented; one independent review, section 8). Date: 2026-11-20. Track:
-Foundation (it changes the cost of audited movement reads; it changes no result). Source:
+Foundation (it changes the cost of audited movement reads; no read gives another answer;
+the metered cost of the pool stage changes, section 3). Source:
 `target/mc-evidence/handoffs/2026-11-20-bounded-contact-design.md`. Base: `5f18ef1c` on
 `codex/dense-acceptance-integration`. Branch: `codex/bounded-contact`. This note replaces
 the bound of `2026-11-19-recovery-actual-work.md` section 7.3 and changes 7.1 (class P),
@@ -65,9 +66,20 @@ overlap-class reads and the slot reads, as before (the count of B4 is unchanged:
 contact read is not in it). `view_work` adds one insert for each row of a built hidden
 index. `phase_bytes` adds the membership vectors and the hidden indexes.
 
-## 3. Results do not change
+## 3. What changes and what does not
 
-The new reads give the same overlap flags and the same contact sets as the old read.
+Each read gives the same answer as before: the new reads give the same overlap flags and
+the same contact sets as the old read, and every grid query gives the same points.
+
+One metered cost changes. The pool stage and the pool precheck of a recovery job walk the
+cell box of the slot grid (`EscapeScan::pool_levels` and `precheck`, `UniformGrid::cell_box`)
+and pay one unit for each cell. G1 makes that box tighter for a reach below 1 and removes
+the f32 growth at large coordinates. So these stages can cost fewer units (K work 132 to
+117 in the tiny spare scene of section 7), and a slice can end at another point. The cost
+depends on slot positions only, so privacy does not change. The live server and the
+auditor run the same kernel, so replay stays deterministic. A log written before this
+change does not replay to the same result when a slice end moves, and its paused pool
+cursor (`RecoveryPoolCursor::at`) indexes other cells.
 
 - Test oracle (`recovery_oracle::check_schedule_read`, test builds only): at each schedule
   read of a frame of at most 4,096 rows, it tests every row of the frame and compares the
@@ -138,7 +150,43 @@ This branch implements none of them.
 
 ## 7. Evidence
 
-Filled at delivery (section 8 and `target/mc-evidence/bounded-contact/`).
+Files: `target/mc-evidence/bounded-contact/` (README there). Probe
+`frame_contact_density_probe`: 5,041 bodies in a packed square, 100 recovery rows of owner
+0, one tick. *Spare*: stalled movers; *blocked*: blocked group movers. Fog *visible*: every
+other still body is of owner 1 and permitted; *hidden*: the same bodies are hidden, so the
+rows touch them. Work is in units of the counters (one cell or one body test).
+
+| Scene | Base `physical_work` | `bd0c46e0` `physical_work` (of it `contact_work`) |
+| --- | --- | --- |
+| radius 0.4, spare, no fog | 1,649 | 1,583 (0) |
+| radius 0.4, spare, hidden | 1,677 | 2,788 (1,177) |
+| radius 0.001, spare, no fog | 826,378 | 1,717 (0) |
+| radius 0.001, spare, visible | 826,378 | 1,717 (0) |
+| radius 0.001, spare, hidden | 851,083 | 239,637 (213,215) |
+| radius 0.001, blocked, no fog | 828,287 | 3,434 (0) |
+| radius 0.001, blocked, hidden | 828,287 | 216,649 (213,215) |
+
+- K work is unchanged in each scene (`owner` 759, 117, 216 or 0). The base and the branch
+  give different K work only in the tiny spare scenes (132 to 117, 231 to 216): the frame
+  hash and the oracle show that no result changed, so this is NOT TRACED further; the
+  likely cause is the order of the cells that a check reads after the f64 cell change.
+- V work: 10,220 (radius 0.4) and 10,106 (radius 0.001) with no fog. Under fog a blocked
+  scene now has 5,041 or 7,511 units of V work (the membership pass and the hidden index)
+  where the base had 0: the base read the same rows in its schedule read as P work.
+- Phase memory (`phase_bytes`): 723,633 bytes in the radius-0.4 spare scene (base
+  799,257); 707,250 in the tiny hidden spare scene (base 738,809).
+- Wall time does not change: the spare tiny scene takes 3.15 s on both builds. The time is
+  in the movement kernel. The integration probe with ordinary movers and no recovery row
+  takes 4.27 s on the base for the tiny scene (29 ms for radius 0.4). In the base profile
+  of the tiny spare scene, 75 % of the cycles are in `UniformGrid::within_unsorted`, the
+  general neighbourhood query of the kernel.
+- `tests/frame_hash.rs`: `frame_chains=c47f80851ee283b8`, `muster_world=980377f842f51f57`
+  on `5f18ef1c` and on `bd0c46e0`.
+- All 929 `turts_sim` unit tests and the 20 other `turts_sim` test binaries pass in release.
+- Six one-line mutants each turn a new test red (`mutants.log`): the overlap read with
+  `CONTACT_GAP`, a hidden index with members, a contact reach with no gap, the absolute
+  grid margin, f32 cell boxes, and a full scan in `any_within`. The frame-level test at
+  large coordinates stays green on the f32-box mutant; the grid test catches it.
 
 ## 8. Review
 
