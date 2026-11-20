@@ -255,7 +255,9 @@ baseline below remains a separate diagnostic.
 Charge bounded spatial discovery to the existing owner work and visit limits
 and the actor steering limit. Charge lookup by the size of the owner's own
 actor set, with the same charge for every ID. Include temporary storage in the
-existing scratch bound. If a query or allowance is exhausted, retain the
+existing scratch bound. Skip the forecast when no actor has coherence advice.
+Leave one full predictive ticket for the owner and at least the minimum primary
+solve credit for each actor. If a query or allowance is exhausted, retain the
 owner's entire captured forecast and keep the work already charged.
 
 A stalled private waypoint permits a detour after about half a second without

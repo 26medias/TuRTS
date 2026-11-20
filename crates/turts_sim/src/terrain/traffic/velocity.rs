@@ -8,6 +8,7 @@ use crate::movement::motion::{MotionGuide, MotionKind, MotionRequest};
 use crate::movement::sweep::SweepBudget;
 use bevy_math::DVec2;
 const TICKET: usize = 128;
+const MIN_REMAINING: usize = 64;
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct HistoryRow {
     unit: u32,
@@ -386,7 +387,9 @@ fn bounded_forecast(
             let reach = row.agent.radius + view.max_radius + 0.05;
             let mut spent = actor.spent;
             let mut charge = || {
-                if spent >= TICKET || !budget.charge_guidance_pair(owner as u8, &mut spent) {
+                if spent >= TICKET - MIN_REMAINING
+                    || !budget.charge_guidance_pair(owner as u8, &mut spent)
+                {
                     return false;
                 }
                 budget.model_operations += 1;
@@ -965,6 +968,7 @@ impl<'a> Guide<'a> {
             actors[row.actor].member = Some(index as u16);
         }
         let member_bytes = members.capacity() * std::mem::size_of::<super::coherence::Member>();
+        let mut advised = [false; SLOTS];
         // Useful proof is work-conserving. The next physical actor can use all
         // unspent owner credit; no retry receives a fresh per-actor allowance.
         for &i in &service {
@@ -1035,6 +1039,7 @@ impl<'a> Guide<'a> {
                 &mut |from, to| clear(actor.index, from, to),
             ) {
                 actor.advice = Some(next);
+                advised[usize::from(owner)] = true;
                 budget.coherence_advice += 1;
             }
         }
@@ -1042,10 +1047,14 @@ impl<'a> Guide<'a> {
         // Publish only a complete owner-local forecast. No hidden inputs enter it.
         let mut views = views;
         let mut forecast_bytes = 0;
-        if dt.is_finite() && dt > 0. {
+        if dt.is_finite() && dt > 0. && advised.into_iter().any(|advised| advised) {
             service.sort_unstable_by_key(|&i| (actors[i].owner, actors[i].id));
             for (owner, view) in views.iter_mut().enumerate() {
-                if let Some(view) = view {
+                if let Some(view) = view
+                    && advised[owner]
+                    && budget.reserve_model_amount(owner as u8, TICKET)
+                {
+                    // Give the predictive solver first claim on one full ticket.
                     // Lookup work must be independent of foreign intent and IDs.
                     let start = service.partition_point(|&i| usize::from(actors[i].owner) < owner);
                     let end = service.partition_point(|&i| usize::from(actors[i].owner) <= owner);
@@ -1058,6 +1067,7 @@ impl<'a> Guide<'a> {
                         &mut visits[owner],
                         budget,
                     ));
+                    budget.release_model(owner as u8, TICKET);
                 }
             }
         }
@@ -1266,7 +1276,7 @@ impl Guide<'_> {
 
 fn predictive_allowance(spent: usize, available: usize) -> Option<usize> {
     let remaining = TICKET.checked_sub(spent)?;
-    (remaining >= 64 && available >= remaining).then_some(remaining)
+    (remaining >= MIN_REMAINING && available >= remaining).then_some(remaining)
 }
 
 fn spend(ticket: &mut Ticket, owner: u8, budget: &mut SweepBudget) -> bool {
@@ -3851,8 +3861,8 @@ mod tests {
         remaining: usize,
     ) -> ReviewForecastResult {
         let mut f = coherent_frame(4);
-        for i in 0..4 {
-            f.units[i].unit_id = ids[i];
+        for (i, id) in ids.into_iter().enumerate() {
+            f.units[i].unit_id = id;
             if i >= 2 {
                 f.units[i].owner_slot = 1;
                 f.units[i].position = Vec2::new(100. + (i - 2) as f32 * 10., 100.);
