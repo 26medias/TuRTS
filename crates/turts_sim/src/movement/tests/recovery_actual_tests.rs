@@ -3,7 +3,7 @@
 use super::frame::{MovementFrame, MovementFrameOutput, MovementFrameUnit};
 use super::recovery::{
     Check, EscapeScan, MIN_SLICE, OWNER_WORK, PoolSearch, RecoveryCounters, RecoveryWorld,
-    RowRecovery, SLICE_CANDIDATES, ScheduleRow, SliceOutcome, plan,
+    RowRecovery, SLICE_CANDIDATES, ScheduleReads, ScheduleRow, SliceOutcome, plan,
 };
 use super::recovery_oracle::take_compared;
 use super::recovery_view::{ClaimSet, Contacts, KnownSet, KnownView, body_key};
@@ -1193,7 +1193,8 @@ fn stress_scene_work_report() {
         total.physical_work + total.view_work,
         total.checks
     );
-    // 100 blocked group rows: two reads for each row and tick at most.
+    // 100 blocked group rows: two fixed reads for each row and tick, and the reads of the
+    // slot refresh (this pool has one slot, far from the rows).
     assert!(peak.physical_reads <= 200);
 }
 
@@ -2215,12 +2216,15 @@ fn owner_work_and_neighbourhood_reads_stay_within_their_bounds() {
                     })
             })
             .count() as u64;
+        super::pool_index::SLOT_CLEARANCE_READS.with(|count| count.set(0));
         let (outputs, counters) = step_mode(&frame, None, true, tick);
+        // The slot refresh reads of all movers: an upper bound of those of recovery rows.
+        let refresh = super::pool_index::SLOT_CLEARANCE_READS.with(|count| count.get());
         peak = peak.max(counters.owner_work[0]);
         assert!(counters.owner_work[0] <= OWNER_WORK, "tick {tick}");
         let least = 2 * physical + 2 * group + plain + spare;
         assert!(
-            (least..=least + physical).contains(&counters.physical_reads),
+            (least..=least + physical + refresh).contains(&counters.physical_reads),
             "tick {tick}: {} reads for {physical} physical, {group} group, {plain} plain, \
              {spare} spare rows",
             counters.physical_reads
@@ -2632,4 +2636,352 @@ fn a_clear_retained_group_target_has_no_resting_body_on_it() {
         clear > 100 && resting_blocks > 100 && edge > 50,
         "{clear} {resting_blocks} {edge}"
     );
+}
+
+// ---- Repairs after the review of section 7 (counting and instruments). ----
+
+/// One blocked group row (radius 0.3) on the way to a retained slot, inside a pool of hex
+/// slots 0.7 apart, and one own body of radius 1.5 far away (the largest radius of the
+/// frame sets the reach of the slot refresh). `walkers` ordinary movers are far away.
+fn slot_refresh_scene(walkers: u32) -> (MovementFrame, Vec<Vec2>) {
+    let target = ORIGIN + Vec2::new(2.8, 0.0);
+    let mut mover = blocked(1, ORIGIN, target);
+    mover.radius = 0.3;
+    let mut units = vec![
+        mover,
+        still(2, 0, ORIGIN + Vec2::new(-0.3, 0.0), 0.3),
+        still(3, 0, Vec2::new(50.0, 50.0), 1.5),
+    ];
+    for n in 0..walkers {
+        let at = Vec2::new(5.0 + (n % 30) as f32 * 1.5, 30.0 + (n / 30) as f32 * 1.5);
+        let mut walker = body(100 + n, 0, at, 0.3);
+        walker.target = Some(at + Vec2::new(0.0, 5.0));
+        units.push(walker);
+    }
+    let mut slots = vec![target];
+    for j in -8i32..=8 {
+        for i in -8i32..=8 {
+            let slot =
+                ORIGIN + Vec2::new(0.7 * (i as f32 + 0.5 * (j & 1) as f32), 0.606 * j as f32);
+            if slot.distance(target) > 0.3 {
+                slots.push(slot);
+            }
+        }
+    }
+    let mut frame = frame(units);
+    frame.bounds = Vec2::splat(60.0);
+    frame.pools.insert(
+        7,
+        super::MovementPool {
+            pool_id: 7,
+            point: target,
+            spacing: 0.7,
+            primary_count: 1,
+            slots: slots.clone(),
+        },
+    );
+    (frame, slots)
+}
+
+/// Review finding 1. The slot clearance refresh after the turn of a recovery row does one
+/// read of the base grid for each pool slot within `radius + max radius` of its old or
+/// new position. `physical_reads` holds them: it equals the two fixed reads of the row
+/// plus a count of these slots that the test makes from the scene. The reads of ordinary
+/// movers are not recovery reads, and a hidden body out of contact changes no count.
+#[test]
+fn the_slot_refresh_reads_of_a_recovery_row_are_counted() {
+    let basis = Basis {
+        permitted: BTreeSet::new(),
+    };
+    for fog in [false, true] {
+        let (mut alone, slots) = slot_refresh_scene(0);
+        let (mut crowded, _) = slot_refresh_scene(300);
+        // A hidden body 1.2 from the row: inside the reach of the reads, out of contact.
+        let mut dark = alone.clone();
+        dark.units
+            .push(still(10_000, 1, ORIGIN + Vec2::new(0.0, 1.2), 0.3));
+        let mut reads = Vec::new();
+        for tick in 0..3 {
+            let old = alone.units[0].position;
+            super::pool_index::SLOT_CLEARANCE_READS.with(|count| count.set(0));
+            let (outputs, counters) = step_mode(&alone, fog.then_some(&basis), false, tick);
+            let probe = super::pool_index::SLOT_CLEARANCE_READS.with(|count| count.get());
+            let new = outputs[0].position;
+            assert_ne!(new, old, "the row moves");
+            // The filter of the slot grid: squared distance within the squared reach.
+            let reach = 0.3_f32 + 1.5;
+            let near = slots
+                .iter()
+                .filter(|slot| {
+                    slot.distance_squared(old) <= reach * reach
+                        || slot.distance_squared(new) <= reach * reach
+                })
+                .count() as u64;
+            assert!(near > 10, "the scene has slots near the row: {near}");
+            // Fixed reads: the schedule read and the exit read of a blocked group row.
+            assert_eq!(counters.physical_reads, 2 + near, "fog {fog} tick {tick}");
+            assert_eq!(probe, near, "only the recovery row moves");
+            assert!(counters.physical_work >= counters.physical_reads);
+            reads.push(counters.physical_reads);
+            // Ordinary movers refresh slots too; those are not recovery reads.
+            let (crowded_outputs, crowded_counters) =
+                step_mode(&crowded, fog.then_some(&basis), false, tick);
+            assert_eq!(crowded_counters.physical_reads, counters.physical_reads);
+            // A hidden body out of contact changes no read count and no owner counter.
+            let (dark_outputs, dark_counters) = step_mode(&dark, Some(&basis), false, tick);
+            let (lit_outputs, lit_counters) = step_mode(&alone, Some(&basis), false, tick);
+            assert_eq!(dark_counters.physical_reads, lit_counters.physical_reads);
+            assert_eq!(observable(&dark_counters), observable(&lit_counters));
+            assert_eq!(own_outputs(&dark_outputs), own_outputs(&lit_outputs));
+            advance(&mut alone, &outputs);
+            advance(&mut crowded, &crowded_outputs);
+            advance(&mut dark, &dark_outputs);
+        }
+        eprintln!("SLOTREADS fog={fog} physical_reads={reads:?}");
+    }
+}
+
+/// Review finding 2. Each move of a member of a built view costs two units of view work
+/// (one remove and one insert): `view_work` is the build (one check for each row and one
+/// insert for each member) plus twice the relocations that the view counts itself.
+#[test]
+fn view_relocations_are_counted_as_view_work() {
+    let (mut frame, _) = slot_refresh_scene(300);
+    let rows = frame.units.len() as u64;
+    for tick in 0..3 {
+        super::recovery_view::RELOCATIONS.with(|count| count.set(0));
+        let (outputs, counters) = step_mode(&frame, None, false, tick);
+        let relocations = super::recovery_view::RELOCATIONS.with(|count| count.get());
+        assert!(relocations >= 250, "the walkers move: {relocations}");
+        // One shared view: every row is a member.
+        assert_eq!(
+            counters.view_work,
+            2 * rows + 2 * relocations,
+            "tick {tick}"
+        );
+        assert_eq!(
+            counters.frame_work,
+            counters.physical_work + counters.view_work
+        );
+        advance(&mut frame, &outputs);
+    }
+}
+
+/// Review finding 3 (B1, "with a stored scan"). A group row has a stored search scan and
+/// a retained target that is blocked behind a cell larger than half the allowance. The
+/// check runs first in each tick, cannot be paid and is not stored. It never counts as
+/// clear (the test oracle of the frame checks each result), and it uses half the slice
+/// at most, so the stored search continues and ends.
+#[test]
+fn an_unpaid_check_does_not_stop_or_replace_the_stored_search() {
+    let target = ORIGIN + Vec2::new(2.5, 0.0);
+    let mut frame = retained_group_scene(target);
+    // The blocker is the last key of the dense cell.
+    frame
+        .units
+        .push(still(90_000, 0, target + Vec2::new(0.9, 0.0), 0.5));
+    frame.units.sort_by_key(|unit| unit.unit_id);
+    let mut with_stored_search = 0;
+    let mut ended = None;
+    for tick in 0..14 {
+        let had_search = frame
+            .recovery
+            .get(&1)
+            .is_some_and(|job| job.scan.is_some_and(|scan| !scan.is_check()));
+        let (outputs, counters) = with_candidate_cap(1, || {
+            let mut budget = super::sweep::SweepBudget::new(tick);
+            let outputs =
+                super::step_frame_with_sweep_budget(&frame, 0.05, &Default::default(), &mut budget);
+            (outputs, budget.recovery)
+        });
+        assert!(counters.owner_work[0] <= OWNER_WORK);
+        let mover = outputs.iter().find(|output| output.unit_id == 1).unwrap();
+        if had_search {
+            with_stored_search += 1;
+            // The unpaid check takes half the slice at most: the search runs in the tick.
+            assert_eq!((counters.checks, counters.slices), (1, 1), "tick {tick}");
+            if mover.recovery.is_none() {
+                // The search ended with an escape point that is not the blocked target.
+                assert!(mover.target.is_some_and(|point| point != target));
+                ended = Some(tick);
+                break;
+            }
+            assert_eq!(mover.target, Some(target), "tick {tick}: no choice yet");
+        }
+        advance(&mut frame, &outputs);
+    }
+    assert!(with_stored_search >= 2, "{with_stored_search}");
+    assert!(ended.is_some(), "the stored search must end");
+}
+
+/// The pool, the bodies and the far slot of `blocked_dense_pool`, with slot clearances.
+fn blocked_dense_index() -> (
+    super::pool_index::MovementPoolIndex,
+    Vec<MovementFrameUnit>,
+    Vec2,
+) {
+    let (pool, units, far) = blocked_dense_pool();
+    let mut index = super::pool_index::MovementPoolIndex::new(&pool, Vec2::splat(20.0));
+    let points: Vec<_> = units
+        .iter()
+        .map(|unit| crate::grid::GridPoint {
+            id: unit.unit_id,
+            position: unit.position,
+        })
+        .collect();
+    let grid = crate::grid::UniformGrid::new(&points, 5.0);
+    let witness = vec![Vec::new(); units.len()];
+    for slot in 0..pool.slots.len() {
+        index.refresh_slot_clearance(slot, &units, &points, &grid, 2.5, false, &witness);
+    }
+    (index, units, far)
+}
+
+fn spare_scan<'a>(
+    origin: Vec2,
+    claims: &'a ClaimSet,
+    index: &'a super::pool_index::MovementPoolIndex,
+) -> EscapeScan<'a> {
+    EscapeScan {
+        bounds: Vec2::splat(20.0),
+        origin,
+        radius: 0.5,
+        slots: Some((7, claims)),
+        pool: Some(PoolSearch {
+            index,
+            unit_id: 1,
+            allowed: None,
+            skip: None,
+        }),
+        bound: None,
+        verify: true,
+        pool_only: true,
+    }
+}
+
+/// Review finding 5 (`spare_origin`). A stalled mover creeps while its spare search
+/// spans many slices. The search keeps its origin while the mover is within its radius of
+/// it, so it ends with the slot of the unsliced search. A mover that goes farther starts
+/// a new search at its place.
+#[test]
+fn a_spare_search_keeps_its_origin_while_the_mover_creeps() {
+    let (index, units, far) = blocked_dense_index();
+    let claims = ClaimSet::default();
+    let start = units[0].position;
+    let kind = RecoveryKind::Spare(7);
+    let world = RecoveryWorld::new(None, None);
+    let mut counters = RecoveryCounters::default();
+    let mut job = None;
+    let mut slices = 0u32;
+    let mut paused = None;
+    let result = loop {
+        // The mover creeps 0.002 in each tick: 0.4 at most in this test.
+        let position = start + Vec2::new(0.002 * slices as f32, 0.0);
+        let point = row_turn(&world, &mut job, MIN_SLICE, &mut counters, |row| {
+            let origin = row.spare_origin(kind, position, 0.5);
+            if slices > 0 {
+                assert_eq!(origin, start, "slice {slices}: the search keeps its origin");
+            }
+            row.search(kind, &spare_scan(origin, &claims, &index), &units)
+        });
+        slices += 1;
+        assert!(slices < 200, "the search of a creeping mover must end");
+        if job.is_none() {
+            break point;
+        }
+        paused = job;
+    };
+    assert!(slices > 8, "the search spans slices: {slices}");
+    assert_eq!(result, Some(far));
+    // The mover is 0.6 from the origin of its stored search: more than its radius.
+    let away = start + Vec2::new(0.6, 0.0);
+    let origin = row_turn(&world, &mut paused, MIN_SLICE, &mut counters, |row| {
+        row.spare_origin(kind, away, 0.5)
+    });
+    assert_eq!(origin, away);
+}
+
+/// Review finding 5 (the stale check). A row waits with the stored check of a retained
+/// target. Then it has another target and no allowance. The job that it keeps holds no
+/// cursor of the old target: the row is a fresh row for the schedule. With the same
+/// target, the cursor stays.
+#[test]
+fn a_waiting_row_drops_the_check_of_a_point_that_it_left() {
+    let target = ORIGIN + Vec2::new(2.5, 0.0);
+    let units = dense_round(target);
+    let claims = ClaimSet::default();
+    let index = one_slot_pool(target);
+    let scan = check_scan(false, &claims, &index, None);
+    let kind = RecoveryKind::Physical;
+    // The row is a schedule row: a row with no schedule read keeps no job at all.
+    let world = RecoveryWorld::new(None, None);
+    let mut reads = ScheduleReads::default();
+    reads.begin(0);
+    world.set_reads(reads);
+    for (next_target, keeps_cursor) in [(target, true), (ORIGIN + Vec2::new(0.0, 2.5), false)] {
+        let mut counters = RecoveryCounters::default();
+        let mut job = None;
+        let first = row_turn(&world, &mut job, MIN_SLICE, &mut counters, |row| {
+            row.check(kind, &scan, target, false, false, &units)
+        });
+        assert_eq!(first, Check::Pending);
+        assert!(job.is_some_and(|job| job.scan.is_some_and(|scan| scan.is_check())));
+        let waited = row_turn(&world, &mut job, 0, &mut counters, |row| {
+            row.check(kind, &scan, next_target, false, false, &units)
+        });
+        assert_eq!(waited, Check::Pending);
+        let job = job.expect("a row that waits keeps its job");
+        assert_eq!(job.age, 2);
+        assert_eq!(job.scan.is_some(), keeps_cursor);
+    }
+}
+
+/// Review finding 7. A paused `Spare` job goes through the log encoding in the middle of
+/// its search. The restored job continues as the original: the same slices, the same
+/// work and the same slot.
+#[test]
+fn a_paused_spare_job_continues_the_same_after_a_json_round_trip() {
+    let (index, units, far) = blocked_dense_index();
+    let claims = ClaimSet::default();
+    let origin = units[0].position;
+    let kind = RecoveryKind::Spare(7);
+    let scan = spare_scan(origin, &claims, &index);
+    let world = RecoveryWorld::new(None, None);
+    // Runs the job to its end; `restore_at` sends it through JSON after that slice.
+    let run = |restore_at: Option<u32>| {
+        let mut counters = RecoveryCounters::default();
+        let mut job: Option<RecoverySearch> = None;
+        let mut trace = Vec::new();
+        for slice in 1..10_000u32 {
+            let point = row_turn(&world, &mut job, MIN_SLICE, &mut counters, |row| {
+                row.search(kind, &scan, &units)
+            });
+            trace.push((counters.owner_work[0], counters.candidates, job));
+            if job.is_none() {
+                return (point, trace, counters);
+            }
+            if restore_at == Some(slice) {
+                let stored = job.unwrap();
+                let cursor = stored
+                    .scan
+                    .and_then(|scan| scan.pool)
+                    .expect("a pool cursor");
+                assert!(
+                    stored.kind == kind && cursor.checked && !cursor.done && cursor.at > 0,
+                    "the job is paused inside its slot search: {stored:?}"
+                );
+                let logged = serde_json::to_string(&stored).unwrap();
+                let restored: RecoverySearch = serde_json::from_str(&logged).unwrap();
+                assert_eq!(restored, stored);
+                job = Some(restored);
+            }
+        }
+        panic!("the search must end");
+    };
+    let reference = run(None);
+    assert_eq!(reference.0, Some(far));
+    assert!(reference.1.len() > 12, "{}", reference.1.len());
+    for slice in [3, 6, 9] {
+        assert_eq!(run(Some(slice)), reference, "restored after slice {slice}");
+    }
 }

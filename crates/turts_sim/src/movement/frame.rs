@@ -759,7 +759,7 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
                 points[index].position = position;
                 grid.move_point(index, unit.position, position);
                 recovery_world.relocate(index, unit.position, position, unit.radius);
-                refresh_nearby_pool_slot_clearances(
+                let slot_reads = refresh_nearby_pool_slot_clearances(
                     unit.position,
                     position,
                     unit.radius,
@@ -774,6 +774,7 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
                     max_radius,
                     &contact_witness,
                 );
+                recovery.counters.slot_reads(slot_reads);
                 continue;
             }
         }
@@ -976,7 +977,7 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
             points[index].position = position;
             grid.move_point(index, unit.position, position);
             recovery_world.relocate(index, unit.position, position, unit.radius);
-            refresh_nearby_pool_slot_clearances(
+            let slot_reads = refresh_nearby_pool_slot_clearances(
                 unit.position,
                 position,
                 unit.radius,
@@ -991,12 +992,15 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
                 max_radius,
                 &contact_witness,
             );
+            recovery.counters.slot_reads(slot_reads);
             units[index].target = outputs[index].target;
             units[index].progress = outputs[index].progress.clone();
             continue;
         }
         let planning_context = &plain_spread_context;
         if let Some(progress) = unit.plain_progress.clone() {
+            // A blocked plain row is a recovery row: its slot reads are counted.
+            let blocked_plain = progress.activity == MovementActivity::Blocked;
             let mut output = step_plain_progress(
                 frame.bounds,
                 frame.tick_hz,
@@ -1032,7 +1036,7 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
             points[index].position = output.position;
             grid.move_point(index, unit.position, output.position);
             recovery_world.relocate(index, unit.position, output.position, unit.radius);
-            refresh_nearby_pool_slot_clearances(
+            let slot_reads = refresh_nearby_pool_slot_clearances(
                 unit.position,
                 output.position,
                 unit.radius,
@@ -1047,6 +1051,9 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
                 max_radius,
                 &contact_witness,
             );
+            if blocked_plain {
+                recovery_counters.slot_reads(slot_reads);
+            }
             continue;
         }
         let Some(target) = unit.target else { continue };
@@ -1071,6 +1078,7 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
                 });
             if owns_destination && target_occupied {
                 let progress = make_plain_progress(&unit, target, planning_context, &known);
+                let blocked_plain = progress.activity == MovementActivity::Blocked;
                 let mut plain_unit = unit.clone();
                 plain_unit.target = Some(progress.slot);
                 let output = step_plain_progress(
@@ -1105,7 +1113,7 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
                 points[index].position = output.position;
                 grid.move_point(index, unit.position, output.position);
                 recovery_world.relocate(index, unit.position, output.position, unit.radius);
-                refresh_nearby_pool_slot_clearances(
+                let slot_reads = refresh_nearby_pool_slot_clearances(
                     unit.position,
                     output.position,
                     unit.radius,
@@ -1120,6 +1128,9 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
                     max_radius,
                     &contact_witness,
                 );
+                if blocked_plain {
+                    recovery_counters.slot_reads(slot_reads);
+                }
                 continue;
             }
             let destination = target;

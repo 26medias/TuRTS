@@ -279,16 +279,20 @@ impl KnownView {
         }
     }
 
-    /// Follows the move of frame row `row` (no change when it is not a member).
-    pub(crate) fn relocate(&mut self, row: usize, from: Vec2, to: Vec2, radius: f32) {
+    /// Follows the move of frame row `row` (no change when it is not a member). True
+    /// when the view changed: one remove and one insert, each with its digest update.
+    pub(crate) fn relocate(&mut self, row: usize, from: Vec2, to: Vec2, radius: f32) -> bool {
         if !self.contains(row)
             || from.to_array().map(f32::to_bits) == to.to_array().map(f32::to_bits)
         {
-            return;
+            return false;
         }
+        #[cfg(test)]
+        RELOCATIONS.with(|count| count.set(count.get() + 1));
         let soft = self.members[row] == SOFT;
         self.remove(from, radius, soft);
         self.insert(to, radius, soft);
+        true
     }
 
     /// An upper bound of the bytes the view holds (B-tree nodes at half fill).
@@ -505,6 +509,12 @@ impl std::ops::Deref for ClaimSet {
     fn deref(&self) -> &Self::Target {
         &self.set
     }
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Test probe: the view relocations that changed a view.
+    pub(crate) static RELOCATIONS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
 }
 
 /// The result of a metered point query.

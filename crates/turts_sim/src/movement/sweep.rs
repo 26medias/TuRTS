@@ -1471,6 +1471,275 @@ mod planning_tests {
             "the rear of the column toward +x did not follow the front: {east:?}"
         );
     }
+    /// One tick under fog of the column of `fog_column` with bodies of another owner:
+    /// `(position, goal, radius)`; a body with no goal does not move. `sight` makes them
+    /// all visible. Returns the outputs of the column and of its wall.
+    fn column_with_enemies(
+        east: bool,
+        speed: f32,
+        enemies: &[(Vec2, Option<Vec2>, f32)],
+        sight: bool,
+    ) -> Vec<MovementFrameOutput> {
+        struct Sight(bool);
+        impl crate::movement::MovementVisibility for Sight {
+            fn unit_permitted(&self, _: u8, _: u32) -> bool {
+                self.0
+            }
+        }
+        let side = if east { 1. } else { -1. };
+        let place = |rank: u32| Vec2::new(64. + side * (0.7 * rank as f32 - 20.), 20.);
+        let mut units = (0..6)
+            .map(|rank| {
+                let mut body = unit(
+                    rank + 1,
+                    place(rank),
+                    place(rank) + Vec2::new(side * 40., 0.),
+                    speed,
+                );
+                body.radius = 0.3;
+                body
+            })
+            .collect::<Vec<_>>();
+        let mut wall = unit(8, place(5) + Vec2::new(side * 2.6, 0.), place(5), 100.);
+        wall.radius = 0.3;
+        wall.speed = None;
+        wall.target = None;
+        units.push(wall);
+        for (n, (at, goal, radius)) in enemies.iter().enumerate() {
+            let mut enemy = unit(100 + n as u32, *at, goal.unwrap_or(*at), speed);
+            enemy.owner_slot = 1;
+            enemy.radius = *radius;
+            if goal.is_none() {
+                enemy.speed = None;
+                enemy.target = None;
+            }
+            units.push(enemy);
+        }
+        units.sort_by_key(|body| body.unit_id);
+        let frame = MovementFrame {
+            recovery: Default::default(),
+            bounds: Vec2::splat(128.),
+            tick_hz: 20,
+            units,
+            pools: BTreeMap::new(),
+        };
+        let outputs = crate::movement::step_frame_with_motion_guide_and_visibility(
+            &frame,
+            0.05,
+            &BTreeSet::new(),
+            &mut SweepBudget::new(1),
+            &mut Straight,
+            Some(&Sight(sight)),
+        );
+        outputs
+            .into_iter()
+            .filter(|output| output.unit_id < 100)
+            .collect()
+    }
+    #[test]
+    fn hidden_bodies_near_a_fog_column_change_it_only_on_its_chords() {
+        // 400 random worlds: one to six hidden bodies of another owner in lanes beside the
+        // column, 0.12 or more clear of each chord of the column. Some stand; some move
+        // along their lane in one of the two directions. One more hidden body stands at
+        // a corner of the raw step of the front body: its box meets the box of that step,
+        // so it is a pair candidate of the front body, and the exact pair test finds it
+        // clear (0.78 from the end of the step; the contact range is 0.701). No hidden
+        // body stops a step: the column is the column with no enemy.
+        let mut state = 99u64;
+        let mut next = move || {
+            state = state
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            ((state >> 40) as f32) / (1u64 << 24) as f32
+        };
+        for case in 0..400 {
+            let east = case % 2 == 0;
+            let speed = [100.0f32, 20.0, 5.0][case % 3];
+            let side = if east { 1. } else { -1. };
+            let count = 1 + (next() * 6.0) as usize;
+            let front = Vec2::new(64. + side * (0.7 * 5. - 20.), 20.);
+            let corner = front
+                + Vec2::new(
+                    side * (speed * 0.05 + 0.55),
+                    if next() < 0.5 { 0.55 } else { -0.55 },
+                );
+            let mut enemies: Vec<(Vec2, Option<Vec2>, f32)> = vec![(corner, None, 0.3)];
+            while enemies.len() <= count {
+                let x = 64. + side * (next() * 14.0 - 24.0);
+                let lane = 0.6 + 0.12 + next() * 1.5;
+                let y = 20. + if next() < 0.5 { lane } else { -lane };
+                let at = Vec2::new(x, y);
+                if enemies.iter().any(|(other, _, _)| other.distance(at) < 0.9) {
+                    continue;
+                }
+                let goal = match (next() * 3.0) as u32 {
+                    0 => None,
+                    1 => Some(at + Vec2::new(side * 40., 0.)),
+                    _ => Some(at - Vec2::new(side * 40., 0.)),
+                };
+                enemies.push((at, goal, 0.3));
+            }
+            let alone = column_with_enemies(east, speed, &[], false);
+            let dark = column_with_enemies(east, speed, &enemies, false);
+            assert_eq!(
+                alone, dark,
+                "case {case}: east {east}, speed {speed}, enemies {enemies:?}"
+            );
+        }
+        // Control: the test can see a hidden body. A hidden body that stands on a chord of
+        // the column (0.5 from its line: closer than the two radii) changes the column.
+        for case in 0..40 {
+            let east = case % 2 == 0;
+            let side = if east { 1. } else { -1. };
+            let at = Vec2::new(64. + side * (-20. + 0.35 + 0.7 * (case % 5) as f32), 20.5);
+            let alone = column_with_enemies(east, 100., &[], false);
+            let dark = column_with_enemies(east, 100., &[(at, None, 0.3)], false);
+            assert_ne!(
+                alone, dark,
+                "control {case}: a body on a chord stops the column"
+            );
+        }
+    }
+    #[test]
+    fn two_bodies_that_stop_each_other_do_not_wait_for_each_other() {
+        // Two bodies of one owner 0.1 apart move toward each other under fog. The first
+        // in the turn order waits for the start disc of the second. The second must not
+        // wait for the first: a body that waits has no certified chord, so two bodies
+        // that wait for each other get no turn, and their raw steps pass through each
+        // other with no certificate.
+        for flip in [false, true] {
+            let (left, right) = (Vec2::new(20., 20.), Vec2::new(20.7, 20.));
+            let mut units = vec![
+                unit(
+                    if flip { 2 } else { 1 },
+                    left,
+                    left + Vec2::new(40., 0.),
+                    100.,
+                ),
+                unit(
+                    if flip { 1 } else { 2 },
+                    right,
+                    right - Vec2::new(40., 0.),
+                    100.,
+                ),
+            ];
+            for body in &mut units {
+                body.radius = 0.3;
+            }
+            units.sort_by_key(|body| body.unit_id);
+            let frame = MovementFrame {
+                recovery: Default::default(),
+                bounds: Vec2::splat(128.),
+                tick_hz: 20,
+                units,
+                pools: BTreeMap::new(),
+            };
+            let outputs = crate::movement::step_frame_with_motion_guide_and_visibility(
+                &frame,
+                0.05,
+                &BTreeSet::new(),
+                &mut SweepBudget::new(1),
+                &mut Straight,
+                Some(&NoSight),
+            );
+            let x = |start: Vec2| {
+                let unit = frame.units.iter().find(|unit| unit.position == start);
+                let id = unit.unwrap().unit_id;
+                outputs
+                    .iter()
+                    .find(|output| output.unit_id == id)
+                    .unwrap()
+                    .position
+                    .x
+            };
+            assert!(
+                x(left) + 0.6 - 1e-5 <= x(right),
+                "flip {flip}: the bodies passed through each other: {} and {}",
+                x(left),
+                x(right)
+            );
+        }
+    }
+    #[test]
+    fn a_second_turn_continues_the_pair_count_of_the_first_turn() {
+        // The guide records the pair count of a body at each pair that it charges. A body
+        // that waits and gets a second turn must continue its count: with a count from 0
+        // it would get its pair allowance two times.
+        struct Recording(std::cell::RefCell<Vec<(u32, usize)>>);
+        impl MotionGuide for Recording {
+            fn kind(&self, _: u32) -> MotionKind {
+                MotionKind::Destination
+            }
+            fn next_position(
+                &mut self,
+                request: MotionRequest,
+                _: &mut SweepBudget,
+            ) -> Option<Vec2> {
+                Some(request.preferred_position())
+            }
+            fn charge_certificate_pair(
+                &self,
+                unit_id: u32,
+                owner: u8,
+                spent: &mut usize,
+                allowance: usize,
+                budget: &mut SweepBudget,
+            ) -> bool {
+                self.0.borrow_mut().push((unit_id, *spent));
+                budget.charge_pair(owner, spent, allowance)
+            }
+        }
+        // The column toward +x: each body behind the front waits for the body ahead.
+        let place = |rank: u32| Vec2::new(44. + 0.7 * rank as f32, 20.);
+        let mut units = (0..6)
+            .map(|rank| {
+                let mut body = unit(
+                    rank + 1,
+                    place(rank),
+                    place(rank) + Vec2::new(40., 0.),
+                    100.,
+                );
+                body.radius = 0.3;
+                body
+            })
+            .collect::<Vec<_>>();
+        let mut wall = unit(8, place(5) + Vec2::new(2.6, 0.), place(5), 100.);
+        wall.radius = 0.3;
+        wall.speed = None;
+        wall.target = None;
+        units.push(wall);
+        let frame = MovementFrame {
+            recovery: Default::default(),
+            bounds: Vec2::splat(128.),
+            tick_hz: 20,
+            units,
+            pools: BTreeMap::new(),
+        };
+        let mut guide = Recording(Default::default());
+        let outputs = crate::movement::step_frame_with_motion_guide_and_visibility(
+            &frame,
+            0.05,
+            &BTreeSet::new(),
+            &mut SweepBudget::new(1),
+            &mut guide,
+            Some(&NoSight),
+        );
+        // The rear followed the front: it had a second turn.
+        assert!(outputs[0].position.x > place(0).x + 1.9, "{:?}", outputs[0]);
+        let pairs = guide.0.into_inner();
+        for id in 1..=6u32 {
+            let counts: Vec<usize> = pairs
+                .iter()
+                .filter(|(unit, _)| *unit == id)
+                .map(|(_, count)| *count)
+                .collect();
+            assert!(!counts.is_empty(), "unit {id} charged no pair");
+            assert!(
+                counts.windows(2).all(|pair| pair[0] < pair[1]),
+                "unit {id}: the pair count did not continue: {counts:?}"
+            );
+        }
+    }
     #[test]
     fn a_hidden_body_out_of_contact_does_not_change_a_fog_column() {
         // Paired worlds: the hidden body of the other owner has two different goals, and

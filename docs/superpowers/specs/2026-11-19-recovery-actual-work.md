@@ -175,10 +175,13 @@ build, see the commit).
   claim, a pool slot. Metered by the row allowance. Never above `OWNER_WORK` for one owner
   in one pass (A1).
 - **P (physical).** A *neighbourhood read*: one `UniformGrid::visit_within` on the base
-  grid of the frame at one point, with reach `radius + max radius + CONTACT_GAP` at most.
-  It reads hidden bodies. It is never charged to an owner and never refused.
+  grid of the frame at one point, with reach `radius + max radius + CONTACT_GAP` at most
+  (a slot read of B4: `2 * max radius` round the slot). It reads hidden bodies. It is
+  never charged to an owner and never refused.
 - **V (view).** The build of the owner view: one membership check for each row and one
   insert for each member, one time for each owner that has a served row, in each pass.
+  Then two units (one remove, one insert, each with its digest update) for each move of a
+  member of a view that is built.
 
 ### 7.2 Rules
 
@@ -238,25 +241,39 @@ position; a debug assertion in `step_frame` checks each solver row against the l
 unit id that `known` uses). A row turn builds its contact keys from these rows at their
 positions then.
 
-B4. **Fixed count of neighbourhood reads.** In one pass a schedule row does at most: one
-schedule read (B3); one exit read at its turn (the physical overlap of a blocked group row
-or of a physical-escape row); one read at its new position (a physical-escape row that
-moved). So: physical escape 3, blocked group 2, blocked plain 1, spare 1. No read for each
-candidate, slot or claim. This count is for recovery. A row that leaves recovery in its
-turn, and a spare row, also do the reads of an ordinary mover (separation, projection, and
-the overlap read of an order that fails).
+B4. **Count of neighbourhood reads.** In one pass a schedule row does at most:
 
-B5. **Counters.** `RecoveryCounters` holds `physical_reads` (count), `physical_work`
-(cells and bodies of the reads, and the contacts that the row turns read) and `view_work`
-(membership checks and inserts). `frame_work` is their sum. `checks` counts the metered
-point checks with no search. `spare_slot_work` is the metered work of spare jobs; it is
-inside `owner_work`. The navigation diagnostics and the terrain benchmark report
+- *Fixed reads.* One schedule read (B3); one exit read at its turn (the physical overlap
+  of a blocked group row or of a physical-escape row); one read at its new position (a
+  physical-escape row that moved). So: physical escape 3, blocked group 2, blocked plain
+  1, spare 1.
+- *Slot reads.* A turn that does not hold the row ends with the slot clearance refresh
+  (`refresh_nearby_pool_slot_clearances`; a blocked plain row does it in each turn). It
+  does one read for each pool slot within `R = radius + max radius` of the old or the new
+  position of the row. For a pool whose slots are at least `d` apart, that is at most
+  `2 * (2R/d + 1)^2` slots: the discs of radius `d/2` round the slots near one position
+  do not overlap and lie in a disc of radius `R + d/2`. The kernel does not check the
+  slot distance of a pool; with no such distance the bound is the slot count of the
+  pools. The count does not read a body, so a hidden body changes it only through the
+  largest radius of the frame.
+
+No read for each candidate or claim. This count is for recovery. A row that leaves
+recovery in its turn, and a spare row, also do the reads of an ordinary mover (separation,
+projection, the slot refresh, and the overlap read of an order that fails); those are not
+recovery reads and no recovery counter holds them.
+
+B5. **Counters.** `RecoveryCounters` holds `physical_reads` (the fixed reads and the slot
+reads of B4), `physical_work` (cells and bodies of these reads, and the contacts that the
+row turns read) and `view_work` (membership checks, inserts and two units for each
+relocation). `frame_work` is their sum. `checks` counts the metered point checks with no
+search. `spare_slot_work` is the metered work of spare jobs; it is inside `owner_work`.
+The navigation diagnostics and the terrain benchmark report
 `recovery_physical_reads_this_tick`, `recovery_physical_work_this_tick` and
 `recovery_view_work_this_tick`.
 
-B6. **The floor of the schedule (addition to A7).** B1 makes each row on the way to a
-retained target need a slice in each tick, and A7 serves 16 fresh rows of an owner at
-most. So a row that gets no slice from A7 gets `MIN_SLICE` when it has a retained target
+B6. **The floor of the schedule (addition to A7; accepted 2026-11-19).** B1 makes each row
+on the way to a retained target need a slice in each tick, and A7 serves 16 fresh rows of
+an owner at most. So a row that gets no slice from A7 gets `MIN_SLICE` when it has a retained target
 (for a group row: a target that no other mover claims at tick start, because a claimed
 target gets no check) or is a spare row, in service order, from at most half of the rest of the owner budget
 (the oldest scan batch, or the fresh rows, get that much less). A batch that does not fit
@@ -265,7 +282,20 @@ only: a failed check waits for a search slice, as an unserved row did before. Fo
 row the floor is a search slice. The allowances of one owner still sum to `OWNER_WORK` at
 most.
 
-B7. **Reserve of the pool stage (repair of A6).** The pool stage reads slot-grid cells
+The floor does not remove every wait of a row with a retained target. The row moves in a
+tick only when its check ends clear in that tick. It waits in two cases. (1) More rows
+wait than the floor serves (`F` = at least `OWNER_WORK / 4 / MIN_SLICE` = 128 rows of an
+owner in a tick): a row gets a floor slice within `ceil(W / F)` ticks, `W` = the rows of
+the owner that wait for the floor. (2) Its check costs more than one floor slice: the
+check keeps its cursor and continues in each slice that the row gets. A slice that
+resumes gives the query at least 8 units (64, less the local proof and the reserve of the
+next pause, at most 27 each, and two repeated steps; derived from A5 and A6, not
+measured), so a check that reads `C` cells and keys in a stable box ends within
+`ceil(C / 8)` slices. Together: at most `ceil(W / F) * ceil(C / 8)` ticks in a stable
+box. Measured by the review probe: 120 rows, each with 100 known bodies in the query box
+of its target, all end by tick 135; with no such bodies 200 rows end by tick 51.
+
+B7. **Reserve of the pool stage (repair of A6; accepted 2026-11-19).** The pool stage reads slot-grid cells
 with no slot in them before it starts the next slot. A slice that resumed inside such a
 run had no reserve, so its pause could not pay its proof (a debug assertion; in release
 the scan became relaxed). A slice now restores the reserve of its examined region before
@@ -276,10 +306,12 @@ its first unit.
 For one owner in one pass:
 
 - K work is at most `OWNER_WORK` = 32,768. It now includes B1 and B2. Fixed overshoot: 0.
-- P reads are at most 3 for each schedule row of the owner. One read costs the cells of
-  its box (at most 16 with the reach of 7.1) plus the bodies in them.
+- P reads are at most 3 fixed reads for each schedule row of the owner, plus the slot
+  reads of B4 (at most `2 * (2R/d + 1)^2` for each pool near the row). One read costs the
+  cells of its box (at most 16 with the reaches of 7.1) plus the bodies in them.
 - V work is at most one membership check for each row of the frame plus one insert for each
-  body that the owner knows.
+  body that the owner knows, plus two units for each mover of the frame that the owner
+  knows (a mover moves one time in a pass).
 
 P and V are not bounded by a constant. This is a limit of the design, not an omission:
 
@@ -328,7 +360,8 @@ that goes farther in each slice starts again.
 
 - R15: a retained target in a cell larger than a slice (group, physical, plain) resumes
   and ends, clear and blocked; in the frame the row holds its position and its target
-  while the check is paused; rows with a retained target get the floor and do not stop.
+  while the check is paused; rows with a retained target get the floor, and rows whose
+  check fits in a floor slice move in each tick.
 - R16: a paused retained check sees a new body or claim on its target.
 - R17: the spare search gives the slot of `nearest_free` for each class of body on the
   nearest slot (none, own, another owner at rest with and without a witness, a mover of
@@ -366,7 +399,39 @@ One test of the base changed: `step_frame_rejects_fully_occupied_spares_without_
 (`spread_tests.rs`) counted slot candidates with a counter inside `nearest_free`. That
 function is now the test oracle only, so the test reads the recovery counter `candidates`.
 
+Repair tests after the review of `f740fe2e`. Each went red on a one-line mutant (same
+log), but the fog column test: see its item.
+
+- The slot reads of a recovery row are counted: `physical_reads` equals the fixed reads
+  plus a count of the near slots that the test makes from the scene (21, 25, 25 in three
+  ticks; the counter was 2). Ordinary movers and a hidden body out of contact change no
+  count.
+- View relocations are counted: `view_work` equals the build plus twice the relocations
+  that the view counts itself.
+- B1 with a stored search scan: an unpaid check is never clear, uses half the slice at
+  most, and the stored search ends.
+- A spare search keeps its origin while the mover creeps; a waiting row drops the check
+  of a point that it left; a paused `Spare` job continues the same after a JSON round
+  trip.
+- `sweep.rs`: two bodies that stop each other do not wait for each other; a second turn
+  continues the pair count of the first turn.
+- `sweep.rs`: random hidden bodies beside a fog column, and one hidden body that is a
+  pair candidate of the front body, change the column only on its chords. A control (a
+  hidden body on a chord) must change it, so the test is not empty. Open: five one-line
+  mutants of `certify_guided` left it green (list in the log). With a mutant that makes
+  a pair candidate of another owner never clear, the front body still makes its full
+  step; the stage that restores the step is not traced.
+
 ### 7.7 Limits
+
+- A row with a retained target can wait (B6): when more rows wait than the floor serves,
+  and while a check larger than one floor slice continues.
+- Target claims are counted in two buckets, owner 0 and all other owners
+  (`spread.rs` `update_target_claims`, `frame.rs` `target_claimed_by_other`;
+  pre-existing at `e306a51c`). Under fog with `SLOT_COUNT > 2`, a far hidden mover of a
+  third owner with the same target would change the row of another owner that is not
+  owner 0. `SLOT_COUNT` is 2, so no live frame has this case. A change of `SLOT_COUNT`
+  must give each owner its own bucket first.
 
 - P and V work have no constant bound (7.3).
 - The spare search is not immediate any more. With more than 16 fresh rows of one owner, a

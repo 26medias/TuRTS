@@ -170,7 +170,7 @@ impl MovementPoolIndex {
         max_radius: f32,
         assigned: bool,
         contact_witness: &[Vec<u8>],
-    ) {
+    ) -> (usize, usize) {
         if !assigned {
             self.available_by_clearance.remove(&ClearanceRank {
                 clearance: self.clearances[slot_index].first.clearance,
@@ -179,7 +179,11 @@ impl MovementPoolIndex {
         }
         let slot = self.points[slot_index].position;
         let mut nearest = [SlotClearance::empty().first; 2];
-        for unit_index in grid.within(points, slot, 2.0 * max_radius) {
+        // One read of the base grid, in the order of `UniformGrid::within` (by id).
+        let mut near = Vec::new();
+        let work = grid.visit_within(points, slot, 2.0 * max_radius, |index| near.push(index));
+        near.sort_unstable_by_key(|index| (points[*index].id, *index));
+        for unit_index in near {
             let unit = &units[unit_index];
             if !match self.clearance_owners {
                 ClearanceOwners::All => true,
@@ -230,6 +234,7 @@ impl MovementPoolIndex {
         } else {
             self.available_slot_indices.remove(&slot_index);
         }
+        work
     }
 
     fn set_slot_assigned(&mut self, slot_index: usize, assigned: bool) {
@@ -383,6 +388,16 @@ impl MovementPoolIndex {
     }
 }
 
+#[cfg(test)]
+thread_local! {
+    /// Test probe: the slot clearance reads of the base grid after body moves.
+    pub(super) static SLOT_CLEARANCE_READS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// Refreshes the clearance of each pool slot within `body_radius + max_radius` of the old
+/// or the new position of a body. Each slot costs one read of the base grid (class P of
+/// design `2026-11-19-recovery-actual-work` section 7). Returns the count of these reads
+/// and their work (cells and bodies).
 #[expect(
     clippy::too_many_arguments,
     reason = "incremental clearance refresh receives the shared frame indexes and claim state"
@@ -401,7 +416,7 @@ pub(super) fn refresh_nearby_pool_slot_clearances(
     assigned_slots: &std::collections::HashSet<(u64, u32, u32)>,
     max_radius: f32,
     contact_witness: &[Vec<u8>],
-) {
+) -> (usize, usize) {
     let reach = body_radius + max_radius;
     let mut affected = slot_grid
         .within(slot_points, old_position, reach)
@@ -410,6 +425,7 @@ pub(super) fn refresh_nearby_pool_slot_clearances(
         .collect::<Vec<_>>();
     affected.sort_unstable();
     affected.dedup();
+    let (mut reads, mut work) = (0, 0);
     for global_index in affected {
         let (pool_id, slot_index) = slot_refs[global_index];
         let Some(index) = pool_indexes.get_mut(&pool_id) else {
@@ -417,7 +433,7 @@ pub(super) fn refresh_nearby_pool_slot_clearances(
         };
         let point = index.points[slot_index].position;
         let assigned = assigned_slots.contains(&(pool_id, point.x.to_bits(), point.y.to_bits()));
-        index.refresh_slot_clearance(
+        let (cells, bodies) = index.refresh_slot_clearance(
             slot_index,
             units,
             unit_points,
@@ -426,7 +442,12 @@ pub(super) fn refresh_nearby_pool_slot_clearances(
             assigned,
             contact_witness,
         );
+        reads += 1;
+        work += cells + bodies;
     }
+    #[cfg(test)]
+    SLOT_CLEARANCE_READS.with(|count| count.set(count.get() + reads as u64));
+    (reads, work)
 }
 
 pub(super) fn add_pool_slot_claim(

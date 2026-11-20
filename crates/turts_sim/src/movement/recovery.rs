@@ -89,13 +89,15 @@ pub(crate) struct RecoveryCounters {
     pub(crate) spare_slot_work: u64,
     /// Metered point checks with no search: retained targets and own positions.
     pub(crate) checks: u64,
-    /// Neighbourhood reads of the base grid (class P): the schedule read, the exit read
-    /// and the read at a new position.
+    /// Neighbourhood reads of the base grid (class P) of recovery rows: the schedule
+    /// read, the exit read, the read at a new position, and one read for each pool slot
+    /// near the row when its turn ends (the slot clearance refresh).
     pub(crate) physical_reads: u64,
     /// The cells and bodies of the neighbourhood reads, and the contacts they gave.
     pub(crate) physical_work: u64,
-    /// The view builds (class V): one membership check for each row and one insert for
-    /// each member, for each owner with a served row.
+    /// The view work (class V): one membership check for each row and one insert for
+    /// each member, for each owner with a served row; then two units for each move of a
+    /// member of a built view.
     pub(crate) view_work: u64,
     /// Work charged to no owner: `physical_work + view_work`.
     pub(crate) frame_work: u64,
@@ -156,6 +158,12 @@ impl RecoveryCounters {
     pub(crate) fn physical_read(&mut self, cells: usize, bodies: usize) {
         self.physical_reads += 1;
         self.add_physical_work(cells + bodies);
+    }
+
+    /// Counts the slot clearance reads after the turn of a recovery row.
+    pub(crate) fn slot_reads(&mut self, (reads, work): (usize, usize)) {
+        self.physical_reads += reads as u64;
+        self.add_physical_work(work);
     }
 
     pub(crate) fn add_physical_work(&mut self, work: usize) {
@@ -1371,11 +1379,14 @@ impl<'f> RecoveryWorld<'f> {
             .is_some_and(|read| read.overlapping)
     }
 
-    /// Follows the move of frame row `row` in every view that holds it.
+    /// Follows the move of frame row `row` in every view that holds it. Each view that
+    /// changes costs two units of view work (one remove and one insert).
     pub(super) fn relocate(&self, row: usize, from: Vec2, to: Vec2, radius: f32) {
+        let mut changed = 0;
         for view in self.views.borrow_mut().values_mut() {
-            view.relocate(row, from, to, radius);
+            changed += u64::from(view.relocate(row, from, to, radius));
         }
+        self.view_work.set(self.view_work.get() + 2 * changed);
     }
 
     fn ensure_view(&self, owner: u8, units: &[MovementFrameUnit]) {
