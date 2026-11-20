@@ -195,6 +195,8 @@ rows touch them. Work is in units of the counters (one cell or one body test).
   takes 4.27 s on the base for the tiny scene (29 ms for radius 0.4). In the base profile
   of the tiny spare scene, 75 % of the cycles are in `UniformGrid::within_unsorted`, the
   general neighbourhood query of the kernel.
+- The ordinary-mover tiny scene, base and final head interleaved: 4,479 and 4,351 ms
+  (base) against 4,380 and 4,242 ms (head). No regression from the f64 grid.
 - `tests/frame_hash.rs`: `frame_chains=c47f80851ee283b8`, `muster_world=980377f842f51f57`
   on `5f18ef1c` and on `bd0c46e0`.
 - All 929 `turts_sim` unit tests and the 20 other `turts_sim` test binaries pass in release.
