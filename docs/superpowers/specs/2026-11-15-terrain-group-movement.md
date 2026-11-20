@@ -204,7 +204,7 @@ Freeze original own order-group membership separately from temporary waypoint st
 
 Blend an actor's own preferred heading equally with that group heading only when their dot product exceeds 0.5. Keep the authored speed cap, cap short private-waypoint preference to its distance, and preserve actual destination/closest-holder arrival handling. This is alignment within an existing order, not a new destination or a force that pulls unrelated units together.
 
-Compute and validate coherence before expensive model admission. Every changed coherence chord needs complete CURRENT known-static clearance and permitted terrain clearance. A compact static-only spatial index can avoid scanning moving rows again; its capacities count toward the same 8 MiB bound. Refused discovery, proof or credit retains the straight preferred fallback. Exact moving-body and physical terrain certification remains mandatory. A stored coherence result applies only to its unchanged effective target; a retry or selected claim that changes that target cannot reuse stale advice. Freeze all inputs before motion generation. Never use a peer's generated proposal as a new model input.
+Compute and validate coherence before expensive model admission. Every changed coherence chord needs complete CURRENT known-static clearance and permitted terrain clearance. A compact static-only spatial index can avoid scanning moving rows again; its capacities count toward the same 8 MiB bound. Refused discovery, proof or credit retains the straight preferred fallback. Exact moving-body and physical terrain certification remains mandatory. A stored coherence result applies only to its unchanged effective target; a retry or selected claim that changes that target cannot reuse stale advice. Freeze all inputs before motion generation. Never use a peer's primary steering output as a new model input.
 
 Prove unrelated-order isolation, coherent turns, static/cliff refusal, stationary holders, private/real arrival semantics, useful service under dense routing, owner privacy, ID/enumeration reversal, work and memory limits. Then run the unchanged failing tape and full acceptance workloads. Coherence is not accepted merely because its small tests pass.
 
@@ -236,6 +236,36 @@ Evaluate primary predictions in oldest predictive-service age, then canonical ph
 Cache each completed primary result for its captured pose, effective goal, motion kind, speed, radius, timestep and bounds. Preserve validated same-target coherence when prediction is refused. Raw planning can reuse only an identical request. It cannot repeat the prediction program or receive fresh credit. A changed private goal or kind discards the cached proposal and uses the existing bounded fallback and unchanged exact guards. Keep the original accepted destination and actual spent counters. Actual charged primary computation updates predictive service age even when its result is refused; reservation alone does not. Preserve short actual-arrival handling and first-actual-arrival ownership.
 
 This changes scheduling and cache use, not collision authority. Fixed views, selected-neighbor semantics, complete discovery/proofs, hard constraints, speed limits, privacy, and final certification stay intact. Use reusable fixed neighbor/solver scratch for the current primary calculation. Retain only compact per-actor primary results and actual spent counters. Up to the existing4096 actors may receive service, but no array of4096 full neighbor tickets is needed. Include real scratch capacity and cached-result bytes in the unchanged8 MiB bound. Tests must prove reuse of unused credit under the same owner cap, exact tie-batch behavior, unchanged requests without new work, changed-goal/private-kind fallback without credit, independent service clocks, reversal, and maximum allocation. The unchanged default tape remains the acceptance prerequisite.
+
+### Bounded coherence forecast
+
+A returning column can stop when the forecast combines a briefly held front
+unit with faster followers. Before the primary ORCA solve, capture the already
+validated coherence advice for moving owned bodies. Retain the captured
+forecast for bodies without advice, bodies with zero captured velocity, and
+physically ambiguous bodies. Treat foreign bodies as stationary.
+
+An advised body keeps its captured forecast when an unadvised or held body is
+within the sum of their radii plus 0.05 metres in the direction of the advice.
+Apply that rule in up to eight synchronous rounds. Freeze the resulting
+velocities before solving primary proposals. This is a forecast only. Final
+body and terrain checks still certify every committed movement. The joint
+baseline below remains a separate diagnostic.
+
+Charge bounded spatial discovery to the existing owner work and visit limits
+and the actor steering limit. Charge lookup by the size of the owner's own
+actor set, with the same charge for every ID. Include temporary storage in the
+existing scratch bound. If a query or allowance is exhausted, retain the
+owner's entire captured forecast and keep the work already charged.
+
+A stalled private waypoint permits a detour after about half a second without
+certified progress. Its local retry restarts after one second. The earlier
+trigger lets peers with different stall counts qualify together. The accepted
+order and the exact movement guards still apply.
+
+Verify owner work and forecast output under ID renaming and foreign private
+order changes. Run both GM2 cases, the unchanged GM7 workload, and all other
+milestone checks on the same candidate.
 
 ### Coherent permitted movement plans
 
