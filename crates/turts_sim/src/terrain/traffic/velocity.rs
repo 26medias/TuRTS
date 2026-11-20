@@ -321,6 +321,11 @@ fn bounded_forecast(
     budget: &mut SweepBudget,
 ) -> usize {
     let n = view.rows.len();
+    // Rust's binary search uses up to ceil(log2(len)) iterations and a final comparison.
+    let lookup_work = service
+        .len()
+        .checked_sub(1)
+        .map_or(0, |last| usize::BITS - last.leading_zeros() + 1);
     let mut flags = vec![0u8; n]; // 0 held, 1 active, 2 held next round
     let mut actor_for = vec![usize::MAX; n];
     let mut active = Vec::with_capacity(n);
@@ -350,7 +355,6 @@ fn bounded_forecast(
             continue;
         }
         // A fixed lookup charge keeps ID order out of admission decisions.
-        let lookup_work = usize::BITS - service.len().leading_zeros();
         for _ in 0..lookup_work {
             if !admin_charge(budget) {
                 return bytes;
@@ -3834,5 +3838,123 @@ mod tests {
         assert_eq!((b.model_operations, b.pairs, g.visits), before);
         assert!(g.actors.iter().all(|a| a.spent <= 128));
         assert_eq!(b.model_reserved, [0; SLOTS]);
+    }
+    type ReviewForecastResult = (
+        Vec<(Vec2, DVec2)>,
+        Vec<(Vec2, Option<Vec2>, usize)>,
+        usize,
+        usize,
+    );
+    fn review_forecast_capture(
+        ids: [u32; 4],
+        foreign_active: bool,
+        remaining: usize,
+    ) -> ReviewForecastResult {
+        let mut f = coherent_frame(4);
+        for i in 0..4 {
+            f.units[i].unit_id = ids[i];
+            if i >= 2 {
+                f.units[i].owner_slot = 1;
+                f.units[i].position = Vec2::new(100. + (i - 2) as f32 * 10., 100.);
+                f.units[i].target = foreign_active.then_some(f.units[i].position + Vec2::Y * 20.);
+            }
+        }
+        let mut state = TrafficState::default();
+        let mut budget = SweepBudget::new(1);
+        let capacity = budget.model_available(0);
+        budget.pairs[0] = capacity - remaining;
+        let mut public = |viewer: u8, emit: &mut dyn FnMut(u32, ObservedBody) -> bool| {
+            for unit in f.units.iter().filter(|unit| unit.owner_slot != viewer) {
+                if !emit(
+                    unit.unit_id,
+                    ObservedBody {
+                        position: unit.position,
+                        radius: unit.radius,
+                    },
+                ) {
+                    return false;
+                }
+            }
+            true
+        };
+        let mut clear = |_, _, _| true;
+        let guide = Guide::capture(
+            &f,
+            0.05,
+            1,
+            &mut state,
+            &mut budget,
+            &mut public,
+            |_| true,
+            |_| MotionKind::Waypoint,
+            |i| f.units[i].target.unwrap_or(f.units[i].position),
+            |i| (f.units[i].owner_slot == 0).then_some(7),
+            &mut clear,
+        );
+        let rows = guide.views[0]
+            .as_ref()
+            .unwrap()
+            .rows
+            .iter()
+            .map(|row| (row.agent.position.as_vec2(), row.agent.velocity))
+            .collect::<Vec<_>>();
+        let mut owned = guide
+            .actors
+            .iter()
+            .filter(|actor| actor.owner == 0)
+            .map(|actor| (actor.position, actor.primary, actor.spent))
+            .collect::<Vec<_>>();
+        owned.sort_by(|a, b| a.0.x.total_cmp(&b.0.x).then(a.0.y.total_cmp(&b.0.y)));
+        (
+            rows,
+            owned,
+            budget.pairs[0] - (capacity - remaining),
+            guide.visits[0],
+        )
+    }
+    #[test]
+    fn review_forecast_id_renaming_preserves_output_and_metered_work() {
+        let a = review_forecast_capture([1, 2, 3, 4], true, 512);
+        let b = review_forecast_capture([3, 4, 1, 2], true, 512);
+        println!("full capture ample renaming: before={a:?} after={b:?}");
+        let mut changed = None;
+        for remaining in 0..=160 {
+            let a = review_forecast_capture([1, 2, 3, 4], true, remaining);
+            let b = review_forecast_capture([3, 4, 1, 2], true, remaining);
+            if a.0 != b.0 || a.1 != b.1 {
+                changed = Some((remaining, a, b));
+                break;
+            }
+        }
+        println!("full capture renaming publication difference={changed:?}");
+        assert!(
+            changed.is_none(),
+            "ID renaming changed forecast or primary service: {changed:?}"
+        );
+        assert_eq!(a, b, "ID renaming changed actual charged work");
+    }
+    #[test]
+    fn review_forecast_foreign_private_admission_preserves_output_and_metered_work() {
+        let a = review_forecast_capture([1, 2, 3, 4], false, 512);
+        let b = review_forecast_capture([1, 2, 3, 4], true, 512);
+        println!("full capture ample foreign admission: before={a:?} after={b:?}");
+        let mut changed = None;
+        for remaining in 0..=160 {
+            let a = review_forecast_capture([1, 2, 3, 4], false, remaining);
+            let b = review_forecast_capture([1, 2, 3, 4], true, remaining);
+            if a.0 != b.0 || a.1 != b.1 {
+                changed = Some((remaining, a, b));
+                break;
+            }
+        }
+        println!("full capture foreign admission publication difference={changed:?}");
+        assert!(
+            changed.is_none(),
+            "Foreign private actor admission changed owned forecast or primary service: {changed:?}"
+        );
+        assert_eq!(
+            a, b,
+            "Foreign private actor admission changed owned metered work"
+        );
     }
 }
