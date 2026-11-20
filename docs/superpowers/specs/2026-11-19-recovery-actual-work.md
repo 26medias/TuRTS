@@ -161,3 +161,120 @@ One review (`simulation-core-engineer`, runs and mutants) of `e2e5d8e5` gave
    integration repair.
 6. A 6-tick output cycle of 40 stacked escapers (review probe P5): the base `4db1211a`
    gives the same trace, hash for hash. It is pre-existing, not caused by this change.
+
+## 7. Amendment: the work outside the owner allowance (2026-11-19, branch `codex/recovery-gm7-unblock`)
+
+Source: `target/mc-evidence/handoffs/2026-11-19-recovery-gm7-unblock.md`. This section
+replaces A3 and the second, third and fourth items of section 5.
+
+### 7.1 Three classes of work
+
+- **K (known).** A read of a fact that the owner knows: a view cell or key, a contact, a
+  claim, a pool slot. Metered by the row allowance. Never above `OWNER_WORK` for one owner
+  in one pass (A1).
+- **P (physical).** A *neighbourhood read*: one `UniformGrid::visit_within` on the base
+  grid of the frame at one point, with reach `radius + max radius + CONTACT_GAP` at most.
+  It reads hidden bodies. It is never charged to an owner and never refused.
+- **V (view).** The build of the owner view: one membership check for each row and one
+  insert for each member, one time for each owner that has a served row, in each pass.
+
+### 7.2 Rules
+
+B1. **Retained-target checks are K.** The check of a retained escape target (physical
+escape `target_occupied`, group `is_free` with its claim check, plain `body_occupied` of the
+target) is a metered point query on the known set of the row (`KnownSet::probe`), with the
+same predicate and tolerance as before. `target_is_blocked_by_stationary` is removed: it is
+implied by `is_free`. When the meter refuses, the row holds its position for this tick.
+With no stored scan, the row stores the query as a scan in stage `Verify` (the cursor and
+the local proof of A5) and resumes it. With a stored search scan, the check runs first and
+is not stored: when the slice cannot pay it, the stored search continues without it. A
+failed check starts the search in the same slice.
+
+B2. **The stall spare-slot search is K.** A stalled group mover runs it as a metered,
+resumable job of kind `RecoveryKind::Spare(pool)`: the pool stage of `EscapeScan` with no
+ring stage. The result is the result of `MovementPoolIndex::nearest_free` with the same
+predicate. In claim exchange mode a body of another owner blocks a slot only when it was
+at rest at tick start and the owner has a body in contact range of it (the rule of the
+old predicate); the view marks the other known bodies of other owners as *soft*, and a
+spare query ignores soft copies. A row that may reach the spare search in this tick (group
+progress, not blocked, stall clock at tick start at least `tick_hz - 1`, fewer than 3
+spare claims) is a schedule row of class *spare*. Blocked rows are served before spare
+rows in both tiers. A spare row with no allowance or an unfinished search keeps its stall
+state and its job; the job ages, so service rotates.
+
+B3. **One schedule read, and contacts from it.** Each schedule row does one neighbourhood
+read at tick start, before any row moves. It gives the tick-start overlap key and the
+contacts of the row (bodies in contact range that the owner view does not hold). The
+start grid and the sort by unit id are removed: before the first move, the base grid holds
+the tick-start positions (`arrival::prepare_with_kept` changes no position).
+
+B4. **Fixed count of neighbourhood reads.** In one pass a schedule row does at most: one
+schedule read (B3); one exit read at its turn (the physical overlap of a blocked group row
+or of a physical-escape row); one read at its new position (a physical-escape row that
+moved). So: physical escape 3, blocked group 2, blocked plain 1, spare 1. No read for each
+candidate, slot or claim.
+
+B5. **Counters.** `RecoveryCounters` holds `physical_reads` (count), `physical_work`
+(cells and bodies of the reads) and `view_work` (membership checks and inserts).
+`frame_work` is their sum. `spare_slot_work` is the metered work of spare jobs; it is
+inside `owner_work`.
+
+### 7.3 Bound
+
+For one owner in one pass:
+
+- K work is at most `OWNER_WORK` = 32,768. It now includes B1 and B2. Fixed overshoot: 0.
+- P reads are at most 3 for each schedule row of the owner. One read costs the cells of
+  its box (at most 16 with the reach of 7.1) plus the bodies in them.
+- V work is at most one membership check for each row of the frame plus one insert for each
+  body that the owner knows.
+
+P and V are not bounded by a constant. This is a limit of the design, not an omission:
+
+1. *An exact physical read cannot have a cap.* The exit of a blocked row and its contacts
+   are physical facts. To find them, the frame must test each body near the row. A cap
+   has two results only. The row waits: then a hidden body that is near the row, and not
+   in contact, changes its schedule. Or the read stops: then a contact or an overlap is
+   lost, and a body can stop on a hidden body. Both break a contract of this spec. One
+   neighbourhood read is the cost of the physical step of any mover of the base frame
+   (which does three or more for each mover and tick), so a blocked row does no more
+   physical work than a row that moves.
+2. *A stateless kernel cannot have a known-body index for less than one read for each
+   known body.* `step_frame` gets the bodies of one tick and keeps nothing. A lazy index
+   of the cells that a slice reads must filter the base grid cells, and then each hidden
+   body in the search region costs a read (this was the 2026-11-18 defect, and a meter on
+   it stops the slice of an owner because of hidden bodies). The view build reads no
+   position of a hidden body.
+
+Memory: as A9, less the start grid; plus the contact rows of the schedule rows (4 bytes
+for each contact) and the soft flags of each view (1 byte for each row).
+
+### 7.4 Privacy
+
+A hidden body out of contact changes no K work, no allowance, no slice end, no result and
+no owner counter. It changes `physical_work` and the membership part of `view_work` only.
+A hidden body in contact range at tick start is a known body of that actor (A2), for the
+retained check and the spare search as for the search.
+
+### 7.5 Liveness
+
+As section 3. In addition: a retained check with a cursor ends when its query box is
+stable for one check; without a cursor it cannot stop the stored search. A spare row is
+served within `ceil(waiting rows / served rows)` ticks after the blocked rows of its owner
+have no fresh job.
+
+### 7.6 Tests
+
+`recovery_actual_tests.rs`, R15 to R24: R15 a retained target in a cell larger than a
+slice (group, physical, plain) resumes and ends; R16 a retained check sees a new body or
+claim on its target while paused; R17 the spare search gives the slot of `nearest_free`
+(visible, soft, contacted and hidden bodies on slots; exchange mode on and off); R18 a
+spare search larger than a slice resumes; R19 more spare rows than slices: each is served,
+and blocked rows first; R20 hidden-world pairs: hidden bodies near and far, never in
+contact, change no owner output and no owner counter for 60 ticks, for blocked group,
+plain, physical and spare rows; R21 a hidden body in contact gives the same result as the
+same body when visible, for the retained check and the spare search; R22 the K work of an
+owner is at most `OWNER_WORK` in a scene with blocked and spare rows, and the reads of
+each row are within B4; R23 a stop order, a new order and a death drop the job (spare and
+retained); R24 reversed unit ids, row order and owner slots give the mirrored result, and
+the audit replay kernel gives the same jobs and outputs as the live frame.
