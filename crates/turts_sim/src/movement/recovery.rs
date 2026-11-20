@@ -90,13 +90,22 @@ pub(crate) struct RecoveryCounters {
     /// Metered point checks with no search: retained targets and own positions.
     pub(crate) checks: u64,
     /// Neighbourhood reads of the base grid (class P) of recovery rows: the schedule
-    /// read, the exit read, the read at a new position, and one read for each pool slot
-    /// near the row when its turn ends (the slot clearance refresh).
+    /// overlap read, the exit read, the read at a new position, and one read for each pool
+    /// slot near the row when its turn ends (the slot clearance refresh). Each has a reach
+    /// of at most `radius + max radius`, so it scans at most 16 cells (design
+    /// `2026-11-20-bounded-contact`, rule G1).
     pub(crate) physical_reads: u64,
-    /// The cells and bodies of the neighbourhood reads, and the contacts they gave.
+    /// The cells and bodies of the neighbourhood reads, of the contact reads, and the
+    /// contacts that the row turns read.
     pub(crate) physical_work: u64,
-    /// The view work (class V): one membership check for each row and one insert for
-    /// each member, for each owner with a served row; then two units for each move of a
+    /// Contact reads (class P, fog only): one read of the hidden index of the owner for
+    /// each schedule row. It reads no own and no permitted body (rule G2).
+    pub(crate) contact_reads: u64,
+    /// The cells and hidden bodies of the contact reads. It is inside `physical_work`.
+    pub(crate) contact_work: u64,
+    /// The view work (class V): one membership check for each row, for each owner with a
+    /// schedule row under fog or a served row; one insert for each member of a built view
+    /// and for each hidden row of a built hidden index; then two units for each move of a
     /// member of a built view.
     pub(crate) view_work: u64,
     /// Work charged to no owner: `physical_work + view_work`.
@@ -140,6 +149,8 @@ impl RecoveryCounters {
         self.checks += other.checks;
         self.physical_reads += other.physical_reads;
         self.physical_work += other.physical_work;
+        self.contact_reads += other.contact_reads;
+        self.contact_work += other.contact_work;
         self.view_work += other.view_work;
         self.frame_work += other.frame_work;
         self.phase_bytes = self.phase_bytes.max(other.phase_bytes);
@@ -157,6 +168,13 @@ impl RecoveryCounters {
     /// Counts one neighbourhood read of `cells` cells and `bodies` bodies.
     pub(crate) fn physical_read(&mut self, cells: usize, bodies: usize) {
         self.physical_reads += 1;
+        self.add_physical_work(cells + bodies);
+    }
+
+    /// Counts one contact read of `cells` cells and `bodies` hidden bodies.
+    pub(crate) fn contact_read(&mut self, cells: usize, bodies: usize) {
+        self.contact_reads += 1;
+        self.contact_work += (cells + bodies) as u64;
         self.add_physical_work(cells + bodies);
     }
 
@@ -1292,6 +1310,14 @@ impl ScheduleReads {
         }
     }
 
+    /// The contacts of the row of the last `begin` (test oracle).
+    #[cfg(test)]
+    pub(super) fn last_contacts(&self) -> &[u32] {
+        self.rows.last().map_or(&[], |read| {
+            &self.contact_rows[read.contacts.start as usize..read.contacts.end as usize]
+        })
+    }
+
     fn find(&self, row: usize) -> Option<&RowRead> {
         self.rows
             .binary_search_by_key(&row, |read| read.row)
@@ -1312,6 +1338,14 @@ pub(super) struct RecoveryWorld<'f> {
     /// One view for each owner; one shared view (key `None`) with no visibility basis and
     /// no claim exchange.
     views: RefCell<BTreeMap<Option<u8>, KnownView>>,
+    /// Under fog: the view membership of each frame row, for each owner that has a
+    /// schedule row or a built view. One check for each row and owner in a pass.
+    members: RefCell<BTreeMap<u8, Vec<bool>>>,
+    /// Under fog: the bodies that each owner does not hold in its view, for the contact
+    /// reads of its schedule rows (design `2026-11-20-bounded-contact`, rule G2).
+    hidden: RefCell<BTreeMap<u8, HiddenIndex>>,
+    /// The largest radius of the frame.
+    max_radius: f32,
     reads: OnceCell<ScheduleReads>,
     view_work: Cell<u64>,
     contact_work: Cell<u64>,
@@ -1322,11 +1356,15 @@ impl<'f> RecoveryWorld<'f> {
     pub(super) fn new(
         visibility: Option<&'f dyn super::MovementVisibility>,
         soft: Option<SoftRule<'f>>,
+        max_radius: f32,
     ) -> Self {
         Self {
             visibility,
             soft,
             views: RefCell::new(BTreeMap::new()),
+            members: RefCell::new(BTreeMap::new()),
+            hidden: RefCell::new(BTreeMap::new()),
+            max_radius,
             reads: OnceCell::new(),
             view_work: Cell::new(0),
             contact_work: Cell::new(0),
@@ -1389,16 +1427,42 @@ impl<'f> RecoveryWorld<'f> {
         self.view_work.set(self.view_work.get() + 2 * changed);
     }
 
+    /// Under fog: the view membership of each row for `owner`, computed one time in a
+    /// pass (one check for each row, counted as view work).
+    fn ensure_members(&self, owner: u8, units: &[MovementFrameUnit]) {
+        if self.members.borrow().contains_key(&owner) {
+            return;
+        }
+        let members: Vec<bool> = (0..units.len())
+            .map(|row| self.member(owner, row, units))
+            .collect();
+        self.view_work
+            .set(self.view_work.get() + units.len() as u64);
+        self.members.borrow_mut().insert(owner, members);
+        self.note_bytes(0);
+    }
+
     fn ensure_view(&self, owner: u8, units: &[MovementFrameUnit]) {
         let key = self.view_key(owner);
         if self.views.borrow().contains_key(&key) {
             return;
         }
-        let members: Vec<_> = units
-            .iter()
-            .enumerate()
-            .filter(|(row, _)| self.member(owner, *row, units))
-            .map(|(row, unit)| {
+        let rows: Vec<usize> = if self.visibility.is_some() {
+            // The membership pass is shared with the hidden index (rule G2).
+            self.ensure_members(owner, units);
+            let members = self.members.borrow();
+            let members = &members[&owner];
+            (0..units.len()).filter(|&row| members[row]).collect()
+        } else {
+            // One membership check for each row: with no basis every row is a member.
+            self.view_work
+                .set(self.view_work.get() + units.len() as u64);
+            (0..units.len()).collect()
+        };
+        let members: Vec<_> = rows
+            .into_iter()
+            .map(|row| {
+                let unit = &units[row];
                 (
                     row,
                     unit.position,
@@ -1407,9 +1471,9 @@ impl<'f> RecoveryWorld<'f> {
                 )
             })
             .collect();
-        // One membership check for each row and one insert for each member.
+        // One insert for each member.
         self.view_work
-            .set(self.view_work.get() + (units.len() + members.len()) as u64);
+            .set(self.view_work.get() + members.len() as u64);
         let view = KnownView::build_soft(&members, units.len());
         self.views.borrow_mut().insert(key, view);
         self.note_bytes(members.capacity() * std::mem::size_of::<(usize, Vec2, f32, bool)>());
@@ -1417,9 +1481,67 @@ impl<'f> RecoveryWorld<'f> {
 
     fn note_bytes(&self, scratch: usize) {
         let views: usize = self.views.borrow().values().map(KnownView::bytes).sum();
+        let members: usize = self.members.borrow().values().map(Vec::capacity).sum();
+        let hidden: usize = self.hidden.borrow().values().map(HiddenIndex::bytes).sum();
         let reads = self.reads.get().map_or(0, ScheduleReads::bytes);
-        self.peak_bytes
-            .set(self.peak_bytes.get().max(views + reads + scratch));
+        self.peak_bytes.set(
+            self.peak_bytes
+                .get()
+                .max(views + members + hidden + reads + scratch),
+        );
+    }
+
+    /// The contact read of schedule row `row` (fog only; design
+    /// `2026-11-20-bounded-contact`, rule G2): calls `contact` for each body in contact
+    /// range of the row (the contact rule of `known`) that its owner view does not hold.
+    /// It reads the hidden index of the owner only, so own and permitted bodies cost
+    /// nothing. Returns `(cells, hidden bodies tested)`. Rows must be at their tick-start
+    /// positions.
+    pub(super) fn contact_read(
+        &self,
+        row: usize,
+        units: &[MovementFrameUnit],
+        mut contact: impl FnMut(usize),
+    ) -> (usize, usize) {
+        debug_assert!(
+            self.visibility.is_some(),
+            "contact reads exist under fog only"
+        );
+        let unit = &units[row];
+        let owner = unit.owner_slot;
+        if !self.hidden.borrow().contains_key(&owner) {
+            self.ensure_members(owner, units);
+            let members = self.members.borrow();
+            let index = HiddenIndex::new(&members[&owner], units, self.max_radius);
+            drop(members);
+            // One insert for each hidden row.
+            self.view_work
+                .set(self.view_work.get() + index.rows.len() as u64);
+            self.hidden.borrow_mut().insert(owner, index);
+            self.note_bytes(0);
+        }
+        let hidden = self.hidden.borrow();
+        let index = &hidden[&owner];
+        if index.rows.is_empty() {
+            return (0, 0);
+        }
+        index.grid.visit_within(
+            &index.points,
+            unit.position,
+            index.reach(unit.radius),
+            |at| {
+                let other = index.rows[at] as usize;
+                if touch(unit.position, unit.radius, &units[other]).1 {
+                    contact(other);
+                }
+            },
+        )
+    }
+
+    /// Drops the hidden indexes: the schedule reads are done.
+    pub(super) fn end_contact_reads(&self) {
+        self.note_bytes(0);
+        self.hidden.borrow_mut().clear();
     }
 
     /// The contacts of the actor of row `row`, from its schedule read: the bodies in
@@ -1473,6 +1595,69 @@ impl<'f> RecoveryWorld<'f> {
 
     pub(super) fn peak_bytes(&self) -> usize {
         self.peak_bytes.get()
+    }
+}
+
+/// The bodies that one owner does not hold in its view, at tick start, for the contact
+/// reads (design `2026-11-20-bounded-contact`, rule G2).
+///
+/// The cell is at least the largest contact reach `max radius + hidden max radius +
+/// CONTACT_GAP` (with margin), so a contact read scans at most 4 cells on each axis
+/// (`grid` rule G1). It holds no own and no permitted body, so their density costs a
+/// contact read nothing.
+struct HiddenIndex {
+    /// The frame row of each hidden body.
+    rows: Vec<u32>,
+    points: Vec<crate::grid::GridPoint>,
+    grid: crate::grid::UniformGrid,
+    /// The largest radius of a hidden body.
+    max_radius: f32,
+}
+
+impl HiddenIndex {
+    fn new(members: &[bool], units: &[MovementFrameUnit], frame_max_radius: f32) -> Self {
+        let rows: Vec<u32> = (0..units.len())
+            .filter(|&row| !members[row])
+            .map(|row| row as u32)
+            .collect();
+        let points: Vec<_> = rows
+            .iter()
+            .map(|&row| crate::grid::GridPoint {
+                id: row,
+                position: units[row as usize].position,
+            })
+            .collect();
+        let max_radius = rows
+            .iter()
+            .map(|&row| units[row as usize].radius)
+            .fold(0.0_f32, f32::max);
+        let cell = Self::reach_of(frame_max_radius, max_radius) * 1.001;
+        let grid = crate::grid::UniformGrid::new(&points, cell);
+        Self {
+            rows,
+            points,
+            grid,
+            max_radius,
+        }
+    }
+
+    /// The reach of a contact read of an actor of `radius`: every hidden body in contact
+    /// range is inside it. The relative margin keeps the f32 filter of the read above the
+    /// contact rule of `touch` at its edge.
+    fn reach_of(radius: f32, hidden_max_radius: f32) -> f32 {
+        (radius + hidden_max_radius + CONTACT_GAP) * (1.0 + 1.0e-6)
+    }
+
+    fn reach(&self, radius: f32) -> f32 {
+        Self::reach_of(radius, self.max_radius)
+    }
+
+    fn bytes(&self) -> usize {
+        self.rows.capacity() * std::mem::size_of::<u32>()
+            + self.points.capacity() * std::mem::size_of::<crate::grid::GridPoint>()
+            // The grid: one index and one spatial key for each body, and the cell map.
+            + self.points.len()
+                * (std::mem::size_of::<usize>() + std::mem::size_of::<u64>() + 2 * 24)
     }
 }
 

@@ -525,7 +525,7 @@ mod approach_tests {
                     consumed: false,
                     next_jobs: &mut Default::default(),
                     counters: &mut Default::default(),
-                    world: &super::super::recovery::RecoveryWorld::new(None, None),
+                    world: &super::super::recovery::RecoveryWorld::new(None, None, 0.0),
                 },
             );
             assert!(

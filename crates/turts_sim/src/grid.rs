@@ -46,8 +46,14 @@ fn spatial_key(position: Vec2) -> u64 {
     (u64::from(total_order_bits(position.x)) << 32) | u64::from(total_order_bits(position.y))
 }
 
-/// Relative margin on the query box of `within`, times max(1, reach).
-const EDGE_MARGIN: f32 = 1e-4;
+/// Relative margin on the query box of `within`, times the reach.
+///
+/// The filter of a query is `distance_squared <= reach * reach` in f32. Each f32
+/// subtraction is correctly rounded, so an accepted point is within
+/// `reach * (1 + 2^-21)` of the query point on each axis. The box and the cells are
+/// computed in f64, so they add no f32 rounding at large coordinates. The margin is
+/// relative: a tiny reach gives a tiny box (bounded-contact design, rule G1).
+const EDGE_MARGIN: f64 = 1e-4;
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct GridPoint {
@@ -121,12 +127,17 @@ impl UniformGrid {
     /// the f32 error of the distance filter in `within`, so every point that
     /// the filter accepts is in a scanned cell (ruling 3, G1).
     fn cell_range(&self, position: Vec2, reach: f32) -> ((i64, i64), (i64, i64)) {
-        let half = reach.abs() + EDGE_MARGIN * reach.abs().max(1.0);
-        let (low_x, low_y) = cell(position - Vec2::splat(half), self.cell_size);
-        let (high_x, high_y) = cell(position + Vec2::splat(half), self.cell_size);
+        let half = f64::from(reach.abs()) * (1.0 + EDGE_MARGIN);
+        let (x, y) = (f64::from(position.x), f64::from(position.y));
         (
-            (i64::from(low_x), i64::from(low_y)),
-            (i64::from(high_x), i64::from(high_y)),
+            (
+                i64::from(cell_axis(x - half, self.cell_size)),
+                i64::from(cell_axis(y - half, self.cell_size)),
+            ),
+            (
+                i64::from(cell_axis(x + half, self.cell_size)),
+                i64::from(cell_axis(y + half, self.cell_size)),
+            ),
         )
     }
 
@@ -261,6 +272,59 @@ impl UniformGrid {
         (cells, tested)
     }
 
+    /// True when `hit` holds for a point within `reach` of `position`. It stops at the
+    /// first hit. Returns `(found, cells visited, points tested)`. The answer does not
+    /// depend on the visit order; the counts do (they are diagnostics only).
+    pub(crate) fn any_within(
+        &self,
+        points: &[GridPoint],
+        position: Vec2,
+        reach: f32,
+        mut hit: impl FnMut(usize) -> bool,
+    ) -> (bool, usize, usize) {
+        debug_assert!(reach >= 0.0, "reach must not be negative: {reach}");
+        let ((min_x, min_y), (max_x, max_y)) = self.cell_range(position, reach);
+        let width = (max_x - min_x + 1) as u128;
+        let height = (max_y - min_y + 1) as u128;
+        let mut cells = 0;
+        let mut tested = 0;
+        let mut scan = |indices: &Vec<usize>| {
+            indices.iter().any(|&index| {
+                tested += 1;
+                points[index].position.distance_squared(position) <= reach * reach && hit(index)
+            })
+        };
+        if width.saturating_mul(height) > self.cells.len() as u128 {
+            for (&key, indices) in &self.cells {
+                cells += 1;
+                let (x, y) = cell_coordinates(key);
+                if i64::from(x) >= min_x
+                    && i64::from(x) <= max_x
+                    && i64::from(y) >= min_y
+                    && i64::from(y) <= max_y
+                    && scan(indices)
+                {
+                    return (true, cells, tested);
+                }
+            }
+        } else {
+            for y in min_y..=max_y {
+                for x in min_x..=max_x {
+                    cells += 1;
+                    if let Some(indices) = i32::try_from(x)
+                        .ok()
+                        .zip(i32::try_from(y).ok())
+                        .and_then(|key| self.cells.get(&cell_key(key)))
+                        && scan(indices)
+                    {
+                        return (true, cells, tested);
+                    }
+                }
+            }
+        }
+        (false, cells, tested)
+    }
+
     /// The cell box of a query, as `cell_range` (both ends included).
     pub(crate) fn cell_box(&self, position: Vec2, reach: f32) -> ((i64, i64), (i64, i64)) {
         self.cell_range(position, reach)
@@ -284,14 +348,21 @@ impl UniformGrid {
 
 fn cell(position: Vec2, size: f32) -> (i32, i32) {
     (
-        (position.x / size).floor() as i32,
-        (position.y / size).floor() as i32,
+        cell_axis(f64::from(position.x), size),
+        cell_axis(f64::from(position.y), size),
     )
+}
+
+/// The cell of one coordinate, in f64. Inserts and query boxes use the same rule, so a
+/// point is always in the box of a query that accepts it. A value outside the i32 range
+/// saturates; such points share an edge cell and the exact filter still decides.
+fn cell_axis(position: f64, size: f32) -> i32 {
+    (position / f64::from(size)).floor() as i32
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{GridPoint, UniformGrid};
+    use super::{GridPoint, UniformGrid, cell};
     use bevy_math::Vec2;
 
     #[cfg(debug_assertions)]
@@ -781,5 +852,137 @@ mod tests {
             "within result depends on the cell size: {} queries",
             count.cell_size_dependent,
         );
+    }
+
+    /// A read whose reach is at most the cell size spans at most 4 cells on each axis
+    /// (16 cells), at every finite f32 scale and for tiny reaches (bounded-contact
+    /// design, rule G1). Every point that the filter accepts is in the box.
+    #[test]
+    fn a_reach_up_to_one_cell_scans_at_most_16_cells_at_every_scale() {
+        let mut rng = TestRng(0x9312_9871_0bad_cafe);
+        for cell_size in [2.0e-6_f32, 0.002, 0.1, 0.8, 2.0, 100.0] {
+            let grid = UniformGrid::new(&[], cell_size);
+            for exponent in -40..=127 {
+                let base = 2.0_f32.powi(exponent);
+                for _ in 0..200 {
+                    let jitter = (rng.next() % 4_096) as i64 - 2_048;
+                    let bits = i64::from(base.to_bits()) + jitter;
+                    if !(1..0x7f80_0000).contains(&bits) {
+                        continue;
+                    }
+                    let magnitude = f32::from_bits(bits as u32);
+                    for (sx, sy) in [(1.0_f32, 1.0_f32), (-1.0, 1.0), (1.0, -1.0), (-1.0, -1.0)] {
+                        let position = Vec2::new(sx * magnitude, sy * magnitude * 0.75);
+                        for reach in [cell_size, cell_size * 0.5, cell_size * 1.0e-3] {
+                            let ((lx, ly), (hx, hy)) = grid.cell_box(position, reach);
+                            assert!(
+                                hx - lx < 4 && hy - ly < 4,
+                                "cell {cell_size} reach {reach} at {position}: {:?}",
+                                ((lx, ly), (hx, hy))
+                            );
+                            for offset in [
+                                Vec2::new(reach, 0.0),
+                                Vec2::new(-reach, 0.0),
+                                Vec2::new(0.0, reach),
+                                Vec2::new(0.0, -reach),
+                            ] {
+                                let point = position + offset;
+                                if !point.is_finite()
+                                    || point.distance_squared(position) > reach * reach
+                                {
+                                    continue;
+                                }
+                                let (x, y) = cell(point, cell_size);
+                                assert!(
+                                    (lx..=hx).contains(&i64::from(x))
+                                        && (ly..=hy).contains(&i64::from(y)),
+                                    "accepted point {point} outside the box of {position}"
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// The exact filter decides with tiny bodies and at large coordinates.
+    #[test]
+    fn within_matches_brute_force_for_tiny_reaches_and_large_coordinates() {
+        let mut count = PropertyCount::default();
+        let mut rng = TestRng(0x51ed_270b_2718_2818);
+        for round in 0..120 {
+            let origin = [0.0_f32, 1.0e3, -6.5e4, 4.0e6, 3.0e7][round % 5];
+            let cell_size = [2.0e-6_f32, 2.0e-3, 0.21, 1.0][round % 4];
+            let mut positions = Vec::new();
+            for _ in 0..200 {
+                positions.push(Vec2::new(
+                    origin + (rng.unit() - 0.5) * cell_size * 40.0,
+                    origin - (rng.unit() - 0.5) * cell_size * 40.0,
+                ));
+            }
+            let mut queries = Vec::new();
+            for _ in 0..30 {
+                let at = positions[(rng.next() % positions.len() as u64) as usize];
+                let reach = cell_size * (0.25 + rng.unit() * 2.0);
+                for offset in [
+                    Vec2::new(reach, 0.0),
+                    Vec2::new(0.0, -reach),
+                    Vec2::splat(reach * std::f32::consts::FRAC_1_SQRT_2),
+                ] {
+                    positions.push(at + offset);
+                }
+                queries.push((at, reach));
+            }
+            let points: Vec<GridPoint> = positions
+                .iter()
+                .enumerate()
+                .map(|(id, position)| GridPoint {
+                    id: id as u32,
+                    position: *position,
+                })
+                .collect();
+            check_queries(&points, cell_size, &queries, &mut count);
+        }
+        assert_eq!(count.extras, 0, "within returned points outside reach");
+        assert_eq!(count.misses, 0, "within missed points inside reach");
+        assert_eq!(count.cell_size_dependent, 0);
+    }
+
+    /// `any_within` gives the answer of a full scan, and a hit in the first cell stops it.
+    #[test]
+    fn any_within_matches_a_full_scan_and_stops_at_the_first_hit() {
+        let mut rng = TestRng(0x2545_f491_4f6c_dd1d);
+        for round in 0..200 {
+            let cell_size = [0.002_f32, 0.1, 0.8, 4.0][round % 4];
+            let points: Vec<GridPoint> = (0..300)
+                .map(|id| GridPoint {
+                    id,
+                    position: Vec2::new(
+                        rng.unit() * cell_size * 20.0,
+                        rng.unit() * cell_size * 20.0,
+                    ),
+                })
+                .collect();
+            let grid = UniformGrid::new(&points, cell_size);
+            for _ in 0..30 {
+                let at = Vec2::new(rng.unit() * cell_size * 20.0, rng.unit() * cell_size * 20.0);
+                let reach = cell_size * rng.unit();
+                let odd = |index: usize| points[index].id % 2 == 1;
+                let mut expected = false;
+                grid.visit_within(&points, at, reach, |index| expected |= odd(index));
+                assert_eq!(grid.any_within(&points, at, reach, odd).0, expected);
+            }
+        }
+        // 500 points on one spot: the first test is a hit.
+        let stack: Vec<GridPoint> = (0..500)
+            .map(|id| GridPoint {
+                id,
+                position: Vec2::splat(1.0),
+            })
+            .collect();
+        let grid = UniformGrid::new(&stack, 0.5);
+        let (found, cells, tested) = grid.any_within(&stack, Vec2::splat(1.0), 0.5, |_| true);
+        assert!(found && cells <= 16 && tested == 1, "{cells} {tested}");
     }
 }

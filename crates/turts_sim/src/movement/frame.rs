@@ -435,6 +435,7 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
             stationary: &stationary_at_start,
             witness: &contact_witness,
         }),
+        max_radius,
     );
     // `arrival::prepare_with_kept` sorts the rows and writes no position. So each solver
     // row is at its tick-start position here, the base grid holds the tick-start
@@ -493,33 +494,35 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
             // and it must not wait for a slice that the base would not delay. Tick-start
             // overlap only orders the fresh rows (see `ScheduleRow::overlapping`).
             //
-            // The schedule read: one neighbourhood read of the base grid, before any row
-            // moves. It gives the tick-start overlap and the contacts of the row (the
-            // bodies in contact range that the owner view does not hold). A body that
-            // overlaps is in contact range, so `known` admits it.
+            // The schedule reads, before any row moves (design
+            // `2026-11-20-bounded-contact`). The overlap read: one neighbourhood read of
+            // the base grid with the reach of an overlap (at most 16 cells, rule G1). The
+            // contact read (fog only): the bodies in contact range that the owner view does
+            // not hold, from the hidden index of the owner (rule G2). A body that overlaps
+            // is in contact range, so `known` admits it.
             reads.begin(row);
-            let mut overlapping = false;
-            let (cells, tested) = grid.visit_within(
-                &points,
-                unit.position,
-                unit.radius + max_radius + super::route::CONTACT_GAP,
-                |other| {
-                    if other == row {
-                        return;
-                    }
-                    let (overlap, contact) =
-                        super::recovery::touch(unit.position, unit.radius, &units[other]);
-                    overlapping |= overlap;
-                    if visibility.is_some()
-                        && contact
-                        && !recovery_world.member(unit.owner_slot, other, &units)
-                    {
-                        reads.contact(other);
-                    }
-                },
-            );
+            let (overlapping, cells, tested) =
+                grid.any_within(&points, unit.position, unit.radius + max_radius, |other| {
+                    other != row
+                        && super::recovery::touch(unit.position, unit.radius, &units[other]).0
+                });
             reads.overlap(overlapping);
             recovery_counters.physical_read(cells, tested);
+            if visibility.is_some() {
+                let (cells, tested) =
+                    recovery_world.contact_read(row, &units, |other| reads.contact(other));
+                recovery_counters.contact_read(cells, tested);
+            }
+            #[cfg(test)]
+            super::recovery_oracle::check_schedule_read(
+                row,
+                &units,
+                &reads,
+                overlapping,
+                |other| {
+                    visibility.is_none() || recovery_world.member(unit.owner_slot, other, &units)
+                },
+            );
             rows.push(super::recovery::ScheduleRow {
                 row,
                 owner: unit.owner_slot,
@@ -548,6 +551,7 @@ pub(crate) fn step_frame_with_motion_guide_and_visibility(
                         })),
             });
         }
+        recovery_world.end_contact_reads();
         recovery_world.set_reads(reads);
         super::recovery::plan(rows, budget.epoch, &mut recovery_counters)
     };
@@ -2164,11 +2168,13 @@ fn overlap_read(
     max_radius: f32,
     counters: &mut super::recovery::RecoveryCounters,
 ) -> bool {
-    let mut overlapping = false;
-    let (cells, tested) = grid.visit_within(points, position, radius + max_radius, |other| {
-        overlapping |= other != self_index
-            && position.distance(units[other].position) < radius + units[other].radius - 1.0e-5;
-    });
+    // A yes or no answer: the read stops at the first overlap, so a stack that overlaps the
+    // row costs one test (design `2026-11-20-bounded-contact`, rule G3).
+    let (overlapping, cells, tested) =
+        grid.any_within(points, position, radius + max_radius, |other| {
+            other != self_index
+                && position.distance(units[other].position) < radius + units[other].radius - 1.0e-5
+        });
     counters.physical_read(cells, tested);
     overlapping
 }

@@ -29,6 +29,57 @@ fn count(kind: usize) {
     });
 }
 
+thread_local! {
+    /// Schedule reads compared with the full scan on this thread.
+    static SCHEDULE_COMPARED: Cell<usize> = const { Cell::new(0) };
+}
+
+/// The schedule reads compared on this thread since the last call.
+pub(super) fn take_schedule_compared() -> usize {
+    SCHEDULE_COMPARED.with(|count| count.replace(0))
+}
+
+/// The largest frame that `check_schedule_read` scans in full (it costs one test for each
+/// row of the frame).
+const SCHEDULE_ORACLE_ROWS: usize = 4_096;
+
+/// Compares the schedule reads of row `row` (design `2026-11-20-bounded-contact`) with a
+/// test of every row of the frame: the overlap flag is true when a row overlaps the actor,
+/// and the contacts are the rows in contact range that `member` rejects (the old single
+/// read of reach `radius + max radius + CONTACT_GAP`, with no cell and no reach limit).
+pub(super) fn check_schedule_read(
+    row: usize,
+    units: &[MovementFrameUnit],
+    reads: &super::recovery::ScheduleReads,
+    overlapping: bool,
+    member: impl Fn(usize) -> bool,
+) {
+    if units.len() > SCHEDULE_ORACLE_ROWS {
+        return;
+    }
+    let unit = &units[row];
+    let mut expected_overlap = false;
+    let mut expected: Vec<u32> = Vec::new();
+    for (other, body) in units.iter().enumerate() {
+        if other == row {
+            continue;
+        }
+        let (overlap, contact) = super::recovery::touch(unit.position, unit.radius, body);
+        expected_overlap |= overlap;
+        if contact && !member(other) {
+            expected.push(other as u32);
+        }
+    }
+    let mut found = reads.last_contacts().to_vec();
+    found.sort_unstable();
+    assert_eq!(
+        overlapping, expected_overlap,
+        "the overlap read of row {row}"
+    );
+    assert_eq!(found, expected, "the contact read of row {row}");
+    SCHEDULE_COMPARED.with(|count| count.set(count.get() + 1));
+}
+
 /// The physical state of one row turn and the `known` rule of its actor.
 pub(super) struct Oracle<'a> {
     pub(super) units: &'a [MovementFrameUnit],

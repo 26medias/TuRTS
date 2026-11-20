@@ -303,6 +303,10 @@ its first unit.
 
 ### 7.3 Bound
 
+*Replaced by `2026-11-20-bounded-contact.md` section 4.* The claim below that a read visits
+at most 16 cells was false for the schedule read: its reach had `CONTACT_GAP`, which does
+not scale with the base cell. The text stays as the record of this amendment.
+
 For one owner in one pass:
 
 - K work is at most `OWNER_WORK` = 32,768. It now includes B1 and B2. Fixed overshoot: 0.
