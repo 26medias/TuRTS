@@ -332,12 +332,21 @@ impl UniformGrid {
         (false, cells, tested)
     }
 
-    /// An upper bound of the heap bytes of the grid, from capacities: the spatial keys,
-    /// the cell map (key, vector header and one control byte for each bucket) and the
-    /// index vectors.
+    /// The heap bytes of the grid, from capacities: the spatial keys, the cell map and the
+    /// index vectors. The map allocates a power-of-two bucket count with a load of 7/8: one
+    /// entry and one control byte for each bucket, plus one 16-byte control group
+    /// (checked with a counting allocator in the bounded-contact review: 270,352 bytes for
+    /// 5,041 cells).
     pub(crate) fn bytes(&self) -> usize {
+        let capacity = self.cells.capacity();
+        let table = if capacity == 0 {
+            0
+        } else {
+            let buckets = (capacity * 8).div_ceil(7).next_power_of_two();
+            buckets * (std::mem::size_of::<(u64, Vec<usize>)>() + 1) + 16
+        };
         self.spatial_keys.capacity() * std::mem::size_of::<u64>()
-            + self.cells.capacity() * (std::mem::size_of::<(u64, Vec<usize>)>() + 1)
+            + table
             + self
                 .cells
                 .values()
@@ -1038,5 +1047,25 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// The map part of `bytes` for 5,041 cells is the table that the review measured with a
+    /// counting allocator (8,192 buckets of 32 bytes and one control byte, and 16 bytes).
+    #[test]
+    fn grid_bytes_count_the_whole_cell_table() {
+        let points: Vec<GridPoint> = (0..5_041)
+            .map(|id| GridPoint {
+                id,
+                position: Vec2::new((id % 71) as f32, (id / 71) as f32),
+            })
+            .collect();
+        let grid = UniformGrid::new(&points, 1.0);
+        let vectors: usize = grid
+            .cells
+            .values()
+            .map(|indices| indices.capacity() * std::mem::size_of::<usize>())
+            .sum();
+        let keys = grid.spatial_keys.capacity() * std::mem::size_of::<u64>();
+        assert_eq!(grid.bytes() - vectors - keys, 270_352);
     }
 }

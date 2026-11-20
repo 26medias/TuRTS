@@ -232,3 +232,14 @@ at seven angles round the free escape direction (distance one f32 step above the
 reach) found a change only where `touch` reports contact, because the f32 position falls
 inside the reach. Bodies with no contact changed no own output. Each repair mutant turns
 its test red (`target/mc-evidence/bounded-contact/mutants-repair.log`).
+
+The same reviewer checked the repairs at `ecc7a9ab`: `VERDICT=FAIL REPAIRED=5/6
+NEW_FINDINGS=0`. Its brute-force probe found no miss in 200,000 grid queries (reach 0,
+subnormal reaches, coordinates up to 3e38) and no box wider than 4 cells. It refuted its
+own question: its comparison held the output of the hidden body itself; with that output
+left out, a body out of contact changes no escape. The open item (Low): `UniformGrid::bytes`
+counted the cell map about 8 % low (it used `capacity()`, which is 7/8 of the buckets).
+Repair: the map is counted as a power-of-two bucket table with one control byte for each
+bucket and a 16-byte group; a test checks 270,352 bytes for 5,041 cells, the value that
+the reviewer measured with a counting allocator. This item is closed without a further
+review (light rule: one check of the repaired items).
