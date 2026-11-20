@@ -16,6 +16,121 @@ use std::collections::{BTreeMap, BTreeSet};
 
 const ORIGIN: Vec2 = Vec2::new(10.0, 10.0);
 
+/// Manual wall-time, work and memory diagnostic; run only with the exclusive performance
+/// lock. `DENSITY_RADIUS=tiny` (0.001, else 0.4), `DENSITY_SIDE` (71), `DENSITY_KIND`
+/// (`spare`: stalled movers, the default; `blocked`: blocked group movers),
+/// `DENSITY_FOG` (`none`, the default; `visible`: every other still body is of owner 1 and
+/// permitted; `hidden`: the same bodies are hidden, so they are contacts of the rows).
+#[test]
+#[ignore = "manual release workload"]
+fn frame_contact_density_probe() {
+    let tiny = std::env::var("DENSITY_RADIUS").as_deref() == Ok("tiny");
+    let blocked_kind = std::env::var("DENSITY_KIND").as_deref() == Ok("blocked");
+    let fog = std::env::var("DENSITY_FOG").unwrap_or_else(|_| "none".into());
+    let side: usize = std::env::var("DENSITY_SIDE")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(71);
+    let radius = if tiny { 0.001_f32 } else { 0.4_f32 };
+    let spacing = radius * 2.1;
+    let upper = 2.0 + side as f32 * spacing;
+    let slots: Vec<_> = (0..100)
+        .map(|i| {
+            let index = side * side - 100 + i;
+            Vec2::new(
+                1.0 + (index % side) as f32 * spacing,
+                1.0 + (index / side) as f32 * spacing,
+            )
+        })
+        .collect();
+    let base = slots[50];
+    let mut units = Vec::with_capacity(side * side);
+    let mut permitted = BTreeSet::new();
+    for i in 0..side * side {
+        let position = Vec2::new(
+            1.0 + (i % side) as f32 * spacing,
+            1.0 + (i / side) as f32 * spacing,
+        );
+        let mut unit = if let Some(&slot) = slots.get(i) {
+            let mut mover = blocked(i as u32 + 1, position, slot);
+            if !blocked_kind {
+                let progress = mover.progress.as_mut().unwrap();
+                progress.activity = super::MovementActivity::Moving;
+                progress.claim_count = 0;
+                progress.best_distance = 0.0;
+            }
+            mover
+        } else {
+            let owner = u8::from(fog != "none" && i % 2 == 1);
+            if owner == 1 && fog == "visible" {
+                permitted.insert((0, i as u32 + 1));
+            }
+            still(i as u32 + 1, owner, position, radius)
+        };
+        unit.radius = radius;
+        units.push(unit);
+    }
+    let basis = Basis { permitted };
+    let bounds = Vec2::splat(upper + 10.0 * spacing + 2.0);
+    let frame = MovementFrame {
+        bounds,
+        tick_hz: 20,
+        units,
+        pools: BTreeMap::from([(
+            7,
+            super::MovementPool {
+                pool_id: 7,
+                point: base,
+                spacing,
+                primary_count: 100,
+                slots,
+            },
+        )]),
+        recovery: BTreeMap::new(),
+    };
+    let mut times = Vec::new();
+    for sample in 0..6 {
+        let mut budget = super::sweep::SweepBudget::new(1);
+        let start = std::time::Instant::now();
+        let outputs = super::frame::step_frame_with_motion_guide_and_visibility(
+            &frame,
+            0.05,
+            &Default::default(),
+            &mut budget,
+            &mut super::motion::NoMotionGuide,
+            (fog != "none").then_some(&basis as &dyn MovementVisibility),
+        );
+        let millis = start.elapsed().as_secs_f64() * 1000.0;
+        assert_eq!(outputs.len(), side * side);
+        let c = &budget.recovery;
+        assert!(c.physical_reads >= 100);
+        eprintln!(
+            "DENSITY tiny={tiny} kind={} fog={fog} bodies={} movers=100 sample={sample} ms={millis:.3} owner={} physical_reads={} physical_work={} view_work={} frame_work={} phase_bytes={} contact_reads={} contact_work={}",
+            if blocked_kind { "blocked" } else { "spare" },
+            side * side,
+            c.owner_work[0],
+            c.physical_reads,
+            c.physical_work,
+            c.view_work,
+            c.frame_work,
+            c.phase_bytes,
+            c.contact_reads,
+            c.contact_work
+        );
+        if sample > 0 {
+            times.push(millis);
+        }
+    }
+    times.sort_by(f64::total_cmp);
+    eprintln!(
+        "DENSITY_SUMMARY tiny={tiny} kind={} fog={fog} bodies={} median_ms={:.3} max_ms={:.3}",
+        if blocked_kind { "blocked" } else { "spare" },
+        side * side,
+        times[times.len() / 2],
+        times[times.len() - 1]
+    );
+}
+
 fn body(unit_id: u32, owner: u8, position: Vec2, radius: f32) -> MovementFrameUnit {
     MovementFrameUnit {
         unit_id,
@@ -985,7 +1100,7 @@ fn a_move_earlier_in_the_tick_is_in_the_view() {
         still(1, 0, ORIGIN, 0.5),
         still(2, 0, Vec2::new(18.0, 18.0), 0.5),
     ];
-    let world = RecoveryWorld::new(None, None);
+    let world = RecoveryWorld::new(None, None, 0.0);
     let scan = EscapeScan {
         bounds: Vec2::splat(20.0),
         origin: ORIGIN,
@@ -1292,7 +1407,7 @@ fn sliced_check(
     point: Vec2,
     slot: bool,
 ) -> (Check, usize) {
-    let world = RecoveryWorld::new(None, None);
+    let world = RecoveryWorld::new(None, None, 0.0);
     let mut counters = RecoveryCounters::default();
     let mut job = None;
     for slices in 1..10_000 {
@@ -1327,7 +1442,7 @@ fn a_retained_target_in_a_cell_larger_than_a_slice_resumes_and_ends() {
     for (name, kind, slot) in KINDS {
         let scan = check_scan(slot, &claims, &index, None);
         for (units, expected) in [(&clear, Check::Clear), (&blocked, Check::Blocked)] {
-            let world = RecoveryWorld::new(None, None);
+            let world = RecoveryWorld::new(None, None, 0.0);
             let whole = row_turn(
                 &world,
                 &mut None,
@@ -1429,7 +1544,7 @@ fn a_paused_retained_check_sees_a_new_body_or_claim_on_its_target() {
                 continue;
             }
             let scan = check_scan(slot, &empty, &index, None);
-            let world = RecoveryWorld::new(None, None);
+            let world = RecoveryWorld::new(None, None, 0.0);
             let mut counters = RecoveryCounters::default();
             let mut job = None;
             let first = row_turn(&world, &mut job, MIN_SLICE, &mut counters, |row| {
@@ -1449,7 +1564,7 @@ fn a_paused_retained_check_sees_a_new_body_or_claim_on_its_target() {
                 &index,
                 None,
             );
-            let later_world = RecoveryWorld::new(None, None);
+            let later_world = RecoveryWorld::new(None, None, 0.0);
             let mut result = Check::Pending;
             for _ in 0..10_000 {
                 result = row_turn(&later_world, &mut job, MIN_SLICE, &mut counters, |row| {
@@ -1742,7 +1857,7 @@ fn a_spare_search_larger_than_a_slice_resumes() {
         &std::cell::Cell::new(0),
     );
     assert_eq!(oracle, Some(far));
-    let world = RecoveryWorld::new(None, None);
+    let world = RecoveryWorld::new(None, None, 0.0);
     let mut counters = RecoveryCounters::default();
     let mut job = None;
     let mut slices = 0;
@@ -2272,7 +2387,7 @@ fn a_check_and_a_search_of_one_row_share_one_allowance() {
     let claims = ClaimSet::default();
     let index = one_slot_pool(target);
     let scan = check_scan(false, &claims, &index, None);
-    let world = RecoveryWorld::new(None, None);
+    let world = RecoveryWorld::new(None, None, 0.0);
     let mut counters = RecoveryCounters::default();
     let mut job = None;
     let allowance = 256;
@@ -2611,7 +2726,7 @@ fn a_clear_retained_group_target_has_no_resting_body_on_it() {
             index: 0,
             known: &|_| true,
         };
-        let world = RecoveryWorld::new(None, None);
+        let world = RecoveryWorld::new(None, None, 0.0);
         let checked = row_turn(
             &world,
             &mut None,
@@ -2869,7 +2984,7 @@ fn a_spare_search_keeps_its_origin_while_the_mover_creeps() {
     let claims = ClaimSet::default();
     let start = units[0].position;
     let kind = RecoveryKind::Spare(7);
-    let world = RecoveryWorld::new(None, None);
+    let world = RecoveryWorld::new(None, None, 0.0);
     let mut counters = RecoveryCounters::default();
     let mut job = None;
     let mut slices = 0u32;
@@ -2914,7 +3029,7 @@ fn a_waiting_row_drops_the_check_of_a_point_that_it_left() {
     let scan = check_scan(false, &claims, &index, None);
     let kind = RecoveryKind::Physical;
     // The row is a schedule row: a row with no schedule read keeps no job at all.
-    let world = RecoveryWorld::new(None, None);
+    let world = RecoveryWorld::new(None, None, 0.0);
     let mut reads = ScheduleReads::default();
     reads.begin(0);
     world.set_reads(reads);
@@ -2946,7 +3061,7 @@ fn a_paused_spare_job_continues_the_same_after_a_json_round_trip() {
     let origin = units[0].position;
     let kind = RecoveryKind::Spare(7);
     let scan = spare_scan(origin, &claims, &index);
-    let world = RecoveryWorld::new(None, None);
+    let world = RecoveryWorld::new(None, None, 0.0);
     // Runs the job to its end; `restore_at` sends it through JSON after that slice.
     let run = |restore_at: Option<u32>| {
         let mut counters = RecoveryCounters::default();
@@ -2984,4 +3099,294 @@ fn a_paused_spare_job_continues_the_same_after_a_json_round_trip() {
     for slice in [3, 6, 9] {
         assert_eq!(run(Some(slice)), reference, "restored after slice {slice}");
     }
+}
+
+// Design `2026-11-20-bounded-contact`: the schedule reads of a recovery row.
+
+/// A crowd of `side * side` still tiny bodies (radius 0.001, 0.0021 apart, no overlap) at
+/// `origin`, in owner 0 unless `foreign` gives another owner. The first `rows` bodies are
+/// escaping rows of owner 0 (schedule rows of class physical).
+fn tiny_crowd(
+    side: usize,
+    rows: usize,
+    origin: Vec2,
+    foreign: impl Fn(usize) -> u8,
+) -> Vec<MovementFrameUnit> {
+    (0..side * side)
+        .map(|n| {
+            let position = origin + Vec2::new((n % side) as f32, (n / side) as f32) * 0.0021;
+            if n < rows {
+                MovementFrameUnit {
+                    speed: Some(1.0),
+                    ..escaping(n as u32 + 1, 0, position, 0.001)
+                }
+            } else {
+                still(n as u32 + 1, foreign(n), position, 0.001)
+            }
+        })
+        .collect()
+}
+
+fn tiny_frame(units: Vec<MovementFrameUnit>, bounds: f32) -> MovementFrame {
+    let mut frame = frame(units);
+    frame.bounds = Vec2::splat(bounds);
+    frame
+}
+
+fn step_open(frame: &MovementFrame) -> RecoveryCounters {
+    let mut budget = super::sweep::SweepBudget::new(1);
+    let _ = super::step_frame_with_sweep_budget(frame, 0.05, &Default::default(), &mut budget);
+    budget.recovery
+}
+
+/// G1 with no fog: a recovery row reads no contact range. 4,096 tiny bodies lie within the
+/// contact gap of each row; each schedule, exit and new-position read scans at most 16
+/// cells and the bodies in them (red on `5f18ef1c`: one read scanned about 8,000 cells and
+/// bodies). The test oracle compares each schedule read with a scan of every row.
+#[test]
+fn tiny_footprints_cost_no_contact_scan_without_fog() {
+    let _ = super::recovery_oracle::take_schedule_compared();
+    let counters = step_open(&tiny_frame(
+        tiny_crowd(64, 100, Vec2::splat(1.0), |_| 0),
+        4.0,
+    ));
+    assert_eq!(super::recovery_oracle::take_schedule_compared(), 100);
+    assert_eq!(counters.contact_reads, 0);
+    assert_eq!(counters.contact_work, 0);
+    assert!(counters.physical_reads >= 200, "{counters:?}");
+    // One cell holds at most one body (0.0021 apart, cells 0.002 wide).
+    assert!(
+        counters.physical_work <= 32 * counters.physical_reads,
+        "reads {} work {}",
+        counters.physical_reads,
+        counters.physical_work
+    );
+}
+
+/// G2 under fog: the contact read reads the hidden bodies of the owner only. A crowd of
+/// 4,000 own and permitted foreign tiny bodies costs it nothing, and a hidden crowd away
+/// from the rows costs it no body test. Hidden bodies in contact range are found (the
+/// test oracle checks every contact set).
+#[test]
+fn own_and_visible_density_costs_no_contact_work_under_fog() {
+    let side = 63;
+    let origin = Vec2::splat(1.0);
+    // Owner 1 for every third body; all of them are permitted.
+    let crowd = tiny_crowd(side, 100, origin, |n| u8::from(n % 3 == 0));
+    let permitted: BTreeSet<(u8, u32)> = crowd
+        .iter()
+        .filter(|unit| unit.owner_slot == 1)
+        .map(|unit| (0, unit.unit_id))
+        .collect();
+    let basis = Basis { permitted };
+    // Hidden bodies of owner 1: three in contact range of the first rows, and a dense
+    // patch far from every row.
+    let near: Vec<_> = (0..3)
+        .map(|n| {
+            still(
+                50_000 + n,
+                1,
+                origin + Vec2::new(-0.05, 0.01 * n as f32),
+                0.001,
+            )
+        })
+        .collect();
+    let far: Vec<_> = (0..90)
+        .map(|n| {
+            still(
+                60_000 + n,
+                1,
+                Vec2::new(
+                    3.0 + (n % 10) as f32 * 0.0021,
+                    3.0 + (n / 10) as f32 * 0.0021,
+                ),
+                0.001,
+            )
+        })
+        .collect();
+    let rows_only: Vec<_> = crowd.iter().take(100).cloned().collect();
+    let run = |units: Vec<MovementFrameUnit>| {
+        let _ = super::recovery_oracle::take_schedule_compared();
+        let (_, counters) = step(&tiny_frame(units, 4.0), &basis, 1);
+        assert_eq!(super::recovery_oracle::take_schedule_compared(), 100);
+        counters
+    };
+    let crowded = run([crowd.clone(), near.clone(), far.clone()].concat());
+    let sparse = run([rows_only.clone(), near.clone(), far.clone()].concat());
+    assert_eq!(crowded.contact_reads, 100);
+    assert_eq!(
+        (crowded.contact_reads, crowded.contact_work),
+        (sparse.contact_reads, sparse.contact_work),
+        "own and permitted bodies change no contact work"
+    );
+    // A far hidden patch adds no body test; it can change the cell count of a read (the
+    // sparse scan of `grid`), at most 16 cells for each read.
+    let without_far = run([rows_only.clone(), near.clone()].concat());
+    assert!(crowded.contact_work <= without_far.contact_work + 100 * 16);
+    // At most 16 cells and the 3 near hidden bodies for each read.
+    assert!(
+        crowded.contact_work <= 100 * (16 + 3),
+        "{}",
+        crowded.contact_work
+    );
+    // The near hidden bodies are contacts of the first rows: the hidden index is used.
+    assert!(crowded.contact_work > 100, "{}", crowded.contact_work);
+}
+
+/// G1 at large finite coordinates: each read still scans at most 16 cells (red on
+/// `5f18ef1c` for the f32 cell boxes of the audit probe).
+#[test]
+fn reads_at_large_coordinates_scan_at_most_16_cells() {
+    for origin in [1.0e5_f32, 3.0e6] {
+        let units: Vec<_> = (0..64)
+            .map(|n| {
+                let position =
+                    Vec2::splat(origin) + Vec2::new((n % 8) as f32, (n / 8) as f32) * 0.5;
+                if n < 8 {
+                    escaping(n + 1, 0, position, 0.2)
+                } else {
+                    still(n + 1, 1, position, 0.2)
+                }
+            })
+            .collect();
+        let frame = tiny_frame(units, origin * 2.0);
+        let counters = step_open(&frame);
+        // Cells 0.4 wide, bodies 0.5 apart: at most one body in a cell.
+        assert!(
+            counters.physical_work <= 32 * counters.physical_reads,
+            "origin {origin}: {counters:?}"
+        );
+        let (_, fog) = step(
+            &frame,
+            &Basis {
+                permitted: BTreeSet::new(),
+            },
+            1,
+        );
+        assert_eq!(fog.contact_reads, 8);
+        // Contact cells are 0.8 wide or more: at most 16 cells and 4 bodies in each.
+        assert!(
+            fog.contact_work <= 8 * (16 + 64),
+            "origin {origin}: {fog:?}"
+        );
+    }
+}
+
+/// G3: an overlap read stops at the first overlap. 400 escaping bodies stacked on one spot
+/// read a few bodies each, not the whole stack (red on `5f18ef1c`: each schedule read
+/// tested every body of the stack).
+#[test]
+fn a_stack_of_escaping_bodies_reads_a_few_bodies_for_each_overlap_read() {
+    let units: Vec<_> = (0..400)
+        .map(|n| escaping(n + 1, 0, Vec2::splat(10.0), 0.5))
+        .collect();
+    let counters = step_open(&frame(units));
+    assert!(counters.physical_reads >= 800, "{counters:?}");
+    assert!(
+        counters.physical_work <= 40 * counters.physical_reads,
+        "reads {} work {}",
+        counters.physical_reads,
+        counters.physical_work
+    );
+}
+
+/// Review finding 1: a hidden body at the f32 edge of the contact rule. `touch` admits it
+/// (`distance <= r + r' + CONTACT_GAP`) while its squared distance is above the square of
+/// that reach. The contact read finds it (the oracle checks the set), so the escape is the
+/// escape of the same body when visible. The base read missed this contact.
+#[test]
+fn a_hidden_body_at_the_f32_edge_of_contact_range_is_a_contact() {
+    let base_units = || {
+        vec![
+            MovementFrameUnit {
+                speed: Some(1.0),
+                ..escaping(1, 0, ORIGIN, 0.5)
+            },
+            still(2, 0, ORIGIN + Vec2::new(0.05, 0.0), 0.5),
+        ]
+    };
+    let escape = |units: Vec<MovementFrameUnit>, visible: bool| {
+        let basis = Basis {
+            permitted: if visible {
+                BTreeSet::from([(0, 3)])
+            } else {
+                BTreeSet::new()
+            },
+        };
+        let (outputs, _) = step(&frame(units), &basis, 1);
+        outputs[0].physical_escape.clone().and_then(|e| e.target)
+    };
+    let free = escape(base_units(), false).expect("an escape point");
+    let theta = (free - ORIGIN).to_angle();
+    let reach = 0.5_f32 + 0.5 + super::route::CONTACT_GAP;
+    let edge = (0..200_000_i32)
+        .flat_map(|i| (-4_i32..=4).map(move |delta| (i, delta)))
+        .find_map(|(i, delta)| {
+            let angle = theta + (i - 100_000) as f32 * 1.0e-7;
+            let distance = f32::from_bits((reach.to_bits() as i32 + delta) as u32);
+            let at = ORIGIN + Vec2::from_angle(angle) * distance;
+            let contact = super::recovery::touch(ORIGIN, 0.5, &still(3, 1, at, 0.5)).1;
+            (contact && at.distance_squared(ORIGIN) > reach * reach).then_some(at)
+        })
+        .expect("an f32 edge point");
+    let mut units = base_units();
+    units.push(still(3, 1, edge, 0.5));
+    let _ = super::recovery_oracle::take_schedule_compared();
+    let hidden = escape(units.clone(), false);
+    assert!(super::recovery_oracle::take_schedule_compared() > 0);
+    assert_eq!(hidden, escape(units, true));
+}
+
+/// Review finding 3: a contact read scans at most 16 cells of the hidden index. 1,600
+/// hidden bodies 0.06 apart round one row fill more than 16 cells of the index (cells
+/// about 0.104 wide), so the grid uses its box scan. A cell holds at most 4 of them.
+#[test]
+fn a_contact_read_scans_at_most_16_cells_of_a_dense_hidden_index() {
+    let mut units = vec![MovementFrameUnit {
+        speed: Some(1.0),
+        ..escaping(1, 0, Vec2::splat(5.0), 0.001)
+    }];
+    for n in 0..1_600_u32 {
+        let at = Vec2::new(
+            3.8 + (n % 40) as f32 * 0.06 + 0.013,
+            3.8 + (n / 40) as f32 * 0.06 + 0.017,
+        );
+        units.push(still(10 + n, 1, at, 0.001));
+    }
+    let basis = Basis {
+        permitted: BTreeSet::new(),
+    };
+    let (_, counters) = step(&tiny_frame(units, 10.0), &basis, 1);
+    assert_eq!(counters.contact_reads, 1);
+    assert!(
+        counters.contact_work <= 16 + 4 * 16,
+        "contact work {}",
+        counters.contact_work
+    );
+}
+
+/// Review finding 5: the view work and the phase memory of the hidden index and of the
+/// membership pass are counted, and the membership pass runs one time for each owner.
+#[test]
+fn the_hidden_index_and_the_membership_pass_are_counted_once() {
+    let mut units: Vec<_> = (0..10)
+        .map(|n| escaping(n + 1, 0, Vec2::new(2.0 + n as f32, 2.0), 0.4))
+        .collect();
+    units.extend((0..20).map(|n| still(100 + n, 1, Vec2::new(2.0 + n as f32 * 0.5, 2.6), 0.4)));
+    let basis = Basis {
+        permitted: BTreeSet::new(),
+    };
+    let world = RecoveryWorld::new(Some(&basis), None, 0.4);
+    let _ = world.contact_read(0, &units, |_| {});
+    // One membership check for each row and one insert for each hidden row.
+    assert_eq!(world.view_work(), 30 + 20);
+    // The bytes of the membership vector and of the hidden index (at least 4 bytes of row,
+    // 12 of point and 8 of spatial key for each hidden body).
+    assert!(world.peak_bytes() >= 30 + 20 * 24, "{}", world.peak_bytes());
+    let _ = world.contact_read(1, &units, |_| {});
+    assert_eq!(world.view_work(), 50, "the second read reuses the index");
+    world.end_contact_reads();
+    world.build_view(0, &units);
+    // The view reuses the membership pass: one insert for each member only.
+    assert_eq!(world.view_work(), 50 + 10);
 }
