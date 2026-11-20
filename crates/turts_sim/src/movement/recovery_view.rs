@@ -116,8 +116,6 @@ fn grow(reach: f32) -> f32 {
 pub(crate) struct Meter {
     pub(crate) left: usize,
     pub(crate) used: usize,
-    /// The part of `used` that `force` recorded.
-    pub(crate) forced: usize,
     pub(crate) floor: usize,
     pub(crate) cells: u64,
     pub(crate) bodies: u64,
@@ -130,7 +128,6 @@ impl Meter {
         Self {
             left: allowance,
             used: 0,
-            forced: 0,
             floor: 0,
             cells: 0,
             bodies: 0,
@@ -147,13 +144,6 @@ impl Meter {
         } else {
             false
         }
-    }
-
-    /// Records work that ran before it could be refused (a bounded local precheck).
-    pub(crate) fn force(&mut self, work: usize) {
-        self.left = self.left.saturating_sub(work);
-        self.used += work;
-        self.forced += work;
     }
 }
 

@@ -1,6 +1,6 @@
 # Actual-work bound for blocked recovery
 
-Status: Baseline (implemented; one independent review). Date: 2026-11-19. Track: Foundation
+Status: Baseline (implemented; one independent review, repairs in section 6). Date: 2026-11-19. Track: Foundation
 (it changes audited movement state). Source: `target/mc-evidence/handoffs/2026-11-19-recovery-actual-work.md`.
 Base: `4db1211a` on `codex/dense-acceptance-integration`. Branch: `codex/recovery-actual-fable`.
 This note revises `2026-11-18-bounded-recovery.md` sections 2 (R1, R5, R8), 3.3 and 4. The
@@ -20,15 +20,16 @@ A1. **Metered work.** Every read of a known fact in a recovery slice costs one u
 row, a cell, a body key, a candidate or pool slot, a claim check, a claim cell, a contact,
 a digest start. The meter refuses a unit when the allowance is spent. The metered work of a
 slice is never above its allowance. The metered work of one owner in one solver pass is
-never above `OWNER_WORK` (32,768). One exception is counted as actual work: the pool
-precheck `has_potential_free_slot` runs at most once for each pool search, and costs
-`2 + 3 * local slots`.
+never above `OWNER_WORK` (32,768). The pool precheck (`has_potential_free_slot`) is
+metered too: two units for its constant-time part, then one unit for each slot-grid cell
+and each slot of its local part. It resumes from the pool cursor (`at`, `item`, `local`).
 
 A2. **Known bodies only.** A slice reads the owner view (own bodies and bodies that the
 visibility basis permits; all bodies without a basis) and the contacts of its actor (bodies
 in contact range at tick start that the view does not hold). This is the same set as
 `known` in `frame.rs`. Hidden bodies out of contact are not in either set, so they change no
-result, charge, slice end, proof or schedule.
+result, charge, slice end, proof or schedule. One input is outside these sets: the slot
+clearances that the pool precheck reads (section 5).
 
 A3. **Frame work.** Three costs are charged to no owner and are counted in
 `RecoveryCounters::frame_work`: the owner view build (one membership check for each row and
@@ -51,8 +52,9 @@ claim-cell digests of the own pool in `origin +- examined` (claim cells are 4 un
 It costs one unit for each cell row and each cell. A different proof restarts the scan.
 `RELAX_AFTER` (2) failed proofs, or a proof that costs more than half a slice, make the scan
 relaxed. A relaxed scan resumes paused probes as they are, and checks the chosen point
-against the current state before it commits (stage `Verify`, which resumes only with a
-local proof of its query box). A partial query never reports a point as clear.
+against the current state before it commits (stage `Verify`). A paused check resumes only
+with a local proof: the cell digests of its query box and the own-pool claim cell of the
+point. A partial query never reports a point as clear.
 
 A6. **Reserve.** Before a scan starts a candidate, it keeps a reserve that pays the proof
 digest of a pause there. A slice that cannot keep the reserve and do one more unit pauses.
@@ -66,8 +68,9 @@ a body that `known` admits.
 
 A8. **Cell size.** The view half is the smallest power of two at least as large as every
 member radius (at least 1/64); the cell is twice the half. A scan stores the cell bits of
-its proof; a different cell size restarts it. The cell size changes only when the largest
-known radius crosses a power of two.
+its proof. The cell size changes only when the largest known radius crosses a power of two.
+A different cell size voids a paused query cursor and counts as an invalidation. A proving
+scan restarts. A relaxed scan keeps its place and restarts only its paused query.
 
 A9. **Memory.** Retained: `RecoverySearch` is 200 bytes (was 88), plus the unit id. Phase
 (`phase_bytes`, an upper bound, not a heap measurement): the schedule, each owner view
@@ -86,9 +89,13 @@ differ.
 - Equal keys: see A7.
 - Churn in the examined region: the job restarts at most `RELAX_AFTER` times, then runs
   relaxed. A relaxed job ends when its chosen point stays free during the check. The check
-  resumes only when its own query box is unchanged. If that box changes in every slice and
-  the check needs more than one slice, the job does not end. This is the liveness
-  condition: the query box of the chosen point must be stable for one check.
+  resumes only when its own query box and the claim cell of its point are unchanged. If
+  that box changes in every slice and the check needs more than one slice, the job does
+  not end. This is the liveness condition: the query box of the chosen point must be
+  stable for one check.
+- Cell size changes: each change counts as an invalidation (A8), so after `RELAX_AFTER`
+  changes the job is relaxed and keeps its place. Only a query that needs more than one
+  slice and sees a new cell size in each slice does not end (the same liveness condition).
 - A row whose allowance cannot pay the reserve of a proof runs relaxed (A5, A6).
 
 ## 4. Tests
@@ -99,7 +106,12 @@ known bodies (each slice within its allowance, stateless result) and with hidden
 end after stabilization; R4 equal-key batches; R5 hidden non-contact bodies change no owner
 output or counter for 60 frame ticks under fog (red on the base: owner actual work 21,618 to
 550,761 at tick 0); R6 contact and visibility; R7 reversed ids, rows and owner slots; R8 a
-hundred blocked group movers. `recovery_view.rs` tests: key order, cell digests, a probe
+hundred blocked group movers. Repair tests (section 6): R9 a paused check sees a new claim
+or body on its point; R10 a cell size that changes in every slice; R11 a pool precheck
+larger than a slice; R12 a move earlier in the tick is in the view; R13 the mover does not
+block a pool slot under itself; R14 a new claim in the examined region invalidates the
+proof. R6 also asserts that a contacted hidden body gives the escape of the same body when
+visible. `recovery_view.rs` tests: key order, cell digests, a probe
 that resumes inside one dense cell. The 2026-11-18 tests in `recovery_tests.rs` stay, with
 these changes: one-candidate slices use the test hook `SLICE_CANDIDATES` (a slice must pay
 its reserve, so an allowance of 1 cannot progress); allowances below `MIN_SLICE` are raised
@@ -108,8 +120,13 @@ to it; the stress bounds use A1 and A9.
 ## 5. Limits
 
 - Frame work (A3) is not bounded by the owner allowance.
-- The pool precheck reads clearances that `refresh_slot_clearance` builds from bodies that
-  `known` may not admit (pre-existing).
+- The pool precheck reads clearances that `refresh_slot_clearance` builds. On this branch,
+  under fog without claim exchange, they include bodies that `known` does not admit, so a
+  hidden body on the only free slot can change a group escape (pre-existing; an exception
+  to A2). Integration commit `f98dc856` ("Keep hidden bodies out of fog slot prechecks")
+  restricts these clearances under fog. The two branches merge with no text conflict, and
+  the merged tree passes the `turts_sim` tests (section 6). This branch does not repeat
+  that change, so it does not conflict with it.
 - The stall spare-slot search (`nearest_free` after a stall) is counted but not metered
   (pre-existing, 2026-11-18 section 5).
 - Retained-target checks and the exit overlap checks stay single physical queries for each
@@ -118,3 +135,25 @@ to it; the stress bounds use A1 and A9.
   restarts a scan.
 - The digest is a sum of two 64-bit mixes and a count; a collision is possible (near
   2^-64 for each check).
+
+## 6. Review and repairs
+
+One review (`simulation-core-engineer`, runs and mutants) of `e2e5d8e5` gave
+`VERDICT=FAIL FINDINGS=6 HIGH=1`. Repairs:
+
+1. High. A paused check of a relaxed point did not see a new claim of the point: the
+   local proof read bodies only. The local proof now adds the own-pool claim cell of the
+   point (A5). Test R9 (red on `e2e5d8e5`).
+2. A cell size change restarted the scan with zero invalidations, so a far body that joins
+   and leaves the view in turn stopped the search. It now counts as an invalidation (A8,
+   section 3). Test R10 (red on `e2e5d8e5`: no end in 2,000 slices).
+3. The pool precheck was forced work and could use the proof reserve
+   (`debug_assert` in the pause proof). It is now metered and resumable (A1). Test R11
+   (red on `e2e5d8e5`: the assertion fires). `Meter::force` is removed.
+4. Five mutants survived the tests. Each one now turns a test red: no `relocate` (R12),
+   no local proof (R9), own key counted (R13), no contacts (R6), no claim digest (R14,
+   R9).
+5. The A2 and section 5 contradiction: A2 now names the exception; section 5 names the
+   integration repair.
+6. A 6-tick output cycle of 40 stacked escapers (review probe P5): the base `4db1211a`
+   gives the same trace, hash for hash. It is pre-existing, not caused by this change.

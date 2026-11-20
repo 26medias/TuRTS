@@ -2,11 +2,12 @@
 
 use super::frame::{MovementFrame, MovementFrameOutput, MovementFrameUnit};
 use super::recovery::{
-    EscapeScan, MIN_SLICE, OWNER_WORK, RecoveryCounters, ScheduleRow, SliceOutcome, plan,
+    EscapeScan, MIN_SLICE, OWNER_WORK, PoolSearch, RecoveryCounters, RecoveryWorld, RowRecovery,
+    SLICE_CANDIDATES, ScheduleRow, SliceOutcome, plan,
 };
-use super::recovery_view::{Contacts, KnownSet, KnownView, body_key};
+use super::recovery_view::{ClaimSet, Contacts, KnownSet, KnownView, body_key};
 use super::search::MovementSearch;
-use super::{MovementVisibility, PhysicalEscape, RecoveryScan};
+use super::{MovementVisibility, PhysicalEscape, RecoveryKind, RecoveryScan, RecoveryStage};
 use bevy_math::Vec2;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -524,6 +525,9 @@ fn a_contacted_hidden_body_is_known_and_an_uncontacted_one_is_not() {
     // On the escape direction, 1.05 from the mover: in contact range (1.101).
     let touching = ORIGIN + direction * 1.05;
     assert_ne!(run(Some(touching), false), Some(free));
+    // A contacted hidden body counts as a known body: the escape is the one that the same
+    // body gives when it is visible.
+    assert_eq!(run(Some(touching), false), run(Some(touching), true));
     // 1.15 from the mover: out of contact range; ignored while hidden, seen when visible.
     let near = ORIGIN + direction * 1.15;
     assert_eq!(run(Some(near), false), Some(free));
@@ -668,4 +672,397 @@ fn a_hundred_blocked_bodies_all_get_service() {
     );
     assert!(peak <= OWNER_WORK);
     assert_eq!(unresolved(&frame), 0, "every mover resolves");
+}
+
+/// A slice allowance large enough for every proof of these scenes.
+const WIDE: usize = 4_096;
+
+fn view_of(units: &[MovementFrameUnit]) -> KnownView {
+    let members: Vec<_> = units
+        .iter()
+        .enumerate()
+        .map(|(row, unit)| (row, unit.position, unit.radius))
+        .collect();
+    KnownView::build(&members, units.len())
+}
+
+/// One slice of the search of the mover `units[0]` over `view`, with the claims of pool 7.
+fn pool_slice(
+    units: &[MovementFrameUnit],
+    view: &KnownView,
+    claims: &ClaimSet,
+    pool: Option<PoolSearch>,
+    previous: Option<RecoveryScan>,
+    allowance: usize,
+    counters: &mut RecoveryCounters,
+) -> SliceOutcome {
+    let contacts = Contacts::default();
+    let known = KnownSet {
+        view,
+        contacts: &contacts,
+        own_key: Some(body_key(units[0].position, units[0].radius)),
+    };
+    EscapeScan {
+        bounds: Vec2::splat(20.0),
+        origin: units[0].position,
+        radius: units[0].radius,
+        slots: Some((7, claims)),
+        pool,
+        bound: None,
+        verify: true,
+    }
+    .run(&known, previous, allowance, 0, counters)
+}
+
+fn with_candidate_cap<T>(cap: usize, body: impl FnOnce() -> T) -> T {
+    SLICE_CANDIDATES.with(|limit| limit.set(cap));
+    let result = body();
+    SLICE_CANDIDATES.with(|limit| limit.set(usize::MAX));
+    result
+}
+
+/// R9. The check of a relaxed point pauses inside a dense cell. Then a claim of the point,
+/// or a body on the point, appears. The resumed check must not commit the point.
+#[test]
+fn a_paused_check_sees_a_new_claim_or_body_on_its_point() {
+    let point = ORIGIN + Vec2::new(2.5, 0.0);
+    let mut units = vec![still(1, 0, ORIGIN, 0.5)];
+    // Tiny bodies 0.6 from the point: they do not block it, but its query must read them.
+    for n in 0..2_000u32 {
+        units.push(still(
+            2 + n,
+            0,
+            point + Vec2::new(0.6 + (n % 40) as f32 * 0.0025, (n / 40) as f32 * 0.0025),
+            0.001,
+        ));
+    }
+    let view = view_of(&units);
+    let mut with_body = units.clone();
+    with_body.push(still(9_999, 0, point, 0.5));
+    let body_view = view_of(&with_body);
+    let contacts = Contacts::default();
+    let cell = KnownSet {
+        view: &view,
+        contacts: &contacts,
+        own_key: None,
+    }
+    .cell_bits();
+    assert_eq!(
+        cell,
+        KnownSet {
+            view: &body_view,
+            contacts: &contacts,
+            own_key: None,
+        }
+        .cell_bits()
+    );
+    let start = RecoveryScan {
+        origin: ORIGIN,
+        radius: 0.5,
+        ring: 1,
+        side: 0,
+        step: 0,
+        best: None,
+        examined: 0.0,
+        digest: [0; 3],
+        invalidations: 2,
+        relaxed: true,
+        cell,
+        stage: RecoveryStage::Verify { point, slot: false },
+        pool: None,
+        query: None,
+        spanned: true,
+    };
+    let empty = ClaimSet::default();
+    let mut claimed = ClaimSet::default();
+    claimed.insert((7, point.x.to_bits(), point.y.to_bits()));
+    for (name, claims, later) in [("claim", &claimed, &view), ("body", &empty, &body_view)] {
+        let mut counters = RecoveryCounters::default();
+        let first = pool_slice(
+            &units,
+            &view,
+            &empty,
+            None,
+            Some(start),
+            MIN_SLICE,
+            &mut counters,
+        );
+        let SliceOutcome::Paused(mut scan) = first else {
+            panic!("{name}: the check must pause");
+        };
+        assert!(scan.query.is_some_and(|query| query.started), "{name}");
+        let mut result = None;
+        for _ in 0..10_000 {
+            match pool_slice(
+                &units,
+                later,
+                claims,
+                None,
+                Some(scan),
+                MIN_SLICE,
+                &mut counters,
+            ) {
+                SliceOutcome::Done(point) => {
+                    result = Some(point);
+                    break;
+                }
+                SliceOutcome::Paused(next) => scan = next,
+            }
+        }
+        let result = result.unwrap_or_else(|| panic!("{name}: the search must end"));
+        assert_ne!(result, Some(point), "{name}: the point is not free now");
+        if let Some(found) = result
+            && name == "body"
+        {
+            assert!(found.distance(point) >= 1.0 - 1.0e-5, "{name}: {found:?}");
+        }
+    }
+}
+
+/// R10. A far body joins and leaves the view in turn, so the view cell size changes in
+/// every slice. The search counts each change, runs relaxed and ends.
+#[test]
+fn a_view_cell_size_that_changes_every_slice_does_not_stop_the_search() {
+    let mut units = vec![still(1, 0, ORIGIN, 0.5)];
+    for n in 0..60 {
+        let angle = n as f32 * 0.37;
+        let distance = 1.0 + (n % 7) as f32 * 0.55;
+        units.push(still(
+            2 + n,
+            0,
+            ORIGIN + Vec2::new(angle.cos(), angle.sin()) * distance,
+            0.5,
+        ));
+    }
+    let small = view_of(&units);
+    let mut with_big = units.clone();
+    with_big.push(still(999, 1, Vec2::new(18.0, 18.0), 1.5));
+    let big = view_of(&with_big);
+    let claims = ClaimSet::default();
+    let finish = |toggle: bool| {
+        let mut counters = RecoveryCounters::default();
+        let mut scan = None;
+        for slice in 0..2_000 {
+            let view = if toggle && slice % 2 == 1 {
+                &big
+            } else {
+                &small
+            };
+            match pool_slice(&units, view, &claims, None, scan, MIN_SLICE, &mut counters) {
+                SliceOutcome::Done(point) => return (Some((slice, point)), counters),
+                SliceOutcome::Paused(next) => scan = Some(next),
+            }
+        }
+        (None, counters)
+    };
+    let (stable, _) = finish(false);
+    let (toggled, counters) = finish(true);
+    eprintln!(
+        "CELLTOGGLE stable={stable:?} toggled={toggled:?} invalidations={} relaxations={}",
+        counters.invalidations, counters.relaxations
+    );
+    let (stable_slices, stable_point) = stable.expect("the stable search ends");
+    assert!(stable_slices > 1, "the search spans slices");
+    let (_, point) = toggled.expect("the toggled search ends");
+    assert!(counters.invalidations > 0);
+    // The relaxed point is free in both views.
+    let point = point.expect("a free point");
+    for unit in &with_big[1..] {
+        assert!(point.distance(unit.position) >= 0.5 + unit.radius - 1.0e-5);
+    }
+    assert!(stable_point.is_some());
+}
+
+/// The slots of a dense pool round `ORIGIN`: 289 slots 0.15 apart.
+fn dense_pool() -> super::MovementPool {
+    let mut slots = Vec::new();
+    for y in -8..=8 {
+        for x in -8..=8 {
+            slots.push(ORIGIN + Vec2::new(x as f32 * 0.15, y as f32 * 0.15));
+        }
+    }
+    super::MovementPool {
+        pool_id: 7,
+        point: ORIGIN,
+        spacing: 0.15,
+        primary_count: slots.len() as u32,
+        slots,
+    }
+}
+
+/// R11. A pool precheck with more local slots than one slice can read is metered: each
+/// slice stays within its allowance and the search ends with the unsliced result.
+#[test]
+fn the_pool_precheck_stays_inside_each_slice() {
+    let units = vec![still(1, 0, ORIGIN, 0.5)];
+    let view = view_of(&units);
+    let index = super::pool_index::MovementPoolIndex::new(&dense_pool(), Vec2::splat(20.0));
+    let claims = ClaimSet::default();
+    let pool = || {
+        Some(PoolSearch {
+            index: &index,
+            unit_id: 1,
+            allowed: None,
+        })
+    };
+    let mut wide = RecoveryCounters::default();
+    let SliceOutcome::Done(expected) =
+        pool_slice(&units, &view, &claims, pool(), None, WIDE, &mut wide)
+    else {
+        panic!("one wide slice ends");
+    };
+    assert!(wide.pool_work > MIN_SLICE as u64, "{}", wide.pool_work);
+    let mut counters = RecoveryCounters::default();
+    let mut scan = None;
+    let mut slices = 0;
+    let result = loop {
+        let before = counters.owner_actual[0];
+        let outcome = pool_slice(
+            &units,
+            &view,
+            &claims,
+            pool(),
+            scan,
+            MIN_SLICE,
+            &mut counters,
+        );
+        assert!(counters.owner_actual[0] - before <= MIN_SLICE);
+        slices += 1;
+        assert!(slices < 1_000, "the search must end");
+        match outcome {
+            SliceOutcome::Done(point) => break point,
+            SliceOutcome::Paused(next) => scan = Some(next),
+        }
+    };
+    assert!(slices > 2, "the precheck spans slices: {slices}");
+    assert_eq!(result, expected);
+    assert_eq!(counters.relaxations, 0);
+}
+
+/// R12. A body that moves earlier in the tick is at its new place for a later search of
+/// the same tick: the view follows each move.
+#[test]
+fn a_move_earlier_in_the_tick_is_in_the_view() {
+    let mut units = vec![
+        still(1, 0, ORIGIN, 0.5),
+        still(2, 0, Vec2::new(18.0, 18.0), 0.5),
+    ];
+    let start = units.clone();
+    let world = RecoveryWorld::new(&start, None);
+    let scan = EscapeScan {
+        bounds: Vec2::splat(20.0),
+        origin: ORIGIN,
+        radius: 0.5,
+        slots: None,
+        pool: None,
+        bound: None,
+        verify: true,
+    };
+    let mut counters = RecoveryCounters::default();
+    let mut search = |units: &[MovementFrameUnit]| {
+        let mut jobs = BTreeMap::new();
+        RowRecovery {
+            row: 0,
+            owner: 0,
+            allowance: WIDE,
+            previous: None,
+            next_jobs: &mut jobs,
+            counters: &mut counters,
+            world: &world,
+        }
+        .search(RecoveryKind::Physical, &scan, units)
+    };
+    let first = search(&units).expect("a free point");
+    world.relocate(1, units[1].position, first, 0.5);
+    units[1].position = first;
+    let second = search(&units).expect("a free point");
+    assert_ne!(second, first);
+    assert!(second.distance(first) >= 1.0 - 1.0e-5);
+}
+
+/// R13. The mover's own body does not block a pool slot under it.
+#[test]
+fn the_mover_does_not_block_a_pool_slot_under_itself() {
+    let units = vec![still(1, 0, ORIGIN, 0.5)];
+    let view = view_of(&units);
+    let near = ORIGIN + Vec2::new(0.3, 0.0);
+    let pool = super::MovementPool {
+        pool_id: 7,
+        point: ORIGIN,
+        spacing: 1.0,
+        primary_count: 2,
+        slots: vec![near, ORIGIN + Vec2::new(3.0, 0.0)],
+    };
+    let mut index = super::pool_index::MovementPoolIndex::new(&pool, Vec2::splat(20.0));
+    let points: Vec<_> = units
+        .iter()
+        .map(|unit| crate::grid::GridPoint {
+            id: unit.unit_id,
+            position: unit.position,
+        })
+        .collect();
+    let grid = crate::grid::UniformGrid::new(&points, 1.0);
+    let witness = vec![Vec::new(); units.len()];
+    for slot in 0..pool.slots.len() {
+        index.refresh_slot_clearance(slot, &units, &points, &grid, 0.5, false, &witness);
+    }
+    let claims = ClaimSet::default();
+    let search = PoolSearch {
+        index: &index,
+        unit_id: 1,
+        allowed: None,
+    };
+    let mut counters = RecoveryCounters::default();
+    let outcome = pool_slice(
+        &units,
+        &view,
+        &claims,
+        Some(search),
+        None,
+        WIDE,
+        &mut counters,
+    );
+    assert!(matches!(outcome, SliceOutcome::Done(Some(point)) if point == near));
+}
+
+/// R14. A claim on the best point so far that appears while a proving scan pauses changes
+/// its proof: the scan restarts and does not commit the claimed point.
+#[test]
+fn a_new_claim_in_the_examined_region_invalidates_the_proof() {
+    let units = vec![still(1, 0, ORIGIN, 0.5)];
+    let view = view_of(&units);
+    let empty = ClaimSet::default();
+    let mut counters = RecoveryCounters::default();
+    let SliceOutcome::Done(Some(winner)) =
+        pool_slice(&units, &view, &empty, None, None, WIDE, &mut counters)
+    else {
+        panic!("an empty world has a free point");
+    };
+    let mut claimed = ClaimSet::default();
+    claimed.insert((7, winner.x.to_bits(), winner.y.to_bits()));
+    let result = with_candidate_cap(1, || {
+        let mut counters = RecoveryCounters::default();
+        let mut scan = None;
+        // One candidate in each slice, until the winner is the best point so far.
+        for _ in 0..100 {
+            match pool_slice(&units, &view, &empty, None, scan, WIDE, &mut counters) {
+                SliceOutcome::Paused(next) if next.best == Some(winner) => {
+                    scan = Some(next);
+                    break;
+                }
+                SliceOutcome::Paused(next) => scan = Some(next),
+                SliceOutcome::Done(_) => panic!("the capped scan pauses"),
+            }
+        }
+        assert!(scan.is_some_and(|scan| scan.best == Some(winner) && !scan.relaxed));
+        for _ in 0..1_000 {
+            match pool_slice(&units, &view, &claimed, None, scan, WIDE, &mut counters) {
+                SliceOutcome::Done(point) => return (point, counters.invalidations),
+                SliceOutcome::Paused(next) => scan = Some(next),
+            }
+        }
+        panic!("the search must end");
+    });
+    assert_ne!(result.0, Some(winner));
+    assert!(result.1 > 0);
 }

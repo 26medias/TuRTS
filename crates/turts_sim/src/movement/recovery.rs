@@ -312,11 +312,11 @@ impl EscapeScan<'_> {
         2.0 * self.radius + 0.1
     }
 
-    fn same_search(&self, scan: &RecoveryScan, known: &KnownSet) -> bool {
+    /// True when `scan` is a slice of this search (the cell size of its view may differ).
+    fn same_search(&self, scan: &RecoveryScan) -> bool {
         scan.origin.x.to_bits() == self.origin.x.to_bits()
             && scan.origin.y.to_bits() == self.origin.y.to_bits()
             && scan.radius.to_bits() == self.radius.to_bits()
-            && scan.cell == known.cell_bits()
             && scan.pool.is_some() == self.pool.is_some()
     }
 
@@ -344,6 +344,7 @@ impl EscapeScan<'_> {
                 item: 0,
                 best: None,
                 checked: false,
+                local: false,
                 done: false,
             }),
             query: None,
@@ -386,12 +387,24 @@ impl EscapeScan<'_> {
         )
     }
 
+    /// The own-pool claims of the claim cell that holds `point`.
+    fn point_claims(&self) -> Option<(u64, &ClaimSet, f32)> {
+        self.slots.map(|(pool, set)| (pool, set, 0.0))
+    }
+
+    /// The cost of the local proof of the check of `point`: the bodies that can touch it,
+    /// and the claims of its claim cell.
     fn local_cost(&self, known: &KnownSet, point: Vec2) -> usize {
-        known.region_cost(point, self.radius + known.view.half(), None)
+        known.region_cost(point, self.radius + known.view.half(), self.point_claims())
     }
 
     fn local_digest(&self, known: &KnownSet, point: Vec2, meter: &mut Meter) -> Option<[u64; 3]> {
-        known.region_digest(point, self.radius + known.view.half(), None, meter)
+        known.region_digest(
+            point,
+            self.radius + known.view.half(),
+            self.point_claims(),
+            meter,
+        )
     }
 
     /// Sets the reserve that a pause at `point` needs. False when the slice cannot do one
@@ -519,19 +532,17 @@ impl EscapeScan<'_> {
             return Some(());
         }
         if !cursor.checked {
-            // A local precheck: its work is bounded by the slots near the mover.
-            let (possible, work) = pool.index.has_potential_free_slot_counted(
-                pool.unit_id,
-                self.origin,
-                self.radius,
-                pool.allowed.map(|(_, x, y)| (x, y)),
-            );
-            slice.meter.force(work);
-            slice.counters.pool_work += work as u64;
-            cursor.checked = true;
-            if !possible {
-                cursor.done = true;
-                return Some(());
+            match self.precheck(known, state, cursor, pool, slice)? {
+                true => {
+                    cursor.checked = true;
+                    cursor.at = 0;
+                    cursor.item = 0;
+                }
+                false => {
+                    cursor.checked = true;
+                    cursor.done = true;
+                    return Some(());
+                }
             }
         }
         let grid = pool.index.slot_grid();
@@ -608,6 +619,84 @@ impl EscapeScan<'_> {
             cursor.at = 0;
             cursor.item = 0;
         }
+    }
+
+    /// The metered `has_potential_free_slot`: two units for its constant-time part, then one
+    /// unit for each cell and each slot of the local part. `None` when the slice paused.
+    fn precheck(
+        &self,
+        known: &KnownSet,
+        state: &mut RecoveryScan,
+        cursor: &mut RecoveryPoolCursor,
+        pool: PoolSearch,
+        slice: &mut Slice,
+    ) -> Option<bool> {
+        if !self.reserve(known, state, self.origin, slice) {
+            return None;
+        }
+        if !cursor.local {
+            if slice.meter.left < slice.meter.floor + 2 {
+                return None;
+            }
+            slice.meter.step();
+            slice.meter.step();
+            slice.counters.pool_work += 2;
+            if pool.index.potential_free_without_local(
+                pool.unit_id,
+                self.radius,
+                pool.allowed.map(|(_, x, y)| (x, y)),
+            ) {
+                return Some(true);
+            }
+            cursor.local = true;
+            cursor.at = 0;
+            cursor.item = 0;
+        }
+        let reach = 2.0 * self.radius;
+        let grid = pool.index.slot_grid();
+        let points = &pool.index.points;
+        let ((low_x, low_y), (high_x, high_y)) = grid.cell_box(self.origin, reach);
+        let width = (high_x - low_x + 1) as u128;
+        let area = width * (high_y - low_y + 1) as u128;
+        let by_cells = area <= points.len() as u128;
+        let positions = if by_cells { area } else { points.len() as u128 };
+        while u128::from(cursor.at) < positions {
+            let members: &[usize] = if by_cells {
+                let at = u128::from(cursor.at);
+                grid.cell_members(low_x + (at % width) as i64, low_y + (at / width) as i64)
+            } else {
+                &[]
+            };
+            let count = if by_cells { members.len() } else { 1 };
+            if by_cells && cursor.item == 0 {
+                if !slice.meter.step() {
+                    return None;
+                }
+                slice.counters.pool_work += 1;
+            }
+            while (cursor.item as usize) < count {
+                if !slice.meter.step() {
+                    return None;
+                }
+                slice.counters.pool_work += 1;
+                let slot = if by_cells {
+                    members[cursor.item as usize]
+                } else {
+                    cursor.at as usize
+                };
+                if points[slot].position.distance_squared(self.origin) <= reach * reach
+                    && pool
+                        .index
+                        .local_slot_supports(slot, pool.unit_id, self.radius)
+                {
+                    return Some(true);
+                }
+                cursor.item += 1;
+            }
+            cursor.item = 0;
+            cursor.at += 1;
+        }
+        Some(false)
     }
 
     /// Continues the hex ring order. `Some(best)` when the scan ends.
@@ -764,8 +853,7 @@ impl EscapeScan<'_> {
         }
     }
 
-    /// Runs one slice of at most `allowance` metered work (plus the bounded pool
-    /// precheck, at most once for each pool search).
+    /// Runs one slice of at most `allowance` metered work.
     pub(super) fn run(
         &self,
         known: &KnownSet,
@@ -781,9 +869,27 @@ impl EscapeScan<'_> {
             counters,
         };
         slice.counters.slices += 1;
-        let previous = previous.filter(|scan| self.same_search(scan, known));
+        let previous = previous.filter(|scan| self.same_search(scan));
         let mut state = match previous {
             None => self.fresh(known, 0, false),
+            Some(scan) if scan.cell != known.cell_bits() => {
+                // The view cell size changed: a paused query cursor is void. It counts as
+                // an invalidation, so a view whose largest radius changes again and again
+                // makes the scan relaxed. A relaxed scan keeps its place and checks its
+                // point at the end; only the paused query restarts.
+                slice.counters.invalidations += 1;
+                let invalidations = scan.invalidations.saturating_add(1);
+                if self.proving(&scan) {
+                    self.fresh(known, invalidations, false)
+                } else {
+                    RecoveryScan {
+                        cell: known.cell_bits(),
+                        query: None,
+                        invalidations,
+                        ..scan
+                    }
+                }
+            }
             Some(mut scan) if !self.proving(&scan) => {
                 // The paused check of a relaxed point resumes only with its local proof.
                 // A paused scan probe resumes as it is: the chosen point is checked.
@@ -865,7 +971,7 @@ impl EscapeScan<'_> {
             SliceOutcome::Paused(_) => counters.pauses += 1,
         }
         counters.absorb(&meter);
-        counters.charge(owner, meter.used - meter.forced, meter.used);
+        counters.charge(owner, meter.used, meter.used);
         outcome
     }
 }

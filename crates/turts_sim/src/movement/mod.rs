@@ -173,6 +173,8 @@ pub enum RecoveryStage {
 
 /// The cursor of a pool slot search: the reach level, the position inside the level
 /// (a cell index of the level box, or a slot index), and the best free slot so far.
+/// Before `checked`, `at` and `item` are the position of the local precheck, which runs
+/// when `local` is set (its constant-time part found no slot).
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct RecoveryPoolCursor {
     pub level: u8,
@@ -180,6 +182,8 @@ pub struct RecoveryPoolCursor {
     pub item: u32,
     pub best: Option<(u32, Vec2)>,
     pub checked: bool,
+    #[serde(default)]
+    pub local: bool,
     pub done: bool,
 }
 
