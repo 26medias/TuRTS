@@ -871,6 +871,29 @@ fn a_view_cell_size_that_changes_every_slice_does_not_stop_the_search() {
         assert!(point.distance(unit.position) >= 0.5 + unit.radius - 1.0e-5);
     }
     assert!(stable_point.is_some());
+    // A cheap proof (a wide slice, one candidate in each slice) never relaxes by cost, so
+    // only the counted cell changes make the scan relaxed.
+    let (cheap, counters) = with_candidate_cap(1, || {
+        let mut counters = RecoveryCounters::default();
+        let mut scan = None;
+        for slice in 0..2_000 {
+            let view = if slice % 2 == 1 { &big } else { &small };
+            match pool_slice(&units, view, &claims, None, scan, 1_024, &mut counters) {
+                SliceOutcome::Done(point) => return (Some(point), counters),
+                SliceOutcome::Paused(next) => scan = Some(next),
+            }
+        }
+        (None, counters)
+    });
+    eprintln!(
+        "CELLTOGGLE cheap={cheap:?} invalidations={} relaxations={}",
+        counters.invalidations, counters.relaxations
+    );
+    assert_eq!(counters.relaxations, 0);
+    assert!(
+        cheap.is_some(),
+        "the toggled search with a cheap proof ends"
+    );
 }
 
 /// The slots of a dense pool round `ORIGIN`: 289 slots 0.15 apart.

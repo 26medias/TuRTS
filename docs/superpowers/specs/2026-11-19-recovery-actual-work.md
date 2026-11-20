@@ -139,14 +139,18 @@ to it; the stress bounds use A1 and A9.
 ## 6. Review and repairs
 
 One review (`simulation-core-engineer`, runs and mutants) of `e2e5d8e5` gave
-`VERDICT=FAIL FINDINGS=6 HIGH=1`. Repairs:
+`VERDICT=FAIL FINDINGS=6 HIGH=1`. The same reviewer checked the repairs at `0ffe97b4`:
+`VERDICT=PASS REPAIRED=5/5 NEW_FINDINGS=1` (Low, closed in item 2). Repairs:
 
 1. High. A paused check of a relaxed point did not see a new claim of the point: the
    local proof read bodies only. The local proof now adds the own-pool claim cell of the
    point (A5). Test R9 (red on `e2e5d8e5`).
 2. A cell size change restarted the scan with zero invalidations, so a far body that joins
    and leaves the view in turn stopped the search. It now counts as an invalidation (A8,
-   section 3). Test R10 (red on `e2e5d8e5`: no end in 2,000 slices).
+   section 3). Test R10 (red on `e2e5d8e5`: no end in 2,000 slices). The re-check found
+   that R10 stayed green when the cell change was not counted, because its proof became
+   relaxed by cost. R10 now also runs a cheap proof (allowance 1,024, one candidate in each
+   slice); that case is red without the count.
 3. The pool precheck was forced work and could use the proof reserve
    (`debug_assert` in the pause proof). It is now metered and resumable (A1). Test R11
    (red on `e2e5d8e5`: the assertion fires). `Meter::force` is removed.
