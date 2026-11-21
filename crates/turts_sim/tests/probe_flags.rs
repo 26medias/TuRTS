@@ -4,8 +4,8 @@
 //! never use a pool or a plain progress (the counts of `refreeze_classify.py --counts`), so
 //! the stream cannot show that the probe works. These cases do: each probe value that the
 //! trace emitter reads is made non-trivial here, on the authored `muster` package. The three
-//! movement branches (no pool, pool, plain) each store their own `was_projected`; each branch
-//! has an assertion that reads both values.
+//! movement branches expose pool and plain progress. Projection flags are only present
+//! when the legacy projection pass runs.
 #![cfg(feature = "test-probes")]
 
 use turts_mod_api::{ContentId, OrderDef, PackageId, SourceDef};
@@ -162,49 +162,40 @@ fn a_unit_stepped_into_a_neighbour_reads_projected_then_plain_and_separated() {
     );
 }
 
-/// A pooled group exposes its actual projection flags. The packed row has stationary
-/// neighbours. The first two frames must contain both projected and unprojected units.
-/// This rejects constant flags without fixing the avoidance result to particular unit ids.
+/// A certified route can move a pooled unit without running the legacy projection pass.
 #[test]
-fn a_pooled_group_reads_pool_activity_real_flag_separated_and_pool_count() {
+fn a_routed_group_keeps_pool_progress_without_inventing_projection_flags() {
     let mut fixture = muster();
     let ids: Vec<u32> = (1..=8).collect();
     let command = group_move(&fixture.catalog, ids.clone(), Vec2::new(40.0, 30.0));
     let app = &mut fixture.app;
+    let position = |world: &bevy_ecs::world::World, id| {
+        let entity = turts_sim::unit_entity(world, id).expect("Muster unit exists");
+        world.get::<turts_sim::Position>(entity).unwrap().0
+    };
+    let start: Vec<_> = ids.iter().map(|&id| position(app.world(), id)).collect();
     queue(app, command);
-    app.update();
-    let world = app.world();
-    assert_eq!(probe::pool_count(world), 1, "one pool for one group order");
-    let mut projection_flags = Vec::new();
-    for &id in &ids {
-        assert_eq!(probe::unit_state(world, id), "pool", "unit {id}");
-        assert_eq!(probe::activity(world, id), "Moving", "unit {id}");
-        projection_flags
-            .push(probe::was_projected(world, id).expect("a pool step records projection"));
+
+    let mut moved_without_projection = false;
+    for _ in 0..2 {
+        app.update();
+        let world = app.world();
+        assert_eq!(probe::pool_count(world), 1, "one pool for one group order");
+        for (i, &id) in ids.iter().enumerate() {
+            let pose = position(world, id);
+            assert_eq!(probe::unit_state(world, id), "pool", "unit {id}");
+            assert_eq!(probe::activity(world, id), "Moving", "unit {id}");
+            moved_without_projection |=
+                pose != start[i] && probe::was_projected(world, id).is_none();
+            for &other in &ids[i + 1..] {
+                assert!(pose.distance(position(world, other)) >= 1.0 - 1e-5);
+            }
+        }
+        assert_eq!(probe::unit_state(world, 100), "none");
     }
     assert!(
-        ids.iter().any(|&id| probe::separated(world, id)),
-        "a unit of the packed row is separated in the pool branch"
-    );
-    assert_eq!(
-        probe::unit_state(world, 100),
-        "none",
-        "a unit outside the order has no movement state"
-    );
-    app.update();
-    let world = app.world();
-    for &id in &ids {
-        assert_eq!(probe::unit_state(world, id), "pool", "tick 2, unit {id}");
-        projection_flags
-            .push(probe::was_projected(world, id).expect("a pool step records projection"));
-    }
-    assert!(
-        projection_flags.contains(&true),
-        "no hard projection was observed"
-    );
-    assert!(
-        projection_flags.contains(&false),
-        "every flag was true; unprojected steps must remain distinguishable"
+        moved_without_projection,
+        "certified route must report no legacy projection"
     );
 }
 

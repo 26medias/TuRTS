@@ -1,5 +1,10 @@
 use super::*;
 
+#[path = "group_lifecycle_tests.rs"]
+mod group_lifecycle_tests;
+#[path = "hidden_destination_privacy_tests.rs"]
+mod hidden_destination_privacy_tests;
+
 #[test]
 fn planning_epoch_changes_only_after_an_authorized_height_change() {
     let mut fixture = Fixture::new(20, 100, 20);
