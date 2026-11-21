@@ -30962,10 +30962,10 @@
         "tick": 347
       },
       {
-        "operation_count": 5,
+        "operation_count": 6,
         "operations": [
           {
-            "before_equals_after": true,
+            "before_equals_after": false,
             "event_kinds": [],
             "operation_id": 1553
           },
@@ -30988,6 +30988,11 @@
             "before_equals_after": true,
             "event_kinds": [],
             "operation_id": 1557
+          },
+          {
+            "before_equals_after": true,
+            "event_kinds": [],
+            "operation_id": 1558
           }
         ],
         "tick": 348
@@ -30995,11 +31000,6 @@
       {
         "operation_count": 5,
         "operations": [
-          {
-            "before_equals_after": true,
-            "event_kinds": [],
-            "operation_id": 1558
-          },
           {
             "before_equals_after": true,
             "event_kinds": [],
@@ -31019,6 +31019,11 @@
             "before_equals_after": true,
             "event_kinds": [],
             "operation_id": 1562
+          },
+          {
+            "before_equals_after": true,
+            "event_kinds": [],
+            "operation_id": 1563
           }
         ],
         "tick": 349
@@ -31026,11 +31031,6 @@
       {
         "operation_count": 5,
         "operations": [
-          {
-            "before_equals_after": true,
-            "event_kinds": [],
-            "operation_id": 1563
-          },
           {
             "before_equals_after": true,
             "event_kinds": [],
@@ -31050,6 +31050,11 @@
             "before_equals_after": true,
             "event_kinds": [],
             "operation_id": 1567
+          },
+          {
+            "before_equals_after": true,
+            "event_kinds": [],
+            "operation_id": 1568
           }
         ],
         "tick": 350
@@ -31057,11 +31062,6 @@
       {
         "operation_count": 5,
         "operations": [
-          {
-            "before_equals_after": true,
-            "event_kinds": [],
-            "operation_id": 1568
-          },
           {
             "before_equals_after": true,
             "event_kinds": [],
@@ -31081,6 +31081,11 @@
             "before_equals_after": true,
             "event_kinds": [],
             "operation_id": 1572
+          },
+          {
+            "before_equals_after": true,
+            "event_kinds": [],
+            "operation_id": 1573
           }
         ],
         "tick": 351
@@ -31088,11 +31093,6 @@
       {
         "operation_count": 5,
         "operations": [
-          {
-            "before_equals_after": true,
-            "event_kinds": [],
-            "operation_id": 1573
-          },
           {
             "before_equals_after": true,
             "event_kinds": [],
@@ -31112,6 +31112,11 @@
             "before_equals_after": true,
             "event_kinds": [],
             "operation_id": 1577
+          },
+          {
+            "before_equals_after": true,
+            "event_kinds": [],
+            "operation_id": 1578
           }
         ],
         "tick": 352
@@ -31119,11 +31124,6 @@
       {
         "operation_count": 5,
         "operations": [
-          {
-            "before_equals_after": true,
-            "event_kinds": [],
-            "operation_id": 1578
-          },
           {
             "before_equals_after": true,
             "event_kinds": [],
@@ -31143,6 +31143,11 @@
             "before_equals_after": true,
             "event_kinds": [],
             "operation_id": 1582
+          },
+          {
+            "before_equals_after": true,
+            "event_kinds": [],
+            "operation_id": 1583
           }
         ],
         "tick": 353
@@ -31150,11 +31155,6 @@
       {
         "operation_count": 5,
         "operations": [
-          {
-            "before_equals_after": true,
-            "event_kinds": [],
-            "operation_id": 1583
-          },
           {
             "before_equals_after": true,
             "event_kinds": [],
@@ -31174,6 +31174,11 @@
             "before_equals_after": true,
             "event_kinds": [],
             "operation_id": 1587
+          },
+          {
+            "before_equals_after": true,
+            "event_kinds": [],
+            "operation_id": 1588
           }
         ],
         "tick": 354
@@ -31181,11 +31186,6 @@
       {
         "operation_count": 5,
         "operations": [
-          {
-            "before_equals_after": true,
-            "event_kinds": [],
-            "operation_id": 1588
-          },
           {
             "before_equals_after": true,
             "event_kinds": [],
@@ -31205,6 +31205,11 @@
             "before_equals_after": true,
             "event_kinds": [],
             "operation_id": 1592
+          },
+          {
+            "before_equals_after": true,
+            "event_kinds": [],
+            "operation_id": 1593
           }
         ],
         "tick": 355
@@ -31212,11 +31217,6 @@
       {
         "operation_count": 5,
         "operations": [
-          {
-            "before_equals_after": true,
-            "event_kinds": [],
-            "operation_id": 1593
-          },
           {
             "before_equals_after": true,
             "event_kinds": [],
@@ -31236,6 +31236,11 @@
             "before_equals_after": true,
             "event_kinds": [],
             "operation_id": 1597
+          },
+          {
+            "before_equals_after": true,
+            "event_kinds": [],
+            "operation_id": 1598
           }
         ],
         "tick": 356
@@ -31243,11 +31248,6 @@
       {
         "operation_count": 5,
         "operations": [
-          {
-            "before_equals_after": true,
-            "event_kinds": [],
-            "operation_id": 1598
-          },
           {
             "before_equals_after": true,
             "event_kinds": [],
@@ -31267,6 +31267,11 @@
             "before_equals_after": true,
             "event_kinds": [],
             "operation_id": 1602
+          },
+          {
+            "before_equals_after": true,
+            "event_kinds": [],
+            "operation_id": 1603
           }
         ],
         "tick": 357
@@ -31274,11 +31279,6 @@
       {
         "operation_count": 5,
         "operations": [
-          {
-            "before_equals_after": true,
-            "event_kinds": [],
-            "operation_id": 1603
-          },
           {
             "before_equals_after": true,
             "event_kinds": [],
@@ -31298,6 +31298,11 @@
             "before_equals_after": true,
             "event_kinds": [],
             "operation_id": 1607
+          },
+          {
+            "before_equals_after": true,
+            "event_kinds": [],
+            "operation_id": 1608
           }
         ],
         "tick": 358
@@ -31305,11 +31310,6 @@
       {
         "operation_count": 5,
         "operations": [
-          {
-            "before_equals_after": true,
-            "event_kinds": [],
-            "operation_id": 1608
-          },
           {
             "before_equals_after": true,
             "event_kinds": [],
@@ -31329,6 +31329,11 @@
             "before_equals_after": true,
             "event_kinds": [],
             "operation_id": 1612
+          },
+          {
+            "before_equals_after": true,
+            "event_kinds": [],
+            "operation_id": 1613
           }
         ],
         "tick": 359
@@ -31336,11 +31341,6 @@
       {
         "operation_count": 5,
         "operations": [
-          {
-            "before_equals_after": true,
-            "event_kinds": [],
-            "operation_id": 1613
-          },
           {
             "before_equals_after": true,
             "event_kinds": [],
@@ -31360,6 +31360,11 @@
             "before_equals_after": true,
             "event_kinds": [],
             "operation_id": 1617
+          },
+          {
+            "before_equals_after": true,
+            "event_kinds": [],
+            "operation_id": 1618
           }
         ],
         "tick": 360
@@ -31367,11 +31372,6 @@
       {
         "operation_count": 5,
         "operations": [
-          {
-            "before_equals_after": true,
-            "event_kinds": [],
-            "operation_id": 1618
-          },
           {
             "before_equals_after": true,
             "event_kinds": [],
@@ -31391,6 +31391,11 @@
             "before_equals_after": true,
             "event_kinds": [],
             "operation_id": 1622
+          },
+          {
+            "before_equals_after": true,
+            "event_kinds": [],
+            "operation_id": 1623
           }
         ],
         "tick": 361
@@ -31398,11 +31403,6 @@
       {
         "operation_count": 5,
         "operations": [
-          {
-            "before_equals_after": true,
-            "event_kinds": [],
-            "operation_id": 1623
-          },
           {
             "before_equals_after": true,
             "event_kinds": [],
@@ -31422,6 +31422,11 @@
             "before_equals_after": true,
             "event_kinds": [],
             "operation_id": 1627
+          },
+          {
+            "before_equals_after": true,
+            "event_kinds": [],
+            "operation_id": 1628
           }
         ],
         "tick": 362
@@ -31429,11 +31434,6 @@
       {
         "operation_count": 5,
         "operations": [
-          {
-            "before_equals_after": true,
-            "event_kinds": [],
-            "operation_id": 1628
-          },
           {
             "before_equals_after": true,
             "event_kinds": [],
@@ -31453,6 +31453,11 @@
             "before_equals_after": true,
             "event_kinds": [],
             "operation_id": 1632
+          },
+          {
+            "before_equals_after": true,
+            "event_kinds": [],
+            "operation_id": 1633
           }
         ],
         "tick": 363
@@ -31460,11 +31465,6 @@
       {
         "operation_count": 5,
         "operations": [
-          {
-            "before_equals_after": true,
-            "event_kinds": [],
-            "operation_id": 1633
-          },
           {
             "before_equals_after": true,
             "event_kinds": [],
@@ -31484,18 +31484,18 @@
             "before_equals_after": true,
             "event_kinds": [],
             "operation_id": 1637
+          },
+          {
+            "before_equals_after": true,
+            "event_kinds": [],
+            "operation_id": 1638
           }
         ],
         "tick": 364
       },
       {
-        "operation_count": 6,
+        "operation_count": 5,
         "operations": [
-          {
-            "before_equals_after": false,
-            "event_kinds": [],
-            "operation_id": 1638
-          },
           {
             "before_equals_after": true,
             "event_kinds": [],
