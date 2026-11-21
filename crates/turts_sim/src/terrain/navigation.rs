@@ -816,7 +816,7 @@ pub(crate) fn step(
             }
         }
         let tick = world.get_resource::<crate::Tick>().map_or(0, |t| t.0);
-        let mut model_clear = |index: usize, from: bevy_math::Vec2, to: bevy_math::Vec2| {
+        let permitted_clear = |index: usize, from: bevy_math::Vec2, to: bevy_math::Vec2| {
             start_phase.as_ref().is_some_and(|phase| {
                 profiles[index].is_some_and(|profile| {
                     clear(
@@ -858,6 +858,7 @@ pub(crate) fn step(
             .take(super::traffic::index_capacity())
             .map(|(original, guide)| direct_request(original, guide))
             .collect();
+        let mut model_clear = |index, from, to| permitted_clear(index, from, to);
         let mut model = super::traffic::velocity::Guide::capture(
             &candidate,
             dt,
@@ -1101,9 +1102,17 @@ pub(crate) fn step(
                     held,
                     original.radius,
                     frame.tick_hz.max(1).saturating_mul(HELD_FINAL_LEG_SECONDS),
-                ) && endpoint.is_some_and(|goal| {
+                ) && (endpoint.is_some_and(|goal| {
                     held_position_is_nearest(frame, original, output.position, goal)
-                }) {
+                }) || parking_public_goal(world, original, &navigation)
+                    .filter(|&goal| Some(goal) != endpoint)
+                    .is_some_and(|goal| {
+                        // A private slot does not replace the player's point. A
+                        // current holder at that point can prove this closest stop.
+                        held_position_is_nearest(frame, original, output.position, goal)
+                            && permitted_clear(index, output.position, goal)
+                    }))
+                {
                     // Explicit physical arrival at the current certified pose.
                     output.target = None;
                     output.arrival_slot = Some(output.position);
