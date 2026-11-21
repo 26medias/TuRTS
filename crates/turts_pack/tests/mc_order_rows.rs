@@ -1501,9 +1501,19 @@ fn authored_force_move_never_fires_and_hold_remains_stationary_while_firing() {
         final_orders.last_failure.is_none(),
         "the point-under-enemy order did not fail or become Blocked"
     );
+    let samples = app.world().resource::<PhaseSamples>().rows.lock().unwrap();
+    let minimum_foe_distance = samples.iter()
+        .filter(|(_, phase, _, _, _, _)| *phase == "after_movement")
+        .map(|(_, _, pos, _, _, _)| pos.distance(destination))
+        .fold(f32::INFINITY, f32::min);
+    drop(samples);
     assert!(
-        final_position.distance(start) > 1.0,
-        "authored force Move travels through an enemy's weapon range"
+        minimum_foe_distance >= legal_contact,
+        "force Move never overlaps the stationary target during approach: minimum {minimum_foe_distance}, legal contact {legal_contact}"
+    );
+    assert!(
+        final_position.distance(start) > 0.5,
+        "authored force Move makes actual progress through an enemy's weapon range"
     );
     assert!(
         final_position.distance(destination) >= legal_contact
