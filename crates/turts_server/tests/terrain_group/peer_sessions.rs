@@ -354,13 +354,13 @@ impl ConnectedWorld {
         }
         let terrain = p.replica.terrain.as_ref().map(|t| {
             serde_json::json!({
-                "basis":t.basis,"materials":t.materials,
+                "basis":t.basis,"materials":t.materials.as_ref(),
                 "surfaces":t.surfaces.values().collect::<Vec<_>>(),
                 "anchors":t.anchors.values().collect::<Vec<_>>(),
                 "work":t.work.values().collect::<Vec<_>>()
             })
         });
-        serde_json::json!({"units":units,"orders":p.replica.unit_orders,"economy":p.replica.economy,"knowledge":p.replica.knowledge,"terrain":terrain,"results":p.results})
+        serde_json::json!({"units":units,"orders":p.replica.unit_orders,"economy":p.replica.economy,"knowledge":p.replica.knowledge.as_deref(),"terrain":terrain,"results":p.results})
     }
 }
 

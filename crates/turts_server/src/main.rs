@@ -24,6 +24,9 @@ mod session;
 mod session_diagnostics;
 mod stats;
 mod synthetic;
+#[cfg(test)]
+#[path = "../tests/terrain_group/peer_sessions.rs"]
+mod terrain_peer_sessions;
 mod ticklog;
 
 use std::net::SocketAddr;

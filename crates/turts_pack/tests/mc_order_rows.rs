@@ -1502,7 +1502,8 @@ fn authored_force_move_never_fires_and_hold_remains_stationary_while_firing() {
         "the point-under-enemy order did not fail or become Blocked"
     );
     let samples = app.world().resource::<PhaseSamples>().rows.lock().unwrap();
-    let minimum_foe_distance = samples.iter()
+    let minimum_foe_distance = samples
+        .iter()
         .filter(|(_, phase, _, _, _, _)| *phase == "after_movement")
         .map(|(_, _, pos, _, _, _)| pos.distance(destination))
         .fold(f32::INFINITY, f32::min);

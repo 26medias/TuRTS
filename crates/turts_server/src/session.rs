@@ -889,7 +889,7 @@ pub fn kick_pending(mut commands: Commands, pending: Query<(Entity, &PendingKick
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     const HASH: &str = "sha256:advertised";
@@ -913,7 +913,7 @@ mod tests {
         hello(player_id, NET_PROTOCOL_VERSION, HASH)
     }
 
-    fn spawn_hello_peers(app: &mut App, id: u64) -> (Entity, Entity) {
+    pub(crate) fn spawn_hello_peers(app: &mut App, id: u64) -> (Entity, Entity) {
         let registry = app.world().resource::<ChannelRegistry>();
         let mut sender_transport = Transport::default();
         sender_transport.add_channel_send_from_registry::<ReliableChannel>(registry);
@@ -959,7 +959,7 @@ mod tests {
         (sender, receiver)
     }
 
-    fn hello_test_app() -> App {
+    pub(crate) fn hello_test_app() -> App {
         use lightyear::prelude::server::ServerPlugins;
 
         let mut app = App::new();
@@ -981,7 +981,7 @@ mod tests {
         app
     }
 
-    fn deliver_hello(app: &mut App, source: Entity, client: Entity, hello: Hello) {
+    pub(crate) fn deliver_hello(app: &mut App, source: Entity, client: Entity, hello: Hello) {
         use lightyear::link::recv_payload_from_bytes;
 
         app.world_mut()
