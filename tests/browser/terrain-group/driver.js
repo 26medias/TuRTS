@@ -159,6 +159,20 @@ function crossed(fixture,state,bindings,labels,right=true){
 async function drive({pagesBySlot,fixture,capture,record,recordInput,onPoll}) {
     const bindings=new Map(),actions=[],samples=[],checks={observed_full_bodies:true,observed_no_overlap:true},original=new Map(),settled=new SettledTracker(),owned=new Map();
     const first=pagesBySlot.values().next().value;
+    // Record only: the client frame of each order emit and of its first result, read from
+    // the debug frame ring in states that the driver reads anyway. `wall_ms` is the frame
+    // clock of the client, so the two times of one order share one clock.
+    const orderFrames=new Map();
+    const harvest=(slot,state)=>{
+        for(const frame of state?.debug?.frames?.recent||[]){
+            const stamp={frame_index:frame.frame_index,wall_ms:frame.wall_ms,tick:frame.tick,replica_tick:frame.replica_tick};
+            for(const [kind,rows]of [['emit',frame.emitted_orders],['result',frame.results]])for(const row of rows||[]){
+                const key=slot+':'+kind+':'+row.seq;
+                if(Number.isInteger(row.seq)&&!orderFrames.has(key))orderFrames.set(key,stamp);
+            }
+        }
+        return state;
+    };
     for(const [slot,page]of pagesBySlot){
         let state=await wait(page,s=>world(s)?.terrain&&world(s).units.length===fixture.actors.length,'Public fixture did not activate');
         assert(state.debug.slot===slot,'Actual receiving slot differs');
@@ -252,7 +266,7 @@ async function drive({pagesBySlot,fixture,capture,record,recordInput,onPoll}) {
                 monitor();const page=pagesBySlot.get(slot);assert(page,'Missing real peer for slot '+slot);
                 settled.begin(intent.actors);
                 const before=await read(page),lastSeq=Math.max(0,...(before.debug.command_results||[]).map(r=>r.seq));
-                const inputObservation=(stage,state)=>recordInput?.({slot,stage,wall_ms:Date.now(),tick:world(state).tick,focus:state.debug.focus,cursor:state.debug.cursor,selection:state.debug.selection,phase:state.debug.phase,command_results:state.debug.command_results});
+                const inputObservation=(stage,state)=>recordInput?.({slot,stage,...(harvest(slot,state),{}),wall_ms:Date.now(),tick:world(state).tick,focus:state.debug.focus,cursor:state.debug.cursor,selection:state.debug.selection,phase:state.debug.phase,command_results:state.debug.command_results});
                 inputObservation('before',before);
                 try{await issue(page,fixture,bindings,intent,prepared.get(slot)===intent);inputObservation('after',await read(page));}catch(error){
                     const state=await read(page);await capture?.('failed-selection-slot'+slot,state);
@@ -263,6 +277,7 @@ async function drive({pagesBySlot,fixture,capture,record,recordInput,onPoll}) {
                 prepared.delete(slot);
                 let acceptedState;
                 try{acceptedState=await wait(page,s=>{
+                    harvest(slot,s);
                     const results=(s.debug.command_results||[]).filter(r=>r.seq>lastSeq);
                     assert(!results.some(r=>r.rejected||r.envelope||r.refused?.length),'Pointer order was refused: '+JSON.stringify(results));
                     return results.some(r=>Number.isInteger(r.applied_tick)&&r.accepted?.length===intent.actors.length&&intent.actors.every(label=>r.accepted.includes(bindings.get(label))));
@@ -287,7 +302,10 @@ async function drive({pagesBySlot,fixture,capture,record,recordInput,onPoll}) {
                 if(intent.action!=='move')await wait(page,s=>world(s).tick>=receipt.applied_tick,'Replica did not reach the applied tick of the work order');
                 settled.commit(intent.actors,intent.action);
                 for(const label of intent.actors)original.delete(label);
-                const after=await read(page);actions.push({intended_tick:intent.tick,relative_before_selection:world(before).tick-base,relative_after_input:world(after).tick-base,accepted_tick:receipt.applied_tick,accepted_relative_tick:receipt.applied_tick-base,seq:receipt.seq,intent});
+                const after=harvest(slot,await read(page));
+                const emit=orderFrames.get(slot+':emit:'+receipt.seq)||null,result=orderFrames.get(slot+':result:'+receipt.seq)||null;
+                recordInput?.({slot,stage:'order-latency',seq:receipt.seq,action:intent.action,units:intent.actors.length,ack_tick:after.debug.command_results.find(r=>r.seq===receipt.seq&&Number.isInteger(r.ack_tick))?.ack_tick??null,applied_tick:receipt.applied_tick,emit,result,latency_ms:emit&&result?result.wall_ms-emit.wall_ms:null});
+                actions.push({intended_tick:intent.tick,relative_before_selection:world(before).tick-base,relative_after_input:world(after).tick-base,accepted_tick:receipt.applied_tick,accepted_relative_tick:receipt.applied_tick-base,seq:receipt.seq,intent});
                 await capture?.('input-slot'+slot+'-seq'+receipt.seq,after);
             }}));
         }
