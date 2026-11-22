@@ -380,6 +380,10 @@ impl Harness {
         turts_sim::initialize_completed_world(app.world_mut());
         app.insert_resource(ServerCatalog(fixture.catalog.clone()));
         crate::outbound::knowledge::install(&mut app);
+        app.init_resource::<KnowledgeNacks>();
+        // In `Last`: after all the stage timers, and before lightyear clears the list in the
+        // next `PreUpdate`.
+        app.add_systems(bevy::app::Last, count_knowledge_nacks);
         app.init_resource::<Cpu>();
         app.init_resource::<Received>();
         app.add_systems(FixedPreUpdate, begin_simulation.before(SimSet::Advance));
@@ -995,6 +999,25 @@ impl Harness {
     }
 }
 
+/// Test instrument: the frames of the knowledge channel that the transport of each server
+/// session declared lost, summed over the application frames since the last reset.
+#[derive(Resource, Default)]
+struct KnowledgeNacks(std::collections::BTreeMap<Entity, u64>);
+fn count_knowledge_nacks(
+    mut nacks: ResMut<KnowledgeNacks>,
+    transports: bevy::prelude::Query<(Entity, &Transport), With<ClientOf>>,
+) {
+    for (entity, transport) in &transports {
+        let lost = transport
+            .channel_send(lightyear::transport::channel::ChannelKind::of::<
+                KnowledgeChannel,
+            >())
+            .map_or(0, |channel| channel.message_nacks().len() as u64);
+        if lost > 0 {
+            *nacks.0.entry(entity).or_default() += lost;
+        }
+    }
+}
 #[derive(serde::Serialize)]
 pub(super) struct Sample {
     pub(super) server_ns: u64,
@@ -1011,6 +1034,8 @@ pub(super) struct Sample {
     pub(super) hides: [usize; 2],
     pub(super) reveals: [usize; 2],
     pub(super) retained_bytes: [usize; 2],
+    /// Loss declarations of the knowledge channel of each server session in the interval.
+    pub(super) knowledge_nacks: [u64; 2],
     pub(super) wire_bytes: [u64; 2],
 }
 impl Harness {
@@ -1139,6 +1164,11 @@ impl Harness {
             peer.reveals = 0;
             peer.wire_bytes = 0;
         }
+        self.app
+            .world_mut()
+            .resource_mut::<KnowledgeNacks>()
+            .0
+            .clear();
         let mut fired = 0;
         let mut extracted = 0;
         let mut moved = BTreeSet::new();
@@ -1288,6 +1318,10 @@ impl Harness {
             retained_bytes: std::array::from_fn(|i| {
                 self.peers[i].max_server_retained + self.peers[i].max_retained
             }),
+            knowledge_nacks: std::array::from_fn(|i| {
+                let nacks = &self.app.world().resource::<KnowledgeNacks>().0;
+                nacks.get(&self.peers[i].server).copied().unwrap_or(0)
+            }),
             wire_bytes: std::array::from_fn(|i| self.peers[i].wire_bytes),
         };
         assert_eq!(sample.moved, 500, "all designated units must actually move");
@@ -1422,6 +1456,7 @@ fn run(intervals: usize, acceptance: bool) {
             "server":quantiles(samples.iter().map(|s|s.server_ns).collect()),"client":quantiles(samples.iter().map(|s|s.client_ns).collect()),
             "sum":sum,"v1_threshold_pass":v1_pass,"threshold_pass":pass,"deadline":deadline,
             "absolute_process_peak_resident_bytes":peak_resident_bytes(),
+            "knowledge_nacks_total":samples.iter().map(|s|s.knowledge_nacks.iter().sum::<u64>()).sum::<u64>(),
             "queue_subphases":crate::bot_profile::summary(),"samples":samples}));
     }
     let artifact = serde_json::json!({"acceptance":acceptance,"diagnostic_only":!acceptance,
