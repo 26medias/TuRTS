@@ -4,6 +4,7 @@ use crate::{
     session::{ReliableTraffic, Session},
 };
 use bevy::prelude::*;
+use lightyear::prelude::server::ClientOf;
 use lightyear::prelude::*;
 use std::{
     collections::{BTreeSet, VecDeque},
@@ -24,6 +25,15 @@ use turts_net_protocol::{
 use turts_sim::SlotId;
 const WINDOW: usize = 64;
 const FRAMES_PER_PUMP: usize = 16;
+/// The frames that one pump may send for one session. A frame that ran several fixed ticks
+/// (a tick that costs more than its period) queued one transaction for each tick, so the
+/// limit scales with the ticks. A frame with 0 or 1 tick keeps the limit of 16. `WINDOW` stays
+/// the flow-control limit.
+fn frame_budget(ticks_in_frame: u32) -> usize {
+    FRAMES_PER_PUMP
+        .saturating_mul(ticks_in_frame.max(1) as usize)
+        .min(WINDOW)
+}
 /// The simulation tick at the last pump. The difference to the tick of this pump is the number
 /// of fixed ticks that the frame ran. A tick that goes back (a new match) counts as 0.
 #[derive(Resource, Default)]
@@ -33,6 +43,30 @@ impl PumpedTick {
         let ticks = tick.saturating_sub(self.0);
         self.0 = tick;
         ticks
+    }
+}
+/// The floor of the packet loss timeout of a server session transport: 4 x 250 ms, the
+/// `max_delta` of `Time<Virtual>` (`main.rs`, `frame_tests`).
+///
+/// lightyear declares a sent packet lost after max(floor, 1.5 x RTT) and then drops the record
+/// that maps the packet to its messages, so a later acknowledgement of the packet releases no
+/// window credit. Its default floor is 10 ms. A frame that runs fixed ticks for up to
+/// `max_delta` sees an acknowledgement two frames after the send, so with the default every
+/// packet is declared lost and the window stays full (`.swarm/reports/T-1-lag-trace.md` 6b).
+/// A reliable message is resent on a timer, not on this declaration, so the longer floor does
+/// not delay recovery from real loss. The value fits WebSocket, where no packet is lost; the
+/// transport is an Open decision (spec 15): review the value if the transport changes.
+pub(crate) const SERVER_PACKET_LOSS_TIMEOUT_FLOOR: Duration = Duration::from_millis(4 * 250);
+/// PreUpdate, before the transport receives: set the loss timeout floor of each new server
+/// session transport. A client transport (no `ClientOf`) keeps the lightyear default.
+pub(crate) fn set_server_loss_timeout(
+    mut transports: Query<&mut Transport, (Added<Transport>, With<ClientOf>)>,
+) {
+    for mut transport in &mut transports {
+        let mut settings = transport.packet_nack_settings();
+        settings.minimum_timeout = SERVER_PACKET_LOSS_TIMEOUT_FLOOR;
+        settings.maximum_timeout = settings.maximum_timeout.max(settings.minimum_timeout);
+        transport.set_packet_nack_settings(settings);
     }
 }
 // Locked bridge cap, plus packet/retry bookkeeping and serialization workspace. Do not borrow it.
@@ -261,6 +295,10 @@ impl KnowledgeSender {
 }
 pub fn install(app: &mut App) {
     app.init_resource::<PumpedTick>();
+    app.add_systems(
+        PreUpdate,
+        set_server_loss_timeout.before(lightyear::transport::plugin::TransportSystems::Receive),
+    );
     // Once per application frame. One ordered enum preserves cross-kind transaction order.
     app.add_systems(PostUpdate, pump.before(MessageSystems::Send));
 }
@@ -820,7 +858,7 @@ pub(crate) fn pump(world: &mut World) {
     let ticks_in_frame = world
         .get_resource_or_insert_with(PumpedTick::default)
         .advance(tick);
-    let budget = FRAMES_PER_PUMP;
+    let budget = frame_budget(ticks_in_frame);
     let tracing = world.contains_resource::<SendTrace>();
     if tracing {
         world.resource_mut::<SendTrace>().frame += 1;
@@ -851,6 +889,14 @@ pub(crate) fn pump(world: &mut World) {
 mod tests {
     use super::*;
     #[test]
+    fn the_frame_budget_scales_with_the_ticks_and_stops_at_the_window() {
+        assert_eq!(frame_budget(0), FRAMES_PER_PUMP);
+        assert_eq!(frame_budget(1), FRAMES_PER_PUMP);
+        assert_eq!(frame_budget(2), 2 * FRAMES_PER_PUMP);
+        assert_eq!(frame_budget(5), WINDOW);
+        assert_eq!(frame_budget(u32::MAX), WINDOW);
+    }
+    #[test]
     fn a_tick_that_goes_back_counts_as_no_tick() {
         let mut pumped = PumpedTick::default();
         assert_eq!(pumped.advance(7), 7);
@@ -861,6 +907,24 @@ mod tests {
             "a new match starts below the old tick"
         );
         assert_eq!(pumped.advance(4), 1);
+    }
+    #[test]
+    fn only_a_server_session_transport_gets_the_loss_timeout_floor() {
+        let mut app = App::new();
+        app.add_systems(Update, set_server_loss_timeout);
+        let server = app.world_mut().spawn((ClientOf, Transport::default())).id();
+        let client = app.world_mut().spawn(Transport::default()).id();
+        app.update();
+        let floor = |entity| {
+            app.world()
+                .get::<Transport>(entity)
+                .unwrap()
+                .packet_nack_settings()
+                .minimum_timeout
+        };
+        assert_eq!(floor(server), SERVER_PACKET_LOSS_TIMEOUT_FLOOR);
+        assert_eq!(floor(client), Duration::from_millis(10));
+        assert_eq!(SERVER_PACKET_LOSS_TIMEOUT_FLOOR, Duration::from_secs(1));
     }
     use turts_mod_api::{
         ContentId, KnowledgeBasis, KnowledgeSnapshot, ObservationPhase, VisibilityGrid, WorldPos,

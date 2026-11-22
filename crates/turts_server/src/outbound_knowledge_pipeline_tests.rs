@@ -109,8 +109,24 @@ struct PumpReport {
 struct PumpReports(BTreeMap<Entity, PumpReport>);
 #[derive(Resource, Default)]
 struct StoppedPeers(BTreeSet<Entity>);
+/// The frame limit of the harness pump: the production rule from the ticks that were queued
+/// since the last pump, or the fixed limit of 16 that the server had before the M4b repair.
+#[derive(Resource, Default)]
+struct HarnessPump {
+    fixed_old_limit: bool,
+    ticks_since_pump: u32,
+}
 fn pump_in_production_schedule(world: &mut World) {
     let clock = *world.resource::<PumpClock>();
+    let budget = {
+        let mut pump = world.resource_mut::<HarnessPump>();
+        let ticks = std::mem::take(&mut pump.ticks_since_pump);
+        if pump.fixed_old_limit {
+            FRAMES_PER_PUMP
+        } else {
+            frame_budget(ticks)
+        }
+    };
     let entities = world
         .iter_entities()
         .filter(|entity| entity.contains::<KnowledgeSender>())
@@ -133,7 +149,11 @@ fn pump_in_production_schedule(world: &mut World) {
             .iter()
             .map(|id| id.0)
             .collect::<Vec<_>>();
-        let error = pump_one(world, entity, &mut sender, clock.now, FRAMES_PER_PUMP).err();
+        let error = pump_one(world, entity, &mut sender, clock.now, budget).err();
+        assert!(
+            sender.outstanding.len() <= WINDOW,
+            "the pump went above the send window"
+        );
         for id in old_ids.difference(&sender.outstanding) {
             assert!(
                 transport_acks.contains(id),
@@ -205,9 +225,17 @@ struct Harness {
     burst_at_ms: Option<u64>,
     retain_received_frames: bool,
     retained_frames: Vec<StateTransactionFrame>,
+    step_ms: u64,
+}
+std::thread_local! {
+    /// The units that move in each tick. It sets the size of one tick transaction.
+    static MOVING_UNITS: std::cell::Cell<u32> = const { std::cell::Cell::new(500) };
+}
+fn moving_units() -> u32 {
+    MOVING_UNITS.with(std::cell::Cell::get)
 }
 fn position(unit: u32, tick: u32) -> bevy::math::Vec2 {
-    let motion = if unit <= 500 {
+    let motion = if unit <= moving_units() {
         (tick % 100) as f32 * 0.01
     } else {
         0.0
@@ -238,6 +266,11 @@ fn world_view(tick: u32) -> turts_sim::WorldView {
 }
 impl Harness {
     fn new(rtt_ms: u64, count: usize) -> Self {
+        Self::with_loss_timeout(rtt_ms, count, true)
+    }
+    /// `server_loss_timeout` false keeps the lightyear default (10 ms floor) on the server
+    /// transports: the state before the M4b repair.
+    fn with_loss_timeout(rtt_ms: u64, count: usize, server_loss_timeout: bool) -> Self {
         let mut app = App::new();
         app.add_plugins(ServerPlugins {
             tick_duration: Duration::from_millis(TICK_MS),
@@ -246,7 +279,14 @@ impl Harness {
         app.init_resource::<CapturedFrames>()
             .init_resource::<BatchTransportClock>()
             .init_resource::<PumpReports>()
+            .init_resource::<HarnessPump>()
             .init_resource::<StoppedPeers>();
+        if server_loss_timeout {
+            app.add_systems(
+                PreUpdate,
+                set_server_loss_timeout.before(TransportSystems::Receive),
+            );
+        }
         app.add_systems(
             PreUpdate,
             begin_batch_receive
@@ -370,14 +410,46 @@ impl Harness {
             burst_at_ms: None,
             retain_received_frames: false,
             retained_frames: vec![],
+            step_ms: STEP_MS,
         }
     }
+    /// Server tick minus the newest tick whose End frame went to the transport.
+    fn send_lag(&self, peer: usize) -> u32 {
+        let sender = self
+            .app
+            .world()
+            .get::<KnowledgeSender>(self.peers[peer].server)
+            .unwrap();
+        let last_end = sender
+            .pending
+            .iter()
+            .chain(sender.patches.iter())
+            .filter(|entry| entry.end_sent)
+            .map(|entry| entry.encoded.begin().stamp.basis.tick)
+            .max()
+            .or_else(|| sender.active.as_ref().map(|stamp| stamp.basis.tick))
+            .unwrap_or(0);
+        sender.tip.state.tick - last_end
+    }
+    fn set_step_ms(&mut self, step_ms: u64) {
+        self.step_ms = step_ms;
+        self.app
+            .insert_resource(bevy::time::TimeUpdateStrategy::ManualDuration(
+                Duration::from_millis(step_ms),
+            ));
+    }
     fn enqueue_tick(&mut self, tick: u32) {
+        self.app
+            .world_mut()
+            .resource_mut::<HarnessPump>()
+            .ticks_since_pump += 1;
         self.app
             .insert_resource(turts_sim::CompletedWorld(world_view(tick)));
         self.app.insert_resource(turts_sim::CommittedTick {
             tick,
-            positions: (1..=500).map(|unit| (unit, position(unit, tick))).collect(),
+            positions: (1..=moving_units())
+                .map(|unit| (unit, position(unit, tick)))
+                .collect(),
             ..Default::default()
         });
         for peer in &self.peers {
@@ -536,7 +608,7 @@ impl Harness {
                         let first = peer.first_sent_ms[&staged.stamp.transaction_id];
                         // The extra5ms is the real Link return delivery below.
                         let due = (first + self.rtt_ms)
-                            .saturating_sub(STEP_MS)
+                            .saturating_sub(self.step_ms)
                             .max(self.now_ms);
                         peer.activation_acks.push_back((due, ack));
                     }
@@ -577,19 +649,19 @@ impl Harness {
                     continue;
                 }
                 for packet in packets {
-                    let mut due = self.now_ms + STEP_MS;
+                    let mut due = self.now_ms + self.step_ms;
                     if !returning
                         && self
                             .burst_at_ms
                             .is_some_and(|at| self.now_ms >= at && self.now_ms < at + TICK_MS)
                     {
-                        due = self.burst_at_ms.unwrap() + TICK_MS + STEP_MS;
+                        due = self.burst_at_ms.unwrap() + TICK_MS + self.step_ms;
                     }
                     self.packets.push_back((due, to, packet.to_vec()));
                 }
             }
         }
-        self.now_ms += STEP_MS;
+        self.now_ms += self.step_ms;
     }
     fn evidence(&self, label: &str) {
         let rows = self.peers.iter().enumerate().map(|(index, peer)| serde_json::json!({
@@ -882,4 +954,143 @@ fn superseded_sent_suffix_keeps_credit_and_cannot_reactivate_after_replacement()
             .iter()
             .any(|(_, ack)| ack == id)
     }));
+}
+
+/// The M4b overload case: a tick costs more than its period, so one application frame of
+/// 250 ms (`max_delta`) runs 5 fixed ticks and an acknowledgement is seen 2 frames after the
+/// send. Returns the largest send lag after the first slow frames and the lag at the end.
+fn slow_frame_send_lag(fixed_old_limit: bool, server_loss_timeout: bool) -> (u32, u32, usize) {
+    const SLOW_FRAME_MS: u64 = 250;
+    const TICKS_PER_SLOW_FRAME: u32 = 5;
+    const SLOW_FRAMES: u32 = 60;
+    // 200 moving units give a tick transaction of 4 frames: 20 frames for each slow frame.
+    MOVING_UNITS.with(|units| units.set(200));
+    let mut harness = Harness::with_loss_timeout(50, 1, server_loss_timeout);
+    harness
+        .app
+        .world_mut()
+        .resource_mut::<HarnessPump>()
+        .fixed_old_limit = fixed_old_limit;
+    let mut tick = 0;
+    // Normal load first: 1 tick for each 50 ms, frames of 5 ms. The baseline completes.
+    while harness.now_ms < 40 * TICK_MS {
+        if harness.now_ms > 0 && harness.now_ms.is_multiple_of(TICK_MS) {
+            tick += 1;
+            harness.enqueue_tick(tick);
+        }
+        harness.step(None);
+    }
+    assert_eq!(harness.send_lag(0), 0, "normal load must leave no send lag");
+    let frames_before = harness.peers[0].issued_messages.len();
+    harness.set_step_ms(SLOW_FRAME_MS);
+    let (mut peak, mut last) = (0, 0);
+    for frame in 0..SLOW_FRAMES {
+        for _ in 0..TICKS_PER_SLOW_FRAME {
+            tick += 1;
+            harness.enqueue_tick(tick);
+        }
+        harness.step(None);
+        last = harness.send_lag(0);
+        if frame >= 4 {
+            peak = peak.max(last);
+        }
+    }
+    let frames_for_each_tick = (harness.peers[0].issued_messages.len() - frames_before)
+        .div_ceil((SLOW_FRAMES * TICKS_PER_SLOW_FRAME) as usize);
+    eprintln!(
+        "slow frames: old_limit={fixed_old_limit} loss_timeout={server_loss_timeout} peak_lag={peak} last_lag={last} frames_for_each_tick~{frames_for_each_tick} restart={:?}",
+        harness.peers[0].restart_error
+    );
+    (peak, last, frames_for_each_tick)
+}
+
+/// One slow frame of ticks may wait for the next pump; more is a backlog.
+const SLOW_FRAME_LAG_BOUND: u32 = 5;
+
+#[test]
+fn slow_frames_leave_no_send_backlog_with_the_scaled_limit_and_the_loss_timeout_floor() {
+    let (peak, last, frames) = slow_frame_send_lag(false, true);
+    assert!(
+        frames >= 4,
+        "the workload must need more than 16 frames in a slow frame"
+    );
+    assert!(peak <= SLOW_FRAME_LAG_BOUND, "peak send lag {peak} ticks");
+    assert!(last <= SLOW_FRAME_LAG_BOUND, "final send lag {last} ticks");
+}
+
+/// The red controls of the test above: each part of the repair is necessary.
+#[test]
+fn slow_frames_build_a_send_backlog_without_each_part_of_the_repair() {
+    for (fixed_old_limit, server_loss_timeout, label) in [
+        (true, false, "old limit, default loss timeout (56a008b4)"),
+        (false, false, "scaled limit, default loss timeout"),
+        (true, true, "old limit, loss timeout floor"),
+    ] {
+        let (peak, _, _) = slow_frame_send_lag(fixed_old_limit, server_loss_timeout);
+        assert!(
+            peak > SLOW_FRAME_LAG_BOUND,
+            "{label}: expected a backlog, peak send lag {peak} ticks"
+        );
+    }
+}
+
+#[test]
+fn a_frame_with_no_tick_or_one_tick_keeps_the_limit_of_16_frames() {
+    // The first baseline has more than 16 frames and no tick ran before the first pump.
+    let mut harness = Harness::new(50, 1);
+    harness.step(None);
+    assert_eq!(harness.peers[0].issued_messages.len(), FRAMES_PER_PUMP);
+    harness.enqueue_tick(1);
+    harness.step(None);
+    assert_eq!(harness.peers[0].issued_messages.len(), 2 * FRAMES_PER_PUMP);
+}
+
+#[test]
+fn many_ticks_in_one_frame_stop_at_the_send_window_and_keep_the_order() {
+    // 1000 moving units: 5 ticks need more than 64 frames.
+    MOVING_UNITS.with(|units| units.set(1000));
+    let mut harness = Harness::new(50, 1);
+    harness.retain_received_frames = true;
+    let mut tick = 0;
+    while harness.now_ms < 40 * TICK_MS {
+        if harness.now_ms > 0 && harness.now_ms.is_multiple_of(TICK_MS) {
+            tick += 1;
+            harness.enqueue_tick(tick);
+        }
+        harness.step(None);
+    }
+    let before = harness.peers[0].issued_messages.len();
+    for _ in 0..5 {
+        tick += 1;
+        harness.enqueue_tick(tick);
+    }
+    harness.step(None);
+    let server = harness.peers[0].server;
+    let outstanding = |harness: &Harness| {
+        harness
+            .app
+            .world()
+            .get::<KnowledgeSender>(server)
+            .unwrap()
+            .outstanding
+            .len()
+    };
+    assert_eq!(outstanding(&harness), WINDOW, "the window is the limit");
+    assert_eq!(harness.peers[0].issued_messages.len() - before, WINDOW);
+    assert!(
+        harness.send_lag(0) > 0,
+        "the rest waits for the acknowledgements"
+    );
+    for _ in 0..200 {
+        harness.step(None);
+    }
+    assert_eq!(harness.send_lag(0), 0);
+    assert_eq!(*harness.peers[0].activations.last().unwrap(), tick);
+    assert!(
+        harness.peers[0]
+            .activations
+            .windows(2)
+            .all(|pair| pair[0] < pair[1]),
+        "activation ticks must stay ordered"
+    );
 }
