@@ -25,3 +25,5 @@ debt ("is not good as that implies tech debt already").
 
 Source of record: `docs/superpowers/plans/2026-11-12-pre-mp1-slice.md` on branch `mp1-design`,
 Binding amendments, "CEO DECISION on touch point 1".
+
+**Refined by:** [[Decisions/2026-11-22 GM3 late arrival at a packed friendly holder]] (operator, 2026-11-22).
