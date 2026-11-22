@@ -111,6 +111,7 @@ mod tests {
             economy_log: None,
             command_script: None,
             order_log: None,
+            send_trace: None,
             synthetic_units,
             run_ticks: None,
         }

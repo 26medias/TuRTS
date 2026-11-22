@@ -24,6 +24,17 @@ use turts_net_protocol::{
 use turts_sim::SlotId;
 const WINDOW: usize = 64;
 const FRAMES_PER_PUMP: usize = 16;
+/// The simulation tick at the last pump. The difference to the tick of this pump is the number
+/// of fixed ticks that the frame ran. A tick that goes back (a new match) counts as 0.
+#[derive(Resource, Default)]
+struct PumpedTick(u32);
+impl PumpedTick {
+    fn advance(&mut self, tick: u32) -> u32 {
+        let ticks = tick.saturating_sub(self.0);
+        self.0 = tick;
+        ticks
+    }
+}
 // Locked bridge cap, plus packet/retry bookkeeping and serialization workspace. Do not borrow it.
 const BRIDGE_RESERVE: usize = 4 * 1024 * 1024;
 const TRANSPORT_RESERVE: usize = 4 * 1024 * 1024;
@@ -59,6 +70,8 @@ pub struct KnowledgeSender {
     next_id: u64,
     outstanding: BTreeSet<u16>,
     restarts: VecDeque<Instant>,
+    /// Trace only: the kind of the last restart, taken by the next trace line.
+    restart_event: Option<&'static str>,
 }
 impl KnowledgeSender {
     #[cfg(test)]
@@ -233,6 +246,7 @@ impl KnowledgeSender {
         Ok(())
     }
     fn restart(&mut self, now: Instant) -> Result<(), String> {
+        self.restart_event.get_or_insert("restart");
         while self.restarts.front().is_some_and(|time| {
             now.saturating_duration_since(*time) > Duration::from_millis(STATE_RESTART_WINDOW_MS)
         }) {
@@ -246,8 +260,156 @@ impl KnowledgeSender {
     }
 }
 pub fn install(app: &mut App) {
+    app.init_resource::<PumpedTick>();
     // Once per application frame. One ordered enum preserves cross-kind transaction order.
     app.add_systems(PostUpdate, pump.before(MessageSystems::Send));
+}
+
+/// Send-queue trace (`--send-trace PATH`): a local test hook, off by default. The file has
+/// mode 0600 and is not served. One CSV line for each session and pump in which a frame left,
+/// a frame is not acknowledged, or the queue is not empty:
+/// `wall_ns,sim_tick,slot,ticks_in_frame,budget,frames_sent,outstanding,queued,unsent,last_end_tick,tip_tick,head_chunks,nacks,rtt_us,max_ack_frames,event,trace_ns_total`
+///
+/// `queued` counts the transactions that are not acknowledged and `unsent` those whose End
+/// frame has not left. `last_end_tick` is the newest tick whose End frame left, so
+/// `tip_tick - last_end_tick` is the backlog in ticks. `head_chunks` is the chunk count of the
+/// oldest transaction. `nacks` counts the frames that the transport declared lost in this
+/// frame and `rtt_us` is its RTT estimate. `max_ack_frames` is the largest number of
+/// application frames between the send of a frame and its acknowledgement, of the frames
+/// acknowledged in this pump. `event` is empty or a list joined by `+`: `window_full`,
+/// `restart`, `cancel_<reason>`. `trace_ns_total` is the time that the trace itself used before
+/// this line, from the start of the process: the cost of the instrument.
+///
+/// The writes are buffered and the file is flushed one time each second and at a clean exit, so
+/// the trace adds no file write to a normal pump. A killed server can lose the last second.
+#[derive(Resource)]
+struct SendTrace {
+    out: std::io::BufWriter<std::fs::File>,
+    frame: u64,
+    sent_in_frame: std::collections::BTreeMap<(Entity, u16), u64>,
+    cancels: Vec<(Entity, String)>,
+    last_flush: Instant,
+    spent: Duration,
+}
+const TRACE_HEADER: &str = "wall_ns,sim_tick,slot,ticks_in_frame,budget,frames_sent,outstanding,queued,unsent,last_end_tick,tip_tick,head_chunks,nacks,rtt_us,max_ack_frames,event,trace_ns_total\n";
+
+/// Create the trace file when `--send-trace` is set.
+pub fn install_trace(app: &mut App, path: Option<&std::path::Path>) -> Result<(), String> {
+    use std::io::Write;
+    let Some(path) = path else {
+        return Ok(());
+    };
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
+    let file = options
+        .open(path)
+        .map_err(|error| format!("cannot create --send-trace `{}`: {error}", path.display()))?;
+    // An existing file keeps its old mode on open: set it again.
+    #[cfg(unix)]
+    std::fs::set_permissions(path, std::os::unix::fs::PermissionsExt::from_mode(0o600))
+        .map_err(|error| format!("cannot protect --send-trace `{}`: {error}", path.display()))?;
+    let mut out = std::io::BufWriter::new(file);
+    out.write_all(TRACE_HEADER.as_bytes())
+        .map_err(|error| format!("cannot write --send-trace `{}`: {error}", path.display()))?;
+    app.insert_resource(SendTrace {
+        out,
+        frame: 0,
+        sent_in_frame: Default::default(),
+        cancels: Vec::new(),
+        last_flush: Instant::now(),
+        spent: Duration::ZERO,
+    });
+    Ok(())
+}
+
+/// What one pump did for one session, for the trace line.
+struct PumpTrace {
+    ticks_in_frame: u32,
+    budget: usize,
+    before: BTreeSet<u16>,
+}
+fn trace_pump(world: &mut World, entity: Entity, sender: &mut KnowledgeSender, pump: PumpTrace) {
+    use std::io::Write;
+    let started = Instant::now();
+    let sent = sender.outstanding.difference(&pump.before).count();
+    let restart = sender.restart_event.take();
+    if sent == 0 && pump.before.is_empty() && sender.pending.is_none() && restart.is_none() {
+        return;
+    }
+    let tick = world
+        .get_resource::<turts_sim::Tick>()
+        .map_or(0, |tick| tick.0);
+    let slot = world
+        .get::<Session>(entity)
+        .map_or(255, |session| session.slot.0);
+    let nacks = world
+        .get::<Transport>(entity)
+        .and_then(|transport| {
+            transport.channel_send(lightyear::transport::channel::ChannelKind::of::<
+                KnowledgeChannel,
+            >())
+        })
+        .map_or(0, |channel| channel.message_nacks().len());
+    let rtt_us = world
+        .get::<Link>(entity)
+        .map_or(0, |link| link.stats.rtt.as_micros());
+    let queue = || sender.pending.iter().chain(sender.patches.iter());
+    let unsent = queue().filter(|entry| !entry.end_sent).count();
+    let last_end = queue()
+        .filter(|entry| entry.end_sent)
+        .map(|entry| entry.encoded.begin().stamp.basis.tick)
+        .max()
+        .or_else(|| sender.active.as_ref().map(|stamp| stamp.basis.tick))
+        .unwrap_or(0);
+    let mut trace = world.resource_mut::<SendTrace>();
+    let frame = trace.frame;
+    let mut max_ack_frames = 0;
+    for id in pump.before.difference(&sender.outstanding) {
+        if let Some(sent_in) = trace.sent_in_frame.remove(&(entity, *id)) {
+            max_ack_frames = max_ack_frames.max(frame - sent_in);
+        }
+    }
+    for id in sender.outstanding.difference(&pump.before) {
+        trace.sent_in_frame.insert((entity, *id), frame);
+    }
+    let mut events = Vec::new();
+    if unsent > 0 && sender.outstanding.len() >= WINDOW {
+        events.push("window_full".to_owned());
+    }
+    events.extend(restart.map(str::to_owned));
+    let mut index = 0;
+    while index < trace.cancels.len() {
+        if trace.cancels[index].0 == entity {
+            events.push(trace.cancels.remove(index).1);
+        } else {
+            index += 1;
+        }
+    }
+    let wall_ns = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |elapsed| elapsed.as_nanos());
+    let line = format!(
+        "{wall_ns},{tick},{slot},{},{},{sent},{},{},{unsent},{last_end},{},{},{nacks},{rtt_us},{max_ack_frames},{},{}\n",
+        pump.ticks_in_frame,
+        pump.budget,
+        sender.outstanding.len(),
+        queue().count(),
+        sender.tip.state.tick,
+        queue()
+            .next()
+            .map_or(0, |entry| entry.encoded.begin().chunk_count),
+        events.join("+"),
+        trace.spent.as_nanos(),
+    );
+    let mut result = trace.out.write_all(line.as_bytes());
+    if started.saturating_duration_since(trace.last_flush) >= Duration::from_secs(1) {
+        trace.last_flush = started;
+        result = result.and_then(|()| trace.out.flush());
+    }
+    result.unwrap_or_else(|error| panic!("turts_server: cannot write --send-trace: {error}"));
+    trace.spent += started.elapsed();
 }
 pub fn disconnect(world: &mut World, entity: Entity, reason: String) {
     eprintln!("turts_server: state connection {entity:?}: {reason}");
@@ -258,6 +420,13 @@ pub fn disconnect(world: &mut World, entity: Entity, reason: String) {
     });
 }
 fn emit_cancel(world: &mut World, entity: Entity, cancel: Option<StateTransactionCancel>) {
+    if let Some(cancel) = &cancel
+        && let Some(mut trace) = world.get_resource_mut::<SendTrace>()
+    {
+        trace
+            .cancels
+            .push((entity, format!("cancel_{:?}", cancel.reason)));
+    }
     if let Some(cancel) = cancel
         && let Some(mut sender) = world.get_mut::<MessageSender<StateTransactionCancel>>(entity)
     {
@@ -347,6 +516,7 @@ fn queue_snapshot(
             next_id: 0,
             outstanding: BTreeSet::new(),
             restarts: VecDeque::new(),
+            restart_event: None,
         }
     };
     if superseded_incomplete {
@@ -539,6 +709,7 @@ fn pump_one(
     entity: Entity,
     sender: &mut KnowledgeSender,
     now: Instant,
+    budget: usize,
 ) -> Result<(), String> {
     if let Some(channel) = world.get::<Transport>(entity).and_then(|transport| {
         transport.channel_send(lightyear::transport::channel::ChannelKind::of::<
@@ -598,7 +769,7 @@ fn pump_one(
     if sender.retained() > MAX_PENDING_STATE_BYTES as usize {
         return Err("State transfer exceeds the 64 MiB retained budget".into());
     }
-    for _ in 0..FRAMES_PER_PUMP {
+    for _ in 0..budget {
         if sender.outstanding.len() >= WINDOW
             || sender.retained().saturating_add(COPY_RESERVE_PER_FRAME)
                 > MAX_PENDING_STATE_BYTES as usize
@@ -643,12 +814,32 @@ pub(crate) fn pump(world: &mut World) {
         .map(|entity| entity.id())
         .collect::<Vec<_>>();
     let now = Instant::now();
+    let tick = world
+        .get_resource::<turts_sim::Tick>()
+        .map_or(0, |tick| tick.0);
+    let ticks_in_frame = world
+        .get_resource_or_insert_with(PumpedTick::default)
+        .advance(tick);
+    let budget = FRAMES_PER_PUMP;
+    let tracing = world.contains_resource::<SendTrace>();
+    if tracing {
+        world.resource_mut::<SendTrace>().frame += 1;
+    }
     for entity in recipients {
         let Some(mut sender) = world.entity_mut(entity).take::<KnowledgeSender>() else {
             continue;
         };
-        match pump_one(world, entity, &mut sender, now) {
+        let before = tracing.then(|| sender.outstanding.clone());
+        match pump_one(world, entity, &mut sender, now, budget) {
             Ok(()) => {
+                if let Some(before) = before {
+                    let pump = PumpTrace {
+                        ticks_in_frame,
+                        budget,
+                        before,
+                    };
+                    trace_pump(world, entity, &mut sender, pump);
+                }
                 world.entity_mut(entity).insert(sender);
             }
             Err(reason) => disconnect(world, entity, reason),
@@ -659,6 +850,18 @@ pub(crate) fn pump(world: &mut World) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn a_tick_that_goes_back_counts_as_no_tick() {
+        let mut pumped = PumpedTick::default();
+        assert_eq!(pumped.advance(7), 7);
+        assert_eq!(pumped.advance(12), 5);
+        assert_eq!(
+            pumped.advance(3),
+            0,
+            "a new match starts below the old tick"
+        );
+        assert_eq!(pumped.advance(4), 1);
+    }
     use turts_mod_api::{
         ContentId, KnowledgeBasis, KnowledgeSnapshot, ObservationPhase, VisibilityGrid, WorldPos,
     };
@@ -697,6 +900,7 @@ mod tests {
             next_id: 0,
             outstanding: BTreeSet::new(),
             restarts: VecDeque::new(),
+            restart_event: None,
         };
         sender.full(now).unwrap();
         sender
@@ -1110,12 +1314,26 @@ mod tests {
         slow.full(now).unwrap();
         assert!(slow.pending.as_ref().unwrap().encoded.begin().chunk_count > WINDOW as u32);
         for _ in 0..20 {
-            pump_one(app.world_mut(), slow_entity, &mut slow, now).unwrap();
+            pump_one(
+                app.world_mut(),
+                slow_entity,
+                &mut slow,
+                now,
+                FRAMES_PER_PUMP,
+            )
+            .unwrap();
         }
         assert_eq!(slow.outstanding.len(), WINDOW);
         assert!(slow.retained() < MAX_PENDING_STATE_BYTES as usize);
         let mut healthy = sender(now);
-        pump_one(app.world_mut(), healthy_entity, &mut healthy, now).unwrap();
+        pump_one(
+            app.world_mut(),
+            healthy_entity,
+            &mut healthy,
+            now,
+            FRAMES_PER_PUMP,
+        )
+        .unwrap();
         assert!(!healthy.outstanding.is_empty());
         assert!(
             healthy

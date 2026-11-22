@@ -153,6 +153,7 @@ fn run() -> Result<(), String> {
     command_script::install(&mut app, cli.command_script.as_deref())?;
     orderlog::install(&mut app, cli.order_log.as_deref())?;
     outbound::install(&mut app);
+    outbound::knowledge::install_trace(&mut app, cli.send_trace.as_deref())?;
     net::install(&mut app, cfg.http_addr(), ws_addr);
     ticklog::install(&mut app, &cli);
     stats::install(&mut app, &cli)?;

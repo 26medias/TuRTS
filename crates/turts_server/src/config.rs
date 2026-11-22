@@ -48,6 +48,11 @@ Options:
   --stats PATH    Rewrite PATH with one line of JSON statistics every second and at exit.
                   Also enable private session observations in the sibling PATH.sessions.jsonl (mode 0600).
                   This option is a local test hook; the file is not served over HTTP.
+  --send-trace PATH
+                  Write one CSV line for each session and state pump to PATH (mode 0600): the
+                  frames sent, the frames not acknowledged, the backlog in ticks, the loss
+                  declarations and the restarts. The first line names the fields.
+                  This option is a local test hook; the file is not served over HTTP.
   --bot SLOT,PROFILE,SEED
                   Select a public bot profile, for example 1,skirmish:opponent,42.
                   Repeat this option for different bot slots.
@@ -194,7 +199,7 @@ pub fn read_config(path: &Path) -> Result<HostConfig, String> {
 
 /// The command line: `turts_server <server.ron> [--tick-log P] [--stats P]
 /// [--synthetic-units N] [--run-ticks N] [--economy-log PATH] [--command-script PATH]
-/// [--order-log PATH]`.
+/// [--order-log PATH] [--send-trace PATH]`.
 #[allow(dead_code)] // Tasks 7b and 7c read the options that Task 7a does not.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Cli {
@@ -208,6 +213,7 @@ pub struct Cli {
     pub economy_log: Option<PathBuf>,
     pub command_script: Option<PathBuf>,
     pub order_log: Option<PathBuf>,
+    pub send_trace: Option<PathBuf>,
 }
 
 /// Parse the arguments after the program name.
@@ -224,6 +230,7 @@ pub fn parse_cli(args: &[String]) -> Result<Cli, String> {
         economy_log: None,
         command_script: None,
         order_log: None,
+        send_trace: None,
     };
     let mut args = args.iter();
     while let Some(arg) = args.next() {
@@ -249,6 +256,7 @@ pub fn parse_cli(args: &[String]) -> Result<Cli, String> {
             "--economy-log" => cli.economy_log = Some(PathBuf::from(value(arg)?)),
             "--command-script" => cli.command_script = Some(PathBuf::from(value(arg)?)),
             "--order-log" => cli.order_log = Some(PathBuf::from(value(arg)?)),
+            "--send-trace" => cli.send_trace = Some(PathBuf::from(value(arg)?)),
             option if option.starts_with("--") => {
                 return Err(format!("unknown option `{option}`\n{USAGE}"));
             }

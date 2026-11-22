@@ -133,7 +133,7 @@ fn pump_in_production_schedule(world: &mut World) {
             .iter()
             .map(|id| id.0)
             .collect::<Vec<_>>();
-        let error = pump_one(world, entity, &mut sender, clock.now).err();
+        let error = pump_one(world, entity, &mut sender, clock.now, FRAMES_PER_PUMP).err();
         for id in old_ids.difference(&sender.outstanding) {
             assert!(
                 transport_acks.contains(id),
