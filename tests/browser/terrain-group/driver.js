@@ -89,6 +89,10 @@ async function selectActors(page,fixture,bindings,labels,recordClick) {
     await wait(page,s=>s.debug.selection.length===wanted.length&&wanted.every(id=>s.debug.selection.includes(id)),'Physical body selection differs from frozen cohort');
 }
 async function issue(page,fixture,bindings,intent,preselected=false) {
+    // Terrain work is aimed at the tops that the replica shows, and its actor is picked
+    // at its replica position. Earlier work of the same actors must be complete first,
+    // or the actor moves and a top changes between aim and press.
+    if(intent.action!=='move')await wait(page,s=>intent.actors.every(label=>!row(s,bindings.get(label))?.current?.target?.TerrainWork),'Earlier terrain work of the actors did not finish');
     if(!preselected)await selectActors(page,fixture,bindings,intent.actors);
     if(intent.queue==='Append'){await page.keyboard.down('Shift');await sleep(PRESS_MS);}
     try{
@@ -278,6 +282,9 @@ async function drive({pagesBySlot,fixture,capture,record,recordInput,onPoll}) {
                     assert(offset<0.001,'Blocker initial point differs from fixture: '+offset);
                     blockerSettledPoint=[...position];checks.blocker_projection_offset=offset;checks.blocker_settled_position=blockerSettledPoint;
                 }
+                // A receipt can arrive before the replica reaches its applied tick. The
+                // next input must see this work order in the replica, not the state before it.
+                if(intent.action!=='move')await wait(page,s=>world(s).tick>=receipt.applied_tick,'Replica did not reach the applied tick of the work order');
                 settled.commit(intent.actors,intent.action);
                 for(const label of intent.actors)original.delete(label);
                 const after=await read(page);actions.push({intended_tick:intent.tick,relative_before_selection:world(before).tick-base,relative_after_input:world(after).tick-base,accepted_tick:receipt.applied_tick,accepted_relative_tick:receipt.applied_tick-base,seq:receipt.seq,intent});
