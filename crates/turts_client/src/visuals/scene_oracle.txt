@@ -218,9 +218,9 @@ state active=true hover=None hover_started=false generation=1 session=Some(Visua
 --- update 2 (3 s old, still blocked)
 fill unit=2 mesh=bar material=bar_health t=[-0.2250 0.0000 0.0800] s=[0.5000 1.0000 1.0000] parent=Some(VisualId { kind: HealthBackground, unit: 2, ordinal: 0, generation: 1, identity: 0 })
 fill unit=3 mesh=bar material=bar_health t=[-0.2700 0.0000 0.0800] s=[0.4000 1.0000 1.0000] parent=Some(VisualId { kind: HealthBackground, unit: 3, ordinal: 0, generation: 1, identity: 0 })
-visual VisualId { kind: Blocked, unit: 1, ordinal: 1, generation: 1, identity: 0 } mesh=bar material=waiting t=[9.7800 1.5000 10.0000] s=[0.0800 0.0800 0.0800] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
-visual VisualId { kind: Blocked, unit: 1, ordinal: 2, generation: 1, identity: 0 } mesh=bar material=waiting t=[10.0000 1.5000 10.0000] s=[0.0800 0.0800 0.0800] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
-visual VisualId { kind: Blocked, unit: 1, ordinal: 3, generation: 1, identity: 0 } mesh=bar material=waiting t=[10.2200 1.5000 10.0000] s=[0.0800 0.0800 0.0800] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+visual VisualId { kind: Blocked, unit: 1, ordinal: 1, generation: 1, identity: 0 } mesh=bar material=waiting t=[9.7791 2.7887 10.0000] s=[0.1325 0.3925 0.0800] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+visual VisualId { kind: Blocked, unit: 1, ordinal: 2, generation: 1, identity: 0 } mesh=bar material=waiting t=[10.0000 2.7887 10.0000] s=[0.1325 0.3925 0.0800] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+visual VisualId { kind: Blocked, unit: 1, ordinal: 3, generation: 1, identity: 0 } mesh=bar material=waiting t=[10.2209 2.7887 10.0000] s=[0.1325 0.3925 0.0800] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
 visual VisualId { kind: HealthBackground, unit: 2, ordinal: 0, generation: 1, identity: 0 } mesh=bar material=bar_background t=[14.0000 2.2000 10.0000] s=[1.0602 0.3925 0.1000] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
 visual VisualId { kind: HealthBackground, unit: 3, ordinal: 0, generation: 1, identity: 0 } mesh=bar material=bar_background t=[10.0000 2.2000 14.0000] s=[0.9963 0.4301 0.1000] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
 markers_shown {"kind":"blocked_waiting","unit":1}
@@ -234,9 +234,9 @@ state active=true hover=None hover_started=false generation=1 session=Some(Visua
 --- update 5 (blocked again, 3 s old)
 fill unit=2 mesh=bar material=bar_health t=[-0.2250 0.0000 0.0800] s=[0.5000 1.0000 1.0000] parent=Some(VisualId { kind: HealthBackground, unit: 2, ordinal: 0, generation: 1, identity: 0 })
 fill unit=3 mesh=bar material=bar_health t=[-0.2700 0.0000 0.0800] s=[0.4000 1.0000 1.0000] parent=Some(VisualId { kind: HealthBackground, unit: 3, ordinal: 0, generation: 1, identity: 0 })
-visual VisualId { kind: Blocked, unit: 1, ordinal: 1, generation: 1, identity: 0 } mesh=bar material=waiting t=[9.7800 1.5000 10.0000] s=[0.0800 0.0800 0.0800] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
-visual VisualId { kind: Blocked, unit: 1, ordinal: 2, generation: 1, identity: 0 } mesh=bar material=waiting t=[10.0000 1.5000 10.0000] s=[0.0800 0.0800 0.0800] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
-visual VisualId { kind: Blocked, unit: 1, ordinal: 3, generation: 1, identity: 0 } mesh=bar material=waiting t=[10.2200 1.5000 10.0000] s=[0.0800 0.0800 0.0800] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+visual VisualId { kind: Blocked, unit: 1, ordinal: 1, generation: 1, identity: 0 } mesh=bar material=waiting t=[9.7791 2.7887 10.0000] s=[0.1325 0.3925 0.0800] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+visual VisualId { kind: Blocked, unit: 1, ordinal: 2, generation: 1, identity: 0 } mesh=bar material=waiting t=[10.0000 2.7887 10.0000] s=[0.1325 0.3925 0.0800] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+visual VisualId { kind: Blocked, unit: 1, ordinal: 3, generation: 1, identity: 0 } mesh=bar material=waiting t=[10.2209 2.7887 10.0000] s=[0.1325 0.3925 0.0800] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
 visual VisualId { kind: HealthBackground, unit: 2, ordinal: 0, generation: 1, identity: 0 } mesh=bar material=bar_background t=[14.0000 2.2000 10.0000] s=[1.0602 0.3925 0.1000] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
 visual VisualId { kind: HealthBackground, unit: 3, ordinal: 0, generation: 1, identity: 0 } mesh=bar material=bar_background t=[10.0000 2.2000 14.0000] s=[0.9963 0.4301 0.1000] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
 markers_shown {"kind":"blocked_waiting","unit":1}

@@ -1,5 +1,6 @@
 //! The blocked marks over units that the simulation reports as blocked.
 
+use super::materials::world_units_for_pixels;
 use super::*;
 use crate::{present::PresentedUnit, replica::Replica};
 
@@ -7,9 +8,15 @@ use crate::{present::PresentedUnit, replica::Replica};
 /// still blocked keeps the quiet form until its activity changes.
 const BLOCKED_ALERT_SECS: f32 = 2.0;
 /// The quiet form: three small amber squares in a row (UX note of 2026-11-23, M4b wait mark).
+/// The squares have a size in screen pixels, as the health bar has: a size in world units was
+/// less than 2 pixels at the default camera height, and the anchor of the red bar is inside a
+/// large model. The row is above the place of the health bar and does not touch it.
 const WAITING_SQUARES: i8 = 3;
-const WAITING_SQUARE: f32 = 0.08;
-const WAITING_PITCH: f32 = WAITING_SQUARE + 0.14;
+const WAITING_SQUARE_PX: f32 = 6.0;
+const WAITING_GAP_PX: f32 = 4.0;
+const WAITING_CLEAR_PX: f32 = 3.0;
+/// The height of the health bar over the unit (`health.rs`).
+const HEALTH_BAR_HEIGHT: f32 = 2.2;
 
 /// Start and end the blocked marks from the replicated order records.
 pub(super) fn track_blocked(replica: &Replica, visuals: &mut VisualState, now: Instant) {
@@ -61,6 +68,8 @@ pub(super) fn draw_blocked_marks(
     visuals: &VisualState,
     now: Instant,
     terrain: Option<&crate::terrain::store::PermittedTerrain>,
+    camera: &Camera,
+    camera_transform: &GlobalTransform,
 ) {
     let Some(mesh) = assets.bar.clone() else {
         return;
@@ -73,9 +82,9 @@ pub(super) fn draw_blocked_marks(
         let Some(unit) = presented_by_id.get(&unit_id) else {
             continue;
         };
-        let point = world_to_scene(unit.pos)
-            + Vec3::Y
-                * (1.5 + crate::terrain::render::live_height(terrain, unit.unit_id).unwrap_or(0.));
+        let ground = world_to_scene(unit.pos)
+            + Vec3::Y * crate::terrain::render::live_height(terrain, unit.unit_id).unwrap_or(0.);
+        let point = ground + Vec3::Y * 1.5;
         let id = |ordinal| VisualId {
             kind: VisualKind::Blocked,
             unit: unit_id,
@@ -87,18 +96,29 @@ pub(super) fn draw_blocked_marks(
             let Some(material) = assets.waiting_material.clone() else {
                 continue;
             };
-            for square in 0..WAITING_SQUARES {
-                let offset = f32::from(square - WAITING_SQUARES / 2) * WAITING_PITCH;
+            let bar = ground + Vec3::Y * HEALTH_BAR_HEIGHT;
+            let square = world_units_for_pixels(
+                camera,
+                camera_transform,
+                bar,
+                Vec2::splat(WAITING_SQUARE_PX),
+            );
+            let per_pixel = square / WAITING_SQUARE_PX;
+            let rise = assets.health_bar_size.y / 2.0 + WAITING_CLEAR_PX + WAITING_SQUARE_PX / 2.0;
+            let row = bar + Vec3::Y * (per_pixel.y * rise);
+            let pitch = per_pixel.x * (WAITING_SQUARE_PX + WAITING_GAP_PX);
+            for square_index in 0..WAITING_SQUARES {
+                let offset = f32::from(square_index - WAITING_SQUARES / 2) * pitch;
                 desired.insert(
                     // Ordinal 0 is the red bar. A kept entity keeps its material, so the
                     // squares have their own ordinals.
-                    id(square as u8 + 1),
+                    id(square_index as u8 + 1),
                     (
                         mesh.clone(),
                         material.clone().into(),
                         Transform {
-                            translation: point + Vec3::X * offset,
-                            scale: Vec3::splat(WAITING_SQUARE),
+                            translation: row + Vec3::X * offset,
+                            scale: Vec3::new(square.x, square.y, 0.08),
                             ..default()
                         },
                     ),

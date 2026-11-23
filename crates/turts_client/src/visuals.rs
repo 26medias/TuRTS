@@ -461,6 +461,8 @@ fn draw_world_visuals(
         &visuals,
         now,
         replica.terrain.as_ref(),
+        camera,
+        camera_transform,
     );
 
     // Selected own units show queued point targets in queue order.
