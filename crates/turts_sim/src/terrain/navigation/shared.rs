@@ -794,6 +794,8 @@ struct Member {
     endpoint: Vec2,
     arrival_slot: Option<Vec2>,
     held_leg: HeldLeg,
+    /// Clock of the accepted Move order for the packed stop; see `held_order`.
+    held_order: HeldLeg,
     radius: u32,
     profile: Traversal,
     epoch: u64,
@@ -839,11 +841,16 @@ impl HeldLeg {
     /// Returns true when the body made no approach of a quarter radius for
     /// `limit` consecutive held ticks.
     fn observe(&mut self, held: Option<f32>, radius: f32, limit: u16) -> bool {
+        self.observe_approach(held, 0.25 * radius, limit)
+    }
+    /// The same clock with an explicit approach: it starts again only when the
+    /// distance gets smaller than the best distance by more than `approach`.
+    fn observe_approach(&mut self, held: Option<f32>, approach: f32, limit: u16) -> bool {
         let Some(distance) = held.filter(|d| d.is_finite()) else {
             *self = Self::default();
             return false;
         };
-        if self.ticks == 0 || distance < self.best - 0.25 * radius {
+        if self.ticks == 0 || distance < self.best - approach {
             self.best = distance;
             self.ticks = 1;
         } else {
@@ -865,6 +872,7 @@ impl Member {
             endpoint: Vec2::ZERO,
             arrival_slot: None,
             held_leg: HeldLeg::default(),
+            held_order: HeldLeg::default(),
             radius: 0,
             profile: Traversal {
                 max_step: 0,
@@ -1055,6 +1063,7 @@ impl ViewerNavigation {
             member.cancelled = true;
             member.arrival_slot = None;
             member.held_leg = HeldLeg::default();
+            member.held_order = HeldLeg::default();
             member.parking_scope = None;
             member.owner_fence = false;
             member.owner_reported = false;
@@ -2789,6 +2798,31 @@ impl TerrainNavigation {
             .filter(|member| !member.cancelled && !member.owner_fence && !member.owner_released)
             .is_some_and(|member| member.held_leg.observe(held, radius, limit))
     }
+    /// Clock of the accepted Move order, for the packed stop (spec "Packed stop
+    /// behind the holder", condition 1). `distance` is the start-of-tick distance
+    /// to the public point on a tick in which the order is active on a direct row;
+    /// the frame target can be the endpoint or a private, spare or spread slot.
+    /// Only an approach of more than `CONTACT_GAP` starts the clock again: a slot
+    /// change or another motion does not.
+    pub(super) fn held_order(
+        &mut self,
+        unit: u32,
+        viewer: u8,
+        distance: Option<f32>,
+        limit: u16,
+    ) -> bool {
+        self.viewers
+            .get_mut(usize::from(viewer))
+            .and_then(|book| book.members.get_mut(&unit))
+            .filter(|member| !member.cancelled && !member.owner_fence && !member.owner_released)
+            .is_some_and(|member| {
+                member.held_order.observe_approach(
+                    distance,
+                    crate::movement::route::CONTACT_GAP,
+                    limit,
+                )
+            })
+    }
     pub(super) fn arrival_slot(&self, unit: u32, viewer: u8) -> Option<Vec2> {
         self.viewers
             .get(usize::from(viewer))
@@ -3282,6 +3316,49 @@ mod tests {
             goal,
         ));
     }
+    /// Packed stop, condition 1 (order clock). Red if the clock ignores progress.
+    #[test]
+    fn order_clock_does_not_complete_while_the_unit_gets_nearer_each_second() {
+        const GAP: f32 = crate::movement::route::CONTACT_GAP;
+        let mut clock = HeldLeg::default();
+        // Nearer by a little more than CONTACT_GAP in each second (20 ticks).
+        let mut distance = 30.0f32;
+        for tick in 0..600 {
+            if tick % 20 == 19 {
+                distance -= GAP + 0.01;
+            }
+            assert!(
+                !clock.observe_approach(Some(distance), GAP, 60),
+                "tick {tick}"
+            );
+        }
+    }
+    /// Motion that is nearer by less than CONTACT_GAP is no progress, and a tick
+    /// with a larger distance does not start the clock again.
+    #[test]
+    fn order_clock_counts_small_motion_as_no_progress() {
+        const GAP: f32 = crate::movement::route::CONTACT_GAP;
+        let mut clock = HeldLeg::default();
+        for tick in 0..59 {
+            // The pose moves on each tick, inside a band narrower than CONTACT_GAP.
+            let distance = 2.89 + 0.04 * ((tick % 5) as f32 - 2.) / 2.;
+            assert!(
+                !clock.observe_approach(Some(distance), GAP, 60),
+                "tick {tick}"
+            );
+        }
+        assert!(clock.observe_approach(Some(2.86), GAP, 60));
+        assert_eq!(clock, HeldLeg::default());
+        // An approach of more than CONTACT_GAP starts the clock again.
+        for _ in 0..30 {
+            assert!(!clock.observe_approach(Some(2.89), GAP, 60));
+        }
+        assert!(!clock.observe_approach(Some(2.89 - GAP - 0.001), GAP, 60));
+        for _ in 0..58 {
+            assert!(!clock.observe_approach(Some(2.78), GAP, 60));
+        }
+        assert!(clock.observe_approach(Some(2.78), GAP, 60));
+    }
     #[test]
     fn held_leg_clock_counts_only_consecutive_held_ticks_without_real_approach() {
         let mut clock = HeldLeg::default();
@@ -3327,6 +3404,7 @@ mod tests {
                 endpoint: Vec2::new(4.0, 4.0),
                 arrival_slot: Some(Vec2::new(3.5, 4.0)),
                 held_leg: HeldLeg::default(),
+                held_order: HeldLeg::default(),
                 radius: 0.4f32.to_bits(),
                 profile: traversal(),
                 epoch: 1,

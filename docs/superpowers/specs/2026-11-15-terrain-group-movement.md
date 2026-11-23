@@ -346,10 +346,26 @@ Terms:
 Rule. The engine ends the move of a held unit at its start-of-tick pose when all these
 conditions are true:
 
-1. The existing held clock is complete, with no change to it
-   (`navigation.rs:1085-1105`): the unit is on its direct final leg, its activity is
-   `Blocked`, it is not in an arrival yield, it has no physical escape, and it made no
-   progress for 3 seconds (`HELD_FINAL_LEG_SECONDS`).
+1. A clock is complete. Two clocks exist, and each one is sufficient:
+   - The held clock of the direct final leg, with no change to it
+     (`navigation.rs`, `held_final_leg`): the frame target is the order endpoint, the
+     activity is `Blocked`, the unit is not in an arrival yield, it has no physical
+     escape, and it made no progress for 3 seconds (`HELD_FINAL_LEG_SECONDS`). The
+     first-row stop uses only this clock.
+   - The order clock (repair of 2026-11-23, `held_order`). It belongs to the accepted
+     Move order and its public point, not to the frame target. It runs on each tick in
+     which the order is active on a direct row (no waypoint and no policy wait replaced
+     the target), the unit has no physical escape and is not in an arrival yield. The
+     frame target can be the endpoint, a private stop place, or a spare or spread slot
+     of the same order. A tick in which the local mover refused the row also counts.
+     Progress is measured on start-of-tick poses as the distance to the public point,
+     with a best distance and a tick count. The clock starts again only when the
+     distance gets smaller than the best distance by more than `CONTACT_GAP`. A slot
+     change, or another motion, is no progress. The limit is the same 3 seconds. The
+     clock ends with the order.
+   With the order clock, the unit can have moved in the tick. The rule then applies
+   only when the certified pose of the tick is not more than `CONTACT_GAP` from the
+   start-of-tick pose, and the move ends at the certified pose.
 2. The actor is in contact with one or more bodies of the pack.
 3. Each body in contact with the actor that is ahead of it (positive component along
    the direction to the point) is a body of the pack. If an enemy, a moving body or a
@@ -421,6 +437,15 @@ Acceptance (added to GM3, nothing removed). Each test names the build where it i
   the holder with no packed stop. The four ID variants give the same poses. Red when
   the packed stop is disabled (the first unit stays `Blocked` past the deadline of
   400 ticks).
+- Order clock, full simulation, both red on the build before the repair of 2026-11-23
+  (the second unit stays `Blocked` past the deadline of 600 ticks), four ID variants
+  equal: `gm3_packed_stop_ends_two_orders_accepted_in_one_tick` (two Move orders to
+  the held point in one tick) and `gm3_packed_stop_ends_a_group_order_at_a_held_point`
+  (one group order). These cases are also stuck on ce686989 and 3bfd66fa.
+- Order clock, unit tests: `order_clock_does_not_complete_while_the_unit_gets_nearer_
+  each_second` (an approach of more than `CONTACT_GAP` in each second never completes
+  the clock; red if progress is ignored) and `order_clock_counts_small_motion_as_no_
+  progress` (motion inside a band narrower than `CONTACT_GAP` completes it).
 - Guard, decision function: a holder, one pack body and a late unit in contact from
   the side, with a free place beside the holder. The result is a step nearer the
   point, not a stop (`a_free_gap_nearer_the_point_must_be_reached_first`). Red when

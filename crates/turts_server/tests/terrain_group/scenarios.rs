@@ -893,6 +893,115 @@ fn gm3_packed_stop_ends_boxed_out_moves_in_the_first_and_in_a_later_row() {
     assert!(poses.windows(2).all(|pair| pair[0] == pair[1]), "{poses:?}");
 }
 
+/// Packed stop, condition 1 (order clock): a late unit whose frame target is a private
+/// or spread slot of its order, not the point. `rear.large.2` rests on the point. On
+/// the earlier clock the second unit stayed `Blocked` for 3000 ticks or more.
+fn packed_stop_ends_the_move_of_two_units_ordered_together(late: [&str; 2], group_order: bool) {
+    use turts_sim::Vec2;
+    const POINT: Vec2 = Vec2::new(17.3, 27.0);
+    const DEADLINE: u32 = 600;
+    let mut results = Vec::new();
+    for variant in VARIANTS {
+        let name = format!("a{} m{}", variant.allocation as u8, variant.members as u8);
+        let mut f = Fixture::new("quarry", "GM3-shared-and-unique", variant);
+        f.commands.clear();
+        let labels = late.map(str::to_string);
+        let start: BTreeMap<String, Vec2> = f
+            .labels(|actor| !late.contains(&actor.label.as_str()))
+            .into_iter()
+            .map(|label| (label.clone(), f.position(&label)))
+            .collect();
+        if group_order {
+            let envelope = f.envelope(
+                "order_move",
+                &labels,
+                point(POINT.x, POINT.y),
+                QueueMode::Replace,
+                90,
+            );
+            f.send(0, envelope);
+        } else {
+            for (n, label) in labels.iter().enumerate() {
+                let envelope = f.envelope(
+                    "order_move",
+                    std::slice::from_ref(label),
+                    point(POINT.x, POINT.y),
+                    QueueMode::Replace,
+                    90 + n as u32,
+                );
+                f.send(0, envelope);
+            }
+        }
+        step(&mut f);
+        let mut done = [None; 2];
+        while done.iter().any(Option::is_none) {
+            for (slot, label) in done.iter_mut().zip(&labels) {
+                if slot.is_none() && f.complete(label) {
+                    *slot = Some(f.tick);
+                }
+            }
+            if done.iter().all(Option::is_some) {
+                break;
+            }
+            assert!(
+                f.tick < DEADLINE,
+                "{name} tick{}: not complete: {:?} at {:?}, {:?} at {:?}",
+                f.tick,
+                f.order(&labels[0]),
+                f.position(&labels[0]),
+                f.order(&labels[1]),
+                f.position(&labels[1])
+            );
+            step(&mut f);
+        }
+        let d = turts_sim::terrain::privileged_navigation_audit(f.app.world()).diagnostics;
+        eprintln!(
+            "{name} {late:?} group_order {group_order}: completion ticks {done:?} poses {:?} {:?} packed_stops {} packed_steps {}",
+            f.position(&labels[0]),
+            f.position(&labels[1]),
+            d.packed_stops,
+            d.packed_steps
+        );
+        assert!(d.packed_stops >= 1, "{name}: no packed stop ran");
+        // Each unit ended clear of every other body, and no stopped body moved.
+        for label in &labels {
+            for other in f.labels(|actor| actor.label != *label) {
+                let gap = f.position(label).distance(f.position(&other))
+                    - f.actor(label).profile.radius
+                    - f.actor(&other).profile.radius;
+                assert!(gap >= -1.0e-4, "{name}: {label} overlaps {other}: {gap}");
+            }
+        }
+        for (label, pose) in &start {
+            assert_eq!(f.position(label), *pose, "{name}: {label} moved");
+        }
+        results.push((
+            done,
+            labels
+                .clone()
+                .map(|label| f.position(&label).to_array().map(f32::to_bits)),
+        ));
+    }
+    // No unit ID decides a result: the four ID variants are equal.
+    assert!(
+        results.windows(2).all(|pair| pair[0] == pair[1]),
+        "{results:?}"
+    );
+}
+
+#[test]
+fn gm3_packed_stop_ends_two_orders_accepted_in_one_tick() {
+    packed_stop_ends_the_move_of_two_units_ordered_together(
+        ["rear.small.0", "rear.small.2"],
+        false,
+    );
+}
+
+#[test]
+fn gm3_packed_stop_ends_a_group_order_at_a_held_point() {
+    packed_stop_ends_the_move_of_two_units_ordered_together(["rear.small.1", "rear.small.2"], true);
+}
+
 #[test]
 fn gm2_browser_projected_destination_and_delayed_orders_complete() {
     let mut f = Fixture::new("quarry", "GM2-narrow", VARIANTS[0]);

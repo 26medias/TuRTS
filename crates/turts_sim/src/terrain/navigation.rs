@@ -1119,27 +1119,52 @@ pub(crate) fn step(
                         }));
                 // Packed stop (operator decision 2026-11-22): a later row behind the
                 // holder. The point is the public Move point, never a private slot.
-                let packed = if clock && !first_row && output.position == original.position {
-                    public_goal
-                        .or(endpoint)
-                        .map_or(packed::PackedStop::NotApplicable, |point| {
-                            let mut spent = 0;
-                            let owner = original.owner_slot;
-                            let budget = &mut body_budget;
-                            let mut visits = 0;
-                            let result = packed::packed_stop(
-                                packed_frame.get_or_insert_with(|| packed::PackedFrame::new(frame)),
-                                original,
-                                point,
-                                &mut |from, to| permitted_clear(index, from, to),
-                                &mut || {
-                                    visits += 1;
-                                    budget.charge_guidance_pair(owner, &mut spent)
-                                },
-                            );
-                            budget.packed_stop_visits += visits;
-                            result
-                        })
+                // Its clock belongs to the order: it also runs when the frame target
+                // is a private, spare or spread slot of the same order, and when the
+                // local mover refused the row in this tick (the target comes back
+                // below). Progress is the approach of the start-of-tick pose to the
+                // point; a slot change or a motion of less than CONTACT_GAP is none.
+                let point = public_goal.or(endpoint);
+                let order_held = point
+                    .filter(|_| {
+                        original.target.is_some()
+                            && constrained.target == endpoint
+                            && original.speed == constrained.speed
+                            && original.physical_escape.is_none()
+                            && output.physical_escape.is_none()
+                            && !output
+                                .plain_progress
+                                .as_ref()
+                                .is_some_and(|progress| progress.arrival_yield)
+                    })
+                    .map(|point| original.position.distance(point));
+                let order_clock = navigation.held_order(
+                    original.unit_id,
+                    original.owner_slot,
+                    order_held,
+                    frame.tick_hz.max(1).saturating_mul(HELD_FINAL_LEG_SECONDS),
+                );
+                let still = output.position.distance(original.position)
+                    <= crate::movement::route::CONTACT_GAP;
+                let packed = if (clock || order_clock) && !first_row && still {
+                    point.map_or(packed::PackedStop::NotApplicable, |point| {
+                        let mut spent = 0;
+                        let owner = original.owner_slot;
+                        let budget = &mut body_budget;
+                        let mut visits = 0;
+                        let result = packed::packed_stop(
+                            packed_frame.get_or_insert_with(|| packed::PackedFrame::new(frame)),
+                            original,
+                            point,
+                            &mut |from, to| permitted_clear(index, from, to),
+                            &mut || {
+                                visits += 1;
+                                budget.charge_guidance_pair(owner, &mut spent)
+                            },
+                        );
+                        budget.packed_stop_visits += visits;
+                        result
+                    })
                 } else {
                     packed::PackedStop::NotApplicable
                 };
@@ -1149,6 +1174,14 @@ pub(crate) fn step(
                     output.arrival_slot = Some(output.position);
                     if let Some(progress) = output.plain_progress.as_mut() {
                         progress.activity = crate::movement::MovementActivity::Resting;
+                    }
+                    if !first_row {
+                        // The order ends as an arrival, also when the local mover
+                        // refused this row or when the group mover still holds it.
+                        output.failed_blocked = false;
+                        if let Some(progress) = output.progress.as_mut() {
+                            progress.activity = crate::movement::MovementActivity::Resting;
+                        }
                     }
                     body_budget.packed_stops += u64::from(!first_row);
                 } else if let packed::PackedStop::Step(end) = packed
