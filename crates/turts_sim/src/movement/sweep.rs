@@ -815,12 +815,27 @@ mod tests {
     use std::collections::BTreeMap;
     /// A clipped pose of a row that carries an escape, next to one resting body.
     fn clipped_escape(gap: f32, ids: [u32; 2]) -> Option<PhysicalEscape> {
+        clipped_row(gap, ids).physical_escape
+    }
+    fn clipped_row(gap: f32, ids: [u32; 2]) -> MovementFrameOutput {
         let holder = body(ids[0], Vec2::new(10., 10.), 0.4, None);
         let at = Vec2::new(10.8 + gap, 10.);
         let proposed = at - Vec2::new(0.1, 0.);
         let mut actor = body(ids[1], at, 0.4, Some(Vec2::new(10., 10.)));
         actor.speed = Some(3.5);
         actor.physical_escape = Some(PhysicalEscape { target: None });
+        // The old blocked group row of the start-of-tick body.
+        actor.progress = Some(crate::movement::MoveProgress {
+            pool_id: 7,
+            slot: Vec2::new(10., 10.),
+            activity: MovementActivity::Blocked,
+            pass_mode: false,
+            stalling_on_group: false,
+            stalled_ticks: 9,
+            best_distance: 0.8,
+            claim_count: 0,
+            follow_origin: None,
+        });
         let frame = MovementFrame {
             recovery: Default::default(),
             units: vec![holder, actor.clone()],
@@ -838,7 +853,17 @@ mod tests {
             "one counted scan for one clipped row with an escape"
         );
         assert_eq!(out.position, at);
-        out.physical_escape
+        out
+    }
+    #[test]
+    fn the_old_blocked_group_row_follows_the_escape() {
+        // The frame drops the blocked group row when it discharges the escape
+        // (frame.rs, the exit read). A clipped pose in contact does not bring the
+        // row back; a clipped pose that still overlaps keeps the row with the escape.
+        assert!(clipped_row(0., [1, 2]).progress.is_none());
+        let kept = clipped_row(-0.1, [1, 2]);
+        assert!(kept.physical_escape.is_some());
+        assert_eq!(kept.progress.map(|row| row.stalled_ticks), Some(9));
     }
     #[test]
     fn a_clipped_pose_in_contact_does_not_bring_back_a_discharged_escape() {
