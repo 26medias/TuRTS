@@ -472,8 +472,8 @@ fn two_orders_take_turns_at_the_work_limit_and_do_not_delay_each_other() {
     }
     // One member of each order is served on each tick: the large first order does
     // not delay the second order, and every member is served in MEMBERS ticks.
-    for order in 0..2 {
-        let mut ticks: Vec<u32> = served_tick[order]
+    for (order, served) in served_tick.iter().enumerate() {
+        let mut ticks: Vec<u32> = served
             .iter()
             .map(|tick| tick.expect("a member was put off without end"))
             .collect();
