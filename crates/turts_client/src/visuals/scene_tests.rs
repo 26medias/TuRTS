@@ -367,6 +367,7 @@ impl Names {
         let mut standard = Vec::new();
         for (handle, name) in [
             (&assets.blocked_material, "blocked"),
+            (&assets.waiting_material, "waiting"),
             (&assets.range_material, "range"),
             (&assets.bar_background, "bar_background"),
             (&assets.bar_health, "bar_health"),
@@ -689,8 +690,8 @@ fn all_scenes() -> String {
     app.update();
     out += &record(&mut app, "update 3 (no hover)");
 
-    // A blocked mark that is 3 s old is past its 2 s lifetime and is not drawn, although the
-    // unit is still blocked.
+    // A blocked mark that is 3 s old is past its 2 s loud form and is not drawn. Unit 4 is still
+    // blocked, but it is a unit of another slot, so it gets no quiet mark.
     let mut app = base_app(None, true);
     spawn_camera(&mut app);
     app.update();
@@ -701,6 +702,49 @@ fn all_scenes() -> String {
     app.update();
     let _ = writeln!(out, "=== blocked mark past its 2 s lifetime");
     out += &record(&mut app, "update 2");
+
+    // An own unit that stays blocked keeps the quiet amber squares after the loud form, with no
+    // cross. They end when the activity changes, and also when the order record goes.
+    let age_mark = |app: &mut App| {
+        app.world_mut()
+            .resource_mut::<VisualState>()
+            .blocked_since
+            .insert(1, Instant::now() - Duration::from_secs(3));
+    };
+    let set_activity = |app: &mut App, activity| {
+        set_orders(app, |orders| {
+            // The record of the foreign unit 4 goes: one blocked unit gives one record order.
+            let mut own = orders
+                .remove(&4)
+                .or_else(|| orders.get(&1).cloned())
+                .expect("an order record to copy");
+            own.unit = UnitId(1);
+            own.activity = activity;
+            orders.insert(1, own);
+        });
+    };
+    let mut app = base_app(None, true);
+    spawn_camera(&mut app);
+    set_activity(&mut app, turts_net_protocol::Activity::Blocked);
+    app.update();
+    let _ = writeln!(out, "=== quiet waiting mark of an own blocked unit");
+    out += &record(&mut app, "update 1 (loud form)");
+    age_mark(&mut app);
+    app.update();
+    out += &record(&mut app, "update 2 (3 s old, still blocked)");
+    set_activity(&mut app, turts_net_protocol::Activity::Moving);
+    app.update();
+    out += &record(&mut app, "update 3 (activity changed)");
+    set_activity(&mut app, turts_net_protocol::Activity::Blocked);
+    app.update();
+    age_mark(&mut app);
+    app.update();
+    out += &record(&mut app, "update 5 (blocked again, 3 s old)");
+    set_orders(&mut app, |orders| {
+        orders.remove(&1);
+    });
+    app.update();
+    out += &record(&mut app, "update 6 (order record removed)");
 
     // Order markers past their 60 s lifetime are retired.
     let mut app = base_app(None, true);
@@ -714,6 +758,12 @@ fn all_scenes() -> String {
     let _ = writeln!(out, "=== order markers past their 60 s lifetime");
     out += &record(&mut app, "update 2");
     out
+}
+
+/// Change the replicated order records of the scene.
+fn set_orders(app: &mut App, change: impl FnOnce(&mut HashMap<u32, UnitOrderRecord>)) {
+    let mut state = app.world_mut().resource_mut::<ReplicaState>();
+    change(&mut state.replica.as_mut().expect("the replica").unit_orders);
 }
 
 fn despawn_camera(app: &mut App) {

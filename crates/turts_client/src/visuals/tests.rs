@@ -329,6 +329,7 @@ fn replacement_intents_remain_distinct_and_session_reset_keeps_current_frame_cli
         hover_started: Some(now),
         blocked_since: HashMap::from([(7, now)]),
         blocked_active: HashSet::from([7]),
+        blocked_own: HashSet::from([7]),
         ..Default::default()
     };
     let mut feed = OrderMarkerFeed::default();
@@ -357,6 +358,7 @@ fn replacement_intents_remain_distinct_and_session_reset_keeps_current_frame_cli
     assert!(visuals.hover_started.is_none());
     assert!(visuals.blocked_since.is_empty());
     assert!(visuals.blocked_active.is_empty());
+    assert!(visuals.blocked_own.is_empty());
     assert_eq!(feed.intents.len(), 1);
     assert_eq!(feed.intents[0].id, 21);
     assert_eq!(feed.sent.len(), 1);

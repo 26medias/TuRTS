@@ -124,6 +124,7 @@ pub(super) fn reset_marker_session(
         visuals.hover_started = None;
         visuals.blocked_since.clear();
         visuals.blocked_active.clear();
+        visuals.blocked_own.clear();
         if session.is_none() {
             marker_feed.intents.clear();
             marker_feed.sent.clear();
