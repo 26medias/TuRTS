@@ -367,6 +367,9 @@ pub(super) struct Harness {
     fog: bool,
     concentrated: bool,
     frame_ms: u64,
+    /// GM7 instrument: the largest number of fixed ticks in one `App::update`, which is
+    /// `ticks_in_frame` of the knowledge pump of that frame. Reset for each interval.
+    ticks_in_frame_max: u32,
     ack_clock_ms: u64,
     ack_rtt_ms: u64,
     delayed_acks: Vec<(u64, Entity, StateTransactionAck)>,
@@ -609,6 +612,7 @@ impl Harness {
             fog,
             concentrated,
             frame_ms: 0,
+            ticks_in_frame_max: 0,
             ack_clock_ms: 0,
             ack_rtt_ms: 0,
             delayed_acks: Vec::new(),
@@ -925,7 +929,16 @@ impl Harness {
             ));
         let before = self.app.world().resource::<Cpu>().stages_ns;
         self.trace_update(ms, "before_app");
+        let sim_tick = |app: &App| {
+            app.world()
+                .get_resource::<turts_sim::Tick>()
+                .map_or(0, |t| t.0)
+        };
+        let tick_before = sim_tick(&self.app);
         self.app.update();
+        self.ticks_in_frame_max = self
+            .ticks_in_frame_max
+            .max(sim_tick(&self.app).saturating_sub(tick_before));
         self.trace_update(ms, "after_app");
         let after = self.app.world().resource::<Cpu>().stages_ns;
         // The app contains both endpoints. Charge all shared receive and send
@@ -1095,6 +1108,8 @@ pub(super) struct Sample {
     pub(super) tick_thread_cpu_ns: Vec<u64>,
     pub(super) tick_run_delay_ns: Vec<u64>,
     pub(super) tick_all_run_delay_ns: Vec<u64>,
+    /// The largest `ticks_in_frame` of a knowledge pump call in the interval.
+    pub(super) ticks_in_frame_max: u32,
 }
 impl Harness {
     fn bots(&mut self) {
@@ -1233,6 +1248,7 @@ impl Harness {
         let mut full_server_tick_ns = Vec::with_capacity(20);
         let mut client_tick_ns: [Vec<u64>; 2] = std::array::from_fn(|_| Vec::with_capacity(20));
         let wall_start_unix_ns = unix_ns();
+        self.ticks_in_frame_max = 0;
         let mut tick_wall_ns = Vec::with_capacity(20);
         let mut tick_thread_cpu_ns = Vec::with_capacity(20);
         let mut tick_run_delay_ns = Vec::with_capacity(20);
@@ -1402,6 +1418,7 @@ impl Harness {
             tick_thread_cpu_ns,
             tick_run_delay_ns,
             tick_all_run_delay_ns,
+            ticks_in_frame_max: self.ticks_in_frame_max,
         };
         assert_eq!(sample.moved, 500, "all designated units must actually move");
         assert!(
