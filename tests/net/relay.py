@@ -2,12 +2,16 @@
 """TCP relay for the networking spike (Task 6a). Standard library only.
 
 relay.py <listen_port> <target_port> [--pause-after A] [--pause-secs B] [--rcvbuf N] [--out PATH]
+         [--log PATH]
 
 Accepts one client on 127.0.0.1:<listen_port> and connects it to 127.0.0.1:<target_port>.
 One thread per direction counts the bytes. --rcvbuf sets SO_RCVBUF on the socket toward the
 server before it connects. A seconds after the start, the relay stops reading from the server
 for B seconds. --out gets {"to_client_bytes", "to_server_bytes", "seconds"} when both
-directions reach EOF, or on SIGTERM.
+directions reach EOF, or on SIGTERM. --log gets one line `wall_ns,direction,bytes` for each
+chunk that the relay reads (direction `c` = to the client, `s` = to the server). `wall_ns` is the
+time of day in nanoseconds since the UNIX epoch, the clock of the server tick log and send trace.
+The log is buffered and written at the end, so it adds no write in the data path.
 
 Stdout lines: "relay listening <port>", "pause <unix_ms>", "resume <unix_ms>".
 """
@@ -34,12 +38,14 @@ def main():
     parser.add_argument("--pause-secs", type=float, default=0.0)
     parser.add_argument("--rcvbuf", type=int, default=0)
     parser.add_argument("--out", default=None)
+    parser.add_argument("--log", default=None)
     args = parser.parse_args()
 
     t0 = time.monotonic()
     counts = {"to_client_bytes": 0, "to_server_bytes": 0}
     lock = threading.Lock()
     written = [False]
+    chunks = []
 
     def write_out():
         with lock:
@@ -51,6 +57,10 @@ def main():
             if args.out:
                 with open(args.out, "w") as f:
                     json.dump(result, f)
+            if args.log:
+                with open(args.log, "w") as f:
+                    f.write("wall_ns,direction,bytes\n")
+                    f.writelines(f"{at},{direction},{size}\n" for at, direction, size in list(chunks))
             print("relay result " + json.dumps(result), flush=True)
 
     def on_sigterm(_signum, _frame):
@@ -92,6 +102,8 @@ def main():
                 break
             with lock:
                 counts[key] += len(data)
+                if args.log:
+                    chunks.append((time.time_ns(), key[3], len(data)))
             try:
                 dst.sendall(data)
             except OSError:
