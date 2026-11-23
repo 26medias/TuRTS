@@ -426,3 +426,66 @@ fn a_resource_refusal_is_asked_again_on_the_next_tick() {
     );
     assert_eq!(n.diagnostics.direct_query_cache_misses, 3);
 }
+
+#[test]
+fn two_orders_take_turns_at_the_work_limit_and_do_not_delay_each_other() {
+    const MEMBERS: usize = 4;
+    let (t, _) = refused_band();
+    let ends = [Vec2::new(6.5, 1.5), Vec2::new(6.5, 5.5)];
+    let mut n = ViewerNavigation::default();
+    // Two orders: each has its own endpoint and no destination region.
+    let mut orders: Vec<Vec<Member>> = ends
+        .iter()
+        .map(|&endpoint| {
+            (0..MEMBERS)
+                .map(|_| {
+                    let mut m = member();
+                    m.endpoint = endpoint;
+                    m
+                })
+                .collect()
+        })
+        .collect();
+    let mut served_tick = [[None; MEMBERS]; 2];
+    for tick in 1..=MEMBERS as u32 {
+        n.begin(tick);
+        // Order 0 is always asked first, with all its members.
+        for (order, members) in orders.iter_mut().enumerate() {
+            for (index, m) in members.iter_mut().enumerate() {
+                let from = Vec2::new(1.5, 1.5 + 4. * order as f32);
+                let before = n.diagnostics.direct_query_cache_misses;
+                assert_eq!(
+                    n.direct_query(m, &t, from, ends[order]),
+                    Certificate::Pending
+                );
+                if n.diagnostics.direct_query_cache_misses > before {
+                    served_tick[order][index].get_or_insert(tick);
+                    // Make each real sweep as costly as the whole limit of its order.
+                    for row in &mut n.direct_order_work {
+                        if row.used {
+                            row.work = row.work.max(DIRECT_QUERY_WORK);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    // One member of each order is served on each tick: the large first order does
+    // not delay the second order, and every member is served in MEMBERS ticks.
+    for order in 0..2 {
+        let mut ticks: Vec<u32> = served_tick[order]
+            .iter()
+            .map(|tick| tick.expect("a member was put off without end"))
+            .collect();
+        ticks.sort_unstable();
+        assert_eq!(
+            ticks,
+            (1..=MEMBERS as u32).collect::<Vec<_>>(),
+            "order {order}"
+        );
+    }
+    assert_eq!(
+        n.diagnostics.direct_query_deferrals,
+        (2 * (MEMBERS * (MEMBERS - 1) / 2)) as u64
+    );
+}

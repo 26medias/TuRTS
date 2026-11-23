@@ -442,6 +442,18 @@ a discharged escape (red on the earlier build); a clipped pose that still overla
 keeps its escape (control); gate `gm3_feasible_opposing_shared_unique_and_movable_
 obstruction_complete` with unchanged expectations.
 
+### Work limit of refused direct lines (GM4 repair, no rule change)
+
+A unit asks one swept terrain certificate from its pose to its endpoint. A refused
+long line is remembered until the unit leaves its start cell or another input
+changes. The fresh direct-line work of the units of one order with no clear line is
+limited to 4 x `GEOMETRY_BUDGET` operations per tick. The units of one order take
+turns, and an order does not delay another order. One viewer has 8 order accounts
+and one shared account, so the worst case for one viewer and tick is
+9 x 4 x `GEOMETRY_BUDGET` operations (about 60 ms at 1.7 ms for each refused sweep).
+Known limit: the limit bounds only new and refused work. A unit on a long clear
+line still makes one fresh certificate on each tick, as before this repair.
+
 Minor list (not in this change): why the late unit did not take a route around the
 stopped group to its private stop slot is NOT TRACED. A point beyond two gates, where
 gate 1 is packed and gate 2 leads to free space near the point: units at gate 1 stop
