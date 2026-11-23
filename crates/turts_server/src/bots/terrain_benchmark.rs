@@ -261,6 +261,11 @@ define_navigation_peaks!(
     body_index_updates_this_tick,
     body_index_update_entries_this_tick,
     body_support_queries_this_tick,
+    escape_keep_scans_this_tick,
+    packed_stop_visits_this_tick,
+    packed_stops,
+    packed_steps,
+    direct_query_work_this_tick,
     body_support_pairs_this_tick,
     body_support_failures_this_tick,
     body_support_accepted_members_this_tick,
@@ -540,11 +545,24 @@ fn navigation_peaks_keep_transient_tick_maximum_and_combined_memory() {
 }
 
 fn run(intervals: usize, acceptance: bool, warmup: usize) {
+    run_with_profiling(intervals, acceptance, warmup, !acceptance);
+}
+fn run_with_profiling(intervals: usize, acceptance: bool, warmup: usize, profiling: bool) {
     let diagnostic_fog = std::env::var("TURTS_TW7_DIAGNOSTIC_FOG").ok();
+    let diagnostic_rtt = std::env::var("TURTS_TW7_DIAGNOSTIC_RTT").ok();
     assert!(
-        !acceptance || diagnostic_fog.is_none(),
-        "acceptance cannot select a diagnostic visibility subset"
+        !acceptance || (diagnostic_fog.is_none() && diagnostic_rtt.is_none()),
+        "acceptance cannot select a diagnostic visibility or RTT subset"
     );
+    assert!(
+        !acceptance || !profiling,
+        "acceptance runs without profiling"
+    );
+    let diagnostic_rtt = diagnostic_rtt.map(|value| match value.as_str() {
+        "50" => 50,
+        "100" => 100,
+        _ => panic!("diagnostic RTT must be 50 or 100"),
+    });
     let diagnostic_fog = diagnostic_fog.map(|value| match value.as_str() {
         "fog" => true,
         "allvisible" => false,
@@ -564,6 +582,9 @@ fn run(intervals: usize, acceptance: bool, warmup: usize) {
             continue;
         }
         for rtt in [50, 100] {
+            if diagnostic_rtt.is_some_and(|selected| selected != rtt) {
+                continue;
+            }
             let fixture = authored(fog);
             turts_mod_runtime::terrain::validate_terrain_catalog(
                 &PackageId("stockyard".into()),
@@ -594,7 +615,7 @@ fn run(intervals: usize, acceptance: bool, warmup: usize) {
                 )),
             );
             harness.set_ack_rtt(rtt);
-            harness.set_profiling(!acceptance);
+            harness.set_profiling(profiling);
             let mut workload = Workload::new(&harness);
             for index in 0..warmup {
                 harness.interval_with(index, false, |h, t, after| workload.tick(h, t, after));
@@ -685,6 +706,11 @@ fn tw7_frozen_1000_warmed_intervals() {
 #[ignore = "short optimized diagnostic; not acceptance"]
 fn diagnostic_tw7_10_intervals() {
     run(10, false, WARMUP);
+}
+#[test]
+#[ignore = "GM7 host diagnosis: 200 unprofiled intervals; not acceptance"]
+fn diagnostic_tw7_200_intervals_unprofiled() {
+    run_with_profiling(200, false, WARMUP, false);
 }
 #[test]
 #[ignore = "workload, wire and conservation preflight; no performance claim"]

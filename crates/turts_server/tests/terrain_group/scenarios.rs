@@ -654,6 +654,34 @@ fn gm3_shared_unique_single_public_world_keeps_all_physical_assertions() {
 }
 
 #[test]
+fn gm3_browser_delayed_rear_group_at_a_held_point_completes() {
+    let mut f = Fixture::new("quarry", "GM3-shared-and-unique", VARIANTS[0]);
+    // Actual application ticks (relative 29, 244, 326) and projected points of the
+    // real-browser failure in gm8-frame-codex/host-2026-11-22/pointer/
+    // quarry-GM3-shared-and-unique-a0-m0-normal. The frozen acceptance row is unchanged.
+    let shared = point(47.999_996, 23.500_027);
+    f.commands[0].tick = 28;
+    f.commands[0].envelope.target = shared.clone();
+    f.commands[1].tick = 243;
+    f.commands[1].envelope.target = shared;
+    f.commands[2].tick = 325;
+    f.commands[2].envelope.target = point(19.999_996, 6.000_008);
+    until(&mut f, 2420);
+    let all = f.labels(|_| true);
+    for label in &all {
+        if !f.complete(label) {
+            eprintln!(
+                "INCOMPLETE {label} position={:?} order={:?} member={:?}",
+                f.position(label),
+                f.order(label),
+                diagnostics::member(&f, label)
+            );
+        }
+    }
+    f.require_complete(&all);
+}
+
+#[test]
 fn gm2_browser_projected_destination_and_delayed_orders_complete() {
     let mut f = Fixture::new("quarry", "GM2-narrow", VARIANTS[0]);
     // These are the actual order application ticks and projected point from
@@ -684,4 +712,41 @@ fn gm2_browser_projected_destination_and_delayed_orders_complete() {
         }
     }
     require_crossed(&f, &large, true);
+}
+
+#[test]
+#[ignore = "GM4 throughput diagnosis: per-tick cost and navigation counters; not acceptance"]
+fn diagnostic_gm4_34_unit_order_tick_cost_and_counters() {
+    let mut f = Fixture::new("quarry", "GM4-edit-during-approach", VARIANTS[0]);
+    // Lena's server-only script: the 34-unit order at tick 200, no terrain edit.
+    f.commands.truncate(1);
+    f.commands[0].tick = 200;
+    let mut rows = Vec::new();
+    let group = f.commands[0].envelope.units.clone();
+    let labels = f.labels(|actor| group.iter().any(|unit| unit.0 == actor.unit));
+    let (mut first_direct, mut last_arrival) = (None, None);
+    while f.tick < 2640 && last_arrival.is_none() {
+        let start = std::time::Instant::now();
+        f.step();
+        let ns = start.elapsed().as_nanos() as u64;
+        let audit = turts_sim::terrain::privileged_navigation_audit(f.app.world());
+        if first_direct.is_none()
+            && audit
+                .members
+                .iter()
+                .any(|member| member.state == turts_sim::terrain::NavigationMemberState::Direct)
+        {
+            first_direct = Some(f.tick);
+        }
+        if f.tick > 200 && labels.iter().all(|label| f.complete(label)) {
+            last_arrival = Some(f.tick);
+        }
+        rows.push(format!("{} {ns} {:?}", f.tick, audit.diagnostics));
+    }
+    rows.push(format!(
+        "SUMMARY first_direct={first_direct:?} last_arrival={last_arrival:?} members={}",
+        labels.len()
+    ));
+    let path = std::env::var("TURTS_GM4_DIAG_OUT").expect("TURTS_GM4_DIAG_OUT");
+    std::fs::write(path, rows.join("\n")).unwrap();
 }

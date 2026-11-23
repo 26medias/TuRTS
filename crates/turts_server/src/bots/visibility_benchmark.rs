@@ -260,6 +260,56 @@ fn end_client(mut cpu: ResMut<Cpu>) {
         cpu.stages_ns[7] += elapsed;
     }
 }
+/// GM7 host instrument. Each reading happens outside every timed region and
+/// never enters a deadline criterion. Wall minus thread CPU over one tick is
+/// the time that the main thread was off its CPU (preempted or waiting).
+#[derive(Clone, Copy)]
+struct HostClock {
+    wall: Instant,
+    thread_cpu_ns: u64,
+    run_delay_ns: u64,
+    all_run_delay_ns: u64,
+}
+impl HostClock {
+    fn now() -> Self {
+        Self {
+            wall: Instant::now(),
+            thread_cpu_ns: thread_cpu_ns(),
+            run_delay_ns: run_delay_ns("/proc/thread-self/schedstat"),
+            all_run_delay_ns: std::fs::read_dir("/proc/self/task")
+                .map(|tasks| {
+                    tasks
+                        .flatten()
+                        .map(|task| run_delay_ns(task.path().join("schedstat")))
+                        .sum()
+                })
+                .unwrap_or(0),
+        }
+    }
+}
+fn thread_cpu_ns() -> u64 {
+    let mut time = libc::timespec {
+        tv_sec: 0,
+        tv_nsec: 0,
+    };
+    // SAFETY: `time` is a valid, writable timespec for the whole call.
+    let status = unsafe { libc::clock_gettime(libc::CLOCK_THREAD_CPUTIME_ID, &mut time) };
+    assert_eq!(status, 0, "CLOCK_THREAD_CPUTIME_ID must be readable");
+    time.tv_sec as u64 * 1_000_000_000 + time.tv_nsec as u64
+}
+/// Run-queue wait (second schedstat field); 0 where the file does not exist.
+fn run_delay_ns(path: impl AsRef<std::path::Path>) -> u64 {
+    std::fs::read_to_string(path)
+        .ok()
+        .and_then(|text| text.split_whitespace().nth(1)?.parse().ok())
+        .unwrap_or(0)
+}
+fn unix_ns() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos() as u64
+}
 fn charge_server(world: &mut World, stage: usize, start: Instant) {
     let elapsed = start.elapsed().as_nanos() as u64;
     let mut cpu = world.resource_mut::<Cpu>();
@@ -1037,6 +1087,14 @@ pub(super) struct Sample {
     /// Loss declarations of the knowledge channel of each server session in the interval.
     pub(super) knowledge_nacks: [u64; 2],
     pub(super) wire_bytes: [u64; 2],
+    /// GM7 instrument, outside the timed regions: wall-clock stamps of the interval
+    /// and, per tick, wall, main-thread CPU, and run-queue wait (main thread and all threads).
+    pub(super) wall_start_unix_ns: u64,
+    pub(super) wall_end_unix_ns: u64,
+    pub(super) tick_wall_ns: Vec<u64>,
+    pub(super) tick_thread_cpu_ns: Vec<u64>,
+    pub(super) tick_run_delay_ns: Vec<u64>,
+    pub(super) tick_all_run_delay_ns: Vec<u64>,
 }
 impl Harness {
     fn bots(&mut self) {
@@ -1174,7 +1232,13 @@ impl Harness {
         let mut moved = BTreeSet::new();
         let mut full_server_tick_ns = Vec::with_capacity(20);
         let mut client_tick_ns: [Vec<u64>; 2] = std::array::from_fn(|_| Vec::with_capacity(20));
+        let wall_start_unix_ns = unix_ns();
+        let mut tick_wall_ns = Vec::with_capacity(20);
+        let mut tick_thread_cpu_ns = Vec::with_capacity(20);
+        let mut tick_run_delay_ns = Vec::with_capacity(20);
+        let mut tick_all_run_delay_ns = Vec::with_capacity(20);
         for step in 0..20 {
+            let clock_before = HostClock::now();
             let cpu = self.app.world().resource::<Cpu>();
             let service_before = cpu.full_server_service_ns();
             let clients_before = cpu.peer_client_ns;
@@ -1299,6 +1363,15 @@ impl Harness {
             for slot in 0..2 {
                 client_tick_ns[slot].push(cpu.peer_client_ns[slot] - clients_before[slot]);
             }
+            let clock_after = HostClock::now();
+            tick_wall_ns.push((clock_after.wall - clock_before.wall).as_nanos() as u64);
+            tick_thread_cpu_ns.push(clock_after.thread_cpu_ns - clock_before.thread_cpu_ns);
+            tick_run_delay_ns.push(clock_after.run_delay_ns - clock_before.run_delay_ns);
+            tick_all_run_delay_ns.push(
+                clock_after
+                    .all_run_delay_ns
+                    .saturating_sub(clock_before.all_run_delay_ns),
+            );
         }
         let cpu = self.app.world().resource::<Cpu>();
         let sample = Sample {
@@ -1323,6 +1396,12 @@ impl Harness {
                 nacks.get(&self.peers[i].server).copied().unwrap_or(0)
             }),
             wire_bytes: std::array::from_fn(|i| self.peers[i].wire_bytes),
+            wall_start_unix_ns,
+            wall_end_unix_ns: unix_ns(),
+            tick_wall_ns,
+            tick_thread_cpu_ns,
+            tick_run_delay_ns,
+            tick_all_run_delay_ns,
         };
         assert_eq!(sample.moved, 500, "all designated units must actually move");
         assert!(
