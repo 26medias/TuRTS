@@ -358,14 +358,25 @@ conditions are true:
      the target), the unit has no physical escape and is not in an arrival yield. The
      frame target can be the endpoint, a private stop place, or a spare or spread slot
      of the same order. A tick in which the local mover refused the row also counts.
-     Progress is measured on start-of-tick poses as the distance to the public point,
-     with a best distance and a tick count. The clock starts again only when the
-     distance gets smaller than the best distance by more than `CONTACT_GAP`. A slot
-     change, or another motion, is no progress. The limit is the same 3 seconds. The
-     clock ends with the order.
+     Progress is measured on start-of-tick poses, with a best distance and a tick
+     count, by two distances: the distance to the public point, and the distance to
+     the current frame target. The clock starts again only when one of them gets
+     smaller than its best distance by more than `CONTACT_GAP`. So a unit that walks
+     along the pack to a free slot is not stopped on its way, at any speed. A change
+     of the frame target sets a new best distance for the new target and does not
+     start the clock again. Another motion is no progress. The limit is the same
+     3 seconds. The clock ends with the order.
    With the order clock, the unit can have moved in the tick. The rule then applies
    only when the certified pose of the tick is not more than `CONTACT_GAP` from the
    start-of-tick pose, and the move ends at the certified pose.
+   A slow unit (speed 2.02 or less at 20 Hz) meets this pose bound while it walks, so
+   the bound is not the protection of a walking unit: the frame-target distance of
+   the order clock is.
+
+   Slot of a stopped unit: the group mover builds the slot claims on each tick from the
+   frame targets of the units (`movement/frame.rs:328-334`). A packed stop removes the
+   target of the unit, so from the next tick the unit claims no slot. A later unit can
+   use that slot when no body stands on it.
 2. The actor is in contact with one or more bodies of the pack.
 3. Each body in contact with the actor that is ahead of it (positive component along
    the direction to the point) is a body of the pack. If an enemy, a moving body or a
@@ -446,6 +457,12 @@ Acceptance (added to GM3, nothing removed). Each test names the build where it i
   each_second` (an approach of more than `CONTACT_GAP` in each second never completes
   the clock; red if progress is ignored) and `order_clock_counts_small_motion_as_no_
   progress` (motion inside a band narrower than `CONTACT_GAP` completes it).
+  `order_clock_does_not_complete_while_a_slow_unit_walks_to_its_slot`: a unit of speed
+  1.0 walks to a slot at an equal distance from the point and is not stopped; red when
+  the clock measures only the distance to the point (48d686ec).
+  `order_clock_is_not_started_again_by_a_slot_change`. Limit: the slow-unit case has
+  no full-simulation test, because the frozen GM scenes have no unit of speed 2.02 or
+  less (their speeds are 3.5 and 2.5).
 - Guard, decision function: a holder, one pack body and a late unit in contact from
   the side, with a free place beside the holder. The result is a step nearer the
   point, not a stop (`a_free_gap_nearer_the_point_must_be_reached_first`). Red when

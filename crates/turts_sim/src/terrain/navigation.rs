@@ -1122,8 +1122,9 @@ pub(crate) fn step(
                 // Its clock belongs to the order: it also runs when the frame target
                 // is a private, spare or spread slot of the same order, and when the
                 // local mover refused the row in this tick (the target comes back
-                // below). Progress is the approach of the start-of-tick pose to the
-                // point; a slot change or a motion of less than CONTACT_GAP is none.
+                // below). Progress is an approach of the start-of-tick pose to the
+                // point or to the current frame target by more than CONTACT_GAP; a
+                // slot change or another motion is none.
                 let point = public_goal.or(endpoint);
                 let order_held = point
                     .filter(|_| {
@@ -1137,7 +1138,14 @@ pub(crate) fn step(
                                 .as_ref()
                                 .is_some_and(|progress| progress.arrival_yield)
                     })
-                    .map(|point| original.position.distance(point));
+                    .zip(original.target)
+                    .map(|(point, target)| {
+                        (
+                            original.position.distance(point),
+                            target,
+                            original.position.distance(target),
+                        )
+                    });
                 let order_clock = navigation.held_order(
                     original.unit_id,
                     original.owner_slot,
