@@ -487,3 +487,12 @@ there, also if a walk around the pack leads to a nearer place. Native reproducti
 of the wedge, on ce686989 and on this build (same pose): in `GM3-shared-and-unique`,
 with no other order, a Move of `rear.small.2` to (6, 10) stays `Blocked` at
 (18.80, 26.93) between two resting friendly units for 2400 ticks or more.
+
+Pair limit (condition 3): two held units side by side, in contact with each other and
+with the pack, are each a moving body in contact ahead of the other when
+|dA^2 - dB^2| < |AB|^2 (d = distance to the point). Then the rule applies to neither
+unit while both have a target. A full-simulation probe with a closed ring of six units
+around a holder and two late units side by side did not reproduce a block: both units
+completed in about 40 ticks by another arrival rule, in four ID variants, as two orders
+and as one group order (evidence `target/mc-evidence/gm3-delayed-rear-replay/pair-probe/`,
+scene 1). The limit stays recorded for the decision function.
