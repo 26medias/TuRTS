@@ -59,7 +59,8 @@ const delta=(a,b)=>Math.max(...a.map((n,i)=>Math.abs(n-b[i])));
    s=await scene();const onward=project(s,[43,32,0]);await page.mouse.move(...onward);await page.mouse.click(...onward,{button:'right',delay:80});
    await wait(read,x=>groupIds.every(id=>x.replicated_world.unit_orders.some(o=>o.unit===id&&o.current?.order?.endsWith(':order_move'))),'Onward move was not accepted');
    // Queue return trips before zoom so the same two units keep moving during the sample.
-   for(const destination of [[14,32,0],[43,32,0]]){
+   // Three legs: with two, the faster unit arrived at about 9.1 s of the 10 s sample.
+   for(const destination of [[14,32,0],[43,32,0],[14,32,0]]){
     s=await scene();const queued=project(s,destination);assert(queued[0]>0&&queued[0]<1280&&queued[1]>0&&queued[1]<720,'Queued goal outside viewport');
     await page.keyboard.down('Shift');await sleep(150);await page.mouse.move(...queued);await page.mouse.click(...queued,{button:'right',delay:80});await sleep(150);await page.keyboard.up('Shift');await sleep(150);
    }
