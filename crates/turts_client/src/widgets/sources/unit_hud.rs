@@ -93,8 +93,10 @@ pub(in crate::widgets) fn primary_activity(context: SourceContext<'_>) -> serde_
         Activity::Attacking => "Attacking",
         Activity::Holding => "Holding position",
         Activity::Gathering => "Gathering",
-        // The plain word (PM decision of 2026-11-23): a longer text would state a cause, and the
-        // server sends none.
+        // No text states a cause: the server sends none. A blocked unit with a current order
+        // waits. With no current order, the order ended blocked (the server keeps `Blocked` after
+        // a `Blocked` failure, `turts_sim` `economy/views.rs`), so the plain word stays.
+        Activity::Blocked if record.current.is_some() => "Waiting (blocked)",
         Activity::Blocked => "Blocked",
     })
 }

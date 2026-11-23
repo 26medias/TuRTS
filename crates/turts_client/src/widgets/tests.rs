@@ -2027,6 +2027,32 @@ mod stub_contract {
     }
 
     #[test]
+    fn primary_activity_of_a_blocked_unit_with_a_current_order_is_a_wait() {
+        let current = turts_net_protocol::OrderSummary {
+            order: "test:order_move".into(),
+            target: turts_net_protocol::OrderTarget::Point(turts_net_protocol::Pos {
+                x: 5.0,
+                y: 5.0,
+            }),
+        };
+        for (current, text) in [(Some(current), "Waiting (blocked)"), (None, "Blocked")] {
+            with_replica(
+                |replica| {
+                    let mut record = order_record(turts_net_protocol::Activity::Blocked);
+                    record.current = current;
+                    replica.unit_orders.insert(1, record);
+                },
+                |context| {
+                    assert_eq!(
+                        sources::read_primary(PrimaryField::Activity, *context),
+                        serde_json::json!(text)
+                    );
+                },
+            );
+        }
+    }
+
+    #[test]
     fn primary_activity_follows_a_change_and_ends_with_the_record() {
         use turts_net_protocol::Activity;
         let mut replica = crate::replica::Replica::new(20);
