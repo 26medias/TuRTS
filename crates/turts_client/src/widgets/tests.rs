@@ -2006,7 +2006,7 @@ mod stub_contract {
             (Activity::Attacking, "Attacking"),
             (Activity::Holding, "Holding position"),
             (Activity::Gathering, "Gathering"),
-            (Activity::Blocked, "Waiting: the way is blocked"),
+            (Activity::Blocked, "Blocked"),
         ] {
             with_replica(
                 |replica| {
@@ -2041,10 +2041,7 @@ mod stub_contract {
         replica
             .unit_orders
             .insert(1, order_record(Activity::Blocked));
-        assert_eq!(
-            read(&replica),
-            serde_json::json!("Waiting: the way is blocked")
-        );
+        assert_eq!(read(&replica), serde_json::json!("Blocked"));
         replica
             .unit_orders
             .insert(1, order_record(Activity::Moving));

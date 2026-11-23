@@ -93,8 +93,9 @@ pub(in crate::widgets) fn primary_activity(context: SourceContext<'_>) -> serde_
         Activity::Attacking => "Attacking",
         Activity::Holding => "Holding position",
         Activity::Gathering => "Gathering",
-        // UX note of 2026-11-23: not `Blocked` alone, and no cause that the server did not send.
-        Activity::Blocked => "Waiting: the way is blocked",
+        // The plain word (PM decision of 2026-11-23): a longer text would state a cause, and the
+        // server sends none.
+        Activity::Blocked => "Blocked",
     })
 }
 
