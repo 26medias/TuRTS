@@ -1,0 +1,1 @@
+(target:Unit("terrain_stockyard_ridge:depot"),shape:Cuboid(x:2.2,y:2.2,z:1.6),model:Some((asset:"terrain_stockyard_ridge:base_glb",team_material:Some("team"),scale:0.65,lods:[],animations:None)))

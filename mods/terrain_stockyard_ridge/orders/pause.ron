@@ -1,0 +1,1 @@
+(id:"order_pause",name:"Pause",behaviour:SetEnabled(false),target:None,fire:None,engage:None,icon:"icon_order_move",hotkey:"key_pause",cursor:None,card:None,units:["terrain_stockyard_ridge:porter","terrain_stockyard_ridge:carrier","terrain_stockyard_ridge:depot"],description:"Pause selected units")

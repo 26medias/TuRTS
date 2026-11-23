@@ -1,0 +1,1 @@
+(id:"soil_layer",name:"Soil",surface_color:"#99734d",hardness:1,work_per_world_cube:(numerator:16,denominator:1),natural_outputs:[(resource:"quarry_ridge:soil",per_world_cube:(numerator:4,denominator:1))],fill_inputs:[(resource:"quarry_ridge:soil",per_world_cube:(numerator:4,denominator:1))],placed_removal:NoYield)

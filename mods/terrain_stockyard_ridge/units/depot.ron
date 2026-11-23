@@ -1,0 +1,1 @@
+(id:"depot",name:"Material depot",footprint:Circle(radius:1.2),movement:None,inventory:None,gatherer:None,drop_off:None,producer:None,terrain_foundation:Some(ForbidEdit),constructor:Some((buildings:["terrain_stockyard_ridge:build_shed"],concurrent_sites:1,queue_capacity:4)),build_area:Some(30.0),health:Some((max:500)),vision:Some((radius:7.0)))

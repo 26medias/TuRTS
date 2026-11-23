@@ -1,0 +1,1 @@
+(id:"order_work",name:"Work",behaviour:TerrainWork,target:TerrainDesignation,fire:None,engage:None,icon:"icon_order_move",hotkey:"key_work",cursor:None,card:None,units:["terrain_stockyard_ridge:porter","terrain_stockyard_ridge:carrier"],description:"Work selected units")

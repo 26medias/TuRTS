@@ -1,0 +1,1 @@
+(id:"loam_layer",name:"Loam",surface_color:"#99734d",hardness:1,work_per_world_cube:(numerator:16,denominator:1),natural_outputs:[(resource:"terrain_stockyard_ridge:loam",per_world_cube:(numerator:4,denominator:1))],fill_inputs:[(resource:"terrain_stockyard_ridge:loam",per_world_cube:(numerator:4,denominator:1))],placed_removal:NoYield)
