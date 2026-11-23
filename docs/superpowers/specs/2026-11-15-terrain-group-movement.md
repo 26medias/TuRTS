@@ -305,3 +305,144 @@ Keep the complete permitted-world baseline, no-partial-plan publication, whole-r
 No new owner allowance, actor allowance, weaker arrival rule or acceptance target is introduced.
 Keep this path behind an explicit diagnostic switch until the unchanged actual tape passes.
 Test convoys, crossing proposals, actual arrivals against held bodies, recovery, refusal without partial commit, deterministic reversal, every charge boundary and phase memory.
+
+## Packed stop behind the holder (operator decision 2026-11-22)
+
+Status: Decided by the operator on 2026-11-22 (option A). This section refines
+"Later units stop at the closest feasible non-overlapping position". It changes no
+other rule, GM row, deadline or assertion.
+
+Play example: a group arrives at a point where friendly units already stand. One late
+unit is boxed out: stopped friendly units stand between it and the point. It stops
+where it is and its order ends. It does not wait for the group to leave.
+
+Defect that this closes: a held unit could end its move only when it was as near to the
+point as the holder permits (first row). A unit that was blocked in a later row kept its
+order and stayed `Blocked` without limit (GM8 browser run, 3 of 3; native replay
+`gm3_browser_delayed_rear_group_at_a_held_point_completes` at 56a008b4).
+
+Inputs. All inputs of this rule come from the start-of-tick movement frame: positions,
+radii, owners, targets and escape state as they were before this tick moved or stopped
+a body. A unit that stops in this tick is a stopped body for other units from the next
+tick. The result does not depend on service order or on a unit ID.
+
+Terms:
+
+- The *point* is the public point of the accepted Move order (`parking_public_goal`,
+  `crates/turts_sim/src/terrain/navigation.rs:99`). It is never a private stop slot.
+- A *stopped friendly body* has the owner of the actor, has no move target and has no
+  physical escape. A body of another owner is never used. A moving body is never used.
+- The *holder* is a stopped friendly body that occupies the point: its distance to the
+  point is less than the sum of its radius and the actor radius.
+- gap(a, b) = distance(a, b) - radius(a) - radius(b).
+- Two stopped friendly bodies are *packed* when gap < 2 x actor radius. The actor
+  cannot pass between them.
+- The *pack* is the set of stopped friendly bodies that connect to a holder through
+  packed pairs.
+- The actor is *in contact* with a body when gap <= `CONTACT_GAP` (0.1 + 1.0e-3,
+  `crates/turts_sim/src/movement/route.rs:50`), the existing contact range of the
+  movement system. No new tolerance is added.
+
+Rule. The engine ends the move of a held unit at its start-of-tick pose when all these
+conditions are true:
+
+1. The existing held clock is complete, with no change to it
+   (`navigation.rs:1085-1105`): the unit is on its direct final leg, its activity is
+   `Blocked`, it is not in an arrival yield, it has no physical escape, and it made no
+   progress for 3 seconds (`HELD_FINAL_LEG_SECONDS`).
+2. The actor is in contact with one or more bodies of the pack.
+3. Each body in contact with the actor that is ahead of it (positive component along
+   the direction to the point) is a body of the pack. If an enemy, a moving body or a
+   stopped body that is not in the pack is in contact ahead, the rule does not apply.
+4. Terrain does not hold the unit: the existing swept terrain certificate of the
+   direct step toward the point (length: the actor radius, as in condition 5) is
+   clear. Then only pack bodies refuse that step. A
+   unit that terrain holds keeps the earlier rules.
+5. Guard: no free step nearer the point exists. The step set is constant: the direct
+   step toward the point and, for each body in contact, the two tangent directions
+   around it. The step length is the actor radius. A step is free when the existing
+   exact swept body guard and the existing swept terrain guard both accept the whole
+   step against the start-of-tick frame. A free step is *nearer* when its end is
+   nearer the point than the start by more than `CONTACT_GAP`.
+
+Guard result. When a free nearer step exists, the unit does not stop. The end of the
+nearest such step becomes its private stop slot, by the existing spare-slot change of
+the plain mover (new slot, new target, stall count 0), and ordinary certified movement
+takes it there. The held clock starts again. Each change moves the stop slot nearer
+the point by more than `CONTACT_GAP`, so the number of changes for one order is not
+more than the start distance divided by `CONTACT_GAP`. A unit cannot stay `Blocked`
+without limit while the guard finds a step.
+
+When the rule applies, the result is the result of the existing first-row stop: the
+target is removed, the pose becomes the arrival slot, and the activity is `Resting`.
+From the next tick the unit is a stopped friendly body, so the units behind it can use
+the same rule (the cascade is intended).
+
+Rules that do not change:
+
+- The first physical arrival keeps the point. This rule never moves a stopped body.
+- No unit ID, entity order or iteration order enters the conditions.
+- The rule reads only bodies of the owner and terrain that the owner is permitted to
+  know. It adds no fog disclosure.
+- A unit blocked by terrain, by an enemy, by a moving body, or with no holder at the
+  point keeps the earlier rules (wait, recover, or truthful `Blocked`).
+- A unit never ends idle while it overlaps a body or terrain: a unit with a physical
+  escape is excluded by condition 1.
+- The impossible fixture of GM3 (`GM3-settled-blocker`) stays a stable wait: no holder
+  stands at either point.
+
+Bounds. The engine builds the pack one time for each tick and each (owner, point,
+actor diameter), and only when one or more units of that key have a complete held
+clock. It uses the existing spatial index of the movement frame. Each body visit and
+each guard step is charged to the existing per-owner movement work allowance; no new
+allowance is added. A refused charge leaves the
+earlier rules in force for that tick. The pack has no fixed size limit: only the
+work allowance bounds it. The pack visits are recorded in the navigation
+diagnostics and in the GM7 work rows.
+
+Acceptance (added to GM3, nothing removed). Each test names the build where it is red:
+
+- Second-row stop: a fixture with a holder, a packed first row and one late unit in
+  contact behind it, no free step. Red before the rule (the unit stays `Blocked`),
+  green after. The replay `gm3_browser_delayed_rear_group_at_a_held_point_completes`
+  is red at 56a008b4 and green on the repaired build.
+- Guard: the same fixture with a free gap nearer the point. The late unit reaches the
+  gap within 200 ticks and does not stop at first contact. Red when the guard is
+  removed. Control: with the gap closed the unit stops at contact.
+- Terrain (condition 4): a unit held by a cliff edge with one pack body in contact at
+  a shallow angle ahead does not stop. Red when condition 4 is removed.
+- Condition 3 boundaries, one test each, red when the boundary is removed: a pack of
+  another owner; a moving body ahead; a stopped friendly body ahead that does not
+  connect to the holder.
+- Start-of-tick inputs: two held units A and B in a row, B in contact with A only. B
+  does not stop in the tick in which A stops; it stops later. The result is equal
+  under ID reversal.
+- ID reversal of the replay gives the same physical rows.
+- All existing GM1 to GM6 native tests pass with no changed expectation.
+
+Measured end state of the browser-timed replay at 56a008b4 (the red case): the late
+unit stands at gap 0.000 to `rear.small.3` and gap 0.14 to `front.small.3`, 1.6 from
+the point; the holder stands on the point.
+
+### Stale physical escape (defect repair, no rule change)
+
+A second cause had the same visible result in the first row. A physical escape is
+owed only while its trigger is true. Every production writer creates it from a body
+overlap (distance < r1 + r2 - 1.0e-5): `movement/plain.rs:407`,
+`movement/frame.rs:705`, `:737`, `:1978`. The sweep (`movement/sweep.rs`, `finish`)
+copied the escape of the start-of-tick row back to the output on each tick in which
+it clipped the proposed pose, with no test of the trigger. A unit in contact, whose
+proposal was refused on each tick, kept the escape without limit, and condition 1
+of the held clock excluded it.
+
+Repair: `finish` keeps the escape only when the certified pose overlaps a body of the
+start-of-tick frame, by the same predicate and tolerance. The exclusion of escaping
+units from the held clock stays. Tests: a clipped pose in contact does not bring back
+a discharged escape (red on the earlier build); a clipped pose that still overlaps
+keeps its escape (control); gate `gm3_feasible_opposing_shared_unique_and_movable_
+obstruction_complete` with unchanged expectations.
+
+Minor list (not in this change): why the late unit did not take a route around the
+stopped group to its private stop slot is NOT TRACED. A point beyond two gates, where
+gate 1 is packed and gate 2 leads to free space near the point: units at gate 1 stop
+outside, because the guard tests only local steps.

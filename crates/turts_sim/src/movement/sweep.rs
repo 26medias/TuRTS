@@ -293,6 +293,7 @@ pub(super) fn certify_guided(
                 proposed,
                 &mut outputs[index],
                 dt,
+                &mut budget.escape_keep_scans,
             );
             let old = points[index].position;
             points[index].position = origins[index];
@@ -660,10 +661,25 @@ pub(super) fn certify_guided(
             raw[index],
             &mut outputs[index],
             dt,
+            &mut budget.escape_keep_scans,
         );
     }
 }
 
+/// The overlap predicate and tolerance of the escape exit read
+/// (`frame::overlap_read`), on the start-of-tick rows. No output of this tick and
+/// no unit id enters the result. It runs only for a row that carries an escape
+/// and whose proposed pose was clipped.
+fn overlaps_at_start_of_tick(
+    frame: &MovementFrame,
+    actor: &MovementFrameUnit,
+    position: Vec2,
+) -> bool {
+    frame.units.iter().any(|other| {
+        other.unit_id != actor.unit_id
+            && position.distance(other.position) < actor.radius + other.radius - 1.0e-5
+    })
+}
 fn finish(
     frame: &MovementFrame,
     unit: &MovementFrameUnit,
@@ -671,6 +687,7 @@ fn finish(
     proposed: Vec2,
     output: &mut MovementFrameOutput,
     dt: f32,
+    escape_keep_scans: &mut u64,
 ) {
     let accepted = output.position;
     if accepted != proposed {
@@ -769,7 +786,19 @@ fn finish(
                 p.activity = MovementActivity::Moving;
             }
         }
-        if let Some(escape) = &original.physical_escape {
+        // An escape is owed only while its trigger is true. Every writer creates it
+        // from a body overlap, so a clipped pose keeps the original escape only when
+        // the certified pose still overlaps a body. Otherwise the discharge of the
+        // frame stands, and a body that only stands in contact can be held and stop.
+        // The group progress row follows the escape: when the frame discharged
+        // the escape it also dropped the old blocked progress (frame.rs, the exit
+        // read), and that row is not brought back here.
+        if let Some(escape) = &original.physical_escape
+            && {
+                *escape_keep_scans += 1;
+                overlaps_at_start_of_tick(frame, original, accepted)
+            }
+        {
             output.physical_escape = Some(PhysicalEscape {
                 target: escape.target.or(Some(proposed)),
             });
@@ -784,6 +813,50 @@ fn finish(
 mod tests {
     use super::*;
     use std::collections::BTreeMap;
+    /// A clipped pose of a row that carries an escape, next to one resting body.
+    fn clipped_escape(gap: f32, ids: [u32; 2]) -> Option<PhysicalEscape> {
+        let holder = body(ids[0], Vec2::new(10., 10.), 0.4, None);
+        let at = Vec2::new(10.8 + gap, 10.);
+        let proposed = at - Vec2::new(0.1, 0.);
+        let mut actor = body(ids[1], at, 0.4, Some(Vec2::new(10., 10.)));
+        actor.speed = Some(3.5);
+        actor.physical_escape = Some(PhysicalEscape { target: None });
+        let frame = MovementFrame {
+            recovery: Default::default(),
+            units: vec![holder, actor.clone()],
+            bounds: Vec2::splat(128.),
+            tick_hz: 20,
+            pools: BTreeMap::new(),
+        };
+        // The frame discharged the escape and the sweep refused the proposed pose.
+        let mut out = output(&actor, at);
+        out.physical_escape = None;
+        let mut scans = 0;
+        finish(&frame, &actor, at, proposed, &mut out, 0.05, &mut scans);
+        assert_eq!(
+            scans, 1,
+            "one counted scan for one clipped row with an escape"
+        );
+        assert_eq!(out.position, at);
+        out.physical_escape
+    }
+    #[test]
+    fn a_clipped_pose_in_contact_does_not_bring_back_a_discharged_escape() {
+        for ids in [[1, 2], [2, 1]] {
+            // Exact contact, and an overlap inside the 1.0e-5 tolerance of the exit read.
+            assert_eq!(clipped_escape(0., ids), None, "ids {ids:?}");
+            assert_eq!(clipped_escape(-4.0e-6, ids), None, "ids {ids:?}");
+        }
+    }
+    #[test]
+    fn a_clipped_pose_that_still_overlaps_keeps_its_escape() {
+        for ids in [[1, 2], [2, 1]] {
+            let kept = clipped_escape(-0.1, ids).expect("a real overlap is still owed");
+            // The refused proposal becomes the escape target, as before.
+            let proposed = Vec2::new(10.8 - 0.1, 10.) - Vec2::new(0.1, 0.);
+            assert_eq!(kept.target, Some(proposed), "ids {ids:?}");
+        }
+    }
     #[test]
     fn projected_raw_arrival_stays_within_speed_and_keeps_unfinished_order() {
         let from = Vec2::new(26.903395, 24.681269);

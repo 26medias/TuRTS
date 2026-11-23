@@ -70,6 +70,12 @@ pub struct NavigationDiagnostics {
     pub body_index_updates_this_tick: u64,
     pub body_index_update_entries_this_tick: u64,
     pub body_support_queries_this_tick: u64,
+    /// Start-of-tick overlap scans of clipped rows that carry an escape.
+    pub escape_keep_scans_this_tick: u64,
+    /// Packed stop (operator decision 2026-11-22).
+    pub packed_stop_visits_this_tick: u64,
+    pub packed_stops: u64,
+    pub packed_steps: u64,
     pub body_support_pairs_this_tick: u64,
     pub body_support_failures_this_tick: u64,
     pub body_support_accepted_members_this_tick: u64,
@@ -2504,6 +2510,10 @@ impl TerrainNavigation {
         d.body_index_update_entries_this_tick =
             self.diagnostics.body_index_update_entries_this_tick;
         d.body_support_queries_this_tick = self.diagnostics.body_support_queries_this_tick;
+        d.escape_keep_scans_this_tick = self.diagnostics.escape_keep_scans_this_tick;
+        d.packed_stop_visits_this_tick = self.diagnostics.packed_stop_visits_this_tick;
+        d.packed_stops = self.diagnostics.packed_stops;
+        d.packed_steps = self.diagnostics.packed_steps;
         d.body_support_pairs_this_tick = self.diagnostics.body_support_pairs_this_tick;
         d.body_support_failures_this_tick = self.diagnostics.body_support_failures_this_tick;
         d.body_support_accepted_members_this_tick =
@@ -2622,6 +2632,16 @@ impl TerrainNavigation {
     }
     pub(super) fn record_body_index(&mut self, budget: &crate::movement::sweep::SweepBudget) {
         self.diagnostics.body_support_queries_this_tick = budget.support_queries;
+        self.diagnostics.escape_keep_scans_this_tick = budget.escape_keep_scans;
+        self.diagnostics.packed_stop_visits_this_tick = budget.packed_stop_visits;
+        self.diagnostics.packed_stops = self
+            .diagnostics
+            .packed_stops
+            .saturating_add(budget.packed_stops);
+        self.diagnostics.packed_steps = self
+            .diagnostics
+            .packed_steps
+            .saturating_add(budget.packed_steps);
         self.diagnostics.body_support_pairs_this_tick = budget.support_pairs;
         self.diagnostics.body_support_failures_this_tick = budget.support_failures;
         self.diagnostics.body_support_accepted_members_this_tick = budget.support_accepted_members;

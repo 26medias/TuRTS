@@ -1,5 +1,6 @@
 //! Shared permitted terrain guidance before the existing authoritative movement solver.
 pub(crate) mod geometry;
+mod packed;
 mod shared;
 mod storage;
 use super::TerrainState;
@@ -1071,6 +1072,7 @@ pub(crate) fn step(
                 },
             );
         }
+        let mut packed_frame: Option<packed::PackedFrame<'_>> = None;
         for (index, ((original, constrained), output)) in frame
             .units
             .iter()
@@ -1096,29 +1098,72 @@ pub(crate) fn step(
                             })
                     })
                     .map(|endpoint| output.position.distance(endpoint));
-                if navigation.held_final_leg(
+                let clock = navigation.held_final_leg(
                     original.unit_id,
                     original.owner_slot,
                     held,
                     original.radius,
                     frame.tick_hz.max(1).saturating_mul(HELD_FINAL_LEG_SECONDS),
-                ) && (endpoint.is_some_and(|goal| {
-                    held_position_is_nearest(frame, original, output.position, goal)
-                }) || parking_public_goal(world, original, &navigation)
-                    .filter(|&goal| Some(goal) != endpoint)
-                    .is_some_and(|goal| {
-                        // A private slot does not replace the player's point. A
-                        // current holder at that point can prove this closest stop.
+                );
+                let public_goal = parking_public_goal(world, original, &navigation);
+                let first_row = clock
+                    && (endpoint.is_some_and(|goal| {
                         held_position_is_nearest(frame, original, output.position, goal)
-                            && permitted_clear(index, output.position, goal)
-                    }))
-                {
+                    }) || public_goal
+                        .filter(|&goal| Some(goal) != endpoint)
+                        .is_some_and(|goal| {
+                            // A private slot does not replace the player's point. A
+                            // current holder at that point can prove this closest stop.
+                            held_position_is_nearest(frame, original, output.position, goal)
+                                && permitted_clear(index, output.position, goal)
+                        }));
+                // Packed stop (operator decision 2026-11-22): a later row behind the
+                // holder. The point is the public Move point, never a private slot.
+                let packed = if clock && !first_row && output.position == original.position {
+                    public_goal
+                        .or(endpoint)
+                        .map_or(packed::PackedStop::NotApplicable, |point| {
+                            let mut spent = 0;
+                            let owner = original.owner_slot;
+                            let budget = &mut body_budget;
+                            let mut visits = 0;
+                            let result = packed::packed_stop(
+                                packed_frame.get_or_insert_with(|| packed::PackedFrame::new(frame)),
+                                original,
+                                point,
+                                &mut |from, to| permitted_clear(index, from, to),
+                                &mut || {
+                                    visits += 1;
+                                    budget.charge_guidance_pair(owner, &mut spent)
+                                },
+                            );
+                            budget.packed_stop_visits += visits;
+                            result
+                        })
+                } else {
+                    packed::PackedStop::NotApplicable
+                };
+                if first_row || packed == packed::PackedStop::Stop {
                     // Explicit physical arrival at the current certified pose.
                     output.target = None;
                     output.arrival_slot = Some(output.position);
                     if let Some(progress) = output.plain_progress.as_mut() {
                         progress.activity = crate::movement::MovementActivity::Resting;
                     }
+                    body_budget.packed_stops += u64::from(!first_row);
+                } else if let packed::PackedStop::Step(end) = packed
+                    && let Some(progress) = output.plain_progress.as_mut()
+                {
+                    // The guard: a free step nearer the point becomes the private stop
+                    // slot, as the spare-slot change of the plain mover. Ordinary
+                    // certified movement takes the unit there; the held clock restarts.
+                    progress.slot = end;
+                    progress.claim_count = progress.claim_count.saturating_add(1);
+                    progress.stalled_ticks = 0;
+                    progress.best_distance = output.position.distance(end);
+                    progress.activity = crate::movement::MovementActivity::Moving;
+                    output.target = Some(end);
+                    body_budget.packed_steps += 1;
                 }
             }
             if constrained.target == requested_target(original)

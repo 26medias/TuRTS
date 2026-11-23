@@ -36,6 +36,12 @@ pub(crate) struct SweepBudget {
     pub(crate) support_pairs: u64,
     pub(crate) support_failures: u64,
     pub(crate) support_accepted_members: u64,
+    /// Start-of-tick overlap scans that decide if a clipped row keeps its escape.
+    pub(crate) escape_keep_scans: u64,
+    /// Packed stop (operator decision 2026-11-22): charged row visits and results.
+    pub(crate) packed_stop_visits: u64,
+    pub(crate) packed_stops: u64,
+    pub(crate) packed_steps: u64,
     pub(crate) recovery: crate::movement::recovery::RecoveryCounters,
 }
 impl SweepBudget {
@@ -65,6 +71,10 @@ impl SweepBudget {
             support_pairs: 0,
             support_failures: 0,
             support_accepted_members: 0,
+            escape_keep_scans: 0,
+            packed_stop_visits: 0,
+            packed_stops: 0,
+            packed_steps: 0,
             recovery: Default::default(),
         }
     }

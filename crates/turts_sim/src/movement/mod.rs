@@ -45,7 +45,7 @@ mod recovery_oracle;
 #[path = "tests/recovery_tests.rs"]
 mod recovery_tests;
 pub(crate) mod recovery_view;
-mod route;
+pub(crate) mod route;
 mod search;
 mod spread;
 #[cfg(test)]

@@ -47,7 +47,7 @@ pub(super) const LOOK_AHEAD: f32 = 8.0;
 /// stops a mover that steps at the same body, so a route gets no fact beyond physical contact.
 /// The rule keeps no memory: a body that no body of the owner touches any more is unknown
 /// again. `exchange::spend_discovery` bounds the steps that find such a body.
-pub(super) const CONTACT_GAP: f32 = 0.1 + 1.0e-3;
+pub(crate) const CONTACT_GAP: f32 = 0.1 + 1.0e-3;
 
 type Node = (i32, i32);
 
