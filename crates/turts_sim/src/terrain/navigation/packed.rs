@@ -292,6 +292,7 @@ pub(super) fn packed_stop(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::movement::sweep::SweepBudget;
     use std::collections::BTreeMap;
 
     const R: f32 = 0.4;
@@ -463,8 +464,38 @@ mod tests {
         }
         let actor = body(900, 0, POINT + Vec2::new(-4.8, 0.), Some(POINT));
         units.push(actor.clone());
-        assert_eq!(decide(units.clone(), &actor), PackedStop::Stop);
-        // A refused charge leaves the earlier rules in force.
+        // The real allowance: `SweepBudget::charge_guidance_pair`, as the caller in
+        // `navigation.rs` charges it (PAIRS_PER_ACTOR for the unit, half of the
+        // owner's pair credit for the owner).
+        let world = frame(units.clone());
+        let charged = |budget: &mut SweepBudget| {
+            let (mut spent, mut visits) = (0, 0usize);
+            let result = packed_stop(
+                &mut PackedFrame::new(&world),
+                &actor,
+                POINT,
+                &mut |_, _| true,
+                &mut || {
+                    visits += 1;
+                    budget.charge_guidance_pair(actor.owner_slot, &mut spent)
+                },
+            );
+            (result, visits, spent)
+        };
+        let mut budget = SweepBudget::new(0);
+        let (result, visits, spent) = charged(&mut budget);
+        println!("121-body pack: {visits} charges, {spent} accepted by the real allowance");
+        assert_eq!(result, PackedStop::Stop);
+        assert_eq!(visits, spent);
+        assert_eq!(budget.pairs[0], spent);
+        // A refused charge leaves the earlier rules in force: an owner with less
+        // credit left than the pack needs gets no stop on this tick.
+        let mut short = SweepBudget::new(0);
+        while short.charge_guidance_pair(0, &mut 0) {}
+        short.pairs[0] -= spent - 1;
+        let (refused, _, accepted) = charged(&mut short);
+        assert_eq!(refused, PackedStop::NotApplicable);
+        assert_eq!(accepted, spent - 1);
         let refused = decide_with(units, &actor, &mut |_, _| true, 40);
         assert_eq!(refused, PackedStop::NotApplicable);
     }

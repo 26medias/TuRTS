@@ -400,15 +400,29 @@ earlier rules in force for that tick. The pack has no fixed size limit: only the
 work allowance bounds it. The pack visits are recorded in the navigation
 diagnostics and in the GM7 work rows.
 
+Known limit of the allowance: the allowance is `SweepBudget::charge_guidance_pair`
+(4096 charges for one unit and tick, and half of the pair credit of the owner). A
+pack whose build is refused falls back to the earlier rules on each tick while the
+refusal holds: the unit stays `Blocked` and does not stop. Measured: a square pack of
+121 bodies and one late unit use 430 charges (test
+`a_large_pack_is_bounded_by_the_work_allowance_only`, which uses the real allowance).
+
 Acceptance (added to GM3, nothing removed). Each test names the build where it is red:
 
 - Second-row stop: a fixture with a holder, a packed first row and one late unit in
   contact behind it, no free step. Red before the rule (the unit stays `Blocked`),
   green after. The replay `gm3_browser_delayed_rear_group_at_a_held_point_completes`
   is red at 56a008b4 and green on the repaired build.
-- Guard: the same fixture with a free gap nearer the point. The late unit reaches the
-  gap within 200 ticks and does not stop at first contact. Red when the guard is
-  removed. Control: with the gap closed the unit stops at contact.
+- Guard, decision function: a holder, one pack body and a late unit in contact from
+  the side, with a free place beside the holder. The result is a step nearer the
+  point, not a stop (`a_free_gap_nearer_the_point_must_be_reached_first`). Red when
+  the guard is removed. Control: with the place closed the unit stops at contact.
+- Guard, full simulation: `gm3_late_unit_reaches_the_free_place_beside_the_holder`.
+  Ordinary Move orders build a holder, a wall of three resting bodies and a late unit.
+  The late unit completes in contact with the holder, in all four ID variants. Red on
+  a build that stops the unit at first contact with the pack (it completes 1.53 from
+  the point, behind the wall). In this scene the ordinary mover walks around the
+  wall, so the held clock (condition 1) does not complete and the rule does not fire.
 - Terrain (condition 4): a unit held by a cliff edge with one pack body in contact at
   a shallow angle ahead does not stop. Red when condition 4 is removed.
 - Condition 3 boundaries, one test each, red when the boundary is removed: a pack of
@@ -457,4 +471,11 @@ line still makes one fresh certificate on each tick, as before this repair.
 Minor list (not in this change): why the late unit did not take a route around the
 stopped group to its private stop slot is NOT TRACED. A point beyond two gates, where
 gate 1 is packed and gate 2 leads to free space near the point: units at gate 1 stop
-outside, because the guard tests only local steps.
+outside, because the guard tests only local steps. For the same cause, the guard
+does not find a place that needs a walk around the pack: only the held clock
+(condition 1) prevents a stop while the ordinary mover makes progress. When the
+ordinary mover is wedged for 3 seconds in contact with the pack, the unit stops
+there, also if a walk around the pack leads to a nearer place. Native reproductions
+of the wedge, on ce686989 and on this build (same pose): in `GM3-shared-and-unique`,
+with no other order, a Move of `rear.small.2` to (6, 10) stays `Blocked` at
+(18.80, 26.93) between two resting friendly units for 2400 ticks or more.

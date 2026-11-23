@@ -681,6 +681,101 @@ fn gm3_browser_delayed_rear_group_at_a_held_point_completes() {
     f.require_complete(&all);
 }
 
+/// Guard of the packed stop (operator decision 2026-11-22): a free place nearer the
+/// point must be reached. Only ordinary Move orders build the scene: a holder on the
+/// point, a wall of three resting friendly bodies on its west side, and a late unit
+/// that comes from the west. The other sides of the holder are free.
+#[test]
+fn gm3_late_unit_reaches_the_free_place_beside_the_holder() {
+    use turts_sim::Vec2;
+    const POINT: Vec2 = Vec2::new(12., 10.);
+    const WALL: [(&str, Vec2); 3] = [
+        ("rear.small.1", Vec2::new(-0.85, 0.)),
+        ("rear.small.3", Vec2::new(-0.5, 0.8)),
+        ("rear.small.4", Vec2::new(-0.5, -0.8)),
+    ];
+    const HOLDER: &str = "rear.small.0";
+    const LATE: &str = "rear.small.2";
+    for variant in VARIANTS {
+        let mut f = Fixture::new("quarry", "GM3-shared-and-unique", variant);
+        f.commands.clear();
+        let mut group = 10;
+        let mut go = |f: &mut Fixture, label: &str, to: Vec2| {
+            group += 1;
+            let one = [label.to_string()];
+            let envelope = f.envelope(
+                "order_move",
+                &one,
+                point(to.x, to.y),
+                QueueMode::Replace,
+                group,
+            );
+            f.send(0, envelope);
+        };
+        let settle = |f: &mut Fixture, label: &str| {
+            let end = f.tick + 400;
+            while !(f.tick > 0 && f.complete(label)) {
+                assert!(
+                    f.tick < end,
+                    "{label} did not settle: {:?} order {:?} tick {}",
+                    f.position(label),
+                    f.order(label),
+                    f.tick
+                );
+                step(f);
+            }
+        };
+        go(&mut f, HOLDER, POINT);
+        step(&mut f);
+        settle(&mut f, HOLDER);
+        for (label, offset) in WALL {
+            go(&mut f, label, POINT + offset);
+            step(&mut f);
+            settle(&mut f, label);
+            assert!(f.position(label).distance(POINT + offset) <= 1.0e-4);
+        }
+        // The late unit leaves its start row only after its neighbours left it.
+        go(&mut f, LATE, POINT + Vec2::new(-6., 0.));
+        step(&mut f);
+        settle(&mut f, LATE);
+        assert_eq!(f.position(HOLDER), POINT);
+        let radius = f.actor(LATE).profile.radius;
+        let contact = 2. * radius + 0.101;
+        go(&mut f, LATE, POINT);
+        step(&mut f);
+        let end = f.tick + 600;
+        while !f.complete(LATE) {
+            assert!(f.tick < end, "the late unit did not complete");
+            step(&mut f);
+        }
+        let stop = f.position(LATE);
+        let d = turts_sim::terrain::privileged_navigation_audit(f.app.world()).diagnostics;
+        eprintln!(
+            "guard a{} m{}: tick {} stop {:?} distance {} packed_stops {} packed_steps {}",
+            variant.allocation as u8,
+            variant.members as u8,
+            f.tick,
+            stop - POINT,
+            stop.distance(POINT),
+            d.packed_stops,
+            d.packed_steps
+        );
+        // Arrival at the free place: the unit ended in contact with the holder. A stop
+        // behind the wall (distance 1.65 or more) is a premature completion.
+        assert!(
+            stop.distance(POINT) <= contact,
+            "a{} m{}: the late unit completed {} from the point, behind the wall",
+            variant.allocation as u8,
+            variant.members as u8,
+            stop.distance(POINT)
+        );
+        for (label, offset) in WALL {
+            assert!(f.position(label).distance(POINT + offset) <= 1.0e-4);
+        }
+        assert_eq!(f.position(HOLDER), POINT);
+    }
+}
+
 #[test]
 fn gm2_browser_projected_destination_and_delayed_orders_complete() {
     let mut f = Fixture::new("quarry", "GM2-narrow", VARIANTS[0]);
