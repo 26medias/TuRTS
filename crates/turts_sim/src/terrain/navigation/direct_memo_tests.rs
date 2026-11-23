@@ -285,3 +285,144 @@ fn direct_memo_matches_fresh_certificates_on_a_real_movement_tape() {
     assert!(cached.diagnostics.direct_query_cache_hits > 20);
     assert_eq!(frames[0].units[0].position, a.endpoint);
 }
+
+/// A broken band in columns 2..=4. A sweep from column 1 to column 6 is
+/// refused by the geometry (partial sweep); columns 5..=7 stay flat.
+fn refused_band() -> (Terrain, Vec2) {
+    let mut t = Terrain::flat();
+    for y in 0..8 {
+        for x in 2..=4 {
+            if (x + y) % 2 == 0 {
+                t.observe(Cell { x, y }, 1);
+            }
+        }
+    }
+    (t, Vec2::new(6.5, 1.5))
+}
+
+#[test]
+fn direct_refusal_is_swept_once_for_each_member_while_it_stays_in_one_cell() {
+    const MEMBERS: usize = 3;
+    const TICKS: usize = 5;
+    let (t, endpoint) = refused_band();
+    let mut n = ViewerNavigation::default();
+    let mut members: Vec<Member> = (0..MEMBERS)
+        .map(|_| {
+            let mut m = member();
+            m.endpoint = endpoint;
+            m
+        })
+        .collect();
+    let mut reads_after_first_tick = 0;
+    for tick in 0..TICKS {
+        n.diagnostics.edge_checks_this_tick = 0;
+        for (index, m) in members.iter_mut().enumerate() {
+            // Each tick has a new exact pose inside cell (1, 1).
+            let from = Vec2::new(1.2 + 0.05 * tick as f32, 1.2 + 0.1 * index as f32);
+            assert_eq!(n.direct_query(m, &t, from, endpoint), Certificate::Pending);
+            assert!(m.direct_query.is_none(), "a refusal is not an exact result");
+        }
+        // A hit takes the same edge quota as a fresh query.
+        assert_eq!(n.diagnostics.edge_checks_this_tick, MEMBERS);
+        if tick == 0 {
+            reads_after_first_tick = t.reads.get();
+        }
+    }
+    assert_eq!(
+        n.diagnostics.direct_query_cache_misses, MEMBERS as u64,
+        "one sweep for each member, not one for each member and tick"
+    );
+    assert_eq!(
+        n.diagnostics.direct_query_cache_hits,
+        (MEMBERS * (TICKS - 1)) as u64
+    );
+    assert_eq!(
+        t.reads.get(),
+        reads_after_first_tick,
+        "a hit reran geometry"
+    );
+}
+
+#[test]
+fn direct_refusal_ends_at_the_first_query_from_another_cell() {
+    let (t, endpoint) = refused_band();
+    let mut n = ViewerNavigation::default();
+    let mut m = member();
+    m.endpoint = endpoint;
+    for x in [1.2, 1.6] {
+        assert_eq!(
+            n.direct_query(&mut m, &t, Vec2::new(x, 1.5), endpoint),
+            Certificate::Pending
+        );
+    }
+    assert_eq!(n.diagnostics.direct_query_cache_misses, 1);
+    assert_eq!(n.diagnostics.direct_query_cache_hits, 1);
+    // The first pose in a new cell asks the geometry again: the line is clear there.
+    assert_eq!(
+        n.direct_query(&mut m, &t, Vec2::new(5.5, 1.5), endpoint),
+        Certificate::Clear
+    );
+    assert_eq!(n.diagnostics.direct_query_cache_misses, 2);
+    assert!(m.direct_refusal.is_none());
+}
+
+#[test]
+fn direct_refusal_ends_with_each_other_input() {
+    let (mut t, endpoint) = refused_band();
+    let mut n = ViewerNavigation::default();
+    let mut m = member();
+    m.endpoint = endpoint;
+    let from = Vec2::new(1.5, 1.5);
+    let mut misses = 0;
+    let mut fresh = |n: &mut ViewerNavigation, m: &mut Member, t: &Terrain, to: Vec2| {
+        assert_eq!(n.direct_query(m, t, from, to), Certificate::Pending);
+        misses += 1;
+        assert_eq!(n.diagnostics.direct_query_cache_misses, misses);
+    };
+    fresh(&mut n, &mut m, &t, endpoint);
+    fresh(&mut n, &mut m, &t, endpoint + Vec2::new(0.0, 0.1));
+    m.radius = 0.25f32.to_bits();
+    fresh(&mut n, &mut m, &t, endpoint + Vec2::new(0.0, 0.1));
+    m.epoch += 1;
+    fresh(&mut n, &mut m, &t, endpoint + Vec2::new(0.0, 0.1));
+    // A terrain change outside the lease still ends the refusal (terrain epoch).
+    t.observe(Cell { x: 7, y: 7 }, 1);
+    fresh(&mut n, &mut m, &t, endpoint + Vec2::new(0.0, 0.1));
+}
+
+#[test]
+fn a_resource_refusal_is_asked_again_on_the_next_tick() {
+    let (t, endpoint) = refused_band();
+    let mut n = ViewerNavigation::default();
+    let mut m = member();
+    m.endpoint = endpoint;
+    let from = Vec2::new(1.5, 1.5);
+    // No memory for the lease rows: a transient refusal, never retained.
+    m.direct = Vec::new();
+    n.member_buffer_bytes = MAX_BYTES;
+    for expected in 1..=2 {
+        assert_eq!(
+            n.direct_query(&mut m, &t, from, endpoint),
+            Certificate::Pending
+        );
+        assert!(
+            m.direct_refusal.is_none(),
+            "a resource refusal was retained"
+        );
+        assert_eq!(n.diagnostics.direct_query_cache_misses, expected);
+    }
+    // The edge quota is transient too.
+    n.member_buffer_bytes = 0;
+    n.diagnostics.edge_checks_this_tick = MAX_EDGES;
+    assert_eq!(
+        n.direct_query(&mut m, &t, from, endpoint),
+        Certificate::Pending
+    );
+    assert!(m.direct_refusal.is_none());
+    n.diagnostics.edge_checks_this_tick = 0;
+    assert_eq!(
+        n.direct_query(&mut m, &t, from, endpoint),
+        Certificate::Pending
+    );
+    assert_eq!(n.diagnostics.direct_query_cache_misses, 3);
+}

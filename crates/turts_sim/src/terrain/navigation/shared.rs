@@ -2,7 +2,9 @@
 #[path = "waypoint.rs"]
 mod waypoint;
 use super::super::traffic::{DestinationRegion, SCRATCH_BYTES as TRAFFIC_BYTES, TrafficState};
-use super::geometry::{Certificate, Planning, TerrainRead, bits, certify};
+use super::geometry::{
+    Certificate, GEOMETRY_BUDGET, Planning, TerrainRead, bits, certify, certify_with_refusal, point,
+};
 use super::storage::{Frontier, Index, PAGE_BYTES, QueueRow, Sparse, Vertex, index_bytes, pages};
 use crate::movement::{MovementFrame, MovementFrameUnit};
 use bevy_ecs::{prelude::Resource, world::World};
@@ -36,6 +38,10 @@ pub struct NavigationDiagnostics {
     pub direct_query_cache_hits: u64,
     /// Direct queries that actually invoke the geometric certificate.
     pub direct_query_cache_misses: u64,
+    /// Fresh direct queries put off to a later tick by the per-tick work limit.
+    pub direct_query_deferrals: u64,
+    /// Geometry operations of the fresh direct queries of this tick.
+    pub direct_query_work_this_tick: usize,
     pub invalidations: u64,
     pub solver_retries: u64,
     pub budget_waits: u64,
@@ -729,8 +735,36 @@ struct DirectQueryMemo {
     key: DirectQueryKey,
     result: Certificate,
 }
+/// Geometry operations that the fresh direct queries of the members of one order
+/// with no clear direct line can start in one tick. The limit is in operations, never in time, so it is deterministic.
+/// The last admitted query can finish above it by one certificate at most.
+const DIRECT_QUERY_WORK: usize = 4 * GEOMETRY_BUDGET;
+/// Orders with their own work account in one tick. Further orders share the last row.
+const DIRECT_ORDER_ROWS: usize = 8;
+/// The limited direct-query work of one order in one tick.
+#[derive(Clone, Copy, Default)]
+struct DirectOrderAccount {
+    used: bool,
+    order: u64,
+    work: usize,
+    /// One or more members of the order were put off in this tick.
+    put_off: bool,
+}
+/// One admitted geometry refusal of the direct line. It holds until the unit
+/// leaves the cell of the refused start, or any other input changes. A refused
+/// long segment is not swept again on each tick from a slightly different pose.
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct DirectRefusalMemo {
+    from_cell: [u32; 2],
+    to: [u32; 2],
+    radius: u32,
+    profile: Traversal,
+    viewer: u8,
+    order_epoch: u64,
+    terrain_epoch: u64,
+}
 // Inline storage is charged by index_bytes/member admission, with no new heap.
-const _: () = assert!(size_of::<DirectQueryMemo>() <= 128);
+const _: () = assert!(size_of::<DirectQueryMemo>() + size_of::<DirectRefusalMemo>() <= 128);
 #[derive(Clone, Copy)]
 struct ParkingScope {
     region: DestinationRegion,
@@ -773,6 +807,9 @@ struct Member {
     connector_cursor: usize,
     direct: Vec<(usize, u64)>,
     direct_query: Option<DirectQueryMemo>,
+    direct_refusal: Option<DirectRefusalMemo>,
+    /// The last tick in which this member ran a limited fresh direct query.
+    direct_turn: Option<u32>,
     contact: Vec<(usize, u64)>,
     contact_epoch: u64,
     contact_validation_epoch: u64,
@@ -847,6 +884,8 @@ impl Member {
             connector_cursor: 0,
             direct: Vec::new(),
             direct_query: None,
+            direct_refusal: None,
+            direct_turn: None,
             contact: Vec::new(),
             contact_epoch: 0,
             contact_validation_epoch: 0,
@@ -886,6 +925,11 @@ struct ViewerNavigation {
     owner_changes: Vec<(u32, u8)>,
     pub(super) diagnostics: NavigationDiagnostics,
     small_retired_bytes: usize,
+    /// Work of the limited fresh direct queries of this tick, for each order.
+    /// The last row collects every further order. Inline: no heap.
+    direct_order_work: [DirectOrderAccount; DIRECT_ORDER_ROWS],
+    /// The accounts of the tick before: who was put off decides who yields now.
+    direct_order_before: [DirectOrderAccount; DIRECT_ORDER_ROWS],
     member_buffer_bytes: usize,
     cancellation_overflow: bool,
 }
@@ -938,10 +982,21 @@ impl ViewerNavigation {
         if self.tick == Some(tick) {
             return;
         }
+        let consecutive = self
+            .tick
+            .is_some_and(|last| last.checked_add(1) == Some(tick));
         self.tick = Some(tick);
         self.small_retired_bytes = 0;
+        // Accounts of a tick that is not the tick before give no turn order.
+        self.direct_order_before = if consecutive {
+            self.direct_order_work
+        } else {
+            Default::default()
+        };
+        self.direct_order_work = Default::default();
         self.diagnostics.expansions_this_tick = 0;
         self.diagnostics.edge_checks_this_tick = 0;
+        self.diagnostics.direct_query_work_this_tick = 0;
         self.diagnostics.admission_entries_this_tick = 0;
         self.diagnostics.invalidation_entries_this_tick = 0;
         self.diagnostics.retired_pages_this_tick = 0;
@@ -1002,6 +1057,7 @@ impl ViewerNavigation {
                 member.viewer = viewer;
             }
             member.direct_query = None;
+            member.direct_refusal = None;
             let buffer = std::mem::take(&mut member.direct);
             let contact = std::mem::take(&mut member.contact);
             member.contact_invalidated = false;
@@ -1172,6 +1228,7 @@ impl ViewerNavigation {
             if !terrain.lease_matches(key, revision) {
                 member.direct.clear();
                 member.direct_query = None;
+                member.direct_refusal = None;
                 member.seed = None;
                 member.connector = None;
                 member.connector_cursor = 0;
@@ -1194,12 +1251,25 @@ impl ViewerNavigation {
         from: Vec2,
         to: Vec2,
     ) -> Certificate {
+        self.member_query_with_refusal(member, terrain, from, to).0
+    }
+    /// As `member_query`. The flag is true only for a geometry refusal whose
+    /// complete lease was admitted. Quota, revision, capacity and memory
+    /// refusals are transient and are never flagged.
+    fn member_query_with_refusal(
+        &mut self,
+        member: &mut Member,
+        terrain: &impl TerrainRead,
+        from: Vec2,
+        to: Vec2,
+    ) -> (Certificate, bool, usize) {
+        const TRANSIENT: (Certificate, bool, usize) = (Certificate::Pending, false, 0);
         if self.diagnostics.edge_checks_this_tick >= MAX_EDGES {
-            return Certificate::Pending;
+            return TRANSIENT;
         }
         self.diagnostics.edge_checks_this_tick += 1;
         let mut lease = BTreeMap::new();
-        let result = certify(
+        let result = certify_with_refusal(
             terrain,
             from,
             to,
@@ -1207,23 +1277,25 @@ impl ViewerNavigation {
             member.profile,
             &mut lease,
         );
+        // A transient refusal after the geometry still reports the work that it used.
+        let spent = (Certificate::Pending, false, result.2);
         // A member owns at most one 64KiB page of dependency rows. Reserve before growth;
         // rejected partial certificates can never activate guidance without their leases.
         let mut additions = 0;
         for (&key, &revision) in &lease {
             match member.direct.binary_search_by_key(&key, |row| row.0) {
-                Ok(i) if member.direct[i].1 != revision => return Certificate::Pending,
+                Ok(i) if member.direct[i].1 != revision => return spent,
                 Ok(_) => {}
                 Err(_) => additions += 1,
             }
         }
         let length = member.direct.len() + additions;
         if length > 4096 {
-            return Certificate::Pending;
+            return spent;
         }
         let extra = length.saturating_sub(member.direct.capacity()) * size_of::<(usize, u64)>();
         if extra > self.available() || (extra > 0 && self.retiring()) {
-            return Certificate::Pending;
+            return spent;
         }
         member
             .direct
@@ -1264,16 +1336,89 @@ impl ViewerNavigation {
                 self.diagnostics.direct_query_cache_hits.saturating_add(1);
             return memo.result;
         }
+        let refusal =
+            terrain
+                .grid()
+                .point_to_cell(point(from))
+                .ok()
+                .map(|cell| DirectRefusalMemo {
+                    from_cell: [cell.x, cell.y],
+                    to: key.to,
+                    radius: key.radius,
+                    profile: key.profile,
+                    viewer: key.viewer,
+                    order_epoch: key.order_epoch,
+                    terrain_epoch: terrain.epoch(),
+                });
+        if refusal.is_some() && member.direct_refusal == refusal {
+            // The caller reads only `== Clear`. A hit takes the same edge
+            // quota as a fresh query, so the service of other members is equal.
+            self.diagnostics.edge_checks_this_tick += 1;
+            self.diagnostics.direct_query_cache_hits =
+                self.diagnostics.direct_query_cache_hits.saturating_add(1);
+            return Certificate::Pending;
+        }
+        // A member whose last direct line was clear is always served: its route must
+        // not change because other members used the work of this tick. The limit
+        // applies to members with no clear line (a new order, or an earlier refusal).
+        let limited = !member
+            .direct_query
+            .is_some_and(|memo| memo.result == Certificate::Clear);
+        // Each order has its own account: a large order cannot put off the direct
+        // query of a unit of another order. The members of one group order have the
+        // same acceptance tick and the same destination goal; a member with no
+        // destination region is alone with its endpoint. An equal key of two orders
+        // only makes them share one account.
+        let goal = member
+            .parking_scope
+            .map_or(member.endpoint, |scope| scope.region.goal);
+        let order = (u64::from(member.accepted) << 32)
+            ^ u64::from(goal.x.to_bits())
+            ^ (u64::from(goal.y.to_bits()) << 16);
+        let account = self
+            .direct_order_work
+            .iter()
+            .position(|row| !row.used || row.order == order)
+            .unwrap_or(DIRECT_ORDER_ROWS - 1);
+        if limited {
+            // Turns: when members of this order were put off in the tick before, a
+            // member that ran then yields now. So the limit reaches every member in
+            // a bounded number of ticks and no member is put off without end.
+            let yields = member.direct_turn.is_some()
+                && member.direct_turn.and_then(|turn| turn.checked_add(1)) == self.tick
+                && self
+                    .direct_order_before
+                    .iter()
+                    .any(|row| row.used && row.order == order && row.put_off);
+            let row = &mut self.direct_order_work[account];
+            (row.used, row.order) = (true, order);
+            if yields || row.work >= DIRECT_QUERY_WORK {
+                // This member runs no geometry now and asks again on the next tick.
+                row.put_off = true;
+                self.diagnostics.edge_checks_this_tick += 1;
+                self.diagnostics.direct_query_deferrals =
+                    self.diagnostics.direct_query_deferrals.saturating_add(1);
+                return Certificate::Pending;
+            }
+            member.direct_turn = self.tick;
+        }
         self.diagnostics.direct_query_cache_misses =
             self.diagnostics.direct_query_cache_misses.saturating_add(1);
-        let result = self.member_query(member, terrain, from, to);
+        let (result, geometry_refusal, work) =
+            self.member_query_with_refusal(member, terrain, from, to);
+        if limited {
+            self.diagnostics.direct_query_work_this_tick += work;
+            self.direct_order_work[account].work += work;
+        }
         // member_query returns Clear/Blocked only after admitting its complete
-        // local lease. Pending includes arithmetic/geometry uncertainty and
-        // resource refusal; none of those results is retained.
+        // local lease. Those results are retained for the exact key. An admitted
+        // geometry refusal is retained for the start cell. Unknown terrain and
+        // every resource refusal are never retained: the next tick asks again.
         member.direct_query = match result {
             Certificate::Clear | Certificate::Blocked => Some(DirectQueryMemo { key, result }),
             Certificate::Pending => None,
         };
+        member.direct_refusal = refusal.filter(|_| geometry_refusal);
         result
     }
     fn guide(
@@ -2328,6 +2473,10 @@ impl TerrainNavigation {
             d.pending += s.pending;
             d.expansions_this_tick += s.expansions_this_tick;
             d.edge_checks_this_tick += s.edge_checks_this_tick;
+            d.direct_query_work_this_tick += s.direct_query_work_this_tick;
+            d.direct_query_deferrals = d
+                .direct_query_deferrals
+                .saturating_add(s.direct_query_deferrals);
             d.admission_entries_this_tick += s.admission_entries_this_tick;
             d.invalidation_entries_this_tick += s.invalidation_entries_this_tick;
             d.retired_pages_this_tick += s.retired_pages_this_tick;
@@ -3177,6 +3326,8 @@ mod tests {
                 connector_cursor: 0,
                 direct: Vec::new(),
                 direct_query: None,
+                direct_refusal: None,
+                direct_turn: None,
                 contact: Vec::new(),
                 contact_epoch: 0,
                 contact_validation_epoch: 0,

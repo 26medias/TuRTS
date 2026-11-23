@@ -9,7 +9,7 @@ use turts_rules::terrain::{
     Ratio,
     geometry::{Budget, Cell, Error, Grid, Point, Surface, Traversal},
 };
-const GEOMETRY_BUDGET: usize = 16_384;
+pub(super) const GEOMETRY_BUDGET: usize = 16_384;
 const MAX_QUERY_LEASES: usize = 4096;
 pub(super) trait TerrainRead: Surface {
     fn epoch(&self) -> u64 {
@@ -134,24 +134,54 @@ pub(super) fn certify(
     profile: Traversal,
     lease: &mut BTreeMap<usize, u64>,
 ) -> Certificate {
+    certify_with_refusal(terrain, from, to, radius, profile, lease).0
+}
+/// As `certify`. The flag is true when a `Pending` result is a refusal of the
+/// geometry itself (work budget, arithmetic uncertainty, or a partial sweep).
+/// Such a refusal is a pure function of the inputs and the permitted terrain.
+/// A `Pending` from unknown terrain is not flagged: knowledge can arrive.
+/// The last value is the geometry work that the query used.
+pub(super) fn certify_with_refusal(
+    terrain: &impl TerrainRead,
+    from: Vec2,
+    to: Vec2,
+    radius: f32,
+    profile: Traversal,
+    lease: &mut BTreeMap<usize, u64>,
+) -> (Certificate, bool, usize) {
+    let mut budget = Budget::new(GEOMETRY_BUDGET);
+    let (result, refusal) =
+        certify_budgeted(terrain, from, to, radius, profile, lease, &mut budget);
+    // The work is counted in geometry operations, never in time.
+    (result, refusal, GEOMETRY_BUDGET - budget.remaining())
+}
+fn certify_budgeted(
+    terrain: &impl TerrainRead,
+    from: Vec2,
+    to: Vec2,
+    radius: f32,
+    profile: Traversal,
+    lease: &mut BTreeMap<usize, u64>,
+    budget: &mut Budget,
+) -> (Certificate, bool) {
     if !radius.is_finite() || radius <= 0.0 || !from.is_finite() || !to.is_finite() {
-        return Certificate::Blocked;
+        return (Certificate::Blocked, false);
     }
     let tracked = Tracked {
         terrain,
         lease: RefCell::new(lease),
     };
-    let mut budget = Budget::new(GEOMETRY_BUDGET);
     let classify = |error| match error {
-        Error::Budget | Error::Uncertain | Error::Unknown(_) => Certificate::Pending,
-        _ => Certificate::Blocked,
+        Error::Budget | Error::Uncertain => (Certificate::Pending, true),
+        Error::Unknown(_) => (Certificate::Pending, false),
+        _ => (Certificate::Blocked, false),
     };
     let first = match terrain.grid().disk_support(
         &tracked,
         point(from),
         f64::from(radius),
         profile.max_step,
-        &mut budget,
+        budget,
     ) {
         Ok(value) => value,
         Err(error) => return classify(error),
@@ -161,7 +191,7 @@ pub(super) fn certify(
         point(to),
         f64::from(radius),
         profile.max_step,
-        &mut budget,
+        budget,
     ) {
         Ok(value) => value,
         Err(error) => return classify(error),
@@ -181,7 +211,7 @@ pub(super) fn certify(
     if area <= MAX_QUERY_LEASES as u64
         && terrain.rectangle(minimum, maximum, &mut tracked.lease.borrow_mut())
     {
-        return Certificate::Clear;
+        return (Certificate::Clear, false);
     }
     let result = terrain.grid().sweep(
         &tracked,
@@ -189,11 +219,11 @@ pub(super) fn certify(
         point(to),
         f64::from(radius),
         profile,
-        &mut budget,
+        budget,
     );
     match result.result {
-        Ok(()) if result.numerator == result.denominator => Certificate::Clear,
-        Ok(()) => Certificate::Pending,
+        Ok(()) if result.numerator == result.denominator => (Certificate::Clear, false),
+        Ok(()) => (Certificate::Pending, true),
         Err(error) => classify(error),
     }
 }
