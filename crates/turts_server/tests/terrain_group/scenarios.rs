@@ -776,6 +776,123 @@ fn gm3_late_unit_reaches_the_free_place_beside_the_holder() {
     }
 }
 
+/// Packed stop behind the holder (operator decision 2026-11-22), in a full simulation.
+/// Only ordinary Move orders are used, and the frozen scene is not changed. The large
+/// unit `rear.large.2` rests on the point, so it is the holder. The start rows of the
+/// small units stand around it as stopped friendly bodies.
+/// 1. `rear.small.3` is boxed out in contact with the holder: its move ends there.
+/// 2. `rear.small.0` is boxed out in a later row, in contact with a pack body and not
+///    with the holder: its move ends there. This is the second-row case.
+/// 3. Control: `rear.small.2` has a free way. It reaches the holder by the earlier rules
+///    and the packed stop does not run.
+///
+/// Without the packed stop, units 1 and 2 stay `Blocked` and this test is red.
+#[test]
+fn gm3_packed_stop_ends_boxed_out_moves_in_the_first_and_in_a_later_row() {
+    use turts_sim::Vec2;
+    const POINT: Vec2 = Vec2::new(17.3, 27.0);
+    const HOLDER: &str = "rear.large.2";
+    const DEADLINE: u32 = 400;
+    const CONTACT: f32 = 0.101;
+    let mut poses = Vec::new();
+    for variant in VARIANTS {
+        let mut f = Fixture::new("quarry", "GM3-shared-and-unique", variant);
+        f.commands.clear();
+        let name = format!("a{} m{}", variant.allocation as u8, variant.members as u8);
+        let start: BTreeMap<String, Vec2> = f
+            .labels(|_| true)
+            .into_iter()
+            .map(|label| (label.clone(), f.position(&label)))
+            .collect();
+        let gap = |f: &Fixture, a: &str, b: &str| {
+            f.position(a).distance(f.position(b))
+                - f.actor(a).profile.radius
+                - f.actor(b).profile.radius
+        };
+        let stops = |f: &Fixture| {
+            let d = turts_sim::terrain::privileged_navigation_audit(f.app.world()).diagnostics;
+            assert_eq!(d.packed_steps, 0, "{name}: no guard step is expected");
+            d.packed_stops
+        };
+        let mut group = 10;
+        let mut order = |f: &mut Fixture, label: &str| {
+            group += 1;
+            let one = [label.to_string()];
+            let envelope = f.envelope(
+                "order_move",
+                &one,
+                point(POINT.x, POINT.y),
+                QueueMode::Replace,
+                group,
+            );
+            f.send(0, envelope);
+            let end = f.tick + DEADLINE;
+            step(f);
+            while !f.complete(label) {
+                assert!(
+                    f.tick < end,
+                    "{name} tick{}: {label} did not complete: {:?} at {:?}",
+                    f.tick,
+                    f.order(label),
+                    f.position(label)
+                );
+                step(f);
+            }
+        };
+        // The holder occupies the point: a small unit cannot stand on it.
+        assert!(
+            f.position(HOLDER).distance(POINT)
+                < f.actor(HOLDER).profile.radius + f.actor("rear.small.3").profile.radius
+        );
+
+        // 1. First row: contact with the holder, boxed by a stopped friendly body.
+        order(&mut f, "rear.small.3");
+        assert_eq!(stops(&f), 1, "{name}: the first stop is a packed stop");
+        let first = gap(&f, "rear.small.3", HOLDER);
+        assert!((-1.0e-4..=CONTACT).contains(&first), "{name}: gap {first}");
+
+        // 2. Later row: contact with a pack body, no contact with the holder.
+        order(&mut f, "rear.small.0");
+        assert_eq!(stops(&f), 2, "{name}: the second stop is a packed stop");
+        assert!(
+            gap(&f, "rear.small.0", HOLDER) > 1.0,
+            "{name}: not a first-row stop"
+        );
+        let behind = gap(&f, "rear.small.0", "rear.small.4");
+        assert!(
+            (-1.0e-4..=CONTACT).contains(&behind),
+            "{name}: gap {behind}"
+        );
+        assert!(
+            f.position("rear.small.0").distance(POINT)
+                > f.position("rear.small.3").distance(POINT) + CONTACT
+        );
+
+        // 3. Control: a unit with a free way reaches the holder; no packed stop runs.
+        order(&mut f, "rear.small.2");
+        assert_eq!(
+            stops(&f),
+            2,
+            "{name}: the control must not use the packed stop"
+        );
+        let free = gap(&f, "rear.small.2", HOLDER);
+        assert!((-1.0e-4..=CONTACT).contains(&free), "{name}: gap {free}");
+
+        // The rule moves no stopped body: every other unit is at its start pose.
+        for (label, pose) in &start {
+            if !["rear.small.3", "rear.small.0", "rear.small.2"].contains(&label.as_str()) {
+                assert_eq!(f.position(label), *pose, "{name}: {label} moved");
+            }
+        }
+        poses.push(
+            ["rear.small.3", "rear.small.0", "rear.small.2"]
+                .map(|label| f.position(label).to_array().map(f32::to_bits)),
+        );
+    }
+    // No unit ID decides a result: the four ID variants give the same poses.
+    assert!(poses.windows(2).all(|pair| pair[0] == pair[1]), "{poses:?}");
+}
+
 #[test]
 fn gm2_browser_projected_destination_and_delayed_orders_complete() {
     let mut f = Fixture::new("quarry", "GM2-narrow", VARIANTS[0]);

@@ -413,6 +413,14 @@ Acceptance (added to GM3, nothing removed). Each test names the build where it i
   contact behind it, no free step. Red before the rule (the unit stays `Blocked`),
   green after. The replay `gm3_browser_delayed_rear_group_at_a_held_point_completes`
   is red at 56a008b4 and green on the repaired build.
+- Packed stop, full simulation:
+  `gm3_packed_stop_ends_boxed_out_moves_in_the_first_and_in_a_later_row`. Ordinary Move
+  orders in the frozen scene `GM3-shared-and-unique`, where `rear.large.2` rests on the
+  point. One unit ends its move in contact with the holder, and one unit ends it in a
+  later row, in contact with a pack body only. A control unit with a free way reaches
+  the holder with no packed stop. The four ID variants give the same poses. Red when
+  the packed stop is disabled (the first unit stays `Blocked` past the deadline of
+  400 ticks).
 - Guard, decision function: a holder, one pack body and a late unit in contact from
   the side, with a free place beside the holder. The result is a step nearer the
   point, not a stop (`a_free_gap_nearer_the_point_must_be_reached_first`). Red when
