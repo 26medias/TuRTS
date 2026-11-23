@@ -204,6 +204,49 @@ fill unit=3 mesh=bar material=bar_health t=[-0.2700 0.0000 0.0800] s=[0.4000 1.0
 visual VisualId { kind: HealthBackground, unit: 2, ordinal: 0, generation: 1, identity: 0 } mesh=bar material=bar_background t=[14.0000 2.2000 10.0000] s=[1.0602 0.3925 0.1000] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
 visual VisualId { kind: HealthBackground, unit: 3, ordinal: 0, generation: 1, identity: 0 } mesh=bar material=bar_background t=[10.0000 2.2000 14.0000] s=[0.9963 0.4301 0.1000] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
 state active=true hover=None hover_started=false generation=1 session=Some(VisualSession { match_id: 7, connection_epoch: 1, local_slot: 0 }) retained_markers=[] blocked_active=[4] blocked_since=[4] feed_intents=0 feed_sent=0
+=== quiet waiting mark of an own blocked unit
+--- update 1 (loud form)
+fill unit=2 mesh=bar material=bar_health t=[-0.2250 0.0000 0.0800] s=[0.5000 1.0000 1.0000] parent=Some(VisualId { kind: HealthBackground, unit: 2, ordinal: 0, generation: 1, identity: 0 })
+fill unit=3 mesh=bar material=bar_health t=[-0.2700 0.0000 0.0800] s=[0.4000 1.0000 1.0000] parent=Some(VisualId { kind: HealthBackground, unit: 3, ordinal: 0, generation: 1, identity: 0 })
+gizmo order_marker [9.7000 1.5700 10.3000] -> [10.3000 1.5700 9.7000] colour=[0.7874 0.0134 0.0072]
+gizmo order_marker [9.7000 1.5700 9.7000] -> [10.3000 1.5700 10.3000] colour=[0.7874 0.0134 0.0072]
+visual VisualId { kind: Blocked, unit: 1, ordinal: 0, generation: 1, identity: 0 } mesh=bar material=blocked t=[10.0000 1.5000 10.0000] s=[0.7000 0.0800 0.0800] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+visual VisualId { kind: HealthBackground, unit: 2, ordinal: 0, generation: 1, identity: 0 } mesh=bar material=bar_background t=[14.0000 2.2000 10.0000] s=[1.0602 0.3925 0.1000] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+visual VisualId { kind: HealthBackground, unit: 3, ordinal: 0, generation: 1, identity: 0 } mesh=bar material=bar_background t=[10.0000 2.2000 14.0000] s=[0.9963 0.4301 0.1000] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+markers_shown {"kind":"blocked","unit":1}
+state active=true hover=None hover_started=false generation=1 session=Some(VisualSession { match_id: 7, connection_epoch: 1, local_slot: 0 }) retained_markers=[] blocked_active=[1] blocked_since=[1] feed_intents=0 feed_sent=0
+--- update 2 (3 s old, still blocked)
+fill unit=2 mesh=bar material=bar_health t=[-0.2250 0.0000 0.0800] s=[0.5000 1.0000 1.0000] parent=Some(VisualId { kind: HealthBackground, unit: 2, ordinal: 0, generation: 1, identity: 0 })
+fill unit=3 mesh=bar material=bar_health t=[-0.2700 0.0000 0.0800] s=[0.4000 1.0000 1.0000] parent=Some(VisualId { kind: HealthBackground, unit: 3, ordinal: 0, generation: 1, identity: 0 })
+visual VisualId { kind: Blocked, unit: 1, ordinal: 1, generation: 1, identity: 0 } mesh=bar material=waiting t=[9.7800 1.5000 10.0000] s=[0.0800 0.0800 0.0800] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+visual VisualId { kind: Blocked, unit: 1, ordinal: 2, generation: 1, identity: 0 } mesh=bar material=waiting t=[10.0000 1.5000 10.0000] s=[0.0800 0.0800 0.0800] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+visual VisualId { kind: Blocked, unit: 1, ordinal: 3, generation: 1, identity: 0 } mesh=bar material=waiting t=[10.2200 1.5000 10.0000] s=[0.0800 0.0800 0.0800] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+visual VisualId { kind: HealthBackground, unit: 2, ordinal: 0, generation: 1, identity: 0 } mesh=bar material=bar_background t=[14.0000 2.2000 10.0000] s=[1.0602 0.3925 0.1000] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+visual VisualId { kind: HealthBackground, unit: 3, ordinal: 0, generation: 1, identity: 0 } mesh=bar material=bar_background t=[10.0000 2.2000 14.0000] s=[0.9963 0.4301 0.1000] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+markers_shown {"kind":"blocked_waiting","unit":1}
+state active=true hover=None hover_started=false generation=1 session=Some(VisualSession { match_id: 7, connection_epoch: 1, local_slot: 0 }) retained_markers=[] blocked_active=[1] blocked_since=[1] feed_intents=0 feed_sent=0
+--- update 3 (activity changed)
+fill unit=2 mesh=bar material=bar_health t=[-0.2250 0.0000 0.0800] s=[0.5000 1.0000 1.0000] parent=Some(VisualId { kind: HealthBackground, unit: 2, ordinal: 0, generation: 1, identity: 0 })
+fill unit=3 mesh=bar material=bar_health t=[-0.2700 0.0000 0.0800] s=[0.4000 1.0000 1.0000] parent=Some(VisualId { kind: HealthBackground, unit: 3, ordinal: 0, generation: 1, identity: 0 })
+visual VisualId { kind: HealthBackground, unit: 2, ordinal: 0, generation: 1, identity: 0 } mesh=bar material=bar_background t=[14.0000 2.2000 10.0000] s=[1.0602 0.3925 0.1000] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+visual VisualId { kind: HealthBackground, unit: 3, ordinal: 0, generation: 1, identity: 0 } mesh=bar material=bar_background t=[10.0000 2.2000 14.0000] s=[0.9963 0.4301 0.1000] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+state active=true hover=None hover_started=false generation=1 session=Some(VisualSession { match_id: 7, connection_epoch: 1, local_slot: 0 }) retained_markers=[] blocked_active=[] blocked_since=[] feed_intents=0 feed_sent=0
+--- update 5 (blocked again, 3 s old)
+fill unit=2 mesh=bar material=bar_health t=[-0.2250 0.0000 0.0800] s=[0.5000 1.0000 1.0000] parent=Some(VisualId { kind: HealthBackground, unit: 2, ordinal: 0, generation: 1, identity: 0 })
+fill unit=3 mesh=bar material=bar_health t=[-0.2700 0.0000 0.0800] s=[0.4000 1.0000 1.0000] parent=Some(VisualId { kind: HealthBackground, unit: 3, ordinal: 0, generation: 1, identity: 0 })
+visual VisualId { kind: Blocked, unit: 1, ordinal: 1, generation: 1, identity: 0 } mesh=bar material=waiting t=[9.7800 1.5000 10.0000] s=[0.0800 0.0800 0.0800] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+visual VisualId { kind: Blocked, unit: 1, ordinal: 2, generation: 1, identity: 0 } mesh=bar material=waiting t=[10.0000 1.5000 10.0000] s=[0.0800 0.0800 0.0800] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+visual VisualId { kind: Blocked, unit: 1, ordinal: 3, generation: 1, identity: 0 } mesh=bar material=waiting t=[10.2200 1.5000 10.0000] s=[0.0800 0.0800 0.0800] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+visual VisualId { kind: HealthBackground, unit: 2, ordinal: 0, generation: 1, identity: 0 } mesh=bar material=bar_background t=[14.0000 2.2000 10.0000] s=[1.0602 0.3925 0.1000] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+visual VisualId { kind: HealthBackground, unit: 3, ordinal: 0, generation: 1, identity: 0 } mesh=bar material=bar_background t=[10.0000 2.2000 14.0000] s=[0.9963 0.4301 0.1000] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+markers_shown {"kind":"blocked_waiting","unit":1}
+state active=true hover=None hover_started=false generation=1 session=Some(VisualSession { match_id: 7, connection_epoch: 1, local_slot: 0 }) retained_markers=[] blocked_active=[1] blocked_since=[1] feed_intents=0 feed_sent=0
+--- update 6 (order record removed)
+fill unit=2 mesh=bar material=bar_health t=[-0.2250 0.0000 0.0800] s=[0.5000 1.0000 1.0000] parent=Some(VisualId { kind: HealthBackground, unit: 2, ordinal: 0, generation: 1, identity: 0 })
+fill unit=3 mesh=bar material=bar_health t=[-0.2700 0.0000 0.0800] s=[0.4000 1.0000 1.0000] parent=Some(VisualId { kind: HealthBackground, unit: 3, ordinal: 0, generation: 1, identity: 0 })
+visual VisualId { kind: HealthBackground, unit: 2, ordinal: 0, generation: 1, identity: 0 } mesh=bar material=bar_background t=[14.0000 2.2000 10.0000] s=[1.0602 0.3925 0.1000] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+visual VisualId { kind: HealthBackground, unit: 3, ordinal: 0, generation: 1, identity: 0 } mesh=bar material=bar_background t=[10.0000 2.2000 14.0000] s=[0.9963 0.4301 0.1000] r=[0.0000 0.0000 0.0000 1.0000] vis=None ring=None
+state active=true hover=None hover_started=false generation=1 session=Some(VisualSession { match_id: 7, connection_epoch: 1, local_slot: 0 }) retained_markers=[] blocked_active=[] blocked_since=[] feed_intents=0 feed_sent=0
 === order markers past their 60 s lifetime
 --- update 2
 fill unit=2 mesh=bar material=bar_health t=[-0.2250 0.0000 0.0800] s=[0.5000 1.0000 1.0000] parent=Some(VisualId { kind: HealthBackground, unit: 2, ordinal: 0, generation: 1, identity: 0 })

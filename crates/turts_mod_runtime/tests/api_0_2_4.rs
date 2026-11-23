@@ -910,7 +910,7 @@ fn h7_value_variants_in_a_text_widget() {
         (
             "Bind(SelectionPrimary(Activity))",
             "PrimaryField::Activity",
-            "UI2-HUD",
+            "",
         ),
         (
             "Bind(SelectionPrimary(Cargo))",
