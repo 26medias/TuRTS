@@ -126,12 +126,11 @@ const step=(name,ok,detail,fatal=true)=>{result.steps.push({name,ok,detail,at:ne
     await shot('10-before-return');
     // Return.
     // Return order (approved gate, T-49): one box drag selects all 36 units, the digger in the passage too, and
-    // one right-click sends them to FM_RETURN_POINT (default 22,24). FM_RETURN_SELECT=far gives the historical
-    // red control of the old path (the 35 units past X 34, without the digger; ridge-return-repro RESULT.md).
-    const returnPoint=(process.env.FM_RETURN_POINT||'22,24').split(',').map(Number),farOnly=process.env.FM_RETURN_SELECT==='far';
+    // one right-click sends them to FM_RETURN_POINT (default 22,24).
+    const returnPoint=(process.env.FM_RETURN_POINT||'22,24').split(',').map(Number);
     state=await read(page);const far=all.filter(id=>pos(state,id)[0]>=34),near=all.filter(id=>pos(state,id)[0]<34);
-    const selected=await selectBox('return',farOnly?far:all,true);
-    result.rows.return_order={point:returnPoint,wanted:farOnly?'the units past X 34 (historical control)':'all 36',far:far.length,not_far:near.map(id=>({unit:id,kind:kind.get(id),pos:pos(state,id)})),selected:selected.length,selected_units:selected};save();
+    const selected=await selectBox('return',all,true);
+    result.rows.return_order={point:returnPoint,wanted:'all 36',far:far.length,not_far:near.map(id=>({unit:id,kind:kind.get(id),pos:pos(state,id)})),selected:selected.length,selected_units:selected};save();
     const ret=await moveAndSample('return',returnPoint,150000,({tick,applied,settled})=>(settled!==null&&settled.rest!==null)||(applied&&tick-applied.tick>FM2_TICKS+1200));
     result.rows.return=ret;save();
     step('FM1 return: the first unit moves within 20 ticks of the applied order',ret.first_motion.first_unit_ticks!==null&&ret.first_motion.first_unit_ticks<=FM1_TICKS,ret.first_motion,false);

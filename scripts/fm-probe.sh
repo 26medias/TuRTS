@@ -4,7 +4,6 @@
 # return move of all 36 units. It starts the game through scripts/mp1-play.sh --prepared (silent form: a fresh
 # Chrome profile and --alsa-output-device=null) and runs tests/browser/terrain-group/fm-probe.js on its debug port.
 # It takes the quiet lock (exclusive) and then the GPU lock for the whole run.
-# The movement mode is the environment of the caller (TURTS_MOVEMENT); the log records what the server has.
 # Exit: the exit of the probe (0 = all judged FM rows pass), 66 when the prepared folder is stale, 2 for usage.
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -25,7 +24,7 @@ echo "waiting for locks $(date -Is)" > "$LOG"
 exec 8>/tmp/turts-quiet-performance.lock; flock -x 8
 exec 9>/tmp/turts-gpu.lock; flock -x 9
 echo "locks held $(date -Is)" >> "$LOG"
-{ git -C "$ROOT" rev-parse HEAD; git -C "$ROOT" status --short; google-chrome --version; sha256sum "$PREP/manifest.json"; echo "TURTS_MOVEMENT of the caller: ${TURTS_MOVEMENT:-<not set>}"; } >> "$LOG" 2>&1
+{ git -C "$ROOT" rev-parse HEAD; git -C "$ROOT" status --short; google-chrome --version; sha256sum "$PREP/manifest.json"; } >> "$LOG" 2>&1
 # The frozen GM2-narrow layout of the ridge packages gives the actor labels and the profiles.
 python3 -B "$ROOT/tests/browser/terrain-group/generate.py" --root "$ROOT" --package "$BASE" --scene GM2-narrow --output "$OUT/fixture" > "$OUT/fixture.log" 2>&1 || { echo "fixture exit=$?" >> "$LOG"; exit 1; }
 (cd "$ROOT" && exec bash scripts/mp1-play.sh --prepared "$PREP" --package "$PACKAGE" --silent) > "$OUT/launcher.log" 2>&1 &
@@ -37,9 +36,6 @@ for _ in $(seq 1 300); do
     sleep 0.2
 done
 if [[ -z "$PORT" ]]; then wait "$PLAY"; CODE=$?; echo "launcher did not start, exit=$CODE" >> "$LOG"; exit "$CODE"; fi
-for PID in $(pgrep -f "$PREP/bin/turts_server"); do
-    echo "turts_server pid=$PID TURTS_MOVEMENT=$(tr '\0' '\n' < "/proc/$PID/environ" | sed -n 's/^TURTS_MOVEMENT=//p' | head -1 | grep . || echo '<not set>')" >> "$LOG"
-done
 (cd "$ROOT/tests/browser" && TURTS_ROOT="$ROOT" node terrain-group/fm-probe.js "$PORT" "$OUT/fixture/fixture.json" "$PKG" "$OUT/run") > "$OUT/probe.log" 2>&1
 CODE=$?
 echo "probe exit=$CODE $(date -Is)" >> "$LOG"
