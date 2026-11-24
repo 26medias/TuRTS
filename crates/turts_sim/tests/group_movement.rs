@@ -1536,6 +1536,58 @@ fn second_group_same_point_ignores_unit_ids_and_owner_slots() {
     );
 }
 
+/// V6 (Clara, 2026-11-24): an idle own unit that a passing group pushes away goes back to
+/// its place when no own mover is near.
+#[test]
+fn pushed_idle_unit_goes_back_to_its_place() {
+    let home = Vec2::new(30.0, 32.0);
+    let mut positions = vec![(home.x, home.y)];
+    positions.extend((0..28).map(|k| (8.0 + 1.2 * (k % 4) as f32, 28.4 + 1.2 * (k / 4) as f32)));
+    let owners = vec![0; positions.len()];
+    let mut app = app_with_units(&positions, &owners);
+    let target = Vec2::new(54.0, 32.0);
+    send_order(
+        &mut app,
+        0,
+        (2..=29).collect(),
+        target,
+        7,
+        QueueMode::Replace,
+    );
+    let idle = |app: &mut bevy_app::App| {
+        snapshot(app.world_mut())
+            .into_iter()
+            .find(|unit| unit.unit_id == 1)
+            .unwrap()
+            .pos
+    };
+    let mut farthest = 0.0_f32;
+    let mut trace = Vec::new();
+    for _ in 0..horizon_ticks(&positions[1..], target) + 200 {
+        app.update();
+        let at = idle(&mut app);
+        farthest = farthest.max(at.distance(home));
+        trace.push(at);
+    }
+    // The case proves nothing if the group never pushed the idle unit away.
+    assert!(
+        farthest > 0.5,
+        "the group did not push the idle unit: {farthest}"
+    );
+    let end = trace[trace.len() - 1];
+    assert!(
+        end.distance(home) < 1.0e-3,
+        "the pushed idle unit did not go back to its place: {end:?} (farthest {farthest})"
+    );
+    assert_eq!(
+        trace[trace.len() - 40..]
+            .iter()
+            .filter(|at| **at != end)
+            .count(),
+        0
+    );
+}
+
 #[test]
 fn new_order_while_moving() {
     let positions: Vec<_> = (0..40)

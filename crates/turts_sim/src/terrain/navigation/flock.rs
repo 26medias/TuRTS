@@ -73,8 +73,10 @@ impl TerrainRead for FlatGround {
 }
 /// Neighbours that one unit reads for steering.
 const NEIGHBOURS: usize = 8;
-/// Passes of simultaneous overlap corrections between own bodies.
-const RELAX_PASSES: usize = 8;
+/// Passes of simultaneous overlap corrections between own bodies. The push alone holds
+/// rule 4 against own units (no step check between them), so a dense crowd needs 16; a pass
+/// with no correction ends the relaxation early.
+const RELAX_PASSES: usize = 16;
 /// Field work credit of one owner for one tick, in cells.
 pub const FIELD_CREDIT: usize = 16_384;
 /// Fields that one owner keeps.
@@ -83,11 +85,20 @@ const MAX_FIELDS: usize = 16;
 const ORTHOGONAL: u32 = 1000;
 const DIAGONAL: u32 = 1414;
 const UNREACHED: u32 = u32::MAX;
-/// The deepest overlap that a step may make between two own bodies that can move, as a
-/// share of the smaller radius (rule 4; FM3 limits it to 25 %). Two units that step at each
-/// other in one tick each use the cap against the start pose of the other, so the overlap
-/// of a pair stays below two caps.
-const OVERLAP_CAP: f32 = 0.10;
+/// The deepest overlap with an own body that lets a mover settle, as a share of the smaller
+/// radius. The standing units then relax the rest to zero (rule 4: no overlap at rest; FM3
+/// limits a moving overlap to 25 %).
+const SETTLE_OVERLAP: f32 = 0.10;
+/// Ticks with no own mover near before a pushed idle unit goes back to its place (V6).
+const RETURN_DELAY: u16 = 20;
+/// The distance at which a unit looks at bodies in its way: four radii and one step.
+fn look_round(radius: f32, speed: f32, dt: f32) -> f32 {
+    4.0 * radius + speed * dt
+}
+/// The deepest overlap of two own bodies after the push, as a share of the smaller radius.
+/// A deeper pair takes a smaller part of its steps. Rule 4 permits 25 %; the margin keeps
+/// the float residue of the relaxation under it.
+const MOVING_OVERLAP: f32 = 0.20;
 /// The gap that the relaxation leaves between two bodies.
 const REST_GAP: f32 = 1.0e-3;
 /// A gap up to this value between two bodies is contact.
@@ -137,6 +148,15 @@ struct Member {
     crowd: bool,
     /// The tick at which the unit came into the passage where it is now.
     passage_since: Option<u32>,
+}
+
+impl Member {
+    /// The direction in which the unit goes: its last velocity, else the line to its goal.
+    fn course(&self, at: Vec2) -> Vec2 {
+        self.velocity
+            .try_normalize()
+            .unwrap_or((self.goal - at).normalize_or_zero())
+    }
 }
 
 /// One cost-to-goal field, from one owner's permitted terrain. Its nodes are the points of
@@ -569,8 +589,23 @@ enum Advice {
 #[derive(Resource, Default)]
 struct FlockState {
     members: BTreeMap<u32, Member>,
+    /// For each idle unit: the pose at which it last became idle (V6).
+    homes: BTreeMap<u32, Home>,
     fields: Vec<Field>,
     audit: FlockAudit,
+}
+
+/// The place of an idle unit (Clara, V6, 2026-11-24). An own push can move the unit away;
+/// it goes back when no own mover was near for `RETURN_DELAY` ticks. A new order clears the
+/// place. A shift of less than one radius, or a shift while no return is due, moves the
+/// place with the unit.
+#[derive(Clone, Copy, Debug)]
+struct Home {
+    pose: Vec2,
+    /// Ticks in a row with no own mover near.
+    quiet: u16,
+    /// The unit goes back to `pose`.
+    returning: bool,
 }
 
 /// Privileged test record of the last tick. Reading it changes nothing.
@@ -787,6 +822,15 @@ fn step_inner(
     for unit in units {
         present.insert(unit.unit_id);
         let moves = unit.target.is_some() && unit.speed.is_some();
+        if moves {
+            state.homes.remove(&unit.unit_id);
+        } else {
+            state.homes.entry(unit.unit_id).or_insert(Home {
+                pose: unit.position,
+                quiet: 0,
+                returning: false,
+            });
+        }
         if !moves {
             // A unit with no target keeps only a settled entry (its crowd membership).
             if state
@@ -842,6 +886,7 @@ fn step_inner(
         }
     }
     state.members.retain(|unit, _| present.contains(unit));
+    state.homes.retain(|unit, _| present.contains(unit));
 
     // Stage A: fields. Each owner has a fixed credit; fields in use are served by key order,
     // which is geometry (class, goal), not identity.
@@ -954,46 +999,35 @@ fn step_inner(
     };
     // Bodies that no step of `row` may enter: buildings, own units on Hold, every body of
     // another owner (true positions; contact is a permitted fact for the toucher only).
-    let solids_for = |row: usize, from: Vec2, reach: f32, capped: bool| -> Vec<Solid> {
+    // An own body that can move is not in the step check: it acts only through the
+    // separation force and the push (T-56 change A; rule 4 of 2026-11-23).
+    let solids_for = |row: usize, from: Vec2, reach: f32| -> Vec<Solid> {
         let mut solids = Vec::new();
         snapshot.near(from, reach + max_radius, |other| {
             let body = &snapshot.bodies[other];
-            if other == row {
+            if other == row || (!body.fixed && body.owner == units[row].owner_slot) {
                 return;
             }
-            // An own body that can move is soft: a step may overlap it up to the cap of
-            // rule 4, and never deeper. Every other body is solid at its full radius.
-            let soft = !body.fixed && body.owner == units[row].owner_slot;
-            if soft && !capped {
-                return;
-            }
-            let radius = if soft {
-                body.radius - OVERLAP_CAP * body.radius.min(units[row].radius)
-            } else {
-                body.radius
-            };
             solids.push((
                 body.position.x.to_bits(),
                 body.position.y.to_bits(),
                 Solid {
                     position: body.position,
-                    radius,
+                    radius: body.radius,
                 },
             ));
         });
         solids.sort_unstable_by_key(|entry| (entry.0, entry.1));
         solids.into_iter().map(|entry| entry.2).collect()
     };
-    // `capped`: the step is a unit's own move, so the overlap cap with own bodies applies.
-    // A push and the chord of the tick are checked against solid things only.
-    let guard = |row: usize, from: Vec2, to: Vec2, capped: bool| -> Vec2 {
+    let guard = |row: usize, from: Vec2, to: Vec2| -> Vec2 {
         let Some(profile) = profiles[row] else {
             return from;
         };
         if from == to {
             return from;
         }
-        let solids = solids_for(row, from, from.distance(to) + units[row].radius, capped);
+        let solids = solids_for(row, from, from.distance(to) + units[row].radius);
         guarded_step(terrain, from, to, units[row].radius, profile, &solids)
     };
 
@@ -1174,16 +1208,10 @@ fn step_inner(
                 separation += offset / distance * ((personal - gap) / personal).min(2.0);
                 // Two own units that meet head-on pass on the right: each steers to its own
                 // right side, so the rule has no winner and needs no identity.
-                let other_course =
-                    state
-                        .members
-                        .get(&units[body.row].unit_id)
-                        .map_or(Vec2::ZERO, |other| {
-                            other
-                                .velocity
-                                .try_normalize()
-                                .unwrap_or((other.goal - body.position).normalize_or_zero())
-                        });
+                let other_course = state
+                    .members
+                    .get(&units[body.row].unit_id)
+                    .map_or(Vec2::ZERO, |other| other.course(body.position));
                 if heading.dot(other_course) < -0.5 && heading.dot(-offset) > 0.0 {
                     separation -= heading.perp();
                 }
@@ -1236,17 +1264,25 @@ fn step_inner(
                 flockmates += 1.0;
             }
         }
-        // Solid bodies in the way: buildings, own units on Hold, and the bodies of another
-        // owner that this owner is permitted to see now. Each is a stationary obstacle: the
-        // unit steers to the side on which it already is. A body dead ahead gives no side
-        // (no tie winner); a hidden body gives no force, and contact stops the step.
-        let look = 4.0 * unit.radius + speed * dt;
+        // Bodies in the way: buildings, own units on Hold, the bodies of another owner that
+        // this owner is permitted to see now, and own units that stand and are not in the
+        // crowd of this goal. Each is a stationary obstacle: the unit steers to the side on
+        // which it already is. A body dead ahead gives no side (no tie winner); a hidden body
+        // gives no force. Contact with a solid body stops the step; an own unit is pushed
+        // aside (rule 1). A unit goes up to its own crowd and touches it (rule 3).
+        let look = look_round(unit.radius, speed, dt);
         let obstacles = neighbours_in_sum_order(&snapshot, &start, row, look, |body| {
-            (body.fixed || body.owner != unit.owner_slot)
-                && (body.owner == unit.owner_slot
-                    || basis.is_none_or(|basis| {
-                        basis.unit_permitted(unit.owner_slot, units[body.row].unit_id)
-                    }))
+            if body.owner == unit.owner_slot {
+                body.fixed
+                    || state
+                        .members
+                        .get(&units[body.row].unit_id)
+                        .is_none_or(|other| other.mode != Mode::Moving && other.goal != member.goal)
+            } else {
+                basis.is_none_or(|basis| {
+                    basis.unit_permitted(unit.owner_slot, units[body.row].unit_id)
+                })
+            }
         });
         let mut avoid = Vec2::ZERO;
         for &other in obstacles.iter().take(NEIGHBOURS) {
@@ -1326,12 +1362,12 @@ fn step_inner(
             continue;
         }
         let from = unit.position;
-        let mut end = guard(row, from, last_step[row].unwrap_or(from + wish), true);
+        let mut end = guard(row, from, last_step[row].unwrap_or(from + wish));
         // An exact step to a node or to the point, where the body has no clearance.
         if let (Some(node), Some(profile)) = (last_step[row], profiles[row])
             && end != node
         {
-            let solids = solids_for(row, from, from.distance(node) + unit.radius, true);
+            let solids = solids_for(row, from, from.distance(node) + unit.radius);
             end = fitted_step(terrain, from, node, unit.radius, profile, &solids);
         }
         // A unit with no path goes straight to the obstacle and stops there (rule 5); it
@@ -1341,7 +1377,7 @@ fn step_inner(
             let mut best = (end.distance(aim), end);
             for degrees in [30.0f32, -30.0, 60.0, -60.0, 90.0, -90.0] {
                 let turned = Vec2::from_angle(degrees.to_radians()).rotate(wish);
-                let candidate = guard(row, from, from + turned, true);
+                let candidate = guard(row, from, from + turned);
                 if candidate.distance(from) >= 0.2 * wish.length()
                     && candidate.distance(aim) < best.0
                 {
@@ -1354,7 +1390,7 @@ fn step_inner(
             if end == from
                 && let Some(profile) = profiles[row]
             {
-                let solids = solids_for(row, from, wish.length() + unit.radius, true);
+                let solids = solids_for(row, from, wish.length() + unit.radius);
                 let mut best = (f32::MAX, from);
                 for degrees in [
                     0.0f32, 30.0, -30.0, 60.0, -60.0, 90.0, -90.0, 135.0, -135.0, 180.0,
@@ -1372,19 +1408,113 @@ fn step_inner(
         positions[row] = end;
     }
 
+    // Stage C, part 1b: an idle unit that an own push moved goes back to its place (V6), when
+    // no own mover was near for `RETURN_DELAY` ticks and no own body stands on the place.
+    // A refused or shortened step ends the return: the unit stays where it is. Only own
+    // units decide a return, so a return shows nothing of another owner. All returns read
+    // the poses before the returns, so the order of the units decides nothing.
+    let stepped = positions.clone();
+    for (row, unit) in units.iter().enumerate() {
+        let (Some(speed), Some(home)) = (unit.speed, state.homes.get(&unit.unit_id).copied())
+        else {
+            continue;
+        };
+        if holds[row] {
+            continue;
+        }
+        let reach = look_round(unit.radius, speed, dt);
+        let mut mover_near = false;
+        snapshot.near(unit.position, reach + max_radius, |other| {
+            let body = &snapshot.bodies[other];
+            mover_near |= other != row
+                && body.owner == unit.owner_slot
+                && unit.position.distance(body.position) - unit.radius - body.radius < reach
+                && state
+                    .members
+                    .get(&units[body.row].unit_id)
+                    .is_some_and(|other| other.mode == Mode::Moving);
+        });
+        // An own body that the unit would overlap at `at`.
+        let taken = |at: Vec2| {
+            let mut taken = false;
+            snapshot.near(at, unit.radius + max_radius, |other| {
+                let body = &snapshot.bodies[other];
+                taken |= other != row
+                    && body.owner == unit.owner_slot
+                    && at.distance(stepped[other]) < unit.radius + body.radius;
+            });
+            taken
+        };
+        let mut place = if mover_near {
+            Home {
+                quiet: 0,
+                returning: false,
+                ..home
+            }
+        } else {
+            Home {
+                quiet: home.quiet.saturating_add(1),
+                ..home
+            }
+        };
+        // When the area becomes quiet, a shift of less than one radius (a crowd that settles)
+        // is not a push away: the new pose is the place. A larger shift starts the return.
+        if !place.returning && place.quiet == RETURN_DELAY {
+            if unit.position.distance(home.pose) < unit.radius {
+                place.pose = unit.position;
+            } else {
+                place.returning = true;
+            }
+        } else if !place.returning && place.quiet > RETURN_DELAY {
+            place.pose = unit.position;
+        }
+        if place.returning {
+            let to = unit.position + (home.pose - unit.position).clamp_length_max(speed * dt);
+            let end = if taken(home.pose) || taken(to) {
+                unit.position
+            } else {
+                guard(row, unit.position, to)
+            };
+            if end != to || end.distance(home.pose) <= f32::EPSILON * home.pose.length() {
+                place = Home {
+                    pose: end,
+                    returning: false,
+                    ..place
+                };
+            }
+            positions[row] = end;
+        }
+        state.homes.insert(unit.unit_id, place);
+    }
+    // Two returns that end in overlap both stay: no unit wins (as for two owners, E1).
+    let returned: Vec<usize> = (0..units.len())
+        .filter(|&row| positions[row] != stepped[row])
+        .collect();
+    let clash: Vec<usize> = returned
+        .iter()
+        .copied()
+        .filter(|&row| {
+            returned.iter().any(|&other| {
+                other != row
+                    && units[other].owner_slot == units[row].owner_slot
+                    && positions[row].distance(positions[other])
+                        < units[row].radius + units[other].radius
+            })
+        })
+        .collect();
+    for row in clash {
+        positions[row] = stepped[row];
+    }
+
     // Stage C, part 2: own bodies relax overlaps. Each pass reads the positions of the
-    // pass start and applies all corrections together. A mover gives way less than a
-    // standing own unit, so a moving unit pushes an idle one aside (rule 1).
+    // pass start and applies all corrections together. A moving unit pushes an idle one
+    // aside (rule 1).
     let soft = |row: usize| units[row].speed.is_some() && !holds[row] && profiles[row].is_some();
-    let weight = |row: usize| -> f32 {
-        match state
+    let moves = |row: usize| {
+        state
             .members
             .get(&units[row].unit_id)
-            .map(|member| member.mode)
-        {
-            Some(Mode::Moving) => 0.25,
-            _ => 0.75,
-        }
+            .is_some_and(|member| member.mode == Mode::Moving)
     };
     for _ in 0..RELAX_PASSES {
         let relaxed = Snapshot::new(
@@ -1434,32 +1564,34 @@ fn step_inner(
                 if overlap <= 0.0 {
                     continue;
                 }
-                let (mine, theirs) = (weight(row), weight(other));
                 // Two standing units each take the whole overlap, so a packed crowd comes
-                // apart in a few ticks. A mover and a standing unit share it by weight.
-                let share = if mine == theirs && mine > 0.5 {
-                    1.0
-                } else {
-                    mine / (mine + theirs)
-                };
+                // apart in a few ticks. A mover shares an overlap equally with each own unit,
+                // so it pushes its way through, and a crowd keeps its place (rule 2).
+                let share = if moves(row) || moves(other) { 0.5 } else { 1.0 };
                 push += offset / distance * overlap * share;
             }
             if push != Vec2::ZERO {
                 let push = push.clamp_length_max(units[row].radius);
-                positions[row] = guard(row, before[row], before[row] + push, true);
-                // A push that a wall or a solid body refuses turns to the side, so a unit
-                // is not pinned between the pusher and the obstacle.
-                if positions[row] == before[row] {
-                    for degrees in [60.0f32, -60.0, 90.0, -90.0] {
-                        let turned = Vec2::from_angle(degrees.to_radians()).rotate(push);
-                        let end = guard(row, before[row], before[row] + turned, true);
-                        if end != before[row] {
-                            positions[row] = end;
-                            break;
-                        }
+                // A push that a wall or a solid body shortens turns to the side, so a unit
+                // is not pinned between the pusher and the obstacle. The push that goes
+                // farthest wins; equal lengths keep the earlier, smaller turn.
+                let mut best = guard(row, before[row], before[row] + push);
+                for degrees in [60.0f32, -60.0, 90.0, -90.0] {
+                    if best == before[row] + push {
+                        break;
+                    }
+                    let turned = Vec2::from_angle(degrees.to_radians()).rotate(push);
+                    let end = guard(row, before[row], before[row] + turned);
+                    if end.distance(before[row]) > best.distance(before[row]) {
+                        best = end;
                     }
                 }
+                positions[row] = best;
             }
+        }
+        // A pass with no correction ends the relaxation.
+        if positions == before {
+            break;
         }
     }
 
@@ -1478,7 +1610,7 @@ fn step_inner(
             } else {
                 start[row] + chord
             };
-            positions[row] = guard(row, start[row], end, true);
+            positions[row] = guard(row, start[row], end);
             // A start pose at a terrain contact refuses every guarded chord. The chord is
             // then checked as an escape step, so a unit that left the contact keeps its move.
             if positions[row] != end
@@ -1486,7 +1618,7 @@ fn step_inner(
                 && let Some(profile) = profiles[row]
             {
                 // The exact step of a body with no clearance, checked as a whole.
-                let solids = solids_for(row, start[row], chord.length() + units[row].radius, true);
+                let solids = solids_for(row, start[row], chord.length() + units[row].radius);
                 positions[row] = fitted_step(
                     terrain,
                     start[row],
@@ -1498,7 +1630,7 @@ fn step_inner(
             } else if positions[row] == start[row]
                 && let Some(profile) = profiles[row]
             {
-                let solids = solids_for(row, start[row], chord.length() + units[row].radius, true);
+                let solids = solids_for(row, start[row], chord.length() + units[row].radius);
                 positions[row] = escape_step(
                     terrain,
                     start[row],
@@ -1516,14 +1648,11 @@ fn step_inner(
     // smaller part of their step (a half, a quarter, an eighth), and with no clear part
     // both keep their start pose: contact stops the step, and no unit wins. A part of a
     // step is on the checked line of the step, so it needs no new terrain check.
+    // Two own units that the push could not part (terrain holds one of them) do the same
+    // when their overlap is deeper than `MOVING_OVERLAP` (rule 4).
     let ends = positions.clone();
-    let mut stay = vec![false; units.len()];
-    for part in [1.0f32, 0.5, 0.25, 0.125] {
-        for row in 0..units.len() {
-            if stay[row] {
-                positions[row] = start[row] + (ends[row] - start[row]) * part;
-            }
-        }
+    // The units whose step comes nearer to a body that it may not overlap (so deep).
+    let conflicts = |positions: &[Vec2]| -> Vec<bool> {
         let moved = Snapshot::new(
             units
                 .iter()
@@ -1544,15 +1673,30 @@ fn step_inner(
             }
             moved.near(positions[row], unit.radius + max_radius, |other| {
                 let body = &moved.bodies[other];
+                let limit = if body.fixed || body.owner != unit.owner_slot {
+                    0.0
+                } else {
+                    MOVING_OVERLAP * unit.radius.min(body.radius)
+                };
+                let distance = positions[row].distance(positions[other]);
                 if other != row
-                    && (body.fixed || body.owner != unit.owner_slot)
-                    && positions[row].distance(positions[other]) < unit.radius + body.radius
-                    && positions[row].distance(positions[other]) < start[row].distance(start[other])
+                    && distance < unit.radius + body.radius - limit
+                    && distance < start[row].distance(start[other])
                 {
                     conflict[row] = true;
                 }
             });
         }
+        conflict
+    };
+    let mut stay = vec![false; units.len()];
+    for part in [1.0f32, 0.5, 0.25, 0.125] {
+        for row in 0..units.len() {
+            if stay[row] {
+                positions[row] = start[row] + (ends[row] - start[row]) * part;
+            }
+        }
+        let conflict = conflicts(&positions);
         if !conflict.contains(&true) {
             stay.fill(false);
             break;
@@ -1560,10 +1704,15 @@ fn step_inner(
         // A unit with no conflict keeps the part that it has now.
         stay = conflict;
     }
-    for row in 0..units.len() {
-        if stay[row] {
-            positions[row] = start[row];
+    // A unit that keeps its start pose can make a new conflict for a unit that kept a part:
+    // that unit keeps its start pose also, until no conflict is left.
+    while stay.contains(&true) {
+        for row in 0..units.len() {
+            if stay[row] {
+                positions[row] = start[row];
+            }
         }
+        stay = conflicts(&positions);
     }
 
     // Stage D: arrival and waiting, from the relaxed positions.
@@ -1607,10 +1756,10 @@ fn step_inner(
         });
         let gap =
             |other: usize| here.distance(positions[other]) - unit.radius - units[other].radius;
-        // A unit settles when no overlap is deeper than the cap of a step. The standing
+        // A unit settles when no overlap is deeper than `SETTLE_OVERLAP`. The standing
         // units then relax the rest to zero (no overlap at rest).
         let overlaps = near.iter().any(|&other| {
-            gap(other) < -(OVERLAP_CAP * unit.radius.min(units[other].radius) + NO_OVERLAP)
+            gap(other) < -(SETTLE_OVERLAP * unit.radius.min(units[other].radius) + NO_OVERLAP)
         });
         let touches_crowd = near.iter().any(|&other| {
             state
