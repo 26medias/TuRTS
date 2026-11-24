@@ -1,4 +1,6 @@
 //! Shared permitted terrain guidance before the existing authoritative movement solver.
+mod flock;
+mod flock_step;
 pub(crate) mod geometry;
 mod packed;
 mod shared;
@@ -7,6 +9,9 @@ use super::TerrainState;
 use crate::movement::{MovementFrame, MovementFrameOutput, MovementFrameUnit};
 use bevy_ecs::{prelude::Component, world::World};
 use bevy_math::Vec2;
+pub use flock::{
+    FIELD_CREDIT, FlockAudit, FlockMemberAudit, MovementModel, privileged_flock_audit,
+};
 use geometry::{clear, physical_prefix, profile};
 pub use shared::{
     NavigationAudit, NavigationDestinationRegionAudit, NavigationDiagnostics,
@@ -436,6 +441,10 @@ pub(crate) fn step(
             ),
             BTreeSet::new(),
         );
+    }
+    // The one read of the temporary movement model (T-6 design answer A).
+    if world.get_resource::<MovementModel>().copied() == Some(MovementModel::Flock) {
+        return flock::step(world, frame, dt);
     }
     let mut navigation = world
         .remove_resource::<TerrainNavigation>()

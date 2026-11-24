@@ -238,7 +238,7 @@ pub(super) fn clear(
     certify(terrain, from, to, radius, profile, lease) == Certificate::Clear
 }
 pub(super) fn physical_prefix(
-    terrain: &TerrainState,
+    terrain: &impl TerrainRead,
     from: Vec2,
     to: Vec2,
     radius: f32,

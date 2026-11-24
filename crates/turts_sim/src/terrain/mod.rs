@@ -13,6 +13,10 @@ pub(crate) mod cargo;
 pub(crate) mod navigation;
 pub(crate) mod traffic;
 pub use navigation::{
+    FIELD_CREDIT as FLOCK_FIELD_CREDIT, FlockAudit, FlockMemberAudit, MovementModel,
+    privileged_flock_audit,
+};
+pub use navigation::{
     NavigationAudit, NavigationDestinationRegionAudit, NavigationDiagnostics,
     NavigationMemberAudit, NavigationMemberState,
     privileged_diagnostics as privileged_navigation_diagnostics, privileged_navigation_audit,

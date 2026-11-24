@@ -15,6 +15,8 @@ mod diagnostics;
 mod export;
 #[path = "terrain_group/fixture.rs"]
 mod fixture;
+#[path = "terrain_group/flock.rs"]
+mod flock;
 #[allow(dead_code)]
 #[path = "../src/orders.rs"]
 mod orders;
