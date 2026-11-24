@@ -1354,7 +1354,6 @@ pub(crate) fn clear_current_motion(
     entity: bevy_ecs::entity::Entity,
     unit_id: u32,
 ) {
-    crate::terrain::navigation::order_changed(world, unit_id);
     edit_unit_orders(world, entity, |orders| orders.acquired = None);
     let mut movement = world.entity_mut(entity);
     movement.remove::<MoveTarget>();

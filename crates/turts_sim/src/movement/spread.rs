@@ -87,12 +87,6 @@ impl SpreadContext {
         self.static_units = units;
     }
 
-    pub(super) fn set_static_units_iter(&mut self, units: impl Iterator<Item = Option<u32>>) {
-        for (slot, unit) in self.static_units.iter_mut().zip(units) {
-            *slot = unit;
-        }
-    }
-
     fn static_excluded(&self, index: usize, excluded: &dyn Fn(u32) -> bool) -> bool {
         self.static_units[index].is_some_and(excluded)
     }
@@ -118,27 +112,6 @@ impl SpreadContext {
         }
     }
 
-    pub(super) fn conflicts_with_reserved_filtered(
-        &self,
-        candidate: Vec2,
-        radius: f32,
-        excluded_unit: u32,
-        excluded: &dyn Fn(u32) -> bool,
-    ) -> bool {
-        self.reserved_grid
-            .within_unsorted(
-                &self.reserved_points,
-                candidate,
-                radius + self.max_reserved_radius,
-            )
-            .into_iter()
-            .any(|index| {
-                self.reserved_units[index] != Some(excluded_unit)
-                    && !self.reserved_units[index].is_some_and(excluded)
-                    && candidate.distance(self.reserved[index].position)
-                        < radius + self.reserved[index].radius - 1.0e-5
-            })
-    }
 }
 
 /// Build a deterministic, order-preserving hex pool and assignment for an envelope.
@@ -889,24 +862,6 @@ fn reachable_pool(
     }
 }
 
-pub(super) fn minimum_unseen_hex_radius(ring: i32, spacing: f32) -> f32 {
-    let next_ring = i128::from(ring) + 1;
-    let minimum_squared = (3 * next_ring * next_ring + 3) / 4;
-    (minimum_squared as f64).sqrt() as f32 * spacing
-}
-
-pub(super) fn finite_hex_ring_limit(origin: Vec2, radius: f32, bounds: Vec2, spacing: f32) -> i32 {
-    let max_dx = (origin.x - radius)
-        .max(bounds.x - radius - origin.x)
-        .max(0.0);
-    let max_dy = (origin.y - radius)
-        .max(bounds.y - radius - origin.y)
-        .max(0.0);
-    let max_j = (max_dy * 2.0 / (3.0_f32.sqrt() * spacing)).ceil() as i32 + 1;
-    let max_i = (max_dx / spacing + max_j as f32 * 0.5).ceil() as i32 + 1;
-    max_i.saturating_add(max_j).max(1)
-}
-
 pub(super) fn nearest_angle_order(left: Vec2, right: Vec2, origin: Vec2) -> std::cmp::Ordering {
     let left_distance = left.distance_squared(origin);
     let right_distance = right.distance_squared(origin);
@@ -916,35 +871,5 @@ pub(super) fn nearest_angle_order(left: Vec2, right: Vec2, origin: Vec2) -> std:
         (left.y - origin.y)
             .atan2(left.x - origin.x)
             .total_cmp(&(right.y - origin.y).atan2(right.x - origin.x))
-    }
-}
-
-pub(super) fn target_key(target: Vec2) -> (u32, u32) {
-    (target.x.to_bits(), target.y.to_bits())
-}
-
-pub(super) fn update_target_claims(
-    claims: &mut std::collections::HashMap<(u32, u32), [u32; 2]>,
-    owner: u8,
-    old: Option<Vec2>,
-    new: Option<Vec2>,
-) {
-    if old == new {
-        return;
-    }
-    // The live protocol has two slots. Extra test-only owners share the second
-    // bucket; in all-visible mode only the total is used.
-    let row = usize::from(owner != 0);
-    if let Some(old) = old {
-        let key = target_key(old);
-        if let Some(counts) = claims.get_mut(&key) {
-            counts[row] -= 1;
-            if *counts == [0, 0] {
-                claims.remove(&key);
-            }
-        }
-    }
-    if let Some(new) = new {
-        claims.entry(target_key(new)).or_default()[row] += 1;
     }
 }

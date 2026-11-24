@@ -1360,7 +1360,6 @@ impl Transaction<'_> {
         }
         for removal in writes.removed {
             super::repair::remove_unit(world, removal.unit);
-            crate::terrain::navigation::order_changed(world, removal.unit);
             crate::terrain::work::order_changed(world, removal.unit);
             crate::terrain::cargo::order_changed(world, removal.unit);
             if let Some(mut identities) =

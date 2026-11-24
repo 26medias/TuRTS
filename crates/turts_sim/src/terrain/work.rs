@@ -387,12 +387,7 @@ fn approach(world: &mut World, unit: u32, cell: Cell, state: &mut WorkState) {
             // Work still refused at a physically reached approach. That point
             // cannot reveal or reach the current cell by waiting indefinitely;
             // try another of the same bounded permitted candidates.
-            let failed = position == endpoint
-                || world
-                    .get_resource::<super::navigation::TerrainNavigation>()
-                    .is_some_and(|navigation| {
-                        navigation.approach_blocked(unit, owner, position, endpoint, &phase)
-                    });
+            let failed = position == endpoint;
             if !failed {
                 if world
                     .get::<crate::MoveTarget>(entity)

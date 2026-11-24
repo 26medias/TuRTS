@@ -219,22 +219,12 @@ pub(crate) fn run_orders(world: &mut World) {
                 forget_plain_move_identity(world, unit_id);
             });
         }
-        let terrain_continues = world.entity(entity).get::<MoveTarget>().is_some()
-            && world
-                .entity(entity)
-                .get::<crate::Owner>()
-                .is_some_and(|owner| {
-                    world
-                        .get_resource::<crate::terrain::navigation::TerrainNavigation>()
-                        .is_some_and(|navigation| navigation.continues_order(unit_id, owner.0.0))
-                });
         let plain_blocked = world
             .entity(entity)
             .get::<crate::movement::PlainMoveProgress>()
             .is_some_and(|progress| {
                 (progress.activity == crate::movement::MovementActivity::Blocked
-                    && !progress.failure_recorded
-                    && !terrain_continues)
+                    && !progress.failure_recorded)
                     || (completed_plain_fallback && gather_still_approaching)
             });
         if plain_blocked && gather_still_approaching {

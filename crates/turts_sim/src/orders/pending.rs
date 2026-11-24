@@ -1212,10 +1212,6 @@ pub(super) fn dispatch_pending_movement(world: &mut World) {
                 break;
             }
             pool.pool_id = request.pool_id;
-            // Bind terminal parking to this actual accepted cohort. Bounds use
-            // own count/radii and public point, never hidden displaced slots.
-            let parking_region =
-                crate::terrain::traffic::DestinationRegion::from_dispatch(&pool, &input);
             let order_by_unit = request.member_orders.clone();
             let assignment_by_unit: BTreeMap<_, _> = assignments.into_iter().collect();
             for (_, member) in &members {
@@ -1239,10 +1235,6 @@ pub(super) fn dispatch_pending_movement(world: &mut World) {
                     .cloned()
                     .or_else(|| request.order.clone());
                 let replace_order = order.is_some();
-                let explicit_point_move = order.as_ref().is_some_and(|order| {
-                    order.behaviour == Behaviour::Move
-                        && matches!(order.target, OrderTargetSim::Point(_))
-                });
                 let follow_origin = order.as_ref().and_then(|order| {
                     let OrderTargetSim::Unit(target_id) = &order.target else {
                         return None;
@@ -1287,9 +1279,6 @@ pub(super) fn dispatch_pending_movement(world: &mut World) {
                                 .0
                                 .insert(request.pool_id, pool.clone());
                         }
-                        if explicit_point_move {
-                            crate::terrain::navigation::dispatch_order_changed(world, member.id);
-                        }
                         {
                             let mut entity_mut = world.entity_mut(entity);
                             entity_mut.remove::<crate::movement::PlainMoveProgress>();
@@ -1326,9 +1315,6 @@ pub(super) fn dispatch_pending_movement(world: &mut World) {
                         }
                     },
                 );
-            }
-            if let Some(region) = parking_region {
-                crate::terrain::navigation::record_dispatch_parking_region(world, &input, region);
             }
             used = used.saturating_add(next_count);
         }

@@ -313,13 +313,6 @@ impl TerrainState {
             .ok()
             .and_then(|index| u32::try_from(index).ok())
     }
-    pub(crate) fn lease_valid(&self, lease: &BTreeMap<usize, u64>) -> bool {
-        lease.iter().all(|(index, revision)| {
-            self.chunks
-                .get(*index)
-                .is_some_and(|chunk| chunk.revision == *revision)
-        })
-    }
     /// Every returned chunk is read by this rectangle certificate, so edits elsewhere do not
     /// invalidate it. The bounds come from exact endpoint disk support, not rounded poses.
     pub(crate) fn rectangle_certificate(

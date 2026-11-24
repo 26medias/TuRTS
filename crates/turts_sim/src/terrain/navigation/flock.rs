@@ -70,9 +70,6 @@ impl TerrainRead for FlatGround {
     fn rectangle(&self, _: Cell, max: Cell, _: &mut BTreeMap<usize, u64>) -> bool {
         max.x < self.grid.columns && max.y < self.grid.rows
     }
-    fn valid_lease(&self, _: &BTreeMap<usize, u64>) -> bool {
-        true
-    }
 }
 /// Neighbours that one unit reads for steering.
 const NEIGHBOURS: usize = 8;

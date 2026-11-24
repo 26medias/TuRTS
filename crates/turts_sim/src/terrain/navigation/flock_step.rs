@@ -188,9 +188,6 @@ mod tests {
             }
             true
         }
-        fn valid_lease(&self, _: &BTreeMap<usize, u64>) -> bool {
-            true
-        }
     }
     const RADIUS: f32 = 0.4;
     const FROM: Vec2 = Vec2::new(7.0, 8.5);

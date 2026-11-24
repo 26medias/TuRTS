@@ -11,14 +11,8 @@ pub use phase::{
 };
 pub(crate) mod cargo;
 pub(crate) mod navigation;
-pub(crate) mod traffic;
 pub use navigation::{
     FIELD_CREDIT as FLOCK_FIELD_CREDIT, FlockAudit, FlockMemberAudit, privileged_flock_audit,
-};
-pub use navigation::{
-    NavigationAudit, NavigationDestinationRegionAudit, NavigationDiagnostics,
-    NavigationMemberAudit, NavigationMemberState,
-    privileged_diagnostics as privileged_navigation_diagnostics, privileged_navigation_audit,
 };
 mod state;
 pub use audit::{
@@ -167,6 +161,3 @@ pub fn privileged_changed_chunk_count(world: &bevy_ecs::world::World) -> usize {
         .get_resource::<TerrainState>()
         .map_or(0, TerrainState::changed_chunks)
 }
-
-pub use navigation::privileged_contact_debug;
-pub use traffic::privileged_traffic_debug;

@@ -5,78 +5,21 @@ use bevy_math::Vec2;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-/// Visibility facts used by the deterministic movement replay kernel.
-/// Implementations must derive permissions from the trusted observation basis.
-pub trait MovementVisibility {
-    fn unit_permitted(&self, viewer: u8, unit: u32) -> bool;
-}
-
-impl MovementVisibility for crate::visibility::VisibilityBasis {
-    fn unit_permitted(&self, viewer: u8, unit: u32) -> bool {
-        self.unit_permitted(viewer, unit)
-    }
-}
-
-mod arrival;
 mod ecs;
-mod exchange;
-#[cfg(test)]
-#[path = "tests/exchange_tests.rs"]
-mod exchange_tests;
-#[cfg(test)]
-#[path = "tests/fog_arrival_tests.rs"]
-mod fog_arrival_tests;
 mod frame;
-pub(crate) mod motion;
 mod plain;
-#[cfg(test)]
-#[path = "tests/plain_movement_tests.rs"]
-mod plain_movement_tests;
-mod pool_index;
 #[cfg(feature = "test-probes")]
 pub mod probe;
-pub(crate) mod recovery;
-#[cfg(test)]
-#[path = "tests/recovery_actual_tests.rs"]
-mod recovery_actual_tests;
-#[cfg(test)]
-mod recovery_oracle;
-#[cfg(test)]
-#[path = "tests/recovery_tests.rs"]
-mod recovery_tests;
-pub(crate) mod recovery_view;
-pub(crate) mod route;
-mod search;
 mod spread;
 #[cfg(test)]
 #[path = "tests/spread_tests.rs"]
 mod spread_tests;
 pub(crate) mod sweep;
-#[cfg(test)]
-pub(crate) use frame::step_frame_with_sweep_budget;
-pub(crate) use frame::{step_frame_with_motion_guide, step_frame_with_motion_guide_and_visibility};
 
 pub(crate) use ecs::integrate_movement;
-pub use frame::{
-    MovementFrame, MovementFrameOutput, MovementFrameUnit, step_frame, step_frame_at_tick,
-    step_frame_preserving_resting, step_frame_preserving_resting_at_tick,
-    step_frame_preserving_resting_at_tick_with_visibility,
-};
+pub use frame::{MovementFrame, MovementFrameOutput, MovementFrameUnit};
 pub use plain::PlainMoveProgress;
 pub use spread::{SpreadContext, spread_destinations, spread_destinations_with_context};
-
-#[cfg(test)]
-use pool_index::{ClearanceRank, MovementPoolIndex, SlotClearance};
-
-#[cfg(test)]
-thread_local! {
-    static POOL_SLOT_CANDIDATE_CHECKS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
-}
-
-#[cfg(test)]
-fn count_pool_slot_candidates(count: usize) {
-    POOL_SLOT_CANDIDATE_CHECKS.with(|checks| checks.set(checks.get() + count));
-}
 
 /// Current lifecycle of one accepted group-movement envelope.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -165,13 +108,6 @@ pub struct RecoveryScan {
     /// current state.
     #[serde(default)]
     pub spanned: bool,
-}
-
-impl RecoveryScan {
-    /// True for the stored check of one point (ring 0), false for a search.
-    pub(crate) fn is_check(&self) -> bool {
-        self.ring == 0
-    }
 }
 
 /// The stage of an escape search.
@@ -272,37 +208,4 @@ pub struct ReservedFootprint {
 
 fn angle(point: Vec2, origin: Vec2) -> f32 {
     (point.y - origin.y).atan2(point.x - origin.x)
-}
-
-/// The complete input to one unit's deterministic flat-ground movement step.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct MovementInput {
-    pub position: bevy_math::Vec2,
-    pub target: bevy_math::Vec2,
-    pub speed: f32,
-}
-
-/// The result of one unit's deterministic movement step.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct MovementOutput {
-    pub position: bevy_math::Vec2,
-    pub reached: bool,
-}
-
-/// Move one unit toward its target using the shared simulation and validator step.
-pub fn step(input: &MovementInput, dt: f32) -> MovementOutput {
-    let step = input.speed * dt;
-    let offset = input.target - input.position;
-    let distance = offset.length();
-    if distance <= step {
-        MovementOutput {
-            position: input.target,
-            reached: true,
-        }
-    } else {
-        MovementOutput {
-            position: input.position + offset * (step / distance),
-            reached: false,
-        }
-    }
 }
