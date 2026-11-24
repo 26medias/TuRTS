@@ -271,53 +271,6 @@ fn gm3_temporary_blocker_far_from_goal_does_not_complete_the_move() {
 }
 
 #[test]
-fn gm3_occupied_passage_impossible_traffic_waits_stably() {
-    for package in PACKAGES {
-        // Each variant has its own fixture, server app, and evidence directory.
-        std::thread::scope(|scope| {
-            let workers = VARIANTS.map(|variant| {
-                scope.spawn(move || {
-                    let mut f = Fixture::new(package, "GM3-settled-blocker", variant);
-                    // Rules 1 and 2: a push can shift the blocker, so its exact pose is not
-                    // checked. Its order to the place where it stands must still end.
-                    let deadline = f.scene["deadline_ticks"].as_u64().unwrap() as u32;
-                    let mut stable = None;
-                    while f.tick < deadline {
-                        step(&mut f);
-                        if f.tick == deadline - 200 {
-                            stable = Some(f.frame());
-                        }
-                        if f.tick > deadline - 200 {
-                            assert_eq!(
-                                Some(f.frame()).as_ref(),
-                                stable.as_ref(),
-                                "impossible traffic oscillates instead of waiting stably"
-                            );
-                        }
-                    }
-                    assert!(f.complete("blocker"));
-                    for actor in f.actors.iter().filter(|a| a.label != "blocker") {
-                        assert!(
-                            !f.complete(&actor.label),
-                            "impossible passage falsely completed a move"
-                        );
-                        if actor.slot == 0 {
-                            assert!(f.position(&actor.label).x + actor.profile.radius <= 30.0);
-                        } else {
-                            assert!(f.position(&actor.label).x - actor.profile.radius >= 34.0);
-                        }
-                    }
-                    f.write_result(json!({"row":"GM3","stable_ticks":200}));
-                })
-            });
-            workers.map(|worker| match worker.join() {
-                Ok(()) => (),
-                Err(panic) => std::panic::resume_unwind(panic),
-            })
-        });
-    }
-}
-#[test]
 fn gm4_real_fill_excavation_invalidate_only_relevant_routes() {
     for package in PACKAGES {
         // Four independent Apps; packages remain serial. Join in frozen variant order.

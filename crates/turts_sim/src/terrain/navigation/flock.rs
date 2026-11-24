@@ -1054,7 +1054,8 @@ fn step_inner(
         };
         let heading = keep_out.unwrap_or_else(|| (toward - unit.position).normalize_or_zero());
         kept_out[row] = keep_out.is_some();
-        // Right of way in a passage between owners: the body that came into the passage
+        // Right of way in a passage, between owners and between own units that go opposite
+        // ways: the body that came into the passage
         // first keeps it ("arrive first", CEO 2026-11-12). A unit that sees a body of
         // another owner in the passage with an earlier arrival goes back out of the
         // passage, or stays out of it. Equal arrivals: the lower position (x, then y)
@@ -1066,10 +1067,22 @@ fn step_inner(
         let holder = field.filter(|_| !no_path[row]).and_then(|field| {
             let inside = member.passage_since.is_some();
             neighbours_in_sum_order(&snapshot, &start, row, 10.0 * unit.radius, |body| {
-                !body.fixed
-                    && body.owner != unit.owner_slot
-                    && basis.is_none_or(|basis| {
+                if body.fixed {
+                    return false;
+                }
+                if body.owner != unit.owner_slot {
+                    return basis.is_none_or(|basis| {
                         basis.unit_permitted(unit.owner_slot, units[body.row].unit_id)
+                    });
+                }
+                // An own unit that goes the other way to another goal is a holder also.
+                state
+                    .members
+                    .get(&units[body.row].unit_id)
+                    .is_some_and(|other| {
+                        other.mode == Mode::Moving
+                            && other.goal != member.goal
+                            && heading.dot((other.goal - body.position).normalize_or_zero()) < 0.0
                     })
             })
             .into_iter()
@@ -1159,6 +1172,21 @@ fn step_inner(
                 .is_some_and(|other| other.mode == Mode::Moving);
             if gap < personal && other_moves {
                 separation += offset / distance * ((personal - gap) / personal).min(2.0);
+                // Two own units that meet head-on pass on the right: each steers to its own
+                // right side, so the rule has no winner and needs no identity.
+                let other_course =
+                    state
+                        .members
+                        .get(&units[body.row].unit_id)
+                        .map_or(Vec2::ZERO, |other| {
+                            other
+                                .velocity
+                                .try_normalize()
+                                .unwrap_or((other.goal - body.position).normalize_or_zero())
+                        });
+                if heading.dot(other_course) < -0.5 && heading.dot(-offset) > 0.0 {
+                    separation -= heading.perp();
+                }
             }
             // A waiting unit steps to the side of each mover that comes at it (rule 5).
             if member.mode == Mode::Waiting
