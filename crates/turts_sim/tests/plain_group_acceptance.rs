@@ -343,7 +343,9 @@ impl Trace {
             for id in ids {
                 let moved = self.positions[first][id].distance(self.positions[tick][id]);
                 assert!(
-                    moved <= 0.001,
+                    // Rule 2 (2026-11-23): settled units shift a short distance to make room.
+                    // The bound is one radius (design record, answer B).
+                    moved <= RADIUS,
                     "unit {id} moved {moved} over the rest interval at tick {tick}"
                 );
             }
