@@ -1924,10 +1924,10 @@ mod tests {
         // PINS TODAY'S BEHAVIOUR; it is not a decision (open item X2: is the weapon range measured
         // centre to centre, as today, or edge to edge?). Both radii are 0.5, so the bodies touch
         // at a centre distance of 1.0. A range below 1.0 puts the ring point of `weapon_stand_off`
-        // inside the target body. The arrival test of the movement refuses a point that overlaps
-        // another body (`frame.rs`, `occupied`), so the unit rests at a free slot near the ring
-        // point, outside the range. The order stays current, no failure is recorded, and the
-        // weapon never fires. Shipped content cannot reach this (ranges 4.0 and 8.0).
+        // inside the target body. The flock stops the unit at the target body, outside the range.
+        // The unit can shift a little along the body (0.25 at most in 200 ticks). The order stays
+        // current, no failure is recorded, and the weapon never fires. Shipped content cannot
+        // reach this (ranges 4.0 and 8.0).
         for range in [0.4_f32, 0.9] {
             let target = bevy_math::Vec2::new(10.0, 5.0);
             let mut app = approach_app(bevy_math::Vec2::new(5.0, 5.0), target, range);
@@ -1947,10 +1947,10 @@ mod tests {
             for _ in 0..200 {
                 app.update();
             }
-            assert_eq!(
-                position(&app),
-                resting_at,
-                "range {range}: the unit rests and does not move on"
+            let shift = position(&app).distance(resting_at);
+            assert!(
+                shift <= 0.25,
+                "range {range}: the unit stays at the target body (shift {shift})"
             );
             let gap = resting_at.distance(target);
             assert!(
