@@ -47,8 +47,10 @@ const ORTHOGONAL: u32 = 1000;
 const DIAGONAL: u32 = 1414;
 const UNREACHED: u32 = u32::MAX;
 /// The deepest overlap that a step may make between two own bodies that can move, as a
-/// share of the smaller radius (rule 4; FM3 limits it to 25 %).
-const OVERLAP_CAP: f32 = 0.15;
+/// share of the smaller radius (rule 4; FM3 limits it to 25 %). Two units that step at each
+/// other in one tick each use the cap against the start pose of the other, so the overlap
+/// of a pair stays below two caps.
+const OVERLAP_CAP: f32 = 0.10;
 /// A gap up to this value between two bodies is contact.
 const TOUCH: f32 = 0.05;
 /// An overlap up to this value is none (float residue of the relaxation).
@@ -1042,7 +1044,23 @@ fn step_inner(
         if positions[row] != start[row] {
             let limit = units[row].speed.unwrap_or(0.0) * dt;
             let chord = (positions[row] - start[row]).clamp_length_max(limit);
-            positions[row] = guard(row, start[row], start[row] + chord, true);
+            let end = start[row] + chord;
+            positions[row] = guard(row, start[row], end, true);
+            // A start pose at a terrain contact refuses every guarded chord. The chord is
+            // then checked as an escape step, so a unit that left the contact keeps its move.
+            if positions[row] == start[row]
+                && let Some(profile) = profiles[row]
+            {
+                let solids = solids_for(row, start[row], chord.length() + units[row].radius, true);
+                positions[row] = escape_step(
+                    terrain,
+                    start[row],
+                    end,
+                    units[row].radius,
+                    profile,
+                    &solids,
+                );
+            }
         }
     }
 
