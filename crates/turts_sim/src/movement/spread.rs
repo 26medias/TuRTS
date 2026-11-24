@@ -111,7 +111,6 @@ impl SpreadContext {
             self.max_reserved_radius = self.max_reserved_radius.max(footprint.radius);
         }
     }
-
 }
 
 /// Build a deterministic, order-preserving hex pool and assignment for an envelope.
