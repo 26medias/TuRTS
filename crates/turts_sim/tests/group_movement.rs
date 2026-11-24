@@ -1444,7 +1444,12 @@ fn second_group_same_point() {
     assert!(
         snapshot(app.world_mut())
             .iter()
-            .all(|unit| (unit.pos.x - target.x).hypot(unit.pos.y - target.y) <= 6.2)
+            // Rule 2 (2026-11-23): two orders to one point make one crowd of 80 units. A unit
+            // that cannot get into the goal area stops at the crowd, so the bound has one more
+            // unit diameter than `near_bound`.
+            .all(
+                |unit| (unit.pos.x - target.x).hypot(unit.pos.y - target.y) <= near_bound(80) + 1.0
+            )
     );
 }
 

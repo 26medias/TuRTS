@@ -133,6 +133,8 @@ struct Member {
     stalled: u16,
     /// The pose at which the unit settled.
     rest: Vec2,
+    /// The unit is in the crowd of a Move order (rules 2 and 3).
+    crowd: bool,
 }
 
 /// One cost-to-goal field on the terrain cells, from one owner's permitted terrain.
@@ -679,7 +681,12 @@ fn step_inner(
             continue;
         }
         // The goal is the public point of the order, inside the map.
-        let goal = super::public_move_goal(world, unit.unit_id, unit.owner_slot)
+        // A Move order goes to an area: its units form a crowd round the point (rules 2
+        // and 3). Every other target (a gather trip, an attack approach, a work approach) is
+        // a point that the unit must reach itself.
+        let order_point = super::public_move_goal(world, unit.unit_id, unit.owner_slot);
+        let crowd = order_point.is_some();
+        let goal = order_point
             .or_else(|| super::requested_target(unit))
             .unwrap_or(unit.position);
         // The goal is inside the map, at a pose that the body can take.
@@ -710,6 +717,7 @@ fn step_inner(
                     best_distance: unit.position.distance(goal),
                     stalled: 0,
                     rest: unit.position,
+                    crowd,
                 },
             );
         }
@@ -1115,13 +1123,20 @@ fn step_inner(
                 push += offset / distance * overlap * share;
             }
             if push != Vec2::ZERO {
-                let limit = units[row].radius;
-                positions[row] = guard(
-                    row,
-                    before[row],
-                    before[row] + push.clamp_length_max(limit),
-                    true,
-                );
+                let push = push.clamp_length_max(units[row].radius);
+                positions[row] = guard(row, before[row], before[row] + push, true);
+                // A push that a wall or a solid body refuses turns to the side, so a unit
+                // is not pinned between the pusher and the obstacle.
+                if positions[row] == before[row] {
+                    for degrees in [60.0f32, -60.0, 90.0, -90.0] {
+                        let turned = Vec2::from_angle(degrees.to_radians()).rotate(push);
+                        let end = guard(row, before[row], before[row] + turned, true);
+                        if end != before[row] {
+                            positions[row] = end;
+                            break;
+                        }
+                    }
+                }
             }
         }
     }
@@ -1287,11 +1302,14 @@ fn step_inner(
                 touches_solid = true;
             }
         });
-        let at_crowd = (touches_crowd && inside)
-            || ((touches_standing || touches_solid)
-                && member.stalled >= 2 * SETTLE_TICKS
-                && !no_path[row]);
-        settle[row] = (at_point || at_crowd || gave_up) && !overlaps && !in_passage;
+        // Only a unit of a Move order stops at its crowd or in its goal area. A unit with a
+        // point target goes on to the point and pushes a standing own unit off it (rule 1).
+        let at_crowd = member.crowd
+            && ((touches_crowd && inside)
+                || (touches_standing && member.stalled >= 2 * SETTLE_TICKS && !no_path[row]));
+        let at_solid = touches_solid && member.stalled >= 2 * SETTLE_TICKS && !no_path[row];
+        let gave_up = gave_up && member.crowd;
+        settle[row] = (at_point || at_crowd || at_solid || gave_up) && !overlaps && !in_passage;
         settle_reason[row] = if at_point {
             "settled at the point"
         } else if touches_crowd {
