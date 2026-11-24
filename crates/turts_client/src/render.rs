@@ -744,6 +744,10 @@ impl Plugin for UnitRenderPlugin {
         );
         app.add_systems(
             Update,
+            crate::drag_box::show_drag_box.after(crate::core_adapter::CoreAdapterSet),
+        );
+        app.add_systems(
+            Update,
             (
                 (setup_scene, crate::terrain::render::sync).chain(),
                 (

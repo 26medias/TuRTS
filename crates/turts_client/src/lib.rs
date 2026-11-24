@@ -13,6 +13,7 @@ pub mod content;
 pub mod core_adapter;
 pub mod debug;
 pub mod debug_feed;
+mod drag_box;
 pub mod environment;
 pub mod feedback;
 pub mod fetch;

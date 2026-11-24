@@ -145,6 +145,9 @@ fn camera_components_at_height(camera: CameraState, ground: f32) -> (Transform, 
 pub struct CoreRuntime {
     pub(crate) placement_ghost: Option<turts_interaction::placement::Ghost>,
     pub(crate) terrain_preview: Option<turts_interaction::terrain::Preview>,
+    /// The left press on the world that can become a visible drag rectangle (`drag_box.rs`).
+    /// Presentation only: the core does not read it.
+    pub(crate) drag_press: Option<crate::drag_box::DragPress>,
     /// The utility view, route preview and hover that the core last sent (M6).
     pub(crate) utility_output: turts_interaction::utility::Output,
     core: Option<Core>,
@@ -1019,6 +1022,33 @@ fn pointer_button(button: bevy::input::mouse::MouseButton) -> Option<turts_mod_a
         _ => return None,
     })
 }
+
+/// The press that the drag rectangle starts from, after one pointer button event. A left press
+/// on the world starts a box selection, or the work rectangle of a terrain tool that has its
+/// reference level. A press that the core reads as another gesture (a target of a pending order,
+/// a placement, the reference click of a tool) starts none. Every other button event ends it.
+fn drag_press(
+    runtime: &CoreRuntime,
+    button: turts_mod_api::Button,
+    state: ButtonState,
+    px: Vec2,
+    over_widget: bool,
+) -> Option<crate::drag_box::DragPress> {
+    use crate::drag_box::{DragKind, DragPress};
+    if button != turts_mod_api::Button::Left || state != ButtonState::Pressed || over_widget {
+        return None;
+    }
+    let kind = match runtime.terrain_preview.as_ref() {
+        Some(preview) if preview.target_elevation.is_some() => DragKind::TerrainWork,
+        Some(_) => return None,
+        None if runtime.pending_order_id().is_some() || runtime.placement_ghost.is_some() => {
+            return None;
+        }
+        None => DragKind::Selection,
+    };
+    Some(DragPress { at: px, kind })
+}
+
 fn over_widget(
     cursor: Vec2,
     panels: &CapturePanelQuery<'_, '_>,
@@ -1306,6 +1336,7 @@ fn drive_core_adapter(
             }
             WindowEvent::CursorLeft(value) if Some(value.window) == primary => {
                 current_cursor = None;
+                runtime.drag_press = None;
                 runtime.pointer_over_widget = None;
                 runtime.minimap_pointer = None;
                 events.push(InputEvent::PointerLeft);
@@ -1351,6 +1382,7 @@ fn drive_core_adapter(
                         }
                         continue;
                     }
+                    runtime.drag_press = drag_press(&runtime, button, value.state, px, over);
                     match value.state {
                         ButtonState::Pressed => events.push(InputEvent::PointerDown {
                             button,
