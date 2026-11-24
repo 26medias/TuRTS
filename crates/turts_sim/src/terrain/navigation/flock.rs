@@ -52,8 +52,8 @@ impl FlatGround {
                 length_scale: 1000,
                 cell_width: 1000,
                 elevation_step: 250,
-                floor: 0,
-                ceiling: 0,
+                floor: -8,
+                ceiling: 8,
             },
         }
     }
@@ -88,6 +88,10 @@ const UNREACHED: u32 = u32::MAX;
 /// other in one tick each use the cap against the start pose of the other, so the overlap
 /// of a pair stays below two caps.
 const OVERLAP_CAP: f32 = 0.10;
+/// A unit this near its point is at the point.
+const ARRIVED: f32 = 1.0e-3;
+/// The gap that the relaxation leaves between two bodies.
+const REST_GAP: f32 = 1.0e-3;
 /// A gap up to this value between two bodies is contact.
 const TOUCH: f32 = 0.05;
 /// An overlap up to this value is none (float residue of the relaxation).
@@ -712,13 +716,20 @@ fn step_inner(
             );
         }
     }
-    let mut widest = vec![0.0f32; usize::from(turts_mod_api::SLOT_COUNT)];
+    // Owner slots of the frame can go past the player slots (tests, neutral bodies).
+    let slots = units
+        .iter()
+        .map(|unit| usize::from(unit.owner_slot) + 1)
+        .max()
+        .unwrap_or(0)
+        .max(usize::from(turts_mod_api::SLOT_COUNT));
+    let mut widest = vec![0.0f32; slots];
     for unit in units.iter().filter(|unit| unit.speed.is_some()) {
         let slot = &mut widest[usize::from(unit.owner_slot)];
         *slot = slot.max(unit.radius);
     }
-    let mut owners: Vec<(u8, usize, usize)> = (0..turts_mod_api::SLOT_COUNT)
-        .map(|owner| (owner, 0, FIELD_CREDIT))
+    let mut owners: Vec<(u8, usize, usize)> = (0..slots)
+        .map(|owner| (owner as u8, 0, FIELD_CREDIT))
         .collect();
     if let Some(phase) = phase {
         for (key, (radius, profile, goal)) in &wanted {
@@ -847,6 +858,7 @@ fn step_inner(
     let mut no_path = vec![false; units.len()];
     let mut kept_out = vec![false; units.len()];
     let mut aims = start.clone();
+    let mut last_step: Vec<Option<Vec2>> = vec![None; units.len()];
     let mut audit_members = Vec::new();
     let mut audit_rows = Vec::new();
     for (row, unit) in units.iter().enumerate() {
@@ -953,6 +965,10 @@ fn step_inner(
         advice[row] = if member.mode == Mode::Waiting {
             ((give_way + if kept_out[row] { heading } else { Vec2::ZERO }) * speed)
                 .clamp_length_max(speed)
+        } else if unit.position.distance(member.goal) <= speed * dt {
+            // The last step goes exactly to the point.
+            last_step[row] = Some(member.goal);
+            (member.goal - unit.position) / dt
         } else {
             wish.clamp_length_max(speed)
         };
@@ -988,7 +1004,7 @@ fn step_inner(
             continue;
         }
         let from = unit.position;
-        let mut end = guard(row, from, from + wish, true);
+        let mut end = guard(row, from, last_step[row].unwrap_or(from + wish), true);
         if end.distance(from) < 0.5 * wish.length() {
             let aim = aims[row];
             let mut best = (end.distance(aim), end);
@@ -1058,14 +1074,16 @@ fn step_inner(
             if !soft(row) {
                 continue;
             }
-            let neighbours = neighbours_in_sum_order(&relaxed, &before, row, 0.0, |body| {
+            let neighbours = neighbours_in_sum_order(&relaxed, &before, row, REST_GAP, |body| {
                 !body.fixed && body.owner == units[row].owner_slot
             });
             let mut push = Vec2::ZERO;
             for other in neighbours {
                 let offset = before[row] - before[other];
                 let distance = offset.length();
-                let overlap = units[row].radius + units[other].radius - distance;
+                // The relaxation aims at a small gap, so standing bodies end apart and the
+                // float residue of the corrections is not an overlap.
+                let overlap = units[row].radius + units[other].radius + REST_GAP - distance;
                 if overlap <= 0.0 {
                     continue;
                 }
@@ -1091,8 +1109,14 @@ fn step_inner(
     for row in 0..units.len() {
         if positions[row] != start[row] {
             let limit = units[row].speed.unwrap_or(0.0) * dt;
-            let chord = (positions[row] - start[row]).clamp_length_max(limit);
-            let end = start[row] + chord;
+            let whole = positions[row] - start[row];
+            let chord = whole.clamp_length_max(limit);
+            // An unclamped chord ends at the exact position, with no rounding of the sum.
+            let end = if chord == whole {
+                positions[row]
+            } else {
+                start[row] + chord
+            };
             positions[row] = guard(row, start[row], end, true);
             // A start pose at a terrain contact refuses every guarded chord. The chord is
             // then checked as an escape step, so a unit that left the contact keeps its move.
@@ -1164,7 +1188,7 @@ fn step_inner(
                 .get(&units[other].unit_id)
                 .is_some_and(|other| other.mode == Mode::Settled && other.goal == member.goal)
         });
-        let at_point = here.distance(member.goal) <= (0.25 * unit.radius).max(speed * dt);
+        let at_point = here.distance(member.goal) <= ARRIVED;
         // A unit that makes no approach inside the goal area of its order stops there.
         let area = goal_area
             .get(&(unit.owner_slot, goal_key(member.goal)))
