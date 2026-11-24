@@ -172,7 +172,6 @@ fn write_when_due(
     stats: Res<Stats>,
     match_id: Res<MatchId>,
     tick: Res<Tick>,
-    movement: Option<Res<turts_sim::terrain::MovementModel>>,
     units: Query<(), With<UnitId>>,
 ) {
     let exiting = exit.read().count() > 0;
@@ -182,14 +181,7 @@ fn write_when_due(
     timer.last_write = Instant::now();
     let text = format!(
         "{}\n",
-        render(
-            &timer,
-            &stats,
-            match_id.0,
-            tick.0,
-            units.iter().count(),
-            movement.map_or_else(Default::default, |model| *model)
-        )
+        render(&timer, &stats, match_id.0, tick.0, units.iter().count())
     );
     if let Err(error) = replace_file(&timer.path, &text) {
         eprintln!(
@@ -208,7 +200,6 @@ fn render(
     match_id: u64,
     ticks: u32,
     gameplay_entities: usize,
-    movement: turts_sim::terrain::MovementModel,
 ) -> serde_json::Value {
     let mut sorted: Vec<u32> = timer.samples.iter().copied().collect();
     sorted.sort_unstable();
@@ -219,7 +210,6 @@ fn render(
             .map_or(0, |elapsed| elapsed.as_millis() as u64),
         "ticks": ticks,
         "match_id": match_id,
-        "movement": movement.name(),
         "tick_p50_us": percentile(&sorted, 50),
         "tick_p99_us": percentile(&sorted, 99),
         "tick_max_us": sorted.last().copied().unwrap_or(0),

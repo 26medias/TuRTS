@@ -72,11 +72,6 @@ Options:
                   past N.
   --help, -h      Print this text and exit with 0.
 
-Environment:
-  TURTS_MOVEMENT  Temporary test setting, read one time at start: `legacy` (default) or
-                  `flock`. Every other value stops the server. It selects the movement
-                  model of terrain moves. It is not in server.ron and not on the wire.
-
 Exit codes:
   0  The server ended well (--run-ticks reached).
   1  The server could not start, or it stopped on an error. The reason is on stderr. An

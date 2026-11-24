@@ -69,22 +69,7 @@ pub(crate) fn integrate_movement(world: &mut World) {
         units: units.iter().map(|(_, _, unit)| unit.clone()).collect(),
         pools: world.resource::<MovementPools>().0.clone(),
     };
-    let preserve_resting_units = units
-        .iter()
-        .filter_map(|(unit_id, entity, _)| {
-            world
-                .entity(*entity)
-                .get::<crate::orders::UnitOrders>()
-                .and_then(|orders| orders.current.as_ref())
-                .is_some_and(|order| {
-                    order.behaviour == turts_mod_api::Behaviour::Attack
-                        && matches!(order.target, crate::orders::OrderTargetSim::Point(_))
-                })
-                .then_some(*unit_id)
-        })
-        .collect();
-    let (outputs, terrain_waiting) =
-        crate::terrain::navigation::step(world, &frame, delta, &preserve_resting_units);
+    let (outputs, terrain_waiting) = crate::terrain::navigation::step(world, &frame, delta);
     let owner_changes = crate::terrain::navigation::take_owner_changes(world)
         .into_iter()
         .collect::<std::collections::BTreeMap<_, _>>();

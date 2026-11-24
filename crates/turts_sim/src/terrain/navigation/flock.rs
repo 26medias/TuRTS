@@ -12,7 +12,10 @@
 //! C. Physical resolution: `flock_step::guarded_step` is the only authority against
 //!    terrain and solid bodies. Own bodies then relax overlaps in `RELAX_PASSES` passes.
 //! D. Arrival and waiting.
-use super::flock_step::{Solid, escape_step, guarded_step};
+use super::{
+    flock_step::{Solid, escape_step, guarded_step},
+    geometry::TerrainRead,
+};
 use crate::{
     movement::{MovementActivity, MovementFrame, MovementFrameOutput, MovementFrameUnit},
     terrain::{TerrainPhase, TerrainState},
@@ -23,36 +26,54 @@ use std::{
     cmp::Reverse,
     collections::{BTreeMap, BTreeSet, BinaryHeap},
 };
-use turts_rules::terrain::geometry::{Cell, Traversal};
+use turts_rules::terrain::{
+    Ratio,
+    geometry::{Cell, Grid, Surface, Traversal},
+};
 
-/// The movement model of terrain moves. Temporary (T-6 design answer A): it is inserted one
-/// time at world setup and read only at the terrain-movement entry. Absent means `Legacy`.
-#[derive(Resource, Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum MovementModel {
-    #[default]
-    Legacy,
-    Flock,
+/// The traversal of a unit with no terrain class: level ground only.
+const LEVEL_GROUND: Traversal = Traversal {
+    max_step: 0,
+    max_grade: Ratio {
+        numerator: 0,
+        denominator: 1,
+    },
+};
+/// Flat ground of a map with no editable terrain: one level inside the bounds.
+struct FlatGround {
+    grid: Grid,
 }
-impl MovementModel {
-    /// The model of the host setting `TURTS_MOVEMENT`. No value means `Legacy`.
-    /// Every value other than `legacy` and `flock` is refused.
-    pub fn from_setting(value: Option<&str>) -> Result<Self, String> {
-        match value {
-            None | Some("legacy") => Ok(Self::Legacy),
-            Some("flock") => Ok(Self::Flock),
-            Some(other) => Err(format!(
-                "TURTS_MOVEMENT must be `legacy` or `flock`, not `{other}`"
-            )),
+impl FlatGround {
+    fn new(bounds: Vec2) -> Self {
+        Self {
+            grid: Grid {
+                columns: bounds.x.max(1.0).ceil() as u32,
+                rows: bounds.y.max(1.0).ceil() as u32,
+                length_scale: 1000,
+                cell_width: 1000,
+                elevation_step: 250,
+                floor: 0,
+                ceiling: 0,
+            },
         }
     }
-    pub fn name(self) -> &'static str {
-        match self {
-            Self::Legacy => "legacy",
-            Self::Flock => "flock",
-        }
+}
+impl Surface for FlatGround {
+    fn elevation(&self, cell: Cell) -> Option<i32> {
+        (cell.x < self.grid.columns && cell.y < self.grid.rows).then_some(0)
     }
 }
-
+impl TerrainRead for FlatGround {
+    fn grid(&self) -> Grid {
+        self.grid
+    }
+    fn rectangle(&self, _: Cell, max: Cell, _: &mut BTreeMap<usize, u64>) -> bool {
+        max.x < self.grid.columns && max.y < self.grid.rows
+    }
+    fn valid_lease(&self, _: &BTreeMap<usize, u64>) -> bool {
+        true
+    }
+}
 /// Neighbours that one unit reads for steering.
 const NEIGHBOURS: usize = 8;
 /// Passes of simultaneous overlap corrections between own bodies.
@@ -596,13 +617,24 @@ pub(super) fn step(
 ) -> (Vec<MovementFrameOutput>, BTreeSet<u32>) {
     let mut state = world.remove_resource::<FlockState>().unwrap_or_default();
     let tick = world.get_resource::<crate::Tick>().map_or(0, |tick| tick.0);
-    let result = {
-        let terrain = world.resource::<TerrainState>();
+    let result = if let Some(terrain) = world.get_resource::<TerrainState>() {
         let phase = crate::terrain::phase(world, turts_mod_api::ObservationPhase::Start);
         step_inner(
             world,
             terrain,
             phase.as_deref(),
+            frame,
+            dt,
+            tick,
+            &mut state,
+        )
+    } else {
+        // A map with no editable terrain: flat ground inside the map bounds. No field is
+        // needed; each unit steers on the straight line and the guard keeps it in bounds.
+        step_inner(
+            world,
+            &FlatGround::new(frame.bounds),
+            None,
             frame,
             dt,
             tick,
@@ -616,7 +648,7 @@ pub(super) fn step(
 #[allow(clippy::too_many_arguments)]
 fn step_inner(
     world: &World,
-    terrain: &TerrainState,
+    terrain: &impl TerrainRead,
     phase: Option<&TerrainPhase>,
     frame: &MovementFrame,
     dt: f32,
@@ -626,7 +658,7 @@ fn step_inner(
     let units = &frame.units;
     let profiles: Vec<Option<Traversal>> = units
         .iter()
-        .map(|unit| super::geometry::profile(world, unit))
+        .map(|unit| Some(super::geometry::profile(world, unit).unwrap_or(LEVEL_GROUND)))
         .collect();
     // Membership: a unit with a target is in the flock of its goal.
     let mut present = BTreeSet::new();

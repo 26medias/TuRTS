@@ -11,12 +11,10 @@ use turts_rules::terrain::{
     Ratio,
     geometry::{Budget, Point, Traversal},
 };
-use turts_sim::{Vec2, terrain::MovementModel};
+use turts_sim::Vec2;
 
 fn flock_fixture(scene: &str) -> Fixture {
-    let mut f = Fixture::new("quarry", scene, VARIANTS[0]);
-    f.app.world_mut().insert_resource(MovementModel::Flock);
-    f
+    Fixture::new("quarry", scene, VARIANTS[0])
 }
 fn point(p: Vec2) -> Point {
     Point {
