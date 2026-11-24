@@ -13,7 +13,7 @@
 //!    terrain and solid bodies. Own bodies then relax overlaps in `RELAX_PASSES` passes.
 //! D. Arrival and waiting.
 use super::{
-    flock_step::{Solid, escape_step, guarded_step},
+    flock_step::{CLEARANCE, Solid, escape_step, guarded_step},
     geometry::TerrainRead,
 };
 use crate::{
@@ -681,8 +681,10 @@ fn step_inner(
         // The goal is the public point of the order, inside the map.
         let goal = super::public_move_goal(world, unit.unit_id, unit.owner_slot)
             .or_else(|| super::requested_target(unit))
-            .unwrap_or(unit.position)
-            .clamp(Vec2::ZERO, frame.bounds);
+            .unwrap_or(unit.position);
+        // The goal is inside the map, at a pose that the body can take.
+        let inset = Vec2::splat(unit.radius + 2.0 * CLEARANCE);
+        let goal = goal.clamp(inset, (frame.bounds - inset).max(inset));
         // A unit that settled for this goal and still stands at that pose is at its goal:
         // the same target again does not start a new move.
         if state.members.get(&unit.unit_id).is_some_and(|member| {
@@ -1103,7 +1105,14 @@ fn step_inner(
                     continue;
                 }
                 let (mine, theirs) = (weight(row), weight(other));
-                push += offset / distance * overlap * (mine / (mine + theirs));
+                // Two standing units each take the whole overlap, so a packed crowd comes
+                // apart in a few ticks. A mover and a standing unit share it by weight.
+                let share = if mine == theirs && mine > 0.5 {
+                    1.0
+                } else {
+                    mine / (mine + theirs)
+                };
+                push += offset / distance * overlap * share;
             }
             if push != Vec2::ZERO {
                 let limit = units[row].radius;

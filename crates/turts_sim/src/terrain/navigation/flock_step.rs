@@ -95,7 +95,7 @@ fn step(
     }
 }
 /// Distance that every committed pose keeps from terrain.
-const CLEARANCE: f32 = 1.0 / 512.0;
+pub(super) const CLEARANCE: f32 = 1.0 / 512.0;
 /// Distance that a shortened step keeps from its contact.
 const MARGIN: f32 = 1.0 / 1024.0;
 
