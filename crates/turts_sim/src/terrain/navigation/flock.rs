@@ -1226,7 +1226,9 @@ fn step_inner(
                         .map_or(UNREACHED, |(x, y)| field.cost[field.index(x, y)]);
                     (cost, at.x.to_bits(), at.y.to_bits())
                 };
-                queue_hold |= rank(body.position) < rank(unit.position);
+                // A unit on a node that its class cannot occupy has no cost: it does not wait.
+                queue_hold |=
+                    rank(unit.position).0 != UNREACHED && rank(body.position) < rank(unit.position);
             }
             if let Some(mate) = mate {
                 alignment += mate.velocity;
@@ -1494,37 +1496,53 @@ fn step_inner(
     }
 
     // Bodies of different owners move at the same time, and each step was checked against
-    // the start pose of the other. When two end poses overlap, both units keep their start
-    // pose: contact stops the step, and no unit wins. One pass is sufficient: a unit that
-    // stays is at the pose that every other step was checked against.
-    let moved = Snapshot::new(
-        units
-            .iter()
-            .enumerate()
-            .map(|(row, unit)| Body {
-                row,
-                owner: unit.owner_slot,
-                position: positions[row],
-                radius: unit.radius,
-                fixed: unit.speed.is_none() || holds[row],
-            })
-            .collect(),
-    );
+    // the start pose of the other. When two end poses overlap, both units take the same
+    // smaller part of their step (a half, a quarter, an eighth), and with no clear part
+    // both keep their start pose: contact stops the step, and no unit wins. A part of a
+    // step is on the checked line of the step, so it needs no new terrain check.
+    let ends = positions.clone();
     let mut stay = vec![false; units.len()];
-    for (row, unit) in units.iter().enumerate() {
-        if positions[row] == start[row] {
-            continue;
-        }
-        moved.near(positions[row], unit.radius + max_radius, |other| {
-            let body = &moved.bodies[other];
-            if other != row
-                && (body.fixed || body.owner != unit.owner_slot)
-                && positions[row].distance(positions[other]) < unit.radius + body.radius
-                && positions[row].distance(positions[other]) < start[row].distance(start[other])
-            {
-                stay[row] = true;
+    for part in [1.0f32, 0.5, 0.25, 0.125] {
+        for row in 0..units.len() {
+            if stay[row] {
+                positions[row] = start[row] + (ends[row] - start[row]) * part;
             }
-        });
+        }
+        let moved = Snapshot::new(
+            units
+                .iter()
+                .enumerate()
+                .map(|(row, unit)| Body {
+                    row,
+                    owner: unit.owner_slot,
+                    position: positions[row],
+                    radius: unit.radius,
+                    fixed: unit.speed.is_none() || holds[row],
+                })
+                .collect(),
+        );
+        let mut conflict = vec![false; units.len()];
+        for (row, unit) in units.iter().enumerate() {
+            if positions[row] == start[row] {
+                continue;
+            }
+            moved.near(positions[row], unit.radius + max_radius, |other| {
+                let body = &moved.bodies[other];
+                if other != row
+                    && (body.fixed || body.owner != unit.owner_slot)
+                    && positions[row].distance(positions[other]) < unit.radius + body.radius
+                    && positions[row].distance(positions[other]) < start[row].distance(start[other])
+                {
+                    conflict[row] = true;
+                }
+            });
+        }
+        if !conflict.contains(&true) {
+            stay.fill(false);
+            break;
+        }
+        // A unit with no conflict keeps the part that it has now.
+        stay = conflict;
     }
     for row in 0..units.len() {
         if stay[row] {
