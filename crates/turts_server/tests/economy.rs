@@ -838,8 +838,8 @@ fn e9_base_gather_trace_replays_node_depletion_in_process() {
 }
 
 /// The full ORD3 browser scene (every authored muster unit present): worker 42 stands near
-/// the depot approach of worker 41, so its last trip is blocked. The economy log validator
-/// must accept the blocked wait (Waiting(Blocked)), the retry, the delivery and the
+/// the depot approach of worker 41. With the flock, an idle own unit does not block the trip
+/// (rule 1). The economy log validator must accept the trip, the delivery and the
 /// node_depleted failure.
 #[test]
 fn ord3_full_scene_blocked_gather_trip_validates() {
@@ -936,9 +936,10 @@ fn ord3_full_scene_blocked_gather_trip_validates() {
             break;
         }
     }
+    // Rule 1 (2026-11-23): the idle own worker 42 does not block the last trip of worker 41. The trip, the delivery and the failure below stay as they were.
     assert!(
-        saw_blocked,
-        "the full scene blocks the last trip of worker 41"
+        !saw_blocked,
+        "an idle own unit must not block the last trip of worker 41"
     );
     assert_eq!(
         failure.map(|failure| failure.reason),
@@ -1053,7 +1054,13 @@ fn decoded_fractional_movement_uses_captured_fixed_timestep() {
         })
         .expect("decoded worker movement");
     let fixed_delta = std::time::Duration::from_secs_f64(1.0 / 30.0).as_secs_f32();
-    assert_eq!(movement.to_bits(), (0.5_f32 + 3.0 * fixed_delta).to_bits());
+    // Flock (rule 6): the step is the heading times speed times the captured timestep. Its
+    // f32 rounding can differ from this formula by one ULP. A 1/20 s step differs by 0.05.
+    let expected = 0.5_f32 + 3.0 * fixed_delta;
+    assert!(
+        movement.to_bits().abs_diff(expected.to_bits()) <= 1,
+        "{movement} is not one 1/30 s step ({expected})"
+    );
 
     let mut corrupted = decoded;
     let moved = corrupted
