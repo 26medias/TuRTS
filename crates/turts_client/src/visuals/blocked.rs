@@ -8,15 +8,33 @@ use crate::{present::PresentedUnit, replica::Replica};
 /// still blocked keeps the quiet form until its activity changes.
 const BLOCKED_ALERT_SECS: f32 = 2.0;
 /// The quiet form: three small amber squares in a row (UX note of 2026-11-23, M4b wait mark).
-/// The squares have a size in screen pixels, as the health bar has: a size in world units was
+/// The squares have a size in screen pixels (`waiting_square_px`), as the health bar has: a size in world units was
 /// less than 2 pixels at the default camera height, and the anchor of the red bar is inside a
 /// large model. The row is above the place of the health bar and does not touch it.
 const WAITING_SQUARES: i8 = 3;
-const WAITING_SQUARE_PX: f32 = 6.0;
-const WAITING_GAP_PX: f32 = 4.0;
 const WAITING_CLEAR_PX: f32 = 3.0;
 /// The height of the health bar over the unit (`health.rs`).
 const HEALTH_BAR_HEIGHT: f32 = 2.2;
+
+/// The side and the gap of the waiting squares in pixels, from the width of the unit on the
+/// screen (UX note of 2026-11-23): a row of the largest size over each unit of a close group of
+/// small units gave joined lines. The row is 13 pixels for the smallest size and 26 pixels for
+/// the largest.
+fn waiting_square_px(unit_width_px: f32) -> (f32, f32) {
+    let side = if unit_width_px.is_finite() {
+        (unit_width_px / 5.0).round().clamp(3.0, 6.0)
+    } else {
+        6.0
+    };
+    let gap = if side <= 3.0 {
+        2.0
+    } else if side < 6.0 {
+        3.0
+    } else {
+        4.0
+    };
+    (side, gap)
+}
 
 /// Start and end the blocked marks from the replicated order records.
 pub(super) fn track_blocked(replica: &Replica, visuals: &mut VisualState, now: Instant) {
@@ -70,6 +88,7 @@ pub(super) fn draw_blocked_marks(
     terrain: Option<&crate::terrain::store::PermittedTerrain>,
     camera: &Camera,
     camera_transform: &GlobalTransform,
+    content: &crate::content::ClientContent,
 ) {
     let Some(mesh) = assets.bar.clone() else {
         return;
@@ -97,16 +116,15 @@ pub(super) fn draw_blocked_marks(
                 continue;
             };
             let bar = ground + Vec3::Y * HEALTH_BAR_HEIGHT;
-            let square = world_units_for_pixels(
-                camera,
-                camera_transform,
-                bar,
-                Vec2::splat(WAITING_SQUARE_PX),
-            );
-            let per_pixel = square / WAITING_SQUARE_PX;
-            let rise = assets.health_bar_size.y / 2.0 + WAITING_CLEAR_PX + WAITING_SQUARE_PX / 2.0;
+            let per_pixel = world_units_for_pixels(camera, camera_transform, bar, Vec2::ONE);
+            // The width of the unit on the screen: two times its declared pick radius.
+            let width_px = crate::render::declared_unit_pick_radius(content, &unit.content_id)
+                .map_or(f32::NAN, |radius| 2.0 * radius / per_pixel.x);
+            let (side, gap) = waiting_square_px(width_px);
+            let square = per_pixel * side;
+            let rise = assets.health_bar_size.y / 2.0 + WAITING_CLEAR_PX + side / 2.0;
             let row = bar + Vec3::Y * (per_pixel.y * rise);
-            let pitch = per_pixel.x * (WAITING_SQUARE_PX + WAITING_GAP_PX);
+            let pitch = per_pixel.x * (side + gap);
             for square_index in 0..WAITING_SQUARES {
                 let offset = f32::from(square_index - WAITING_SQUARES / 2) * pitch;
                 desired.insert(
@@ -157,5 +175,32 @@ pub(super) fn draw_blocked_marks(
         markers_shown
             .0
             .push(serde_json::json!({"kind":"blocked","unit":unit_id}));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::waiting_square_px;
+
+    #[test]
+    fn waiting_square_follows_the_unit_width_inside_its_limits() {
+        // (unit width in pixels, side, gap, row width)
+        for (width, side, gap, row) in [
+            (4.0, 3.0, 2.0, 13.0),
+            (14.0, 3.0, 2.0, 13.0),
+            (20.0, 4.0, 3.0, 18.0),
+            (25.0, 5.0, 3.0, 21.0),
+            (30.0, 6.0, 4.0, 26.0),
+            (400.0, 6.0, 4.0, 26.0),
+            (f32::NAN, 6.0, 4.0, 26.0),
+        ] {
+            let (got_side, got_gap) = waiting_square_px(width);
+            assert_eq!((got_side, got_gap), (side, gap), "unit width {width}");
+            assert_eq!(
+                3.0 * got_side + 2.0 * got_gap,
+                row,
+                "row of unit width {width}"
+            );
+        }
     }
 }
