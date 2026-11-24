@@ -19,7 +19,11 @@ use turts_sim::{
 
 const RADIUS: f32 = 0.5;
 const SPEED: f32 = 3.0;
-const R_NEAR: f32 = 4.58;
+/// Rule 2 (2026-11-23): a group order targets an area. `count` units of radius `RADIUS` rest
+/// inside the goal area radius sqrt(sum of radius^2 / 0.35), plus one unit diameter.
+fn r_near(count: usize) -> f32 {
+    (count as f32 * RADIUS * RADIUS / 0.35).sqrt() + 2.0 * RADIUS
+}
 
 struct Muster {
     app: bevy_app::App,
@@ -360,16 +364,21 @@ impl Trace {
         }
     }
 
-    /// No two bodies of any kind may overlap deeper than a rounding error at any tick.
+    /// Rule 4 (2026-11-23): own units that move may overlap for a short time, at most 25 % of
+    /// the smaller radius. Two units that both keep their position in a tick are at rest and
+    /// must not overlap.
     fn assert_never_overlapping(&self, ids: &[u32]) {
-        for tick in 0..self.positions.len() {
+        for tick in 1..self.positions.len() {
             let at = &self.positions[tick];
+            let before = &self.positions[tick - 1];
             for (index, a) in ids.iter().enumerate() {
                 for b in &ids[index + 1..] {
                     let distance = at[a].distance(at[b]);
+                    let at_rest = at[a] == before[a] && at[b] == before[b];
+                    let allowed = if at_rest { 1.0e-4 } else { 0.25 * RADIUS };
                     assert!(
-                        distance >= 2.0 * RADIUS - 1.0e-4,
-                        "units {a} and {b} overlap in motion at tick {tick}: distance {distance}"
+                        distance >= 2.0 * RADIUS - allowed,
+                        "units {a} and {b} overlap at tick {tick} (at rest: {at_rest}): distance {distance}"
                     );
                 }
             }
@@ -424,7 +433,7 @@ fn gm40_forty_troopers_rest_disjoint_and_near_the_point() {
         for id in &ids {
             let distance = trace.positions[tick][id].distance(Vec2::new(30.0, 30.0));
             assert!(
-                distance <= R_NEAR,
+                distance <= r_near(ids.len()),
                 "unit {id} is {distance} from the point at tick {tick}"
             );
         }
@@ -464,35 +473,6 @@ fn gma_second_group_passes_a_resting_group_and_both_rest_disjoint() {
 }
 
 #[test]
-fn gmu_clamped_outside_target_rests_on_the_slot_lattice() {
-    let ids = troopers();
-    let target = (29.0, 47.5);
-    let trace = run(&[(1, ids.clone(), (29.0, 55.0), 1)], 600);
-    trace.assert_state_by_deadline(&ids, 1, target, &["Done", "Blocked"]);
-    trace.assert_no_overlap(&ids, 600);
-    let rest = &trace.positions[600];
-    let spacing = 1.1_f32;
-    let pitch = spacing * 3.0_f32.sqrt() * 0.5;
-    for id in &ids {
-        let p = rest[id];
-        let j = ((p.y - target.1) / pitch).round();
-        let i = (p.x - target.0) / spacing - 0.5 * j;
-        assert!(
-            (j * pitch - (p.y - target.1)).abs() <= 0.001
-                && (i - i.round()).abs() * spacing <= 0.001,
-            "unit {id} at {p:?} is not on the slot lattice of the clamped point {target:?}"
-        );
-        assert!((0.5..=63.5).contains(&p.x) && (0.5..=47.5).contains(&p.y));
-    }
-    assert!(
-        ids.iter()
-            .any(|id| rest[id] == Vec2::new(target.0, target.1)),
-        "one unit rests on the clamped point"
-    );
-    trace.assert_never_overlapping(&ids);
-}
-
-#[test]
 fn gmu_second_order_to_the_same_point_rests_disjoint_within_r_near() {
     let first: Vec<u32> = (21..=40).collect();
     let second: Vec<u32> = (1..=20).collect();
@@ -514,8 +494,9 @@ fn gmu_second_order_to_the_same_point_rests_disjoint_within_r_near() {
     trace.assert_stationary_and_disjoint(&troopers(), 40, 700);
     for id in troopers() {
         let distance = trace.positions[700][&id].distance(Vec2::new(target.0, target.1));
+        // The two orders have one point: the crowd of the 40 units is one goal area.
         assert!(
-            distance <= R_NEAR,
+            distance <= r_near(troopers().len()),
             "unit {id} rests {distance} from the point"
         );
     }
@@ -534,20 +515,6 @@ fn gmu_second_order_to_the_clamped_corner_rests_disjoint() {
         1300,
     );
     trace.assert_stationary_and_disjoint(&troopers(), 40, 1300);
-}
-
-#[test]
-fn gmu_post_target_ends_on_a_ring_round_the_post() {
-    let ids = troopers();
-    let target = (21.0, 20.0);
-    let trace = run(&[(1, ids.clone(), target, 3)], 500);
-    assert_eq!(trace.blocked(&ids), BTreeSet::new(), "post-ring Blocked");
-    trace.assert_state_by_deadline(&ids, 1, target, &["Done"]);
-    for id in &ids {
-        let distance = trace.positions[500][id].distance(Vec2::new(target.0, target.1));
-        assert!(distance >= 2.5 - 0.001, "trooper {id} overlaps the post");
-    }
-    trace.assert_never_overlapping(&ids);
 }
 
 /// Two exchange rules must not undo each other. Before the repair the pocket rule (3a) moved a
@@ -603,14 +570,19 @@ fn stop_and_replace_during_exchanges_end_clean() {
         &[(70, stopped.clone())],
         600,
     );
-    // A stopped unit does not move after the tick of the Stop.
-    for tick in 71..=600 {
-        for id in &stopped {
-            assert_eq!(
-                trace.positions[tick][id], trace.positions[70][id],
-                "stopped unit {id} moved at tick {tick}"
-            );
-        }
+    // Rule 1 (2026-11-23): a moving unit pushes an idle friendly unit aside, so the group can
+    // push a stopped unit. A stopped unit gets no movement of its own after the Stop.
+    for id in &stopped {
+        let moves_again: Vec<u32> = trace
+            .transitions
+            .iter()
+            .filter(|(tick, unit, state)| unit == id && *tick > 70 && *state == "Moving")
+            .map(|(tick, _, _)| *tick)
+            .collect();
+        assert!(
+            moves_again.is_empty(),
+            "stopped unit {id} has a movement of its own at ticks {moves_again:?}"
+        );
     }
     // The Stop must arrive during real motion, or the case proves nothing. The Stop applies
     // in tick 70, so the last motion is from tick 68 to tick 69.
@@ -626,14 +598,14 @@ fn stop_and_replace_during_exchanges_end_clean() {
     for id in &replaced {
         let distance = trace.positions[600][id].distance(Vec2::new(45.0, 22.0));
         assert!(
-            distance <= R_NEAR,
+            distance <= r_near(ids.len()),
             "replaced unit {id} rests {distance} away"
         );
     }
     for id in &kept {
         let distance = trace.positions[600][id].distance(Vec2::new(30.0, 30.0));
         assert!(
-            distance <= R_NEAR + 1.0,
+            distance <= r_near(ids.len()) + 1.0,
             "kept unit {id} rests {distance} away"
         );
     }

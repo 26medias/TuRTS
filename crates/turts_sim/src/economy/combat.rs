@@ -3841,7 +3841,7 @@ mod tests {
     // ---- L0-WIRE repair: one red test for each input of the change list ----------------------
     //
     // The record of a unit reads more than `UnitOrders`: `MoveTarget`, `MoveProgress`,
-    // `PlainMoveProgress`, `PhysicalEscape`, the pending move table and the gather order. Each
+    // `PlainMoveProgress`, the pending move table and the gather order. Each
     // test changes ONE of these directly (no writer of `UnitOrders` is called), and the record
     // changes by that input only. A plant that drops the input from `orders::writer` turns the
     // test red (plants (13) to (24) of `l0-wire.json`).
@@ -3988,37 +3988,6 @@ mod tests {
         app.world_mut()
             .entity_mut(entity)
             .remove::<crate::movement::PlainMoveProgress>();
-        app.update();
-        assert_eq!(listed(&app), vec![1]);
-    }
-
-    #[test]
-    fn input_physical_escape_added_is_listed() {
-        let mut app = quiet_orders_app();
-        let entity = entity_of(&app, 1);
-        app.world_mut()
-            .entity_mut(entity)
-            .insert(crate::movement::PhysicalEscape { target: None });
-        app.update();
-        assert_eq!(listed(&app), vec![1]);
-        assert_eq!(
-            activity_of(&app, 1),
-            crate::economy::views::UnitOrderActivityView::Blocked
-        );
-    }
-
-    #[test]
-    fn input_physical_escape_removed_is_listed() {
-        let mut app = quiet_orders_app();
-        let entity = entity_of(&app, 1);
-        app.world_mut()
-            .entity_mut(entity)
-            .insert(crate::movement::PhysicalEscape { target: None });
-        app.update();
-        app.update();
-        app.world_mut()
-            .entity_mut(entity)
-            .remove::<crate::movement::PhysicalEscape>();
         app.update();
         assert_eq!(listed(&app), vec![1]);
     }

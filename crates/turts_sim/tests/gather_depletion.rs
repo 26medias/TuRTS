@@ -2,14 +2,14 @@
 //!
 //! The rule: when the named node of a Gather order empties, a harvester that holds cargo
 //! delivers that cargo to a receiver first. Then the order fails with `node_depleted` and the
-//! harvester is idle at the receiver. A harvester with no cargo fails at once. A gather trip
-//! that a unit blocks does not fail: the cycle waits with `Waiting(Blocked)` and tries the
-//! approach again. With no receiver, the cycle keeps its cargo and waits. No resource is
+//! harvester is idle at the receiver. A harvester with no cargo fails at once. An idle friendly
+//! unit on the approach point does not stop the trip: the harvester pushes it aside (rule 1,
+//! 2026-11-23). With no receiver, the cycle keeps its cargo and waits. No resource is
 //! created or destroyed: node stock, cargo and receiver stock always sum to the start stock.
 //!
 //! Each case drives fixed ticks from a tick counter only. No case reads wall time.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 use turts_mod_api::{
     Behaviour, ContentCatalog, ContentId, ContentsPolicy, Footprint, MapDef, MapSize,
@@ -343,13 +343,12 @@ fn seen(app: &bevy_app::App, unit_id: u32, tick: u32) -> Seen {
 }
 
 /// What one case observed: the worker at the tick the node empties; each gatherer at the tick
-/// its order ended (or at the tick limit); the worker stages in between.
+/// its order ended (or at the tick limit).
 #[derive(Debug)]
 struct Outcome {
     at_depletion: Seen,
     at_end: Seen,
     helper_at_end: Option<Seen>,
-    worker_stages: Vec<GatherStage>,
 }
 
 fn run_case(scene: Scene) -> Outcome {
@@ -437,7 +436,6 @@ fn run_case(scene: Scene) -> Outcome {
         at_depletion,
         at_end,
         helper_at_end,
-        worker_stages,
     }
 }
 
@@ -615,12 +613,7 @@ fn worker_whose_receiver_approach_is_blocked_waits_then_delivers_then_fails() {
         blocker: Some(DEPOT_APPROACH - Vec2::new(0.2, 0.0)),
         ..Scene::node(5)
     });
-    assert!(
-        outcome.worker_stages.contains(&GatherStage::Waiting {
-            reason: WaitReason::Blocked
-        }),
-        "case d: the blocked trip waits visibly: {outcome:?}"
-    );
+    // Rule 1 (2026-11-23): the worker pushes the idle friendly unit aside. No wait is necessary.
     assert_delivered_then_failed("case d", &outcome, 5);
     assert_eq!(outcome.at_end.depot, 5, "case d: the depot holds the ore");
 }
@@ -654,110 +647,23 @@ fn worker_whose_receiver_is_gone_keeps_its_cargo_and_waits() {
 }
 
 // ---------------------------------------------------------------------------------------
-// Blocked trips: the retry, the free approach point, Stop and Move during the wait, and the
-// node side. All of these drive a gatherer whose approach a unit footprint covers.
+// Covered approach points: an idle unit footprint covers the approach of a gatherer.
 // ---------------------------------------------------------------------------------------
 
-const BLOCKED: GatherStage = GatherStage::Waiting {
-    reason: WaitReason::Blocked,
-};
-
-fn stage_of(app: &bevy_app::App, unit_id: u32) -> GatherStage {
-    order_view(app.world(), SlotId(0), unit_id).unwrap().stage
-}
-
-/// Order one unit with a plain behaviour that has the registered content id `local`.
-fn order(
-    app: &mut bevy_app::App,
-    seq: u32,
-    unit_id: u32,
-    (local, behaviour, kind): (&str, Behaviour, TargetKind),
-    target: OrderTargetSim,
-) {
-    let command = Command {
-        slot: SlotId(0),
-        seq,
-        kind: CommandKind::Order(Box::new(OrderCommand {
-            order: id(local),
-            behaviour,
-            target_kind: kind,
-            policy: None,
-            units: vec![unit_id],
-            target,
-            queue: QueueMode::Replace,
-            group: 0,
-            allowed_units: Vec::new(),
-            queue_depth: 16,
-        })),
-    };
-    let result = apply_command(app.world_mut(), &command);
-    assert_eq!(result.units.accepted, vec![unit_id], "{result:?}");
-}
-
-/// Points on a circle of `radius` around `center`, 360 / `count` degrees apart, from angle 0.
-/// The k-th point has unit id `first_id + k` in a fixture whose units are listed in this order.
-fn ring(center: Vec2, radius: f32, count: u32) -> Vec<Vec2> {
-    (0..count)
-        .map(|k| {
-            let angle = f64::from(k) * std::f64::consts::TAU / f64::from(count);
-            center + Vec2::new(angle.cos() as f32, angle.sin() as f32) * radius
-        })
-        .collect()
-}
-
-/// The worker is unit 2. Units 3 to 10 are idle workers on the reach ring of the depot (radius
-/// 2.0): they cover the direct approach point and all 16 candidate points of the worker.
-fn ringed_depot(node_stock: u64) -> bevy_app::App {
-    let mut units = vec![Vec2::new(28.0, 10.0)];
-    units.extend(ring(DEPOT_POS, 2.0, 8));
-    app_with(node_stock, &units)
-}
-
-/// Drive ticks until `stop(app)` holds. Fail at `TICK_LIMIT` ticks.
-fn run_until(app: &mut bevy_app::App, case: &str, stop: impl Fn(&bevy_app::App) -> bool) {
-    for _ in 1..=TICK_LIMIT {
-        app.update();
-        if stop(app) {
-            return;
-        }
-    }
-    panic!("{case}: the condition never held in {TICK_LIMIT} ticks");
-}
-
-/// The ringed depot, one Gather order, run until the worker waits with `Waiting(Blocked)`
-/// while it holds its 5 ore.
-fn ringed_and_waiting() -> bevy_app::App {
-    let mut app = ringed_depot(5);
-    gather(&mut app, 1, WORKER);
-    run_until(&mut app, "ringed depot", |app| {
-        stage_of(app, WORKER) == BLOCKED
-    });
-    assert_eq!(stock(&app, WORKER), 5, "the waiting worker holds its cargo");
-    app
-}
-
 /// Drive ticks until every unit of `units` has no current order. Return each unit as it was on
-/// the tick its order ended, and the set of units that were in `Waiting(Blocked)` on a tick.
-fn run_until_ended(
-    app: &mut bevy_app::App,
-    case: &str,
-    units: &[u32],
-) -> (BTreeMap<u32, Seen>, BTreeSet<u32>) {
+/// the tick its order ended.
+fn run_until_ended(app: &mut bevy_app::App, case: &str, units: &[u32]) -> BTreeMap<u32, Seen> {
     let mut ended = BTreeMap::new();
-    let mut waited = BTreeSet::new();
     for tick in 1..=TICK_LIMIT {
         app.update();
         for unit in units {
-            if stage_of(app, *unit) == BLOCKED {
-                waited.insert(*unit);
-            }
             let now = seen(app, *unit, tick);
             if !now.has_current_order {
                 ended.entry(*unit).or_insert(now);
             }
         }
         if ended.len() == units.len() {
-            return (ended, waited);
+            return ended;
         }
     }
     panic!("{case}: not every order ended in {TICK_LIMIT} ticks: ended {ended:?}");
@@ -789,11 +695,8 @@ fn two_gatherers_and_one_blocker_on_the_depot_approach_both_deliver_then_fail() 
     let mut app = app_with(2 * CAPACITY, &units);
     gather(&mut app, 1, 2);
     gather(&mut app, 2, 3);
-    let (ended, waited) = run_until_ended(&mut app, "two gatherers", &[2, 3]);
-    assert!(
-        !waited.is_empty(),
-        "the blocker makes at least one trip wait: {ended:?}"
-    );
+    // Rule 1 (2026-11-23): a gatherer pushes the idle friendly unit aside. No wait is necessary.
+    let ended = run_until_ended(&mut app, "two gatherers", &[2, 3]);
     for unit in [2, 3] {
         assert_node_depleted_with_no_cargo(&format!("unit {unit}"), &ended[&unit]);
     }
@@ -802,129 +705,4 @@ fn two_gatherers_and_one_blocker_on_the_depot_approach_both_deliver_then_fail() 
         2 * CAPACITY,
         "the depot holds all the ore"
     );
-}
-
-/// The blocker leaves while the worker waits. The trip must resume at the next retry, deliver,
-/// and end the order with `node_depleted`.
-#[test]
-fn blocked_trip_resumes_when_the_blocker_leaves() {
-    let mut app = ringed_and_waiting();
-    // Unit 3 is ring point 0: it stands on the direct approach point of the worker.
-    assert_eq!(position(&app, 3), DEPOT_APPROACH);
-    let away = Vec2::new(12.0, 17.0);
-    let result = apply_command(
-        app.world_mut(),
-        &Command {
-            slot: SlotId(0),
-            seq: 5,
-            kind: CommandKind::MoveTo {
-                unit_ids: vec![3],
-                target: away,
-            },
-        },
-    );
-    assert!(result.outcome.is_ok(), "{result:?}");
-    // The blocker needs about 5 ticks to clear the point; the retry period is 10 ticks.
-    let mut left_the_wait = None;
-    for tick in 1..=30_u32 {
-        app.update();
-        if stage_of(&app, WORKER) != BLOCKED {
-            left_the_wait = Some(tick);
-            break;
-        }
-    }
-    assert!(
-        left_the_wait.is_some(),
-        "the worker leaves Waiting(Blocked) within 30 ticks of the blocker leaving"
-    );
-    let (ended, _) = run_until_ended(&mut app, "blocker left", &[WORKER]);
-    assert_node_depleted_with_no_cargo("blocker left", &ended[&WORKER]);
-    assert_eq!(ended[&WORKER].depot, 5, "the depot holds the ore");
-}
-
-/// Stop during the wait: the worker is Idle at once, keeps its cargo, has no move, and the wait
-/// does not come back.
-#[test]
-fn stop_during_the_blocked_wait_leaves_the_worker_idle_with_its_cargo() {
-    let mut app = ringed_and_waiting();
-    order(
-        &mut app,
-        7,
-        WORKER,
-        ("stop", Behaviour::Stop, TargetKind::None),
-        OrderTargetSim::None,
-    );
-    let at_stop = position(&app, WORKER);
-    for tick in 1..=300_u32 {
-        app.update();
-        let now = seen(&app, WORKER, tick);
-        assert_eq!(now.stage, GatherStage::Idle, "tick {tick}: {now:?}");
-        assert!(!now.has_current_order, "tick {tick}: {now:?}");
-        assert!(!now.moving, "tick {tick}: no move after Stop: {now:?}");
-        assert_eq!(now.position, at_stop, "tick {tick}: the worker stays");
-        assert_eq!(now.cargo, 5, "tick {tick}: the worker keeps its cargo");
-    }
-}
-
-/// Move during the wait: the worker walks to the goal with its cargo and never waits again.
-#[test]
-fn move_during_the_blocked_wait_reaches_the_goal_and_never_waits_again() {
-    let mut app = ringed_and_waiting();
-    let goal = Vec2::new(40.0, 15.0);
-    order(
-        &mut app,
-        7,
-        WORKER,
-        ("move", Behaviour::Move, TargetKind::Point),
-        OrderTargetSim::Point(goal),
-    );
-    for tick in 1..=600_u32 {
-        app.update();
-        assert_ne!(
-            stage_of(&app, WORKER),
-            BLOCKED,
-            "tick {tick}: a Move never waits as a gather"
-        );
-    }
-    let now = seen(&app, WORKER, 600);
-    assert!(
-        now.position.distance(goal) < 0.6,
-        "the worker reaches the goal: {now:?}"
-    );
-    assert_eq!(now.stage, GatherStage::Idle, "{now:?}");
-    assert!(!now.has_current_order, "{now:?}");
-    assert_eq!(now.cargo, 5, "the worker keeps its cargo: {now:?}");
-}
-
-/// The node side: eight idle units cover the reach ring of the node while the worker unloads
-/// its first load, so the trip back TO the node is blocked. The worker has no cargo, waits with
-/// `Waiting(Blocked)`, and when one ring unit leaves, the retry resumes the trip. The order
-/// then ends with `node_depleted` and the depot holds all 15 ore.
-#[test]
-fn blocked_trip_to_the_node_waits_and_retries() {
-    let mut units = vec![Vec2::new(28.0, 10.0)];
-    units.extend((0..8).map(|k| Vec2::new(40.0 + 4.0 * k as f32, 18.0)));
-    let mut app = app_with(15, &units);
-    gather(&mut app, 1, WORKER);
-    let spots = ring(NODE_POS, 2.0, 8);
-    run_until(&mut app, "first unload", |app| {
-        stage_of(app, WORKER) == GatherStage::Unloading
-    });
-    for (unit, spot) in (3..).zip(&spots) {
-        let entity = entity(&app, unit).unwrap().id();
-        app.world_mut().entity_mut(entity).insert(Position(*spot));
-    }
-    run_until(&mut app, "node side wait", |app| {
-        stage_of(app, WORKER) == BLOCKED
-    });
-    assert_eq!(stock(&app, WORKER), 0, "the node-side wait holds no cargo");
-    assert!(node_stock(&app) > 0, "the node still holds ore");
-    // Ring point 4 is the west point, the direct point of a worker that comes from the depot.
-    let entity = entity(&app, 3 + 4).unwrap().id();
-    app.world_mut()
-        .entity_mut(entity)
-        .insert(Position(Vec2::new(70.0, 2.0)));
-    let (ended, _) = run_until_ended(&mut app, "node side", &[WORKER]);
-    assert_node_depleted_with_no_cargo("node side", &ended[&WORKER]);
-    assert_eq!(stock(&app, DEPOT), 15, "the depot holds all the ore");
 }

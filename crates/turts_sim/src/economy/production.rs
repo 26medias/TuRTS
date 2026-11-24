@@ -1801,18 +1801,29 @@ mod m3_disabled_legacy_producer_tests {
             for _ in 0..150 {
                 app.update();
                 let states = crate::world::snapshot(app.world_mut());
+                let previous: Vec<(u32, Vec2)> = traces.last().cloned().unwrap_or_default();
+                let rests =
+                    |unit: &crate::world::UnitState| previous.contains(&(unit.unit_id, unit.pos));
                 for (i, a) in states.iter().enumerate() {
                     for b in &states[i + 1..] {
-                        let min = if a.unit_id == 7 || b.unit_id == 7 {
-                            0.75
+                        let building = a.unit_id == 7 || b.unit_id == 7;
+                        let min = if building { 0.75 } else { 0.5 };
+                        // Rule 4 (2026-11-23): own units that move may overlap for a short
+                        // time, at most 25 % of the smaller radius (0.25). No overlap at rest
+                        // (both keep their position in the tick) or with the building.
+                        let allowed = if building || (rests(a) && rests(b)) {
+                            0.0001
                         } else {
-                            0.5
+                            0.25 * 0.25
                         };
                         assert!(
-                            a.pos.distance(b.pos) >= min - 0.0001,
-                            "EX2: overlap {} {}",
+                            a.pos.distance(b.pos) >= min - allowed,
+                            "EX2: overlap {} {}: distance {}, at rest {} {}",
                             a.unit_id,
-                            b.unit_id
+                            b.unit_id,
+                            a.pos.distance(b.pos),
+                            rests(a),
+                            rests(b)
                         );
                     }
                 }

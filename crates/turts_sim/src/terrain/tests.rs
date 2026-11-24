@@ -722,7 +722,9 @@ fn fast_real_move_cannot_jump_a_one_cell_cliff_and_keeps_its_order() {
         OrderTargetSim::Point(crate::Vec2::new(5.5, 4.5)),
         QueueMode::Replace,
     );
-    for _ in 0..10 {
+    // Rule 5 (2026-11-23): the unit goes to the obstacle first. The wait mark comes after 10
+    // ticks with no progress, so the test reads the state after 20 ticks.
+    for _ in 0..20 {
         fixture.tick();
     }
     let entity = crate::unit_entity(fixture.app.world(), fixture.worker).unwrap();

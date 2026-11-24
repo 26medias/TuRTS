@@ -72,21 +72,28 @@ fn run_thirty() -> Vec<Vec<(u32, Vec2)>> {
     let rally = centre + (Vec2::new(32.0, 24.0) - centre).normalize() * 5.5;
     let mut traces = vec![];
     let mut worst = (0.0, 0, 0, 0);
+    let mut worst_moving = (0.0, 0, 0, 0);
     let mut first_rest = None;
     let mut first_drift = 0.0_f32;
     for tick in 0..2600 {
         app.update();
         let states = snapshot(app.world_mut());
+        let previous: Vec<(u32, Vec2)> = traces.last().cloned().unwrap_or_default();
+        let rests = |unit: &turts_sim::UnitState| previous.contains(&(unit.unit_id, unit.pos));
         for (i, a) in states.iter().enumerate() {
             for b in &states[i + 1..] {
-                let min = if a.unit_id == 1 || b.unit_id == 1 {
-                    2.05
-                } else {
-                    1.1
-                };
+                let building = a.unit_id == 1 || b.unit_id == 1;
+                let min = if building { 2.05 } else { 1.1 };
                 let gap = a.pos.distance(b.pos) - min;
-                if gap < worst.0 {
-                    worst = (gap, tick, a.unit_id, b.unit_id);
+                // Rule 4 (2026-11-23): own units that move may overlap for a short time. A
+                // pair is at rest when both units keep their position in the tick.
+                let record = if building || (rests(a) && rests(b)) {
+                    &mut worst
+                } else {
+                    &mut worst_moving
+                };
+                if gap < record.0 {
+                    *record = (gap, tick, a.unit_id, b.unit_id);
                 }
             }
         }
@@ -106,11 +113,18 @@ fn run_thirty() -> Vec<Vec<(u32, Vec2)>> {
         .map(|s| s.pos.distance(rally))
         .fold(0.0, f32::max);
     println!(
-        "actual skirmish: 30 soldiers, farthest centre from rally {far}, worst overlap {worst:?}, first drift {first_drift}"
+        "actual skirmish: 30 soldiers, farthest centre from rally {far}, worst overlap at rest {worst:?}, worst overlap in motion {worst_moving:?}, first drift {first_drift}"
     );
-    assert!(first_drift < 0.0001, "first arrival moved");
+    // Rule 2 (2026-11-23): the first unit keeps its place in the crowd, and a settled unit
+    // shifts a short distance to make room: at most one unit diameter (1.1).
+    assert!(first_drift <= 1.1, "first arrival left its place");
     assert!(far < 7.0, "group must stay near rally");
     assert!(worst.0 >= -0.0001, "EX2: actual skirmish overlap {worst:?}");
+    // Rule 4 (2026-11-23): at most 25 % of the smaller radius (0.55) while the units move.
+    assert!(
+        worst_moving.0 >= -0.25 * 0.55,
+        "EX2: actual skirmish overlap in motion {worst_moving:?}"
+    );
     traces
 }
 #[test]
