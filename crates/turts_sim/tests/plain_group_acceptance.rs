@@ -467,10 +467,12 @@ fn gma_second_group_passes_a_resting_group_and_both_rest_disjoint() {
             (1, first.clone(), (29.0, 35.0), 1),
             (240, second.clone(), (29.0, 44.0), 2),
         ],
-        700,
+        800,
     );
     trace.assert_stationary_and_disjoint(&first, 40, 239);
-    trace.assert_stationary_and_disjoint(&troopers(), 40, 700);
+    // The last units of the second group push into their crowd slowly (rule 3 holds only
+    // inside the goal area), so the rest check is at tick 800.
+    trace.assert_stationary_and_disjoint(&troopers(), 40, 800);
     trace.assert_never_overlapping(&troopers());
 }
 

@@ -1582,6 +1582,8 @@ fn step_inner(
         // The same holds at a solid body that stands (a building, an own unit on Hold, a body
         // of another owner that does not move). A moving body of another owner is traffic.
         let mut touches_solid = false;
+        // A moving body of another owner in the way for a long time ends the move also.
+        let mut touches_traffic = false;
         // A unit that a solid body stops can stand up to two steps from it.
         let reach = TOUCH + 2.0 * speed * dt;
         snapshot.near(here, unit.radius + max_radius + reach, |other| {
@@ -1592,10 +1594,10 @@ fn step_inner(
                         .members
                         .get(&units[body.row].unit_id)
                         .is_none_or(|other| other.mode != Mode::Moving));
-            if other != row
-                && stands
-                && here.distance(positions[other]) - unit.radius - body.radius <= reach
-            {
+            let touches = other != row
+                && here.distance(positions[other]) - unit.radius - body.radius <= reach;
+            touches_traffic |= touches && body.owner != unit.owner_slot;
+            if touches && stands {
                 touches_solid = true;
             }
         });
@@ -1604,7 +1606,9 @@ fn step_inner(
         let at_crowd = member.crowd
             && ((touches_crowd && inside)
                 || (touches_standing && member.stalled >= 2 * SETTLE_TICKS && !no_path[row]));
-        let at_solid = touches_solid && member.stalled >= 2 * SETTLE_TICKS && !no_path[row];
+        let at_solid = !no_path[row]
+            && ((touches_solid && member.stalled >= 2 * SETTLE_TICKS)
+                || (touches_traffic && member.stalled >= 6 * SETTLE_TICKS));
         let gave_up = gave_up && member.crowd;
         settle[row] = (at_point || at_crowd || at_solid || gave_up) && !overlaps && !in_passage;
         settle_reason[row] = if at_point {
