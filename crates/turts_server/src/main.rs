@@ -84,7 +84,14 @@ fn run() -> Result<(), String> {
         .parse()
         .map_err(|error| format!("ws_listen `{}`: {error}", cfg.ws_listen))?;
 
+    // Temporary host setting (T-6 design answer A): read one time, before the match.
+    let movement = match std::env::var("TURTS_MOVEMENT") {
+        Ok(value) => turts_sim::terrain::MovementModel::from_setting(Some(&value))?,
+        Err(std::env::VarError::NotPresent) => turts_sim::terrain::MovementModel::Legacy,
+        Err(error) => return Err(format!("TURTS_MOVEMENT: {error}")),
+    };
     let mut app = base_app(cfg.tick_hz);
+    app.insert_resource(movement);
 
     let booted = boot::boot(app.world_mut(), &cfg, &bytes).map_err(|error| error.to_string())?;
     let server_catalog = booted
@@ -133,8 +140,11 @@ fn run() -> Result<(), String> {
     }
     let package = &booted.archive.manifest;
     eprintln!(
-        "turts_server: package {} {}, lockfile {}",
-        package.id, package.version, booted.lockfile_hash
+        "turts_server: package {} {}, lockfile {}, movement {}",
+        package.id,
+        package.version,
+        booted.lockfile_hash,
+        movement.name()
     );
     let advertised = Advertised {
         lockfile_hash: booted.lockfile_hash.clone(),

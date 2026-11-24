@@ -33,6 +33,25 @@ pub enum MovementModel {
     Legacy,
     Flock,
 }
+impl MovementModel {
+    /// The model of the host setting `TURTS_MOVEMENT`. No value means `Legacy`.
+    /// Every value other than `legacy` and `flock` is refused.
+    pub fn from_setting(value: Option<&str>) -> Result<Self, String> {
+        match value {
+            None | Some("legacy") => Ok(Self::Legacy),
+            Some("flock") => Ok(Self::Flock),
+            Some(other) => Err(format!(
+                "TURTS_MOVEMENT must be `legacy` or `flock`, not `{other}`"
+            )),
+        }
+    }
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Legacy => "legacy",
+            Self::Flock => "flock",
+        }
+    }
+}
 
 /// Neighbours that one unit reads for steering.
 const NEIGHBOURS: usize = 8;
