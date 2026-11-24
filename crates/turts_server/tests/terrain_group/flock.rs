@@ -296,6 +296,42 @@ fn flock_ridge_outbound_dig_and_return_trace() {
         tick(&mut f);
         watch.observe(&f);
         let age = f.tick - watch.sent;
+        if let Some(label) = env("FLOCK_DEBUG_UNIT")
+            && age.is_multiple_of(5)
+            && age <= 600
+        {
+            let audit = turts_sim::terrain::privileged_flock_audit(f.app.world());
+            let member = audit
+                .members
+                .iter()
+                .find(|m| m.unit == f.actor(&label).unit);
+            eprintln!(
+                "DEBUG +{age} {label} pos={:?} complete={} gaps={:?} {:?}",
+                f.position(&label),
+                f.complete(&label),
+                {
+                    let mut gaps: Vec<(i32, String, bool)> = all
+                        .iter()
+                        .filter(|other| **other != label)
+                        .map(|other| {
+                            let gap = f.position(&label).distance(f.position(other))
+                                - f.actor(&label).profile.radius
+                                - f.actor(other).profile.radius;
+                            ((gap * 1000.0) as i32, other.clone(), f.complete(other))
+                        })
+                        .collect();
+                    gaps.sort();
+                    gaps.truncate(3);
+                    gaps
+                },
+                member.map(|m| (
+                    m.state,
+                    f32::from_bits(m.advice[0]),
+                    f32::from_bits(m.advice[1]),
+                    m.neighbours.len()
+                ))
+            );
+        }
         if age <= 40 || age.is_multiple_of(40) {
             row(&f, "back", &members);
         }

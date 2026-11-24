@@ -796,6 +796,7 @@ fn step_inner(
     let mut advice = vec![Vec2::ZERO; units.len()];
     let mut no_path = vec![false; units.len()];
     let mut kept_out = vec![false; units.len()];
+    let mut aims = start.clone();
     let mut audit_members = Vec::new();
     let mut audit_rows = Vec::new();
     for (row, unit) in units.iter().enumerate() {
@@ -841,6 +842,7 @@ fn step_inner(
         };
         let heading = keep_out.unwrap_or_else(|| (toward - unit.position).normalize_or_zero());
         kept_out[row] = keep_out.is_some();
+        aims[row] = toward;
         let reach = unit.radius + max_radius + 1.0;
         let neighbours = neighbours_in_sum_order(&snapshot, &start, row, reach, |body| {
             !body.fixed && body.owner == unit.owner_slot
@@ -854,7 +856,13 @@ fn step_inner(
             let distance = offset.length();
             let gap = distance - unit.radius - body.radius;
             let personal = 0.5 * unit.radius;
-            if gap < personal {
+            // Separation is between units that move. A unit goes up to a standing unit and
+            // touches it (rule 3), or pushes it (rule 1).
+            let other_moves = state
+                .members
+                .get(&units[body.row].unit_id)
+                .is_some_and(|other| other.mode == Mode::Moving);
+            if gap < personal && other_moves {
                 separation += offset / distance * ((personal - gap) / personal).min(2.0);
             }
             // A waiting unit steps to the side of each mover that comes at it (rule 5).
@@ -920,7 +928,9 @@ fn step_inner(
         });
     }
 
-    // Stage C, part 1: each mover takes its guarded step. A refused step slides on one axis.
+    // Stage C, part 1: each mover takes its guarded step. A refused step turns: the unit
+    // tries the same step length at 30, 60 and 90 degrees to each side, and takes the
+    // turned step that ends nearest its advice point. Equal ends take the smaller turn.
     let mut positions = start.clone();
     for (row, unit) in units.iter().enumerate() {
         let wish = advice[row] * dt;
@@ -930,12 +940,18 @@ fn step_inner(
         let from = unit.position;
         let mut end = guard(row, from, from + wish, true);
         if end.distance(from) < 0.5 * wish.length() {
-            for slide in [Vec2::new(wish.x, 0.0), Vec2::new(0.0, wish.y)] {
-                let candidate = guard(row, from, from + slide, true);
-                if candidate.distance(from) > end.distance(from) {
-                    end = candidate;
+            let aim = aims[row];
+            let mut best = (end.distance(aim), end);
+            for degrees in [30.0f32, -30.0, 60.0, -60.0, 90.0, -90.0] {
+                let turned = Vec2::from_angle(degrees.to_radians()).rotate(wish);
+                let candidate = guard(row, from, from + turned, true);
+                if candidate.distance(from) >= 0.2 * wish.length()
+                    && candidate.distance(aim) < best.0
+                {
+                    best = (candidate.distance(aim), candidate);
                 }
             }
+            end = best.1;
         }
         positions[row] = end;
     }
@@ -1076,12 +1092,13 @@ fn step_inner(
         // on, so that the crowd fills as a blob and does not grow as a line toward the flow.
         // A unit that cannot get in settles at the crowd after a longer time with no approach.
         let inside = here.distance(member.goal) <= area;
-        // A unit that cannot go on stops at a standing own unit (any order, or idle).
+        // A unit that cannot go on stops at a settled or waiting own unit of any order.
+        // An idle unit with no order is not a place to stop: it is pushed aside (rule 1).
         let touches_standing = near.iter().any(|&other| {
             state
                 .members
                 .get(&units[other].unit_id)
-                .is_none_or(|other| other.mode != Mode::Moving)
+                .is_some_and(|other| other.mode != Mode::Moving)
         });
         let at_crowd = (touches_crowd && inside)
             || (touches_standing && member.stalled >= 2 * SETTLE_TICKS && !no_path[row]);
