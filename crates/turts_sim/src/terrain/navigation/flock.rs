@@ -589,6 +589,21 @@ fn neighbours_in_sum_order(
     found.into_iter().map(|entry| entry.3).collect()
 }
 
+/// The unit moves to a point that it can share with other units: it has a Move order, an
+/// attack-move, or a target with no order (a rally walk).
+fn goes_to_an_area(world: &World, unit: u32) -> bool {
+    crate::unit_entity(world, unit)
+        .and_then(|entity| world.get::<crate::UnitOrders>(entity))
+        .and_then(|orders| orders.current.as_ref())
+        .is_none_or(|order| match order.behaviour {
+            turts_mod_api::Behaviour::Move => true,
+            turts_mod_api::Behaviour::Attack => {
+                matches!(order.target, crate::orders::OrderTargetSim::Point(_))
+            }
+            _ => false,
+        })
+}
+
 fn is_hold(world: &World, unit: u32) -> bool {
     crate::unit_entity(world, unit)
         .and_then(|entity| world.get::<crate::UnitOrders>(entity))
@@ -681,11 +696,11 @@ fn step_inner(
             continue;
         }
         // The goal is the public point of the order, inside the map.
-        // A Move order goes to an area: its units form a crowd round the point (rules 2
-        // and 3). Every other target (a gather trip, an attack approach, a work approach) is
-        // a point that the unit must reach itself.
+        // A move to a point goes to an area: the units form a crowd round the point (rules 2
+        // and 3). The target of a gather trip, an attack on a unit or a work approach is a
+        // point that the unit must reach itself.
         let order_point = super::public_move_goal(world, unit.unit_id, unit.owner_slot);
-        let crowd = order_point.is_some();
+        let crowd = goes_to_an_area(world, unit.unit_id);
         let goal = order_point
             .or_else(|| super::requested_target(unit))
             .unwrap_or(unit.position);
