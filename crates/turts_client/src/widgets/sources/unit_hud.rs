@@ -1,4 +1,4 @@
-//! Selected-unit information. Activity and cargo remain unavailable.
+//! Selected-unit information. Cargo remains unavailable.
 
 use super::SourceContext;
 use turts_mod_api::PrimaryField;
@@ -65,8 +65,40 @@ pub(in crate::widgets) fn predicate_repair_state(
     })
 }
 
-pub(in crate::widgets) fn primary_activity(_context: SourceContext<'_>) -> serde_json::Value {
-    serde_json::Value::Null
+/// The replicated activity of the first selected unit, as the text that a `Text` widget shows. The server sends the
+/// activity word and no reason, so the text gives no reason. `Null` with no selection, for a
+/// unit of another slot, and for a unit with no order record.
+/// The words are fixed here: a mod cannot change or translate them, because a mapping from a
+/// stable id to a label needs a schema change (UX note of 2026-11-23, accepted cost).
+pub(in crate::widgets) fn primary_activity(context: SourceContext<'_>) -> serde_json::Value {
+    use turts_net_protocol::Activity;
+    let Some(id) = context.selection.first() else {
+        return serde_json::Value::Null;
+    };
+    if context
+        .replica
+        .units
+        .get(id)
+        .is_none_or(|unit| unit.owner_slot != context.owner_slot)
+    {
+        return serde_json::Value::Null;
+    }
+    let Some(record) = context.replica.unit_orders.get(id) else {
+        return serde_json::Value::Null;
+    };
+    serde_json::json!(match record.activity {
+        Activity::Idle => "Idle",
+        Activity::Pending => "Order received",
+        Activity::Moving => "Moving",
+        Activity::Attacking => "Attacking",
+        Activity::Holding => "Holding position",
+        Activity::Gathering => "Gathering",
+        // No text states a cause: the server sends none. A blocked unit with a current order
+        // waits. With no current order, the order ended blocked (the server keeps `Blocked` after
+        // a `Blocked` failure, `turts_sim` `economy/views.rs`), so the plain word stays.
+        Activity::Blocked if record.current.is_some() => "Waiting (blocked)",
+        Activity::Blocked => "Blocked",
+    })
 }
 
 pub(in crate::widgets) fn primary_cargo(_context: SourceContext<'_>) -> serde_json::Value {

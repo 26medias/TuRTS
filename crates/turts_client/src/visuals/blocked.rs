@@ -1,15 +1,34 @@
 //! The blocked marks over units that the simulation reports as blocked.
 
+use super::materials::world_units_for_pixels;
 use super::*;
 use crate::{present::PresentedUnit, replica::Replica};
 
-/// Start and end the two-second blocked marks from the replicated order records.
+/// The time of the loud form of the blocked mark (red bar and cross). After it, a unit that is
+/// still blocked keeps the quiet form until its activity changes.
+const BLOCKED_ALERT_SECS: f32 = 2.0;
+/// The quiet form: three small amber squares in a row (UX note of 2026-11-23, M4b wait mark).
+/// The squares have a size in screen pixels, as the health bar has: a size in world units was
+/// less than 2 pixels at the default camera height, and the anchor of the red bar is inside a
+/// large model. The row is above the place of the health bar and does not touch it.
+const WAITING_SQUARES: i8 = 3;
+const WAITING_SQUARE_PX: f32 = 6.0;
+const WAITING_GAP_PX: f32 = 4.0;
+const WAITING_CLEAR_PX: f32 = 3.0;
+/// The height of the health bar over the unit (`health.rs`).
+const HEALTH_BAR_HEIGHT: f32 = 2.2;
+
+/// Start and end the blocked marks from the replicated order records.
 pub(super) fn track_blocked(replica: &Replica, visuals: &mut VisualState, now: Instant) {
     let blocked_now = replica
         .unit_orders
         .iter()
         .filter_map(|(&unit_id, order)| (order.activity == Activity::Blocked).then_some(unit_id))
         .collect();
+    // The quiet mark stays for a long time, so it is for the units of the local slot only: the
+    // same rule as the activity line of the selection panel (UX note of 2026-11-23).
+    let local_slot = visuals.session.as_ref().map(|session| session.local_slot);
+    visuals.blocked_own = blocked_now_own(replica, local_slot);
     let visuals_state = &mut *visuals;
     refresh_blocked_marks(
         blocked_now,
@@ -19,7 +38,26 @@ pub(super) fn track_blocked(replica: &Replica, visuals: &mut VisualState, now: I
     );
 }
 
-/// Draw the blocked mark of each unit that is inside its two seconds.
+/// The blocked units of the local slot.
+fn blocked_now_own(replica: &Replica, local_slot: Option<u8>) -> HashSet<u32> {
+    replica
+        .unit_orders
+        .iter()
+        .filter(|(_, order)| order.activity == Activity::Blocked)
+        .filter(|(unit_id, _)| {
+            replica
+                .units
+                .get(unit_id)
+                .is_some_and(|unit| Some(unit.owner_slot) == local_slot)
+        })
+        .map(|(&unit_id, _)| unit_id)
+        .collect()
+}
+
+/// Draw the blocked mark of each unit. Inside the first two seconds the mark is the red bar and
+/// the cross. After that, the quiet amber squares stay while the replicated activity of a
+/// unit of the local slot is `Blocked`. They end with the first record that has another activity, or no record for the
+/// unit. The quiet form has no cross, no motion and no sound.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn draw_blocked_marks(
     desired: &mut DesiredVisuals,
@@ -30,51 +68,94 @@ pub(super) fn draw_blocked_marks(
     visuals: &VisualState,
     now: Instant,
     terrain: Option<&crate::terrain::store::PermittedTerrain>,
+    camera: &Camera,
+    camera_transform: &GlobalTransform,
 ) {
+    let Some(mesh) = assets.bar.clone() else {
+        return;
+    };
     for (&unit_id, start) in &visuals.blocked_since {
-        if now.duration_since(*start).as_secs_f32() >= 2.0 {
+        let alert = now.duration_since(*start).as_secs_f32() < BLOCKED_ALERT_SECS;
+        if !alert && !visuals.blocked_own.contains(&unit_id) {
             continue;
         }
-        if let Some(unit) = presented_by_id.get(&unit_id)
-            && let Some(material) = assets.blocked_material.clone()
-            && let Some(mesh) = assets.bar.clone()
-        {
-            let id = VisualId {
-                kind: VisualKind::Blocked,
-                unit: unit_id,
-                ordinal: 0,
-                generation: visuals.generation,
-                identity: 0,
+        let Some(unit) = presented_by_id.get(&unit_id) else {
+            continue;
+        };
+        let ground = world_to_scene(unit.pos)
+            + Vec3::Y * crate::terrain::render::live_height(terrain, unit.unit_id).unwrap_or(0.);
+        let point = ground + Vec3::Y * 1.5;
+        let id = |ordinal| VisualId {
+            kind: VisualKind::Blocked,
+            unit: unit_id,
+            ordinal,
+            generation: visuals.generation,
+            identity: 0,
+        };
+        if !alert {
+            let Some(material) = assets.waiting_material.clone() else {
+                continue;
             };
-            let point = world_to_scene(unit.pos)
-                + Vec3::Y
-                    * (1.5
-                        + crate::terrain::render::live_height(terrain, unit.unit_id).unwrap_or(0.));
-            desired.insert(
-                id,
-                (
-                    mesh,
-                    material.clone().into(),
-                    Transform {
-                        translation: point,
-                        scale: Vec3::new(0.7, 0.08, 0.08),
-                        ..default()
-                    },
-                ),
+            let bar = ground + Vec3::Y * HEALTH_BAR_HEIGHT;
+            let square = world_units_for_pixels(
+                camera,
+                camera_transform,
+                bar,
+                Vec2::splat(WAITING_SQUARE_PX),
             );
-            marker_gizmos.line(
-                point + Vec3::new(-0.3, 0.07, -0.3),
-                point + Vec3::new(0.3, 0.07, 0.3),
-                Color::srgb(0.9, 0.12, 0.08),
-            );
-            marker_gizmos.line(
-                point + Vec3::new(-0.3, 0.07, 0.3),
-                point + Vec3::new(0.3, 0.07, -0.3),
-                Color::srgb(0.9, 0.12, 0.08),
-            );
+            let per_pixel = square / WAITING_SQUARE_PX;
+            let rise = assets.health_bar_size.y / 2.0 + WAITING_CLEAR_PX + WAITING_SQUARE_PX / 2.0;
+            let row = bar + Vec3::Y * (per_pixel.y * rise);
+            let pitch = per_pixel.x * (WAITING_SQUARE_PX + WAITING_GAP_PX);
+            for square_index in 0..WAITING_SQUARES {
+                let offset = f32::from(square_index - WAITING_SQUARES / 2) * pitch;
+                desired.insert(
+                    // Ordinal 0 is the red bar. A kept entity keeps its material, so the
+                    // squares have their own ordinals.
+                    id(square_index as u8 + 1),
+                    (
+                        mesh.clone(),
+                        material.clone().into(),
+                        Transform {
+                            translation: row + Vec3::X * offset,
+                            scale: Vec3::new(square.x, square.y, 0.08),
+                            ..default()
+                        },
+                    ),
+                );
+            }
             markers_shown
                 .0
-                .push(serde_json::json!({"kind":"blocked","unit":unit_id}));
+                .push(serde_json::json!({"kind":"blocked_waiting","unit":unit_id}));
+            continue;
         }
+        let Some(material) = assets.blocked_material.clone() else {
+            continue;
+        };
+        desired.insert(
+            id(0),
+            (
+                mesh.clone(),
+                material.into(),
+                Transform {
+                    translation: point,
+                    scale: Vec3::new(0.7, 0.08, 0.08),
+                    ..default()
+                },
+            ),
+        );
+        marker_gizmos.line(
+            point + Vec3::new(-0.3, 0.07, -0.3),
+            point + Vec3::new(0.3, 0.07, 0.3),
+            Color::srgb(0.9, 0.12, 0.08),
+        );
+        marker_gizmos.line(
+            point + Vec3::new(-0.3, 0.07, 0.3),
+            point + Vec3::new(0.3, 0.07, -0.3),
+            Color::srgb(0.9, 0.12, 0.08),
+        );
+        markers_shown
+            .0
+            .push(serde_json::json!({"kind":"blocked","unit":unit_id}));
     }
 }

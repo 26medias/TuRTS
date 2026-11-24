@@ -1832,6 +1832,14 @@ mod stub_contract {
     use turts_mod_api::{OutcomeKind, OutcomeReasonKind, PrimaryField, Source, StatField};
 
     fn with_context(check: impl FnOnce(&sources::SourceContext<'_>)) {
+        with_replica(|_| {}, check);
+    }
+
+    /// The context of `with_context`, after `prepare` changed its replica (unit 1, slot 0).
+    fn with_replica(
+        prepare: impl FnOnce(&mut crate::replica::Replica),
+        check: impl FnOnce(&sources::SourceContext<'_>),
+    ) {
         let mut replica = crate::replica::Replica::new(20);
         replica.units.insert(
             1,
@@ -1842,6 +1850,7 @@ mod stub_contract {
                 samples: VecDeque::from([(1, turts_net_protocol::Pos { x: 0.0, y: 0.0 })]),
             },
         );
+        prepare(&mut replica);
         let content = crate::content::ClientContent::default();
         let selection = vec![1];
         let groups = BTreeMap::new();
@@ -1974,6 +1983,110 @@ mod stub_contract {
                 assert_does_not_hold(Predicate::PrimaryHasValue(field), context);
             }
         });
+    }
+
+    fn order_record(activity: turts_net_protocol::Activity) -> turts_net_protocol::UnitOrderRecord {
+        turts_net_protocol::UnitOrderRecord {
+            unit: turts_net_protocol::UnitId(1),
+            activity,
+            current: None,
+            queued: Vec::new(),
+            last_failure: None,
+            rally: None,
+        }
+    }
+
+    #[test]
+    fn primary_activity_is_the_replicated_activity_of_the_selected_own_unit() {
+        use turts_net_protocol::Activity;
+        for (activity, text) in [
+            (Activity::Idle, "Idle"),
+            (Activity::Pending, "Order received"),
+            (Activity::Moving, "Moving"),
+            (Activity::Attacking, "Attacking"),
+            (Activity::Holding, "Holding position"),
+            (Activity::Gathering, "Gathering"),
+            (Activity::Blocked, "Blocked"),
+        ] {
+            with_replica(
+                |replica| {
+                    replica.unit_orders.insert(1, order_record(activity));
+                },
+                |context| {
+                    assert_eq!(
+                        sources::read_primary(PrimaryField::Activity, *context),
+                        serde_json::json!(text)
+                    );
+                    assert!(predicate_matches(
+                        &Predicate::PrimaryHasValue(PrimaryField::Activity),
+                        context
+                    ));
+                },
+            );
+        }
+    }
+
+    #[test]
+    fn primary_activity_of_a_blocked_unit_with_a_current_order_is_a_wait() {
+        let current = turts_net_protocol::OrderSummary {
+            order: "test:order_move".into(),
+            target: turts_net_protocol::OrderTarget::Point(turts_net_protocol::Pos {
+                x: 5.0,
+                y: 5.0,
+            }),
+        };
+        for (current, text) in [(Some(current), "Waiting (blocked)"), (None, "Blocked")] {
+            with_replica(
+                |replica| {
+                    let mut record = order_record(turts_net_protocol::Activity::Blocked);
+                    record.current = current;
+                    replica.unit_orders.insert(1, record);
+                },
+                |context| {
+                    assert_eq!(
+                        sources::read_primary(PrimaryField::Activity, *context),
+                        serde_json::json!(text)
+                    );
+                },
+            );
+        }
+    }
+
+    #[test]
+    fn primary_activity_follows_a_change_and_ends_with_the_record() {
+        use turts_net_protocol::Activity;
+        let mut replica = crate::replica::Replica::new(20);
+        let read = |replica: &crate::replica::Replica| {
+            let mut value = serde_json::Value::Null;
+            with_replica(
+                |fresh| fresh.unit_orders.clone_from(&replica.unit_orders),
+                |context| value = sources::read_primary(PrimaryField::Activity, *context),
+            );
+            value
+        };
+        replica
+            .unit_orders
+            .insert(1, order_record(Activity::Blocked));
+        assert_eq!(read(&replica), serde_json::json!("Blocked"));
+        replica
+            .unit_orders
+            .insert(1, order_record(Activity::Moving));
+        assert_eq!(read(&replica), serde_json::json!("Moving"));
+        replica.unit_orders.remove(&1);
+        assert_eq!(read(&replica), serde_json::Value::Null);
+    }
+
+    #[test]
+    fn primary_activity_is_not_given_for_a_unit_of_another_slot() {
+        with_replica(
+            |replica| {
+                replica.units.get_mut(&1).expect("unit 1").owner_slot = 1;
+                replica
+                    .unit_orders
+                    .insert(1, order_record(turts_net_protocol::Activity::Blocked));
+            },
+            |context| assert_null(Value::SelectionPrimary(PrimaryField::Activity), context),
+        );
     }
 
     #[test]

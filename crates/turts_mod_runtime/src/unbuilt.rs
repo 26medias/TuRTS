@@ -143,7 +143,6 @@ pub(crate) const UNBUILT_FEATURES: &[UnbuiltLine] = &[
     line("ItemField::BuildTimeNow", "UI2-HUD"),
     line("ItemField::SupplyChange", "UI2-HUD"),
     line("ItemField::CausesShortage", "UI2-HUD"),
-    line("PrimaryField::Activity", "UI2-HUD"),
     line("PrimaryField::Cargo", "UI2-HUD"),
     line("world.cargo_bar", "UI2-HUD"),
     line("world.health_bar.scale_to_footprint", "UI2-HUD"),

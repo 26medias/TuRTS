@@ -75,6 +75,8 @@ struct VisualAssets {
     bar: Option<Handle<Mesh>>,
     marker_overlay_material: Option<Handle<RingOverlayMaterial>>,
     blocked_material: Option<Handle<StandardMaterial>>,
+    /// The amber of the quiet waiting mark of a unit that stays blocked.
+    waiting_material: Option<Handle<StandardMaterial>>,
     range_material: Option<Handle<StandardMaterial>>,
     bar_background: Option<Handle<StandardMaterial>>,
     bar_health: Option<Handle<StandardMaterial>>,
@@ -173,6 +175,8 @@ struct VisualState {
     active: bool,
     blocked_since: HashMap<u32, Instant>,
     blocked_active: HashSet<u32>,
+    /// The blocked units of the local slot: the units that keep the quiet waiting mark.
+    blocked_own: HashSet<u32>,
     markers: VecDeque<RetainedMarker>,
 }
 
@@ -288,6 +292,7 @@ fn prepare_assets(
             &mut ring_materials,
         ));
         assets.blocked_material = Some(materials.add(unlit(Color::srgb(0.9, 0.12, 0.08))));
+        assets.waiting_material = Some(materials.add(unlit(Color::srgb(0.95, 0.70, 0.20))));
         assets.range_material = Some(materials.add(unlit(range_color)));
         assets.bar_background = Some(materials.add(unlit(bar_background)));
         assets.bar_health = Some(materials.add(unlit(bar_health)));
@@ -456,6 +461,8 @@ fn draw_world_visuals(
         &visuals,
         now,
         replica.terrain.as_ref(),
+        camera,
+        camera_transform,
     );
 
     // Selected own units show queued point targets in queue order.
