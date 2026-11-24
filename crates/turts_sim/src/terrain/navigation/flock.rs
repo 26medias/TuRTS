@@ -115,6 +115,8 @@ struct Field {
     frontier: BinaryHeap<Reverse<(u32, u32)>>,
     seeded: bool,
     ready_cells: usize,
+    /// Centres of the passage cells that the field reaches, known when it is complete.
+    chokes: Option<Vec<Vec2>>,
     last_used: u32,
 }
 impl Field {
@@ -147,6 +149,7 @@ impl Field {
             frontier: BinaryHeap::new(),
             seeded: false,
             ready_cells: 0,
+            chokes: None,
             last_used: 0,
         }
     }
@@ -160,6 +163,7 @@ impl Field {
         self.frontier.clear();
         self.seeded = false;
         self.ready_cells = 0;
+        self.chokes = None;
         self.lease.clear();
     }
     fn complete(&self) -> bool {
@@ -288,6 +292,18 @@ impl Field {
                     self.frontier.push(Reverse((total, next as u32)));
                 }
             }
+        }
+        if self.complete() && self.chokes.is_none() {
+            let mut chokes = Vec::new();
+            for y in 0..self.rows {
+                for x in 0..self.columns {
+                    let index = self.index(x, y);
+                    if self.passage[index] && self.cost[index] != UNREACHED {
+                        chokes.push(self.centre(x, y));
+                    }
+                }
+            }
+            self.chokes = Some(chokes);
         }
         used
     }
@@ -779,6 +795,7 @@ fn step_inner(
     // Stage B: advice velocities, all from the snapshot.
     let mut advice = vec![Vec2::ZERO; units.len()];
     let mut no_path = vec![false; units.len()];
+    let mut kept_out = vec![false; units.len()];
     let mut audit_members = Vec::new();
     let mut audit_rows = Vec::new();
     for (row, unit) in units.iter().enumerate() {
@@ -797,7 +814,33 @@ fn step_inner(
                 member.goal
             }
         };
-        let heading = (toward - unit.position).normalize_or_zero();
+        // A unit with no path keeps out of the narrow places that other units of the
+        // same owner and goal go through (rule 5: it waits at the side of the flow).
+        let keep_out = if no_path[row] {
+            let reach = 3.0 * unit.radius;
+            state
+                .fields
+                .iter()
+                .filter(|other| {
+                    other.key.0 == unit.owner_slot && other.key.2 == goal_key(member.goal)
+                })
+                .filter_map(|other| other.chokes.as_ref())
+                .flatten()
+                .map(|choke| (unit.position.distance(*choke), *choke))
+                .filter(|(distance, _)| *distance < reach)
+                .min_by(|a, b| {
+                    (a.0.to_bits(), a.1.x.to_bits(), a.1.y.to_bits()).cmp(&(
+                        b.0.to_bits(),
+                        b.1.x.to_bits(),
+                        b.1.y.to_bits(),
+                    ))
+                })
+                .map(|(_, choke)| (unit.position - choke).normalize_or_zero())
+        } else {
+            None
+        };
+        let heading = keep_out.unwrap_or_else(|| (toward - unit.position).normalize_or_zero());
+        kept_out[row] = keep_out.is_some();
         let reach = unit.radius + max_radius + 1.0;
         let neighbours = neighbours_in_sum_order(&snapshot, &start, row, reach, |body| {
             !body.fixed && body.owner == unit.owner_slot
@@ -850,7 +893,8 @@ fn step_inner(
         }
         // A waiting unit holds its place, and gives way to the flow.
         advice[row] = if member.mode == Mode::Waiting {
-            (give_way * speed).clamp_length_max(speed)
+            ((give_way + if kept_out[row] { heading } else { Vec2::ZERO }) * speed)
+                .clamp_length_max(speed)
         } else {
             wish.clamp_length_max(speed)
         };
@@ -1032,7 +1076,15 @@ fn step_inner(
         // on, so that the crowd fills as a blob and does not grow as a line toward the flow.
         // A unit that cannot get in settles at the crowd after a longer time with no approach.
         let inside = here.distance(member.goal) <= area;
-        let at_crowd = touches_crowd && (inside || member.stalled >= 2 * SETTLE_TICKS);
+        // A unit that cannot go on stops at a standing own unit (any order, or idle).
+        let touches_standing = near.iter().any(|&other| {
+            state
+                .members
+                .get(&units[other].unit_id)
+                .is_none_or(|other| other.mode != Mode::Moving)
+        });
+        let at_crowd = (touches_crowd && inside)
+            || (touches_standing && member.stalled >= 2 * SETTLE_TICKS && !no_path[row]);
         settle[row] = (at_point || at_crowd || gave_up) && !overlaps && !in_passage;
         settle_reason[row] = if at_point {
             "settled at the point"

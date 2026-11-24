@@ -29,11 +29,15 @@ pub(super) fn guarded_step(
     profile: Traversal,
     solids: &[Solid],
 ) -> Vec2 {
+    // The terrain check uses a body that is `CLEARANCE` wider than the true body. So every
+    // committed pose keeps that distance from terrain, and a later step of the true body
+    // never starts at a contact, where the exact kernel answers "uncertain".
+    let wide = radius + CLEARANCE;
     // A whole clear step needs one certificate; only a refused step is bisected.
-    let mut end = if geometry::clear(terrain, from, to, radius, profile, &mut BTreeMap::new()) {
+    let mut end = if geometry::clear(terrain, from, to, wide, profile, &mut BTreeMap::new()) {
         to
     } else {
-        geometry::physical_prefix(terrain, from, to, radius, profile)
+        geometry::physical_prefix(terrain, from, to, wide, profile)
     };
     for solid in solids {
         end = body_prefix(from, end, radius, *solid);
@@ -50,6 +54,8 @@ pub(super) fn guarded_step(
         from + (end - from) * ((length - MARGIN) / length)
     }
 }
+/// Distance that every committed pose keeps from terrain.
+const CLEARANCE: f32 = 1.0 / 512.0;
 /// Distance that a shortened step keeps from its contact.
 const MARGIN: f32 = 1.0 / 1024.0;
 
@@ -166,7 +172,7 @@ mod tests {
             "the body passed x = {limit}: {end:?}"
         );
         assert!(
-            end.x + RADIUS > limit - 0.002,
+            end.x + RADIUS > limit - 0.004,
             "the stop is not at the obstacle: {end:?}"
         );
         assert_eq!(end.y, FROM.y);
