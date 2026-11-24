@@ -1168,7 +1168,9 @@ fn step_inner(
             let solids = solids_for(row, from, from.distance(node) + unit.radius, true);
             end = fitted_step(terrain, from, node, unit.radius, profile, &solids);
         }
-        if end.distance(from) < 0.5 * wish.length() {
+        // A unit with no path goes straight to the obstacle and stops there (rule 5); it
+        // does not slide along it.
+        if end.distance(from) < 0.5 * wish.length() && !no_path[row] {
             let aim = aims[row];
             let mut best = (end.distance(aim), end);
             for degrees in [30.0f32, -30.0, 60.0, -60.0, 90.0, -90.0] {
