@@ -58,10 +58,42 @@ pub(super) fn escape_step(
     let end = step(terrain, from, to, radius, radius, profile, solids);
     let wide = radius + CLEARANCE;
     if end != from && geometry::clear(terrain, end, end, wide, profile, &mut BTreeMap::new()) {
-        end
-    } else {
-        from
+        return end;
     }
+    let stands_clear =
+        |body: f32| geometry::clear(terrain, from, from, body, profile, &mut BTreeMap::new());
+    if stands_clear(radius) {
+        return from;
+    }
+    // The pose itself is not permitted (a body that was made too near the map edge or a
+    // cliff). The largest body that is permitted at the pose makes the step: the true body
+    // goes no deeper into terrain, and it can go back to permitted ground.
+    // The check needs a body larger than zero.
+    let (mut low, mut high) = (radius / 64.0, radius);
+    if !stands_clear(low) {
+        return from;
+    }
+    for _ in 0..8 {
+        let middle = 0.5 * (low + high);
+        if stands_clear(middle) {
+            low = middle;
+        } else {
+            high = middle;
+        }
+    }
+    // The step is taken whole or not at all, so the body never ends at a new contact.
+    let whole = geometry::clear(terrain, from, to, low, profile, &mut BTreeMap::new())
+        && solids.iter().all(|solid| {
+            pair_clear(
+                from,
+                to,
+                radius,
+                solid.position,
+                solid.position,
+                solid.radius,
+            )
+        });
+    if whole { to } else { from }
 }
 
 /// A whole step to a lattice node for a body that exactly fits an opening: it has no
@@ -272,5 +304,19 @@ mod tests {
         stops_before(end, 8.0);
         assert!(end.distance(body.position) >= RADIUS + body.radius);
         assert!(end.distance(body.position) < RADIUS + body.radius + 0.002);
+    }
+
+    /// A body that stands nearer the map edge than its radius (a pose that no step made)
+    /// goes back to permitted ground, and it goes no nearer the edge.
+    #[test]
+    fn a_body_too_near_the_map_edge_goes_back_inside() {
+        let map = Map::new(0);
+        let profile = walker();
+        let from = Vec2::new(4.06, 0.35);
+        let inward = Vec2::new(3.88, 0.59);
+        assert_eq!(guarded_step(&map, from, inward, 0.6, profile, &[]), from);
+        assert_eq!(escape_step(&map, from, inward, 0.6, profile, &[]), inward);
+        let outward = Vec2::new(4.06, 0.2);
+        assert_eq!(escape_step(&map, from, outward, 0.6, profile, &[]), from);
     }
 }

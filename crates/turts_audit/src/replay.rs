@@ -4138,7 +4138,18 @@ fn validate_automatic_order_operation(
                         .values()
                         .flat_map(|queue| queue.iter())
                         .any(|before_request| before_request == request)
-            });
+            })
+        // A later member of a group whose request the operation of the first member
+        // queued: its move target goes away while it waits for the dispatch.
+        || (actor_target_before.is_some()
+            && actor_target_after.is_none()
+            && operation
+                .before
+                .pending_movement_orders
+                .queues
+                .values()
+                .flat_map(|queue| queue.iter())
+                .any(|request| request.unit_ids.contains(&unit_id)));
     if (!attack_point_schedule_transition
         || operation.phase == turts_sim::economy::transaction::AuditPhase::PostMovementOrders)
         && let Some(order) = current.as_ref().filter(|order| {
@@ -4251,8 +4262,11 @@ fn validate_automatic_order_operation(
             }
             _ => {
                 return Err(format!(
-                    "automatic Attack point operation {} has no valid pause, resume, completion or failure transition for unit {unit_id}",
-                    operation.operation_id
+                    "automatic Attack point operation {} has no valid pause, resume, completion or failure transition for unit {unit_id} (phase {:?}, target {:?} to {:?}, in range {target_in_range})",
+                    operation.operation_id,
+                    operation.phase,
+                    actor_target_before,
+                    actor_target_after
                 ));
             }
         }
@@ -4827,6 +4841,19 @@ fn validate_automatic_order_operation(
         }
         None if !orders_before.queue.is_empty() && actor.move_target.is_none() => {
             start_next_audited_order_if_not_pending(&mut expected, unit_id, &mut orders_after)?;
+        }
+        // A later member of a group whose request the operation of the first member queued
+        // in this tick: its move target goes away while it waits for the dispatch.
+        Some(order)
+            if matches!(
+                order.behaviour,
+                turts_mod_api::Behaviour::Move | turts_mod_api::Behaviour::Attack
+            ) && matches!(order.target, turts_sim::OrderTargetSim::Point(_))
+                && actor.move_target.is_some()
+                && actor_target_after.is_none()
+                && pending_before.is_some_and(|request| request.accepted_tick == tick) =>
+        {
+            set_audit_move_target(&mut expected, unit_id, None)?;
         }
         _ => {
             return Err(format!(

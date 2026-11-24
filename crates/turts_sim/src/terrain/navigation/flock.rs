@@ -1410,11 +1410,27 @@ fn step_inner(
             });
             let mut push = Vec2::ZERO;
             for other in neighbours {
-                let offset = before[row] - before[other];
+                // Two units at one pose (both took their last step to one point in one tick)
+                // come apart along the line between their poses at the start of the tick.
+                let offset = if before[row] == before[other] {
+                    (start[row] - start[other]).normalize_or_zero() * 1.0e-3
+                } else {
+                    before[row] - before[other]
+                };
                 let distance = offset.length();
+                if distance == 0.0 {
+                    continue;
+                }
                 // The relaxation aims at a small gap, so standing bodies end apart and the
                 // float residue of the corrections is not an overlap.
-                let overlap = units[row].radius + units[other].radius + REST_GAP - distance;
+                // Two units that the flock never moved keep an exact contact.
+                let known = |row: usize| state.members.contains_key(&units[row].unit_id);
+                let gap = if known(row) || known(other) {
+                    REST_GAP
+                } else {
+                    0.0
+                };
+                let overlap = units[row].radius + units[other].radius + gap - distance;
                 if overlap <= 0.0 {
                     continue;
                 }
