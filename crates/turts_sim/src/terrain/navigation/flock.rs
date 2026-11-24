@@ -894,6 +894,7 @@ fn step_inner(
     };
 
     // Stage B: advice velocities, all from the snapshot.
+    let basis = crate::visibility::active_basis(world);
     let mut advice = vec![Vec2::ZERO; units.len()];
     let mut no_path = vec![false; units.len()];
     let mut kept_out = vec![false; units.len()];
@@ -996,7 +997,34 @@ fn step_inner(
                 flockmates += 1.0;
             }
         }
-        let mut wish = heading * speed + separation * speed * 0.6;
+        // Solid bodies in the way: buildings, own units on Hold, and the bodies of another
+        // owner that this owner is permitted to see now. Each is a stationary obstacle: the
+        // unit steers to the side on which it already is. A body dead ahead gives no side
+        // (no tie winner); a hidden body gives no force, and contact stops the step.
+        let look = 4.0 * unit.radius + speed * dt;
+        let obstacles = neighbours_in_sum_order(&snapshot, &start, row, look, |body| {
+            (body.fixed || body.owner != unit.owner_slot)
+                && (body.owner == unit.owner_slot
+                    || basis.is_none_or(|basis| {
+                        basis.unit_permitted(unit.owner_slot, units[body.row].unit_id)
+                    }))
+        });
+        let mut avoid = Vec2::ZERO;
+        for &other in obstacles.iter().take(NEIGHBOURS) {
+            let body = &snapshot.bodies[other];
+            let offset = body.position - unit.position;
+            let ahead = heading.dot(offset);
+            let side = heading.perp_dot(offset);
+            let lane = unit.radius + body.radius + 0.5 * unit.radius;
+            let gap = offset.length() - unit.radius - body.radius;
+            if ahead > 0.0 && side != 0.0 && side.abs() < lane && gap < look {
+                avoid -= heading.perp()
+                    * side.signum()
+                    * (1.0 - side.abs() / lane)
+                    * (1.0 - (gap / look).clamp(0.0, 1.0));
+            }
+        }
+        let mut wish = heading * speed + separation * speed * 0.6 + avoid * speed * 1.5;
         if flockmates > 0.0 {
             wish += (alignment / flockmates - member.velocity) * 0.15;
             wish += (centroid / flockmates - unit.position).clamp_length_max(1.0) * speed * 0.05;
