@@ -1165,7 +1165,7 @@ fn step_inner(
     let mut settle = vec![false; units.len()];
     let mut settle_reason = vec![""; units.len()];
     for (row, unit) in units.iter().enumerate() {
-        let (Some(member), Some(speed)) = (state.members.get(&unit.unit_id), unit.speed) else {
+        let (Some(member), Some(_)) = (state.members.get(&unit.unit_id), unit.speed) else {
             continue;
         };
         if member.mode != Mode::Moving {

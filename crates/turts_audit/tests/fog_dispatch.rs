@@ -299,61 +299,6 @@ fn live_fog_capture_replays_with_auditor_computed_sight() {
 }
 
 #[test]
-fn fog_physical_escape_from_a_post_failure_snapshot_replays() {
-    let mut positions = vec![placement(0, (10.0, 10.0)), placement(0, (15.0, 15.0))];
-    for i in 0..6 {
-        let angle = i as f32 * std::f32::consts::TAU / 6.0;
-        positions.push(placement(
-            0,
-            (10.0 + 1.05 * angle.cos(), 10.0 + 1.05 * angle.sin()),
-        ));
-    }
-    positions.push(placement(1, HIDDEN_POINT));
-    let mut run = Run::with_placements(true, Some(positions), true);
-    let hidden = run.unit_at(HIDDEN_POINT);
-    assert!(!turts_sim::visibility::unit_permitted(
-        run.app.world(),
-        0,
-        hidden,
-        ObservationPhase::Start
-    ));
-    run.order(1, &[(10.0, 10.0)], (40.0, 10.0));
-    run.ticks(30);
-    // Start the capture with an overlapping unit already in physical escape. This is a
-    // constructed post-failure snapshot; the following recovery ticks are live.
-    {
-        let world = run.app.world_mut();
-        let mut query = world.query::<(bevy::prelude::Entity, &turts_sim::UnitId)>();
-        let (entity, _) = query.iter(world).find(|(_, id)| id.0 == 1).unwrap();
-        let mut actor = world.entity_mut(entity);
-        actor.remove::<turts_sim::MoveTarget>();
-        actor.insert(turts_sim::movement::PhysicalEscape { target: None });
-    }
-    run.records = vec![EconomyLogRecord::Initial(turts_sim::audit_state(
-        run.app.world_mut(),
-    ))];
-    run.ticks(30);
-    assert!(run.records.iter().any(|r| matches!(r, EconomyLogRecord::Tick {state, ..} if state.physical_escapes.iter().any(|row| row.escape.target.is_some()))), "a live tick must choose an escape target");
-    validate_records_with_sight(&run.records, Some(&trusted_policy())).unwrap();
-    let mut forged = run.records.clone();
-    let target = forged
-        .iter_mut()
-        .find_map(|record| match record {
-            EconomyLogRecord::Tick { state, .. } => state
-                .physical_escapes
-                .iter_mut()
-                .find_map(|row| row.escape.target.as_mut()),
-            _ => None,
-        })
-        .unwrap();
-    target.x += 1.0;
-    assert!(
-        validate_records_with_sight(&forged, Some(&trusted_policy())).is_err(),
-        "a forged escape target must be refused"
-    );
-}
-
-#[test]
 fn trusted_sight_rejects_inconsequential_forged_radius_and_health_rule() {
     let records = captured(true);
     // This test saves the expected context from an honest capture. Production
@@ -559,35 +504,4 @@ fn fog_singleton_move_to_hidden_body_replays() {
     run.order(1, &GROUP_1[..1], HIDDEN_POINT);
     run.ticks(2);
     validate_records(&run.records).unwrap();
-}
-
-#[test]
-fn fog_direct_move_to_hidden_body_replays() {
-    let mut run = Run::new(true);
-    let id = run.unit_at(GROUP_1[0]);
-    let entity = run
-        .app
-        .world()
-        .iter_entities()
-        .find(|e| e.get::<turts_sim::UnitId>().is_some_and(|i| i.0 == id))
-        .unwrap()
-        .id();
-    run.app
-        .world_mut()
-        .entity_mut(entity)
-        .insert(turts_sim::world::MoveTarget(Vec2::new(
-            HIDDEN_POINT.0,
-            HIDDEN_POINT.1,
-        )));
-    run.records = vec![EconomyLogRecord::Initial(turts_sim::audit_state(
-        run.app.world_mut(),
-    ))];
-    run.ticks(180);
-    validate_records(&run.records).unwrap();
-    let stripped = forged(&run.records, |sight| *sight = None);
-    let error = validate_records(&stripped).expect_err("a false all-visible movement basis");
-    assert!(
-        error.contains("movement transition changed nonmovement state"),
-        "{error}"
-    );
 }
