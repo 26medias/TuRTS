@@ -32,7 +32,47 @@ pub(super) fn guarded_step(
     // The terrain check uses a body that is `CLEARANCE` wider than the true body. So every
     // committed pose keeps that distance from terrain, and a later step of the true body
     // never starts at a contact, where the exact kernel answers "uncertain".
+    step(
+        terrain,
+        from,
+        to,
+        radius,
+        radius + CLEARANCE,
+        profile,
+        solids,
+    )
+}
+
+/// A step for a body that stands so near terrain that `guarded_step` refuses every step:
+/// a glancing approach can end at the contact of the wider check body. The step is checked
+/// with the true body, and it is taken only when its end pose again keeps the clearance.
+/// So the pose moves away from the contact, and the true body never enters terrain.
+pub(super) fn escape_step(
+    terrain: &impl TerrainRead,
+    from: Vec2,
+    to: Vec2,
+    radius: f32,
+    profile: Traversal,
+    solids: &[Solid],
+) -> Vec2 {
+    let end = step(terrain, from, to, radius, radius, profile, solids);
     let wide = radius + CLEARANCE;
+    if end != from && geometry::clear(terrain, end, end, wide, profile, &mut BTreeMap::new()) {
+        end
+    } else {
+        from
+    }
+}
+
+fn step(
+    terrain: &impl TerrainRead,
+    from: Vec2,
+    to: Vec2,
+    radius: f32,
+    wide: f32,
+    profile: Traversal,
+    solids: &[Solid],
+) -> Vec2 {
     // A whole clear step needs one certificate; only a refused step is bisected.
     let mut end = if geometry::clear(terrain, from, to, wide, profile, &mut BTreeMap::new()) {
         to

@@ -12,7 +12,7 @@
 //! C. Physical resolution: `flock_step::guarded_step` is the only authority against
 //!    terrain and solid bodies. Own bodies then relax overlaps in `RELAX_PASSES` passes.
 //! D. Arrival and waiting.
-use super::flock_step::{Solid, guarded_step};
+use super::flock_step::{Solid, escape_step, guarded_step};
 use crate::{
     movement::{MovementActivity, MovementFrame, MovementFrameOutput, MovementFrameUnit},
     terrain::{TerrainPhase, TerrainState},
@@ -952,6 +952,25 @@ fn step_inner(
                 }
             }
             end = best.1;
+            // No step at all: the pose is at a terrain contact. Try the same steps as
+            // escape steps, which must end with the clearance again.
+            if end == from
+                && let Some(profile) = profiles[row]
+            {
+                let solids = solids_for(row, from, wish.length() + unit.radius, true);
+                let mut best = (f32::MAX, from);
+                for degrees in [
+                    0.0f32, 30.0, -30.0, 60.0, -60.0, 90.0, -90.0, 135.0, -135.0, 180.0,
+                ] {
+                    let turned = Vec2::from_angle(degrees.to_radians()).rotate(wish);
+                    let candidate =
+                        escape_step(terrain, from, from + turned, unit.radius, profile, &solids);
+                    if candidate != from && candidate.distance(aim) < best.0 {
+                        best = (candidate.distance(aim), candidate);
+                    }
+                }
+                end = best.1;
+            }
         }
         positions[row] = end;
     }
