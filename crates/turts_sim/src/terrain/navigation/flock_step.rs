@@ -64,6 +64,31 @@ pub(super) fn escape_step(
     }
 }
 
+/// A whole step to a lattice node for a body that exactly fits an opening: it has no
+/// clearance there. The step is taken, whole, only when the exact check of the true body
+/// permits all of it; else the body stays.
+pub(super) fn fitted_step(
+    terrain: &impl TerrainRead,
+    from: Vec2,
+    to: Vec2,
+    radius: f32,
+    profile: Traversal,
+    solids: &[Solid],
+) -> Vec2 {
+    let clear = geometry::clear(terrain, from, to, radius, profile, &mut BTreeMap::new())
+        && solids.iter().all(|solid| {
+            pair_clear(
+                from,
+                to,
+                radius,
+                solid.position,
+                solid.position,
+                solid.radius,
+            )
+        });
+    if clear { to } else { from }
+}
+
 fn step(
     terrain: &impl TerrainRead,
     from: Vec2,

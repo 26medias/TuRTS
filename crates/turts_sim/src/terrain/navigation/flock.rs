@@ -13,7 +13,7 @@
 //!    terrain and solid bodies. Own bodies then relax overlaps in `RELAX_PASSES` passes.
 //! D. Arrival and waiting.
 use super::{
-    flock_step::{CLEARANCE, Solid, escape_step, guarded_step},
+    flock_step::{CLEARANCE, Solid, escape_step, fitted_step, guarded_step},
     geometry::TerrainRead,
 };
 use crate::{
@@ -137,11 +137,18 @@ struct Member {
     crowd: bool,
 }
 
-/// One cost-to-goal field on the terrain cells, from one owner's permitted terrain.
+/// One cost-to-goal field, from one owner's permitted terrain. Its nodes are the points of
+/// a lattice of half a terrain cell: cell centres, edge midpoints and cell corners. So the
+/// centre line of an opening that is exactly as wide as the body is a row of nodes.
 struct Field {
     key: FieldKey,
+    /// Terrain cells of the map.
+    cell_columns: u32,
+    cell_rows: u32,
+    /// Nodes of the lattice: two for each terrain cell, plus one.
     columns: u32,
     rows: u32,
+    /// The distance between two nodes.
     cell: f32,
     radius: f32,
     /// The largest radius of the owner's units that can move; it sets the passage width.
@@ -151,16 +158,22 @@ struct Field {
     /// Chunk revisions of the permitted view that the field read.
     lease: BTreeMap<usize, u64>,
     revision: u64,
-    /// Rows of cells whose clearance is known.
+    /// Rows of nodes whose clearance is known.
     scanned_rows: u32,
     passable: Vec<bool>,
     passage: Vec<bool>,
+    /// A body at this node touches terrain, or nearly: a step to it must end exactly on it.
+    tight: Vec<bool>,
+    /// Heights of the terrain cells.
     heights: Vec<Option<i32>>,
+    /// The level of each node: the lowest of the cells that it touches, when a body can
+    /// step between all of them.
+    levels: Vec<Option<i32>>,
     cost: Vec<u32>,
     frontier: BinaryHeap<Reverse<(u32, u32)>>,
     seeded: bool,
     ready_cells: usize,
-    /// Centres of the passage cells that the field reaches, known when it is complete.
+    /// Positions of the passage nodes that the field reaches, known when it is complete.
     chokes: Option<Vec<Vec2>>,
     last_used: u32,
 }
@@ -174,12 +187,15 @@ impl Field {
         goal: Vec2,
     ) -> Self {
         let grid = phase.grid();
-        let cells = (grid.columns * grid.rows) as usize;
+        let (columns, rows) = (2 * grid.columns + 1, 2 * grid.rows + 1);
+        let nodes = (columns * rows) as usize;
         Self {
             key,
-            columns: grid.columns,
-            rows: grid.rows,
-            cell: grid.cell_width as f32 / grid.length_scale as f32,
+            cell_columns: grid.columns,
+            cell_rows: grid.rows,
+            columns,
+            rows,
+            cell: grid.cell_width as f32 / grid.length_scale as f32 / 2.0,
             radius,
             widest,
             profile,
@@ -187,10 +203,12 @@ impl Field {
             lease: BTreeMap::new(),
             revision: 0,
             scanned_rows: 0,
-            passable: vec![false; cells],
-            passage: vec![false; cells],
-            heights: vec![None; cells],
-            cost: vec![UNREACHED; cells],
+            passable: vec![false; nodes],
+            passage: vec![false; nodes],
+            tight: vec![false; nodes],
+            heights: vec![None; (grid.columns * grid.rows) as usize],
+            levels: vec![None; nodes],
+            cost: vec![UNREACHED; nodes],
             frontier: BinaryHeap::new(),
             seeded: false,
             ready_cells: 0,
@@ -203,7 +221,9 @@ impl Field {
         self.scanned_rows = 0;
         self.passable.fill(false);
         self.passage.fill(false);
+        self.tight.fill(false);
         self.heights.fill(None);
+        self.levels.fill(None);
         self.cost.fill(UNREACHED);
         self.frontier.clear();
         self.seeded = false;
@@ -217,70 +237,110 @@ impl Field {
     fn index(&self, x: u32, y: u32) -> usize {
         (y * self.columns + x) as usize
     }
+    /// The position of a node.
     fn centre(&self, x: u32, y: u32) -> Vec2 {
-        Vec2::new((x as f32 + 0.5) * self.cell, (y as f32 + 0.5) * self.cell)
+        Vec2::new(x as f32 * self.cell, y as f32 * self.cell)
     }
+    /// The node nearest a point.
     fn cell_of(&self, point: Vec2) -> Option<(u32, u32)> {
-        let (x, y) = ((point.x / self.cell).floor(), (point.y / self.cell).floor());
+        let (x, y) = ((point.x / self.cell).round(), (point.y / self.cell).round());
         (x >= 0.0 && y >= 0.0 && (x as u32) < self.columns && (y as u32) < self.rows)
             .then_some((x as u32, y as u32))
     }
+    fn height(&self, x: i64, y: i64) -> Option<i32> {
+        (x >= 0 && y >= 0 && x < i64::from(self.cell_columns) && y < i64::from(self.cell_rows))
+            .then(|| self.heights[(y * i64::from(self.cell_columns) + x) as usize])
+            .flatten()
+    }
+    /// The terrain cells that a node touches, on one axis: one cell for a node inside a
+    /// cell, two for a node on a grid line.
+    fn touched(node: u32) -> [i64; 2] {
+        let node = i64::from(node);
+        if node % 2 == 1 {
+            [(node - 1) / 2, (node - 1) / 2]
+        } else {
+            [node / 2 - 1, node / 2]
+        }
+    }
     fn steps(&self, from: usize, to: usize) -> bool {
-        match (self.heights[from], self.heights[to]) {
+        match (self.levels[from], self.levels[to]) {
             (Some(a), Some(b)) => a.abs_diff(b) <= self.profile.max_step,
             _ => false,
         }
     }
-    /// Spend `credit` cells of work. Returns the work that was used.
+    /// Spend `credit` nodes of work. Returns the work that was used.
     fn build(&mut self, phase: &TerrainPhase, viewer: u8, credit: usize) -> usize {
         let mut used = 0;
         if self.scanned_rows == 0 && self.lease.is_empty() {
             let max = Cell {
-                x: self.columns - 1,
-                y: self.rows - 1,
+                x: self.cell_columns - 1,
+                y: self.cell_rows - 1,
             };
             phase.planning_rectangle(viewer, Cell { x: 0, y: 0 }, max, &mut self.lease);
+            for y in 0..self.cell_rows {
+                for x in 0..self.cell_columns {
+                    self.heights[(y * self.cell_columns + x) as usize] =
+                        phase.planning_elevation(viewer, Cell { x, y });
+                }
+            }
             for y in 0..self.rows {
                 for x in 0..self.columns {
+                    let mut level: Option<i32> = None;
+                    let mut whole = true;
+                    for cy in Self::touched(y) {
+                        for cx in Self::touched(x) {
+                            match (self.height(cx, cy), level) {
+                                (None, _) => whole = false,
+                                (Some(height), None) => level = Some(height),
+                                (Some(height), Some(low)) => {
+                                    whole &= height.abs_diff(low) <= self.profile.max_step;
+                                    level = Some(low.min(height));
+                                }
+                            }
+                        }
+                    }
                     let index = self.index(x, y);
-                    self.heights[index] = phase.planning_elevation(viewer, Cell { x, y });
+                    self.levels[index] = level.filter(|_| whole);
                 }
             }
         }
-        // Clearance: the distance from the cell centre to the nearest cell that the class
+        // Clearance: the distance from the node to the nearest terrain cell that the class
         // cannot step to. The window covers two diameters, for the passage rule.
-        let reach = (4.0 * self.widest / self.cell).ceil() as i64 + 1;
+        let terrain_cell = 2.0 * self.cell;
+        let reach = (4.0 * self.widest / terrain_cell).ceil() as i64 + 1;
         while self.scanned_rows < self.rows && used + self.columns as usize <= credit {
             let y = self.scanned_rows;
             for x in 0..self.columns {
                 let index = self.index(x, y);
-                let centre = self.centre(x, y);
+                let here = self.centre(x, y);
                 let mut clearance = f32::MAX;
-                if self.heights[index].is_none() {
-                    clearance = 0.0;
-                } else {
-                    for ny in i64::from(y) - reach..=i64::from(y) + reach {
-                        for nx in i64::from(x) - reach..=i64::from(x) + reach {
-                            let inside = nx >= 0
-                                && ny >= 0
-                                && nx < i64::from(self.columns)
-                                && ny < i64::from(self.rows);
-                            if inside && self.steps(index, self.index(nx as u32, ny as u32)) {
+                if let Some(level) = self.levels[index] {
+                    let (cx, cy) = (Self::touched(x)[1], Self::touched(y)[1]);
+                    for ny in cy - reach..=cy + reach {
+                        for nx in cx - reach..=cx + reach {
+                            if self.height(nx, ny).is_some_and(|height| {
+                                height.abs_diff(level) <= self.profile.max_step
+                            }) {
                                 continue;
                             }
-                            let low = Vec2::new(nx as f32 * self.cell, ny as f32 * self.cell);
-                            let nearest = centre.clamp(low, low + Vec2::splat(self.cell));
-                            clearance = clearance.min(centre.distance(nearest));
+                            let low = Vec2::new(nx as f32 * terrain_cell, ny as f32 * terrain_cell);
+                            let nearest = here.clamp(low, low + Vec2::splat(terrain_cell));
+                            clearance = clearance.min(here.distance(nearest));
                         }
                     }
+                } else {
+                    clearance = 0.0;
                 }
-                self.passable[index] = clearance >= self.radius;
-                // A corridor narrower than two diameters is a passage (T-6 history section).
-                // The corridor width is the shorter of the two free runs through the cell,
+                // A body that exactly fits can stand at the node.
+                self.passable[index] = clearance >= self.radius - 1.0e-4;
+                // Tight: the wider check body of the step guard cannot stand here.
+                self.tight[index] = clearance < self.radius + 2.0 * CLEARANCE;
+                // A corridor narrower than two diameters is a passage (design record).
+                // The corridor width is the shorter of the two free runs through the node,
                 // along x and along y, so one wall beside open ground is not a passage.
                 let run = |dx: i64, dy: i64| -> i64 {
                     let mut free = 0;
-                    for step in 1..=reach {
+                    for step in 1..=2 * reach {
                         let (nx, ny) = (i64::from(x) + dx * step, i64::from(y) + dy * step);
                         let inside = nx >= 0
                             && ny >= 0
@@ -293,7 +353,7 @@ impl Field {
                     }
                     free
                 };
-                let width = (1 + run(1, 0) + run(-1, 0)).min(1 + run(0, 1) + run(0, -1));
+                let width = (run(1, 0) + run(-1, 0)).min(run(0, 1) + run(0, -1));
                 self.passage[index] = (width as f32) * self.cell < 4.0 * self.widest;
             }
             self.scanned_rows += 1;
@@ -352,7 +412,7 @@ impl Field {
         }
         used
     }
-    /// A body of the class can go between two adjacent passable cells.
+    /// A body of the class can go between two adjacent passable nodes.
     fn edge(&self, from: usize, to: usize, dx: i64, dy: i64) -> bool {
         if !self.passable[from] || !self.passable[to] || !self.steps(from, to) {
             return false;
@@ -365,11 +425,11 @@ impl Field {
         }
         true
     }
-    /// Goal cells: the passable cells within one radius (at least one cell) of the goal.
-    /// With none, the passable cell nearest the goal (a tie goes to the lower cell index,
-    /// which is a position, not an identity).
+    /// Goal nodes: the passable nodes within one radius (at least one terrain cell) of the
+    /// goal. With none, the passable node nearest the goal (a tie goes to the lower node
+    /// index, which is a position, not an identity).
     fn seed(&mut self) {
-        let reach = self.radius.max(self.cell);
+        let reach = self.radius.max(2.0 * self.cell);
         let mut nearest: Option<(f32, usize)> = None;
         for y in 0..self.rows {
             for x in 0..self.columns {
@@ -395,17 +455,18 @@ impl Field {
             self.frontier.push(Reverse((0, index as u32)));
         }
     }
-    /// The advice direction at `point`, or `None` when the field has no ready cell there.
+    /// The advice at `point`: the next node to go to, and whether the step to it must end
+    /// exactly on it (a body there touches terrain, or nearly).
     fn advice(&self, point: Vec2) -> Advice {
         let Some((x, y)) = self.cell_of(point) else {
             return Advice::NotReady;
         };
         let here = self.index(x, y);
-        let goal_reach = self.radius.max(self.cell);
+        let goal_reach = self.radius.max(2.0 * self.cell);
         if point.distance(self.goal) <= goal_reach && self.cost[here] != UNREACHED {
-            return Advice::Toward(self.goal);
+            return Advice::Toward(self.goal, false);
         }
-        let mut best: Option<(u32, Vec2)> = None;
+        let mut best: Option<(u32, Vec2, bool)> = None;
         for (dx, dy) in NEIGHBOUR_CELLS {
             let (nx, ny) = (i64::from(x) + dx, i64::from(y) + dy);
             if nx < 0 || ny < 0 || nx >= i64::from(self.columns) || ny >= i64::from(self.rows) {
@@ -415,27 +476,39 @@ impl Field {
             if self.cost[next] == UNREACHED {
                 continue;
             }
-            // From a cell that the class cannot occupy at its centre, any ready neighbour
-            // is a way back. From a ready cell, only a permitted edge downhill.
+            // From a node that the class cannot occupy, any ready neighbour is a way back.
+            // From a ready node, only a permitted edge downhill.
             if self.cost[here] != UNREACHED
                 && (!self.edge(here, next, dx, dy) || self.cost[next] >= self.cost[here])
             {
                 continue;
             }
-            let centre = self.centre(nx as u32, ny as u32);
             let step = if dx != 0 && dy != 0 {
                 DIAGONAL
             } else {
                 ORTHOGONAL
             };
             let total = self.cost[next].saturating_add(step);
-            if best.is_none_or(|(cost, _)| total < cost) {
-                best = Some((total, centre));
+            if best.is_none_or(|(cost, _, _)| total < cost) {
+                best = Some((total, self.centre(nx as u32, ny as u32), self.tight[next]));
+            }
+        }
+        // At an exact-fit place the unit must be on the line from its node to the next node.
+        // A unit that is off that line goes to its own node first.
+        if let Some((_, node, _)) = best
+            && self.cost[here] != UNREACHED
+            && self.tight[here]
+        {
+            let own = self.centre(x, y);
+            let line = (node - own).normalize_or_zero();
+            let offset = point - own;
+            if offset.perp_dot(line).abs() > 1.0e-5 || offset.dot(line) < 0.0 {
+                return Advice::Toward(own, true);
             }
         }
         match best {
-            Some((_, centre)) => Advice::Toward(centre),
-            None if self.cost[here] != UNREACHED => Advice::Toward(self.goal),
+            Some((_, node, tight)) => Advice::Toward(node, tight || self.tight[here]),
+            None if self.cost[here] != UNREACHED => Advice::Toward(self.goal, false),
             None if self.complete() => Advice::NoPath,
             None => Advice::NotReady,
         }
@@ -457,7 +530,8 @@ const NEIGHBOUR_CELLS: [(i64, i64); 8] = [
 ];
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Advice {
-    Toward(Vec2),
+    /// Go to this point. `true`: the step to it must end exactly on it.
+    Toward(Vec2, bool),
     NotReady,
     NoPath,
 }
@@ -910,8 +984,12 @@ fn step_inner(
             continue;
         }
         let field = field_of(row, member);
+        let mut exact_node = false;
         let toward = match field.map_or(Advice::NotReady, |field| field.advice(unit.position)) {
-            Advice::Toward(point) => point,
+            Advice::Toward(point, exact) => {
+                exact_node = exact;
+                point
+            }
             Advice::NotReady => member.goal,
             Advice::NoPath => {
                 no_path[row] = true;
@@ -1037,6 +1115,16 @@ fn step_inner(
             // The last step goes exactly to the point.
             last_step[row] = Some(member.goal);
             (member.goal - unit.position) / dt
+        } else if exact_node && keep_out.is_none() {
+            // Beside terrain the unit goes from node to node, exactly: a body that just
+            // fits an opening must be on its centre line.
+            if unit.position.distance(toward) <= speed * dt {
+                last_step[row] = Some(toward);
+                (toward - unit.position) / dt
+            } else {
+                last_step[row] = Some(unit.position + heading * speed * dt);
+                heading * speed
+            }
         } else {
             wish.clamp_length_max(speed)
         };
@@ -1073,6 +1161,13 @@ fn step_inner(
         }
         let from = unit.position;
         let mut end = guard(row, from, last_step[row].unwrap_or(from + wish), true);
+        // An exact step to a node or to the point, where the body has no clearance.
+        if let (Some(node), Some(profile)) = (last_step[row], profiles[row])
+            && end != node
+        {
+            let solids = solids_for(row, from, from.distance(node) + unit.radius, true);
+            end = fitted_step(terrain, from, node, unit.radius, profile, &solids);
+        }
         if end.distance(from) < 0.5 * wish.length() {
             let aim = aims[row];
             let mut best = (end.distance(aim), end);
@@ -1202,7 +1297,21 @@ fn step_inner(
             positions[row] = guard(row, start[row], end, true);
             // A start pose at a terrain contact refuses every guarded chord. The chord is
             // then checked as an escape step, so a unit that left the contact keeps its move.
-            if positions[row] == start[row]
+            if positions[row] != end
+                && last_step[row] == Some(end)
+                && let Some(profile) = profiles[row]
+            {
+                // The exact step of a body with no clearance, checked as a whole.
+                let solids = solids_for(row, start[row], chord.length() + units[row].radius, true);
+                positions[row] = fitted_step(
+                    terrain,
+                    start[row],
+                    end,
+                    units[row].radius,
+                    profile,
+                    &solids,
+                );
+            } else if positions[row] == start[row]
                 && let Some(profile) = profiles[row]
             {
                 let solids = solids_for(row, start[row], chord.length() + units[row].radius, true);
