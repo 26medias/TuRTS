@@ -1,4 +1,6 @@
 //! Independent full-circle collision arithmetic, plus the shared exact terrain predicate.
+//! Flock rules of 2026-11-23: a step never crosses terrain, a building or a body of another
+//! owner; two own bodies overlap at most 25 % of the smaller radius; at rest no overlap.
 use bevy::math::Vec2;
 use turts_rules::terrain::{
     Ratio,
@@ -13,6 +15,22 @@ pub struct Body {
     pub speed: f32,
     pub max_step: u32,
     pub max_grade: [u64; 2],
+    pub owner: u8,
+    /// The unit has no order and no move target.
+    pub idle: bool,
+}
+/// Rule 4: the largest overlap of two own bodies, as a share of the smaller radius.
+pub const OWN_OVERLAP_SHARE: f64 = 0.25;
+/// Tolerance of "no overlap at rest", in metres.
+pub const REST_TOLERANCE: f64 = 1.0e-4;
+/// True when the unit has no current order, no queued order, no failure and no move target.
+pub fn idle(world: &bevy::prelude::World, unit: u32) -> bool {
+    let entity = turts_sim::unit_entity(world, unit).unwrap();
+    let orders = world.get::<turts_sim::UnitOrders>(entity).unwrap();
+    orders.current.is_none()
+        && orders.queue.is_empty()
+        && orders.last_failure.is_none()
+        && world.get::<turts_sim::MoveTarget>(entity).is_none()
 }
 pub struct SurfaceState {
     pub grid: Grid,
@@ -87,6 +105,11 @@ fn square(value: i128) -> i128 {
 fn norm(x: i128, y: i128) -> i128 {
     square(x).checked_add(square(y)).unwrap()
 }
+/// Overlap depth of two bodies in metres. Negative when they stand apart.
+pub fn overlap_depth(a: &Body, b: &Body) -> f64 {
+    f64::from(a.radius) + f64::from(b.radius)
+        - (a.position.as_dvec2() - b.position.as_dvec2()).length()
+}
 fn no_body_crossing(a0: &Body, a1: &Body, b0: &Body, b1: &Body) -> bool {
     let x = exact(a0.position.x) - exact(b0.position.x);
     let y = exact(a0.position.y) - exact(b0.position.y);
@@ -156,16 +179,46 @@ pub fn verify(scene: &str, tick: u32, before: &[Body], after: &[Body], surface: 
             );
         }
         for other in 0..index {
+            let (other_from, other_to) = (&before[other], &after[other]);
+            let context = || {
+                format!(
+                    "{} {:?}->{:?} / {} {:?}->{:?}",
+                    from.label,
+                    from.position,
+                    to.position,
+                    other_from.label,
+                    other_from.position,
+                    other_to.position
+                )
+            };
+            // GM4: no committed step crosses a body of another owner or a building.
+            if from.owner != other_from.owner || from.speed == 0.0 || other_from.speed == 0.0 {
+                assert!(
+                    no_body_crossing(from, to, other_from, other_to),
+                    "{scene} tick{tick}: swept complete circles overlap: {}",
+                    context()
+                );
+                continue;
+            }
+            // Rule 4 (FM3): two own bodies overlap at most 25 % of the smaller radius.
+            let depth = overlap_depth(to, other_to);
             assert!(
-                no_body_crossing(from, to, &before[other], &after[other]),
-                "{scene} tick{tick}: swept complete circles overlap: {} {:?}->{:?} / {} {:?}->{:?}",
-                from.label,
-                from.position,
-                to.position,
-                before[other].label,
-                before[other].position,
-                after[other].position
+                depth <= OWN_OVERLAP_SHARE * f64::from(to.radius.min(other_to.radius)),
+                "{scene} tick{tick}: own bodies overlap {depth} m, above the rule-4 cap: {}",
+                context()
             );
+            // Rule 4: at rest no overlap. Both units have no order and did not move.
+            if to.idle
+                && other_to.idle
+                && from.position == to.position
+                && other_from.position == other_to.position
+            {
+                assert!(
+                    depth <= REST_TOLERANCE,
+                    "{scene} tick{tick}: bodies at rest overlap {depth} m: {}",
+                    context()
+                );
+            }
         }
     }
 }
@@ -178,6 +231,8 @@ fn circle_oracle_rejects_crossing_even_with_clear_endpoints_and_keeps_exact_tang
         speed: 100.0,
         max_step: 0,
         max_grade: [0, 1],
+        owner: 0,
+        idle: false,
     };
     assert!(!no_body_crossing(
         &body("a", 2.0, 4.0),
@@ -198,4 +253,55 @@ fn circle_oracle_rejects_crossing_even_with_clear_endpoints_and_keeps_exact_tang
         &body("b", 6.0, below),
         &body("b", 2.0, below)
     ));
+}
+
+fn pair(gap: f32, owners: [u8; 2], idle: bool) -> Vec<Body> {
+    let body = |label: &str, x, owner| Body {
+        label: label.into(),
+        position: Vec2::new(x, 4.0),
+        radius: 1.0,
+        speed: 100.0,
+        max_step: 0,
+        max_grade: [0, 1],
+        owner,
+        idle,
+    };
+    vec![body("a", 4.0, owners[0]), body("b", 6.0 + gap, owners[1])]
+}
+fn flat() -> SurfaceState {
+    SurfaceState {
+        grid: Grid {
+            columns: 16,
+            rows: 16,
+            length_scale: 4,
+            cell_width: 4,
+            elevation_step: 1,
+            floor: -8,
+            ceiling: 8,
+        },
+        heights: vec![0; 256],
+    }
+}
+#[test]
+fn own_moving_bodies_can_overlap_up_to_the_rule_4_cap() {
+    let bodies = pair(-0.25, [0, 0], false);
+    verify("oracle", 1, &bodies, &bodies, &flat());
+}
+#[test]
+#[should_panic(expected = "above the rule-4 cap")]
+fn own_bodies_above_the_rule_4_cap_are_refused() {
+    let bodies = pair(-0.26, [0, 0], false);
+    verify("oracle", 1, &bodies, &bodies, &flat());
+}
+#[test]
+#[should_panic(expected = "bodies at rest overlap")]
+fn own_bodies_at_rest_cannot_overlap() {
+    let bodies = pair(-0.001, [0, 0], true);
+    verify("oracle", 1, &bodies, &bodies, &flat());
+}
+#[test]
+#[should_panic(expected = "swept complete circles overlap")]
+fn bodies_of_different_owners_cannot_overlap() {
+    let bodies = pair(-0.001, [0, 1], false);
+    verify("oracle", 1, &bodies, &bodies, &flat());
 }

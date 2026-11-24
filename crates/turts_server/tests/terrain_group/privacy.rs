@@ -4,9 +4,8 @@
 //! Both worlds use identical public archives and ordinary finite work orders. No column,
 //! component, permission resource or navigation state is written after normal server boot.
 //!
-//! AUTHORED_UNRUN: this module has only passed source formatting checks. The route
-//! audit API must be integrated before compilation. It creates no network peers;
-//! connection-order reversal remains a transport/browser acceptance check.
+//! The guidance rows come from the flock audit (2026-11-23). This module creates no
+//! network peers; `peer_sessions.rs` covers connection-order reversal.
 //! The frozen GM1-GM5 inputs are unchanged. This dedicated GM6 map has two
 //! zero-sight probes for the protected slot and one zero-sight route for the
 //! editing owner, plus two sighted editors. Initial public input is identical.
@@ -279,6 +278,8 @@ impl PrivacyWorld {
                     speed: definition.movement.as_ref().unwrap().speed,
                     max_step: 0,
                     max_grade: [0, 1],
+                    owner: self.app.world().get::<turts_sim::Owner>(e).unwrap().0.0,
+                    idle: physical::idle(self.app.world(), *id),
                 }
             })
             .collect()
@@ -453,30 +454,35 @@ impl PrivacyWorld {
         );
         serde_json::to_value(snapshot).unwrap()
     }
-    pub(super) fn member(&self, label: &str) -> Option<turts_sim::terrain::NavigationMemberAudit> {
-        turts_sim::terrain::privileged_navigation_audit(self.app.world())
+    pub(super) fn member(&self, label: &str) -> Option<turts_sim::terrain::FlockMemberAudit> {
+        turts_sim::terrain::privileged_flock_audit(self.app.world())
             .members
             .into_iter()
             .find(|m| m.unit == self.ids[label])
     }
+    /// GM6: the flock guidance of the protected owner. Every field of the audit row is in
+    /// this cross-world comparison: state, advice, neighbours and the field record.
     pub(super) fn protected_navigation(&self) -> Value {
+        let audit = turts_sim::terrain::privileged_flock_audit(self.app.world());
         let rows: Vec<_> = ["protected_probe", "protected_peer"]
             .iter()
             .map(|label| {
-                let member = self.member(label);
-                // Opaque field handles are local to a run. All geometry, lease revisions,
-                // state and handle presence remain in this cross-world comparison.
-                member
+                self.member(label)
                     .map(|m| {
-                        json!({"label":label,"viewer":m.viewer,"order_epoch":m.order_epoch,
-                "field_present":m.field.is_some(),"field_revision":m.field_revision,
-                "endpoint_bits":m.endpoint.map(f32::to_bits),"dependencies":m.dependencies,
-                "state":format!("{:?}",m.state)})
+                        json!({"label":label,"owner":m.owner,"state":m.state,
+                "advice_bits":m.advice,"neighbours":m.neighbours,
+                "field_class":m.field_class,"field_goal":m.field_goal,
+                "field_revision":m.field_revision,"field_ready_cells":m.field_ready_cells})
                     })
                     .unwrap_or(Value::Null)
             })
             .collect();
-        json!(rows)
+        let work: Vec<_> = audit
+            .owners
+            .iter()
+            .filter(|(owner, _, _)| *owner == self.protected)
+            .collect();
+        json!({"members":rows,"field_work":work})
     }
 }
 
@@ -542,12 +548,14 @@ fn gm6_mirrored_hidden_edits_preserve_protected_view_and_do_not_poison_other_vie
                     }
                     if (PROBE_START + 1..=300).contains(&a.tick) {
                         let (left, right) = other_leases.as_ref().unwrap();
-                        super::diagnostics::same_retained_revisions(
+                        // GM6: the move of the protected owner does not change the field of
+                        // the other owner.
+                        super::diagnostics::same_field(
                             left,
                             &a.member("other_probe")
                                 .expect("other viewer membership retained"),
                         );
-                        super::diagnostics::same_retained_revisions(
+                        super::diagnostics::same_field(
                             right,
                             &b.member("other_probe")
                                 .expect("other viewer membership retained"),
@@ -577,7 +585,7 @@ fn gm6_mirrored_hidden_edits_preserve_protected_view_and_do_not_poison_other_vie
                 assert!(b.surface.rectangle_is(LOCAL_MIN, LOCAL_MAX, 0));
                 for world in [&a, &b] {
                     fs::write(world.dir.join("privacy-result.json"),serde_json::to_vec_pretty(&json!({"status":"CHECKED","protected":protected,"ticks":world.tick,"after_frontier_ticks":after_frontier,
-                    "raw_protected_rows":rows,"other_viewer_identity_and_retained_revisions_stable":true,"peer_connection_reversal":"UNRUN"})).unwrap()).unwrap();
+                    "raw_protected_rows":rows,"other_viewer_field_and_revision_stable":true,"peer_connection_reversal":"UNRUN"})).unwrap()).unwrap();
                 }
             }
         }

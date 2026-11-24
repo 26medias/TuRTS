@@ -102,7 +102,6 @@ pub struct Fixture {
     pub package: String,
     pub surface: SurfaceState,
     seq: [u32; 8],
-    settled: BTreeMap<String, [u32; 2]>,
     pub trace: Vec<Frame>,
     dir: PathBuf,
     expected: BTreeMap<(u8, u32), Vec<u32>>,
@@ -244,7 +243,6 @@ impl Fixture {
             package: package.into(),
             surface,
             seq: [0; 8],
-            settled: BTreeMap::new(),
             trace: Vec::new(),
             dir,
             expected: BTreeMap::new(),
@@ -310,11 +308,6 @@ impl Fixture {
         }
     }
     pub fn send(&mut self, slot: u8, envelope: OrderEnvelope) {
-        for id in &envelope.units {
-            if let Some(actor) = self.actors.iter().find(|a| a.unit == id.0) {
-                self.settled.remove(&actor.label);
-            }
-        }
         self.seq[slot as usize] += 1;
         let command = PlayerCommand {
             seq: self.seq[slot as usize],
@@ -345,6 +338,8 @@ impl Fixture {
                 max_step: a.profile.max_step,
                 max_grade: a.profile.max_grade,
                 speed: a.profile.speed,
+                owner: a.slot,
+                idle: self.complete(&a.label),
             })
             .collect()
     }
@@ -457,6 +452,8 @@ impl Fixture {
         let after = self.bodies();
         // Movement precedes TerrainWork in the real fixed schedule. Certify against the
         // pre-work surface; a later same-tick edit cannot legalize an earlier wall crossing.
+        // Rules 1 and 2 (2026-11-23): a push can move an idle or a settled own unit, so
+        // this step has no "settled unit keeps its pose" check.
         let physical_start = self.timer_start();
         physical::verify(&self.scene_name, self.tick, &before, &after, &self.surface);
         if turts_sim::terrain::privileged_changed_chunk_count(self.app.world()) > 0 {
@@ -465,25 +462,6 @@ impl Fixture {
         }
         if let Some(start) = physical_start {
             self.timings.physical_ns += start.elapsed().as_nanos();
-        }
-        for actor in &self.actors {
-            let point = self.position(&actor.label).to_array().map(f32::to_bits);
-            if let Some(previous) = self.settled.get(&actor.label) {
-                assert_eq!(
-                    *previous, point,
-                    "{} tick{} displaces settled {}",
-                    self.scene_name, self.tick, actor.label
-                );
-            }
-            // Only remember a real accepted/completed movement, not an uncommanded idle unit.
-            if self.complete(&actor.label)
-                && before
-                    .iter()
-                    .zip(&after)
-                    .any(|(a, b)| a.label == actor.label && a.position != b.position)
-            {
-                self.settled.insert(actor.label.clone(), point);
-            }
         }
         self.trace.push(self.frame());
         if self.tick.is_multiple_of(128) && std::env::var_os("TURTS_M4B_TRACE").is_some() {
@@ -507,15 +485,12 @@ impl Fixture {
                 Some(serde_json::json!({"unit":id,"label":label,
                     "position":entity.get::<turts_sim::Position>().map(|p|p.0.to_array()),
                     "target":entity.get::<turts_sim::world::MoveTarget>().map(|p|p.0.to_array()),
-                    "group_progress":entity.get::<turts_sim::movement::MoveProgress>(),
-                    "plain_progress":entity.get::<turts_sim::movement::PlainMoveProgress>(),
-                    "physical_escape":entity.get::<turts_sim::movement::PhysicalEscape>(),
                 }))
             })
             .collect::<Vec<_>>();
         let value = serde_json::json!({"diagnostic_only":true,"scene":self.scene_name,"tick":self.tick,
-            "traffic":turts_sim::terrain::privileged_traffic_debug(world),"contacts":turts_sim::terrain::privileged_contact_debug(world),
-            "units":rows,"owner_orders":turts_sim::completed_world(world).unit_orders,"navigation":format!("{:?}",turts_sim::terrain::privileged_navigation_audit(world)),
+            "units":rows,"owner_orders":turts_sim::completed_world(world).unit_orders,
+            "flock":format!("{:?}",turts_sim::terrain::privileged_flock_audit(world)),
             "trace_tail":&self.trace[self.trace.len().saturating_sub(20)..]});
         if let Ok(bytes) = serde_json::to_vec_pretty(&value) {
             let _ = fs::write(self.dir.join(name), bytes);

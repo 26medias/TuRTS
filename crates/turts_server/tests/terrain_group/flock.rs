@@ -1,6 +1,5 @@
-//! T-7 flock path: headless ridge traces (FM1, FM2, FM3). The fixture is used as it is;
-//! only the stepping differs, because `Fixture::step` asserts the rules of the old path
-//! (no body contact while moving, no displaced settled unit).
+//! T-7 flock path: headless ridge traces (FM1, FM2, FM3) and the reversal check. `tick`
+//! keeps only the terrain and speed checks; `Fixture::step` adds the body rules.
 use super::{
     fixture::{Fixture, VARIANTS},
     physical::SurfaceState,
@@ -367,5 +366,42 @@ fn flock_ridge_outbound_dig_and_return_trace() {
             f.position(l),
             f.complete(l)
         );
+    }
+}
+
+/// The unit id never decides a result. The four variants reverse the allocation and the
+/// member order, so the unit ids differ. Every physical frame must be equal, row by label,
+/// with exact f32 bits. A neighbour sum in unit-id order makes this test red.
+#[test]
+fn flock_reversal_gives_equal_frames() {
+    const TICKS: usize = 600;
+    let traces = std::thread::scope(|scope| {
+        let workers = VARIANTS.map(|variant| {
+            scope.spawn(move || {
+                let mut f = Fixture::new("quarry", "GM2-narrow", variant);
+                let mut frames = Vec::with_capacity(TICKS);
+                for _ in 0..TICKS {
+                    tick(&mut f);
+                    frames.push(f.frame());
+                }
+                frames
+            })
+        });
+        workers.map(|worker| match worker.join() {
+            Ok(frames) => frames,
+            Err(panic) => std::panic::resume_unwind(panic),
+        })
+    });
+    for (variant, trace) in VARIANTS.iter().zip(&traces).skip(1) {
+        assert_eq!(trace.len(), traces[0].len());
+        for (index, (reference, frame)) in traces[0].iter().zip(trace).enumerate() {
+            if let Some((expected, actual)) = reference.iter().zip(frame).find(|(a, b)| a != b) {
+                panic!(
+                    "frames differ under {variant:?} at tick {} for {}: {expected:?} / {actual:?}",
+                    index + 1,
+                    expected.label
+                );
+            }
+        }
     }
 }

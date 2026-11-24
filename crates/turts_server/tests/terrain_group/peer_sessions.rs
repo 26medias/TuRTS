@@ -424,14 +424,8 @@ fn real_peer_creation_and_hello_reversal_preserve_paired_hidden_group_worlds() {
                     }
                     if (203..=300).contains(&tick) {
                         let (left, right) = other_leases.as_ref().unwrap();
-                        diagnostics::same_retained_revisions(
-                            left,
-                            &a.fixture.member("other_probe").unwrap(),
-                        );
-                        diagnostics::same_retained_revisions(
-                            right,
-                            &b.fixture.member("other_probe").unwrap(),
-                        );
+                        diagnostics::same_field(left, &a.fixture.member("other_probe").unwrap());
+                        diagnostics::same_field(right, &b.fixture.member("other_probe").unwrap());
                     }
                     let pos = a.fixture.position("protected_probe");
                     if tick > 202

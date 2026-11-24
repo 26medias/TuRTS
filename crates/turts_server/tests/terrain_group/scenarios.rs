@@ -52,9 +52,16 @@ fn gm1_wide_both_public_packages_complete_and_reversals_preserve_every_physical_
                     let mut f = Fixture::new(package, "GM1-wide", variant);
                     assert_eq!(f.actors.len(), 36);
                     let labels = f.labels(|_| true);
+                    // GM1 (rule 6): the first unit moves within 1 s of the order.
+                    let start = f.frame();
+                    until(&mut f, 20);
+                    assert!(
+                        f.frame().iter().zip(&start).any(|(now, then)| now.position != then.position),
+                        "{package} GM1: no unit moved in the first second"
+                    );
                     until(&mut f, MOVE_BOUND);
                     require_crossed(&f, &labels, true);
-                    f.write_result(json!({"row":"GM1","variant":format!("{variant:?}"),"complete":36,"swept_checks":"every committed tick","reversal":"pending parent comparison"}));
+                    f.write_result(json!({"row":"GM1","variant":format!("{variant:?}"),"complete":36,"first_motion_within_ticks":20,"terrain_sweep_checks":"every committed tick","reversal":"pending parent comparison"}));
                     (variant, std::mem::take(&mut f.trace), f.evidence_dir().to_owned())
                 })
             });
@@ -114,15 +121,11 @@ fn gm2_narrow_keeps_large_original_order_then_ordinary_excavation_resumes_it() {
                             !f.complete(label),
                             "narrow refusal falsely completed original move"
                         );
+                        // GM2 (rule 5): the unit waits at the obstacle, marked, with its order.
                         let row = diagnostics::member(&f, label);
                         assert!(
-                            matches!(
-                                row.state,
-                                turts_sim::terrain::NavigationMemberState::Blocked
-                                    | turts_sim::terrain::NavigationMemberState::Pending
-                                    | turts_sim::terrain::NavigationMemberState::Searching
-                            ),
-                            "large actor must retain truthful waiting route: {row:?}"
+                            row.as_ref().is_some_and(|row| row.state == "waiting"),
+                            "large actor must wait, marked, at the obstacle: {row:?}"
                         );
                     }
                     // Tick2401 is the frozen ordinary work envelope. No large move is sent again.
@@ -142,10 +145,24 @@ fn gm2_narrow_keeps_large_original_order_then_ordinary_excavation_resumes_it() {
                     }
                     let opened = opened
                         .expect("ordinary editor did not expose full eight-cell-wide passage");
+                    // GM2: the dig resumes the waiting large units within 2 s (40 ticks).
+                    let at_open: Vec<_> = large.iter().map(|l| f.position(l)).collect();
+                    until(&mut f, opened + 40);
+                    for label in &large {
+                        let row = diagnostics::member(&f, label);
+                        assert!(
+                            row.as_ref().is_none_or(|row| row.state != "waiting"),
+                            "{label} still waits 2 s after the passage opened: {row:?}"
+                        );
+                    }
+                    assert!(
+                        large.iter().zip(&at_open).any(|(l, then)| f.position(l) != *then),
+                        "no large unit moved in the 2 s after the passage opened"
+                    );
                     until(&mut f, opened + MOVE_BOUND);
                     require_crossed(&f, &large, true);
                     f.write_result(
-                json!({"row":"GM2","opening_tick":opened,"large_completed_without_reissue":12}),
+                json!({"row":"GM2","opening_tick":opened,"large_resumed_within_ticks":40,"large_completed_without_reissue":12}),
             );
                 })
             });
@@ -254,23 +271,19 @@ fn gm3_temporary_blocker_far_from_goal_does_not_complete_the_move() {
 }
 
 #[test]
-fn gm3_settled_blocker_never_moves_and_impossible_traffic_waits_stably() {
+fn gm3_occupied_passage_impossible_traffic_waits_stably() {
     for package in PACKAGES {
         // Each variant has its own fixture, server app, and evidence directory.
         std::thread::scope(|scope| {
             let workers = VARIANTS.map(|variant| {
                 scope.spawn(move || {
                     let mut f = Fixture::new(package, "GM3-settled-blocker", variant);
-                    let blocker = f.position("blocker").to_array().map(f32::to_bits);
+                    // Rules 1 and 2: a push can shift the blocker, so its exact pose is not
+                    // checked. Its order to the place where it stands must still end.
                     let deadline = f.scene["deadline_ticks"].as_u64().unwrap() as u32;
                     let mut stable = None;
                     while f.tick < deadline {
                         step(&mut f);
-                        assert_eq!(
-                            f.position("blocker").to_array().map(f32::to_bits),
-                            blocker,
-                            "later traffic displaced settled blocker"
-                        );
                         if f.tick == deadline - 200 {
                             stable = Some(f.frame());
                         }
@@ -294,9 +307,7 @@ fn gm3_settled_blocker_never_moves_and_impossible_traffic_waits_stably() {
                             assert!(f.position(&actor.label).x - actor.profile.radius >= 34.0);
                         }
                     }
-                    f.write_result(
-                        json!({"row":"GM3","settled_point_retained":true,"stable_ticks":200}),
-                    );
+                    f.write_result(json!({"row":"GM3","stable_ticks":200}));
                 })
             });
             workers.map(|worker| match worker.join() {
@@ -315,12 +326,13 @@ fn gm4_real_fill_excavation_invalidate_only_relevant_routes() {
             let mut f = Fixture::new(package, "GM4-edit-during-approach", variant);
             until(&mut f, 19);
             let distant_label = "large.2.3";
-            let distant = diagnostics::member(&f, distant_label);
+            let distant = diagnostics::member(&f, distant_label).expect("distant unit moves");
             assert!(!f.complete(distant_label));
             let original = f.order(distant_label).unwrap();
             let mut closed = false;
             let mut reopened = false;
             let mut moving_distant = false;
+            let mut distant_change = None;
             let start = f.position(distant_label);
             let deadline = f.scene["deadline_ticks"].as_u64().unwrap() as u32;
             while f.tick < deadline {
@@ -330,7 +342,13 @@ fn gm4_real_fill_excavation_invalidate_only_relevant_routes() {
                     reopened |= f.surface.rectangle_is([31, 20], [32, 28], 0);
                 }
                 if f.tick <= 340 {
-                    diagnostics::same_lease(&distant, &diagnostics::member(&f, distant_label));
+                    // GM4: the field of the distant unit keeps its revision through the edit.
+                    // The first change is recorded and asserted after the other GM4 checks.
+                    let now = diagnostics::member(&f, distant_label).expect("distant unit still moves");
+                    diagnostics::same_field_key(&distant, &now);
+                    if now.field_revision != distant.field_revision && distant_change.is_none() {
+                        distant_change = Some((f.tick, distant.field_revision, now.field_revision));
+                    }
                     assert_eq!(f.order(distant_label), Some(original.clone()));
                     moving_distant |= f.position(distant_label) != start;
                 }
@@ -343,7 +361,11 @@ fn gm4_real_fill_excavation_invalidate_only_relevant_routes() {
             );
             let main = f.labels(|a| a.label != "small.0.0" && a.label != distant_label);
             require_crossed(&f, &main, true);
-            f.write_result(json!({"row":"GM4","closed":closed,"reopened":reopened,"distant_lease_unchanged_through":340}));
+            assert_eq!(
+                distant_change, None,
+                "distant field revision changed (tick, before, after)"
+            );
+            f.write_result(json!({"row":"GM4","closed":closed,"reopened":reopened,"distant_field_revision_unchanged_through":340}));
             }));
             workers.map(|worker| match worker.join() {
                 Ok(()) => (),
@@ -354,6 +376,8 @@ fn gm4_real_fill_excavation_invalidate_only_relevant_routes() {
 }
 #[test]
 fn exact_geometry_legal_cases_complete_and_refused_boundaries_do_not_tunnel() {
+    // Each case runs to its end. One red case does not hide the cases after it.
+    let mut failed = Vec::new();
     for package in PACKAGES {
         for (scene, legal) in [
             ("GM-legal-step", true),
@@ -365,34 +389,41 @@ fn exact_geometry_legal_cases_complete_and_refused_boundaries_do_not_tunnel() {
             ("GM-fast-wall", false),
         ] {
             for variant in [VARIANTS[0], VARIANTS[3]] {
-                let mut f = Fixture::new(package, scene, variant);
-                until(&mut f, MOVE_BOUND);
-                if legal {
-                    f.require_complete(&["probe".into()]);
-                    let target = f.scene["commands"][0]["point"].as_array().unwrap();
-                    let endpoint = turts_sim::Vec2::new(
-                        target[0].as_f64().unwrap() as f32,
-                        target[1].as_f64().unwrap() as f32,
-                    );
-                    assert!(
-                        (f.position("probe") - endpoint).length()
-                            <= f.actor("probe").profile.radius,
-                        "legal case never reached endpoint"
-                    );
-                } else {
-                    assert!(
-                        !f.complete("probe"),
-                        "illegal boundary falsely completed order"
-                    );
-                    assert!(
-                        f.position("probe").x <= 30.0,
-                        "illegal footprint crossed authored wall/ledge"
-                    );
+                let case =
+                    std::panic::catch_unwind(|| geometry_case(package, scene, legal, variant));
+                if case.is_err() {
+                    failed.push(format!("{package}/{scene}/{variant:?}"));
                 }
-                f.write_result(json!({"row":"geometry","legal":legal,"continuous_full_body":true}));
             }
         }
     }
+    assert!(failed.is_empty(), "geometry cases failed: {failed:#?}");
+}
+fn geometry_case(package: &str, scene: &str, legal: bool, variant: super::fixture::Variant) {
+    let mut f = Fixture::new(package, scene, variant);
+    until(&mut f, MOVE_BOUND);
+    if legal {
+        f.require_complete(&["probe".into()]);
+        let target = f.scene["commands"][0]["point"].as_array().unwrap();
+        let endpoint = turts_sim::Vec2::new(
+            target[0].as_f64().unwrap() as f32,
+            target[1].as_f64().unwrap() as f32,
+        );
+        assert!(
+            (f.position("probe") - endpoint).length() <= f.actor("probe").profile.radius,
+            "legal case never reached endpoint"
+        );
+    } else {
+        assert!(
+            !f.complete("probe"),
+            "illegal boundary falsely completed order"
+        );
+        assert!(
+            f.position("probe").x <= 30.0,
+            "illegal footprint crossed authored wall/ledge"
+        );
+    }
+    f.write_result(json!({"row":"geometry","legal":legal,"continuous_full_body":true}));
 }
 #[test]
 fn gm5_ordinary_append_replace_stop_release_memberships_and_replay_same_physical_ticks() {
@@ -436,11 +467,29 @@ fn gm5_ordinary_append_replace_stop_release_memberships_and_replay_same_physical
                 );
                 f.send(0, stop);
                 step(&mut f);
-                // Bounded deferred reclamation is permitted; physical cancellation is immediate.
+                // GM5 (rule 4): Stop ends every order in its tick. After it a unit moves only
+                // to stand apart: at most 0.05 m in all, and not at all in the last 8 ticks.
                 let stopped = f.frame();
-                for _ in 0..16 {
+                assert!(stopped.iter().all(|row| row.current.is_none() && row.queued.is_empty()));
+                let mut rest = None;
+                for tick in 0..16 {
                     step(&mut f);
-                    assert_eq!(stopped, f.frame(), "Stop retained physical movement");
+                    for (now, then) in f.frame().iter().zip(&stopped) {
+                        let shift = |axis: usize| {
+                            f32::from_bits(now.position[axis]) - f32::from_bits(then.position[axis])
+                        };
+                        assert!(
+                            shift(0).hypot(shift(1)) <= 0.05,
+                            "Stop retained physical movement of {}",
+                            now.label
+                        );
+                        assert_eq!((&now.current, &now.queued), (&then.current, &then.queued));
+                    }
+                    if tick == 7 {
+                        rest = Some(f.frame());
+                    } else if tick > 7 {
+                        assert_eq!(rest, Some(f.frame()), "units move 8 ticks after Stop");
+                    }
                 }
                 diagnostics::no_members(&f);
                 if cycle < 31 {
@@ -516,109 +565,6 @@ fn diagnostic_gm1_canonical_ordinary_move_completes() {
 }
 
 #[test]
-#[ignore = "Short real-dispatch destination-authority regression; not GM1 acceptance"]
-fn diagnostic_real_dispatch_retains_destination_region_through_plain_recovery() {
-    let mut f = Fixture::new("quarry", "GM1-wide", Default::default());
-    until(&mut f, 3);
-    let label = "large.0.3".to_string();
-    let actor = f.actor(&label).unit;
-    let original = f.order(&label).unwrap();
-    let before = diagnostics::member(&f, &label);
-    let region = before
-        .destination_region
-        .expect("actual initial ordinary dispatch captures region");
-    assert_eq!(region.goal, [50., 24.]);
-    assert_eq!(region.cohort_radius, 1.1);
-    assert_eq!(region.epoch, before.order_epoch);
-    assert!(region.inline_bytes > 0);
-    let pools = &f
-        .app
-        .world()
-        .resource::<turts_sim::movement::MovementPools>()
-        .0;
-    let pool = pools
-        .values()
-        .find(|p| p.point == turts_sim::Vec2::new(50., 24.) && p.primary_count == 36)
-        .unwrap();
-    let extent = turts_sim::Vec2::new(
-        pool.spacing * 3.,
-        pool.spacing * (3.0_f32.sqrt() * 0.5 * 3.),
-    );
-    let low = pool.point - extent;
-    let high = pool.point + extent;
-    assert_eq!(region.primary_min, [low.x.next_down(), low.y.next_down()]);
-    assert_eq!(region.primary_max, [high.x.next_up(), high.y.next_up()]);
-    // This lifecycle probe converts only local controller state after a REAL
-    // public dispatch. It invents no old pool, pose, order or navigation scope.
-    let entity = turts_sim::unit_entity(f.app.world(), actor).unwrap();
-    let target = f
-        .app
-        .world()
-        .get::<turts_sim::world::MoveTarget>(entity)
-        .unwrap()
-        .0;
-    f.app
-        .world_mut()
-        .entity_mut(entity)
-        .remove::<turts_sim::movement::MoveProgress>();
-    f.app.world_mut().entity_mut(entity).insert((
-        turts_sim::movement::PlainMoveProgress {
-            arrival_yield: false,
-            original_point: target,
-            slot: target,
-            pool_slots: vec![],
-            gather_goal: None,
-            activity: turts_sim::movement::MovementActivity::Blocked,
-            stalled_ticks: 1013,
-            best_distance: 10.,
-            claim_count: 0,
-            failure_recorded: false,
-        },
-        turts_sim::movement::PhysicalEscape { target: None },
-    ));
-    step(&mut f);
-    let recovered = diagnostics::member(&f, &label);
-    assert_eq!(recovered.destination_region, Some(region));
-    assert_eq!(recovered.order_epoch, before.order_epoch);
-    assert_eq!(f.order(&label), Some(original.clone()));
-    // Queued intent does not replace the active dispatch authority.
-    let one = vec![label.clone()];
-    let append = f.envelope("order_move", &one, point(12., 6.), QueueMode::Append, 77);
-    f.send(0, append);
-    step(&mut f);
-    assert_eq!(
-        diagnostics::member(&f, &label).destination_region,
-        Some(region)
-    );
-    assert_eq!(f.order(&label), Some(original));
-    // Same-coordinate Replace gets a NEW actual singleton dispatch and epoch.
-    let replace = f.envelope("order_move", &one, point(50., 24.), QueueMode::Replace, 78);
-    f.send(0, replace);
-    step(&mut f);
-    let replaced = diagnostics::member(&f, &label);
-    let new_region = replaced.destination_region.unwrap();
-    assert_ne!(replaced.order_epoch, before.order_epoch);
-    assert_eq!(new_region.epoch, replaced.order_epoch);
-    assert_ne!(new_region.primary_min, region.primary_min);
-    let stop = f.envelope(
-        "order_stop",
-        &one,
-        OrderTarget::None,
-        QueueMode::Replace,
-        79,
-    );
-    f.send(0, stop);
-    step(&mut f);
-    assert!(
-        turts_sim::terrain::privileged_navigation_audit(f.app.world())
-            .members
-            .iter()
-            .all(|m| m.unit != actor || m.destination_region.is_none())
-    );
-    f.write_result(json!({"scope":"real initial dispatch, plain recovery, pending Append, same-XY Replace and Stop","acceptance":false,"scope_inline_bytes_per_member":region.inline_bytes,"initial_cohort_members":36,"initial_primary_min":region.primary_min,"initial_primary_max":region.primary_max,"cohort_radius":region.cohort_radius,"scope_epoch_matches_order":true}));
-}
-
-#[test]
 #[ignore = "One unchanged public opposing-large world; focused diagnosis, not milestone acceptance"]
 fn gm3_opposing_large_single_public_world_keeps_all_physical_assertions() {
     let mut f = Fixture::new("quarry", "GM3-opposing-large", Default::default());
@@ -681,327 +627,6 @@ fn gm3_browser_delayed_rear_group_at_a_held_point_completes() {
     f.require_complete(&all);
 }
 
-/// Guard of the packed stop (operator decision 2026-11-22): a free place nearer the
-/// point must be reached. Only ordinary Move orders build the scene: a holder on the
-/// point, a wall of three resting friendly bodies on its west side, and a late unit
-/// that comes from the west. The other sides of the holder are free.
-#[test]
-fn gm3_late_unit_reaches_the_free_place_beside_the_holder() {
-    use turts_sim::Vec2;
-    const POINT: Vec2 = Vec2::new(12., 10.);
-    const WALL: [(&str, Vec2); 3] = [
-        ("rear.small.1", Vec2::new(-0.85, 0.)),
-        ("rear.small.3", Vec2::new(-0.5, 0.8)),
-        ("rear.small.4", Vec2::new(-0.5, -0.8)),
-    ];
-    const HOLDER: &str = "rear.small.0";
-    const LATE: &str = "rear.small.2";
-    for variant in VARIANTS {
-        let mut f = Fixture::new("quarry", "GM3-shared-and-unique", variant);
-        f.commands.clear();
-        let mut group = 10;
-        let mut go = |f: &mut Fixture, label: &str, to: Vec2| {
-            group += 1;
-            let one = [label.to_string()];
-            let envelope = f.envelope(
-                "order_move",
-                &one,
-                point(to.x, to.y),
-                QueueMode::Replace,
-                group,
-            );
-            f.send(0, envelope);
-        };
-        let settle = |f: &mut Fixture, label: &str| {
-            let end = f.tick + 400;
-            while !(f.tick > 0 && f.complete(label)) {
-                assert!(
-                    f.tick < end,
-                    "{label} did not settle: {:?} order {:?} tick {}",
-                    f.position(label),
-                    f.order(label),
-                    f.tick
-                );
-                step(f);
-            }
-        };
-        go(&mut f, HOLDER, POINT);
-        step(&mut f);
-        settle(&mut f, HOLDER);
-        for (label, offset) in WALL {
-            go(&mut f, label, POINT + offset);
-            step(&mut f);
-            settle(&mut f, label);
-            assert!(f.position(label).distance(POINT + offset) <= 1.0e-4);
-        }
-        // The late unit leaves its start row only after its neighbours left it.
-        go(&mut f, LATE, POINT + Vec2::new(-6., 0.));
-        step(&mut f);
-        settle(&mut f, LATE);
-        assert_eq!(f.position(HOLDER), POINT);
-        let radius = f.actor(LATE).profile.radius;
-        let contact = 2. * radius + 0.101;
-        go(&mut f, LATE, POINT);
-        step(&mut f);
-        let end = f.tick + 600;
-        while !f.complete(LATE) {
-            assert!(f.tick < end, "the late unit did not complete");
-            step(&mut f);
-        }
-        let stop = f.position(LATE);
-        let d = turts_sim::terrain::privileged_navigation_audit(f.app.world()).diagnostics;
-        eprintln!(
-            "guard a{} m{}: tick {} stop {:?} distance {} packed_stops {} packed_steps {}",
-            variant.allocation as u8,
-            variant.members as u8,
-            f.tick,
-            stop - POINT,
-            stop.distance(POINT),
-            d.packed_stops,
-            d.packed_steps
-        );
-        // Arrival at the free place: the unit ended in contact with the holder. A stop
-        // behind the wall (distance 1.65 or more) is a premature completion.
-        assert!(
-            stop.distance(POINT) <= contact,
-            "a{} m{}: the late unit completed {} from the point, behind the wall",
-            variant.allocation as u8,
-            variant.members as u8,
-            stop.distance(POINT)
-        );
-        for (label, offset) in WALL {
-            assert!(f.position(label).distance(POINT + offset) <= 1.0e-4);
-        }
-        assert_eq!(f.position(HOLDER), POINT);
-    }
-}
-
-/// Packed stop behind the holder (operator decision 2026-11-22), in a full simulation.
-/// Only ordinary Move orders are used, and the frozen scene is not changed. The large
-/// unit `rear.large.2` rests on the point, so it is the holder. The start rows of the
-/// small units stand around it as stopped friendly bodies.
-/// 1. `rear.small.3` is boxed out in contact with the holder: its move ends there.
-/// 2. `rear.small.0` is boxed out in a later row, in contact with a pack body and not
-///    with the holder: its move ends there. This is the second-row case.
-/// 3. Control: `rear.small.2` has a free way. It reaches the holder by the earlier rules
-///    and the packed stop does not run.
-///
-/// Without the packed stop, units 1 and 2 stay `Blocked` and this test is red.
-#[test]
-fn gm3_packed_stop_ends_boxed_out_moves_in_the_first_and_in_a_later_row() {
-    use turts_sim::Vec2;
-    const POINT: Vec2 = Vec2::new(17.3, 27.0);
-    const HOLDER: &str = "rear.large.2";
-    const DEADLINE: u32 = 400;
-    const CONTACT: f32 = 0.101;
-    let mut poses = Vec::new();
-    for variant in VARIANTS {
-        let mut f = Fixture::new("quarry", "GM3-shared-and-unique", variant);
-        f.commands.clear();
-        let name = format!("a{} m{}", variant.allocation as u8, variant.members as u8);
-        let start: BTreeMap<String, Vec2> = f
-            .labels(|_| true)
-            .into_iter()
-            .map(|label| (label.clone(), f.position(&label)))
-            .collect();
-        let gap = |f: &Fixture, a: &str, b: &str| {
-            f.position(a).distance(f.position(b))
-                - f.actor(a).profile.radius
-                - f.actor(b).profile.radius
-        };
-        let stops = |f: &Fixture| {
-            let d = turts_sim::terrain::privileged_navigation_audit(f.app.world()).diagnostics;
-            assert_eq!(d.packed_steps, 0, "{name}: no guard step is expected");
-            d.packed_stops
-        };
-        let mut group = 10;
-        let mut order = |f: &mut Fixture, label: &str| {
-            group += 1;
-            let one = [label.to_string()];
-            let envelope = f.envelope(
-                "order_move",
-                &one,
-                point(POINT.x, POINT.y),
-                QueueMode::Replace,
-                group,
-            );
-            f.send(0, envelope);
-            let end = f.tick + DEADLINE;
-            step(f);
-            while !f.complete(label) {
-                assert!(
-                    f.tick < end,
-                    "{name} tick{}: {label} did not complete: {:?} at {:?}",
-                    f.tick,
-                    f.order(label),
-                    f.position(label)
-                );
-                step(f);
-            }
-        };
-        // The holder occupies the point: a small unit cannot stand on it.
-        assert!(
-            f.position(HOLDER).distance(POINT)
-                < f.actor(HOLDER).profile.radius + f.actor("rear.small.3").profile.radius
-        );
-
-        // 1. First row: contact with the holder, boxed by a stopped friendly body.
-        order(&mut f, "rear.small.3");
-        assert_eq!(stops(&f), 1, "{name}: the first stop is a packed stop");
-        let first = gap(&f, "rear.small.3", HOLDER);
-        assert!((-1.0e-4..=CONTACT).contains(&first), "{name}: gap {first}");
-
-        // 2. Later row: contact with a pack body, no contact with the holder.
-        order(&mut f, "rear.small.0");
-        assert_eq!(stops(&f), 2, "{name}: the second stop is a packed stop");
-        assert!(
-            gap(&f, "rear.small.0", HOLDER) > 1.0,
-            "{name}: not a first-row stop"
-        );
-        let behind = gap(&f, "rear.small.0", "rear.small.4");
-        assert!(
-            (-1.0e-4..=CONTACT).contains(&behind),
-            "{name}: gap {behind}"
-        );
-        assert!(
-            f.position("rear.small.0").distance(POINT)
-                > f.position("rear.small.3").distance(POINT) + CONTACT
-        );
-
-        // 3. Control: a unit with a free way reaches the holder; no packed stop runs.
-        order(&mut f, "rear.small.2");
-        assert_eq!(
-            stops(&f),
-            2,
-            "{name}: the control must not use the packed stop"
-        );
-        let free = gap(&f, "rear.small.2", HOLDER);
-        assert!((-1.0e-4..=CONTACT).contains(&free), "{name}: gap {free}");
-
-        // The rule moves no stopped body: every other unit is at its start pose.
-        for (label, pose) in &start {
-            if !["rear.small.3", "rear.small.0", "rear.small.2"].contains(&label.as_str()) {
-                assert_eq!(f.position(label), *pose, "{name}: {label} moved");
-            }
-        }
-        poses.push(
-            ["rear.small.3", "rear.small.0", "rear.small.2"]
-                .map(|label| f.position(label).to_array().map(f32::to_bits)),
-        );
-    }
-    // No unit ID decides a result: the four ID variants give the same poses.
-    assert!(poses.windows(2).all(|pair| pair[0] == pair[1]), "{poses:?}");
-}
-
-/// Packed stop, condition 1 (order clock): a late unit whose frame target is a private
-/// or spread slot of its order, not the point. `rear.large.2` rests on the point. On
-/// the earlier clock the second unit stayed `Blocked` for 3000 ticks or more.
-fn packed_stop_ends_the_move_of_two_units_ordered_together(late: [&str; 2], group_order: bool) {
-    use turts_sim::Vec2;
-    const POINT: Vec2 = Vec2::new(17.3, 27.0);
-    const DEADLINE: u32 = 600;
-    let mut results = Vec::new();
-    for variant in VARIANTS {
-        let name = format!("a{} m{}", variant.allocation as u8, variant.members as u8);
-        let mut f = Fixture::new("quarry", "GM3-shared-and-unique", variant);
-        f.commands.clear();
-        let labels = late.map(str::to_string);
-        let start: BTreeMap<String, Vec2> = f
-            .labels(|actor| !late.contains(&actor.label.as_str()))
-            .into_iter()
-            .map(|label| (label.clone(), f.position(&label)))
-            .collect();
-        if group_order {
-            let envelope = f.envelope(
-                "order_move",
-                &labels,
-                point(POINT.x, POINT.y),
-                QueueMode::Replace,
-                90,
-            );
-            f.send(0, envelope);
-        } else {
-            for (n, label) in labels.iter().enumerate() {
-                let envelope = f.envelope(
-                    "order_move",
-                    std::slice::from_ref(label),
-                    point(POINT.x, POINT.y),
-                    QueueMode::Replace,
-                    90 + n as u32,
-                );
-                f.send(0, envelope);
-            }
-        }
-        step(&mut f);
-        let mut done = [None; 2];
-        while done.iter().any(Option::is_none) {
-            for (slot, label) in done.iter_mut().zip(&labels) {
-                if slot.is_none() && f.complete(label) {
-                    *slot = Some(f.tick);
-                }
-            }
-            if done.iter().all(Option::is_some) {
-                break;
-            }
-            assert!(
-                f.tick < DEADLINE,
-                "{name} tick{}: not complete: {:?} at {:?}, {:?} at {:?}",
-                f.tick,
-                f.order(&labels[0]),
-                f.position(&labels[0]),
-                f.order(&labels[1]),
-                f.position(&labels[1])
-            );
-            step(&mut f);
-        }
-        let d = turts_sim::terrain::privileged_navigation_audit(f.app.world()).diagnostics;
-        eprintln!(
-            "{name} {late:?} group_order {group_order}: completion ticks {done:?} poses {:?} {:?} packed_stops {} packed_steps {}",
-            f.position(&labels[0]),
-            f.position(&labels[1]),
-            d.packed_stops,
-            d.packed_steps
-        );
-        assert!(d.packed_stops >= 1, "{name}: no packed stop ran");
-        // Each unit ended clear of every other body, and no stopped body moved.
-        for label in &labels {
-            for other in f.labels(|actor| actor.label != *label) {
-                let gap = f.position(label).distance(f.position(&other))
-                    - f.actor(label).profile.radius
-                    - f.actor(&other).profile.radius;
-                assert!(gap >= -1.0e-4, "{name}: {label} overlaps {other}: {gap}");
-            }
-        }
-        for (label, pose) in &start {
-            assert_eq!(f.position(label), *pose, "{name}: {label} moved");
-        }
-        results.push((
-            done,
-            labels
-                .clone()
-                .map(|label| f.position(&label).to_array().map(f32::to_bits)),
-        ));
-    }
-    // No unit ID decides a result: the four ID variants are equal.
-    assert!(
-        results.windows(2).all(|pair| pair[0] == pair[1]),
-        "{results:?}"
-    );
-}
-
-#[test]
-fn gm3_packed_stop_ends_two_orders_accepted_in_one_tick() {
-    packed_stop_ends_the_move_of_two_units_ordered_together(
-        ["rear.small.0", "rear.small.2"],
-        false,
-    );
-}
-
-#[test]
-fn gm3_packed_stop_ends_a_group_order_at_a_held_point() {
-    packed_stop_ends_the_move_of_two_units_ordered_together(["rear.small.1", "rear.small.2"], true);
-}
-
 #[test]
 fn gm2_browser_projected_destination_and_delayed_orders_complete() {
     let mut f = Fixture::new("quarry", "GM2-narrow", VARIANTS[0]);
@@ -1033,41 +658,4 @@ fn gm2_browser_projected_destination_and_delayed_orders_complete() {
         }
     }
     require_crossed(&f, &large, true);
-}
-
-#[test]
-#[ignore = "GM4 throughput diagnosis: per-tick cost and navigation counters; not acceptance"]
-fn diagnostic_gm4_34_unit_order_tick_cost_and_counters() {
-    let mut f = Fixture::new("quarry", "GM4-edit-during-approach", VARIANTS[0]);
-    // Lena's server-only script: the 34-unit order at tick 200, no terrain edit.
-    f.commands.truncate(1);
-    f.commands[0].tick = 200;
-    let mut rows = Vec::new();
-    let group = f.commands[0].envelope.units.clone();
-    let labels = f.labels(|actor| group.iter().any(|unit| unit.0 == actor.unit));
-    let (mut first_direct, mut last_arrival) = (None, None);
-    while f.tick < 2640 && last_arrival.is_none() {
-        let start = std::time::Instant::now();
-        f.step();
-        let ns = start.elapsed().as_nanos() as u64;
-        let audit = turts_sim::terrain::privileged_navigation_audit(f.app.world());
-        if first_direct.is_none()
-            && audit
-                .members
-                .iter()
-                .any(|member| member.state == turts_sim::terrain::NavigationMemberState::Direct)
-        {
-            first_direct = Some(f.tick);
-        }
-        if f.tick > 200 && labels.iter().all(|label| f.complete(label)) {
-            last_arrival = Some(f.tick);
-        }
-        rows.push(format!("{} {ns} {:?}", f.tick, audit.diagnostics));
-    }
-    rows.push(format!(
-        "SUMMARY first_direct={first_direct:?} last_arrival={last_arrival:?} members={}",
-        labels.len()
-    ));
-    let path = std::env::var("TURTS_GM4_DIAG_OUT").expect("TURTS_GM4_DIAG_OUT");
-    std::fs::write(path, rows.join("\n")).unwrap();
 }

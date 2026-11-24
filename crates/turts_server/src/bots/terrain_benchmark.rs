@@ -215,107 +215,33 @@ struct Worker {
 fn as_metric(value: impl TryInto<u64>) -> u64 {
     value.try_into().ok().unwrap_or(u64::MAX)
 }
-macro_rules! define_navigation_peaks {
-    ($($field:ident),+ $(,)?) => {
-        #[derive(Default, serde::Serialize)]
-        struct NavigationPeaks {
-            ticks: u64,
-            retained_bytes: u64,
-            $($field: u64,)+
-        }
-        impl NavigationPeaks {
-            fn observe(&mut self, nav: turts_sim::terrain::NavigationDiagnostics) {
-                self.ticks += 1;
-                self.retained_bytes = self.retained_bytes.max(
-                    as_metric(nav.resident_bytes).saturating_add(as_metric(nav.retired_bytes)),
-                );
-                $(self.$field = self.$field.max(as_metric(nav.$field));)+
-            }
-        }
-    };
+/// Per-tick maxima of the flock work (T-7). The old navigation counters are deleted.
+#[derive(Default, serde::Serialize)]
+struct FlockPeaks {
+    ticks: u64,
+    members: u64,
+    moving: u64,
+    waiting: u64,
+    /// The largest field work of one owner in one tick, in cells.
+    field_work_cells: u64,
+    field_credit: u64,
 }
-define_navigation_peaks!(
-    resident_fields,
-    resident_bytes,
-    retired_bytes,
-    retired_pages,
-    memberships,
-    pending,
-    max_pending_age_ticks,
-    expansions_this_tick,
-    edge_checks_this_tick,
-    admission_entries_this_tick,
-    invalidation_entries_this_tick,
-    retired_pages_this_tick,
-    ranking_comparisons_this_tick,
-    frame_rows_this_tick,
-    body_index_queries_this_tick,
-    body_index_rank_comparisons_this_tick,
-    body_index_tail_entries_this_tick,
-    body_index_word_ops_this_tick,
-    body_index_build_comparisons_this_tick,
-    body_index_build_prefix_words_this_tick,
-    body_index_build_mask_words_this_tick,
-    body_envelope_filters_this_tick,
-    body_index_rebuilds_this_tick,
-    body_index_updates_this_tick,
-    body_index_update_entries_this_tick,
-    body_support_queries_this_tick,
-    escape_keep_scans_this_tick,
-    packed_stop_visits_this_tick,
-    packed_stops,
-    packed_steps,
-    direct_query_work_this_tick,
-    body_support_pairs_this_tick,
-    body_support_failures_this_tick,
-    body_support_accepted_members_this_tick,
-    body_pair_checks_this_tick,
-    neighbor_visits_this_tick,
-    neighbor_overflows_this_tick,
-    neighbor_bucket_visits_this_tick,
-    traffic_index_queries_this_tick,
-    traffic_index_rank_comparisons_this_tick,
-    traffic_index_tail_entries_this_tick,
-    traffic_index_word_ops_this_tick,
-    traffic_index_build_comparisons_this_tick,
-    traffic_index_build_prefix_words_this_tick,
-    traffic_index_build_mask_words_this_tick,
-    traffic_members,
-    traffic_gates,
-    model_attempts_this_tick,
-    model_operations_this_tick,
-    model_fallbacks_this_tick,
-    model_view_refusals_this_tick,
-    coherence_attempts_this_tick,
-    coherence_advice_this_tick,
-    coherence_members_this_tick,
-    coherence_operations_this_tick,
-    local_detour_filter_rows_this_tick,
-    local_detour_scanned_rows_this_tick,
-    local_detour_generator_comparisons_this_tick,
-    local_detour_candidates_this_tick,
-    recovery_work_this_tick,
-    recovery_actual_work_this_tick,
-    recovery_candidates_this_tick,
-    recovery_visibility_checks_this_tick,
-    recovery_digests_this_tick,
-    recovery_invalidations_this_tick,
-    recovery_relaxed_commits_this_tick,
-    recovery_pool_work_this_tick,
-    recovery_spare_slot_work_this_tick,
-    recovery_physical_reads_this_tick,
-    recovery_physical_work_this_tick,
-    recovery_view_work_this_tick,
-    recovery_jobs,
-    recovery_max_age,
-    recovery_retained_bytes,
-    recovery_phase_bytes,
-    local_detour_body_checks_this_tick,
-    local_detour_terrain_calls_this_tick,
-);
+impl FlockPeaks {
+    fn observe(&mut self, audit: turts_sim::terrain::FlockAudit) {
+        self.ticks += 1;
+        self.members = self.members.max(as_metric(audit.members.len()));
+        self.moving = self.moving.max(as_metric(audit.moving));
+        let waiting = audit.members.iter().filter(|m| m.state == "waiting");
+        self.waiting = self.waiting.max(as_metric(waiting.count()));
+        for (_, work, credit) in audit.owners {
+            self.field_work_cells = self.field_work_cells.max(as_metric(work));
+            self.field_credit = self.field_credit.max(as_metric(credit));
+        }
+    }
+}
 
 struct Workload {
-    navigation_peaks: NavigationPeaks,
+    flock_peaks: FlockPeaks,
     workers: Vec<Worker>,
     interval_steps: BTreeMap<u32, u64>,
     steps: u64,
@@ -347,7 +273,7 @@ impl Workload {
             }
         }
         Self {
-            navigation_peaks: NavigationPeaks::default(),
+            flock_peaks: FlockPeaks::default(),
             workers,
             interval_steps: BTreeMap::new(),
             steps: 0,
@@ -379,8 +305,8 @@ impl Workload {
             }
             return;
         }
-        self.navigation_peaks
-            .observe(turts_sim::terrain::privileged_navigation_diagnostics(
+        self.flock_peaks
+            .observe(turts_sim::terrain::privileged_flock_audit(
                 harness.app.world(),
             ));
         for event in &harness.app.world().resource::<CommittedTick>().events {
@@ -496,52 +422,50 @@ impl Workload {
             );
             assert_eq!(balance.reserved, 0);
         }
-        let nav = turts_sim::terrain::privileged_navigation_diagnostics(harness.app.world());
-        let peaks = std::mem::take(&mut self.navigation_peaks);
-        assert_eq!(peaks.ticks, 20, "one navigation sample per completed tick");
+        let peaks = std::mem::take(&mut self.flock_peaks);
+        assert_eq!(peaks.ticks, 20, "one flock sample per completed tick");
         let result = serde_json::json!({"steps":self.interval_steps,"cumulative_steps":self.steps,
             "changed_cells":self.interval_steps.len(),"changed_chunks":changed_chunks,
-            "local_navigation":{"searches":nav.searches,"cache_hits":nav.cache_hits,"invalidations":nav.invalidations,"solver_retries":nav.solver_retries,"budget_waits":nav.budget_waits},
-            "group_navigation_per_tick_peaks":peaks,
-            "group_navigation_interval_snapshot":{"resident_fields":nav.resident_fields,"resident_bytes":nav.resident_bytes,"retired_bytes":nav.retired_bytes,"memberships":nav.memberships,"pending":nav.pending,"max_pending_age_ticks":nav.max_pending_age_ticks,"expansions_last_tick":nav.expansions_this_tick,"edge_checks_last_tick":nav.edge_checks_this_tick,"invalidation_entries_last_tick":nav.invalidation_entries_this_tick,"neighbor_visits":nav.neighbor_visits,"neighbor_visits_last_tick":nav.neighbor_visits_this_tick,"neighbor_overflows":nav.neighbor_overflows,"traffic_members":nav.traffic_members,"traffic_gates":nav.traffic_gates,"traffic_capacity_waits":nav.traffic_capacity_waits,"traffic_index_queries":nav.traffic_index_queries,"stale_activations":nav.stale_activations}});
+            "flock_per_tick_peaks":peaks});
         self.interval_steps.clear();
         result
     }
 }
 
 #[test]
-fn navigation_peaks_keep_transient_tick_maximum_and_combined_memory() {
-    use turts_sim::terrain::NavigationDiagnostics;
-    let mut peaks = NavigationPeaks::default();
-    peaks.observe(NavigationDiagnostics {
-        resident_bytes: 80,
-        retired_bytes: 10,
-        expansions_this_tick: 12,
-        neighbor_visits_this_tick: 3,
-        ..Default::default()
+fn flock_peaks_keep_the_tick_maximum() {
+    use turts_sim::terrain::{FlockAudit, FlockMemberAudit};
+    let member = |state| FlockMemberAudit {
+        unit: 1,
+        owner: 0,
+        state,
+        advice: [0; 2],
+        neighbours: vec![],
+        field_class: (0, 0, 0, 0),
+        field_goal: (0, 0),
+        field_revision: 0,
+        field_ready_cells: 0,
+    };
+    let mut peaks = FlockPeaks::default();
+    peaks.observe(FlockAudit {
+        tick: 1,
+        moving: 2,
+        members: vec![member("moving"), member("waiting"), member("waiting")],
+        owners: vec![(0, 12, 64), (1, 40, 64)],
     });
-    peaks.observe(NavigationDiagnostics {
-        resident_bytes: 60,
-        retired_bytes: 50,
-        expansions_this_tick: 2,
-        neighbor_visits_this_tick: 15,
-        ..Default::default()
-    });
-    peaks.observe(NavigationDiagnostics {
-        resident_bytes: 1,
-        retired_bytes: 1,
-        ..Default::default()
+    peaks.observe(FlockAudit {
+        tick: 2,
+        moving: 5,
+        members: vec![member("moving")],
+        owners: vec![(0, 30, 64), (1, 3, 64)],
     });
     let json = serde_json::to_value(peaks).unwrap();
-    assert_eq!(json["ticks"], 3);
-    assert_eq!(json["resident_bytes"], 80);
-    assert_eq!(json["retired_bytes"], 50);
-    assert_eq!(
-        json["retained_bytes"], 110,
-        "combined peak must come from one tick"
-    );
-    assert_eq!(json["expansions_this_tick"], 12);
-    assert_eq!(json["neighbor_visits_this_tick"], 15);
+    assert_eq!(json["ticks"], 2);
+    assert_eq!(json["members"], 3);
+    assert_eq!(json["moving"], 5);
+    assert_eq!(json["waiting"], 2);
+    assert_eq!(json["field_work_cells"], 40);
+    assert_eq!(json["field_credit"], 64);
 }
 
 fn run(intervals: usize, acceptance: bool, warmup: usize) {
