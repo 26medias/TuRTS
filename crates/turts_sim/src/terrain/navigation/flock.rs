@@ -74,7 +74,7 @@ impl TerrainRead for FlatGround {
 /// Neighbours that one unit reads for steering.
 const NEIGHBOURS: usize = 8;
 /// Passes of simultaneous overlap corrections between own bodies.
-const RELAX_PASSES: usize = 4;
+const RELAX_PASSES: usize = 8;
 /// Field work credit of one owner for one tick, in cells.
 pub const FIELD_CREDIT: usize = 16_384;
 /// Fields that one owner keeps.
@@ -88,8 +88,6 @@ const UNREACHED: u32 = u32::MAX;
 /// other in one tick each use the cap against the start pose of the other, so the overlap
 /// of a pair stays below two caps.
 const OVERLAP_CAP: f32 = 0.10;
-/// A unit this near its point is at the point.
-const ARRIVED: f32 = 1.0e-3;
 /// The gap that the relaxation leaves between two bodies.
 const REST_GAP: f32 = 1.0e-3;
 /// A gap up to this value between two bodies is contact.
@@ -133,6 +131,8 @@ struct Member {
     velocity: Vec2,
     best_distance: f32,
     stalled: u16,
+    /// The pose at which the unit settled.
+    rest: Vec2,
 }
 
 /// One cost-to-goal field on the terrain cells, from one owner's permitted terrain.
@@ -663,6 +663,7 @@ fn step_inner(
         .collect();
     // Membership: a unit with a target is in the flock of its goal.
     let mut present = BTreeSet::new();
+    let mut resettled = BTreeSet::new();
     for unit in units {
         present.insert(unit.unit_id);
         let moves = unit.target.is_some() && unit.speed.is_some();
@@ -677,9 +678,22 @@ fn step_inner(
             }
             continue;
         }
+        // The goal is the public point of the order, inside the map.
         let goal = super::public_move_goal(world, unit.unit_id, unit.owner_slot)
             .or_else(|| super::requested_target(unit))
-            .unwrap_or(unit.position);
+            .unwrap_or(unit.position)
+            .clamp(Vec2::ZERO, frame.bounds);
+        // A unit that settled for this goal and still stands at that pose is at its goal:
+        // the same target again does not start a new move.
+        if state.members.get(&unit.unit_id).is_some_and(|member| {
+            member.mode == Mode::Settled
+                && member.goal == goal
+                && member.owner == unit.owner_slot
+                && member.rest == unit.position
+        }) {
+            resettled.insert(unit.unit_id);
+            continue;
+        }
         let fresh = state.members.get(&unit.unit_id).is_none_or(|member| {
             member.mode == Mode::Settled || member.goal != goal || member.owner != unit.owner_slot
         });
@@ -693,6 +707,7 @@ fn step_inner(
                     velocity: Vec2::ZERO,
                     best_distance: unit.position.distance(goal),
                     stalled: 0,
+                    rest: unit.position,
                 },
             );
         }
@@ -1136,6 +1151,45 @@ fn step_inner(
         }
     }
 
+    // Bodies of different owners move at the same time, and each step was checked against
+    // the start pose of the other. When two end poses overlap, both units keep their start
+    // pose: contact stops the step, and no unit wins. One pass is sufficient: a unit that
+    // stays is at the pose that every other step was checked against.
+    let moved = Snapshot::new(
+        units
+            .iter()
+            .enumerate()
+            .map(|(row, unit)| Body {
+                row,
+                owner: unit.owner_slot,
+                position: positions[row],
+                radius: unit.radius,
+                fixed: unit.speed.is_none() || holds[row],
+            })
+            .collect(),
+    );
+    let mut stay = vec![false; units.len()];
+    for (row, unit) in units.iter().enumerate() {
+        if positions[row] == start[row] {
+            continue;
+        }
+        moved.near(positions[row], unit.radius + max_radius, |other| {
+            let body = &moved.bodies[other];
+            if other != row
+                && (body.fixed || body.owner != unit.owner_slot)
+                && positions[row].distance(positions[other]) < unit.radius + body.radius
+                && positions[row].distance(positions[other]) < start[row].distance(start[other])
+            {
+                stay[row] = true;
+            }
+        });
+    }
+    for row in 0..units.len() {
+        if stay[row] {
+            positions[row] = start[row];
+        }
+    }
+
     // Stage D: arrival and waiting, from the relaxed positions.
     let settled_now = Snapshot::new(
         units
@@ -1165,7 +1219,7 @@ fn step_inner(
     let mut settle = vec![false; units.len()];
     let mut settle_reason = vec![""; units.len()];
     for (row, unit) in units.iter().enumerate() {
-        let (Some(member), Some(_)) = (state.members.get(&unit.unit_id), unit.speed) else {
+        let (Some(member), Some(speed)) = (state.members.get(&unit.unit_id), unit.speed) else {
             continue;
         };
         if member.mode != Mode::Moving {
@@ -1188,7 +1242,9 @@ fn step_inner(
                 .get(&units[other].unit_id)
                 .is_some_and(|other| other.mode == Mode::Settled && other.goal == member.goal)
         });
-        let at_point = here.distance(member.goal) <= ARRIVED;
+        // A unit one step from its point takes that step exactly, so only the exact pose
+        // is at the point.
+        let at_point = here == member.goal;
         // A unit that makes no approach inside the goal area of its order stops there.
         let area = goal_area
             .get(&(unit.owner_slot, goal_key(member.goal)))
@@ -1209,8 +1265,23 @@ fn step_inner(
                 .get(&units[other].unit_id)
                 .is_some_and(|other| other.mode != Mode::Moving)
         });
+        // The same holds at a solid body (an enemy, a building, an own unit on Hold).
+        let mut touches_solid = false;
+        // A unit that a solid body stops can stand up to two steps from it.
+        let reach = TOUCH + 2.0 * speed * dt;
+        snapshot.near(here, unit.radius + max_radius + reach, |other| {
+            let body = &snapshot.bodies[other];
+            if other != row
+                && (body.fixed || body.owner != unit.owner_slot)
+                && here.distance(positions[other]) - unit.radius - body.radius <= reach
+            {
+                touches_solid = true;
+            }
+        });
         let at_crowd = (touches_crowd && inside)
-            || (touches_standing && member.stalled >= 2 * SETTLE_TICKS && !no_path[row]);
+            || ((touches_standing || touches_solid)
+                && member.stalled >= 2 * SETTLE_TICKS
+                && !no_path[row]);
         settle[row] = (at_point || at_crowd || gave_up) && !overlaps && !in_passage;
         settle_reason[row] = if at_point {
             "settled at the point"
@@ -1230,6 +1301,15 @@ fn step_inner(
             continue;
         };
         if member.mode == Mode::Settled {
+            if resettled.contains(&unit.unit_id) {
+                outputs[row].target = None;
+                if let Some(progress) = outputs[row].progress.as_mut() {
+                    progress.activity = MovementActivity::Resting;
+                }
+                if let Some(progress) = outputs[row].plain_progress.as_mut() {
+                    progress.activity = MovementActivity::Resting;
+                }
+            }
             continue;
         }
         member.velocity = (positions[row] - start[row]) / dt;
@@ -1244,6 +1324,7 @@ fn step_inner(
         if settle[row] {
             member.mode = Mode::Settled;
             member.velocity = Vec2::ZERO;
+            member.rest = positions[row];
             outputs[row].target = None;
             if let Some(progress) = outputs[row].progress.as_mut() {
                 progress.activity = MovementActivity::Resting;

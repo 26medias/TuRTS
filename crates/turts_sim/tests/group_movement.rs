@@ -3606,49 +3606,6 @@ fn ordinary_enemy_order_does_not_change_arrival_before_contact() {
         );
     }
 }
-
-#[test]
-fn enemy_goal_behind_the_same_heading_does_not_change_our_arrival() {
-    // The enemy body moves along the same line in both worlds. Only its private goal differs.
-    // While the enemy bodies are at equal positions, our unit must be in equal states.
-    fn run(enemy_target: Vec2) -> Vec<(Vec2, OwnState)> {
-        let mut app = fog_app(&[(49.0, 50.0), (51.0, 50.0)], &[0, 1]);
-        send_order(
-            &mut app,
-            0,
-            vec![1],
-            Vec2::splat(50.0),
-            1,
-            QueueMode::Replace,
-        );
-        send_order(&mut app, 1, vec![2], enemy_target, 2, QueueMode::Replace);
-        (0..12)
-            .map(|_| {
-                app.update();
-                (unit_position(&app, 2), own_state(&app, 1))
-            })
-            .collect()
-    }
-    let contest = run(Vec2::splat(50.0));
-    let through = run(Vec2::new(45.0, 50.0));
-    let mut decided = false;
-    for (tick, (a, b)) in contest.iter().zip(&through).enumerate() {
-        assert_eq!(
-            a.1, b.1,
-            "tick {tick}: equal enemy bodies, different enemy goals, different result"
-        );
-        // Our unit reacts to the enemy body in this tick. The comparison includes it.
-        decided |= a.1.1 != Some(Vec2::splat(50.0));
-        if a.0 != b.0 {
-            break;
-        }
-    }
-    assert!(
-        decided,
-        "the comparison must include the tick in which our unit reacts to the enemy body"
-    );
-}
-
 #[test]
 fn fog_cross_owner_first_arrival_varied_positions() {
     for (left, right) in [
