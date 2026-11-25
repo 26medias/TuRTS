@@ -2,23 +2,37 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { SettledTracker, DistantOrderTracker } = require('./settled-tracker');
-test('a settled unit may not move without an accepted new order', () => {
+test('a settled unit may shift up to one body diameter and fails beyond it', () => {
     const tracker = new SettledTracker();
-    tracker.observe('worker', true, [2, 3]);
-    assert.throws(() => tracker.observe('worker', true, [2, 4]), /displaced settled point/);
+    tracker.observe('worker', true, [2, 3], 0.5);
+    tracker.observe('worker', true, [2, 3.99], 0.5);
+    tracker.observe('worker', true, [3, 3], 0.5);
+    assert.throws(() => tracker.observe('worker', true, [2, 4.01], 0.5), /more than one body diameter/);
+    assert.throws(() => tracker.observe('worker', true, [2, 4], 0), /needs its body radius/);
+});
+test('the bound is measured from the first settle point, not from the last sample', () => {
+    const tracker = new SettledTracker();
+    tracker.observe('worker', true, [2, 3], 0.5);
+    tracker.observe('worker', true, [2, 3.9], 0.5);
+    assert.throws(() => tracker.observe('worker', true, [2, 4.8], 0.5), /more than one body diameter/);
+});
+test('a new order clears the settle point', () => {
+    const tracker = new SettledTracker();
+    tracker.observe('worker', true, [2, 3], 0.5);
     tracker.begin(['worker']);
     assert.deepEqual(tracker.positions.get('worker'), [2, 3]);
     tracker.commit(['worker'], 'excavate');
-    tracker.observe('worker', true, [2, 4]);
+    tracker.observe('worker', true, [9, 9], 0.5);
     assert.equal(tracker.positions.has('worker'), false);
 });
-test('a later move establishes a new protected settled point', () => {
+test('a later move establishes a new settle point with the same bound', () => {
     const tracker = new SettledTracker();
-    tracker.observe('worker', true, [2, 3]);
+    tracker.observe('worker', true, [2, 3], 0.5);
     tracker.begin(['worker']);
     tracker.commit(['worker'], 'move');
-    tracker.observe('worker', true, [5, 6]);
-    assert.throws(() => tracker.observe('worker', true, [5, 7]), /displaced settled point/);
+    tracker.observe('worker', true, [5, 6], 0.5);
+    tracker.observe('worker', true, [5, 6.9], 0.5);
+    assert.throws(() => tracker.observe('worker', true, [5, 7.1], 0.5), /more than one body diameter/);
     assert.throws(() => tracker.commit(['other'], 'move'), /No pending order/);
 });
 

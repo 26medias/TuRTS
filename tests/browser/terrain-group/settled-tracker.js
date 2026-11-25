@@ -10,11 +10,16 @@ class SettledTracker {
             if (action === 'move') this.retired.delete(label); else this.retired.add(label);
         }
     }
-    observe(label, idle, position) {
+    // Settled-unit bound (Clara, 2026-11-24; vault/Decisions/2026-11-24 Movement rules V2 V3 V5 V6.md): a settled
+    // unit with no new order of its own may be pushed or make room, but it fails when it is more than one body
+    // diameter (2 x radius) from its settle point. A new order of that unit clears its point (begin/commit).
+    observe(label, idle, position, radius) {
         if (this.pending.has(label) || this.retired.has(label) || !idle) return;
+        if (!(radius > 0)) throw Error('Settled unit needs its body radius: ' + label);
         const old = this.positions.get(label);
-        if (old && JSON.stringify(old) !== JSON.stringify(position)) throw Error('Later arrival displaced settled point: ' + label);
-        this.positions.set(label, [...position]);
+        if (!old) { this.positions.set(label, [...position]); return; }
+        const distance = Math.hypot(position[0] - old[0], position[1] - old[1]);
+        if (distance > 2 * radius) throw Error('Settled unit moved more than one body diameter from its settle point: ' + label + ' (' + distance.toFixed(3) + ' m, bound ' + (2 * radius).toFixed(3) + ' m)');
     }
 }
 class DistantOrderTracker {
