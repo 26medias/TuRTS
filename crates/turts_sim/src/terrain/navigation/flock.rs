@@ -107,6 +107,8 @@ const TOUCH: f32 = 0.05;
 const NO_OVERLAP: f32 = 1.0e-3;
 /// Ticks with no progress before a unit with no path becomes a waiting unit.
 const WAIT_TICKS: u16 = 10;
+/// A unit this near a tight node is on it (metres).
+const NODE_REACHED: f32 = 0.01;
 /// Goal areas from the goal within which a unit that a standing body stops ends its move
 /// there. Farther away it waits with its order kept (V2).
 const NEAR_GOAL: f32 = 2.0;
@@ -1120,7 +1122,16 @@ fn step_inner(
         }
         let field = field_of(row, member);
         let mut exact_node = false;
-        let toward = match field.map_or(Advice::NotReady, |field| field.advice(unit.position)) {
+        // A unit that stands within `NODE_REACHED` of a tight node is on it: the exact step
+        // can be refused there (a node at a terrain contact), and the unit then turns round
+        // the node with no approach. It takes the advice of the node and goes on.
+        let advice_here = |field: &Field| match field.advice(unit.position) {
+            Advice::Toward(node, true) if unit.position.distance(node) < NODE_REACHED => {
+                field.advice(node)
+            }
+            advice => advice,
+        };
+        let toward = match field.map_or(Advice::NotReady, advice_here) {
             Advice::Toward(point, exact) => {
                 exact_node = exact;
                 point
