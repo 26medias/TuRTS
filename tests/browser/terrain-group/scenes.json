@@ -3235,6 +3235,333 @@
       ],
       "deadline_ticks": 2400,
       "expect": "safe blocked; no committed swept body may cross the one-cell wall"
+    },
+    "GM3-settled-blocker-hold": {
+      "row": "GM3",
+      "map": {
+        "size": [
+          64,
+          48
+        ],
+        "cell_width": 1,
+        "elevation_step": 0.25,
+        "chunk_width": 8,
+        "floor": -8,
+        "ceiling": 8,
+        "ridge": {
+          "min": [
+            30,
+            0
+          ],
+          "max": [
+            34,
+            48
+          ],
+          "elevation": 4
+        },
+        "visibility": "AllVisible; paired privacy variants belong to GM6 native contracts",
+        "passage_y": [
+          22,
+          25
+        ]
+      },
+      "actors": [
+        {
+          "label": "left.small.0",
+          "kind": "small",
+          "position": [
+            29.4,
+            25.2
+          ],
+          "slot": 0
+        },
+        {
+          "label": "left.small.1",
+          "kind": "small",
+          "position": [
+            29.4,
+            26.4
+          ],
+          "slot": 0
+        },
+        {
+          "label": "left.small.2",
+          "kind": "small",
+          "position": [
+            29.4,
+            27.6
+          ],
+          "slot": 0
+        },
+        {
+          "label": "left.small.3",
+          "kind": "small",
+          "position": [
+            28.2,
+            25.2
+          ],
+          "slot": 0
+        },
+        {
+          "label": "left.small.4",
+          "kind": "small",
+          "position": [
+            28.2,
+            26.4
+          ],
+          "slot": 0
+        },
+        {
+          "label": "left.small.5",
+          "kind": "small",
+          "position": [
+            28.2,
+            27.6
+          ],
+          "slot": 0
+        },
+        {
+          "label": "left.large.0",
+          "kind": "large",
+          "position": [
+            28.8,
+            21.2
+          ],
+          "slot": 0
+        },
+        {
+          "label": "left.large.1",
+          "kind": "large",
+          "position": [
+            26.4,
+            21.2
+          ],
+          "slot": 0
+        },
+        {
+          "label": "left.large.2",
+          "kind": "large",
+          "position": [
+            26.4,
+            26.8
+          ],
+          "slot": 0
+        },
+        {
+          "label": "right.small.0",
+          "kind": "small",
+          "position": [
+            34.6,
+            25.2
+          ],
+          "slot": 1
+        },
+        {
+          "label": "right.small.1",
+          "kind": "small",
+          "position": [
+            34.6,
+            26.4
+          ],
+          "slot": 1
+        },
+        {
+          "label": "right.small.2",
+          "kind": "small",
+          "position": [
+            34.6,
+            27.6
+          ],
+          "slot": 1
+        },
+        {
+          "label": "right.small.3",
+          "kind": "small",
+          "position": [
+            35.8,
+            25.2
+          ],
+          "slot": 1
+        },
+        {
+          "label": "right.small.4",
+          "kind": "small",
+          "position": [
+            35.8,
+            26.4
+          ],
+          "slot": 1
+        },
+        {
+          "label": "right.small.5",
+          "kind": "small",
+          "position": [
+            35.8,
+            27.6
+          ],
+          "slot": 1
+        },
+        {
+          "label": "right.large.0",
+          "kind": "large",
+          "position": [
+            35.2,
+            21.2
+          ],
+          "slot": 1
+        },
+        {
+          "label": "right.large.1",
+          "kind": "large",
+          "position": [
+            37.6,
+            21.2
+          ],
+          "slot": 1
+        },
+        {
+          "label": "right.large.2",
+          "kind": "large",
+          "position": [
+            37.6,
+            26.8
+          ],
+          "slot": 1
+        },
+        {
+          "label": "blocker",
+          "kind": "blocker",
+          "position": [
+            32,
+            23.5
+          ],
+          "slot": 0
+        }
+      ],
+      "commands": [
+        {
+          "tick": 0,
+          "slot": 0,
+          "actors": [
+            "blocker"
+          ],
+          "action": "move",
+          "point": [
+            32,
+            23.5
+          ],
+          "queue": "Replace",
+          "group": 3
+        },
+        {
+          "tick": 1,
+          "slot": 0,
+          "actors": [
+            "blocker"
+          ],
+          "action": "hold",
+          "queue": "Replace",
+          "group": 4
+        },
+        {
+          "tick": 10,
+          "slot": 0,
+          "actors": [
+            "left.small.0",
+            "left.small.1",
+            "left.small.2",
+            "left.small.3",
+            "left.small.4",
+            "left.small.5",
+            "left.large.0",
+            "left.large.1",
+            "left.large.2"
+          ],
+          "action": "move",
+          "point": [
+            48,
+            23.5
+          ],
+          "queue": "Replace",
+          "group": 1
+        },
+        {
+          "tick": 10,
+          "slot": 1,
+          "actors": [
+            "right.small.0",
+            "right.small.1",
+            "right.small.2",
+            "right.small.3",
+            "right.small.4",
+            "right.small.5",
+            "right.large.0",
+            "right.large.1",
+            "right.large.2"
+          ],
+          "action": "move",
+          "point": [
+            16,
+            23.5
+          ],
+          "queue": "Replace",
+          "group": 2
+        }
+      ],
+      "blocker_radius": 1.4,
+      "deadline_ticks": 2410,
+      "bays": {
+        "left": {
+          "min": [
+            24,
+            20
+          ],
+          "max": [
+            30,
+            28
+          ]
+        },
+        "right": {
+          "min": [
+            34,
+            20
+          ],
+          "max": [
+            40,
+            28
+          ]
+        },
+        "clear_centerline": {
+          "y": 23.5,
+          "large_swept_y": [
+            22.4,
+            24.6
+          ]
+        },
+        "feasible_sequence": [
+          "Right cohort waits at its authored bay poses, all outside the central radius1.1 transit strip.",
+          "Left small actors leave their parking columns front-to-back, then the three left large actors join y23.5 and cross.",
+          "Left actors settle in the east plateau near(48,23.5), outside the right bay.",
+          "Right cohort crosses and settles near(16,23.5)."
+        ],
+        "witness_only": "Both actual move commands are issued at tick0. The controller must choose the sequential crossing; the witness is not a scripted Hold workaround."
+      },
+      "expect": {
+        "stable_safe_wait": true,
+        "both_cohorts_complete_after_obstruction_moves": false,
+        "blocker_not_displaced_by_later_arrivals": true
+      },
+      "clearance_proof": {
+        "corridor_y": [
+          22,
+          25
+        ],
+        "blocker_center_y": 23.5,
+        "blocker_radius": 1.4,
+        "each_remaining_side_gap": 0.1,
+        "small_diameter": 0.8,
+        "conclusion": "Each side gap0.1 is less than small diameter0.8. Ridge spans the map boundary, so no side route exists. Blocker arrives10 ticks before traffic."
+      }
     }
   }
 }

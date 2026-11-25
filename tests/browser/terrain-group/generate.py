@@ -146,8 +146,8 @@ def main():
     for command in scene['commands']:
         ids=[mapping[name] for name in command['actors']]
         if args.reverse_members:ids.reverse()
-        target={'Point':{'x':command['point'][0],'y':command['point'][1]}} if command['action']=='move' else {'TerrainWork':{'tool':prefix+binding['fill' if command['action']=='fill' else 'dig'],'cells':{'min':dict(zip(['x','y'],command['cells']['min'])),'max':dict(zip(['x','y'],command['cells']['max']))},'target_elevation':command['target_elevation']}}
-        order=prefix+('order_move' if command['action']=='move' else 'order_work')
+        target='None' if command['action']=='hold' else {'Point':{'x':command['point'][0],'y':command['point'][1]}} if command['action']=='move' else {'TerrainWork':{'tool':prefix+binding['fill' if command['action']=='fill' else 'dig'],'cells':{'min':dict(zip(['x','y'],command['cells']['min'])),'max':dict(zip(['x','y'],command['cells']['max']))},'target_elevation':command['target_elevation']}}
+        order=prefix+{'move':'order_move','hold':'order_hold'}.get(command['action'],'order_work')
         commands.append({'tick':command['tick'],'slot':command['slot'],'envelope':{'order':order,'units':ids,'target':target,'queue':command['queue'],'group':command['group']}})
     (out/'commands.json').write_text(json.dumps(commands,indent=2)+'\n')
     put('README.md',f'# Public group fixture: {args.scene}\n\nStatus: AUTHORED_UNRUN. This generated variant has not passed typed archive, simulation or browser checks.\n\nPhysical input comes from scenes.json. Actors: {len(actors)}. Finite commands: {len(commands)}. No private seed or realized columns are in this package.\n\nDetailed model/texture/animation bytes and existing assets/CREDITS.md are reused unchanged from {args.package}. Only public map, footprint/profile, visual scale and tool/resource records are authored for this frozen case.\n')

@@ -5,7 +5,7 @@ const fs=require('node:fs'),os=require('node:os'),path=require('node:path'),net=
 const {spawn,spawnSync}=require('node:child_process'),{chromium}=require('playwright-core');
 const {drive,read}=require('./driver');
 const root=path.resolve(__dirname,'../../..'),args=process.argv.slice(2),prepared=path.resolve(args.shift()||''),output=path.resolve(args.shift()||'');
-const scenes=['GM1-wide','GM2-narrow','GM3-opposing-large','GM3-settled-blocker','GM3-movable-blocker','GM3-shared-and-unique','GM4-edit-during-approach'];
+const scenes=['GM1-wide','GM2-narrow','GM3-opposing-large','GM3-settled-blocker','GM3-settled-blocker-hold','GM3-movable-blocker','GM3-shared-and-unique','GM4-edit-during-approach'];
 const options={packages:['quarry','terrain_stockyard'],scenes,allocation:false,members:false,connections:'both',chrome:'/usr/bin/google-chrome'};
 while(args.length){const flag=args.shift();if(flag==='--package')options.packages=[args.shift()];else if(flag==='--scene')options.scenes=[args.shift()];else if(flag==='--reverse-allocation')options.allocation=true;else if(flag==='--reverse-members')options.members=true;else if(flag==='--connections')options.connections=args.shift();else if(flag==='--chrome')options.chrome=args.shift();else throw Error('Unknown argument '+flag);}
 const assert=(ok,message)=>{if(!ok)throw Error(message);},sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
@@ -43,7 +43,7 @@ async function ready(url,server){const deadline=Date.now()+30000;while(Date.now(
         displays.push(await new Promise((resolve,reject)=>{let text='';const timeout=setTimeout(()=>reject(Error('Owned Xvfb startup timeout')),10000);instance.stdio[3].on('data',data=>{text+=data;if(text.includes('\n')){clearTimeout(timeout);resolve(':'+text.trim());}});instance.once('error',reject);instance.once('exit',code=>reject(Error('Owned Xvfb exited '+code)));}));
     }
     for(const packageName of options.packages)for(const scene of options.scenes){
-        const peers=['GM3-opposing-large','GM3-settled-blocker','GM3-movable-blocker'].includes(scene)?2:1;
+        const peers=['GM3-opposing-large','GM3-settled-blocker','GM3-settled-blocker-hold','GM3-movable-blocker'].includes(scene)?2:1;
         const connections=peers===2&&options.connections==='both'?['normal','reversed']:[options.connections==='reversed'?'reversed':'normal'];
         for(const connection of connections){
             const caseName=`${packageName}-${scene}-a${+options.allocation}-m${+options.members}-${connection}`,caseOut=path.join(output,caseName);fs.mkdirSync(caseOut);

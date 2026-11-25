@@ -96,7 +96,12 @@ async function issue(page,fixture,bindings,intent,preselected=false) {
     if(!preselected)await selectActors(page,fixture,bindings,intent.actors);
     if(intent.queue==='Append'){await page.keyboard.down('Shift');await sleep(PRESS_MS);}
     try{
-        if(intent.action==='move'){
+        if(intent.action==='hold'){
+            const order=fixture.package+':order_hold';
+            const state=await wait(page,s=>s.ui.some(w=>w.visible&&w.enabled&&w.widget_action?.id===order),'Hold button absent');
+            const button=state.ui.find(w=>w.visible&&w.enabled&&w.widget_action?.id===order),[x,y,w,h]=button.rect;
+            await click(page,[x+w/2,y+h/2]);
+        }else if(intent.action==='move'){
             // A smart right-click on the blocker's own body has no Ground
             // action. The ordinary Move button targets the same ground point.
             if(intent.tick===0&&intent.actors.length===1&&intent.actors[0]==='blocker'){
@@ -139,18 +144,20 @@ function bodySupport(fixture,state,actor,unit){
     }
     assert(heights.length>0&&Math.max(...heights)-Math.min(...heights)<=actor.profile.max_step,'Complete body intersects known cliff: '+actor.label);
 }
-// Body overlap rule of the flock path (operator rule 4 of 2026-11-23, FM3): two Idle bodies may not overlap at all;
-// while at least one of the two is not Idle, the overlap depth must stay below 25 % of the smaller radius.
-// `a` and `b` are {pos:[x,y],radius,activity}. Exact f32 arithmetic; returns a fault text or null.
+// Body overlap rule of the flock path (operator rule 4 of 2026-11-23, FM3): bodies of different owners never overlap
+// (enemy units stay solid; the sim checks the same each tick, physical.rs); two Idle bodies of one owner may not
+// overlap; while at least one of the two is not Idle, the overlap depth must stay below 25 % of the smaller radius.
+// `a` and `b` are {pos:[x,y],radius,activity,owner}. Exact f32 arithmetic; returns a fault text or null.
 function overlapFault(a,b){
     const dx=exact(a.pos[0])-exact(b.pos[0]),dy=exact(a.pos[1])-exact(b.pos[1]),d2=square(dx)+square(dy);
     const ra=exact(a.radius),rb=exact(b.radius),r=ra+rb,small=ra<rb?ra:rb;
+    if(a.owner!==b.owner)return d2<square(r)?'Circles of different owners overlap':null;
     if(a.activity==='Idle'&&b.activity==='Idle')return d2<square(r)?'Idle circles overlap':null;
     // depth >= small/4  <=>  4*distance <= 4*r - small  <=>  16*d2 <= (4*r - small)^2 (4*r - small > 0)
     return 16n*d2<=square(4n*r-small)?'Moving circles overlap 25 % or more of the smaller radius':null;
 }
 function physical(fixture,state,bindings){
-    const bodies=fixture.actors.map(actor=>{const id=bindings.get(actor.label),unit=world(state).units.find(u=>u.unit_id===id);assert(unit,'Frozen actor disappeared: '+actor.label);bodySupport(fixture,state,actor,unit);return{actor,body:{pos:unit.pos,radius:actor.profile.radius,activity:row(state,id)?.activity??'Idle'}};});
+    const bodies=fixture.actors.map(actor=>{const id=bindings.get(actor.label),unit=world(state).units.find(u=>u.unit_id===id);assert(unit,'Frozen actor disappeared: '+actor.label);bodySupport(fixture,state,actor,unit);return{actor,body:{pos:unit.pos,radius:actor.profile.radius,activity:row(state,id)?.activity??'Idle',owner:actor.slot}};});
     for(let i=0;i<bodies.length;i++)for(let j=0;j<i;j++){
         const a=bodies[i],b=bodies[j],fault=overlapFault(a.body,b.body);
         assert(!fault,fault+': '+a.actor.label+'/'+b.actor.label+' ('+a.body.activity+'/'+b.body.activity+')');
@@ -213,7 +220,7 @@ async function drive({pagesBySlot,fixture,capture,record,recordInput,onPoll}) {
     const distant=new DistantOrderTracker();
     const labels=filter=>fixture.actors.filter(filter).map(a=>a.label),large=labels(a=>a.kind==='large'),small=labels(a=>a.kind==='small');
     const initialDeadline=fixture.scene.initial_deadline_ticks??fixture.scene.deadline_ticks;
-    const settledBlocker=fixture.scene_name==='GM3-settled-blocker';
+    const settledBlocker=fixture.scene_name.startsWith('GM3-settled-blocker'),blockerHold=fixture.scene_name==='GM3-settled-blocker-hold';
     const blockerStart=fixture.actors.find(a=>a.label==='blocker')?.position;
     let blockerSettledPoint=null;
     let gm2Initial=false;const previousSurfaces=new Map();
@@ -338,9 +345,31 @@ async function drive({pagesBySlot,fixture,capture,record,recordInput,onPoll}) {
         }
         assert(final,'Completed ticks stopped before outcome deadline');monitor();
         if(settledBlocker){
-            assert(idle(final,bindings.get('blocker'))&&stable,'No settled blocker/stable waiting evidence');
-            for(const actor of fixture.actors.filter(a=>a.label!=='blocker'))assert(!idle(final,bindings.get(actor.label))&&['Blocked','Pending'].includes(row(final,bindings.get(actor.label)).activity),'Impossible crossing lacks truthful wait state');
-            checks.permanent_blocker_retained=true;checks.stable_wait_ticks=200;
+            // Clara rule 1a (2026-11-24), as the sim test gap_with_a_big_unit (crates/turts_server/tests/terrain_group/
+            // scenarios.rs): nothing moves in the last 200 ticks (above); a slot-0 move that ends, ends inside its goal
+            // area; bodies of different owners never overlap (physical, each sample). On Hold: the blocker stays and
+            // nobody passes, every other unit waits on its side. Idle: own units may push it; no wait-state check.
+            assert(stable,'No stable evidence in the last 200 ticks');
+            const blocker=world(final).units.find(u=>u.unit_id===bindings.get('blocker'));
+            const goalCommand=fixture.scene.commands.find(c=>c.group===1),goal=goalCommand.point;
+            const area=Math.sqrt(fixture.actors.filter(a=>a.slot===0&&a.label!=='blocker').reduce((sum,a)=>sum+a.profile.radius**2,0)/0.35);
+            for(const actor of fixture.actors.filter(a=>a.slot===0&&a.label!=='blocker')){
+                const at=world(final).units.find(u=>u.unit_id===bindings.get(actor.label)).pos;
+                assert(!idle(final,bindings.get(actor.label))||Math.hypot(at[0]-goal[0],at[1]-goal[1])<=area,'A move ended outside its goal area: '+actor.label+' at '+JSON.stringify(at)+' (area '+area.toFixed(3)+' m)');
+            }
+            if(blockerHold){
+                assert(Math.hypot(blocker.pos[0]-blockerSettledPoint[0],blocker.pos[1]-blockerSettledPoint[1])<1e-3,'A unit on Hold moved: '+JSON.stringify(blocker.pos));
+                for(const actor of fixture.actors.filter(a=>a.label!=='blocker')){
+                    const id=bindings.get(actor.label),at=world(final).units.find(u=>u.unit_id===id).pos;
+                    assert(!idle(final,id)&&['Blocked','Pending'].includes(row(final,id).activity),'Impossible crossing lacks truthful wait state: '+actor.label);
+                    assert(actor.slot===0?at[0]+actor.profile.radius<=30:at[0]-actor.profile.radius>=34,'A unit left its side of a shut gap: '+actor.label);
+                }
+                checks.permanent_blocker_retained=true;
+            }else{
+                assert(idle(final,bindings.get('blocker')),'The idle blocker did not end at rest');
+                checks.blocker_final_position=blocker.pos;
+            }
+            checks.stable_wait_ticks=200;checks.blocker_hold=blockerHold;
         }else if(fixture.scene_name==='GM2-narrow'){
             crossed(fixture,final,bindings,large);checks.large12_original_move_completed=true;checks.opening_tick=openingTick;
         }else if(fixture.scene_name==='GM4-edit-during-approach'){
