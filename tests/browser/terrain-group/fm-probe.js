@@ -28,6 +28,10 @@ const REST_TICKS=40,REST_TOLERANCE_M=1e-4;
 const result={package:packageId,steps:[],rows:{},status:'FAIL',errors:[]};
 const save=()=>fs.writeFileSync(path.join(out,'result.json'),JSON.stringify(result,null,2));
 // ok === null: the row is not judged in this run (it is printed, and it is not a pass).
+// FM1 verdict: NOT JUDGED (null) when no sample came inside FM1_TICKS of the applied order (the probe cannot see a
+// first motion inside the bound), else the first unit must move inside the bound.
+const fm1=m=>m.first_sample_ticks===null||m.first_sample_ticks>FM1_TICKS?null:m.first_unit_ticks!==null&&m.first_unit_ticks<=FM1_TICKS;
+const fm1Detail=m=>fm1(m)===null?{...m,reason:'not judged: the first sample after the applied order came '+m.first_sample_ticks+' ticks later (bound '+FM1_TICKS+'); the probe samples too slowly to see the first motion'}:m;
 const step=(name,ok,detail,fatal=true)=>{result.steps.push({name,ok,detail,at:new Date().toISOString()});save();console.log((ok===null?'NOT JUDGED ':ok?'PASS ':'FAIL ')+name+' '+JSON.stringify(detail??''));if(ok===false&&fatal)throw Error('Step failed: '+name);};
 (async()=>{
  let browser;
@@ -69,11 +73,12 @@ const step=(name,ok,detail,fatal=true)=>{result.steps.push({name,ok,detail,at:ne
         const before=await read(page),start=new Map(all.map(id=>[id,pos(before,id)])),seqs=new Set(before.debug.command_results.map(r=>r.seq));
         await issue(page,fixture,bindings,{tick:name==='outbound'?0:2,actors:fixture.actors.map(a=>a.label),action:'move',point,queue:'Replace'},true);
         const file=fs.createWriteStream(path.join(out,name+'-samples.jsonl')),t0=Date.now();
-        let applied=null,first=new Map(),lastMove=new Map(all.map(id=>[id,{tick:null,pos:null}])),stalls=[],open=new Map(),nextShot=0,last=null,settled=null,samples=0;
+        let applied=null,firstSample=null,first=new Map(),lastMove=new Map(all.map(id=>[id,{tick:null,pos:null}])),stalls=[],open=new Map(),nextShot=0,last=null,settled=null,samples=0;
         while(Date.now()-t0<limitMs){
             const s=await read(page);if(!s){await sleep(20);continue;}
             const tick=world(s).tick;last=s;samples++;
             if(applied===null){const r=s.debug.command_results.find(r=>!seqs.has(r.seq)&&Number.isInteger(r.applied_tick));if(r)applied={tick:r.applied_tick,seq:r.seq,accepted:r.accepted?.length,refused:r.refused};}
+            if(applied&&firstSample===null&&tick>=applied.tick)firstSample=tick;
             const row={tick,wall_ms:Date.now()-t0,u:all.map(id=>{const p=pos(s,id);return[id,Math.round(p[0]*100)/100,Math.round(p[1]*100)/100,order(s,id)?.activity??'none'];})};
             file.write(JSON.stringify(row)+'\n');
             for(const id of all){
@@ -95,14 +100,14 @@ const step=(name,ok,detail,fatal=true)=>{result.steps.push({name,ok,detail,at:ne
         }
         file.end();await shot(name+'-end');fs.writeFileSync(path.join(out,name+'-end.json'),JSON.stringify(last,null,2));
         const rel=id=>first.has(id)&&applied?first.get(id)-applied.tick:null,rels=all.map(rel).filter(n=>n!==null).sort((a,b)=>a-b);
-        return{applied,samples,sample_ms:Math.round((Date.now()-t0)/Math.max(1,samples)),end_tick:world(last).tick,first_motion:{first_unit_ticks:rels[0]??null,units_moved:rels.length,units_within_20_ticks:rels.filter(n=>n<=FM1_TICKS).length,median_ticks:rels[Math.floor(rels.length/2)]??null,last_ticks:rels.at(-1)??null,small:small.map(rel),large:large.map(rel)},settled:settled&&{ticks_after_order:settled.tick-applied.tick,overlaps_at_settle:settled.overlaps_at_settle,rest:settled.rest&&{ticks_after_settle:settled.rest.tick-settled.tick,overlaps:settled.rest.overlaps}},stalls,end_activity:{small:act(last,small),large:act(last,large)},end_overlaps:overlaps(last)};
+        return{applied,samples,sample_ms:Math.round((Date.now()-t0)/Math.max(1,samples)),end_tick:world(last).tick,first_motion:{first_sample_ticks:applied&&firstSample!==null?firstSample-applied.tick:null,first_unit_ticks:rels[0]??null,units_moved:rels.length,units_within_20_ticks:rels.filter(n=>n<=FM1_TICKS).length,median_ticks:rels[Math.floor(rels.length/2)]??null,last_ticks:rels.at(-1)??null,small:small.map(rel),large:large.map(rel)},settled:settled&&{ticks_after_order:settled.tick-applied.tick,overlaps_at_settle:settled.overlaps_at_settle,rest:settled.rest&&{ticks_after_settle:settled.rest.tick-settled.tick,overlaps:settled.rest.overlaps}},stalls,end_activity:{small:act(last,small),large:act(last,large)},end_overlaps:overlaps(last)};
     };
     await shot('00-start');
     // Outbound.
     await selectBox('outbound',all,true);
     const outbound=await moveAndSample('outbound',[50,24],180000,({state:s})=>small.every(id=>pos(s,id)[0]>=34&&order(s,id)?.activity==='Idle'));
     result.rows.outbound=outbound;save();
-    step('FM1 outbound: the first unit moves within 20 ticks of the applied order',outbound.first_motion.first_unit_ticks!==null&&outbound.first_motion.first_unit_ticks<=FM1_TICKS,outbound.first_motion,false);
+    step('FM1 outbound: the first unit moves within 20 ticks of the applied order',fm1(outbound.first_motion),fm1Detail(outbound.first_motion),false);
     state=await read(page);
     step('outbound: all 24 small units are across',small.every(id=>pos(state,id)[0]>=34),{small:act(state,small),large:act(state,large),large_across:large.filter(id=>pos(state,id)[0]>=34).length});
     // Dig, as a person: click a small unit, take the one that the click selects.
@@ -133,7 +138,7 @@ const step=(name,ok,detail,fatal=true)=>{result.steps.push({name,ok,detail,at:ne
     result.rows.return_order={point:returnPoint,wanted:'all 36',far:far.length,not_far:near.map(id=>({unit:id,kind:kind.get(id),pos:pos(state,id)})),selected:selected.length,selected_units:selected};save();
     const ret=await moveAndSample('return',returnPoint,150000,({tick,applied,settled})=>(settled!==null&&settled.rest!==null)||(applied&&tick-applied.tick>FM2_TICKS+1200));
     result.rows.return=ret;save();
-    step('FM1 return: the first unit moves within 20 ticks of the applied order',ret.first_motion.first_unit_ticks!==null&&ret.first_motion.first_unit_ticks<=FM1_TICKS,ret.first_motion,false);
+    step('FM1 return: the first unit moves within 20 ticks of the applied order',fm1(ret.first_motion),fm1Detail(ret.first_motion),false);
     step('FM1: every unit with free space in front of it moves within 20 ticks',null,{reason:'not judged in the browser; the headless check judges this clause',outbound_units_within_20_ticks:outbound.first_motion.units_within_20_ticks,return_units_within_20_ticks:ret.first_motion.units_within_20_ticks,per_unit_ticks:'rows.outbound.first_motion and rows.return.first_motion'},false);
     step('FM2 return: all 36 units settled within 1200 ticks (60 s at 20 Hz) of the applied order',!!ret.settled&&ret.settled.ticks_after_order<=FM2_TICKS,{settled_ticks:ret.settled&&ret.settled.ticks_after_order,observed_to_ticks:ret.end_tick-(ret.applied?.tick??ret.end_tick),end_activity:ret.end_activity,ordered_units:selected.length},false);
     step('FM2 return: 40 ticks after the last unit settles, no pair is closer than the sum of the radii (tolerance 0.0001 m)',ret.settled?.rest?ret.settled.rest.overlaps.length===0:null,ret.settled?.rest?{ticks_after_settle:ret.settled.rest.ticks_after_settle,overlaps:ret.settled.rest.overlaps,overlaps_at_the_settle_tick_for_information:ret.settled.overlaps_at_settle.length}:{reason:'no settlement that lasted 40 ticks in the observed time; separation is not judged',overlaps_in_the_last_sample:ret.end_overlaps.length},false);
@@ -144,7 +149,8 @@ const step=(name,ok,detail,fatal=true)=>{result.steps.push({name,ok,detail,at:ne
     // A row that is not judged is not a pass and not a fail: the status needs every judged row true, and the
     // settle and separation rows judged.
     result.not_judged=rows.filter(s=>s.ok===null).map(s=>s.name);
-    result.status=rows.every(s=>s.ok!==false)&&rows.filter(s=>/^FM2 return/.test(s.name)).every(s=>s.ok===true)&&result.errors.length===0?'PASS':'FAIL';
+    const required=rows.filter(s=>/^FM2 return|^FM1 (outbound|return):/.test(s.name));
+    result.status=rows.some(s=>s.ok===false)||result.errors.length?'FAIL':required.every(s=>s.ok===true)?'PASS':'NOT JUDGED';
     if(result.status!=='PASS')process.exitCode=1;
  }catch(error){result.error=String(error.stack||error);console.error(error);process.exitCode=1;}
  finally{save();if(browser)await browser.close().catch(()=>{});}
