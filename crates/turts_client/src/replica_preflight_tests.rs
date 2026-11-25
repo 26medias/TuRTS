@@ -244,3 +244,31 @@ fn a_patch_larger_than_the_space_left_in_the_budget_is_refused() {
         "the patch moved unit 1"
     );
 }
+
+#[test]
+fn the_preflight_charges_each_table_row_of_a_patch() {
+    let content = wide_flat_content();
+    let replica = joined_replica(&content);
+    let rows = |count: usize| {
+        patch(
+            9,
+            (0..count)
+                .map(|index| UnitDelta {
+                    unit_id: UnitId(index as u32 % UNITS + 1),
+                    pos: unit_pos(index as u32 % UNITS),
+                })
+                .collect(),
+        )
+    };
+    // The bare decoded rows alone are larger than the whole budget (T-39 M2, Nora's probe).
+    let over = MAX_PENDING_STATE_BYTES as usize / std::mem::size_of::<UnitDelta>() + 1;
+    assert!(
+        replica.preflight_transaction(&rows(over), 0).is_err(),
+        "a patch of {over} position rows passed the preflight with a free budget"
+    );
+    // A large patch that fits is not refused: the charge is not far above the real size.
+    assert!(
+        replica.preflight_transaction(&rows(100_000), 0).is_ok(),
+        "a patch of 100,000 position rows was refused with a free budget"
+    );
+}

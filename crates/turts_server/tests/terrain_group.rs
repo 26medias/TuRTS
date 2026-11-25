@@ -20,6 +20,8 @@ mod flock;
 #[allow(dead_code)]
 #[path = "../src/orders.rs"]
 mod orders;
+#[path = "terrain_group/passage_privacy.rs"]
+mod passage_privacy;
 #[allow(dead_code)]
 #[path = "../src/permissions.rs"]
 mod permissions;
