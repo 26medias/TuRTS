@@ -234,7 +234,9 @@ async function drive({pagesBySlot,fixture,capture,record,recordInput,onPoll}) {
             const ownerTick=world(states.get(fixture.actors.find(a=>a.label===label).slot)).tick;
             if(original.has(label)&&idle(merged,id)&&ownerTick===tick){
                 const position=world(state).units.find(u=>u.unit_id===id).pos;
-                settled.observe(label,true,position,fixture.actors.find(a=>a.label===label).profile.radius);
+                const actor=fixture.actors.find(a=>a.label===label),others=fixture.actors.filter(a=>a.label!==label).map(a=>({actor:a,unit:world(state).units.find(u=>u.unit_id===bindings.get(a.label))})).filter(x=>x.unit);
+                const ownMovers=others.filter(x=>x.actor.slot===actor.slot&&(row(merged,x.unit.unit_id)?.activity??'Idle')!=='Idle').map(x=>x.unit.pos);
+                settled.observe(label,true,position,actor.profile.radius,{tick,ownMovers,bodies:others.map(x=>x.unit.pos)});
             }
         }
         if(settledBlocker&&blockerSettledPoint){const blocker=world(state).units.find(u=>u.unit_id===bindings.get('blocker')),r=fixture.actors.find(a=>a.label==='blocker').profile.radius,moved=Math.hypot(blocker.pos[0]-blockerSettledPoint[0],blocker.pos[1]-blockerSettledPoint[1]);assert(moved<=2*r,'Traffic moved the settled blocker more than one body diameter: actual='+JSON.stringify(blocker.pos)+' settled='+JSON.stringify(blockerSettledPoint));}
