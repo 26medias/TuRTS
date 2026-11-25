@@ -1536,6 +1536,89 @@ fn second_group_same_point_ignores_unit_ids_and_owner_slots() {
     );
 }
 
+/// A 36-unit group move on open ground (T-7 proof; FM rows measured headless, 20 Hz):
+/// FM1 every unit moves within 20 ticks; FM2 all units rest within 1200 ticks; FM3 the
+/// overlap of two moving units is at most 25 % of the radius, and none at rest. With
+/// `TURTS_TRACE_OUT=<file>` the test writes each tick as CSV `tick,unit,x,y`.
+#[test]
+fn thirty_six_units_cross_open_ground() {
+    let positions: Vec<_> = (0..36)
+        .map(|k| (8.0 + 1.2 * (k % 6) as f32, 26.0 + 1.2 * (k / 6) as f32))
+        .collect();
+    let owners = vec![0; positions.len()];
+    let mut app = app_with_units(&positions, &owners);
+    let ids: Vec<u32> = (1..=36).collect();
+    let target = Vec2::new(50.0, 30.0);
+    send_order(&mut app, 0, ids.clone(), target, 7, QueueMode::Replace);
+    let start: Vec<Vec2> = positions.iter().map(|&(x, y)| Vec2::new(x, y)).collect();
+    let mut first_motion = vec![None; ids.len()];
+    let mut trace = String::from("tick,unit,x,y\n");
+    let mut previous = start.clone();
+    let mut worst_moving = 0.0_f32;
+    let mut rested_at = None;
+    for tick in 1..=1200 {
+        app.update();
+        let now: Vec<Vec2> = snapshot(app.world_mut())
+            .iter()
+            .map(|unit| unit.pos)
+            .collect();
+        for (index, at) in now.iter().enumerate() {
+            if first_motion[index].is_none() && at.distance(start[index]) > 0.1 {
+                first_motion[index] = Some(tick);
+            }
+            trace.push_str(&format!("{tick},{},{},{}\n", ids[index], at.x, at.y));
+            for other in index + 1..now.len() {
+                let moving = *at != previous[index] || now[other] != previous[other];
+                let overlap = 1.0 - at.distance(now[other]);
+                if moving {
+                    worst_moving = worst_moving.max(overlap);
+                }
+            }
+        }
+        let resting = now == previous
+            && ids.iter().all(|id| {
+                app.world_mut()
+                    .iter_entities()
+                    .find(|e| e.get::<turts_sim::UnitId>().is_some_and(|u| u.0 == *id))
+                    .is_some_and(|e| e.get::<MoveTarget>().is_none())
+            });
+        if resting && rested_at.is_none() {
+            rested_at = Some(tick);
+        }
+        previous = now;
+        if rested_at.is_some_and(|at| tick >= at + 40) {
+            break;
+        }
+    }
+    if let Some(path) = std::env::var_os("TURTS_TRACE_OUT") {
+        std::fs::write(path, &trace).unwrap();
+    }
+    let last_first_motion = first_motion
+        .iter()
+        .map(|t| t.unwrap_or(u32::MAX))
+        .max()
+        .unwrap();
+    println!(
+        "open ground, 36 units: last first motion {last_first_motion} ticks, rest at {rested_at:?} ticks, worst moving overlap {worst_moving} m (radius 0.5)"
+    );
+    assert!(
+        last_first_motion <= 20,
+        "FM1: a unit started late: {first_motion:?}"
+    );
+    assert!(
+        rested_at.is_some(),
+        "FM2: the group did not rest within 1200 ticks"
+    );
+    assert!(
+        worst_moving <= 0.25 * 0.5,
+        "FM3: moving overlap {worst_moving} m"
+    );
+    assert!(
+        rests_without_overlap(&mut app, &ids),
+        "FM3: overlap at rest"
+    );
+}
+
 /// V6 (Clara, 2026-11-24): an idle own unit that a passing group pushes away goes back to
 /// its place when no own mover is near.
 #[test]

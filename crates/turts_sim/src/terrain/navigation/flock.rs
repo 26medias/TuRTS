@@ -107,6 +107,9 @@ const TOUCH: f32 = 0.05;
 const NO_OVERLAP: f32 = 1.0e-3;
 /// Ticks with no progress before a unit with no path becomes a waiting unit.
 const WAIT_TICKS: u16 = 10;
+/// Goal areas from the goal within which a unit that a standing body stops ends its move
+/// there. Farther away it waits with its order kept (V2).
+const NEAR_GOAL: f32 = 2.0;
 /// Ticks with no approach before a unit inside its goal area settles where it stands.
 const SETTLE_TICKS: u16 = 20;
 
@@ -148,6 +151,10 @@ struct Member {
     crowd: bool,
     /// The tick at which the unit came into the passage where it is now.
     passage_since: Option<u32>,
+    /// The pose at which the unit came into that passage.
+    passage_entry: Vec2,
+    /// The unit waits because bodies stop it, not because it has no path (rule 5, V2).
+    blocked: bool,
 }
 
 impl Member {
@@ -157,6 +164,19 @@ impl Member {
             .try_normalize()
             .unwrap_or((self.goal - at).normalize_or_zero())
     }
+}
+
+/// The seeded coin of a tie in a passage (V5): of two entry poses, the one that goes first.
+/// Both units draw the same coin, because the poses are put in a fixed order by geometry.
+fn tie_coin(key: u64, tick: u32, a: Vec2, b: Vec2) -> Vec2 {
+    let bits = |at: Vec2| (u64::from(at.x.to_bits()) << 32) | u64::from(at.y.to_bits());
+    let (low, high) = if bits(a) <= bits(b) { (a, b) } else { (b, a) };
+    let draw = crate::terrain::mix64(
+        key ^ crate::terrain::mix64(u64::from(tick))
+            ^ crate::terrain::mix64(bits(low)).rotate_left(17)
+            ^ crate::terrain::mix64(bits(high)).rotate_left(41),
+    );
+    if draw & 1 == 0 { low } else { high }
 }
 
 /// One cost-to-goal field, from one owner's permitted terrain. Its nodes are the points of
@@ -566,6 +586,11 @@ impl Field {
         self.cell_of(point)
             .is_some_and(|(x, y)| self.passage[self.index(x, y)])
     }
+    /// A body of this class can stand at `point` (nearest node).
+    fn passable_at(&self, point: Vec2) -> bool {
+        self.cell_of(point)
+            .is_some_and(|(x, y)| self.passable[self.index(x, y)])
+    }
 }
 const NEIGHBOUR_CELLS: [(i64, i64); 8] = [
     (1, 0),
@@ -742,11 +767,19 @@ fn goes_to_an_area(world: &World, unit: u32) -> bool {
         })
 }
 
-fn is_hold(world: &World, unit: u32) -> bool {
+/// An own unit that other own units do not push and do not step into: a unit on Hold, and a
+/// unit with a terrain work order, in its cells and on the short walks between them (Clara,
+/// "Busy own unit", 2026-11-24). It still takes its own steps.
+fn stands_firm(world: &World, unit: u32) -> bool {
     crate::unit_entity(world, unit)
         .and_then(|entity| world.get::<crate::UnitOrders>(entity))
         .and_then(|orders| orders.current.as_ref())
-        .is_some_and(|order| order.behaviour == turts_mod_api::Behaviour::Hold)
+        .is_some_and(|order| {
+            matches!(
+                order.behaviour,
+                turts_mod_api::Behaviour::Hold | turts_mod_api::Behaviour::TerrainWork
+            )
+        })
 }
 
 fn output_row(unit: &MovementFrameUnit) -> MovementFrameOutput {
@@ -782,6 +815,7 @@ pub(super) fn step(
             frame,
             dt,
             tick,
+            terrain.tie_key(),
             &mut state,
         )
     } else {
@@ -794,6 +828,7 @@ pub(super) fn step(
             frame,
             dt,
             tick,
+            0,
             &mut state,
         )
     };
@@ -809,6 +844,7 @@ fn step_inner(
     frame: &MovementFrame,
     dt: f32,
     tick: u32,
+    tie_key: u64,
     state: &mut FlockState,
 ) -> (Vec<MovementFrameOutput>, BTreeSet<u32>) {
     let units = &frame.units;
@@ -881,6 +917,8 @@ fn step_inner(
                     rest: unit.position,
                     crowd,
                     passage_since: None,
+                    passage_entry: Vec2::ZERO,
+                    blocked: false,
                 },
             );
         }
@@ -970,7 +1008,14 @@ fn step_inner(
     // The frozen snapshot.
     let holds: Vec<bool> = units
         .iter()
-        .map(|unit| unit.speed.is_some() && is_hold(world, unit.unit_id))
+        .map(|unit| unit.speed.is_some() && stands_firm(world, unit.unit_id))
+        .collect();
+    // A firm unit that walks (a busy unit between its cells) is not pushed, but own units are
+    // not held at its start pose: they make room for it in the push.
+    let walks_firm: Vec<bool> = units
+        .iter()
+        .enumerate()
+        .map(|(row, unit)| holds[row] && unit.target.is_some())
         .collect();
     let snapshot = Snapshot::new(
         units
@@ -1005,7 +1050,9 @@ fn step_inner(
         let mut solids = Vec::new();
         snapshot.near(from, reach + max_radius, |other| {
             let body = &snapshot.bodies[other];
-            if other == row || (!body.fixed && body.owner == units[row].owner_slot) {
+            if other == row
+                || ((!body.fixed || walks_firm[other]) && body.owner == units[row].owner_slot)
+            {
                 return;
             }
             solids.push((
@@ -1031,12 +1078,35 @@ fn step_inner(
         guarded_step(terrain, from, to, units[row].radius, profile, &solids)
     };
 
+    // A body that can stop a unit of `goal` on its way (rule 5, V2): a solid body, a body of
+    // another owner, an own unit that waits, and an own idle unit that is not in the crowd
+    // of `goal`. An own mover and the own crowd of the goal do not stop it.
+    let stops = |row: usize, goal: Vec2, other: usize| -> bool {
+        let body = &snapshot.bodies[other];
+        if other == row {
+            return false;
+        }
+        if body.fixed || body.owner != units[row].owner_slot {
+            return true;
+        }
+        state
+            .members
+            .get(&units[other].unit_id)
+            .is_none_or(|other| match other.mode {
+                Mode::Moving => false,
+                Mode::Waiting => true,
+                Mode::Settled => other.goal != goal,
+            })
+    };
+
     // Stage B: advice velocities, all from the snapshot.
     let basis = crate::visibility::active_basis(world);
     let mut advice = vec![Vec2::ZERO; units.len()];
     let mut no_path = vec![false; units.len()];
     let mut kept_out = vec![false; units.len()];
     let mut yielding = vec![false; units.len()];
+    let mut at_mouth = vec![false; units.len()];
+    let mut way_free = vec![false; units.len()];
     let mut aims = start.clone();
     let mut last_step: Vec<Option<Vec2>> = vec![None; units.len()];
     let mut audit_members = Vec::new();
@@ -1089,25 +1159,36 @@ fn step_inner(
         let heading = keep_out.unwrap_or_else(|| (toward - unit.position).normalize_or_zero());
         kept_out[row] = keep_out.is_some();
         // Right of way in a passage, between owners and between own units that go opposite
-        // ways: the body that came into the passage
-        // first keeps it ("arrive first", CEO 2026-11-12). A unit that sees a body of
-        // another owner in the passage with an earlier arrival goes back out of the
-        // passage, or stays out of it. Equal arrivals: the lower position (x, then y)
-        // keeps the passage; the unit id never decides. Only permitted bodies count.
-        let rank = |since: Option<u32>, at: Vec2| {
-            (since.unwrap_or(u32::MAX), at.x.to_bits(), at.y.to_bits())
+        // ways: the body that came into the passage first keeps it ("arrive first", CEO
+        // 2026-11-12; V3). A unit outside waits at the mouth. A unit inside goes back out
+        // only when it meets the holder head-on and the corridor is too narrow for both
+        // bodies. Arrivals in one tick (V5): the slower body goes first; at equal speed a
+        // seeded coin of the arrival tick and the two entry poses decides. The unit id and
+        // the slot never decide. Only permitted bodies count.
+        let first_of = |theirs: Option<u32>, entry: Vec2, their_speed: f32| -> bool {
+            let mine = member.passage_since.unwrap_or(u32::MAX);
+            let theirs = theirs.unwrap_or(u32::MAX);
+            if theirs != mine {
+                return theirs < mine;
+            }
+            if their_speed != speed {
+                return their_speed < speed;
+            }
+            tie_coin(tie_key, mine, entry, member.passage_entry) == entry
         };
-        let mine = rank(member.passage_since, unit.position);
+        // Inside: in the passage itself. A unit at a mouth has not come in yet (V3).
+        let inside = field.is_some_and(|field| field.in_passage(unit.position));
         let holder = field.filter(|_| !no_path[row]).and_then(|field| {
-            let inside = member.passage_since.is_some();
             neighbours_in_sum_order(&snapshot, &start, row, 10.0 * unit.radius, |body| {
-                if body.fixed {
-                    return false;
-                }
                 if body.owner != unit.owner_slot {
                     return basis.is_none_or(|basis| {
                         basis.unit_permitted(unit.owner_slot, units[body.row].unit_id)
                     });
+                }
+                // An own body that does not move (a building, a unit on Hold, a busy unit)
+                // in the passage holds it.
+                if body.fixed {
+                    return true;
                 }
                 // An own unit that goes the other way to another goal is a holder also.
                 state
@@ -1138,22 +1219,39 @@ fn step_inner(
                     Some(other) => other.passage_since.is_some() && part_in_zone,
                     None => field.in_passage(body.position),
                 };
+                let entry = active.map_or(body.position, |other| other.passage_entry);
+                let course = state
+                    .members
+                    .get(&units[body.row].unit_id)
+                    .map_or(Vec2::ZERO, |other| other.course(body.position));
+                // Inside the passage, the unit goes back only from a head-on meeting in a
+                // corridor where the two bodies can not pass; else it stays in. They can pass
+                // when this unit can stand beside the other body, on one side.
+                let beside = heading.perp() * (unit.radius + body.radius + 2.0 * CLEARANCE);
+                let head_on = course.dot(unit.position - body.position) > 0.0
+                    && heading.dot(body.position - unit.position) > 0.0
+                    && !field.passable_at(body.position + beside)
+                    && !field.passable_at(body.position - beside);
                 holds
-                    && (inside || heading.dot(body.position - unit.position) > 0.0)
-                    && rank(theirs, body.position) < mine
+                    && (if inside {
+                        head_on
+                    } else {
+                        heading.dot(body.position - unit.position) > 0.0
+                    })
+                    && first_of(theirs, entry, units[body.row].speed.unwrap_or(0.0))
             })
             .map(|body| {
                 let course = state
                     .members
                     .get(&units[body.row].unit_id)
-                    .map_or(Vec2::ZERO, |other| other.velocity);
+                    .map_or(Vec2::ZERO, |other| other.course(body.position));
                 (body.position, course)
             })
         });
         let give_passage = holder.map(|(holder, course)| {
             let offset = unit.position - holder;
-            if member.passage_since.is_some() {
-                // Inside the passage the unit goes back out.
+            if inside {
+                // Inside the passage the unit goes back out, to the mouth behind it.
                 return (0.25 * offset.normalize_or_zero() - heading).normalize_or_zero() * speed;
             }
             // Outside it keeps the mouth of the passage free and steps out of the course
@@ -1174,15 +1272,50 @@ fn step_inner(
                 .map_or(Vec2::ZERO, |(_, choke)| {
                     (unit.position - choke).normalize_or_zero()
                 });
-            let course = course.try_normalize().unwrap_or(offset.normalize_or_zero());
-            let side = course.perp_dot(offset);
-            if course.dot(offset) > 0.0 && side.abs() < 2.5 * unit.radius {
-                aside += course.perp() * if side < 0.0 { -1.0 } else { 1.0 };
+            // A holder that goes somewhere has a course; the unit steps out of it. A holder
+            // that stands has none, and the unit only keeps the mouth free.
+            if let Some(course) = course.try_normalize() {
+                let side = course.perp_dot(offset);
+                if course.dot(offset) > 0.0 && side.abs() < 2.5 * unit.radius {
+                    aside += course.perp() * if side < 0.0 { -1.0 } else { 1.0 };
+                }
             }
             aside.normalize_or_zero() * speed
         });
         yielding[row] = give_passage.is_some();
-        aims[row] = toward;
+        at_mouth[row] = give_passage.is_some() && !inside;
+        // A unit that bodies stop waits until one step on its way is free of them (V2).
+        if member.mode == Mode::Waiting
+            && member.blocked
+            && let Some(profile) = profiles[row]
+        {
+            let to = unit.position + heading * speed * dt;
+            let mut solids = Vec::new();
+            snapshot.near(
+                unit.position,
+                speed * dt + unit.radius + max_radius,
+                |other| {
+                    if stops(row, member.goal, other) {
+                        let body = &snapshot.bodies[other];
+                        solids.push((
+                            body.position.x.to_bits(),
+                            body.position.y.to_bits(),
+                            Solid {
+                                position: body.position,
+                                radius: body.radius,
+                            },
+                        ));
+                    }
+                },
+            );
+            solids.sort_unstable_by_key(|entry| (entry.0, entry.1));
+            let solids: Vec<Solid> = solids.into_iter().map(|entry| entry.2).collect();
+            way_free[row] = give_passage.is_none()
+                && guarded_step(terrain, unit.position, to, unit.radius, profile, &solids) == to;
+        }
+        // A unit that gives the passage aims where that advice goes, so a turned step
+        // keeps that way and does not turn back toward the goal.
+        aims[row] = give_passage.map_or(toward, |advice| unit.position + advice * dt);
         let reach = unit.radius + max_radius + 1.0;
         let neighbours = neighbours_in_sum_order(&snapshot, &start, row, reach, |body| {
             !body.fixed && body.owner == unit.owner_slot
@@ -1285,6 +1418,9 @@ fn step_inner(
             }
         });
         let mut avoid = Vec2::ZERO;
+        // The part of `avoid` from bodies that can move: a waiting unit side-steps only
+        // these (a body that never moves keeps the way shut on each side).
+        let mut avoid_movable = Vec2::ZERO;
         for &other in obstacles.iter().take(NEIGHBOURS) {
             let body = &snapshot.bodies[other];
             let offset = body.position - unit.position;
@@ -1293,10 +1429,14 @@ fn step_inner(
             let lane = unit.radius + body.radius + 0.5 * unit.radius;
             let gap = offset.length() - unit.radius - body.radius;
             if ahead > 0.0 && side != 0.0 && side.abs() < lane && gap < look {
-                avoid -= heading.perp()
+                let force = heading.perp()
                     * side.signum()
                     * (1.0 - side.abs() / lane)
                     * (1.0 - (gap / look).clamp(0.0, 1.0));
+                avoid -= force;
+                if !body.fixed {
+                    avoid_movable -= force;
+                }
             }
         }
         let mut wish = heading * speed + separation * speed * 0.6 + avoid * speed * 1.5;
@@ -1311,7 +1451,13 @@ fn step_inner(
         } else if queue_hold {
             Vec2::ZERO
         } else if member.mode == Mode::Waiting {
-            ((give_way + if kept_out[row] { heading } else { Vec2::ZERO }) * speed)
+            // A unit that bodies stop steps out of the line of the bodies ahead (V2).
+            let aside = if member.blocked {
+                avoid_movable
+            } else {
+                Vec2::ZERO
+            };
+            ((give_way + aside + if kept_out[row] { heading } else { Vec2::ZERO }) * speed)
                 .clamp_length_max(speed)
         } else if unit.position.distance(member.goal) <= speed * dt {
             // The last step goes exactly to the point.
@@ -1363,6 +1509,17 @@ fn step_inner(
         }
         let from = unit.position;
         let mut end = guard(row, from, last_step[row].unwrap_or(from + wish));
+        // A waiting unit takes its step to the side whole, or not at all, and does not turn:
+        // so it stands still when the side is not free.
+        if last_step[row].is_none()
+            && state
+                .members
+                .get(&unit.unit_id)
+                .is_some_and(|member| member.mode == Mode::Waiting)
+        {
+            positions[row] = if end == from + wish { end } else { from };
+            continue;
+        }
         // An exact step to a node or to the point, where the body has no clearance.
         if let (Some(node), Some(profile)) = (last_step[row], profiles[row])
             && end != node
@@ -1535,8 +1692,10 @@ fn step_inner(
             if !soft(row) {
                 continue;
             }
+            // Own units, and own units that stand firm (Hold, busy): a firm unit is not
+            // pushed, but it can step into others, and they make room for it.
             let neighbours = neighbours_in_sum_order(&relaxed, &before, row, REST_GAP, |body| {
-                !body.fixed && body.owner == units[row].owner_slot
+                body.owner == units[row].owner_slot && (!body.fixed || holds[body.row])
             });
             let mut push = Vec2::ZERO;
             for other in neighbours {
@@ -1567,7 +1726,11 @@ fn step_inner(
                 // Two standing units each take the whole overlap, so a packed crowd comes
                 // apart in a few ticks. A mover shares an overlap equally with each own unit,
                 // so it pushes its way through, and a crowd keeps its place (rule 2).
-                let share = if moves(row) || moves(other) { 0.5 } else { 1.0 };
+                let share = if holds[other] || !(moves(row) || moves(other)) {
+                    1.0
+                } else {
+                    0.5
+                };
                 push += offset / distance * overlap * share;
             }
             if push != Vec2::ZERO {
@@ -1662,7 +1825,9 @@ fn step_inner(
                     owner: unit.owner_slot,
                     position: positions[row],
                     radius: unit.radius,
-                    fixed: unit.speed.is_none() || holds[row],
+                    // A firm unit that walks moves in this tick: own pairs with it keep the
+                    // overlap limit of two moving own units.
+                    fixed: unit.speed.is_none() || (holds[row] && !walks_firm[row]),
                 })
                 .collect(),
         );
@@ -1678,10 +1843,20 @@ fn step_inner(
                 } else {
                     MOVING_OVERLAP * unit.radius.min(body.radius)
                 };
-                let distance = positions[row].distance(positions[other]);
+                // The nearest distance of the two bodies over the tick: both move on straight
+                // lines in the same time (f64, as the swept check of a committed step).
+                let from = (start[row] - start[other]).as_dvec2();
+                let course =
+                    ((positions[row] - start[row]) - (positions[other] - start[other])).as_dvec2();
+                let part = if course.length_squared() > 0.0 {
+                    (-from.dot(course) / course.length_squared()).clamp(0.0, 1.0)
+                } else {
+                    0.0
+                };
+                let distance = (from + course * part).length();
                 if other != row
-                    && distance < unit.radius + body.radius - limit
-                    && distance < start[row].distance(start[other])
+                    && distance < f64::from(unit.radius) + f64::from(body.radius) - f64::from(limit)
+                    && distance < from.length()
                 {
                     conflict[row] = true;
                 }
@@ -1742,12 +1917,13 @@ fn step_inner(
         *area = (*area / 0.35).sqrt();
     }
     let mut settle = vec![false; units.len()];
+    let mut blocked = vec![false; units.len()];
     let mut settle_reason = vec![""; units.len()];
     for (row, unit) in units.iter().enumerate() {
         let (Some(member), Some(speed)) = (state.members.get(&unit.unit_id), unit.speed) else {
             continue;
         };
-        if member.mode != Mode::Moving {
+        if member.mode == Mode::Settled || (member.mode == Mode::Waiting && !member.blocked) {
             continue;
         }
         let here = positions[row];
@@ -1793,8 +1969,14 @@ fn step_inner(
         // The same holds at a solid body that stands (a building, an own unit on Hold, a body
         // of another owner that does not move). A moving body of another owner is traffic.
         let mut touches_solid = false;
-        // A moving body of another owner in the way for a long time ends the move also.
+        // A body that stops the unit on its way (V2). The unit waits, with its order kept, at
+        // a moving body of another owner (traffic), at an own unit that waits (a queue), and
+        // in a passage or its mouth (V3) at each body that stops it, when it is far from the
+        // goal (more than `NEAR_GOAL` goal areas). No timer ends the order. Elsewhere a
+        // standing body ends the move where the unit stands, as before.
+        let mut touches_stop = false;
         let mut touches_traffic = false;
+        let mut touches_waiting = false;
         // A unit that a solid body stops can stand up to two steps from it.
         let reach = TOUCH + 2.0 * speed * dt;
         snapshot.near(here, unit.radius + max_radius + reach, |other| {
@@ -1807,21 +1989,40 @@ fn step_inner(
                         .is_none_or(|other| other.mode != Mode::Moving));
             let touches = other != row
                 && here.distance(positions[other]) - unit.radius - body.radius <= reach;
-            touches_traffic |= touches && body.owner != unit.owner_slot;
+            touches_stop |= touches && stops(row, member.goal, other);
+            touches_traffic |= touches && !stands && body.owner != unit.owner_slot;
+            touches_waiting |= touches
+                && !body.fixed
+                && body.owner == unit.owner_slot
+                && state
+                    .members
+                    .get(&units[body.row].unit_id)
+                    .is_some_and(|other| other.mode == Mode::Waiting);
             if touches && stands {
                 touches_solid = true;
             }
         });
         // Only a unit of a Move order stops at its crowd or in its goal area. A unit with a
         // point target goes on to the point and pushes a standing own unit off it (rule 1).
+        let far = here.distance(member.goal) > NEAR_GOAL * area
+            && field_of(row, member).is_some_and(|field| field.in_zone(here));
         let at_crowd = member.crowd
             && ((touches_crowd && inside)
-                || (touches_standing && member.stalled >= 2 * SETTLE_TICKS && !no_path[row]));
-        let at_solid = !no_path[row]
-            && ((touches_solid && member.stalled >= 2 * SETTLE_TICKS)
-                || (touches_traffic && member.stalled >= 6 * SETTLE_TICKS));
+                || (touches_standing
+                    && member.stalled >= 2 * SETTLE_TICKS
+                    && !no_path[row]
+                    && !far));
+        let at_solid = !no_path[row] && touches_solid && member.stalled >= 2 * SETTLE_TICKS && !far;
+        let reason = touches_traffic || touches_waiting || (touches_stop && far);
+        if member.mode == Mode::Waiting {
+            // A wait ends when its reason ends.
+            blocked[row] = reason;
+            continue;
+        }
+        blocked[row] = !inside && !no_path[row] && member.stalled >= WAIT_TICKS && reason;
         let gave_up = gave_up && member.crowd;
-        settle[row] = (at_point || at_crowd || at_solid || gave_up) && !overlaps && !in_passage;
+        // A unit does not park in a passage, but the exact point of its order ends its move.
+        settle[row] = (at_point || ((at_crowd || at_solid || gave_up) && !in_passage)) && !overlaps;
         settle_reason[row] = if at_point {
             "settled at the point"
         } else if touches_crowd {
@@ -1861,6 +2062,9 @@ fn step_inner(
             continue;
         }
         member.velocity = (positions[row] - start[row]) / dt;
+        if in_passage_now[row] && member.passage_since.is_none() {
+            member.passage_entry = positions[row];
+        }
         member.passage_since = in_passage_now[row].then(|| member.passage_since.unwrap_or(tick));
         moving += usize::from(positions[row] != start[row]);
         let distance = positions[row].distance(member.goal);
@@ -1885,15 +2089,27 @@ fn step_inner(
             continue;
         }
         member.mode = match member.mode {
-            Mode::Moving if no_path[row] && member.stalled >= WAIT_TICKS => Mode::Waiting,
-            Mode::Waiting if !no_path[row] => {
+            Mode::Moving if no_path[row] && member.stalled >= WAIT_TICKS => {
+                member.blocked = false;
+                Mode::Waiting
+            }
+            Mode::Moving if blocked[row] => {
+                member.blocked = true;
+                Mode::Waiting
+            }
+            Mode::Waiting
+                if (member.blocked && (way_free[row] || !blocked[row]))
+                    || (!member.blocked && !no_path[row]) =>
+            {
+                member.blocked = false;
                 member.stalled = 0;
                 member.best_distance = distance;
                 Mode::Moving
             }
             mode => mode,
         };
-        if member.mode == Mode::Waiting {
+        // The wait marker carries no position or type of what stops the unit (GM6).
+        if member.mode == Mode::Waiting || at_mouth[row] {
             waiting.insert(unit.unit_id);
         }
         for progress in outputs[row].progress.iter_mut() {

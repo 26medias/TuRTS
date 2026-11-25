@@ -270,19 +270,59 @@ fn gm3_temporary_blocker_far_from_goal_does_not_complete_the_move() {
     }
 }
 
-#[test]
-fn gm3_occupied_passage_impossible_traffic_waits_stably() {
+/// Slot 0 parks a big unit in the 3 m gap; then each slot sends nine units through it.
+/// For slot 1 the big unit is an enemy body. For slot 0 it is an own unit (Clara,
+/// 2026-11-24, choice 1a): when it is idle, a mover pushes it, also along the gap and out of
+/// it; a unit on Hold is not pushed, and a player who wants the gap shut uses Hold.
+/// Each case checks: nothing moves in the last 200 ticks; a move of slot 0 that ends, ends
+/// inside its goal area; no body crosses a body of another owner and no body leaves
+/// permitted ground (`physical::verify`, each tick in `Fixture::step`).
+/// On Hold (the old contract): nobody passes, both sides wait on their sides, no move ends.
+/// Idle: slot 0 may pass; the gap is then open, and slot 1 may use it.
+fn gap_with_a_big_unit(hold: bool) {
     for package in PACKAGES {
         // Each variant has its own fixture, server app, and evidence directory.
         std::thread::scope(|scope| {
             let workers = VARIANTS.map(|variant| {
                 scope.spawn(move || {
                     let mut f = Fixture::new(package, "GM3-settled-blocker", variant);
-                    // Rules 1 and 2: a push can shift the blocker, so its exact pose is not
-                    // checked. Its order to the place where it stands must still end.
                     let deadline = f.scene["deadline_ticks"].as_u64().unwrap() as u32;
+                    let point = |group: u64| {
+                        let command = f.scene["commands"]
+                            .as_array()
+                            .unwrap()
+                            .iter()
+                            .find(|command| command["group"].as_u64() == Some(group))
+                            .unwrap();
+                        let point = &command["point"];
+                        turts_sim::Vec2::new(
+                            point[0].as_f64().unwrap() as f32,
+                            point[1].as_f64().unwrap() as f32,
+                        )
+                    };
+                    let (place, goal) = (point(3), point(1));
+                    // The goal area of the slot 0 order: the disc that holds its members at a
+                    // packing share of 0.35 (`flock.rs`, rules 2 and 3).
+                    let area = (f
+                        .actors
+                        .iter()
+                        .filter(|a| a.slot == 0 && a.label != "blocker")
+                        .map(|a| a.profile.radius * a.profile.radius)
+                        .sum::<f32>()
+                        / 0.35)
+                        .sqrt();
                     let mut stable = None;
                     while f.tick < deadline {
+                        if hold && f.tick == 1 {
+                            let order = f.envelope(
+                                "order_hold",
+                                &["blocker".to_owned()],
+                                OrderTarget::None,
+                                QueueMode::Replace,
+                                4,
+                            );
+                            f.send(0, order);
+                        }
                         step(&mut f);
                         if f.tick == deadline - 200 {
                             stable = Some(f.frame());
@@ -291,23 +331,42 @@ fn gm3_occupied_passage_impossible_traffic_waits_stably() {
                             assert_eq!(
                                 Some(f.frame()).as_ref(),
                                 stable.as_ref(),
-                                "impossible traffic oscillates instead of waiting stably"
+                                "traffic at the gap oscillates instead of waiting stably"
                             );
                         }
                     }
-                    assert!(f.complete("blocker"));
-                    for actor in f.actors.iter().filter(|a| a.label != "blocker") {
+                    if hold {
                         assert!(
-                            !f.complete(&actor.label),
-                            "impossible passage falsely completed a move"
+                            f.position("blocker").distance(place) < 1.0e-3,
+                            "a unit on Hold moved: {:?}",
+                            f.position("blocker")
                         );
+                    } else {
+                        assert!(f.complete("blocker"));
+                    }
+                    for actor in f.actors.iter().filter(|a| a.label != "blocker") {
+                        let at = f.position(&actor.label);
                         if actor.slot == 0 {
-                            assert!(f.position(&actor.label).x + actor.profile.radius <= 30.0);
-                        } else {
-                            assert!(f.position(&actor.label).x - actor.profile.radius >= 34.0);
+                            assert!(
+                                !f.complete(&actor.label) || at.distance(goal) <= area,
+                                "a move ended outside its goal area: {} at {at:?}",
+                                actor.label
+                            );
+                        }
+                        if hold {
+                            assert!(
+                                !f.complete(&actor.label),
+                                "a shut gap falsely completed a move: {}",
+                                actor.label
+                            );
+                            if actor.slot == 0 {
+                                assert!(at.x + actor.profile.radius <= 30.0, "{}", actor.label);
+                            } else {
+                                assert!(at.x - actor.profile.radius >= 34.0, "{}", actor.label);
+                            }
                         }
                     }
-                    f.write_result(json!({"row":"GM3","stable_ticks":200}));
+                    f.write_result(json!({"row":"GM3","stable_ticks":200,"hold":hold}));
                 })
             });
             workers.map(|worker| match worker.join() {
@@ -316,6 +375,14 @@ fn gm3_occupied_passage_impossible_traffic_waits_stably() {
             })
         });
     }
+}
+#[test]
+fn gm3_occupied_passage_impossible_traffic_waits_stably() {
+    gap_with_a_big_unit(true);
+}
+#[test]
+fn gm3_idle_big_unit_in_a_gap_is_pushed_and_traffic_rests() {
+    gap_with_a_big_unit(false);
 }
 #[test]
 fn gm4_real_fill_excavation_invalidate_only_relevant_routes() {

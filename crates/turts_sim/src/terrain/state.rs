@@ -163,6 +163,9 @@ pub(crate) struct TerrainState {
     /// `apply_prevalidated`; cleared with the dirty-chunk bits by `terrain::begin_tick`.
     changed_cells: BTreeSet<Cell>,
     pub(crate) step_observations: BTreeMap<(u8, Cell), super::TerrainSurfaceWitness>,
+    /// The key of the movement tie stream (V5): a one-way mix of the private seed with its
+    /// own domain, so a tie result shows nothing of the seed or of the geology.
+    tie_key: u64,
 }
 // StagedPackage needs Debug. Never print realized columns or private seed.
 impl fmt::Debug for TerrainState {
@@ -193,6 +196,10 @@ impl Surface for TerrainState {
     }
 }
 impl TerrainState {
+    /// The key of the movement tie stream (V5).
+    pub(crate) fn tie_key(&self) -> u64 {
+        self.tie_key
+    }
     pub(crate) fn index(&self, cell: Cell) -> Option<usize> {
         if cell.x >= self.grid.columns || cell.y >= self.grid.rows {
             return None;
@@ -578,5 +585,14 @@ pub(crate) fn prepare(
         chunks: ChunkTable::new(chunks)?,
         table_revision: 0,
         step_observations: BTreeMap::new(),
+        tie_key: mix64(seed.0 ^ 0x6d6f_7665_2d74_6965),
     })
+}
+
+/// splitmix64 finalizer: one 64-bit value to a well-mixed 64-bit value.
+pub(crate) fn mix64(value: u64) -> u64 {
+    let mut z = value.wrapping_add(0x9E37_79B9_7F4A_7C15);
+    z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+    z ^ (z >> 31)
 }

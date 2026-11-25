@@ -21,7 +21,7 @@ pub use audit::{
 };
 pub(crate) mod step;
 pub(crate) mod work;
-pub(crate) use state::{PreparedCellEdit, TerrainState, prepare};
+pub(crate) use state::{PreparedCellEdit, TerrainState, mix64, prepare};
 pub use state::{PrivateTerrainSeed, TerrainError};
 pub use work::{TerrainWorkView, TerrainWorkWait, rows_for as work_for};
 
