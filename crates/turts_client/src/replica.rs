@@ -1088,9 +1088,16 @@ impl Replica {
         );
         // Fixed candidates, store steps, stamps, and small hash tables.
         budget.bytes(64 * 1024)?;
+        // The payload boxes its state: the walk below sees the box, not the boxed row.
+        budget.rows::<turts_net_protocol::Snapshot>(1)?;
+        budget.rows::<WorldDelta>(1)?;
         budget.value(payload)?;
         if let Some(terrain) = &self.terrain {
-            budget.value(&terrain.surfaces)?;
+            // One row for each surface map entry; a walk of 65,536 rows is not needed (T-31).
+            budget.rows::<(
+                turts_mod_api::TerrainCell,
+                turts_net_protocol::TerrainSurfaceRecord,
+            )>(terrain.surfaces.len())?;
             budget.value(&terrain.anchors)?;
             budget.value(&terrain.work)?;
             budget.value(terrain.materials.as_ref())?;
@@ -3002,3 +3009,7 @@ fn valid_event_ground(
         _ => false,
     }
 }
+
+#[cfg(test)]
+#[path = "replica_preflight_tests.rs"]
+mod preflight_tests;

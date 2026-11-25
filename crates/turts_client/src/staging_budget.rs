@@ -1,5 +1,12 @@
 //! Allocation-free conservative preflight for decoded state plus its candidate and scratch tables.
 //! Count four copies of nested storage. Container overhead covers validation sets and map nodes.
+//!
+//! One row is charged one time. A struct or tuple header (or a direct value of more than 8 bytes)
+//! is the charge for the inline storage of its row. The inline parts of that row (scalars, unit
+//! variants, `Option` tags, nested structs and tuples) add nothing more. Heap parts (strings,
+//! bytes, sequences, maps) are always charged, and each sequence or map element is a new row.
+//! Before T-31 the inline parts were charged again: a terrain surface row of 28 bytes cost about
+//! 830 bytes, so a 256 x 256 all-visible map used the full 64 MiB budget.
 use serde::{Serialize, Serializer, ser};
 use std::fmt;
 
@@ -19,14 +26,54 @@ impl ser::Error for Limit {
 
 pub(crate) struct Budget {
     left: usize,
+    /// The number of open rows whose inline storage is charged. Above 0, inline parts are free.
+    inline: usize,
 }
 impl Budget {
     pub(crate) fn new(limit: usize) -> Self {
-        Self { left: limit }
+        Self {
+            left: limit,
+            inline: 0,
+        }
     }
     pub(crate) fn bytes(&mut self, bytes: usize) -> Result<(), Limit> {
         self.left = self.left.checked_sub(bytes).ok_or(Limit)?;
         Ok(())
+    }
+    /// Charge `rows` table rows of type `T` that already exist: four copies and 64 bytes of
+    /// container overhead for each row. It needs no walk of the rows.
+    pub(crate) fn rows<T>(&mut self, rows: usize) -> Result<(), Limit> {
+        self.bytes(
+            std::mem::size_of::<T>()
+                .checked_mul(4)
+                .and_then(|n| n.checked_add(64))
+                .and_then(|n| n.checked_mul(rows))
+                .ok_or(Limit)?,
+        )
+    }
+    /// Charge storage that lives inline in its row: free when the row is charged.
+    fn inline_bytes(&mut self, bytes: usize) -> Result<(), Limit> {
+        if self.inline > 0 {
+            Ok(())
+        } else {
+            self.bytes(bytes)
+        }
+    }
+    /// Charge an inline header, then treat the parts up to the matching `close_row` as inline.
+    fn open_row(&mut self, header: usize) -> Result<(), Limit> {
+        self.inline_bytes(header)?;
+        self.inline += 1;
+        Ok(())
+    }
+    fn close_row(&mut self) {
+        self.inline -= 1;
+    }
+    /// A sequence or map element is a new row: its inline storage is not in the parent row.
+    fn element<T: Serialize + ?Sized>(&mut self, value: &T) -> Result<(), Limit> {
+        let parent = std::mem::replace(&mut self.inline, 0);
+        let result = self.sized(value);
+        self.inline = parent;
+        result
     }
     pub(crate) fn value<T: Serialize + ?Sized>(&mut self, value: &T) -> Result<(), Limit> {
         self.sized(value)
@@ -35,18 +82,21 @@ impl Budget {
         let size = std::mem::size_of_val(value);
         // collect_seq passes references. Never treat a primitive reference as its storage width.
         // Large direct values add conservative inline storage; containers/rows count themselves too.
-        if size > 8 {
-            self.bytes(
-                size.checked_mul(4)
-                    .and_then(|n| n.checked_add(64))
-                    .ok_or(Limit)?,
-            )?;
+        if size <= 8 {
+            return value.serialize(self);
         }
-        value.serialize(self)
+        self.open_row(
+            size.checked_mul(4)
+                .and_then(|n| n.checked_add(64))
+                .ok_or(Limit)?,
+        )?;
+        let result = value.serialize(&mut *self);
+        self.close_row();
+        result
     }
 }
 macro_rules! scalar {
-    ($($method:ident($ty:ty)),* $(,)?) => { $(fn $method(self, _: $ty) -> Result<(), Limit> { self.bytes(std::mem::size_of::<$ty>() * 4) })* };
+    ($($method:ident($ty:ty)),* $(,)?) => { $(fn $method(self, _: $ty) -> Result<(), Limit> { self.inline_bytes(std::mem::size_of::<$ty>() * 4) })* };
 }
 impl Serializer for &mut Budget {
     type Ok = ();
@@ -89,10 +139,10 @@ impl Serializer for &mut Budget {
     }
     fn serialize_none(self) -> Result<(), Limit> {
         // Protocol nullable sequences contain ContentRef or SlotOutcome rows.
-        self.bytes(128)
+        self.inline_bytes(128)
     }
     fn serialize_some<T: Serialize + ?Sized>(self, value: &T) -> Result<(), Limit> {
-        self.bytes(32)?;
+        self.inline_bytes(32)?;
         value.serialize(self)
     }
     fn serialize_unit(self) -> Result<(), Limit> {
@@ -102,7 +152,7 @@ impl Serializer for &mut Budget {
         Ok(())
     }
     fn serialize_unit_variant(self, _: &'static str, _: u32, _: &'static str) -> Result<(), Limit> {
-        self.bytes(256)
+        self.inline_bytes(256)
     }
     fn serialize_newtype_struct<T: Serialize + ?Sized>(
         self,
@@ -125,7 +175,7 @@ impl Serializer for &mut Budget {
         Ok(self)
     }
     fn serialize_tuple(self, len: usize) -> Result<Self, Limit> {
-        self.bytes(
+        self.open_row(
             len.checked_mul(32)
                 .and_then(|n| n.checked_add(64))
                 .ok_or(Limit)?,
@@ -133,6 +183,7 @@ impl Serializer for &mut Budget {
         Ok(self)
     }
     fn serialize_tuple_struct(self, _: &'static str, _: usize) -> Result<Self, Limit> {
+        self.open_row(0)?;
         Ok(self)
     }
     fn serialize_tuple_variant(
@@ -142,13 +193,14 @@ impl Serializer for &mut Budget {
         _: &'static str,
         _: usize,
     ) -> Result<Self, Limit> {
+        self.open_row(0)?;
         Ok(self)
     }
     fn serialize_map(self, _: Option<usize>) -> Result<Self, Limit> {
         Ok(self)
     }
     fn serialize_struct(self, _: &'static str, len: usize) -> Result<Self, Limit> {
-        self.bytes(
+        self.open_row(
             len.checked_mul(32)
                 .and_then(|n| n.checked_add(64))
                 .ok_or(Limit)?,
@@ -162,6 +214,7 @@ impl Serializer for &mut Budget {
         _: &'static str,
         _: usize,
     ) -> Result<Self, Limit> {
+        self.open_row(0)?;
         Ok(self)
     }
     fn collect_str<T: fmt::Display + ?Sized>(self, value: &T) -> Result<(), Limit> {
@@ -186,60 +239,43 @@ impl Serializer for &mut Budget {
         false
     }
 }
-macro_rules! compound {
+impl ser::SerializeSeq for &mut Budget {
+    type Ok = ();
+    type Error = Limit;
+    fn serialize_element<T: Serialize + ?Sized>(&mut self, value: &T) -> Result<(), Limit> {
+        self.element(value)
+    }
+    fn end(self) -> Result<(), Limit> {
+        Ok(())
+    }
+}
+// Tuple, tuple struct, struct and struct variant parts live inside their open row.
+macro_rules! row {
     ($trait:ident, $method:ident $(, $key:ident : $ty:ty)*) => {
         impl ser::$trait for &mut Budget {
             type Ok = (); type Error = Limit;
             fn $method<T: Serialize + ?Sized>(&mut self, $($key: $ty,)* value: &T) -> Result<(), Limit> {
                 $(let _ = $key;)*
-                self.sized(value)
+                value.serialize(&mut **self)
             }
-            fn end(self) -> Result<(), Limit> { Ok(()) }
+            fn end(self) -> Result<(), Limit> { self.close_row(); Ok(()) }
         }
     };
 }
-compound!(SerializeSeq, serialize_element);
-compound!(SerializeTuple, serialize_element);
-compound!(SerializeTupleStruct, serialize_field);
-compound!(SerializeTupleVariant, serialize_field);
-// Struct fields live inside their containing row. Recurse without a second structural charge.
-impl ser::SerializeStruct for &mut Budget {
-    type Ok = ();
-    type Error = Limit;
-    fn serialize_field<T: Serialize + ?Sized>(
-        &mut self,
-        _: &'static str,
-        value: &T,
-    ) -> Result<(), Limit> {
-        value.serialize(&mut **self)
-    }
-    fn end(self) -> Result<(), Limit> {
-        Ok(())
-    }
-}
-impl ser::SerializeStructVariant for &mut Budget {
-    type Ok = ();
-    type Error = Limit;
-    fn serialize_field<T: Serialize + ?Sized>(
-        &mut self,
-        _: &'static str,
-        value: &T,
-    ) -> Result<(), Limit> {
-        value.serialize(&mut **self)
-    }
-    fn end(self) -> Result<(), Limit> {
-        Ok(())
-    }
-}
+row!(SerializeTuple, serialize_element);
+row!(SerializeTupleStruct, serialize_field);
+row!(SerializeTupleVariant, serialize_field);
+row!(SerializeStruct, serialize_field, _name: &'static str);
+row!(SerializeStructVariant, serialize_field, _name: &'static str);
 impl ser::SerializeMap for &mut Budget {
     type Ok = ();
     type Error = Limit;
     fn serialize_key<T: Serialize + ?Sized>(&mut self, value: &T) -> Result<(), Limit> {
         self.bytes(64)?;
-        self.sized(value)
+        self.element(value)
     }
     fn serialize_value<T: Serialize + ?Sized>(&mut self, value: &T) -> Result<(), Limit> {
-        self.sized(value)
+        self.element(value)
     }
     fn end(self) -> Result<(), Limit> {
         Ok(())
