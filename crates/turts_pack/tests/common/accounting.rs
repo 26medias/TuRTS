@@ -423,7 +423,8 @@ impl AccountingOracle {
                         "trace-managed movement changed the clock before automatic capture".into(),
                     );
                 }
-                let mut modeled = self.predicted_movement(&self.last, before.economy.tick)?;
+                let mut modeled =
+                    self.predicted_movement(&self.last, before.economy.tick, before)?;
                 project_raw_queues(&mut modeled)?;
                 if modeled != *before {
                     return Err(
@@ -738,7 +739,7 @@ impl AccountingOracle {
         let mut modeled = self.last.clone();
         if !self.movement_checked_this_tick {
             let tick_start = modeled.clone();
-            modeled = self.predicted_movement(&tick_start, tick)?;
+            modeled = self.predicted_movement(&tick_start, tick, after)?;
         }
         modeled.economy.tick = tick;
         modeled.pending_events.clear();
@@ -3045,35 +3046,78 @@ impl AccountingOracle {
         if a.economy.tick != expected_tick {
             return Err("movement transition did not cross exactly one tick".into());
         }
-        let mut modeled = self.predicted_movement(b, expected_tick)?;
+        let mut modeled = self.predicted_movement(b, expected_tick, a)?;
         project_raw_queues(&mut modeled)?;
         if modeled != *a {
             return Err("movement boundary differs from independently predicted fixed-step transition or changes unrelated state".into());
         }
         Ok(())
     }
-    fn predicted_movement(&self, b: &AuditState, tick: u32) -> Result<AuditState, String> {
+    /// The movement boundary of a tick, from the flock rules that do not depend on the
+    /// steering: a unit with no target does not move; a unit that keeps its target moves at
+    /// least half and at most all of its speed for one tick (these fixtures have no traffic,
+    /// so a missing step is a fault); a unit that loses its target was within one step of it
+    /// and stands exactly on it. The flock steers (round solid bodies, apart from other
+    /// units), so the direction of a step is not a straight line to the target. Every other
+    /// part of the state must be exactly as before.
+    fn predicted_movement(
+        &self,
+        b: &AuditState,
+        tick: u32,
+        a: &AuditState,
+    ) -> Result<AuditState, String> {
         let mut modeled = b.clone();
         modeled.economy.tick = tick;
         let hz = f32::from(b.tick_hz.ok_or("movement clock missing")?);
         for unit in &mut modeled.raw_units {
-            if let Some(target) = unit.move_target {
-                let def = self.unit_catalog(b, unit.unit_id)?;
-                let speed = def.movement_speed.ok_or("moving unit lacks speed")?;
-                let dx = target.x - unit.pos.x;
-                let dy = target.y - unit.pos.y;
-                let distance = (dx * dx + dy * dy).sqrt();
-                let step = speed / hz;
-                if distance <= step {
-                    unit.pos = target;
-                    unit.move_target = None
-                } else {
-                    unit.pos = turts_mod_api::WorldPos {
-                        x: unit.pos.x + dx * (step / distance),
-                        y: unit.pos.y + dy * (step / distance),
+            let Some(target) = unit.move_target else {
+                continue;
+            };
+            let def = self.unit_catalog(b, unit.unit_id)?;
+            let speed = def.movement_speed.ok_or("moving unit lacks speed")?;
+            let after = a
+                .raw_units
+                .iter()
+                .find(|x| x.unit_id == unit.unit_id)
+                .ok_or("moving unit vanished in a movement tick")?;
+            let step =
+                ((after.pos.x - unit.pos.x).powi(2) + (after.pos.y - unit.pos.y).powi(2)).sqrt();
+            // f32 rounding of one committed step: a few ULPs of the coordinates.
+            let rounding = 8.0 * f32::EPSILON * (unit.pos.x.abs() + unit.pos.y.abs() + 1.0);
+            if step > speed / hz + rounding {
+                return Err(format!(
+                    "unit {} moved {step} m, more than its speed for one tick",
+                    unit.unit_id
+                ));
+            }
+            match after.move_target {
+                Some(kept) if kept == target => {
+                    if step < 0.5 * speed / hz {
+                        return Err(format!(
+                            "unit {} with a target missed its step: {step} m",
+                            unit.unit_id
+                        ));
                     }
                 }
+                None => {
+                    let left =
+                        ((target.x - unit.pos.x).powi(2) + (target.y - unit.pos.y).powi(2)).sqrt();
+                    if left > speed / hz + rounding || after.pos != target {
+                        return Err(format!(
+                            "unit {} lost its target before an exact arrival",
+                            unit.unit_id
+                        ));
+                    }
+                }
+                Some(_) => {
+                    return Err(format!(
+                        "unit {} changed its target in a movement tick",
+                        unit.unit_id
+                    ));
+                }
             }
+            unit.pos = after.pos;
+            unit.move_target = after.move_target;
         }
         for unit in &mut modeled.units {
             let raw = modeled
