@@ -43,38 +43,63 @@ function contact(state,id) {
     const anchor=world(state).terrain.anchors.find(a=>a.unit===id&&a.current);
     assert(anchor,'Owned body lacks permitted current contact: '+id);return anchor.elevation*.25;
 }
-// Free click point (Iris, 2026-11-24). The client picks the nearest visible body along the click ray
-// (crates/turts_interaction/src/picking.rs), so in a packed crowd a nearer unit can cover the intended body. The driver
-// aims at a point of the intended body that no nearer unit covers on screen. A unit covers a screen column from its
-// projected ground centre to COVER_HEIGHT x its pick height, widened to COVER_WIDTH x its body radius: a generous
-// cover, so a point is called free only with margin. The selection check after the click is unchanged: a wrong pick
-// still fails.
-const COVER_HEIGHT=1.5,COVER_WIDTH=1.5,FREE_MARGIN_PX=1;
-function clip(scene,[x,y,height]){const m=scene.clip_from_world,v=[x,height,y,1];return [0,1,2,3].map(r=>v.reduce((sum,n,c)=>sum+m[c*4+r]*n,0));}
-function screen(scene,point){const c=clip(scene,point),[left,top,width,depth]=scene.viewport_logical_rect;return c[3]>0?[left+(c[0]/c[3]+1)*width/2,top+(1-c[1]/c[3])*depth/2,c[3]]:null;}
-function toSegment(p,a,b){const dx=b[0]-a[0],dy=b[1]-a[1],l=dx*dx+dy*dy,t=l?Math.max(0,Math.min(1,((p[0]-a[0])*dx+(p[1]-a[1])*dy)/l)):0;return Math.hypot(p[0]-a[0]-t*dx,p[1]-a[1]-t*dy);}
-// The screen column of a body: {ground, top, width (px), depth (clip w at mid height)}, or null when it is not in view.
-function screenColumn(scene,pos,base,radius,height){
-    const ground=screen(scene,[pos[0],pos[1],base]),top=screen(scene,[pos[0],pos[1],base+height]),mid=screen(scene,[pos[0],pos[1],base+height/2]);
-    if(!ground||!top||!mid)return null;
-    const side=[[radius,0],[0,radius]].map(([dx,dy])=>screen(scene,[pos[0]+dx,pos[1]+dy,base+height/2])).filter(Boolean);
-    return {ground,top,depth:mid[2],width:Math.max(0,...side.map(q=>Math.hypot(q[0]-mid[0],q[1]-mid[1])))};
+// Free click point (Iris, 2026-11-24). The client picks the nearest body hit along the click ray, using the declared
+// pick shape of each unit (crates/turts_interaction/src/smart.rs, picking.rs). In a packed crowd a nearer unit can
+// cover the intended body. The driver casts the same ray for each candidate point, with a margin on both sides: the
+// intended body is the cylinder inside its shape's footprint, every other body the cylinder round it. A point is free
+// when the intended body is the nearest hit there and at the four pixels round it. The selection check after the click
+// is unchanged: a wrong pick still fails.
+function invert4(m){
+    const a=[0,1,2,3].map(r=>[0,1,2,3].map(c=>m[c*4+r])),inv=[0,1,2,3].map(r=>[0,1,2,3].map(c=>r===c?1:0));
+    for(let c=0;c<4;c++){
+        let p=c;for(let r=c+1;r<4;r++)if(Math.abs(a[r][c])>Math.abs(a[p][c]))p=r;
+        assert(Math.abs(a[p][c])>1e-12,'Camera matrix is singular');
+        [a[c],a[p]]=[a[p],a[c]];[inv[c],inv[p]]=[inv[p],inv[c]];
+        const d=a[c][c];for(let k=0;k<4;k++){a[c][k]/=d;inv[c][k]/=d;}
+        for(let r=0;r<4;r++)if(r!==c){const f=a[r][c];for(let k=0;k<4;k++){a[r][k]-=f*a[c][k];inv[r][k]-=f*inv[c][k];}}
+    }
+    return inv;
+}
+function screen(scene,[x,y,height]){const m=scene.clip_from_world,v=[x,height,y,1],c=[0,1,2,3].map(r=>v.reduce((sum,n,k)=>sum+m[k*4+r]*n,0)),[left,top,width,depth]=scene.viewport_logical_rect;return c[3]>0?[left+(c[0]/c[3]+1)*width/2,top+(1-c[1]/c[3])*depth/2]:null;}
+// The scene ray through a page point: origin and direction in scene coordinates (x, height, map y).
+function screenRay(scene,inverse,[px,py]){
+    const [left,top,width,depth]=scene.viewport_logical_rect,nx=(px-left)/width*2-1,ny=1-(py-top)/depth*2;
+    const at=z=>{const w=inverse.map(row=>row[0]*nx+row[1]*ny+row[2]*z+row[3]);return [w[0]/w[3],w[1]/w[3],w[2]/w[3]];};
+    const near=at(1),far=at(.5);return {origin:near,direction:far.map((n,k)=>n-near[k])};
+}
+// Ray distance (in direction units) to a vertical cylinder of `radius` and `height` standing at map `pos` on `base`.
+function cylinderHit({origin,direction},pos,base,radius,height){
+    const o=[origin[0]-pos[0],origin[1]-base,origin[2]-pos[1]],d=direction;let best=null;
+    const keep=t=>{if(t>=0&&(best===null||t<best))best=t;};
+    const a=d[0]*d[0]+d[2]*d[2],b=o[0]*d[0]+o[2]*d[2],c=o[0]*o[0]+o[2]*o[2]-radius*radius,disc=b*b-a*c;
+    if(a>1e-12&&disc>=0)for(const t of [(-b-Math.sqrt(disc))/a,(-b+Math.sqrt(disc))/a]){const y=o[1]+t*d[1];if(y>=0&&y<=height)keep(t);}
+    if(Math.abs(d[1])>1e-12)for(const level of [0,height]){const t=(level-o[1])/d[1],x=o[0]+t*d[0],z=o[2]+t*d[2];if(x*x+z*z<=radius*radius)keep(t);}
+    return best;
+}
+// Inner (intended body) or outer (other bodies) cylinder of a declared pick shape.
+function pickCylinder(shape,inner){
+    if(shape?.Cuboid){const {x,y,z}=shape.Cuboid;return {radius:inner?Math.min(x,y)/2:Math.hypot(x,y)/2,height:z};}
+    if(shape?.Capsule)return {radius:shape.Capsule.radius,height:shape.Capsule.height};
+    return null;
 }
 function freePoint(fixture,state,bindings,id){
-    const scene=state.scene,units=world(state).units,unit=units.find(u=>u.unit_id===id),label=[...bindings].find(([,v])=>v===id)?.[0];
-    const profile=fixture.actors.find(a=>a.label===label)?.profile;assert(unit&&profile,'Free point needs a bound live actor: '+id);
-    const base=contact(state,id),own=screenColumn(scene,unit.pos,base,profile.radius,profile.pick_height);if(!own)return null;
-    const bodyOf=u=>{const l=[...bindings].find(([,v])=>v===u.unit_id)?.[0],f=fixture.actors.find(a=>a.label===l)?.profile;
-        const anchor=world(state).terrain.anchors.find(a=>a.unit===u.unit_id&&a.current);
-        return screenColumn(scene,u.pos,anchor?anchor.elevation*.25:0,COVER_WIDTH*(f?.radius??u.pick_radius??1),COVER_HEIGHT*(f?.pick_height??1));};
-    const covers=units.filter(u=>u.unit_id!==id).map(bodyOf).filter(c=>c&&c.depth<own.depth);
-    const [left,top,width,depth]=scene.viewport_logical_rect;let best=null;
-    for(const f of [.3,.5,.7,.9,1])for(const dx of [-.5,-.25,0,.25,.5]){
-        const centre=screen(scene,[unit.pos[0],unit.pos[1],base+f*profile.pick_height]);if(!centre)continue;
-        const point=[centre[0]+dx*own.width,centre[1]];
-        if(point[0]<=left||point[0]>=left+width||point[1]<=top||point[1]>=top+depth)continue;
-        const clearance=Math.min(Infinity,...covers.map(c=>toSegment(point,c.ground,c.top)-c.width));
-        if(clearance>FREE_MARGIN_PX&&(!best||clearance>best.clearance))best={point,clearance};
+    const scene=state.scene,units=world(state).units,byId=new Map([...bindings].map(([l,v])=>[v,fixture.actors.find(a=>a.label===l)]));
+    const actor=byId.get(id),unit=units.find(u=>u.unit_id===id);assert(unit&&actor,'Free point needs a bound live actor: '+id);
+    const own=pickCylinder(actor.pick_shape,true);assert(own,'Free point needs the declared pick shape of '+actor.label);
+    const base=contact(state,id),inverse=invert4(scene.clip_from_world),[left,top,width,depth]=scene.viewport_logical_rect;
+    const others=units.filter(u=>u.unit_id!==id).map(u=>{const a=byId.get(u.unit_id),c=pickCylinder(a?.pick_shape,false)??{radius:u.pick_radius??1,height:1.6};
+        const anchor=world(state).terrain.anchors.find(x=>x.unit===u.unit_id&&x.current);return {pos:u.pos,base:anchor?anchor.elevation*.25:0,...c};});
+    const margin=point=>{const ray=screenRay(scene,inverse,point),mine=cylinderHit(ray,unit.pos,base,own.radius,own.height);if(mine===null)return -Infinity;
+        const theirs=Math.min(Infinity,...others.map(o=>cylinderHit(ray,o.pos,o.base,o.radius,o.height)).filter(t=>t!==null));return theirs-mine;};
+    const centre=screen(scene,[unit.pos[0],unit.pos[1],base+own.height/2]),side=screen(scene,[unit.pos[0]+own.radius,unit.pos[1],base+own.height/2]);
+    if(!centre)return null;
+    const halfWidth=side?Math.abs(side[0]-centre[0]):0;let best=null;
+    for(const f of [.25,.5,.75])for(const dx of [-.6,-.3,0,.3,.6]){
+        const c=screen(scene,[unit.pos[0],unit.pos[1],base+f*own.height]);if(!c)continue;
+        const point=[c[0]+dx*halfWidth,c[1]];
+        if(point[0]<=left+1||point[0]>=left+width-1||point[1]<=top+1||point[1]>=top+depth-1)continue;
+        const clearance=Math.min(...[[0,0],[1,0],[-1,0],[0,1],[0,-1]].map(([x,y])=>margin([point[0]+x,point[1]+y])));
+        if(clearance>0&&(!best||clearance>best.clearance))best={point,clearance};
     }
     return best;
 }

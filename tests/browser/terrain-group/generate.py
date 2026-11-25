@@ -151,7 +151,17 @@ def main():
         commands.append({'tick':command['tick'],'slot':command['slot'],'envelope':{'order':order,'units':ids,'target':target,'queue':command['queue'],'group':command['group']}})
     (out/'commands.json').write_text(json.dumps(commands,indent=2)+'\n')
     put('README.md',f'# Public group fixture: {args.scene}\n\nStatus: AUTHORED_UNRUN. This generated variant has not passed typed archive, simulation or browser checks.\n\nPhysical input comes from scenes.json. Actors: {len(actors)}. Finite commands: {len(commands)}. No private seed or realized columns are in this package.\n\nDetailed model/texture/animation bytes and existing assets/CREDITS.md are reused unchanged from {args.package}. Only public map, footprint/profile, visual scale and tool/resource records are authored for this frozen case.\n')
-    frozen={'status':'AUTHORED_UNRUN','scene_name':args.scene,'package':args.package,'tick_hz':20,'scene':scene,'profiles':data['profiles'],'bindings':binding,'actors':[dict(a,unit=mapping[a['label']],content=content(a),profile=profile(data,scene,a)) for a in scene['actors']],'reverse_allocation':args.reverse_allocation,'reverse_members':args.reverse_members,'source_scenes_sha256':sha(SCENES),'commands_sha256':sha(out/'commands.json'),'public_files_sha256':{str(p.relative_to(package)):sha(p) for p in sorted(package.rglob('*')) if p.is_file()},'asset_policy':'unchanged detailed source asset bytes, hardlinked when possible; existing credits retained','pending':['typed archive/staging validation','native swept/trajectory/determinism checks','real browser input','performance and cold-play checks after accepted M4 merge']}
+    # The declared pick shape of each actor's content (the shape the client hits on a click, turts_interaction smart.rs).
+    def pick_shape(content_id):
+        for visual in sorted((package/'visuals').glob('*.ron')):
+            text=visual.read_text()
+            if 'Unit("'+content_id+'")' not in text:continue
+            m=re.search(r'shape:\s*Cuboid\(x:([0-9.]+),\s*y:([0-9.]+),\s*z:([0-9.]+)\)',text)
+            if m:return {'Cuboid':{'x':float(m[1]),'y':float(m[2]),'z':float(m[3])}}
+            m=re.search(r'shape:\s*Capsule\(radius:([0-9.]+),\s*height:([0-9.]+)\)',text)
+            if m:return {'Capsule':{'radius':float(m[1]),'height':float(m[2])}}
+        raise ValueError('no declared pick shape for '+content_id)
+    frozen={'status':'AUTHORED_UNRUN','scene_name':args.scene,'package':args.package,'tick_hz':20,'scene':scene,'profiles':data['profiles'],'bindings':binding,'actors':[dict(a,unit=mapping[a['label']],content=content(a),profile=profile(data,scene,a),pick_shape=pick_shape(content(a))) for a in scene['actors']],'reverse_allocation':args.reverse_allocation,'reverse_members':args.reverse_members,'source_scenes_sha256':sha(SCENES),'commands_sha256':sha(out/'commands.json'),'public_files_sha256':{str(p.relative_to(package)):sha(p) for p in sorted(package.rglob('*')) if p.is_file()},'asset_policy':'unchanged detailed source asset bytes, hardlinked when possible; existing credits retained','pending':['typed archive/staging validation','native swept/trajectory/determinism checks','real browser input','performance and cold-play checks after accepted M4 merge']}
     (out/'fixture.json').write_text(json.dumps(frozen,indent=2)+'\n');print(json.dumps({'status':'AUTHORED_UNRUN','scene':args.scene,'actors':len(actors),'commands':len(commands),'output':str(out)}))
 
 
