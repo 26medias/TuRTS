@@ -3,10 +3,10 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { SettledTracker, DistantOrderTracker } = require('./settled-tracker');
 const at = (tick, ownMovers = [], bodies = []) => ({tick, ownMovers, bodies});
-// A tracker with two units of one move order; 'a' settles first.
+// A tracker with two units of one move order (crowd 'c1'); 'a' settles first.
 function order() {
     const tracker = new SettledTracker();
-    tracker.begin(['a', 'b']); tracker.commit(['a', 'b'], 'move');
+    tracker.begin(['a', 'b']); tracker.commit(['a', 'b'], 'move', 'c1');
     tracker.observe('a', true, [10, 10], 0.5, at(0));
     tracker.observe('b', true, [20, 20], 0.5, at(1));
     return tracker;
@@ -18,25 +18,38 @@ test('(1) contact while own units move is allowed, at any distance', () => {
     tracker.observe('b', true, [21.5, 20], 0.5, at(41, [], [[23, 20]]));
     tracker.observe('b', true, [21.5, 20], 0.5, at(99, [], [[23, 20]]));
     tracker.observe('b', true, [20.2, 20], 0.5, at(100));
+    tracker.observe('a', true, [11.5, 10], 0.5, at(5, [[13, 10]]));
+    tracker.observe('a', true, [11.5, 10], 0.5, at(64));
+    tracker.observe('a', true, [10.1, 10], 0.5, at(65));
 });
-test('(1) at rest (60 quiet ticks) a unit beyond 2 x radius fails; inside passes', () => {
-    const near = order();
-    near.observe('b', true, [20.9, 20], 0.5, at(10, [[22, 20]]));
-    near.observe('b', true, [20.9, 20], 0.5, at(11));
-    assert.throws(() => near.observe('b', true, [20.9, 20], 0.5, at(72)), /did not go back/);
-    const far = order();
-    far.observe('b', true, [21.1, 20], 0.5, at(10, [[22, 20]]));
-    far.observe('b', true, [21.1, 20], 0.5, at(11, [], [[20.5, 20]]));
-    assert.throws(() => far.observe('b', true, [21.1, 20], 0.5, at(71, [], [[22.5, 20]])), /at rest is more than one body diameter/);
+test('(1) the first unit of a crowd at rest beyond 2 x radius fails, also when its point is occupied', () => {
+    const tracker = order();
+    tracker.observe('a', true, [11.1, 10], 0.5, at(10, [[12, 10]]));
+    tracker.observe('a', true, [11.1, 10], 0.5, at(11, [], [[10.2, 10]]));
+    assert.throws(() => tracker.observe('a', true, [11.1, 10], 0.5, at(71, [], [[10.2, 10]])), /First unit of its crowd/);
+    const inside = order();
+    inside.observe('a', true, [10.9, 10], 0.5, at(10, [[12, 10]]));
+    inside.observe('a', true, [10.9, 10], 0.5, at(11, [], [[10.2, 10]]));
+    inside.observe('a', true, [10.9, 10], 0.5, at(300, [], [[10.2, 10]]));
 });
-test('(1) an occupied settle point excuses a later arrival but never the first arrival of its order', () => {
+test('(1) a later member of a crowd has no per-unit bound; check (2) still applies to it', () => {
     const tracker = order();
     tracker.observe('b', true, [21.5, 20], 0.5, at(10, [[23, 20]]));
     tracker.observe('b', true, [21.5, 20], 0.5, at(11, [], [[20.2, 20]]));
-    tracker.observe('b', true, [21.5, 20], 0.5, at(200, [], [[20.2, 20]]));
-    tracker.observe('a', true, [11.5, 10], 0.5, at(10, [[13, 10]]));
-    tracker.observe('a', true, [11.5, 10], 0.5, at(11, [], [[10.2, 10]]));
-    assert.throws(() => tracker.observe('a', true, [11.5, 10], 0.5, at(71, [], [[10.2, 10]])), /first arrival of its order/);
+    tracker.observe('b', true, [21.5, 20], 0.5, at(300, [], [[20.2, 20]]));
+    assert.throws(() => tracker.observe('b', true, [21.5, 20], 0.5, at(301)), /did not go back/);
+});
+test('(1) two orders to one point make one crowd with one first unit; another point is another crowd', () => {
+    const tracker = new SettledTracker();
+    tracker.begin(['a']); tracker.commit(['a'], 'move', '0@5,5');
+    tracker.observe('a', true, [5, 5], 0.5, at(0));
+    tracker.begin(['b', 'c']); tracker.commit(['b'], 'move', '0@5,5'); tracker.commit(['c'], 'move', '0@9,9');
+    tracker.observe('b', true, [6, 5], 0.5, at(1));
+    tracker.observe('c', true, [9, 9], 0.5, at(1));
+    tracker.observe('b', true, [7.2, 5], 0.5, at(2, [], [[6, 5]]));
+    tracker.observe('b', true, [7.2, 5], 0.5, at(200, [], [[6, 5]]));
+    tracker.observe('c', true, [10.2, 9], 0.5, at(2, [], [[9, 9]]));
+    assert.throws(() => tracker.observe('c', true, [10.2, 9], 0.5, at(62, [], [[9, 9]])), /First unit of its crowd at rest .*: c /);
 });
 test('(2) a pushed unit that goes back within one radius in 60 quiet ticks passes', () => {
     const tracker = order();

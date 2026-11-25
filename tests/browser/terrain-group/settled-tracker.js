@@ -5,25 +5,26 @@ const near = (list, at, bound) => list.some(p => Math.hypot(p[0] - at[0], p[1] -
 // Settled-unit checks of the GM pointer campaign (Clara, 2026-11-24; vault/Decisions/2026-11-24 Movement rules V2 V3
 // V5 V6.md). Both measure from the FIRST settle point of the unit after its last own order; a new order clears it.
 // "Quiet" for a unit starts at the first tick with no own mover within two diameters (4 x radius) of the unit.
-// (1) At rest (quiet for REST_TICKS or more) the unit is within 2 x radius of its settle point. It does not apply while
-//     another body stands within one diameter of that point, except for the FIRST unit of its order to settle
-//     (arrive first): that unit must always pass. Contact while units move is allowed (operator rule 4).
+// (1) At rest (quiet for REST_TICKS or more) the FIRST unit to settle in each crowd is within 2 x radius of its settle
+//     point, with no exception (arrive first). A crowd is one owner and one goal point: two orders to one point make one
+//     crowd. The other members of a crowd have no per-unit bound; the crowd checks judge them (Clara, 2026-11-24, after
+//     Kenji's rerun). Contact while units move is allowed (operator rule 4).
 // (2) When the unit is one radius or more from its settle point, it is back within one radius at most RETURN_TICKS
 //     after quiet starts. It does not apply while another body stands within one diameter of the settle point.
 // `context` is {tick, ownMovers: [[x, y]], bodies: [[x, y]]} (the other bodies only).
 class SettledTracker {
     constructor() {
         this.positions = new Map(); this.pending = new Set(); this.retired = new Set();
-        this.quiet = new Map(); this.orderOf = new Map(); this.firstOf = new Map(); this.orders = 0;
+        this.quiet = new Map(); this.crowdOf = new Map(); this.firstOf = new Map();
     }
     begin(labels) { for (const label of labels) this.pending.add(label); }
-    commit(labels, action) {
-        const order = ++this.orders;
+    // `crowd` names the crowd of a move order: its owner and its goal point.
+    commit(labels, action, crowd) {
         for (const label of labels) {
             if (!this.pending.has(label)) throw Error('No pending order for ' + label);
             this.positions.delete(label);
             this.quiet.delete(label);
-            this.orderOf.set(label, order);
+            this.crowdOf.set(label, crowd ?? null);
             this.pending.delete(label);
             if (action === 'move') this.retired.delete(label); else this.retired.add(label);
         }
@@ -32,19 +33,19 @@ class SettledTracker {
         if (this.pending.has(label) || this.retired.has(label) || !idle) return;
         if (!(radius > 0)) throw Error('Settled unit needs its body radius: ' + label);
         if (!context) throw Error('Settled unit needs the tick, the own movers and the bodies: ' + label);
-        const {tick, ownMovers, bodies} = context, home = this.positions.get(label), order = this.orderOf.get(label) ?? 0;
+        const {tick, ownMovers, bodies} = context, home = this.positions.get(label), crowd = this.crowdOf.get(label) ?? null;
         if (!home) {
             this.positions.set(label, [...position]);
-            if (!this.firstOf.has(order)) this.firstOf.set(order, label);
+            if (crowd !== null && !this.firstOf.has(crowd)) this.firstOf.set(crowd, label);
         }
         if (near(ownMovers, position, 4 * radius)) { this.quiet.delete(label); return; }
         if (!this.quiet.has(label)) this.quiet.set(label, tick);
         if (!home) return;
         const quietFor = tick - this.quiet.get(label), distance = Math.hypot(position[0] - home[0], position[1] - home[1]);
-        const occupied = near(bodies, home, 2 * radius), first = this.firstOf.get(order) === label;
+        const occupied = near(bodies, home, 2 * radius), first = crowd !== null && this.firstOf.get(crowd) === label;
         const where = ' (' + distance.toFixed(3) + ' m from its settle point, quiet for ' + quietFor + ' ticks at tick ' + tick + ')';
-        if (quietFor >= REST_TICKS && distance > 2 * radius && (first || !occupied))
-            throw Error('Settled unit at rest is more than one body diameter from its settle point' + (first ? ' (first arrival of its order)' : '') + ': ' + label + where);
+        if (first && quietFor >= REST_TICKS && distance > 2 * radius)
+            throw Error('First unit of its crowd at rest is more than one body diameter from its settle point: ' + label + where);
         if (quietFor > RETURN_TICKS && distance >= radius && !occupied)
             throw Error('Pushed settled unit did not go back within ' + RETURN_TICKS + ' ticks after the movers left: ' + label + where + ', bound ' + radius.toFixed(3) + ' m');
     }

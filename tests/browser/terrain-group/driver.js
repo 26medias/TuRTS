@@ -321,7 +321,7 @@ async function drive({pagesBySlot,fixture,capture,record,recordInput,onPoll}) {
                 // A receipt can arrive before the replica reaches its applied tick. The
                 // next input must see this work order in the replica, not the state before it.
                 if(intent.action!=='move')await wait(page,s=>world(s).tick>=receipt.applied_tick,'Replica did not reach the applied tick of the work order');
-                settled.commit(intent.actors,intent.action);
+                settled.commit(intent.actors,intent.action,intent.action==='move'?intent.slot+'@'+intent.point.join(','):null);
                 for(const label of intent.actors)original.delete(label);
                 const after=harvest(slot,await read(page));
                 const emit=orderFrames.get(slot+':emit:'+receipt.seq)||null,result=orderFrames.get(slot+':result:'+receipt.seq)||null;
