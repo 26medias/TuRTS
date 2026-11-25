@@ -379,8 +379,10 @@ impl Field {
                 } else {
                     clearance = 0.0;
                 }
-                // A body that exactly fits can stand at the node.
-                self.passable[index] = clearance >= self.radius - 1.0e-4;
+                // A body that exactly fits can stand at the node. No tolerance: a node a hair
+                // narrower than the body is one that the exact step check refuses, and a
+                // unit sent to it turns round it with no approach (N-1).
+                self.passable[index] = clearance >= self.radius;
                 // Tight: the wider check body of the step guard cannot stand here.
                 self.tight[index] = clearance < self.radius + 2.0 * CLEARANCE;
                 // A corridor narrower than two diameters is a passage (design record).

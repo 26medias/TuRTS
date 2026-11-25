@@ -9,7 +9,10 @@ fn package_app(package: &str) -> bevy_app::App {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../mods")
         .join(package);
-    let archive = PackageArchive::parse(&pack_dir(&path).unwrap()).unwrap();
+    package_app_at(&path, package)
+}
+fn package_app_at(path: &std::path::Path, package: &str) -> bevy_app::App {
+    let archive = PackageArchive::parse(&pack_dir(path).unwrap()).unwrap();
     let catalog = archive.content().unwrap();
     let (file, mut map) = archive.maps().unwrap().remove(0);
     // Keep the worker cargo empty so these tests isolate movement.
@@ -649,4 +652,92 @@ fn own_movers_do_not_push_a_unit_with_a_work_order() {
     // The case proves nothing if no mover came to the digger.
     assert!(walk_contacts > 0, "no mover touched the walking digger");
     assert!(work_contacts > 0, "no mover touched the working digger");
+}
+
+fn copy_dir(from: &std::path::Path, to: &std::path::Path) {
+    std::fs::create_dir_all(to).unwrap();
+    for entry in std::fs::read_dir(from).unwrap() {
+        let entry = entry.unwrap();
+        let target = to.join(entry.file_name());
+        if entry.file_type().unwrap().is_dir() {
+            copy_dir(&entry.path(), &target);
+        } else {
+            std::fs::copy(entry.path(), target).unwrap();
+        }
+    }
+}
+
+/// A tight node at the map edge (Nora N-1, f84bc1d1; Marco's battle400 replay on 431bddac).
+/// The public quarry package (1 m cells, a 0.5 m node lattice) with a walker of radius
+/// 0.50005 m: the nodes 0.5 m from the north edge are a hair narrower than the body, as the
+/// f32 map edge made them in battle400. The field marks them passable (it allows 1e-4) and
+/// the exact step onto them is refused. A walker that stands 0.002 m from such a node is
+/// sent to its own node first; before f84bc1d1 it turned round it with no approach. A walker sent along that edge must arrive; before
+/// f84bc1d1 it turned round such a node with no approach.
+#[test]
+fn a_walker_along_a_row_of_tight_nodes_at_the_map_edge_arrives() {
+    let source = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../mods/quarry");
+    let dir = std::env::temp_dir().join(format!("turts-tight-nodes-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    copy_dir(&source, &dir);
+    let edit = |file: &str, from: &str, to: &str| {
+        let path = dir.join(file);
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(text.contains(from), "{file} has {from}");
+        std::fs::write(&path, text.replacen(from, to, 1)).unwrap();
+    };
+    edit("units/walker.ron", "radius:0.35", "radius:0.50005");
+    // The wider walker at (15.5, 13.5) would touch the ridge step; it stands off it.
+    edit(
+        "maps/field.ron",
+        "pos:(x:15.5,y:13.5)",
+        "pos:(x:12.5,y:13.5)",
+    );
+    let mut app = package_app_at(&dir, "quarry");
+    let walker = app
+        .world()
+        .iter_entities()
+        .find_map(|entity| {
+            (entity.get::<Position>()?.0 == bevy_math::Vec2::new(13.0, 8.0)
+                && entity.get::<Owner>()?.0.0 == 0)
+                .then(|| entity.get::<UnitId>().unwrap().0)
+        })
+        .unwrap();
+    let start = bevy_math::Vec2::new(12.5016, 23.4988);
+    let entity = unit_entity(app.world(), walker).unwrap();
+    app.world_mut().entity_mut(entity).insert(Position(start));
+    let target = bevy_math::Vec2::new(2.0, 20.0);
+    let result = apply_command(
+        app.world_mut(),
+        &Command {
+            slot: SlotId(0),
+            seq: 1,
+            kind: CommandKind::Order(Box::new(OrderCommand {
+                order: ContentId::parse("quarry:order_move").unwrap(),
+                behaviour: Behaviour::Move,
+                target_kind: TargetKind::PointOrUnit,
+                policy: None,
+                units: vec![walker],
+                target: OrderTargetSim::Point(target),
+                queue: QueueMode::Replace,
+                group: 1,
+                allowed_units: vec![],
+                queue_depth: 16,
+            })),
+        },
+    );
+    assert!(result.outcome.is_ok(), "move rejected: {result:?}");
+    for _ in 0..300 {
+        app.update();
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+    let at = app
+        .world()
+        .get::<Position>(unit_entity(app.world(), walker).unwrap())
+        .unwrap()
+        .0;
+    assert!(
+        at.distance(target) < 0.1,
+        "the walker did not arrive along the edge: it stands at {at:?}"
+    );
 }
