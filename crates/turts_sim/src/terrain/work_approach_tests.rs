@@ -489,3 +489,164 @@ fn public_pending_replacement_survives_entering_working() {
 fn public_pending_replacement_survives_completed_work() {
     pending_replacement_survives_work_transition(3);
 }
+
+/// Busy own unit (Clara, 2026-11-24): own units do not push a unit with a work order, on its
+/// walk to its cell and while it works there. Own movers cross its line; each tick of the
+/// walk, its step lies along its own advice (a push adds a side part), and while it works,
+/// it does not move.
+#[test]
+fn own_movers_do_not_push_a_unit_with_a_work_order() {
+    let mut app = package_app("quarry");
+    let start = bevy_math::Vec2::new(13.0, 8.0);
+    let digger = app
+        .world()
+        .iter_entities()
+        .find_map(|entity| {
+            (entity.get::<Position>()?.0 == start && entity.get::<Owner>()?.0.0 == 0)
+                .then(|| entity.get::<UnitId>().unwrap().0)
+        })
+        .unwrap();
+    let entity = unit_entity(app.world(), digger).unwrap();
+    let walker = app.world().get::<crate::world::UnitType>(entity).unwrap().0;
+    let order = |units: Vec<u32>, target: OrderTargetSim, work: bool, group: u32| OrderCommand {
+        order: ContentId::parse(if work {
+            "quarry:order_work"
+        } else {
+            "quarry:order_move"
+        })
+        .unwrap(),
+        behaviour: if work {
+            Behaviour::TerrainWork
+        } else {
+            Behaviour::Move
+        },
+        target_kind: if work {
+            TargetKind::TerrainDesignation
+        } else {
+            TargetKind::Point
+        },
+        policy: None,
+        units,
+        target,
+        queue: QueueMode::Replace,
+        group,
+        allowed_units: vec![],
+        queue_depth: 16,
+    };
+    let mut seq = 0;
+    let mut send = |app: &mut bevy_app::App, command: OrderCommand| {
+        seq += 1;
+        let result = apply_command(
+            app.world_mut(),
+            &Command {
+                slot: SlotId(0),
+                seq,
+                kind: CommandKind::Order(Box::new(command)),
+            },
+        );
+        assert!(result.outcome.is_ok(), "order rejected: {result:?}");
+    };
+    let work = OrderTargetSim::TerrainWork {
+        tool: ContentId::parse("quarry:spade").unwrap(),
+        cells: TerrainRect {
+            min: TerrainCell { x: 15, y: 11 },
+            max: TerrainCell { x: 16, y: 12 },
+        },
+        target_elevation: 0,
+    };
+    send(&mut app, order(vec![digger], work, true, 1));
+    let position = |app: &bevy_app::App, unit: u32| {
+        app.world()
+            .get::<Position>(unit_entity(app.world(), unit).unwrap())
+            .unwrap()
+            .0
+    };
+    let walking = |app: &bevy_app::App| {
+        app.world()
+            .get::<crate::world::MoveTarget>(unit_entity(app.world(), digger).unwrap())
+            .is_some()
+    };
+    let busy = |app: &bevy_app::App| {
+        app.world()
+            .get::<crate::UnitOrders>(unit_entity(app.world(), digger).unwrap())
+            .and_then(|orders| orders.current.as_ref())
+            .is_some_and(|order| order.behaviour == Behaviour::TerrainWork)
+    };
+    // Movers cross the line of the walk, and later the cell where the digger works.
+    let crossing = |app: &mut bevy_app::App, from: bevy_math::Vec2| {
+        let positions: Vec<_> = (0..6)
+            .map(|k| from + bevy_math::Vec2::new(0.0, 0.8 * k as f32 - 2.0))
+            .collect();
+        crate::spawn_synthetic_units(app.world_mut(), walker, &positions).unwrap()
+    };
+    let walk_movers = crossing(&mut app, bevy_math::Vec2::new(12.0, 9.5));
+    send(
+        &mut app,
+        order(
+            walk_movers.clone(),
+            OrderTargetSim::Point(bevy_math::Vec2::new(19.0, 9.5)),
+            false,
+            2,
+        ),
+    );
+    let (mut walk_contacts, mut work_contacts) = (0, 0);
+    let mut work_movers = Vec::new();
+    for _ in 0..600 {
+        let before = position(&app, digger);
+        let was_walking = walking(&app);
+        let was_busy = busy(&app);
+        app.update();
+        if !(was_busy && busy(&app)) {
+            continue;
+        }
+        let after = position(&app, digger);
+        let contact = |app: &bevy_app::App, movers: &[u32]| {
+            movers
+                .iter()
+                .any(|&unit| position(app, unit).distance(after) < 2.0 * 0.35 + 0.05)
+        };
+        if was_walking && walking(&app) {
+            walk_contacts += usize::from(contact(&app, &walk_movers));
+            let advice = crate::terrain::privileged_flock_audit(app.world())
+                .members
+                .iter()
+                .find(|member| member.unit == digger)
+                .map(|member| {
+                    bevy_math::Vec2::new(
+                        f32::from_bits(member.advice[0]),
+                        f32::from_bits(member.advice[1]),
+                    )
+                })
+                .unwrap_or_default();
+            let step = after - before;
+            if let Some(along) = advice.try_normalize() {
+                assert!(
+                    along.perp_dot(step).abs() <= 1.0e-4 && along.dot(step) >= -1.0e-6,
+                    "the walking digger was pushed: step {step:?}, advice {advice:?}"
+                );
+            }
+        }
+        if !was_walking && !walking(&app) {
+            if work_movers.is_empty() {
+                // It works at its cell: movers now walk through its place.
+                work_movers = crossing(&mut app, after - bevy_math::Vec2::new(1.5, 0.0));
+                send(
+                    &mut app,
+                    order(
+                        work_movers.clone(),
+                        OrderTargetSim::Point(after + bevy_math::Vec2::new(5.0, 0.0)),
+                        false,
+                        3,
+                    ),
+                );
+            } else {
+                work_contacts += usize::from(contact(&app, &work_movers));
+                assert_eq!(after, before, "the working digger was pushed");
+            }
+        }
+    }
+    assert!(!busy(&app), "the dig did not end in 600 ticks");
+    // The case proves nothing if no mover came to the digger.
+    assert!(walk_contacts > 0, "no mover touched the walking digger");
+    assert!(work_contacts > 0, "no mover touched the working digger");
+}
