@@ -1,0 +1,44 @@
+// turts-test-role: unit
+'use strict';
+// The body overlap rule of the GM pointer driver (operator rule 4 of 2026-11-23, FM3): two Idle bodies may not
+// overlap; while at least one moves, the depth must stay below 25 % of the smaller radius. Planted cases.
+const test=require('node:test'),assert=require('node:assert/strict');
+const {overlapFault,physical}=require('./driver');
+const body=(x,activity,radius=.5)=>({pos:[x,10],radius,activity});
+test('moving: a 26 % overlap fails and a 24 % overlap passes (radii 0.5 and 0.5)',()=>{
+    assert.match(overlapFault(body(10,'Moving'),body(10.87,'Moving')),/25 %/);
+    assert.equal(overlapFault(body(10,'Moving'),body(10.88,'Moving')),null);
+});
+test('moving: the cap uses the smaller radius (radii 0.5 and 1.1)',()=>{
+    assert.match(overlapFault(body(10,'Moving',1.1),body(11.47,'Idle')),/25 %/);
+    assert.equal(overlapFault(body(10,'Moving',1.1),body(11.48,'Idle')),null);
+});
+test('moving: one moving unit and one Idle unit are under the moving cap',()=>{
+    assert.equal(overlapFault(body(10,'Blocked'),body(10.9,'Idle')),null);
+});
+test('rest: any overlap of two Idle bodies fails, also one f32 step deep',()=>{
+    assert.match(overlapFault(body(10,'Idle'),body(10.99,'Idle')),/Idle circles overlap/);
+    const touch=Math.fround(11),below=touch-2**-20;
+    assert.equal(overlapFault(body(10,'Idle'),body(touch,'Idle')),null);
+    assert.match(overlapFault(body(10,'Idle'),body(below,'Idle')),/Idle circles overlap/);
+});
+// physical() on a flat 64 x 48 map: it reads the activity of each actor from the merged unit orders.
+const flat=(x2,activity)=>{
+    const fixture={scene:{map:{override_patches:[]}},actors:[
+        {label:'a',profile:{radius:.5,max_step:1}},{label:'b',profile:{radius:.5,max_step:1}}]};
+    const state={debug:{replicated_world:{terrain:{surfaces:[]},units:[{unit_id:1,pos:[10,10]},{unit_id:2,pos:[x2,10]}],
+        unit_orders:[{unit:1,activity},{unit:2,activity}]}}};
+    return [fixture,state,new Map([['a',1],['b',2]])];
+};
+test('physical: a planted 26 % overlap while moving fails, 20 % passes',()=>{
+    assert.throws(()=>physical(...flat(10.87,'Moving')),/25 % or more of the smaller radius: b\/a \(Moving\/Moving\)/);
+    assert.doesNotThrow(()=>physical(...flat(10.9,'Moving')));
+});
+test('physical: a planted overlap at rest fails, touching at rest passes',()=>{
+    assert.throws(()=>physical(...flat(10.95,'Idle')),/Idle circles overlap: b\/a \(Idle\/Idle\)/);
+    assert.doesNotThrow(()=>physical(...flat(11,'Idle')));
+});
+test('physical: a unit with no order row counts as Idle (the stricter rule)',()=>{
+    const [fixture,state,bindings]=flat(10.95,'Moving');state.debug.replicated_world.unit_orders=[];
+    assert.throws(()=>physical(fixture,state,bindings),/Idle circles overlap/);
+});

@@ -139,11 +139,21 @@ function bodySupport(fixture,state,actor,unit){
     }
     assert(heights.length>0&&Math.max(...heights)-Math.min(...heights)<=actor.profile.max_step,'Complete body intersects known cliff: '+actor.label);
 }
+// Body overlap rule of the flock path (operator rule 4 of 2026-11-23, FM3): two Idle bodies may not overlap at all;
+// while at least one of the two is not Idle, the overlap depth must stay below 25 % of the smaller radius.
+// `a` and `b` are {pos:[x,y],radius,activity}. Exact f32 arithmetic; returns a fault text or null.
+function overlapFault(a,b){
+    const dx=exact(a.pos[0])-exact(b.pos[0]),dy=exact(a.pos[1])-exact(b.pos[1]),d2=square(dx)+square(dy);
+    const ra=exact(a.radius),rb=exact(b.radius),r=ra+rb,small=ra<rb?ra:rb;
+    if(a.activity==='Idle'&&b.activity==='Idle')return d2<square(r)?'Idle circles overlap':null;
+    // depth >= small/4  <=>  4*distance <= 4*r - small  <=>  16*d2 <= (4*r - small)^2 (4*r - small > 0)
+    return 16n*d2<=square(4n*r-small)?'Moving circles overlap 25 % or more of the smaller radius':null;
+}
 function physical(fixture,state,bindings){
-    const bodies=fixture.actors.map(actor=>{const unit=world(state).units.find(u=>u.unit_id===bindings.get(actor.label));assert(unit,'Frozen actor disappeared: '+actor.label);bodySupport(fixture,state,actor,unit);return{actor,unit};});
+    const bodies=fixture.actors.map(actor=>{const id=bindings.get(actor.label),unit=world(state).units.find(u=>u.unit_id===id);assert(unit,'Frozen actor disappeared: '+actor.label);bodySupport(fixture,state,actor,unit);return{actor,body:{pos:unit.pos,radius:actor.profile.radius,activity:row(state,id)?.activity??'Idle'}};});
     for(let i=0;i<bodies.length;i++)for(let j=0;j<i;j++){
-        const a=bodies[i],b=bodies[j],dx=exact(a.unit.pos[0])-exact(b.unit.pos[0]),dy=exact(a.unit.pos[1])-exact(b.unit.pos[1]),r=exact(a.actor.profile.radius)+exact(b.actor.profile.radius);
-        assert(square(dx)+square(dy)>=square(r),'Complete observed circles overlap: '+a.actor.label+'/'+b.actor.label);
+        const a=bodies[i],b=bodies[j],fault=overlapFault(a.body,b.body);
+        assert(!fault,fault+': '+a.actor.label+'/'+b.actor.label+' ('+a.body.activity+'/'+b.body.activity+')');
     }
 }
 function publicOutcomes(state,fixture,bindings){return fixture.actors.map(actor=>{
@@ -212,11 +222,12 @@ async function drive({pagesBySlot,fixture,capture,record,recordInput,onPoll}) {
         const tick=world(state).tick,relative=tick-base;
         if(tick===lastTick)return state;
         if(lastTick>=0&&tick>lastTick+1)gaps+=tick-lastTick-1;lastTick=tick;
-        physical(fixture,state,bindings);
         // Private unit orders are read from the actor's actual owner page only.
         const states=new Map([[state.debug.slot,state]]);
         for(const [slot,page]of pagesBySlot)if(!states.has(slot))states.set(slot,await read(page));
         const merged={...state,debug:{...state.debug,replicated_world:{...world(state),unit_orders:[...states.values()].flatMap(s=>world(s).unit_orders)}}};
+        // The overlap rule needs the activity of every actor, so it reads the merged orders of all owner pages.
+        physical(fixture,merged,bindings);
         for(const intent of fixture.scene.commands.filter(c=>c.action==='move'))for(const label of intent.actors){
             const id=bindings.get(label),order=row(merged,id);
             if(order?.current?.order===fixture.package+':order_move'&&!original.has(label))original.set(label,JSON.parse(JSON.stringify(order.current)));
@@ -343,4 +354,4 @@ async function drive({pagesBySlot,fixture,capture,record,recordInput,onPoll}) {
             limits:['Browser checks observed complete bodies and permitted terrain. Native acceptance certifies every actual committed sweep; polling can skip ticks.','Real pointer acceptance ticks are recorded and may differ from native script ticks.','Internal order identity/route lease and same-seed trajectory proof remain native checks.'],skipped_observation_ticks:gaps};
     }finally{clearInterval(timer);while(inPoll)await sleep(10);await pollTail;}
 }
-module.exports={activatePage,project,read,actorBindings,permittedTop,selectActors,issue,publicOutcomes,physical,drive};
+module.exports={activatePage,project,read,actorBindings,permittedTop,selectActors,issue,publicOutcomes,physical,overlapFault,drive};
