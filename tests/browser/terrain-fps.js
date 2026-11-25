@@ -4,6 +4,7 @@
 const fs=require('node:fs'),os=require('node:os'),path=require('node:path'),net=require('node:net'),crypto=require('node:crypto');
 const {spawn,spawnSync}=require('node:child_process'),{chromium}=require('playwright-core');
 const {movementIntervals}=require('./terrain-fps-intervals');
+const {orderAccepted}=require('./terrain-fps-orders');
 const [prepared,fixtures,output]=process.argv.slice(2);if(!output)throw Error('PREPARED TERRAIN_FIXTURES OUTPUT');
 const metadata=JSON.parse(fs.readFileSync(path.join(fixtures,'terrain-fps.json')));fs.mkdirSync(output,{recursive:false});
 const selectedViews=process.env.TURTS_TERRAIN_FPS_VIEWS?process.env.TURTS_TERRAIN_FPS_VIEWS.split(','):metadata.zooms;if(!selectedViews.length||new Set(selectedViews).size!==selectedViews.length||selectedViews.some(view=>!metadata.zooms.includes(view)))throw Error('Invalid selected camera views');
@@ -53,11 +54,14 @@ const delta=(a,b)=>Math.max(...a.map((n,i)=>Math.abs(n-b[i])));
    }
    assert(groupIds.length>=2&&!d.selection.includes(metadata.work.actor),'Could not select two owned moving actors');
    s=await scene();const point=project(s,goal);assert(point[0]>0&&point[0]<1280&&point[1]>0&&point[1]<720,'Group goal outside viewport');
+   // A short move can start and end between two slow reads: accept a new command result or the arrival too.
+   let seqs=new Set((await read()).command_results.map(r=>r.seq));
    await page.mouse.move(...point);await page.mouse.click(...point,{button:'right',delay:80});
-   await wait(read,x=>groupIds.every(id=>x.replicated_world.unit_orders.some(o=>o.unit===id&&o.current?.order?.endsWith(':order_move'))),'Group move was not accepted');
+   await wait(read,x=>orderAccepted(seqs,x,groupIds,':order_move',p=>p[1]>29),'Group move was not accepted');
    await wait(read,x=>groupIds.every(id=>{const u=x.replicated_world.units.find(v=>v.unit_id===id);return u&&u.pos[1]>29;}),'Group did not reach clear terrain');
+   seqs=new Set((await read()).command_results.map(r=>r.seq));
    s=await scene();const onward=project(s,[43,32,0]);await page.mouse.move(...onward);await page.mouse.click(...onward,{button:'right',delay:80});
-   await wait(read,x=>groupIds.every(id=>x.replicated_world.unit_orders.some(o=>o.unit===id&&o.current?.order?.endsWith(':order_move'))),'Onward move was not accepted');
+   await wait(read,x=>orderAccepted(seqs,x,groupIds,':order_move',p=>Math.hypot(p[0]-43,p[1]-32)<3),'Onward move was not accepted');
    // Queue return trips before zoom so the same two units keep moving during the sample.
    // Three legs: with two, the faster unit arrived at about 9.1 s of the 10 s sample.
    for(const destination of [[14,32,0],[43,32,0],[14,32,0]]){
