@@ -1185,6 +1185,11 @@ fn step_inner(
                         basis.unit_permitted(unit.owner_slot, units[body.row].unit_id)
                     });
                 }
+                // A busy unit does not give the passage to own units: they go round it or
+                // wait for it ("Busy own unit", Clara 2026-11-24).
+                if holds[row] {
+                    return false;
+                }
                 // An own body that does not move (a building, a unit on Hold, a busy unit)
                 // in the passage holds it.
                 if body.fixed {

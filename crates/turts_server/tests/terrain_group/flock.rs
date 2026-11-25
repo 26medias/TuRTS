@@ -405,3 +405,30 @@ fn flock_reversal_gives_equal_frames() {
         }
     }
 }
+
+/// The ordinary ridge dig opens the passage within a bound while the 36-unit group waits and
+/// crosses (scene GM2-narrow, dig order at tick 400; Lena's setup, `.swarm/reports/T-53-dig-time.md`).
+/// Measured: 205 ticks on 099feffc; 515 on 36b2256d (the digger pushed off its cell); 647 on
+/// eb26648c (the busy digger gave the passage to own units). The bound is 15 s.
+#[test]
+fn ridge_dig_opens_the_passage_within_15_s() {
+    const DIG_TICK: u32 = 400;
+    const BOUND: u32 = 300;
+    for package in ["quarry", "terrain_stockyard"] {
+        let mut f = Fixture::new(package, "GM2-narrow", VARIANTS[0]);
+        f.commands[1].tick = DIG_TICK;
+        let mut opened = None;
+        while f.tick < DIG_TICK + BOUND {
+            tick(&mut f);
+            if f.surface.rectangle_is([30, 20], [34, 28], 0) {
+                opened = Some(f.tick - DIG_TICK);
+                break;
+            }
+        }
+        eprintln!("{package}: the dig opened the passage after {opened:?} ticks");
+        assert!(
+            opened.is_some(),
+            "{package}: the dig did not open the passage within {BOUND} ticks"
+        );
+    }
+}
