@@ -346,16 +346,20 @@ async function drive({pagesBySlot,fixture,capture,record,recordInput,onPoll}) {
         assert(final,'Completed ticks stopped before outcome deadline');monitor();
         if(settledBlocker){
             // Clara rule 1a (2026-11-24), as the sim test gap_with_a_big_unit (crates/turts_server/tests/terrain_group/
-            // scenarios.rs): nothing moves in the last 200 ticks (above); a slot-0 move that ends, ends inside its goal
-            // area; bodies of different owners never overlap (physical, each sample). On Hold: the blocker stays and
+            // scenarios.rs): nothing moves in the last 200 ticks (above); a move of either slot that ends, ends inside its
+            // goal area; bodies of different owners never overlap (physical, each sample). On Hold: the blocker stays and
             // nobody passes, every other unit waits on its side. Idle: own units may push it; no wait-state check.
             assert(stable,'No stable evidence in the last 200 ticks');
             const blocker=world(final).units.find(u=>u.unit_id===bindings.get('blocker'));
-            const goalCommand=fixture.scene.commands.find(c=>c.group===1),goal=goalCommand.point;
-            const area=Math.sqrt(fixture.actors.filter(a=>a.slot===0&&a.label!=='blocker').reduce((sum,a)=>sum+a.profile.radius**2,0)/0.35);
-            for(const actor of fixture.actors.filter(a=>a.slot===0&&a.label!=='blocker')){
-                const at=world(final).units.find(u=>u.unit_id===bindings.get(actor.label)).pos;
-                assert(!idle(final,bindings.get(actor.label))||Math.hypot(at[0]-goal[0],at[1]-goal[1])<=area,'A move ended outside its goal area: '+actor.label+' at '+JSON.stringify(at)+' (area '+area.toFixed(3)+' m)');
+            // Each move order of both slots (Clara, 2026-11-24: slot 1 too, no F4 exception): a move that ends, ends
+            // inside the goal area of its order.
+            for(const command of fixture.scene.commands.filter(c=>c.action==='move'&&!c.actors.includes('blocker'))){
+                const members=fixture.actors.filter(a=>command.actors.includes(a.label)),goal=command.point;
+                const area=Math.sqrt(members.reduce((sum,a)=>sum+a.profile.radius**2,0)/0.35);
+                for(const actor of members){
+                    const at=world(final).units.find(u=>u.unit_id===bindings.get(actor.label)).pos;
+                    assert(!idle(final,bindings.get(actor.label))||Math.hypot(at[0]-goal[0],at[1]-goal[1])<=area,'A move ended outside its goal area: '+actor.label+' (slot '+actor.slot+') at '+JSON.stringify(at)+' (area '+area.toFixed(3)+' m)');
+                }
             }
             if(blockerHold){
                 assert(Math.hypot(blocker.pos[0]-blockerSettledPoint[0],blocker.pos[1]-blockerSettledPoint[1])<1e-3,'A unit on Hold moved: '+JSON.stringify(blocker.pos));
