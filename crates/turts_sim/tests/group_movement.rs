@@ -1619,6 +1619,63 @@ fn thirty_six_units_cross_open_ground() {
     );
 }
 
+/// V6 in a sparse scene (Clara's example, 2026-11-24): 6 idle units stand in a line, and a
+/// column of another order walks through them. 3 s after the column has gone, each idle
+/// unit is back within one radius of its place.
+#[test]
+fn an_idle_line_comes_back_after_a_column_passes() {
+    let places: Vec<(f32, f32)> = (0..6).map(|k| (30.0, 27.0 + 1.2 * k as f32)).collect();
+    let mut positions = places.clone();
+    positions.extend((0..8).map(|k| (10.0 + 1.2 * (k % 4) as f32, 29.4 + 1.2 * (k / 4) as f32)));
+    let owners = vec![0; positions.len()];
+    let mut app = app_with_units(&positions, &owners);
+    send_order(
+        &mut app,
+        0,
+        (7..=14).collect(),
+        Vec2::new(55.0, 30.0),
+        7,
+        QueueMode::Replace,
+    );
+    let line: Vec<u32> = (1..=6).collect();
+    let mut farthest = 0.0f32;
+    let mut gone_at = None;
+    for tick in 0..1200 {
+        app.update();
+        let units = snapshot(app.world_mut());
+        for (id, place) in line.iter().zip(&places) {
+            let at = units.iter().find(|u| u.unit_id == *id).unwrap().pos;
+            farthest = farthest.max(at.distance(Vec2::new(place.0, place.1)));
+        }
+        // The column has gone when each of its units is 6 m past the line.
+        let column_gone = units
+            .iter()
+            .filter(|u| u.unit_id > 6)
+            .all(|u| u.pos.x > 36.0);
+        if column_gone && gone_at.is_none() {
+            gone_at = Some(tick);
+        }
+        if gone_at.is_some_and(|gone| tick >= gone + 60) {
+            for (id, place) in line.iter().zip(&places) {
+                let at = units.iter().find(|u| u.unit_id == *id).unwrap().pos;
+                let place = Vec2::new(place.0, place.1);
+                assert!(
+                    at.distance(place) <= 0.5,
+                    "idle unit {id} is {} m from its place 3 s after the column",
+                    at.distance(place)
+                );
+            }
+            // The case proves nothing if the column did not push the line away.
+            assert!(
+                farthest > 0.5,
+                "the column did not push the line: {farthest} m"
+            );
+            return;
+        }
+    }
+    panic!("the column did not pass the line in 1200 ticks");
+}
+
 /// V6 (Clara, 2026-11-24): an idle own unit that a passing group pushes away goes back to
 /// its place when no own mover is near.
 #[test]
