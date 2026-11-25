@@ -1,44 +1,52 @@
 'use strict';
-// 3 s at 20 Hz (Clara's proposal, not a measurement).
-const RETURN_TICKS = 60;
+// 3 s at 20 Hz (Clara's proposals, not measurements).
+const REST_TICKS = 60, RETURN_TICKS = 60;
+const near = (list, at, bound) => list.some(p => Math.hypot(p[0] - at[0], p[1] - at[1]) <= bound);
+// Settled-unit checks of the GM pointer campaign (Clara, 2026-11-24; vault/Decisions/2026-11-24 Movement rules V2 V3
+// V5 V6.md). Both measure from the FIRST settle point of the unit after its last own order; a new order clears it.
+// "Quiet" for a unit starts at the first tick with no own mover within two diameters (4 x radius) of the unit.
+// (1) At rest (quiet for REST_TICKS or more) the unit is within 2 x radius of its settle point. It does not apply while
+//     another body stands within one diameter of that point, except for the FIRST unit of its order to settle
+//     (arrive first): that unit must always pass. Contact while units move is allowed (operator rule 4).
+// (2) When the unit is one radius or more from its settle point, it is back within one radius at most RETURN_TICKS
+//     after quiet starts. It does not apply while another body stands within one diameter of the settle point.
+// `context` is {tick, ownMovers: [[x, y]], bodies: [[x, y]]} (the other bodies only).
 class SettledTracker {
-    constructor() { this.positions = new Map(); this.pending = new Set(); this.retired = new Set(); this.returns = new Map(); }
+    constructor() {
+        this.positions = new Map(); this.pending = new Set(); this.retired = new Set();
+        this.quiet = new Map(); this.orderOf = new Map(); this.firstOf = new Map(); this.orders = 0;
+    }
     begin(labels) { for (const label of labels) this.pending.add(label); }
     commit(labels, action) {
+        const order = ++this.orders;
         for (const label of labels) {
             if (!this.pending.has(label)) throw Error('No pending order for ' + label);
             this.positions.delete(label);
-            this.returns.delete(label);
+            this.quiet.delete(label);
+            this.orderOf.set(label, order);
             this.pending.delete(label);
             if (action === 'move') this.retired.delete(label); else this.retired.add(label);
         }
     }
-    // Settled-unit bound (Clara, 2026-11-24; vault/Decisions/2026-11-24 Movement rules V2 V3 V5 V6.md): a settled
-    // unit with no new order of its own may be pushed or make room, but it fails when it is more than one body
-    // diameter (2 x radius) from its settle point. A new order of that unit clears its point (begin/commit).
-    //
-    // Return check (Clara, 2026-11-24, rule (2), V6): when an own push moved the unit one radius or more from its
-    // first settle point, it must be back within one radius of that point at most RETURN_TICKS after the first tick
-    // with no own mover within two diameters of the unit. It does not apply while any other body stands within one
-    // diameter of the settle point. `context` is {tick, ownMovers: [[x, y]], bodies: [[x, y]]} (other bodies only).
     observe(label, idle, position, radius, context) {
         if (this.pending.has(label) || this.retired.has(label) || !idle) return;
         if (!(radius > 0)) throw Error('Settled unit needs its body radius: ' + label);
-        const old = this.positions.get(label);
-        if (!old) { this.positions.set(label, [...position]); return; }
-        const distance = Math.hypot(position[0] - old[0], position[1] - old[1]);
-        if (distance > 2 * radius) throw Error('Settled unit moved more than one body diameter from its settle point: ' + label + ' (' + distance.toFixed(3) + ' m, bound ' + (2 * radius).toFixed(3) + ' m)');
-        if (context) this.checkReturn(label, position, radius, old, distance, context);
-    }
-    checkReturn(label, position, radius, home, distance, {tick, ownMovers, bodies}) {
-        const near = (list, at, bound) => list.some(p => Math.hypot(p[0] - at[0], p[1] - at[1]) <= bound);
-        let state = this.returns.get(label);
-        if (distance < radius) { this.returns.delete(label); return; }
-        if (!state) { state = {quietSince: null}; this.returns.set(label, state); }
-        if (near(ownMovers, position, 4 * radius)) { state.quietSince = null; return; }
-        if (state.quietSince === null) state.quietSince = tick;
-        if (near(bodies, home, 2 * radius)) return;
-        if (tick - state.quietSince > RETURN_TICKS) throw Error('Pushed settled unit did not go back within ' + RETURN_TICKS + ' ticks after the movers left: ' + label + ' (' + distance.toFixed(3) + ' m from its settle point, bound ' + radius.toFixed(3) + ' m, quiet since tick ' + state.quietSince + ', now ' + tick + ')');
+        if (!context) throw Error('Settled unit needs the tick, the own movers and the bodies: ' + label);
+        const {tick, ownMovers, bodies} = context, home = this.positions.get(label), order = this.orderOf.get(label) ?? 0;
+        if (!home) {
+            this.positions.set(label, [...position]);
+            if (!this.firstOf.has(order)) this.firstOf.set(order, label);
+        }
+        if (near(ownMovers, position, 4 * radius)) { this.quiet.delete(label); return; }
+        if (!this.quiet.has(label)) this.quiet.set(label, tick);
+        if (!home) return;
+        const quietFor = tick - this.quiet.get(label), distance = Math.hypot(position[0] - home[0], position[1] - home[1]);
+        const occupied = near(bodies, home, 2 * radius), first = this.firstOf.get(order) === label;
+        const where = ' (' + distance.toFixed(3) + ' m from its settle point, quiet for ' + quietFor + ' ticks at tick ' + tick + ')';
+        if (quietFor >= REST_TICKS && distance > 2 * radius && (first || !occupied))
+            throw Error('Settled unit at rest is more than one body diameter from its settle point' + (first ? ' (first arrival of its order)' : '') + ': ' + label + where);
+        if (quietFor > RETURN_TICKS && distance >= radius && !occupied)
+            throw Error('Pushed settled unit did not go back within ' + RETURN_TICKS + ' ticks after the movers left: ' + label + where + ', bound ' + radius.toFixed(3) + ' m');
     }
 }
 class DistantOrderTracker {

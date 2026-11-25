@@ -239,7 +239,8 @@ async function drive({pagesBySlot,fixture,capture,record,recordInput,onPoll}) {
                 settled.observe(label,true,position,actor.profile.radius,{tick,ownMovers,bodies:others.map(x=>x.unit.pos)});
             }
         }
-        if(settledBlocker&&blockerSettledPoint){const blocker=world(state).units.find(u=>u.unit_id===bindings.get('blocker')),r=fixture.actors.find(a=>a.label==='blocker').profile.radius,moved=Math.hypot(blocker.pos[0]-blockerSettledPoint[0],blocker.pos[1]-blockerSettledPoint[1]);assert(moved<=2*r,'Traffic moved the settled blocker more than one body diameter: actual='+JSON.stringify(blocker.pos)+' settled='+JSON.stringify(blockerSettledPoint));}
+        // The settled blocker is a slot-0 unit with its own move order, so the settled tracker above judges it with the
+        // at-rest rule and as the first arrival of its order (Clara, 2026-11-24). Its settle point stays in the checks.
         if(fixture.scene_name==='GM2-narrow'){
             if(relative>=2400&&!gm2Initial){
                 crossed(fixture,merged,bindings,small);
