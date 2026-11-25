@@ -58,15 +58,15 @@ done
 
 mkdir -p "$SESSION/internal"
 PLAY_LOG="$SESSION/internal/play.log"
-PLAY_PID="" NODE_PID=""
+PLAY_PID="" NODE_PID="" XVFB_PID=""
 cleanup() {
     local rc=$?
     trap - EXIT INT TERM
     # Only the processes that this script started. mp1-play.sh ends its own Chrome and server.
-    for pid in "$NODE_PID" "$PLAY_PID"; do
+    for pid in "$NODE_PID" "$PLAY_PID" "$XVFB_PID"; do
         [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null && kill "$pid" 2>/dev/null || true
     done
-    for pid in "$NODE_PID" "$PLAY_PID"; do
+    for pid in "$NODE_PID" "$PLAY_PID" "$XVFB_PID"; do
         [[ -n "$pid" ]] && wait "$pid" 2>/dev/null || true
     done
     exit "$rc"
@@ -81,8 +81,24 @@ if [[ -n "$PREP" ]]; then
 else
     play_args=(--url "$URL_ARG")
 fi
+# The Chrome of a session runs on its own X display (2026-11-24): on the shared desktop a pointer outside the probe
+# selected a unit and armed a placement in the game window. Nothing but the session reaches this display.
+XVFB_FD_FILE="$SESSION/internal/xvfb-display"
+exec 4>"$XVFB_FD_FILE"
+Xvfb -displayfd 4 -screen 0 1920x1080x24 -nolisten tcp >"$SESSION/internal/xvfb.log" 2>&1 &
+XVFB_PID=$!
+exec 4>&-
+XVFB_DISPLAY=""
+for _ in $(seq 1 100); do
+    XVFB_DISPLAY="$(tr -d '[:space:]' <"$XVFB_FD_FILE")"
+    [[ -n "$XVFB_DISPLAY" ]] && break
+    kill -0 "$XVFB_PID" 2>/dev/null || break
+    sleep 0.1
+done
+[[ "$XVFB_DISPLAY" =~ ^[0-9]+$ ]] || { echo "cold-play: Xvfb did not start; see $SESSION/internal/xvfb.log" >&2; exit 1; }
+echo "DISPLAY :$XVFB_DISPLAY (own Xvfb, pid $XVFB_PID)" >"$SESSION/internal/display.txt"
 # --silent: the Chrome gets --alsa-output-device=null and the silent environment (no sound on the desktop of the operator).
-bash "$ROOT/scripts/mp1-play.sh" "${play_args[@]}" --silent >"$PLAY_LOG" 2>&1 &
+DISPLAY=":$XVFB_DISPLAY" env -u WAYLAND_DISPLAY bash "$ROOT/scripts/mp1-play.sh" "${play_args[@]}" --silent >"$PLAY_LOG" 2>&1 &
 PLAY_PID=$!
 URL="" PORT=""
 for _ in $(seq 1 600); do
