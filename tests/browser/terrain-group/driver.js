@@ -43,6 +43,41 @@ function contact(state,id) {
     const anchor=world(state).terrain.anchors.find(a=>a.unit===id&&a.current);
     assert(anchor,'Owned body lacks permitted current contact: '+id);return anchor.elevation*.25;
 }
+// Free click point (Iris, 2026-11-24). The client picks the nearest visible body along the click ray
+// (crates/turts_interaction/src/picking.rs), so in a packed crowd a nearer unit can cover the intended body. The driver
+// aims at a point of the intended body that no nearer unit covers on screen. A unit covers a screen column from its
+// projected ground centre to COVER_HEIGHT x its pick height, widened to COVER_WIDTH x its body radius: a generous
+// cover, so a point is called free only with margin. The selection check after the click is unchanged: a wrong pick
+// still fails.
+const COVER_HEIGHT=1.5,COVER_WIDTH=1.5,FREE_MARGIN_PX=1;
+function clip(scene,[x,y,height]){const m=scene.clip_from_world,v=[x,height,y,1];return [0,1,2,3].map(r=>v.reduce((sum,n,c)=>sum+m[c*4+r]*n,0));}
+function screen(scene,point){const c=clip(scene,point),[left,top,width,depth]=scene.viewport_logical_rect;return c[3]>0?[left+(c[0]/c[3]+1)*width/2,top+(1-c[1]/c[3])*depth/2,c[3]]:null;}
+function toSegment(p,a,b){const dx=b[0]-a[0],dy=b[1]-a[1],l=dx*dx+dy*dy,t=l?Math.max(0,Math.min(1,((p[0]-a[0])*dx+(p[1]-a[1])*dy)/l)):0;return Math.hypot(p[0]-a[0]-t*dx,p[1]-a[1]-t*dy);}
+// The screen column of a body: {ground, top, width (px), depth (clip w at mid height)}, or null when it is not in view.
+function screenColumn(scene,pos,base,radius,height){
+    const ground=screen(scene,[pos[0],pos[1],base]),top=screen(scene,[pos[0],pos[1],base+height]),mid=screen(scene,[pos[0],pos[1],base+height/2]);
+    if(!ground||!top||!mid)return null;
+    const side=[[radius,0],[0,radius]].map(([dx,dy])=>screen(scene,[pos[0]+dx,pos[1]+dy,base+height/2])).filter(Boolean);
+    return {ground,top,depth:mid[2],width:Math.max(0,...side.map(q=>Math.hypot(q[0]-mid[0],q[1]-mid[1])))};
+}
+function freePoint(fixture,state,bindings,id){
+    const scene=state.scene,units=world(state).units,unit=units.find(u=>u.unit_id===id),label=[...bindings].find(([,v])=>v===id)?.[0];
+    const profile=fixture.actors.find(a=>a.label===label)?.profile;assert(unit&&profile,'Free point needs a bound live actor: '+id);
+    const base=contact(state,id),own=screenColumn(scene,unit.pos,base,profile.radius,profile.pick_height);if(!own)return null;
+    const bodyOf=u=>{const l=[...bindings].find(([,v])=>v===u.unit_id)?.[0],f=fixture.actors.find(a=>a.label===l)?.profile;
+        const anchor=world(state).terrain.anchors.find(a=>a.unit===u.unit_id&&a.current);
+        return screenColumn(scene,u.pos,anchor?anchor.elevation*.25:0,COVER_WIDTH*(f?.radius??u.pick_radius??1),COVER_HEIGHT*(f?.pick_height??1));};
+    const covers=units.filter(u=>u.unit_id!==id).map(bodyOf).filter(c=>c&&c.depth<own.depth);
+    const [left,top,width,depth]=scene.viewport_logical_rect;let best=null;
+    for(const f of [.3,.5,.7,.9,1])for(const dx of [-.5,-.25,0,.25,.5]){
+        const centre=screen(scene,[unit.pos[0],unit.pos[1],base+f*profile.pick_height]);if(!centre)continue;
+        const point=[centre[0]+dx*own.width,centre[1]];
+        if(point[0]<=left||point[0]>=left+width||point[1]<=top||point[1]>=top+depth)continue;
+        const clearance=Math.min(Infinity,...covers.map(c=>toSegment(point,c.ground,c.top)-c.width));
+        if(clearance>FREE_MARGIN_PX&&(!best||clearance>best.clearance))best={point,clearance};
+    }
+    return best;
+}
 function actorBindings(fixture,state) {
     const result=new Map();
     for(const actor of fixture.actors){
@@ -63,7 +98,7 @@ function elevation(fixture,state,x,y) {
     return surface?.elevation??initialElevation(fixture,[x+.5,y+.5]);
 }
 function permittedTop(fixture,state,point){return elevation(fixture,state,Math.floor(point[0]),Math.floor(point[1]))*.25;}
-async function selectActors(page,fixture,bindings,labels,recordClick) {
+async function selectActors(page,fixture,bindings,labels,recordClick,timeout=90000) {
     if(fixture.scene_name==='GM3-opposing-large'){
         const state=await read(page),wanted=labels.map(label=>bindings.get(label));
         const units=world(state).units;
@@ -81,12 +116,26 @@ async function selectActors(page,fixture,bindings,labels,recordClick) {
         const unit=world(state).units.find(u=>u.unit_id===id);
         assert(unit&&unit.owner_slot===state.debug.slot,'Selection requires owned live body');
         if(i===1){await page.keyboard.down('Shift');await sleep(PRESS_MS);}
-        const point=project(state.scene,[...unit.pos,contact(state,id)+actor.profile.pick_height]);
+        const free=freePoint(fixture,state,bindings,id);assert(free,'No free click point on the intended body: '+labels[i]);
+        const point=free.point;
         await click(page,point);
         if(recordClick){const after=await read(page);recordClick({label:labels[i],id,point,tick:world(after).tick,focus:after.debug.focus,selection:after.debug.selection,frames:after.debug.frames?.recent?.map(f=>({frame_index:f.frame_index,tick:f.tick,selection:f.selection,named_dispatches:f.named_dispatches}))});}
     }}finally{await page.keyboard.up('Shift');}
     const wanted=labels.map(label=>bindings.get(label));
-    await wait(page,s=>s.debug.selection.length===wanted.length&&wanted.every(id=>s.debug.selection.includes(id)),'Physical body selection differs from frozen cohort');
+    await wait(page,s=>s.debug.selection.length===wanted.length&&wanted.every(id=>s.debug.selection.includes(id)),'Physical body selection differs from frozen cohort',timeout);
+}
+// A one-unit order whose body no click can reach in a packed crowd goes to the nearest body of the same kind and slot
+// that has a free point (Iris, 2026-11-24). The covered body is a reported fact; with no reachable body the case fails.
+function reachableIntent(fixture,state,bindings,intent,record){
+    if(intent.actors.length!==1)return intent;
+    const label=intent.actors[0],actor=fixture.actors.find(a=>a.label===label);
+    if(freePoint(fixture,state,bindings,bindings.get(label)))return intent;
+    const at=world(state).units.find(u=>u.unit_id===bindings.get(label)).pos;
+    const others=fixture.actors.filter(a=>a.label!==label&&a.kind===actor.kind&&a.slot===actor.slot).map(a=>({label:a.label,pos:world(state).units.find(u=>u.unit_id===bindings.get(a.label))?.pos})).filter(a=>a.pos).sort((a,b)=>Math.hypot(a.pos[0]-at[0],a.pos[1]-at[1])-Math.hypot(b.pos[0]-at[0],b.pos[1]-at[1]));
+    const substitute=others.find(a=>freePoint(fixture,state,bindings,bindings.get(a.label)));
+    assert(substitute,'No body of the cohort can be clicked: '+label+' and '+others.length+' bodies of its kind are covered');
+    record({tick:world(state).tick,label,substitute:substitute.label});
+    return {...intent,actors:[substitute.label]};
 }
 async function issue(page,fixture,bindings,intent,preselected=false) {
     // Terrain work is aimed at the tops that the replica shows, and its actor is picked
@@ -283,13 +332,14 @@ async function drive({pagesBySlot,fixture,capture,record,recordInput,onPoll}) {
             // Different peers may issue simultaneous intents concurrently. Same-owner intents
             // remain sequential because one real pointer cannot select two cohorts at once.
             const bySlot=new Map();for(const intent of batch){if(!bySlot.has(intent.slot))bySlot.set(intent.slot,[]);bySlot.get(intent.slot).push(intent);}
-            await Promise.all([...bySlot].map(async([slot,intents])=>{for(const intent of intents){
+            await Promise.all([...bySlot].map(async([slot,intents])=>{for(const planned of intents){
                 monitor();const page=pagesBySlot.get(slot);assert(page,'Missing real peer for slot '+slot);
+                const intent=prepared.get(slot)===planned?planned:reachableIntent(fixture,await read(page),bindings,planned,fact=>(checks.covered_substitutions??=[]).push(fact));
                 settled.begin(intent.actors);
                 const before=await read(page),lastSeq=Math.max(0,...(before.debug.command_results||[]).map(r=>r.seq));
                 const inputObservation=(stage,state)=>recordInput?.({slot,stage,...(harvest(slot,state),{}),wall_ms:Date.now(),tick:world(state).tick,focus:state.debug.focus,cursor:state.debug.cursor,selection:state.debug.selection,phase:state.debug.phase,command_results:state.debug.command_results});
                 inputObservation('before',before);
-                try{await issue(page,fixture,bindings,intent,prepared.get(slot)===intent);inputObservation('after',await read(page));}catch(error){
+                try{await issue(page,fixture,bindings,intent,prepared.get(slot)===planned);inputObservation('after',await read(page));}catch(error){
                     const state=await read(page);await capture?.('failed-selection-slot'+slot,state);
                     const picks=intent.actors.map(label=>{const id=bindings.get(label),actor=fixture.actors.find(a=>a.label===label),unit=world(state).units.find(u=>u.unit_id===id);return {label,id,position:unit?.pos,projected:unit?project(state.scene,[...unit.pos,contact(state,id)+actor.profile.pick_height]):null};});
                     error.message+='; actual selection='+JSON.stringify(state?.debug?.selection)+'; intended picks='+JSON.stringify(picks);
@@ -390,4 +440,4 @@ async function drive({pagesBySlot,fixture,capture,record,recordInput,onPoll}) {
             limits:['Browser checks observed complete bodies and permitted terrain. Native acceptance certifies every actual committed sweep; polling can skip ticks.','Real pointer acceptance ticks are recorded and may differ from native script ticks.','Internal order identity/route lease and same-seed trajectory proof remain native checks.'],skipped_observation_ticks:gaps};
     }finally{clearInterval(timer);while(inPoll)await sleep(10);await pollTail;}
 }
-module.exports={activatePage,project,read,actorBindings,permittedTop,selectActors,issue,publicOutcomes,physical,overlapFault,drive};
+module.exports={activatePage,project,read,actorBindings,permittedTop,selectActors,issue,publicOutcomes,physical,overlapFault,freePoint,reachableIntent,drive};
