@@ -8,7 +8,6 @@
 use super::geometry::{self, TerrainRead};
 use crate::movement::sweep::pair_clear;
 use bevy_math::Vec2;
-use std::collections::BTreeMap;
 use turts_rules::terrain::geometry::Traversal;
 
 /// A body that no step may enter. It does not move in this step.
@@ -57,11 +56,10 @@ pub(super) fn escape_step(
 ) -> Vec2 {
     let end = step(terrain, from, to, radius, radius, profile, solids);
     let wide = radius + CLEARANCE;
-    if end != from && geometry::clear(terrain, end, end, wide, profile, &mut BTreeMap::new()) {
+    if end != from && geometry::clear_now(terrain, end, end, wide, profile) {
         return end;
     }
-    let stands_clear =
-        |body: f32| geometry::clear(terrain, from, from, body, profile, &mut BTreeMap::new());
+    let stands_clear = |body: f32| geometry::clear_now(terrain, from, from, body, profile);
     if stands_clear(radius) {
         return from;
     }
@@ -82,7 +80,7 @@ pub(super) fn escape_step(
         }
     }
     // The step is taken whole or not at all, so the body never ends at a new contact.
-    let whole = geometry::clear(terrain, from, to, low, profile, &mut BTreeMap::new())
+    let whole = geometry::clear_now(terrain, from, to, low, profile)
         && solids.iter().all(|solid| {
             pair_clear(
                 from,
@@ -107,7 +105,7 @@ pub(super) fn fitted_step(
     profile: Traversal,
     solids: &[Solid],
 ) -> Vec2 {
-    let clear = geometry::clear(terrain, from, to, radius, profile, &mut BTreeMap::new())
+    let clear = geometry::clear_now(terrain, from, to, radius, profile)
         && solids.iter().all(|solid| {
             pair_clear(
                 from,
@@ -131,7 +129,7 @@ fn step(
     solids: &[Solid],
 ) -> Vec2 {
     // A whole clear step needs one certificate; only a refused step is bisected.
-    let mut end = if geometry::clear(terrain, from, to, wide, profile, &mut BTreeMap::new()) {
+    let mut end = if geometry::clear_now(terrain, from, to, wide, profile) {
         to
     } else {
         geometry::physical_prefix(terrain, from, to, wide, profile)
@@ -194,6 +192,7 @@ fn body_prefix(from: Vec2, to: Vec2, radius: f32, solid: Solid) -> Vec2 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::BTreeMap;
     use turts_rules::terrain::{
         Ratio,
         geometry::{Cell, Grid, Surface},

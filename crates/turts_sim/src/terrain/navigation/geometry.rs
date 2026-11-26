@@ -13,8 +13,12 @@ pub(super) const GEOMETRY_BUDGET: usize = 16_384;
 const MAX_QUERY_LEASES: usize = 4096;
 pub(super) trait TerrainRead: Surface {
     fn grid(&self) -> Grid;
+    /// True only when every cell of the rectangle is known and all have one elevation.
     fn rectangle(&self, minimum: Cell, maximum: Cell, lease: &mut BTreeMap<usize, u64>) -> bool;
 }
+/// The largest span, in cells, of the box that `flat_box` accepts. Inside it, the exact
+/// check of `clear` stays far below its work budget and its lease limit.
+const FLAT_BOX_SPAN: f64 = 32.0;
 impl TerrainRead for TerrainState {
     fn grid(&self) -> Grid {
         self.grid
@@ -196,6 +200,55 @@ pub(super) fn clear(
 ) -> bool {
     certify(terrain, from, to, radius, profile, lease) == Certificate::Clear
 }
+/// `clear` for a caller that keeps no lease. A step whose box (both end disks, with one
+/// cell of margin) lies inside the map on one flat rectangle is clear: there the exact
+/// check of both end supports passes, and its rectangle certificate is a part of the same
+/// flat rectangle. Every other step takes the exact check, so the answer is the same.
+pub(super) fn clear_now(
+    terrain: &impl TerrainRead,
+    from: Vec2,
+    to: Vec2,
+    radius: f32,
+    profile: Traversal,
+) -> bool {
+    flat_box(terrain, from, to, radius)
+        || clear(terrain, from, to, radius, profile, &mut BTreeMap::new())
+}
+fn flat_box(terrain: &impl TerrainRead, from: Vec2, to: Vec2, radius: f32) -> bool {
+    let grid = terrain.grid();
+    if !(radius.is_finite() && radius > 0.0 && from.is_finite() && to.is_finite())
+        || grid.length_scale == 0
+        || grid.cell_width == 0
+    {
+        return false;
+    }
+    let cell = f64::from(grid.cell_width) / f64::from(grid.length_scale);
+    let radius = f64::from(radius);
+    let index = |value: f32, side: f64| ((f64::from(value) + side * radius) / cell + side).floor();
+    let (low_x, low_y) = (index(from.x.min(to.x), -1.0), index(from.y.min(to.y), -1.0));
+    let (high_x, high_y) = (index(from.x.max(to.x), 1.0), index(from.y.max(to.y), 1.0));
+    if low_x < 0.0
+        || low_y < 0.0
+        || high_x >= f64::from(grid.columns)
+        || high_y >= f64::from(grid.rows)
+        || high_x - low_x > FLAT_BOX_SPAN
+        || high_y - low_y > FLAT_BOX_SPAN
+    {
+        return false;
+    }
+    let minimum = Cell {
+        x: low_x as u32,
+        y: low_y as u32,
+    };
+    let maximum = Cell {
+        x: high_x as u32,
+        y: high_y as u32,
+    };
+    terrain.rectangle(minimum, maximum, &mut BTreeMap::new())
+        && terrain
+            .elevation(minimum)
+            .is_some_and(|level| (grid.floor..=grid.ceiling).contains(&level))
+}
 pub(super) fn physical_prefix(
     terrain: &impl TerrainRead,
     from: Vec2,
@@ -214,21 +267,14 @@ pub(super) fn physical_prefix(
     };
     while high - low > 1 {
         let middle = low + (high - low) / 2;
-        if clear(
-            terrain,
-            from,
-            candidate(middle),
-            radius,
-            profile,
-            &mut BTreeMap::new(),
-        ) {
+        if clear_now(terrain, from, candidate(middle), radius, profile) {
             low = middle;
         } else {
             high = middle;
         }
     }
     let point = candidate(low);
-    if clear(terrain, from, point, radius, profile, &mut BTreeMap::new()) {
+    if clear_now(terrain, from, point, radius, profile) {
         point
     } else {
         from

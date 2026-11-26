@@ -681,29 +681,98 @@ struct Body {
     fixed: bool,
 }
 
-/// The frozen snapshot: bodies in buckets of `size` metres.
+/// The frozen snapshot: bodies in a flat grid of buckets of `size` metres (a uniform-grid
+/// spatial hash). The bodies of a bucket are in body order, and `near` visits the buckets
+/// row by row, so each caller sees the same sequence as with the former map of buckets.
 struct Snapshot {
     bodies: Vec<Body>,
-    buckets: BTreeMap<(i32, i32), Vec<usize>>,
     size: f32,
+    /// The largest body radius.
+    max_radius: f32,
+    /// The bucket of the first column and row of the grid, and its columns and rows.
+    origin: (i32, i32),
+    columns: i32,
+    rows: i32,
+    /// For each bucket (row-major), the range of `items` that holds its bodies.
+    starts: Vec<u32>,
+    items: Vec<u32>,
+    /// Buffers of `build`: the bucket of each body, and the next free place of each bucket.
+    keys: Vec<(i32, i32)>,
+    fill: Vec<u32>,
 }
 impl Snapshot {
     fn new(bodies: Vec<Body>) -> Self {
         let size = bodies
             .iter()
             .fold(2.0f32, |size, body| size.max(body.radius * 2.0 + 1.0));
-        let mut buckets: BTreeMap<(i32, i32), Vec<usize>> = BTreeMap::new();
-        for (index, body) in bodies.iter().enumerate() {
-            buckets
-                .entry(Self::bucket(body.position, size))
-                .or_default()
-                .push(index);
-        }
-        Self {
+        let max_radius = bodies
+            .iter()
+            .fold(0.0f32, |radius, body| radius.max(body.radius));
+        let mut snapshot = Self {
             bodies,
-            buckets,
             size,
+            max_radius,
+            origin: (0, 0),
+            columns: 0,
+            rows: 0,
+            starts: Vec::new(),
+            items: Vec::new(),
+            keys: Vec::new(),
+            fill: Vec::new(),
+        };
+        snapshot.build();
+        snapshot
+    }
+    /// The same bodies at new positions (one for each body). The grid is built again in the
+    /// buffers of the last build.
+    fn move_to(&mut self, positions: &[Vec2]) {
+        for (body, &position) in self.bodies.iter_mut().zip(positions) {
+            body.position = position;
         }
+        self.build();
+    }
+    fn build(&mut self) {
+        let size = self.size;
+        let keys = &mut self.keys;
+        keys.clear();
+        keys.extend(
+            self.bodies
+                .iter()
+                .map(|body| Self::bucket(body.position, size)),
+        );
+        let (low, high) = keys.iter().fold(
+            ((i32::MAX, i32::MAX), (i32::MIN, i32::MIN)),
+            |(low, high), &(x, y)| ((low.0.min(x), low.1.min(y)), (high.0.max(x), high.1.max(y))),
+        );
+        let (origin, columns, rows) = if keys.is_empty() {
+            ((0, 0), 0, 0)
+        } else {
+            (low, high.0 - low.0 + 1, high.1 - low.1 + 1)
+        };
+        // Counting sort: bodies keep their order inside each bucket.
+        let cell = |(x, y): (i32, i32)| ((y - origin.1) * columns + (x - origin.0)) as usize;
+        let starts = &mut self.starts;
+        starts.clear();
+        starts.resize((columns * rows) as usize + 1, 0);
+        for &key in keys.iter() {
+            starts[cell(key) + 1] += 1;
+        }
+        for index in 1..starts.len() {
+            starts[index] += starts[index - 1];
+        }
+        let fill = &mut self.fill;
+        fill.clone_from(starts);
+        let items = &mut self.items;
+        items.clear();
+        items.resize(keys.len(), 0);
+        for (index, &key) in keys.iter().enumerate() {
+            let slot = &mut fill[cell(key)];
+            items[*slot as usize] = index as u32;
+            *slot += 1;
+        }
+        self.origin = origin;
+        self.columns = columns;
+        self.rows = rows;
     }
     fn bucket(point: Vec2, size: f32) -> (i32, i32) {
         (
@@ -715,11 +784,14 @@ impl Snapshot {
     fn near(&self, point: Vec2, reach: f32, mut visit: impl FnMut(usize)) {
         let span = (reach / self.size).ceil() as i32;
         let (cx, cy) = Self::bucket(point, self.size);
-        for y in cy - span..=cy + span {
-            for x in cx - span..=cx + span {
-                if let Some(bucket) = self.buckets.get(&(x, y)) {
-                    bucket.iter().copied().for_each(&mut visit);
-                }
+        let (x0, y0) = self.origin;
+        for y in (cy - span).max(y0)..=(cy + span).min(y0 + self.rows - 1) {
+            for x in (cx - span).max(x0)..=(cx + span).min(x0 + self.columns - 1) {
+                let cell = ((y - y0) * self.columns + (x - x0)) as usize;
+                let range = self.starts[cell] as usize..self.starts[cell + 1] as usize;
+                self.items[range]
+                    .iter()
+                    .for_each(|&index| visit(index as usize));
             }
         }
     }
@@ -735,9 +807,29 @@ fn neighbours_in_sum_order(
     reach: f32,
     accept: impl Fn(&Body) -> bool,
 ) -> Vec<usize> {
-    let here = positions[me];
     let mut found = Vec::new();
-    snapshot.near(here, snapshot.size + reach, |other| {
+    sort_neighbours(snapshot, positions, me, reach, accept, &mut found);
+    found.into_iter().map(|entry| entry.3).collect()
+}
+
+/// A neighbour in the sum order: distance bits, position bits, body index.
+type Neighbour = (u32, u32, u32, usize);
+
+/// `neighbours_in_sum_order` into a buffer that the caller keeps: `found` holds the sorted
+/// neighbours after the call (the body index is the last field).
+fn sort_neighbours(
+    snapshot: &Snapshot,
+    positions: &[Vec2],
+    me: usize,
+    reach: f32,
+    accept: impl Fn(&Body) -> bool,
+    found: &mut Vec<Neighbour>,
+) {
+    let here = positions[me];
+    found.clear();
+    // A neighbour within `reach` of the body is at most this far from its centre.
+    let search = snapshot.bodies[me].radius + snapshot.max_radius + reach;
+    snapshot.near(here, search, |other| {
         let body = &snapshot.bodies[other];
         let there = positions[other];
         if other != me && there != here && accept(body) {
@@ -753,7 +845,6 @@ fn neighbours_in_sum_order(
         }
     });
     found.sort_unstable_by_key(|entry| (entry.0, entry.1, entry.2));
-    found.into_iter().map(|entry| entry.3).collect()
 }
 
 /// The unit moves to a point that it can share with other units: it has a Move order, an
@@ -797,8 +888,6 @@ fn output_row(unit: &MovementFrameUnit) -> MovementFrameOutput {
         physical_escape: None,
         failed_blocked: false,
         arrival_slot: None,
-        #[cfg(feature = "test-probes")]
-        probe: Default::default(),
     }
 }
 
@@ -1691,32 +1780,52 @@ fn step_inner(
             .get(&units[row].unit_id)
             .is_some_and(|member| member.mode == Mode::Moving)
     };
-    for _ in 0..RELAX_PASSES {
-        let relaxed = Snapshot::new(
-            units
-                .iter()
-                .enumerate()
-                .map(|(row, unit)| Body {
-                    row,
-                    owner: unit.owner_slot,
-                    position: positions[row],
-                    radius: unit.radius,
-                    fixed: !soft(row),
-                })
-                .collect(),
-        );
-        let before = positions.clone();
+    // A unit whose inputs did not change since the last pass (its pose and the poses of the
+    // bodies in reach) gets the same push as in that pass, which moved nothing. So a pass
+    // runs only for the units that moved in the last pass and for the units near them.
+    let mut active: Vec<bool> = (0..units.len()).map(soft).collect();
+    // The members do not change in this stage: read them once.
+    let moving: Vec<bool> = (0..units.len()).map(moves).collect();
+    let known: Vec<bool> = units
+        .iter()
+        .map(|unit| state.members.contains_key(&unit.unit_id))
+        .collect();
+    let mut relaxed = Snapshot::new(
+        units
+            .iter()
+            .enumerate()
+            .map(|(row, unit)| Body {
+                row,
+                owner: unit.owner_slot,
+                position: positions[row],
+                radius: unit.radius,
+                fixed: !soft(row),
+            })
+            .collect(),
+    );
+    let mut before = positions.clone();
+    let mut neighbours = Vec::new();
+    for pass in 0..RELAX_PASSES {
+        if pass > 0 {
+            relaxed.move_to(&positions);
+            before.clone_from(&positions);
+        }
         for row in 0..units.len() {
-            if !soft(row) {
+            if !soft(row) || !active[row] {
                 continue;
             }
             // Own units, and own units that stand firm (Hold, busy): a firm unit is not
             // pushed, but it can step into others, and they make room for it.
-            let neighbours = neighbours_in_sum_order(&relaxed, &before, row, REST_GAP, |body| {
-                body.owner == units[row].owner_slot && (!body.fixed || holds[body.row])
-            });
+            sort_neighbours(
+                &relaxed,
+                &before,
+                row,
+                REST_GAP,
+                |body| body.owner == units[row].owner_slot && (!body.fixed || holds[body.row]),
+                &mut neighbours,
+            );
             let mut push = Vec2::ZERO;
-            for other in neighbours {
+            for &(_, _, _, other) in &neighbours {
                 // Two units at one pose (both took their last step to one point in one tick)
                 // come apart along the line between their poses at the start of the tick.
                 let offset = if before[row] == before[other] {
@@ -1731,8 +1840,7 @@ fn step_inner(
                 // The relaxation aims at a small gap, so standing bodies end apart and the
                 // float residue of the corrections is not an overlap.
                 // Two units that the flock never moved keep an exact contact.
-                let known = |row: usize| state.members.contains_key(&units[row].unit_id);
-                let gap = if known(row) || known(other) {
+                let gap = if known[row] || known[other] {
                     REST_GAP
                 } else {
                     0.0
@@ -1744,7 +1852,7 @@ fn step_inner(
                 // Two standing units each take the whole overlap, so a packed crowd comes
                 // apart in a few ticks. A mover shares an overlap equally with each own unit,
                 // so it pushes its way through, and a crowd keeps its place (rule 2).
-                let share = if holds[other] || !(moves(row) || moves(other)) {
+                let share = if holds[other] || !(moving[row] || moving[other]) {
                     1.0
                 } else {
                     0.5
@@ -1773,6 +1881,14 @@ fn step_inner(
         // A pass with no correction ends the relaxation.
         if positions == before {
             break;
+        }
+        active.fill(false);
+        for row in (0..units.len()).filter(|&row| positions[row] != before[row]) {
+            active[row] = true;
+            let reach = units[row].radius + relaxed.max_radius + REST_GAP;
+            for at in [before[row], positions[row]] {
+                relaxed.near(at, reach, |other| active[other] = true);
+            }
         }
     }
 
@@ -1871,7 +1987,12 @@ fn step_inner(
                 } else {
                     0.0
                 };
-                let distance = (from + course * part).length();
+                // Own pairs: the end poses (the push parts them during the tick).
+                let distance = if limit > 0.0 {
+                    f64::from(positions[row].distance(positions[other]))
+                } else {
+                    (from + course * part).length()
+                };
                 if other != row
                     && distance < f64::from(unit.radius) + f64::from(body.radius) - f64::from(limit)
                     && distance < from.length()

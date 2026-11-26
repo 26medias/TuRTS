@@ -20,9 +20,10 @@
 //! - It needs the cargo feature `test-probes` of `turts_sim`. The dev-dependency
 //!   of `turts_pack` turns it on.
 //! - Units are sorted by unit id. Floats are written with `to_bits`.
-//! - The stream never sets `separated` or `was_projected` to true and never has a pool
-//!   or a plain progress. The cases of `crates/turts_sim/tests/probe_flags.rs` show
-//!   that the probe values work.
+//! - The stream never has a pool or a plain progress. The cases of
+//!   `crates/turts_sim/tests/probe_flags.rs` show that the probe values work. The flags
+//!   `separated` and `was_projected` of the old path's hard projection are gone with that
+//!   path (1962b8d3).
 //! - `TURTS_M2_TRACE_OUT` must be an absolute path. A relative path would resolve
 //!   under the crate folder and write untracked files into the tree, so the test
 //!   refuses it.
@@ -269,8 +270,6 @@ fn unit_record(world: &World, package: &str, tick: u32, row: &UnitRow) -> Value 
         "gather_stage": gather_stage(world, row),
         "queue": queue,
         "last_failure": last_failure,
-        "separated": probe::separated(world, row.id),
-        "was_projected": probe::was_projected(world, row.id),
     })
 }
 
