@@ -51,9 +51,17 @@ pub(crate) struct WorkState {
 /// only for the viewer's planning epoch, never a private terrain revision.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub(crate) struct Approach {
-    poses: [bevy_math::Vec2; 8],
+    /// Eight poses that touch the cell, then a lattice of poses in the tool's reach. A lattice
+    /// pose is taken only when no touching pose is left: a wide body may not fit beside the
+    /// cell, but it can work from farther away (Marco, quarry_ridge, 2026-11-26).
+    poses: Vec<bevy_math::Vec2>,
     current: Option<usize>,
-    refused: u8,
+    refused: Vec<bool>,
+    /// The pose of the unit at the last check, and the checks in a row at that pose.
+    #[serde(default)]
+    last: bevy_math::Vec2,
+    #[serde(default)]
+    still: u16,
     epoch: u64,
     select: bool,
     kind: turts_mod_api::UnitTypeId,
@@ -379,15 +387,26 @@ fn approach(world: &mut World, unit: u32, cell: Cell, state: &mut WorkState) {
     if let Some(saved) = &mut state.approach {
         if saved.epoch != phase.planning_epoch(owner) {
             saved.epoch = phase.planning_epoch(owner);
-            saved.refused = 0;
+            saved.refused.fill(false);
             saved.select = saved.current.is_none();
         }
         if let Some(index) = saved.current {
             let endpoint = saved.poses[index];
             // Work still refused at a physically reached approach. That point
             // cannot reveal or reach the current cell by waiting indefinitely;
-            // try another of the same bounded permitted candidates.
-            let failed = position == endpoint;
+            // try another of the same bounded permitted candidates. A walk that
+            // the movement ended short of the endpoint (its target is gone), or
+            // that makes no progress for `STUCK_TICKS`, also failed: the same
+            // endpoint again would not start a new walk.
+            if position == saved.last {
+                saved.still = saved.still.saturating_add(1);
+            } else {
+                saved.last = position;
+                saved.still = 0;
+            }
+            let failed = position == endpoint
+                || world.get::<crate::MoveTarget>(entity).is_none()
+                || saved.still >= STUCK_TICKS;
             if !failed {
                 if world
                     .get::<crate::MoveTarget>(entity)
@@ -403,7 +422,7 @@ fn approach(world: &mut World, unit: u32, cell: Cell, state: &mut WorkState) {
             // physical point once, not once per duplicate array entry.
             for (other, &pose) in saved.poses.iter().enumerate() {
                 if pose == endpoint {
-                    saved.refused |= 1 << other;
+                    saved.refused[other] = true;
                 }
             }
             saved.current = None;
@@ -442,11 +461,27 @@ fn approach(world: &mut World, unit: u32, cell: Cell, state: &mut WorkState) {
     let y = f64::from(position.y).clamp(min_y, max_y) as f32;
     let middle_x = ((min_x + max_x) * 0.5) as f32;
     let middle_y = ((min_y + max_y) * 0.5) as f32;
+    // The work reaches the cell from `tool.reach + radius` of its nearest point (step.rs).
+    let tool = match &state.order.target {
+        OrderTargetSim::TerrainWork { tool, .. } => Some(tool),
+        _ => None,
+    };
+    let reach = tool
+        .and_then(|tool| {
+            world
+                .get_resource::<InstalledCatalog>()?
+                .0
+                .terrain_tools
+                .get(tool)
+        })
+        .map_or(f64::from(radius), |tool| {
+            f64::from(tool.reach) + f64::from(radius)
+        });
     let west = down(min_x - f64::from(radius));
     let east = up(max_x + f64::from(radius));
     let north = down(min_y - f64::from(radius));
     let south = up(max_y + f64::from(radius));
-    let poses = [
+    let mut poses = vec![
         bevy_math::Vec2::new(west, y),
         bevy_math::Vec2::new(east, y),
         bevy_math::Vec2::new(x, north),
@@ -456,13 +491,32 @@ fn approach(world: &mut World, unit: u32, cell: Cell, state: &mut WorkState) {
         bevy_math::Vec2::new(middle_x, north),
         bevy_math::Vec2::new(middle_x, south),
     ];
+    // The lattice: points of a half-cell grid whose distance to the cell is at least the
+    // radius (the body stays off the cell) and at most the reach, row by row.
+    let step = width * 0.5;
+    let first = |low: f64| ((low - reach) / step).floor() as i64;
+    let last = |high: f64| ((high + reach) / step).ceil() as i64;
+    for row in first(min_y)..=last(max_y) {
+        for column in first(min_x)..=last(max_x) {
+            let pose =
+                bevy_math::Vec2::new((column as f64 * step) as f32, (row as f64 * step) as f32);
+            let dx = f64::from(pose.x) - f64::from(pose.x).clamp(min_x, max_x);
+            let dy = f64::from(pose.y) - f64::from(pose.y).clamp(min_y, max_y);
+            let distance = dx * dx + dy * dy;
+            if distance >= f64::from(radius) * f64::from(radius) && distance <= reach * reach {
+                poses.push(pose);
+            }
+        }
+    }
     let saved = state.approach.get_or_insert(Approach {
+        refused: vec![false; poses.len()],
         poses,
         current: None,
-        refused: 0,
         epoch: phase.planning_epoch(owner),
         select: true,
         kind,
+        last: position,
+        still: 0,
     });
     saved.select = false;
     let point = |value: bevy_math::Vec2| Point {
@@ -480,7 +534,7 @@ fn approach(world: &mut World, unit: u32, cell: Cell, state: &mut WorkState) {
         .ok();
     let mut candidates = Vec::new();
     for (index, &pose) in saved.poses.iter().enumerate() {
-        if saved.refused & (1 << index) != 0 {
+        if saved.refused[index] {
             continue;
         }
         let Ok(support) = grid.disk_support(
@@ -510,17 +564,20 @@ fn approach(world: &mut World, unit: u32, cell: Cell, state: &mut WorkState) {
         let direct = swept.result.is_ok() && swept.numerator == swept.denominator;
         let dx = f64::from(pose.x) - f64::from(position.x);
         let dy = f64::from(pose.y) - f64::from(position.y);
-        candidates.push((!direct, dx * dx + dy * dy, pose, index));
+        candidates.push((index >= 8, !direct, dx * dx + dy * dy, pose, index));
     }
     candidates.sort_by(|left, right| {
         left.0
             .cmp(&right.0)
-            .then_with(|| left.1.total_cmp(&right.1))
-            .then_with(|| left.2.x.total_cmp(&right.2.x))
-            .then_with(|| left.2.y.total_cmp(&right.2.y))
+            .then_with(|| left.1.cmp(&right.1))
+            .then_with(|| left.2.total_cmp(&right.2))
+            .then_with(|| left.3.x.total_cmp(&right.3.x))
+            .then_with(|| left.3.y.total_cmp(&right.3.y))
     });
-    if let Some((_, _, point, index)) = candidates.first() {
+    if let Some((_, _, _, point, index)) = candidates.first() {
         saved.current = Some(*index);
+        saved.last = position;
+        saved.still = 0;
         clear_approach_motion(world, unit);
         // A supported endpoint without a straight connector still uses the
         // existing permitted route search. It never grants straight-line motion.
@@ -531,6 +588,8 @@ fn approach(world: &mut World, unit: u32, cell: Cell, state: &mut WorkState) {
         clear_approach_motion(world, unit);
     }
 }
+/// Checks with no motion after which an approach walk failed (3 s at 20 ticks per second).
+const STUCK_TICKS: u16 = 60;
 fn clear_approach_motion(world: &mut World, unit: u32) {
     let Some(entity) = unit_entity(world, unit) else {
         return;
@@ -732,6 +791,17 @@ pub(crate) fn run(world: &mut World) {
                 ) {
                     approach(world, unit, cell, &mut state);
                 }
+                // No approach pose is left until the planning epoch changes: the unit
+                // shows that it is blocked, not that it approaches.
+                let no_pose = state
+                    .approach
+                    .as_ref()
+                    .is_some_and(|approach| approach.current.is_none() && !approach.select);
+                let reason = if reason == StepWait::OutOfReach && no_pose {
+                    StepWait::Blocked
+                } else {
+                    reason
+                };
                 if matches!(reason, StepWait::Unknown) {
                     state.required = None;
                 }

@@ -208,7 +208,7 @@ fn approach_retains_pending_endpoint_while_actor_position_changes() {
     approach(app.world_mut(), unit, Cell { x: 11, y: 10 }, &mut state);
     let entity = unit_entity(app.world(), unit).unwrap();
     let endpoint = app.world().get::<crate::MoveTarget>(entity).unwrap().0;
-    let poses = state.approach.as_ref().unwrap().poses;
+    let poses = state.approach.as_ref().unwrap().poses.clone();
     app.world_mut().get_mut::<Position>(entity).unwrap().0 += bevy_math::Vec2::new(0.025, -0.025);
     approach(app.world_mut(), unit, Cell { x: 11, y: 10 }, &mut state);
     assert_eq!(
@@ -740,4 +740,84 @@ fn a_walker_along_a_row_of_tight_nodes_at_the_map_edge_arrives() {
         at.distance(target) < 0.1,
         "the walker did not arrive along the edge: it stands at {at:?}"
     );
+}
+
+/// Marco, quarry_ridge (2026-11-26): the twelve crawlers (radius 1.1, the wide class with no
+/// step) dig the whole designation on the ridge with the Auger. Few poses that touch a ridge
+/// cell fit a crawler on one height, so a crawler must also work from farther away in its
+/// reach, and a walk that cannot end must give way to another pose. A build with only the
+/// touching poses digs two cells and then stands still (Marco's run, tick 382 to 2321).
+#[test]
+fn crawlers_dig_the_ridge_from_the_edge_of_their_reach() {
+    let mut app = package_app("quarry_ridge");
+    let crawlers: Vec<u32> = app
+        .world()
+        .iter_entities()
+        .filter_map(|entity| {
+            let kind = entity.get::<crate::world::UnitType>()?.0;
+            let content = &app
+                .world()
+                .resource::<crate::UnitTypes>()
+                .get(kind)?
+                .content_id;
+            (content == "quarry_ridge:crawler" && entity.get::<Owner>()?.0.0 == 0)
+                .then(|| entity.get::<UnitId>().unwrap().0)
+        })
+        .collect();
+    assert_eq!(crawlers.len(), 12, "the map places twelve own crawlers");
+    let cells = TerrainRect {
+        min: TerrainCell { x: 29, y: 20 },
+        max: TerrainCell { x: 34, y: 28 },
+    };
+    let heights = |app: &bevy_app::App| -> Vec<i32> {
+        let terrain = app.world().resource::<TerrainState>();
+        (cells.min.y..cells.max.y)
+            .flat_map(|y| (cells.min.x..cells.max.x).map(move |x| Cell { x, y }))
+            .map(|cell| terrain.elevation(cell).unwrap())
+            .collect()
+    };
+    let order = OrderCommand {
+        order: ContentId::parse("quarry_ridge:order_work").unwrap(),
+        behaviour: Behaviour::TerrainWork,
+        target_kind: TargetKind::TerrainDesignation,
+        policy: None,
+        units: crawlers,
+        target: OrderTargetSim::TerrainWork {
+            tool: ContentId::parse("quarry_ridge:auger").unwrap(),
+            cells,
+            target_elevation: 0,
+        },
+        queue: QueueMode::Replace,
+        group: 1,
+        allowed_units: vec![],
+        queue_depth: 16,
+    };
+    let accepted = apply_command(
+        app.world_mut(),
+        &Command {
+            slot: SlotId(0),
+            seq: 1,
+            kind: CommandKind::Order(Box::new(order)),
+        },
+    );
+    assert!(
+        accepted.outcome.is_ok(),
+        "work order rejected: {accepted:?}"
+    );
+    // The fixed build ends the work in about 600 ticks; 60 s leaves a margin.
+    for _ in 0..1200 {
+        app.update();
+        if heights(&app).iter().all(|height| *height <= 0) {
+            return;
+        }
+    }
+    let waits: Vec<_> = app
+        .world()
+        .resource::<TerrainWorkRuntime>()
+        .units
+        .values()
+        .map(|state| (state.cell, state.wait.clone()))
+        .collect();
+    let left = heights(&app).iter().filter(|height| **height > 0).count();
+    panic!("{left} cells are not dug after 60 s: {waits:?}");
 }
