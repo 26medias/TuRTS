@@ -190,6 +190,7 @@ mod tests {
             },
             target_elevation: Some(-2),
             cells: vec![turts_interaction::terrain::CellPreview {
+                changes: false,
                 cell,
                 elevation: 0,
                 current,

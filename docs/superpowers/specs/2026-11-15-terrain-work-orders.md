@@ -158,7 +158,9 @@ Render affected chunks and exposed material surfaces. Keep the current model, te
 Show work progress and a short status. A refusal must appear within one second.
 Use mod-defined command labels and capabilities. Do not hardcode Quarry controls into gameplay code.
 
-The work flow has two steps: choose a reference elevation on observed ground, then drag the work rectangle.
+The player arms a tool, drags over the ground and releases. The ground height where the drag starts is the reference
+elevation of the order (operator, 2026-11-26, amending the two-step flow of this design: "the location where the drag
+starts IS the reference height"). The start cell must be observed.
 The preview shows the target elevation, designated cells, operation, and permitted cost information before submission.
 It uses designation coordinates and permitted observations only. Unknown cells stay marked Unknown; previews never inspect hidden truth.
 The ordinary queue modifier can append a work order. Stop and Cancel remain visible and work through the normal order API.

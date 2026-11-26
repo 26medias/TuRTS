@@ -2,7 +2,7 @@
 
 API17 terrain work fixture. This package has public initial heights and generation rules. It contains no private match seed or realized columns.
 
-Select the Walker or Crawler. Choose a public tool at the bottom left. Click a fully observed cell to capture its reference level. Then drag a rectangle across the ridge. Gray cells remain in the order with Unknown cost and progress. Shift appends work. Right click cancels the designation.
+Select the Walker or Crawler. Choose a public tool at the bottom left. Drag across the ridge and release. A dig goes down to the lowest ground that you see round the area; a fill goes up to the highest. Gray cells remain in the order with Unknown cost and progress. Shift appends work. Right click cancels the designation.
 
 The narrow worker and wide rover have different footprints. The ridge blocks both until work opens a sufficiently wide passage. Soft soil covers harder iron; only the heavy tool can remove the harder exposed material. Fill consumes soil; removing placed fill gives NoYield.
 

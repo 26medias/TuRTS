@@ -312,10 +312,8 @@ fn map_local(position: Vec2, map_size: Vec2, widget_size: Vec2) -> Option<Vec2> 
         return None;
     }
     let max = (widget_size - Vec2::splat(1.0)).max(Vec2::ZERO);
-    Some(Vec2::new(
-        (position.x / map_size.x * widget_size.x).clamp(0.0, max.x),
-        ((1.0 - position.y / map_size.y) * widget_size.y).clamp(0.0, max.y),
-    ))
+    let local = turts_interaction::minimap::map_to_minimap(position, map_size) * widget_size;
+    Some(local.clamp(Vec2::ZERO, max))
 }
 
 fn camera_frame_points(corners: &[Vec2; 4], map_size: Vec2, widget_size: Vec2) -> Vec<Vec2> {
@@ -542,13 +540,16 @@ fn sync_fog(
         let pixel = Vec2::new(size.x / width as f32, size.y / height as f32);
         for y in 0..height {
             let state = |x: u32| {
-                position_state(
-                    knowledge,
-                    turts_mod_api::WorldPos {
-                        x: (x as f32 + 0.5) / width as f32 * knowledge.grid.size.x,
-                        y: (1. - (y as f32 + 0.5) / height as f32) * knowledge.grid.size.y,
-                    },
-                )
+                position_state(knowledge, {
+                    let at = turts_interaction::minimap::minimap_to_map(
+                        Vec2::new(
+                            (x as f32 + 0.5) / width as f32,
+                            (y as f32 + 0.5) / height as f32,
+                        ),
+                        Vec2::new(knowledge.grid.size.x, knowledge.grid.size.y),
+                    );
+                    turts_mod_api::WorldPos { x: at.x, y: at.y }
+                })
                 .unwrap_or(FogCell::Unexplored)
             };
             let mut x = 0;
@@ -740,9 +741,9 @@ mod tests {
         let horizontal_node = world.get::<Node>(*horizontal).expect("horizontal ping arm");
         let vertical_node = world.get::<Node>(*vertical).expect("vertical ping arm");
         assert_eq!(horizontal_node.left, Val::Px(32.5));
-        assert_eq!(horizontal_node.top, Val::Px(161.5));
+        assert_eq!(horizontal_node.top, Val::Px(36.5));
         assert_eq!(vertical_node.left, Val::Px(36.5));
-        assert_eq!(vertical_node.top, Val::Px(157.5));
+        assert_eq!(vertical_node.top, Val::Px(32.5));
         assert_eq!(
             world.get::<BackgroundColor>(*horizontal).unwrap().0,
             Color::srgb_u8(255, 204, 0)

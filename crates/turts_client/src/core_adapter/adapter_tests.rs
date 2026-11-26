@@ -1975,7 +1975,7 @@ fn authored_minimap_input_routes_to_core_and_cursor_exit_releases_capture() {
             .unwrap()
             .camera_state()
             .look_at,
-        Vec2::new(60.0, 30.0),
+        Vec2::new(60.0, 10.0),
         "actual transformed (.75,.25) widget input must preserve top-down Y mapping"
     );
     assert!(app.world().resource::<SelectionFeed>().0.is_empty());
@@ -2116,7 +2116,7 @@ fn authored_minimap_input_routes_to_core_and_cursor_exit_releases_capture() {
         .camera_state()
         .look_at;
     assert!(
-        target_camera_state.distance(Vec2::new(16.0, 8.0)) < 1.0e-4,
+        target_camera_state.distance(Vec2::new(16.0, 32.0)) < 1.0e-4,
         "a second camera's independent UI stack must not block the actual minimap target camera: {target_camera_state:?}"
     );
     app.world_mut().despawn(other_camera_overlay);
@@ -2997,7 +2997,7 @@ fn terrain_wall_picking_keeps_actual_hit_height_and_flat_foundation_refuses_a_cl
     assert_eq!(
         hit.elevation,
         Some(4),
-        "work captures the owning plateau reference level"
+        "a wall hit belongs to the cell and level of the plateau that owns the wall"
     );
     assert_eq!(hit.position.x, 15.);
     assert_eq!(

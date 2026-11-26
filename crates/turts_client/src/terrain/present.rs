@@ -46,15 +46,20 @@ pub(crate) fn preview(
             .layout
             .elevation_height(preview.target_elevation.unwrap_or(cell.elevation))
             + 0.025;
+        // The cells that the order digs or fills are bright; the other cells of the area are faint.
         let color = if !cell.current {
             Color::srgba(0.65, 0.65, 0.65, 0.95)
+        } else if preview.target_elevation.is_none() {
+            Color::srgb(0.2, 1., 0.45)
+        } else if !cell.changes {
+            Color::srgba(0.2, 1., 0.45, 0.35)
         } else if preview
             .target_elevation
             .is_some_and(|level| level > cell.elevation)
         {
             Color::srgb(0.2, 0.65, 1.)
         } else {
-            Color::srgb(0.2, 1., 0.45)
+            Color::srgb(1., 0.85, 0.2)
         };
         let (x, z) = (cell.cell.x as f32 * width, cell.cell.y as f32 * width);
         let corners = [
@@ -79,6 +84,16 @@ pub(crate) fn preview(
         }
         for point in corners {
             lines.line(Vec3::new(point.x, surface, point.z), point, color);
+        }
+        if cell.changes {
+            // A cross on the top of each cell that the order works.
+            for (a, b) in [(0, 2), (1, 3)] {
+                lines.line(
+                    Vec3::new(corners[a].x, surface, corners[a].z),
+                    Vec3::new(corners[b].x, surface, corners[b].z),
+                    color,
+                );
+            }
         }
     }
 }
@@ -105,7 +120,7 @@ pub(crate) fn panel(
             text.push_str(tool.map_or("Terrain work", |tool| tool.name.as_str()));
             if let Some(level) = preview.target_elevation {
                 let unknown = preview.cells.iter().filter(|cell| !cell.current).count();
-                text.push_str(&format!("\nTarget level {level} · {} cells · {unknown} Unknown\nDrag a rectangle. Shift queues. Right click cancels.",preview.cells.len()));
+                text.push_str(&format!("\nTarget level {level}, {} cells, {unknown} Unknown\nRelease to order. Shift queues.",preview.cells.len()));
                 if let Some(tool) = tool {
                     if let Some(advice) =
                         super::advice::estimate(terrain, &content.catalog, tool, preview)
@@ -161,8 +176,6 @@ pub(crate) fn panel(
                         "\nUnknown cells remain in the order. Cost and work are Unknown.",
                     );
                 }
-            } else {
-                text.push_str("\nClick an observed cell to choose its reference level.");
             }
             if let Some(reason) = &preview.reason {
                 text.push_str(&format!("\n{reason}"));
@@ -287,7 +300,8 @@ pub(crate) fn panel(
                     position_type: PositionType::Absolute,
                     right: Val::Px(12.),
                     top: Val::Px(72.),
-                    max_width: Val::Px(400.),
+                    // A fixed width: with a maximum width the box was one wrapped line too short.
+                    width: Val::Px(400.),
                     flex_direction: FlexDirection::Column,
                     padding: UiRect::all(Val::Px(10.)),
                     row_gap: Val::Px(5.),
