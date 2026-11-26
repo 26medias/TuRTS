@@ -1,3 +1,4 @@
+// turts-test-role: unit
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -37,7 +38,8 @@ test('(1) a later member of a crowd has no per-unit bound; check (2) still appli
     tracker.observe('b', true, [21.5, 20], 0.5, at(10, [[23, 20]]));
     tracker.observe('b', true, [21.5, 20], 0.5, at(11, [], [[20.2, 20]]));
     tracker.observe('b', true, [21.5, 20], 0.5, at(300, [], [[20.2, 20]]));
-    assert.throws(() => tracker.observe('b', true, [21.5, 20], 0.5, at(301)), /did not go back/);
+    tracker.observe('b', true, [21.5, 20], 0.5, at(301));
+    assert.throws(() => tracker.observe('b', true, [21.5, 20], 0.5, at(362)), /did not go back/);
 });
 test('(1) two orders to one point make one crowd with one first unit; another point is another crowd', () => {
     const tracker = new SettledTracker();
@@ -72,6 +74,24 @@ test('(2) is measured from the FIRST settle point: small steps that add up are c
     for (const [i, x] of [20.2, 20.4, 20.6].entries()) tracker.observe('b', true, [x, 20], 0.5, at(2 + i, [[x + 1, 20]]));
     tracker.observe('b', true, [20.6, 20], 0.5, at(5));
     assert.throws(() => tracker.observe('b', true, [20.6, 20], 0.5, at(66)), /did not go back/);
+});
+test('(2) the clock starts again when the point becomes free, however long the quiet time was', () => {
+    const tracker = order();
+    tracker.observe('b', true, [21.2, 20], 0.5, at(10, [], [[20.3, 20]]));
+    tracker.observe('b', true, [21.2, 20], 0.5, at(2400, [], [[20.3, 20]]));
+    tracker.observe('b', true, [21.2, 20], 0.5, at(2410));
+    tracker.observe('b', true, [21.2, 20], 0.5, at(2470));
+    assert.throws(() => tracker.observe('b', true, [21.2, 20], 0.5, at(2471)), /due for 61 ticks/);
+});
+test('(2) the clock starts when the unit leaves the circle, and starts again after it was back inside', () => {
+    const tracker = order();
+    tracker.observe('b', true, [20.2, 20], 0.5, at(10));
+    tracker.observe('b', true, [20.6, 20], 0.5, at(200));
+    tracker.observe('b', true, [20.6, 20], 0.5, at(260));
+    tracker.observe('b', true, [20.4, 20], 0.5, at(261));
+    tracker.observe('b', true, [20.6, 20], 0.5, at(262));
+    tracker.observe('b', true, [20.6, 20], 0.5, at(322));
+    assert.throws(() => tracker.observe('b', true, [20.6, 20], 0.5, at(323)), /did not go back/);
 });
 test('a new order clears the settle point; a unit needs its radius and the context', () => {
     const tracker = order();
