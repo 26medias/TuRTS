@@ -301,9 +301,13 @@ pub(crate) fn sync_client_notice(
             let order = packages.0.content.catalog.orders.get(&id)?;
             // An armed terrain tool names the gesture itself (operator, 2026-11-26).
             if order.target == turts_mod_api::TargetKind::TerrainDesignation {
-                return Some(
-                    "Drag on the ground to choose the area. Right-click or Esc cancels.".into(),
-                );
+                let hint = "Drag on the ground to choose the area. Right-click or Esc cancels.";
+                // A refused or unusable area says why above the hint.
+                let reason = runtime
+                    .as_deref()
+                    .and_then(|r| r.terrain_preview.as_ref())
+                    .and_then(|preview| preview.reason.as_deref());
+                return Some(reason.map_or_else(|| hint.into(), |why| format!("{why}\n{hint}")));
             }
             let target = match order.target {
                 turts_mod_api::TargetKind::Point

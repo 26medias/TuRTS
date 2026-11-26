@@ -17,6 +17,8 @@ pub(crate) struct State {
     input: Option<Input>,
     identity: Option<(u64, ContentId)>,
     start: Option<TerrainCell>,
+    /// Why the last drag was refused; shown until the next press.
+    refused: Option<&'static str>,
 }
 #[derive(Clone, Debug, PartialEq)]
 pub struct CellPreview {
@@ -71,6 +73,14 @@ pub(crate) fn cancel(core: &mut Core, effects: &mut Vec<Effect>) {
             context: "default".into(),
         });
     }
+}
+/// A refused drag keeps the tool armed; the reason shows with the hint and goes to the notices.
+fn refuse(core: &mut Core, reason: &'static str, effects: &mut Vec<Effect>) {
+    core.terrain.refused = Some(reason);
+    effects.push(Effect::Notice {
+        text_key: reason.into(),
+        units: vec![],
+    });
 }
 pub(crate) fn on_input(
     core: &mut Core,
@@ -252,9 +262,12 @@ pub(crate) fn refresh(
                 }
             }
         }
-        _ => preview
-            .cells
-            .extend(pointer.and_then(|hit| hit.cell).and_then(cell_preview)),
+        _ => {
+            preview.reason = core.terrain.refused.map(Into::into);
+            preview
+                .cells
+                .extend(pointer.and_then(|hit| hit.cell).and_then(cell_preview));
+        }
     }
     effects.push(Effect::TerrainWork(Output {
         preview: Some(preview),
@@ -306,6 +319,7 @@ pub(crate) fn intercept(
                 return true;
             }
             core.terrain.start = hit(*px, core, world, view).and_then(|hit| hit.cell);
+            core.terrain.refused = None;
             true
         }
         InputEvent::PointerUp {
@@ -325,10 +339,7 @@ pub(crate) fn intercept(
                 .zip(hit(*px, core, world, view).and_then(|hit| hit.cell))
                 .and_then(|(start, end)| rectangle(start, end, world));
             let (Some(cells), Some(input)) = (rect, core.terrain.input.clone()) else {
-                effects.push(Effect::Notice {
-                    text_key: "Drag over the ground to choose the area.".into(),
-                    units: vec![],
-                });
+                refuse(core, "Drag over the ground to choose the area.", effects);
                 return true;
             };
             let units = eligible(core, &input, world);
@@ -341,10 +352,7 @@ pub(crate) fn intercept(
             let level = match refusal(start, cells, &operation, world) {
                 Ok(level) => level,
                 Err(reason) => {
-                    effects.push(Effect::Notice {
-                        text_key: reason.into(),
-                        units: vec![],
-                    });
+                    refuse(core, reason, effects);
                     return true;
                 }
             };
@@ -714,6 +722,32 @@ mod tests {
             ["Nothing to dig above the height where you started. Start the drag on lower ground."]
         );
         assert!(c.terrain.input.is_some(), "the tool stays armed");
+        let mut e = vec![];
+        refresh(&mut c, &w, &VIEW, &mut e);
+        assert_eq!(
+            preview(&e).reason.as_deref(),
+            Some(
+                "Nothing to dig above the height where you started. Start the drag on lower ground."
+            )
+        );
+        // The next drag, from the foot of the ridge over it, clears the reason.
+        let (a, b) = (px(&c, 9.5, 3.5), px(&c, 10.5, 3.5));
+        for event in [
+            InputEvent::PointerDown {
+                button: Button::Left,
+                px: a,
+                over_widget: false,
+            },
+            InputEvent::PointerMove {
+                px: b,
+                over_widget: false,
+            },
+        ] {
+            intercept(&mut c, &event, &w, &VIEW, &mut e);
+        }
+        e.clear();
+        refresh(&mut c, &w, &VIEW, &mut e);
+        assert_eq!(preview(&e).reason.as_deref(), None);
     }
     #[test]
     fn a_fill_that_starts_on_the_ridge_goes_up_to_the_ridge_height() {
