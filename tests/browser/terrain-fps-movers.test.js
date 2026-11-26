@@ -13,7 +13,6 @@ test('the accepted commands stay, and the movers get alternating moves in tick o
     const base = [{tick: 30, slot: 1, envelope: {order: 'skirmish:order_attack', units: [3]}}];
     const script = scriptWithMovers(base, [6, 7]);
     assert.deepEqual(script.find(c => c.tick === 30), base[0]);
-    assert.deepEqual(script.slice(0, 2).map(c => c.tick), [30, 100]);
-    assert.deepEqual(script.filter(c => c.tick === 100 || c.tick === 200).map(c => c.envelope.target.Point.x), [18, 36]);
+    assert.deepEqual(script.slice(1, 4).map(c => [c.tick, c.envelope.units, c.envelope.target.Point.x]), [[50, [6], 18], [75, [7], 36], [100, [6], 36]]);
     assert.equal(script.at(-1).tick, 12000);
 });

@@ -185,18 +185,40 @@ function reachableIntent(fixture,state,bindings,intent,record){
     record({tick:world(state).tick,label,substitute:substitute.label});
     return {...intent,actors:[substitute.label]};
 }
+// The cell whose top the scene ray through the page point `point` meets first: the cell that a drag picks there.
+function rayCell(scene,levelOf,point){
+    const {origin:o,direction:d}=screenRay(scene,invert4(scene.clip_from_world),point);
+    if(!(d[1]<0))return null;
+    const end=(-.5-o[1])/d[1],steps=Math.ceil(Math.hypot(...d)*end/.02);
+    for(let i=0;i<=steps;i++){const t=end*i/steps,x=Math.floor(o[0]+t*d[0]),y=Math.floor(o[2]+t*d[2]);
+        if(x>=0&&x<64&&y>=0&&y<48&&o[1]+t*d[1]<=levelOf(x,y)*.25)return [x,y];}
+    return null;
+}
+// A page point that picks the cell, also one pixel round it. A cell behind higher ground can have none.
+function cellAim(scene,levelOf,[x,y]){
+    for(const [fx,fy]of [[.5,.5],[.5,.3],[.5,.7],[.3,.5],[.7,.5]]){
+        const point=project(scene,[x+fx,y+fy,levelOf(x,y)*.25]);
+        if([[0,0],[1,0],[-1,0],[0,1],[0,-1]].every(([dx,dy])=>{const c=rayCell(scene,levelOf,[point[0]+dx,point[1]+dy]);return c&&c[0]===x&&c[1]===y;}))return point;
+    }
+    return null;
+}
 // The one drag that gives the work order of `cells` ({min,max}) at `level` (the operator's rule: the drag start is the
 // reference height). A corner of the area at the level starts the drag. Else the area grows by one row or column whose
 // cells are all at the level (they need no work), and the drag starts at a corner of it. `levelOf(x,y)` is the level.
-function dragFor(cells,level,levelOf){
-    const grow=[[0,0,0,0],[-1,0,0,0],[0,-1,0,0],[0,0,1,0],[0,0,0,1]];
+// With `aim(cell)` (a page point or null), both ends of the drag must be cells that the player can point at; the area
+// may then grow by two rows or columns.
+function dragFor(cells,level,levelOf,aim){
+    const grow=[[0,0,0,0],[-1,0,0,0],[0,-1,0,0],[0,0,1,0],[0,0,0,1],...(aim?[[-2,0,0,0],[0,-2,0,0],[0,0,2,0],[0,0,0,2]]:[])];
     for(const [left,top,right,bottom] of grow){
         const rect={min:[cells.min[0]+left,cells.min[1]+top],max:[cells.max[0]+right,cells.max[1]+bottom]};
         const added=[];for(let y=rect.min[1];y<rect.max[1];y++)for(let x=rect.min[0];x<rect.max[0];x++)if(x<cells.min[0]||x>=cells.max[0]||y<cells.min[1]||y>=cells.max[1])added.push([x,y]);
         if(added.some(([x,y])=>levelOf(x,y)!==level))continue;
         const [x0,y0,x1,y1]=[rect.min[0],rect.min[1],rect.max[0]-1,rect.max[1]-1];
         for(const [start,end] of [[[x0,y0],[x1,y1]],[[x1,y0],[x0,y1]],[[x0,y1],[x1,y0]],[[x1,y1],[x0,y0]]])
-            if(levelOf(...start)===level)return {start,end,cells:rect};
+            if(levelOf(...start)===level){
+                if(!aim)return {start,end,cells:rect};
+                const from=aim(start),to=from&&aim(end);if(to)return {start,end,cells:rect,from,to};
+            }
     }
     throw Error('No drag gives this work order: '+JSON.stringify({cells,level}));
 }
@@ -232,11 +254,11 @@ async function issue(page,fixture,bindings,intent,preselected=false) {
             const button=state.ui.find(w=>w.visible&&w.enabled&&w.widget_action?.tool===tool),[x,y,w,h]=button.rect;
             await click(page,[x+w/2,y+h/2]);
             // The player's gesture (2026-11-26): the tool button, then a drag that starts at the target level.
-            state=await read(page);const drag=dragFor(intent.cells,intent.target_elevation,(x,y)=>elevation(fixture,state,x,y));
-            const a=drag.start.map(n=>n+.5),b=drag.end.map(n=>n+.5);
+            state=await read(page);const levelOf=(x,y)=>elevation(fixture,state,x,y);
+            const drag=dragFor(intent.cells,intent.target_elevation,levelOf,cell=>cellAim(state.scene,levelOf,cell));
             await activatePage(page);
-            await page.mouse.move(...project(state.scene,[...a,permittedTop(fixture,state,a)]));await page.mouse.down();await sleep(PRESS_MS);
-            await page.mouse.move(...project(state.scene,[...b,permittedTop(fixture,state,b)]),{steps:8});await sleep(PRESS_MS);await page.mouse.up();await sleep(PRESS_MS);
+            await page.mouse.move(...drag.from);await page.mouse.down();await sleep(PRESS_MS);
+            await page.mouse.move(...drag.to,{steps:8});await sleep(PRESS_MS);await page.mouse.up();await sleep(PRESS_MS);
             return drag.cells;
         }
     }finally{await page.keyboard.up('Shift');}
@@ -526,4 +548,4 @@ async function drive({pagesBySlot,fixture,capture,record,recordInput,onPoll,reco
     }catch(error){error.faults=faults;error.return_records=settled.records;throw error;}
     finally{clearInterval(timer);while(inPoll)await sleep(10);await pollTail;}
 }
-module.exports={activatePage,project,read,actorBindings,permittedTop,selectActors,issue,publicOutcomes,physical,overlapFault,freePoint,reachableIntent,dragFor,faultList,bodyAt,drive};
+module.exports={activatePage,project,read,actorBindings,permittedTop,selectActors,issue,publicOutcomes,physical,overlapFault,freePoint,reachableIntent,dragFor,rayCell,cellAim,faultList,bodyAt,drive};
