@@ -2,7 +2,7 @@
 const assert = require('node:assert/strict');
 const {movementIntervals} = require('./terrain-fps-intervals');
 
-const frame = (at, a, b) => ({at, group_positions: [
+const frame = (at, a, b) => ({at, positions: [
   {unit: 1, position: [a, 0, 0]}, {unit: 2, position: [b, 0, 0]},
 ]});
 const frames = [0, 500, 1000, 1500, 2000, 2200].map(t => frame(t, t / 1000, t / 1000));
