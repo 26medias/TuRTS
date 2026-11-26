@@ -1943,7 +1943,10 @@ fn step_inner(
     // both keep their start pose: contact stops the step, and no unit wins. A part of a
     // step is on the checked line of the step, so it needs no new terrain check.
     // Two own units that the push could not part (terrain holds one of them) do the same
-    // when their overlap is deeper than `MOVING_OVERLAP` (rule 4).
+    // when their overlap is deeper than `MOVING_OVERLAP` (rule 4). Of two own units, only a
+    // unit whose own step goes toward the other yields: in a queue the unit behind waits and
+    // the unit ahead goes on, so a fast unit that closes in on a slow one cannot stop both
+    // (FM2 return deadlock, 2026-11-26).
     let ends = positions.clone();
     // The units whose step comes nearer to a body that it may not overlap (so deep).
     let conflicts = |positions: &[Vec2]| -> Vec<bool> {
@@ -1990,7 +1993,11 @@ fn step_inner(
                 } else {
                     (from + course * part).length()
                 };
+                // An own unit that steps away from the other does not yield to it.
+                let toward = limit == 0.0
+                    || (positions[row] - start[row]).dot(start[other] - start[row]) > 0.0;
                 if other != row
+                    && toward
                     && distance < f64::from(unit.radius) + f64::from(body.radius) - f64::from(limit)
                     && distance < from.length()
                 {

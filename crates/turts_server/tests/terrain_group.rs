@@ -17,6 +17,8 @@ mod export;
 mod fixture;
 #[path = "terrain_group/flock.rs"]
 mod flock;
+#[path = "terrain_group/fm2_return.rs"]
+mod fm2_return;
 #[allow(dead_code)]
 #[path = "../src/orders.rs"]
 mod orders;
