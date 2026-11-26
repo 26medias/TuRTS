@@ -1,1 +1,1 @@
-(id:"spade",name:"Spade",operation:Excavate,work_per_second:64,reach:1.5,allowed_materials:["quarry_ridge:soil_layer"],max_hardness:1,output_destination:Inventory)
+(id:"spade",name:"Dig",operation:Excavate,work_per_second:64,reach:1.5,allowed_materials:["quarry_ridge:soil_layer"],max_hardness:1,output_destination:Inventory)

@@ -1,1 +1,1 @@
-(id:"backfill",name:"Backfill",operation:Fill(material:"quarry_ridge:soil_layer"),work_per_second:64,reach:1.5,allowed_materials:["quarry_ridge:soil_layer","quarry_ridge:iron_layer"],max_hardness:8,output_destination:Inventory)
+(id:"backfill",name:"Fill",operation:Fill(material:"quarry_ridge:soil_layer"),work_per_second:64,reach:1.5,allowed_materials:["quarry_ridge:soil_layer","quarry_ridge:iron_layer"],max_hardness:8,output_destination:Inventory)

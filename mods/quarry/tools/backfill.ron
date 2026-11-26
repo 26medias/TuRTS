@@ -1,1 +1,1 @@
-(id:"backfill",name:"Backfill",operation:Fill(material:"quarry:soil_layer"),work_per_second:8,reach:1.5,allowed_materials:["quarry:soil_layer","quarry:iron_layer"],max_hardness:8,output_destination:Inventory)
+(id:"backfill",name:"Fill",operation:Fill(material:"quarry:soil_layer"),work_per_second:8,reach:1.5,allowed_materials:["quarry:soil_layer","quarry:iron_layer"],max_hardness:8,output_destination:Inventory)
