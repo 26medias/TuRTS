@@ -138,17 +138,25 @@ pub(super) fn authored_fixture(fog: bool, concentrated: bool) -> Fixture {
                 lane - 5.25 + (n / 16) as f32 * 0.7,
             ));
         }
-        // Static enemies lie on the OTHER slot's ordinary scouting route.
+        // Static enemies lie beside the OTHER slot's ordinary scouting route: in sight of its
+        // scouts as they pass, never on their way. A block on the route is a wall of standing
+        // bodies that the flock does not walk round until the local path (T-59): scouts that
+        // pass it then stand at its far face, in sight, and the row has no hides (b3-1,
+        // 2026-11-26). The movers' band ends 0.78 m before the block; the scouts' row nearest
+        // to it passes 1.375 m away, so a scout east of about x 62.7 sees it.
         let foreign_lane = if concentrated {
             76. - f32::from(slot) * 16.
         } else {
-            96. - f32::from(slot) * 64.
+            96. - f32::from(slot) * 64. - 10.
         };
+        // Near the east end of the shuttle (x 32 to 80): only scouts near that end see the
+        // block, and the slowest scouts are out of sight when the leg back to x 32 ends.
+        let stationary_x = if concentrated { 60.625 } else { 74.625 };
         for n in 0..100 {
             map.placements.push(place(
                 "sv7_stationary",
                 slot,
-                60.625 + (n % 10) as f32 * 0.75,
+                stationary_x + (n % 10) as f32 * 0.75,
                 foreign_lane - 3.375 + (n / 10) as f32 * 0.75,
             ));
             map.placements.push(place(
