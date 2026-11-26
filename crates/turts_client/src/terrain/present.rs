@@ -120,7 +120,7 @@ pub(crate) fn panel(
             text.push_str(tool.map_or("Terrain work", |tool| tool.name.as_str()));
             if let Some(level) = preview.target_elevation {
                 let unknown = preview.cells.iter().filter(|cell| !cell.current).count();
-                text.push_str(&format!("\nTarget level {level} · {} cells · {unknown} Unknown\nRelease to order. Shift queues. Right-click cancels.",preview.cells.len()));
+                text.push_str(&format!("\nTarget level {level}, {} cells, {unknown} Unknown\nRelease to order. Shift queues.",preview.cells.len()));
                 if let Some(tool) = tool {
                     if let Some(advice) =
                         super::advice::estimate(terrain, &content.catalog, tool, preview)
@@ -300,7 +300,8 @@ pub(crate) fn panel(
                     position_type: PositionType::Absolute,
                     right: Val::Px(12.),
                     top: Val::Px(72.),
-                    max_width: Val::Px(400.),
+                    // A fixed width: with a maximum width the box was one wrapped line too short.
+                    width: Val::Px(400.),
                     flex_direction: FlexDirection::Column,
                     padding: UiRect::all(Val::Px(10.)),
                     row_gap: Val::Px(5.),
