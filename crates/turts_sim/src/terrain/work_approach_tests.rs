@@ -218,6 +218,62 @@ fn approach_retains_pending_endpoint_while_actor_position_changes() {
     assert_eq!(state.approach.as_ref().unwrap().poses, poses);
     assert_eq!((state.done, state.carry, state.banked), (17, 3, true));
 }
+/// Nora K-1 (a6d54cee): a walk that makes no progress fails its pose after `STUCK_TICKS`
+/// approach checks, and the unit takes another pose; one check earlier it keeps the pose.
+/// A build without the stuck rule keeps the same endpoint for ever (shown as Approaching).
+#[test]
+fn approach_takes_another_pose_after_a_walk_with_no_progress() {
+    let (mut app, unit, mut state) = approach_fixture();
+    let cell = Cell { x: 11, y: 10 };
+    let entity = unit_entity(app.world(), unit).unwrap();
+    approach(app.world_mut(), unit, cell, &mut state);
+    let first = app.world().get::<crate::MoveTarget>(entity).unwrap().0;
+    // The unit stands still with its target kept: a pose that it cannot reach.
+    for check in 1..STUCK_TICKS {
+        approach(app.world_mut(), unit, cell, &mut state);
+        assert_eq!(
+            app.world()
+                .get::<crate::MoveTarget>(entity)
+                .map(|target| target.0),
+            Some(first),
+            "the pose failed early, at check {check}"
+        );
+    }
+    approach(app.world_mut(), unit, cell, &mut state);
+    let next = app
+        .world()
+        .get::<crate::MoveTarget>(entity)
+        .map(|target| target.0);
+    assert!(
+        next.is_some_and(|next| next != first),
+        "a walk with no progress kept its pose: {next:?}"
+    );
+}
+/// Nora K-1 (a6d54cee): a walk that the movement ended short of its endpoint (its target is
+/// gone) fails that pose at the next check, and the unit takes another pose. A build without
+/// the short-walk rule sends the same endpoint again, which the movement ends again.
+#[test]
+fn approach_takes_another_pose_after_a_walk_that_ended_short() {
+    let (mut app, unit, mut state) = approach_fixture();
+    let cell = Cell { x: 11, y: 10 };
+    let entity = unit_entity(app.world(), unit).unwrap();
+    approach(app.world_mut(), unit, cell, &mut state);
+    let first = app.world().get::<crate::MoveTarget>(entity).unwrap().0;
+    // The movement ends the walk a little way from the endpoint.
+    app.world_mut().get_mut::<Position>(entity).unwrap().0 += bevy_math::Vec2::new(0.025, -0.025);
+    app.world_mut()
+        .entity_mut(entity)
+        .remove::<crate::MoveTarget>();
+    approach(app.world_mut(), unit, cell, &mut state);
+    let next = app
+        .world()
+        .get::<crate::MoveTarget>(entity)
+        .map(|target| target.0);
+    assert!(
+        next.is_some_and(|next| next != first),
+        "a walk that ended short kept its pose: {next:?}"
+    );
+}
 #[test]
 fn new_approach_retires_stale_motion_without_erasing_job_and_cancel_drops_candidates() {
     let (mut app, unit, mut state) = approach_fixture();
