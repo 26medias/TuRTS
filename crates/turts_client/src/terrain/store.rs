@@ -556,7 +556,7 @@ fn validate_rect(grid: Grid, rect: TerrainRect, limit: usize) -> Result<(), Inva
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use turts_mod_api::{ObservationPhase, TerrainGenerationDef};
     use turts_net_protocol::TerrainMaterialId;
@@ -614,7 +614,7 @@ mod tests {
             current: true,
         }
     }
-    fn state() -> PermittedTerrain {
+    pub(crate) fn state() -> PermittedTerrain {
         PermittedTerrain::stage_snapshot(
             layout(),
             &basis(1),

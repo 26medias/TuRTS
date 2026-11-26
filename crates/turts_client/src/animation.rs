@@ -352,6 +352,14 @@ pub fn animate_units(
                 .get(&id)
                 .map(|r| r.activity)
         });
+        // A terrain order reads `Gathering` also while its worker only waits.
+        let terrain_waits = id.is_some_and(|id| {
+            replica
+                .replica
+                .as_ref()
+                .and_then(|r| r.terrain.as_ref()?.work.get(&id))
+                .is_some_and(|work| work.wait.is_some())
+        });
         let attacking = activity == Some(turts_net_protocol::Activity::Attacking)
             || id.is_some_and(|id| {
                 replica.replica.as_ref().is_some_and(|r| {
@@ -370,7 +378,7 @@ pub fn animate_units(
             rig.mapping.attack.as_ref().or(idle)
         } else if moving {
             rig.mapping.r#move.as_ref().or(idle)
-        } else if activity == Some(turts_net_protocol::Activity::Gathering) {
+        } else if activity == Some(turts_net_protocol::Activity::Gathering) && !terrain_waits {
             rig.mapping.work.as_ref().or(idle)
         } else if attacking {
             rig.mapping.attack.as_ref().or(idle)
@@ -599,6 +607,47 @@ mod tests {
                 },
             );
         app.update();
+    }
+    /// A terrain order reads `Gathering` for its whole life. The operator's case (2026-11-26): units that waited out
+    /// of reach played the dig clip.
+    #[test]
+    fn a_terrain_worker_plays_work_only_while_it_works() {
+        use turts_net_protocol::terrain::{TerrainWorkRecord, TerrainWorkWait};
+        let (mut app, root, _) = fixture();
+        let mut terrain = crate::terrain::store::tests::state();
+        for (wait, clip) in [
+            (Some(TerrainWorkWait::Approaching), "Idle"),
+            (None, "Work"),
+            (Some(TerrainWorkWait::Blocked), "Idle"),
+        ] {
+            terrain.work.insert(
+                1,
+                TerrainWorkRecord {
+                    unit: UnitId(1),
+                    designation: turts_mod_api::TerrainDesignation {
+                        tool: "test:spade".into(),
+                        cells: turts_mod_api::TerrainRect {
+                            min: turts_mod_api::TerrainCell { x: 0, y: 0 },
+                            max: turts_mod_api::TerrainCell { x: 1, y: 1 },
+                        },
+                        target_elevation: 0,
+                    },
+                    current_cell: None,
+                    completed_work: 0,
+                    required_work: None,
+                    wait,
+                },
+            );
+            app.world_mut()
+                .resource_mut::<ReplicaState>()
+                .replica
+                .as_mut()
+                .unwrap()
+                .terrain = Some(terrain.clone());
+            step(&mut app, 0., 0.016, Activity::Gathering);
+            let rig = app.world().get::<UnitAnimation>(root).unwrap();
+            assert_eq!(rig.current.as_deref(), Some(clip), "wait {wait:?}");
+        }
     }
     #[test]
     fn stable_rig_rotation_keeps_transform_clean_and_changed_rotation_is_still_applied() {
