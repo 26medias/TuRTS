@@ -299,6 +299,12 @@ pub(crate) fn sync_client_notice(
             let packages = acquired.as_deref()?;
             let id = turts_mod_api::ContentId::parse(id).ok()?;
             let order = packages.0.content.catalog.orders.get(&id)?;
+            // An armed terrain tool names the gesture itself (operator, 2026-11-26).
+            if order.target == turts_mod_api::TargetKind::TerrainDesignation {
+                return Some(
+                    "Drag on the ground to choose the area. Right-click or Esc cancels.".into(),
+                );
+            }
             let target = match order.target {
                 turts_mod_api::TargetKind::Point
                 | turts_mod_api::TargetKind::PointOrUnit
@@ -307,9 +313,7 @@ pub(crate) fn sync_client_notice(
                 turts_mod_api::TargetKind::Node => "click a resource",
                 turts_mod_api::TargetKind::Job => "choose a job",
                 turts_mod_api::TargetKind::Content => "choose an item",
-                turts_mod_api::TargetKind::TerrainDesignation => {
-                    "choose an observed reference level, then drag a work rectangle"
-                }
+                turts_mod_api::TargetKind::TerrainDesignation => return None,
                 turts_mod_api::TargetKind::UtilityRoute => {
                     "click the start, then the end of the line"
                 }

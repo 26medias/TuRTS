@@ -610,11 +610,12 @@ fn order_target_valid(
             }
             _ => false,
         },
+        // An armed terrain tool takes a drag anywhere on the ground; the order says why when it refuses an area.
+        TargetKind::TerrainDesignation => true,
         // `ContentAtPoint` (API 0.2.4, row O5) is the target of a placement: `UI-PLACE`.
         TargetKind::Job
         | TargetKind::Content
         | TargetKind::ContentAtPoint
-        | TargetKind::TerrainDesignation
         | TargetKind::UtilityRoute => false,
     }
 }

@@ -12,7 +12,7 @@ use turts_interaction::CLICK_DRAG_PIXELS;
 pub(crate) enum DragKind {
     /// The box selection of units.
     Selection,
-    /// The work rectangle of a terrain tool that has its reference level.
+    /// The work area of an armed terrain tool.
     TerrainWork,
 }
 

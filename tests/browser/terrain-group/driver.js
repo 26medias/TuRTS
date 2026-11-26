@@ -192,9 +192,8 @@ async function issue(page,fixture,bindings,intent,preselected=false) {
             let state=await wait(page,s=>s.ui.some(w=>w.visible&&w.enabled&&w.widget_action?.tool===tool),'Bound public TerrainTools button absent');
             const button=state.ui.find(w=>w.visible&&w.enabled&&w.widget_action?.tool===tool),[x,y,w,h]=button.rect;
             await click(page,[x+w/2,y+h/2]);
-            const reference=intent.target_elevation===4?[30.5,19.5]:[28.5,24.5];
-            state=await read(page);assert(permittedTop(fixture,state,reference)===intent.target_elevation*.25,'Permitted reference level changed');
-            await click(page,project(state.scene,[...reference,intent.target_elevation*.25]));
+            // The player's gesture (2026-11-26): the tool button, then a drag over the area. The level of the order
+            // comes from the ground round the area; the applied order is checked against the fixture below.
             state=await read(page);const a=intent.cells.min.map(n=>n+.5),b=intent.cells.max.map(n=>n-.5);
             await activatePage(page);
             await page.mouse.move(...project(state.scene,[...a,permittedTop(fixture,state,a)]));await page.mouse.down();await sleep(PRESS_MS);
@@ -395,7 +394,12 @@ async function drive({pagesBySlot,fixture,capture,record,recordInput,onPoll}) {
                 }
                 // A receipt can arrive before the replica reaches its applied tick. The
                 // next input must see this work order in the replica, not the state before it.
-                if(intent.action!=='move')await wait(page,s=>world(s).tick>=receipt.applied_tick,'Replica did not reach the applied tick of the work order');
+                if(intent.action!=='move'&&intent.action!=='hold'){
+                    // The drag gave the order that the fixture names: the same cells and the level from the ground round them.
+                    const done=await wait(page,s=>world(s).tick>=receipt.applied_tick,'Replica did not reach the applied tick of the work order');
+                    const work=row(done,bindings.get(intent.actors[0]))?.current?.target?.TerrainWork;
+                    assert(work&&work.target_elevation===intent.target_elevation&&work.cells.min.x===intent.cells.min[0]&&work.cells.min.y===intent.cells.min[1]&&work.cells.max.x===intent.cells.max[0]&&work.cells.max.y===intent.cells.max[1],'The drag gave a different work order: '+JSON.stringify(work));
+                }
                 settled.commit(intent.actors,intent.action,intent.action==='move'?intent.slot+'@'+intent.point.join(','):null);
                 for(const label of intent.actors)original.delete(label);
                 const after=harvest(slot,await read(page));

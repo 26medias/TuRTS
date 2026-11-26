@@ -19,6 +19,7 @@ type ButtonVisualQuery<'w, 's> = Query<
         Option<&'static bevy::picking::hover::Hovered>,
         &'static primitives::WidgetEnabled,
         Option<&'static primitives::WidgetButtonColour>,
+        Option<&'static primitives::WidgetButtonAction>,
         &'static mut BackgroundColor,
     ),
     With<Button>,
@@ -35,12 +36,24 @@ type ButtonActionQuery<'w, 's> = Query<
     With<Button>,
 >;
 
-pub(super) fn update_widget_button_states(mut buttons: ButtonVisualQuery<'_, '_>) {
-    for (pressed, hovered, enabled, colour, mut background) in &mut buttons {
+/// The background of the button of the armed terrain tool.
+pub(super) const ARMED_BUTTON: Color = Color::srgb(0.62, 0.45, 0.08);
+
+pub(super) fn update_widget_button_states(
+    runtime: Option<Res<crate::core_adapter::CoreRuntime>>,
+    mut buttons: ButtonVisualQuery<'_, '_>,
+) {
+    let armed = runtime.as_deref().and_then(|r| r.terrain_preview.as_ref());
+    for (pressed, hovered, enabled, colour, action, mut background) in &mut buttons {
+        let is_armed = armed.is_some_and(|preview| {
+            matches!(action.map(|action| &action.0), Some(primitives::WidgetAction::TerrainWork { tool, .. }) if *tool == preview.input.tool)
+        });
         *background = BackgroundColor(if let Some(colour) = colour {
             colour.0.with_alpha(if enabled.0 { 1.0 } else { 0.35 })
         } else if !enabled.0 {
             Color::srgb(0.20, 0.20, 0.20)
+        } else if is_armed {
+            ARMED_BUTTON
         } else if pressed.is_some() {
             Color::srgb(0.10, 0.30, 0.36)
         } else if hovered.is_some_and(|hovered| hovered.0) {
@@ -201,5 +214,52 @@ pub(super) fn activate_widget(
         primitives::WidgetAction::FocusAlert { x, y, unit } => {
             alert::activate(*x, *y, *unit, &mut queue, &state, acquired.as_deref())
         }
+    }
+}
+
+#[cfg(test)]
+mod armed_tests {
+    use super::*;
+    use crate::core_adapter::CoreRuntime;
+
+    #[test]
+    fn the_button_of_the_armed_terrain_tool_shows_as_active() {
+        let mut app = App::new();
+        let mut runtime = CoreRuntime::default();
+        runtime.terrain_preview = Some(turts_interaction::terrain::Preview {
+            input: turts_interaction::terrain::Input {
+                order: "quarry:order_work".into(),
+                tool: "quarry:spade".into(),
+            },
+            target_elevation: None,
+            cells: vec![],
+            rectangle: None,
+            can_submit: false,
+            reason: None,
+        });
+        app.insert_resource(runtime);
+        app.add_systems(Update, update_widget_button_states);
+        let button = |tool: &str| {
+            (
+                Button,
+                primitives::WidgetEnabled(true),
+                primitives::WidgetButtonAction(primitives::WidgetAction::TerrainWork {
+                    order: "quarry:order_work".into(),
+                    tool: tool.into(),
+                }),
+                BackgroundColor::default(),
+            )
+        };
+        let armed = app.world_mut().spawn(button("quarry:spade")).id();
+        let other = app.world_mut().spawn(button("quarry:backfill")).id();
+        app.update();
+        let colour = |app: &App, entity| app.world().get::<BackgroundColor>(entity).unwrap().0;
+        assert_eq!(colour(&app, armed), ARMED_BUTTON);
+        assert_ne!(colour(&app, other), ARMED_BUTTON);
+        app.world_mut()
+            .resource_mut::<CoreRuntime>()
+            .terrain_preview = None;
+        app.update();
+        assert_ne!(colour(&app, armed), ARMED_BUTTON);
     }
 }

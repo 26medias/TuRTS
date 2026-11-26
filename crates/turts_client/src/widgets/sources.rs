@@ -793,7 +793,7 @@ fn terrain_tools(context: SourceContext<'_>, order: &str) -> SourceData {
         row.set(
             ItemField::Reason,
             if enabled {
-                "Choose an observed reference height, then drag the work rectangle"
+                "Drag on the ground to choose the area"
             } else {
                 "Waiting for editable terrain"
             },

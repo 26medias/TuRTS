@@ -8,7 +8,7 @@ How to play the person check:
 
 1. Drag a selection box around all your units. Right-click the far side of the ridge, near (50, 24).
 2. The Porters go through the narrow opening. The Carriers wait with a status.
-3. Select one Porter. Choose the Scraper at the bottom left. Click an observed cell to capture its reference level. Drag a rectangle over the ridge around the opening (X 30 to 34, Y 20 to 28) to level 0.
+3. Select one Porter. Choose the Scraper at the bottom left. Drag over the ridge around the opening (X 30 to 34, Y 20 to 28) and release: the area is dug down to the lowest ground that you see round it. Right-click cancels.
 4. When the passage is wide enough, the waiting Carriers go on with their first order. Do not give a new order.
 
 Frozen fixture values (from the generator, not the default Terrain Stockyard balance): Scraper and Leveler 64 work per second, compact and broad classes max step 0, four resource units per world cube. Dug loam goes to the slot balance. Visibility is off on this map.

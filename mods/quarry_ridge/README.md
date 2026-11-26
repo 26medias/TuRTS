@@ -8,7 +8,7 @@ How to play the person check:
 
 1. Drag a selection box around all your units. Right-click the far side of the ridge, near (50, 24).
 2. The Walkers go through the narrow opening. The Crawlers wait with a status.
-3. Select one Walker. Choose the Spade at the bottom left. Click an observed cell to capture its reference level. Drag a rectangle over the ridge around the opening (X 30 to 34, Y 20 to 28) to level 0.
+3. Select one Walker. Choose the Spade at the bottom left. Drag over the ridge around the opening (X 30 to 34, Y 20 to 28) and release: the area is dug down to the lowest ground that you see round it. Right-click cancels.
 4. When the passage is wide enough, the waiting Crawlers go on with their first order. Do not give a new order.
 
 Frozen fixture values (from the generator, not the default Quarry balance): Walker and Crawler inventory 256, Spade and Backfill 64 work per second, light and wide classes max step 0. The dug soil goes into the Walker's inventory. Visibility is off on this map.

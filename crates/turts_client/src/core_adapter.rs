@@ -1024,9 +1024,9 @@ fn pointer_button(button: bevy::input::mouse::MouseButton) -> Option<turts_mod_a
 }
 
 /// The press that the drag rectangle starts from, after one pointer button event. A left press
-/// on the world starts a box selection, or the work rectangle of a terrain tool that has its
-/// reference level. A press that the core reads as another gesture (a target of a pending order,
-/// a placement, the reference click of a tool) starts none. Every other button event ends it.
+/// on the world starts a box selection, or the work area of an armed terrain tool. A press that the
+/// core reads as another gesture (a target of a pending order, a placement) starts none. Every
+/// other button event ends it.
 fn drag_press(
     runtime: &CoreRuntime,
     button: turts_mod_api::Button,
@@ -1039,8 +1039,7 @@ fn drag_press(
         return None;
     }
     let kind = match runtime.terrain_preview.as_ref() {
-        Some(preview) if preview.target_elevation.is_some() => DragKind::TerrainWork,
-        Some(_) => return None,
+        Some(_) => DragKind::TerrainWork,
         None if runtime.pending_order_id().is_some() || runtime.placement_ghost.is_some() => {
             return None;
         }
