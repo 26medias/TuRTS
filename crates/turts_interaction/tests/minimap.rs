@@ -35,7 +35,7 @@ fn left_click_moves_look_at_to_the_world_point_under_the_minimap_cursor() {
         10,
     );
 
-    assert_eq!(core.camera_state().look_at, vec2(60.0, 30.0));
+    assert_eq!(core.camera_state().look_at, vec2(60.0, 10.0));
     assert!(
         effects
             .iter()
@@ -57,8 +57,8 @@ fn drag_moves_look_at_with_each_minimap_pointer_position() {
     let mut core = Core::new(camera());
 
     for (now_ms, local, expected) in [
-        (10, [0.25, 0.75], vec2(20.0, 10.0)),
-        (20, [0.75, 0.25], vec2(60.0, 30.0)),
+        (10, [0.25, 0.75], vec2(20.0, 30.0)),
+        (20, [0.75, 0.25], vec2(60.0, 10.0)),
     ] {
         core.step(
             &[InputEvent::Minimap {
@@ -113,7 +113,7 @@ fn right_click_orders_at_the_minimap_world_point_without_moving_the_camera() {
     assert_eq!(orders[0].queue, QueueMode::Replace);
     assert_eq!(
         orders[0].target,
-        OrderTarget::Point(Pos { x: 48.0, y: 36.0 })
+        OrderTarget::Point(Pos { x: 48.0, y: 12.0 })
     );
     assert_eq!(core.camera_state(), before);
 }
