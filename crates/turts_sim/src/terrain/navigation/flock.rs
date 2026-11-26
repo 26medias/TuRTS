@@ -624,10 +624,9 @@ struct FlockState {
     audit: FlockAudit,
 }
 
-/// The place of an idle unit (Clara, V6, 2026-11-24). An own push can move the unit away;
-/// it goes back when no own mover was near for `RETURN_DELAY` ticks. A new order clears the
-/// place. A shift of less than one radius, or a shift while no return is due, moves the
-/// place with the unit.
+/// The place of an idle unit (Clara, V6, 2026-11-24): the pose where it first stopped. An own
+/// push can move the unit away; it goes back when no own mover was near for `RETURN_DELAY`
+/// ticks. Only a new order clears the place (Iris, 2026-11-26): a push never moves it.
 #[derive(Clone, Copy, Debug)]
 struct Home {
     pose: Vec2,
@@ -1672,9 +1671,11 @@ fn step_inner(
         positions[row] = end;
     }
 
-    // Stage C, part 1b: an idle unit that an own push moved goes back to its place (V6), when
-    // no own mover was near for `RETURN_DELAY` ticks and no own body stands on the place.
-    // A refused or shortened step ends the return: the unit stays where it is. Only own
+    // Stage C, part 1b: an idle unit that an own push moved one radius or more goes back to its
+    // place (V6), when no own mover was near for `RETURN_DELAY` ticks and no own body stands on
+    // the place. A push of less than one radius makes no return. A refused or shortened step
+    // stops the return where the unit stands; it tries again only after a new quiet delay, so a
+    // waiting unit stands still (Clara, 2026-11-26). Only own
     // units decide a return, so a return shows nothing of another owner. All returns read
     // the poses before the returns, so the order of the units decides nothing.
     let stepped = positions.clone();
@@ -1721,16 +1722,11 @@ fn step_inner(
                 ..home
             }
         };
-        // When the area becomes quiet, a shift of less than one radius (a crowd that settles)
-        // is not a push away: the new pose is the place. A larger shift starts the return.
-        if !place.returning && place.quiet == RETURN_DELAY {
-            if unit.position.distance(home.pose) < unit.radius {
-                place.pose = unit.position;
-            } else {
-                place.returning = true;
-            }
-        } else if !place.returning && place.quiet > RETURN_DELAY {
-            place.pose = unit.position;
+        if !place.returning
+            && place.quiet >= RETURN_DELAY
+            && unit.position.distance(home.pose) >= unit.radius
+        {
+            place.returning = true;
         }
         if place.returning {
             let to = unit.position + (home.pose - unit.position).clamp_length_max(speed * dt);
@@ -1739,12 +1735,13 @@ fn step_inner(
             } else {
                 guard(row, unit.position, to)
             };
-            if end != to || end.distance(home.pose) <= f32::EPSILON * home.pose.length() {
-                place = Home {
-                    pose: end,
-                    returning: false,
-                    ..place
-                };
+            // The place stays. A stopped return waits a new quiet delay before it tries again.
+            let arrived = end.distance(home.pose) <= f32::EPSILON * home.pose.length();
+            if end != to && !arrived {
+                place.quiet = 0;
+            }
+            if end != to || arrived {
+                place.returning = false;
             }
             positions[row] = end;
         }

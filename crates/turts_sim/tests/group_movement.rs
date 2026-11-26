@@ -1728,6 +1728,64 @@ fn pushed_idle_unit_goes_back_to_its_place() {
     );
 }
 
+/// V6 (Iris, 2026-11-26; GM8 quarry GM2-narrow): a pushed idle unit whose place is taken
+/// waits, and goes back when the place is free. Unit 1 stands at its place; unit 2 stands
+/// far away. Both are moved: unit 1 one radius and more from its place, unit 2 onto it.
+/// Unit 2 then goes back to its own place, and unit 1 must follow it to its first place.
+/// A build that makes a refused return the new place leaves unit 1 where it was moved.
+/// Unit 1 waits a full quiet delay (20 ticks) after the refusal before it tries again
+/// (Clara, 2026-11-26), so a build that tries on each tick moves it too early.
+#[test]
+fn a_pushed_unit_goes_back_when_its_taken_place_is_free() {
+    let home = Vec2::new(30.0, 32.0);
+    let far = Vec2::new(30.0, 20.0);
+    let mut app = app_with_units(&[(home.x, home.y), (far.x, far.y)], &[0, 0]);
+    for _ in 0..2 {
+        app.update();
+    }
+    set_positions(&mut app, 1, &[(home.x + 1.2, home.y), (home.x, home.y)]);
+    let at = |app: &mut bevy_app::App, id: u32| {
+        snapshot(app.world_mut())
+            .into_iter()
+            .find(|unit| unit.unit_id == id)
+            .unwrap()
+            .pos
+    };
+    let moved = Vec2::new(home.x + 1.2, home.y);
+    let mut first_poses = Vec::new();
+    let mut second_poses = Vec::new();
+    for _ in 0..400 {
+        app.update();
+        first_poses.push(at(&mut app, 1));
+        second_poses.push(at(&mut app, 2));
+    }
+    // Both units are idle from the start, so the quiet delay ends for both on one tick: unit
+    // 2 starts back, and the return of unit 1 is refused, because unit 2 still stands on the
+    // place. The case proves nothing if that never happens.
+    let refusal = second_poses
+        .iter()
+        .position(|pose| *pose != home)
+        .expect("unit 2 never went back to its own place");
+    assert!(
+        first_poses[refusal] == moved,
+        "unit 1 moved before its place was free: {:?}",
+        first_poses[refusal]
+    );
+    let waited = first_poses[refusal..refusal + 20]
+        .iter()
+        .all(|pose| *pose == moved);
+    assert!(waited, "unit 1 tried again before a new quiet delay");
+    let (first, second) = (at(&mut app, 1), at(&mut app, 2));
+    assert!(
+        second.distance(far) < 1.0e-3,
+        "unit 2 did not go back to its own place: {second:?}"
+    );
+    assert!(
+        first.distance(home) < 1.0e-3,
+        "unit 1 did not go back to its free place: {first:?}"
+    );
+}
+
 #[test]
 fn new_order_while_moving() {
     let positions: Vec<_> = (0..40)
