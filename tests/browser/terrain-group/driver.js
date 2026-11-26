@@ -222,11 +222,15 @@ function dragFor(cells,level,levelOf,aim){
     }
     throw Error('No drag gives this work order: '+JSON.stringify({cells,level}));
 }
-async function issue(page,fixture,bindings,intent,preselected=false) {
+// `workers`: the actors of earlier terrain work, also a substitute: a later work order builds on their result.
+async function issue(page,fixture,bindings,intent,preselected=false,workers=new Set()) {
     // Terrain work is aimed at the tops that the replica shows, and its actor is picked
     // at its replica position. Earlier work of the same actors must be complete first,
     // or the actor moves and a top changes between aim and press.
-    if(intent.action!=='move')await wait(page,s=>intent.actors.every(label=>!row(s,bindings.get(label))?.current?.target?.TerrainWork),'Earlier terrain work of the actors did not finish');
+    if(intent.action!=='move'&&intent.action!=='hold'){
+        await wait(page,s=>[...intent.actors,...workers].every(label=>!row(s,bindings.get(label))?.current?.target?.TerrainWork),'Earlier terrain work did not finish');
+        for(const label of intent.actors)workers.add(label);
+    }
     if(!preselected)await selectActors(page,fixture,bindings,intent.actors);
     if(intent.queue==='Append'){await page.keyboard.down('Shift');await sleep(PRESS_MS);}
     try{
@@ -320,7 +324,7 @@ function faultList(recordAll){
     }};
 }
 async function drive({pagesBySlot,fixture,capture,record,recordInput,onPoll,recordAll=false}) {
-    const bindings=new Map(),actions=[],samples=[],checks={observed_full_bodies:true,observed_no_overlap:true},original=new Map(),settled=new SettledTracker(),owned=new Map(),ended=new Map();
+    const bindings=new Map(),actions=[],samples=[],checks={observed_full_bodies:true,observed_no_overlap:true},original=new Map(),settled=new SettledTracker(),owned=new Map(),ended=new Map(),workers=new Set(),substitutes=new Set();
     const{faults,at:faultTick,check}=faultList(recordAll);
     const first=pagesBySlot.values().next().value;
     // Record only: the client frame of each order emit and of its first result, read from
@@ -434,13 +438,13 @@ async function drive({pagesBySlot,fixture,capture,record,recordInput,onPoll,reco
             const bySlot=new Map();for(const intent of batch){if(!bySlot.has(intent.slot))bySlot.set(intent.slot,[]);bySlot.get(intent.slot).push(intent);}
             await Promise.all([...bySlot].map(async([slot,intents])=>{for(const planned of intents){
                 monitor();const page=pagesBySlot.get(slot);assert(page,'Missing real peer for slot '+slot);
-                const intent=prepared.get(slot)===planned?planned:reachableIntent(fixture,await read(page),bindings,planned,fact=>(checks.covered_substitutions??=[]).push(fact));
+                const intent=prepared.get(slot)===planned?planned:reachableIntent(fixture,await read(page),bindings,planned,fact=>{(checks.covered_substitutions??=[]).push(fact);substitutes.add(fact.substitute);});
                 settled.begin(intent.actors);
                 const before=await read(page),lastSeq=Math.max(0,...(before.debug.command_results||[]).map(r=>r.seq));
                 const inputObservation=(stage,state)=>recordInput?.({slot,stage,...(harvest(slot,state),{}),wall_ms:Date.now(),tick:world(state).tick,focus:state.debug.focus,cursor:state.debug.cursor,selection:state.debug.selection,phase:state.debug.phase,command_results:state.debug.command_results});
                 inputObservation('before',before);
                 let ordered;
-                try{ordered=await issue(page,fixture,bindings,intent,prepared.get(slot)===planned);inputObservation('after',await read(page));}catch(error){
+                try{ordered=await issue(page,fixture,bindings,intent,prepared.get(slot)===planned,workers);inputObservation('after',await read(page));}catch(error){
                     const state=await read(page);await capture?.('failed-selection-slot'+slot,state);
                     const picks=intent.actors.map(label=>{const id=bindings.get(label),actor=fixture.actors.find(a=>a.label===label),unit=world(state).units.find(u=>u.unit_id===id);return {label,id,position:unit?.pos,projected:unit?project(state.scene,[...unit.pos,contact(state,id)+actor.profile.pick_height]):null};});
                     error.message+='; actual selection='+JSON.stringify(state?.debug?.selection)+'; intended picks='+JSON.stringify(picks);
@@ -534,7 +538,8 @@ async function drive({pagesBySlot,fixture,capture,record,recordInput,onPoll,reco
         }else if(fixture.scene_name==='GM2-narrow'){
             for(const label of large)check(()=>crossed(fixture,final,bindings,[label]));checks.large12_original_move_completed=true;checks.opening_tick=openingTick;
         }else if(fixture.scene_name==='GM4-edit-during-approach'){
-            check(()=>assert(closed&&reopened&&distant.moved,'Actual fill/reopen or distant motion missing'));for(const label of labels(a=>a.label!=='small.0.0'&&a.label!=='large.2.3'))check(()=>crossed(fixture,final,bindings,[label]));checks.closed_reopened=true;checks.distant_order_unchanged_through_tick=340;
+            check(()=>assert(closed&&reopened&&distant.moved,'Actual fill/reopen or distant motion missing'));// A substitute worker gave up its move for the work, as small.0.0 does.
+            for(const label of labels(a=>a.label!=='small.0.0'&&a.label!=='large.2.3'&&!substitutes.has(a.label)))check(()=>crossed(fixture,final,bindings,[label]));checks.closed_reopened=true;checks.distant_order_unchanged_through_tick=340;
         }else{
             for(const actor of fixture.actors)check(()=>{const id=bindings.get(actor.label);assert(idle(final,id),'Feasible cohort did not finish: '+actor.label);
                 if(actor.label==='blocker')return;
