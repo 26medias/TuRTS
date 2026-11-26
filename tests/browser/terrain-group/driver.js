@@ -162,6 +162,21 @@ function reachableIntent(fixture,state,bindings,intent,record){
     record({tick:world(state).tick,label,substitute:substitute.label});
     return {...intent,actors:[substitute.label]};
 }
+// The one drag that gives the work order of `cells` ({min,max}) at `level` (the operator's rule: the drag start is the
+// reference height). A corner of the area at the level starts the drag. Else the area grows by one row or column whose
+// cells are all at the level (they need no work), and the drag starts at a corner of it. `levelOf(x,y)` is the level.
+function dragFor(cells,level,levelOf){
+    const grow=[[0,0,0,0],[-1,0,0,0],[0,-1,0,0],[0,0,1,0],[0,0,0,1]];
+    for(const [left,top,right,bottom] of grow){
+        const rect={min:[cells.min[0]+left,cells.min[1]+top],max:[cells.max[0]+right,cells.max[1]+bottom]};
+        const added=[];for(let y=rect.min[1];y<rect.max[1];y++)for(let x=rect.min[0];x<rect.max[0];x++)if(x<cells.min[0]||x>=cells.max[0]||y<cells.min[1]||y>=cells.max[1])added.push([x,y]);
+        if(added.some(([x,y])=>levelOf(x,y)!==level))continue;
+        const [x0,y0,x1,y1]=[rect.min[0],rect.min[1],rect.max[0]-1,rect.max[1]-1];
+        for(const [start,end] of [[[x0,y0],[x1,y1]],[[x1,y0],[x0,y1]],[[x0,y1],[x1,y0]],[[x1,y1],[x0,y0]]])
+            if(levelOf(...start)===level)return {start,end,cells:rect};
+    }
+    throw Error('No drag gives this work order: '+JSON.stringify({cells,level}));
+}
 async function issue(page,fixture,bindings,intent,preselected=false) {
     // Terrain work is aimed at the tops that the replica shows, and its actor is picked
     // at its replica position. Earlier work of the same actors must be complete first,
@@ -192,12 +207,13 @@ async function issue(page,fixture,bindings,intent,preselected=false) {
             let state=await wait(page,s=>s.ui.some(w=>w.visible&&w.enabled&&w.widget_action?.tool===tool),'Bound public TerrainTools button absent');
             const button=state.ui.find(w=>w.visible&&w.enabled&&w.widget_action?.tool===tool),[x,y,w,h]=button.rect;
             await click(page,[x+w/2,y+h/2]);
-            // The player's gesture (2026-11-26): the tool button, then a drag over the area. The level of the order
-            // comes from the ground round the area; the applied order is checked against the fixture below.
-            state=await read(page);const a=intent.cells.min.map(n=>n+.5),b=intent.cells.max.map(n=>n-.5);
+            // The player's gesture (2026-11-26): the tool button, then a drag that starts at the target level.
+            state=await read(page);const drag=dragFor(intent.cells,intent.target_elevation,(x,y)=>elevation(fixture,state,x,y));
+            const a=drag.start.map(n=>n+.5),b=drag.end.map(n=>n+.5);
             await activatePage(page);
             await page.mouse.move(...project(state.scene,[...a,permittedTop(fixture,state,a)]));await page.mouse.down();await sleep(PRESS_MS);
             await page.mouse.move(...project(state.scene,[...b,permittedTop(fixture,state,b)]),{steps:8});await sleep(PRESS_MS);await page.mouse.up();await sleep(PRESS_MS);
+            return drag.cells;
         }
     }finally{await page.keyboard.up('Shift');}
 }
@@ -363,7 +379,8 @@ async function drive({pagesBySlot,fixture,capture,record,recordInput,onPoll}) {
                 const before=await read(page),lastSeq=Math.max(0,...(before.debug.command_results||[]).map(r=>r.seq));
                 const inputObservation=(stage,state)=>recordInput?.({slot,stage,...(harvest(slot,state),{}),wall_ms:Date.now(),tick:world(state).tick,focus:state.debug.focus,cursor:state.debug.cursor,selection:state.debug.selection,phase:state.debug.phase,command_results:state.debug.command_results});
                 inputObservation('before',before);
-                try{await issue(page,fixture,bindings,intent,prepared.get(slot)===planned);inputObservation('after',await read(page));}catch(error){
+                let ordered;
+                try{ordered=await issue(page,fixture,bindings,intent,prepared.get(slot)===planned);inputObservation('after',await read(page));}catch(error){
                     const state=await read(page);await capture?.('failed-selection-slot'+slot,state);
                     const picks=intent.actors.map(label=>{const id=bindings.get(label),actor=fixture.actors.find(a=>a.label===label),unit=world(state).units.find(u=>u.unit_id===id);return {label,id,position:unit?.pos,projected:unit?project(state.scene,[...unit.pos,contact(state,id)+actor.profile.pick_height]):null};});
                     error.message+='; actual selection='+JSON.stringify(state?.debug?.selection)+'; intended picks='+JSON.stringify(picks);
@@ -395,10 +412,10 @@ async function drive({pagesBySlot,fixture,capture,record,recordInput,onPoll}) {
                 // A receipt can arrive before the replica reaches its applied tick. The
                 // next input must see this work order in the replica, not the state before it.
                 if(intent.action!=='move'&&intent.action!=='hold'){
-                    // The drag gave the order that the fixture names: the same cells and the level from the ground round them.
+                    // The drag gave the order that the fixture names: its level, over its cells (and the start row or column).
                     const done=await wait(page,s=>world(s).tick>=receipt.applied_tick,'Replica did not reach the applied tick of the work order');
                     const work=row(done,bindings.get(intent.actors[0]))?.current?.target?.TerrainWork;
-                    assert(work&&work.target_elevation===intent.target_elevation&&work.cells.min.x===intent.cells.min[0]&&work.cells.min.y===intent.cells.min[1]&&work.cells.max.x===intent.cells.max[0]&&work.cells.max.y===intent.cells.max[1],'The drag gave a different work order: '+JSON.stringify(work));
+                    assert(work&&work.target_elevation===intent.target_elevation&&work.cells.min.x===ordered.min[0]&&work.cells.min.y===ordered.min[1]&&work.cells.max.x===ordered.max[0]&&work.cells.max.y===ordered.max[1],'The drag gave a different work order: '+JSON.stringify({work,ordered}));
                 }
                 settled.commit(intent.actors,intent.action,intent.action==='move'?intent.slot+'@'+intent.point.join(','):null);
                 for(const label of intent.actors)original.delete(label);
@@ -469,4 +486,4 @@ async function drive({pagesBySlot,fixture,capture,record,recordInput,onPoll}) {
             limits:['Browser checks observed complete bodies and permitted terrain. Native acceptance certifies every actual committed sweep; polling can skip ticks.','Real pointer acceptance ticks are recorded and may differ from native script ticks.','Internal order identity/route lease and same-seed trajectory proof remain native checks.'],skipped_observation_ticks:gaps};
     }finally{clearInterval(timer);while(inPoll)await sleep(10);await pollTail;}
 }
-module.exports={activatePage,project,read,actorBindings,permittedTop,selectActors,issue,publicOutcomes,physical,overlapFault,freePoint,reachableIntent,drive};
+module.exports={activatePage,project,read,actorBindings,permittedTop,selectActors,issue,publicOutcomes,physical,overlapFault,freePoint,reachableIntent,dragFor,drive};
