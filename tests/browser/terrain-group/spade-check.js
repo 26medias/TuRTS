@@ -50,7 +50,9 @@ const step=(name,ok,detail)=>{result.steps.push({name,ok,detail});save();console
     step('during the drag the hint is still there',hint(s),{});
     await page.mouse.up();await sleep(700);
     s=await read(page);await shot('3-released');
+    // The order reaches the replica later on a loaded host (3 s at load 13, 2026-11-26).
     const work=()=>world(s).unit_orders.map(o=>o.current?.target?.TerrainWork).filter(Boolean);
+    for(const limit=Date.now()+10000;!work().length&&Date.now()<limit;){await sleep(200);s=await read(page);}
     const w=work()[0];
     step('release orders the dragged area at the height where the drag started',!!w&&w.target_elevation===0&&w.cells.min.x===29&&w.cells.min.y===20&&w.cells.max.x===34&&w.cells.max.y===28,{work:w,workers:work().length});
     step('after the order the hint is gone and the cursor is not the target cursor',!hint(s)&&s.debug.cursor?.context!=='target',{cursor:s.debug.cursor,texts:texts(s).filter(t=>/Drag/.test(t))});
