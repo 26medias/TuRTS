@@ -141,7 +141,8 @@ test("silentEnv sets a pulse server that does not exist and a null ALSA device, 
 // configuration). The operator heard beeps from a Chrome that a script started with neither.
 function scriptProblems(source) {
     const code = source.split("\n").filter((line) => !/^\s*#/.test(line)).join("\n");
-    const starts = /"\$CHROME_BIN"\s+"\$\{|\b(?:exec\s+)?(?:google-chrome|chromium)(?:-browser)?\s+--[a-z]/.test(code);
+    // `--version` only asks for the version: it starts no browser window and plays no sound.
+    const starts = /"\$CHROME_BIN"\s+"\$\{|\b(?:exec\s+)?(?:google-chrome|chromium)(?:-browser)?\s+--(?!version\b)[a-z]/.test(code);
     if (!starts) return [];
     const problems = [];
     if (!/--alsa-output-device=null/.test(code)) problems.push("starts a Chrome and never gives --alsa-output-device=null");
@@ -169,4 +170,12 @@ test("the script scan finds a Chrome start with no silent form, and passes one t
     const good = 'ARGS+=(--alsa-output-device=null)\nexport PULSE_SERVER="unix:/nonexistent/x"\nprintf \'pcm.!default { type null }\' > c\n"$CHROME_BIN" "${ARGS[@]}" "$URL" &';
     assert.deepEqual(scriptProblems(good), []);
     assert.equal(scriptProblems(good.replace("--alsa-output-device=null", "--other")).length, 1, "the argument alone is required");
+});
+
+test("a version query is not a Chrome start; a real start in a script is still flagged", () => {
+    assert.deepEqual(scriptProblems('{ git rev-parse HEAD; google-chrome --version; } >> "$LOG"'), []);
+    assert.deepEqual(scriptProblems("chromium-browser --version"), []);
+    assert.equal(scriptProblems('google-chrome --headless=new "$URL"').length, 3);
+    assert.equal(scriptProblems("exec google-chrome --user-data-dir=/tmp/p").length, 3);
+    assert.equal(scriptProblems("google-chrome --versioned-thing").length, 3, "only --version itself is a query");
 });
