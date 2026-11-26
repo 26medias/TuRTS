@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 
 use turts_mod_api::{
     Behaviour, Binding, ContentId, CostSource, GuidePage, InputMapDef, InterfaceDef, ItemField,
-    PrimaryField, Source, Value,
+    PrimaryField, ResolvedTerrainOperation, ResolvedTerrainTool, Source, Value,
 };
 use turts_net_protocol::UnitId;
 
@@ -793,9 +793,9 @@ fn terrain_tools(context: SourceContext<'_>, order: &str) -> SourceData {
         row.set(
             ItemField::Reason,
             if enabled {
-                "Drag on the ground to choose the area"
+                terrain_tooltip(context, id, tool)
             } else {
-                "Waiting for editable terrain"
+                "Waiting for editable terrain".into()
             },
         );
         row.set(
@@ -808,6 +808,100 @@ fn terrain_tools(context: SourceContext<'_>, order: &str) -> SourceData {
         result.items.push(row);
     }
     result
+}
+
+/// The tooltip of a terrain tool button: what the drag does, then one line for each selected own unit type with what
+/// the button orders it to do.
+fn terrain_tooltip(
+    context: SourceContext<'_>,
+    id: &ContentId,
+    tool: &ResolvedTerrainTool,
+) -> String {
+    let materials = &context.content.catalog.terrain_materials;
+    let (mut lines, digs) = match &tool.operation {
+        ResolvedTerrainOperation::Excavate => (
+            vec![format!(
+                "{}: drag an area to lower it to the level where the drag starts.",
+                tool.name
+            )],
+            true,
+        ),
+        ResolvedTerrainOperation::Fill { material } => {
+            let material = materials
+                .get(material)
+                .map_or_else(|| material.to_string(), |m| m.name.to_lowercase());
+            (
+                vec![format!(
+                    "{}: drag an area to raise it with {material}, up to the level where the drag starts.",
+                    tool.name
+                )],
+                false,
+            )
+        }
+    };
+    let mut seen = Vec::new();
+    for unit in context.selection {
+        let Some(definition) = context
+            .replica
+            .units
+            .get(unit)
+            .filter(|unit| unit.owner_slot == context.owner_slot)
+            .and_then(|unit| ContentId::parse(&unit.content_id).ok())
+            .and_then(|id| context.content.catalog.units.get(&id))
+        else {
+            continue;
+        };
+        if seen.contains(&&definition.name) {
+            continue;
+        }
+        seen.push(&definition.name);
+        if !definition.terrain_tools.contains(id) {
+            lines.push(format!(
+                "{}: this button gives it no order.",
+                definition.name
+            ));
+        } else if digs {
+            let mut dug: Vec<_> = tool
+                .allowed_materials
+                .iter()
+                .filter_map(|id| materials.get(id))
+                .filter(|material| material.hardness <= tool.max_hardness)
+                .collect();
+            dug.sort_by_key(|material| material.hardness);
+            let names: Vec<_> = dug.iter().map(|m| m.name.to_lowercase()).collect();
+            let only = if names.len() == 1 && materials.len() > 1 {
+                " only"
+            } else {
+                ""
+            };
+            lines.push(format!(
+                "{}: {}{only}{}.",
+                definition.name,
+                names.join(" and "),
+                dig_speed(context, tool.work_per_second)
+            ));
+        }
+    }
+    lines.join("\n")
+}
+
+/// The speed of a dig tool against the other dig tools of the match. No word when all are equal.
+fn dig_speed(context: SourceContext<'_>, work_per_second: u64) -> &'static str {
+    let speeds = || {
+        context
+            .content
+            .catalog
+            .terrain_tools
+            .values()
+            .filter(|tool| tool.operation == ResolvedTerrainOperation::Excavate)
+            .map(|tool| tool.work_per_second)
+    };
+    match (speeds().min(), speeds().max()) {
+        (Some(min), Some(max)) if min < max && work_per_second == max => ", fast",
+        (Some(min), Some(max)) if min < max && work_per_second == min => ", slow",
+        (Some(min), Some(max)) if min < max => ", medium speed",
+        _ => "",
+    }
 }
 
 /// One item for each catalog utility type, when the order lists a selected own unit type (M6).
@@ -1551,6 +1645,50 @@ mod tests {
         OrderDef, PaymentPolicy, RefundRatio, ResolvedProduction, ResolvedTechnology, TargetKind,
         UnitPresentation,
     };
+
+    /// Clara's tooltip (2026-11-26) from the data of the Quarry Ridge package.
+    #[test]
+    fn a_terrain_tool_tooltip_says_what_each_selected_type_does_with_it() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../mods/quarry_ridge");
+        let archive = turts_mod_runtime::archive::PackageArchive::parse(
+            &turts_mod_runtime::pack::pack_dir(&path).unwrap(),
+        )
+        .unwrap();
+        let content = ClientContent::from_archives(&[archive]).unwrap();
+        let mut replica = Replica::new(20);
+        replica.units.insert(1, unit("quarry_ridge:walker", 1));
+        replica.units.insert(2, unit("quarry_ridge:crawler", 1));
+        let (groups, runtime, input) =
+            (BTreeMap::new(), BTreeMap::new(), content.input_map.clone());
+        let tooltip = |selection: &[u32], tool: &str| {
+            let ctx = context(
+                &replica,
+                &content,
+                selection,
+                &groups,
+                &[],
+                &runtime,
+                &input,
+                &[],
+            );
+            let id = ContentId::parse(tool).unwrap();
+            terrain_tooltip(ctx, &id, &content.catalog.terrain_tools[&id])
+        };
+        assert_eq!(
+            tooltip(&[1, 2], "quarry_ridge:spade"),
+            "Dig: drag an area to lower it to the level where the drag starts.\n\
+             Walker: soil only, fast.\nCrawler: this button gives it no order."
+        );
+        assert_eq!(
+            tooltip(&[2], "quarry_ridge:auger"),
+            "Dig: drag an area to lower it to the level where the drag starts.\n\
+             Crawler: soil and iron, slow."
+        );
+        assert_eq!(
+            tooltip(&[1, 2], "quarry_ridge:backfill"),
+            "Fill: drag an area to raise it with soil, up to the level where the drag starts."
+        );
+    }
 
     #[test]
     fn alert_rows_put_the_real_player_text_in_the_rendered_title_field() {
