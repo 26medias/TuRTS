@@ -27,6 +27,19 @@ Recorded on 2026-11-26 for task T-45 on `codex/t7-flock-sim`. Product code: a6d5
 - **Client.** The Spade drag area, the minimap orientation, and work clips that play only while
   a unit works (Marco's branch, merged in the candidate).
 
+## Decisions
+
+- Contested move points: arrive first. The unit id never decides a visible result (CEO,
+  2026-11-12).
+- One movement path, the flock (design record above). The Game Director's rules V2, V3, V5 and
+  V6, and the busy-unit rule (vault, 2026-11-24). V6 refined on 2026-11-26: the place stays the
+  first stop until a new order, a push never moves it, and a refused return waits a new quiet
+  delay. A spot is free when no body stands nearer than the sum of the two radii.
+- A move ends at a standing blocker as before. Keep-order (wait far from the goal) moves to T-59,
+  with the local search (Iris and the Game Director, 2026-11-26).
+- Ridge demo as standalone packages `mods/quarry_ridge` and `mods/terrain_stockyard_ridge`
+  (`vault/Decisions/2026-11-23 M4b ridge demo as standalone packages.md`).
+
 ## Results
 
 | Check | Evidence | Result on the candidate |
@@ -40,10 +53,23 @@ Recorded on 2026-11-26 for task T-45 on `codex/t7-flock-sim`. Product code: a6d5
 | GM7 frozen workload, B3 | `target/mc-evidence/t7-flocking/gm7-b3-candidate/runs/b3-2/` | PASS, all 4 rows (table below) |
 | GM8 browser, 24 cases | `.swarm/reports/T-42-cand-8fa203ab.md`, `target/mc-evidence/t7-flocking/cand-8fa203ab/` | 7 of 24 PASS on 8fa203ab. The return-check and end-pose fails were check faults (repaired in test code, 0582fda5). Marco's rerun is open. |
 | FPS, 400 detailed models | the same report | normal view 56.0 FPS (floor 30). The row needs a rerun: no unit moved in its last interval. |
-| FM1 first motion | `.swarm/reports/T-49.md`, `.swarm/reports/T-42-d7ee8c72.md` | PASS on d7ee8c72. Not rerun on the candidate. |
+| FM1 first motion | `.swarm/reports/T-49.md`, `.swarm/reports/T-42-d7ee8c72.md`, `target/mc-evidence/gm8-frame-codex/fm-probe/` | PASS on the flock builds 099feffc and d7ee8c72 (timings below). Not rerun on the candidate. |
 | FM2 return crossing | the same reports | PASS on d7ee8c72: settle at 332 to 336 ticks, 0 stall intervals, 0 overlapping pairs at rest. Not rerun on the candidate. |
 | FM3 overlap while moving | the same reports | PASS on d7ee8c72. Not rerun on the candidate. |
 | Wide units dig (quarry_ridge) | `crawlers_dig_the_ridge_from_the_edge_of_their_reach`; browser check in T-42-cand-8fa203ab | 40 of 40 cells natively; 32 of 32 cells in the browser |
+
+### First motion (FM1, flock build 099feffc, 36 mixed units, both ridge packages)
+
+All times are in ticks from the applied order, at 20 Hz.
+
+| Row | Bound | Result |
+| --- | --- | --- |
+| First unit moves | 20 ticks (1 s) | 0 / 0 ticks |
+| Units that move within 20 ticks, outbound | all | 36 of 36 (last at 13 / 14 ticks) |
+| Units that move within 20 ticks, return | all | 36 of 36 (last at 12 / 11 ticks) |
+| All 36 idle after the opening | (recorded) | 279 / 286 ticks |
+
+On the old path, the first unit moved after 809 / 810 ticks (T-49).
 
 ### GM7 under B3 (run b3-2)
 
@@ -63,6 +89,10 @@ Server tick times are in ms. The fog rows churned at least 69 hides and 73 revea
 first B3 run (b3-1) stopped in 0.6 s: the static enemies of each side stood on the other side's
 scouting lane, and the flock does not walk round such a wall. The test layout now puts them
 beside the route (854e01e8, test code only).
+
+A person's sign-off of the milestone (spec section 14) is not recorded. The operator played the
+ridge loop and skirmish on 2026-11-26 ("Flocking looks good"; "movements look and behave well,
+the game is playable").
 
 ## Known limits
 
