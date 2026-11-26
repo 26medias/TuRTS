@@ -298,7 +298,7 @@ function faultList(recordAll){
     }};
 }
 async function drive({pagesBySlot,fixture,capture,record,recordInput,onPoll,recordAll=false}) {
-    const bindings=new Map(),actions=[],samples=[],checks={observed_full_bodies:true,observed_no_overlap:true},original=new Map(),settled=new SettledTracker(),owned=new Map();
+    const bindings=new Map(),actions=[],samples=[],checks={observed_full_bodies:true,observed_no_overlap:true},original=new Map(),settled=new SettledTracker(),owned=new Map(),ended=new Map();
     const{faults,at:faultTick,check}=faultList(recordAll);
     const first=pagesBySlot.values().next().value;
     // Record only: the client frame of each order emit and of its first result, read from
@@ -366,6 +366,8 @@ async function drive({pagesBySlot,fixture,capture,record,recordInput,onPoll,reco
             const ownerTick=world(states.get(fixture.actors.find(a=>a.label===label).slot)).tick;
             if(original.has(label)&&idle(merged,id)&&ownerTick===tick){
                 const position=world(state).units.find(u=>u.unit_id===id).pos;
+                // The pose where the move ended: the first sample that shows the unit Idle after its move.
+                if(!ended.has(label))ended.set(label,{tick,position:[...position]});
                 const actor=fixture.actors.find(a=>a.label===label),others=fixture.actors.filter(a=>a.label!==label).map(a=>({actor:a,unit:world(state).units.find(u=>u.unit_id===bindings.get(a.label))})).filter(x=>x.unit);
                 const ownMovers=others.filter(x=>x.actor.slot===actor.slot&&(row(merged,x.unit.unit_id)?.activity??'Idle')!=='Idle').map(x=>x.unit.pos);
                 check(()=>settled.observe(label,true,position,actor.profile.radius,{tick,ownMovers,bodies:others.map(x=>[...x.unit.pos,x.actor.profile.radius])}));
@@ -454,7 +456,7 @@ async function drive({pagesBySlot,fixture,capture,record,recordInput,onPoll,reco
                     assert(work&&work.target_elevation===intent.target_elevation&&work.cells.min.x===ordered.min[0]&&work.cells.min.y===ordered.min[1]&&work.cells.max.x===ordered.max[0]&&work.cells.max.y===ordered.max[1],'The drag gave a different work order: '+JSON.stringify({work,ordered}));
                 }
                 settled.commit(intent.actors,intent.action,intent.action==='move'?intent.slot+'@'+intent.point.join(','):null);
-                for(const label of intent.actors)original.delete(label);
+                for(const label of intent.actors){original.delete(label);ended.delete(label);}
                 const after=harvest(slot,await read(page));
                 const emit=orderFrames.get(slot+':emit:'+receipt.seq)||null,result=orderFrames.get(slot+':result:'+receipt.seq)||null;
                 recordInput?.({slot,stage:'order-latency',seq:receipt.seq,action:intent.action,units:intent.actors.length,ack_tick:after.debug.command_results.find(r=>r.seq===receipt.seq&&Number.isInteger(r.ack_tick))?.ack_tick??null,applied_tick:receipt.applied_tick,emit,result,latency_ms:emit&&result?result.wall_ms-emit.wall_ms:null});
@@ -489,8 +491,9 @@ async function drive({pagesBySlot,fixture,capture,record,recordInput,onPoll,reco
                 const members=fixture.actors.filter(a=>command.actors.includes(a.label)),goal=command.point;
                 const area=Math.sqrt(members.reduce((sum,a)=>sum+a.profile.radius**2,0)/0.35);
                 for(const actor of members){
-                    const at=world(final).units.find(u=>u.unit_id===bindings.get(actor.label)).pos;
-                    check(()=>assert(!idle(final,bindings.get(actor.label))||Math.hypot(at[0]-goal[0],at[1]-goal[1])<=area,'A move ended outside its goal area: '+actor.label+' (slot '+actor.slot+') at '+JSON.stringify(at)+' (area '+area.toFixed(3)+' m)'));
+                    // Judged at the pose where the move ended: a later push by a mover is not the result of the move.
+                    const end=ended.get(actor.label),at=end?.position??world(final).units.find(u=>u.unit_id===bindings.get(actor.label)).pos;
+                    check(()=>assert(!idle(final,bindings.get(actor.label))||Math.hypot(at[0]-goal[0],at[1]-goal[1])<=area,'A move ended outside its goal area: '+actor.label+' (slot '+actor.slot+') at '+JSON.stringify(at)+' (area '+area.toFixed(3)+' m, ended at tick '+(end?.tick??'not observed')+')'));
                 }
             }
             if(blockerHold){
