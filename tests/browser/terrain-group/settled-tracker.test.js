@@ -3,7 +3,10 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { SettledTracker, DistantOrderTracker } = require('./settled-tracker');
-const at = (tick, ownMovers = [], bodies = []) => ({tick, ownMovers, bodies});
+// A body without a radius has the radius of the units here (0.5).
+const at = (tick, ownMovers = [], bodies = []) => ({tick, ownMovers, bodies: bodies.map(([x, y, r = 0.5]) => [x, y, r])});
+// Check (2) records and does not fail: the observation adds exactly one record.
+const records = (tracker, observe) => { const before = tracker.records.length; observe(); assert.equal(tracker.records.length, before + 1, 'a return miss is recorded'); return tracker.records.at(-1); };
 // A tracker with two units of one move order (crowd 'c1'); 'a' settles first.
 function order() {
     const tracker = new SettledTracker();
@@ -39,7 +42,7 @@ test('(1) a later member of a crowd has no per-unit bound; check (2) still appli
     tracker.observe('b', true, [21.5, 20], 0.5, at(11, [], [[20.2, 20]]));
     tracker.observe('b', true, [21.5, 20], 0.5, at(300, [], [[20.2, 20]]));
     tracker.observe('b', true, [21.5, 20], 0.5, at(301));
-    assert.throws(() => tracker.observe('b', true, [21.5, 20], 0.5, at(362)), /did not go back/);
+    records(tracker, () => tracker.observe('b', true, [21.5, 20], 0.5, at(362)));
 });
 test('(1) two orders to one point make one crowd with one first unit; another point is another crowd', () => {
     const tracker = new SettledTracker();
@@ -67,13 +70,13 @@ test('(2) the quiet time starts again when an own mover comes within two diamete
     tracker.observe('b', true, [20.8, 20], 0.5, at(60, [[22.7, 20]]));
     tracker.observe('b', true, [20.8, 20], 0.5, at(61));
     tracker.observe('b', true, [20.8, 20], 0.5, at(121));
-    assert.throws(() => tracker.observe('b', true, [20.8, 20], 0.5, at(122)), /did not go back/);
+    records(tracker, () => tracker.observe('b', true, [20.8, 20], 0.5, at(122)));
 });
 test('(2) is measured from the FIRST settle point: small steps that add up are caught', () => {
     const tracker = order();
     for (const [i, x] of [20.2, 20.4, 20.6].entries()) tracker.observe('b', true, [x, 20], 0.5, at(2 + i, [[x + 1, 20]]));
     tracker.observe('b', true, [20.6, 20], 0.5, at(5));
-    assert.throws(() => tracker.observe('b', true, [20.6, 20], 0.5, at(66)), /did not go back/);
+    records(tracker, () => tracker.observe('b', true, [20.6, 20], 0.5, at(66)));
 });
 test('(2) the clock starts again when the point becomes free, however long the quiet time was', () => {
     const tracker = order();
@@ -81,7 +84,7 @@ test('(2) the clock starts again when the point becomes free, however long the q
     tracker.observe('b', true, [21.2, 20], 0.5, at(2400, [], [[20.3, 20]]));
     tracker.observe('b', true, [21.2, 20], 0.5, at(2410));
     tracker.observe('b', true, [21.2, 20], 0.5, at(2470));
-    assert.throws(() => tracker.observe('b', true, [21.2, 20], 0.5, at(2471)), /due for 61 ticks/);
+    assert.equal(records(tracker, () => tracker.observe('b', true, [21.2, 20], 0.5, at(2471))).due_since, 2410);
 });
 test('(2) the clock starts when the unit leaves the circle, and starts again after it was back inside', () => {
     const tracker = order();
@@ -91,7 +94,18 @@ test('(2) the clock starts when the unit leaves the circle, and starts again aft
     tracker.observe('b', true, [20.4, 20], 0.5, at(261));
     tracker.observe('b', true, [20.6, 20], 0.5, at(262));
     tracker.observe('b', true, [20.6, 20], 0.5, at(322));
-    assert.throws(() => tracker.observe('b', true, [20.6, 20], 0.5, at(323)), /did not go back/);
+    records(tracker, () => tracker.observe('b', true, [20.6, 20], 0.5, at(323)));
+});
+test('(2) a large body takes the point at the sum of the radii; one record for each due stretch', () => {
+    const tracker = order();
+    tracker.observe('b', true, [21.2, 20], 0.5, at(10, [], [[21.3, 20.2, 1.1]]));
+    tracker.observe('b', true, [21.2, 20], 0.5, at(200, [], [[21.3, 20.2, 1.1]]));
+    assert.equal(tracker.records.length, 0);
+    tracker.observe('b', true, [21.2, 20], 0.5, at(201, [], [[21.7, 20, 1.1]]));
+    records(tracker, () => tracker.observe('b', true, [21.2, 20], 0.5, at(262, [], [[21.7, 20, 1.1]])));
+    tracker.observe('b', true, [21.2, 20], 0.5, at(300));
+    assert.equal(tracker.records.length, 1);
+    assert.throws(() => tracker.observe('b', true, [21.2, 20], 0.5, {tick: 301, ownMovers: [], bodies: [[1, 1]]}), /needs its radius/);
 });
 test('a new order clears the settle point; a unit needs its radius and the context', () => {
     const tracker = order();

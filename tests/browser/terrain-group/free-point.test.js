@@ -58,3 +58,12 @@ test('a planted wrong pick at a free point fails; the right pick passes',async()
     const right=page(world([[1,0,10],[2,-.35,9.5]]),1);
     await selectActors(right,f,b,['small.0'],null,300);
 });
+test('a body that moved under the click is aimed at again',async()=>{
+    const f=fixture(['small.0']),state=world([[1,0,10]]),clicks=[];
+    // The first click misses because the body walked on; the second selects it.
+    const walking={bringToFront:async()=>{},keyboard:{down:async()=>{},up:async()=>{}},
+        mouse:{click:async()=>{clicks.push(1);if(clicks.length===1)state.debug.replicated_world.units[0].pos=[1,10];else state.debug.selection=[1];}},
+        evaluate:async()=>JSON.parse(JSON.stringify(state))};
+    await selectActors(walking,f,bind([['small.0',1]]),['small.0'],null,300);
+    assert.equal(clicks.length,2);
+});

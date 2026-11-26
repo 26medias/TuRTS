@@ -4,6 +4,7 @@
 const fs=require('node:fs'),os=require('node:os'),path=require('node:path'),net=require('node:net'),crypto=require('node:crypto');
 const {spawn,spawnSync}=require('node:child_process'),{chromium}=require('playwright-core');
 const {movementIntervals}=require('./terrain-fps-intervals');
+const {moverIds,scriptWithMovers}=require('./terrain-fps-movers');
 const {orderAccepted}=require('./terrain-fps-orders');
 const [prepared,fixtures,output]=process.argv.slice(2);if(!output)throw Error('PREPARED TERRAIN_FIXTURES OUTPUT');
 const metadata=JSON.parse(fs.readFileSync(path.join(fixtures,'terrain-fps.json')));fs.mkdirSync(output,{recursive:false});
@@ -21,11 +22,14 @@ const delta=(a,b)=>Math.max(...a.map((n,i)=>Math.abs(n-b[i])));
  const sha=file=>crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');assert(sha(path.join(fixtures,'battle400-commands.json'))===metadata.commands_sha256,'Accepted combat commands changed');for(const [file,hash]of Object.entries(metadata.public_files_sha256)){assert(sha(path.join(fixtures,'battle400',file))===hash,'Frozen public fixture changed: '+file);}
  xvfb=spawn('Xvfb',['-displayfd','3','-screen','0','1280x720x24','-nolisten','tcp'],{stdio:['ignore','ignore','pipe','pipe']});
  const display=await new Promise((resolve,reject)=>{let text='';xvfb.stdio[3].on('data',data=>{text+=data;if(text.includes('\n'))resolve(':'+text.trim());});xvfb.once('error',reject);xvfb.once('exit',code=>reject(Error('Xvfb '+code)));});
+ // Group mode: the accepted combat script plus the movers of terrain-fps-movers.js, which keep the scene in motion.
+ const combat=path.join(fixtures,'battle400-commands.json'),movers=groupMode?moverIds(fs.readFileSync(path.join(fixtures,'battle400/maps/field.ron'),'utf8'),[metadata.work.actor]):[];
+ let commandScript=combat;if(groupMode){commandScript=path.join(output,'commands-with-movers.json');fs.writeFileSync(commandScript,JSON.stringify(scriptWithMovers(JSON.parse(fs.readFileSync(combat)),movers)));result.movers=movers;}
  for(const zoom of selectedViews){
   const rowOut=path.join(output,zoom);fs.mkdirSync(rowOut);const packed=spawnSync(path.join(prepared,'bin/turts-pack'),[path.join(fixtures,'battle400')],{encoding:'utf8'});fs.writeFileSync(path.join(rowOut,'pack.log'),packed.stdout+packed.stderr);assert(packed.status===0,'Terrain FPS public package validation failed');
   const privateDir=path.join(rowOut,'private');fs.mkdirSync(privateDir,{mode:0o700});fs.writeFileSync(path.join(privateDir,'seed.txt'),'0\n',{mode:0o600});const http=await port(),ws=await port(),url=`http://127.0.0.1:${http}`;
   const config=path.join(rowOut,'server.ron'),q=JSON.stringify;fs.writeFileSync(config,`(game_package:${q(path.resolve(fixtures,'battle400.tar'))},http_listen:"127.0.0.1:${http}",ws_listen:"127.0.0.1:${ws}",public_url:${q(url)},tick_hz:20,static_dir:Some(${q(path.resolve(prepared,'dist'))}),start_policy:Some(Immediate),terrain_seed_file:Some(${q(path.resolve(privateDir,'seed.txt'))}),terrain_provenance:Some(${q(path.resolve(privateDir,'terrain.json'))}))`);
-  const fd=fs.openSync(path.join(rowOut,'server.log'),'w');server=spawn(path.join(prepared,'bin/turts_server'),[config,'--command-script',path.join(fixtures,'battle400-commands.json')],{stdio:['ignore',fd,fd],env:{...process.env,TURTS_COMPUTER_SLOT:''}});fs.closeSync(fd);
+  const fd=fs.openSync(path.join(rowOut,'server.log'),'w');server=spawn(path.join(prepared,'bin/turts_server'),[config,'--command-script',commandScript],{stdio:['ignore',fd,fd],env:{...process.env,TURTS_COMPUTER_SLOT:''}});fs.closeSync(fd);
   let ready=false;for(let i=0;i<300;i++){try{if((await fetch(url+'/advertisement.json')).ok){ready=true;break;}}catch{}assert(server.exitCode===null,'Server stopped');await sleep(100);}assert(ready,'Server not ready');
   profile=fs.mkdtempSync(path.join(os.tmpdir(),'turts-terrain-fps-'));context=await chromium.launchPersistentContext(profile,{executablePath:'/usr/bin/google-chrome',headless:false,viewport:{width:1280,height:720},env:{...process.env,DISPLAY:display},ignoreDefaultArgs:['--enable-unsafe-swiftshader'],args:['--enable-gpu','--alsa-output-device=null','--enable-unsafe-webgpu','--enable-features=Vulkan','--use-angle=vulkan','--disable-vulkan-surface','--no-first-run','--no-default-browser-check']});
   await context.addInitScript(()=>localStorage.setItem('turts.v1.settings',JSON.stringify({controls:{quality:'high'}})));const page=context.pages()[0];page.on('pageerror',error=>result.errors.push(String(error)));await page.goto(url+'/?server='+encodeURIComponent(url)+'&ws='+encodeURIComponent(`ws://127.0.0.1:${ws}`));await page.keyboard.press('F9');
@@ -42,7 +46,7 @@ const delta=(a,b)=>Math.max(...a.map((n,i)=>Math.abs(n-b[i])));
   let groupIds=[];
   if(groupMode){
    const goal=[14,32,0];
-   const candidates=d.replicated_world.units.filter(u=>u.owner_slot===d.slot&&u.unit_id!==metadata.work.actor&&Math.hypot(u.pos[0]-goal[0],u.pos[1]-goal[1])>10).sort((a,b)=>b.pos[1]-a.pos[1]||Math.abs(a.pos[0]-14)-Math.abs(b.pos[0]-14));
+   const candidates=d.replicated_world.units.filter(u=>u.owner_slot===d.slot&&u.unit_id!==metadata.work.actor&&!movers.includes(u.unit_id)&&Math.hypot(u.pos[0]-goal[0],u.pos[1]-goal[1])>10).sort((a,b)=>b.pos[1]-a.pos[1]||Math.abs(a.pos[0]-14)-Math.abs(b.pos[0]-14));
    assert(candidates.length>=2,'Not enough owned actors for the group move');
    // Select separate owned bodies at their current physical locations.
    for(const u of candidates){
@@ -93,7 +97,7 @@ const delta=(a,b)=>Math.max(...a.map((n,i)=>Math.abs(n-b[i])));
    assert(sample.states.some(s=>s.melee===melee&&s.ranged>=ranged),'Accepted mixed attack animation coverage was not observed');
   }else{
    // The row measures the frame time while units move. The queued legs of the two selected units cross the melee, and
-   // rule 2a ends a Move leg there (T-59), so the requirement is movement in the scene, not of those two units.
+   // rule 2a ends a Move leg there (T-59), so the requirement is movement in the scene (the movers give it).
    row.group_ids=groupIds;
    const intervals=movementIntervals(sample.states,sample.states[0].positions.map(p=>p.unit));
    row.moving_intervals=intervals.map(i=>({from_ms:i.from_ms,to_ms:i.to_ms,moving:i.active.length,selected:i.active.filter(id=>groupIds.includes(id))}));

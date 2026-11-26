@@ -7,6 +7,8 @@ const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 // Hold both sides of a gesture across frames. A zero-delay press/release can
 // disappear between Bevy input polls, even when hover picked the correct body.
 const PRESS_MS=80;
+// Selection retry: a body that moved this far (world units) since the aim can have left the click point.
+const SELECT_ATTEMPTS=4,SELECT_SETTLE_MS=600,MOVED_UNDER_CLICK=.05;
 // Xvfb has one real pointer shared by the peer windows. Activate the target
 // before CDP input so Chrome delivers the native pointer position before down.
 async function activatePage(page){await page.bringToFront();await sleep(150);}
@@ -103,6 +105,12 @@ function freePoint(fixture,state,bindings,id){
     }
     return best;
 }
+// True when the click ray through `point` meets a body: a right-click there is a body click, not a ground order.
+function bodyAt(fixture,state,bindings,point){
+    const byId=new Map([...bindings].map(([l,v])=>[v,fixture.actors.find(a=>a.label===l)])),ray=screenRay(state.scene,invert4(state.scene.clip_from_world),point);
+    return world(state).units.some(u=>{const a=byId.get(u.unit_id),c=pickCylinder(a?.pick_shape,false)??{radius:u.pick_radius??1,height:1.6};
+        const anchor=world(state).terrain.anchors.find(x=>x.unit===u.unit_id&&x.current);return cylinderHit(ray,u.pos,anchor?anchor.elevation*.25:0,c.radius,c.height)!==null;});
+}
 function actorBindings(fixture,state) {
     const result=new Map();
     for(const actor of fixture.actors){
@@ -135,18 +143,33 @@ async function selectActors(page,fixture,bindings,labels,recordClick,timeout=900
         await wait(page,s=>s.debug.selection.length===wanted.length&&wanted.every(id=>s.debug.selection.includes(id)),'Physical box selection differs from frozen cohort');
         return;
     }
-    // Selection is performed at actual current poses. Shift is held only for additive picks.
-    try{for(let i=0;i<labels.length;i++){
-        const state=await read(page),actor=fixture.actors.find(a=>a.label===labels[i]),id=bindings.get(labels[i]);
-        const unit=world(state).units.find(u=>u.unit_id===id);
-        assert(unit&&unit.owner_slot===state.debug.slot,'Selection requires owned live body');
-        if(i===1){await page.keyboard.down('Shift');await sleep(PRESS_MS);}
-        const free=freePoint(fixture,state,bindings,id);assert(free,'No free click point on the intended body: '+labels[i]);
-        const point=free.point;
-        await click(page,point);
-        if(recordClick){const after=await read(page);recordClick({label:labels[i],id,point,tick:world(after).tick,focus:after.debug.focus,selection:after.debug.selection,frames:after.debug.frames?.recent?.map(f=>({frame_index:f.frame_index,tick:f.tick,selection:f.selection,named_dispatches:f.named_dispatches}))});}
-    }}finally{await page.keyboard.up('Shift');}
+    // Selection is performed at actual current poses. Shift is held only for additive picks. The window is activated
+    // before the aim, so the click follows the aim at once. A moving body can still leave the click point, and a crowd
+    // can cover a body for a moment: then the whole selection starts again (the first click replaces it). A wrong pick
+    // of a body that did not move is not retried; it fails.
     const wanted=labels.map(label=>bindings.get(label));
+    for(let attempt=1;;attempt++){
+        let uncovered=null,moved=false;
+        try{for(let i=0;i<labels.length;i++){
+            await activatePage(page);
+            const state=await read(page),actor=fixture.actors.find(a=>a.label===labels[i]),id=wanted[i];
+            const unit=world(state).units.find(u=>u.unit_id===id);
+            assert(unit&&unit.owner_slot===state.debug.slot,'Selection requires owned live body');
+            const free=freePoint(fixture,state,bindings,id);
+            if(!free){uncovered='No free click point on the intended body: '+labels[i];break;}
+            if(i===1){await page.keyboard.down('Shift');await sleep(PRESS_MS);}
+            const point=free.point;
+            await page.mouse.click(...point,{button:'left',delay:PRESS_MS});await sleep(PRESS_MS);
+            let after=await read(page);
+            for(const end=Date.now()+SELECT_SETTLE_MS;!after.debug.selection.includes(id)&&Date.now()<end;){await sleep(50);after=await read(page);}
+            recordClick?.({label:labels[i],id,point,attempt,tick:world(after).tick,focus:after.debug.focus,selection:after.debug.selection,frames:after.debug.frames?.recent?.map(f=>({frame_index:f.frame_index,tick:f.tick,selection:f.selection,named_dispatches:f.named_dispatches}))});
+            const now=world(after).units.find(u=>u.unit_id===id);
+            if(!after.debug.selection.includes(id)&&Math.hypot(now.pos[0]-unit.pos[0],now.pos[1]-unit.pos[1])>MOVED_UNDER_CLICK){moved=true;break;}
+        }}finally{await page.keyboard.up('Shift');}
+        if((uncovered||moved)&&attempt<SELECT_ATTEMPTS){await sleep(500);continue;}
+        assert(!uncovered,uncovered);
+        break;
+    }
     await wait(page,s=>s.debug.selection.length===wanted.length&&wanted.every(id=>s.debug.selection.includes(id)),'Physical body selection differs from frozen cohort',timeout);
 }
 // A one-unit order whose body no click can reach in a packed crowd goes to the nearest body of the same kind and slot
@@ -191,9 +214,10 @@ async function issue(page,fixture,bindings,intent,preselected=false) {
             const button=state.ui.find(w=>w.visible&&w.enabled&&w.widget_action?.id===order),[x,y,w,h]=button.rect;
             await click(page,[x+w/2,y+h/2]);
         }else if(intent.action==='move'){
-            // A smart right-click on the blocker's own body has no Ground
-            // action. The ordinary Move button targets the same ground point.
-            if(intent.tick===0&&intent.actors.length===1&&intent.actors[0]==='blocker'){
+            // A smart right-click on a body has no Ground action (the blocker's own body, or units that already
+            // stand at a shared point). The ordinary Move button targets the same ground point.
+            const aim=await read(page),covered=bodyAt(fixture,aim,bindings,project(aim.scene,[...intent.point,permittedTop(fixture,aim,intent.point)]));
+            if(covered||(intent.tick===0&&intent.actors.length===1&&intent.actors[0]==='blocker')){
                 const order=fixture.package+':order_move';
                 const state=await wait(page,s=>s.ui.some(w=>w.visible&&w.enabled&&w.widget_action?.id===order),'Move button absent');
                 const button=state.ui.find(w=>w.visible&&w.enabled&&w.widget_action?.id===order),[x,y,w,h]=button.rect;
@@ -245,11 +269,12 @@ function overlapFault(a,b){
     // depth >= small/4  <=>  4*distance <= 4*r - small  <=>  16*d2 <= (4*r - small)^2 (4*r - small > 0)
     return 16n*d2<=square(4n*r-small)?'Moving circles overlap 25 % or more of the smaller radius':null;
 }
-function physical(fixture,state,bindings){
-    const bodies=fixture.actors.map(actor=>{const id=bindings.get(actor.label),unit=world(state).units.find(u=>u.unit_id===id);assert(unit,'Frozen actor disappeared: '+actor.label);bodySupport(fixture,state,actor,unit);return{actor,body:{pos:unit.pos,radius:actor.profile.radius,activity:row(state,id)?.activity??'Idle',owner:actor.slot}};});
+// `check` runs one assertion. By default its fault throws; the record-all mode collects it and goes on.
+function physical(fixture,state,bindings,check=run=>run()){
+    const bodies=fixture.actors.map(actor=>{const id=bindings.get(actor.label),unit=world(state).units.find(u=>u.unit_id===id);assert(unit,'Frozen actor disappeared: '+actor.label);check(()=>bodySupport(fixture,state,actor,unit));return{actor,body:{pos:unit.pos,radius:actor.profile.radius,activity:row(state,id)?.activity??'Idle',owner:actor.slot}};});
     for(let i=0;i<bodies.length;i++)for(let j=0;j<i;j++){
         const a=bodies[i],b=bodies[j],fault=overlapFault(a.body,b.body);
-        assert(!fault,fault+': '+a.actor.label+'/'+b.actor.label+' ('+a.body.activity+'/'+b.body.activity+')');
+        check(()=>assert(!fault,fault+': '+a.actor.label+'/'+b.actor.label+' ('+a.body.activity+'/'+b.body.activity+')'));
     }
 }
 function publicOutcomes(state,fixture,bindings){return fixture.actors.map(actor=>{
@@ -262,8 +287,19 @@ function crossed(fixture,state,bindings,labels,right=true){
     assert(completed(fixture,state,bindings,labels),'Required actors have not completed');
     for(const label of labels){const actor=fixture.actors.find(a=>a.label===label),unit=world(state).units.find(u=>u.unit_id===bindings.get(label)),radius=Math.fround(actor.profile.radius);assert(right?unit.pos[0]-radius>=34:unit.pos[0]+radius<=30,'Order completed on wrong plateau: '+label);}
 }
-async function drive({pagesBySlot,fixture,capture,record,recordInput,onPoll}) {
+// The record-all mode (one run lists every fault of a case): each fault is kept once, by its text without positions
+// and distances. A fault that stops the input script (a selection or an order) still ends the case.
+function faultList(recordAll){
+    const faults=[],seen=new Set();let tick=null;
+    return{faults,at:value=>{tick=value;},check:run=>{
+        if(!recordAll)return run();
+        try{return run();}catch(error){const fault=String(error.message||error),key=fault.replace(/\([\d.]+ m [^)]*\)|\[-?[\d.,-]+\]|[\d.]+ m from[^,]*|due for \d+ ticks/g,'');
+            if(!seen.has(key)){seen.add(key);faults.push({tick,fault});}}
+    }};
+}
+async function drive({pagesBySlot,fixture,capture,record,recordInput,onPoll,recordAll=false}) {
     const bindings=new Map(),actions=[],samples=[],checks={observed_full_bodies:true,observed_no_overlap:true},original=new Map(),settled=new SettledTracker(),owned=new Map();
+    const{faults,at:faultTick,check}=faultList(recordAll);
     const first=pagesBySlot.values().next().value;
     // Record only: the client frame of each order emit and of its first result, read from
     // the debug frame ring in states that the driver reads anyway. `wall_ms` is the frame
@@ -317,13 +353,13 @@ async function drive({pagesBySlot,fixture,capture,record,recordInput,onPoll}) {
         const state=await read(first);assert(state&&world(state),'Activated state disappeared');onPoll?.();
         const tick=world(state).tick,relative=tick-base;
         if(tick===lastTick)return state;
-        if(lastTick>=0&&tick>lastTick+1)gaps+=tick-lastTick-1;lastTick=tick;
+        if(lastTick>=0&&tick>lastTick+1)gaps+=tick-lastTick-1;lastTick=tick;faultTick(tick);
         // Private unit orders are read from the actor's actual owner page only.
         const states=new Map([[state.debug.slot,state]]);
         for(const [slot,page]of pagesBySlot)if(!states.has(slot))states.set(slot,await read(page));
         const merged={...state,debug:{...state.debug,replicated_world:{...world(state),unit_orders:[...states.values()].flatMap(s=>world(s).unit_orders)}}};
         // The overlap rule needs the activity of every actor, so it reads the merged orders of all owner pages.
-        physical(fixture,merged,bindings);
+        physical(fixture,merged,bindings,check);
         for(const intent of fixture.scene.commands.filter(c=>c.action==='move'))for(const label of intent.actors){
             const id=bindings.get(label),order=row(merged,id);
             if(order?.current?.order===fixture.package+':order_move'&&!original.has(label))original.set(label,JSON.parse(JSON.stringify(order.current)));
@@ -332,27 +368,27 @@ async function drive({pagesBySlot,fixture,capture,record,recordInput,onPoll}) {
                 const position=world(state).units.find(u=>u.unit_id===id).pos;
                 const actor=fixture.actors.find(a=>a.label===label),others=fixture.actors.filter(a=>a.label!==label).map(a=>({actor:a,unit:world(state).units.find(u=>u.unit_id===bindings.get(a.label))})).filter(x=>x.unit);
                 const ownMovers=others.filter(x=>x.actor.slot===actor.slot&&(row(merged,x.unit.unit_id)?.activity??'Idle')!=='Idle').map(x=>x.unit.pos);
-                settled.observe(label,true,position,actor.profile.radius,{tick,ownMovers,bodies:others.map(x=>x.unit.pos)});
+                check(()=>settled.observe(label,true,position,actor.profile.radius,{tick,ownMovers,bodies:others.map(x=>[...x.unit.pos,x.actor.profile.radius])}));
             }
         }
         // The settled blocker is a slot-0 unit with its own move order, so the settled tracker above judges it with the
         // at-rest rule and as the first arrival of its order (Clara, 2026-11-24). Its settle point stays in the checks.
         if(fixture.scene_name==='GM2-narrow'){
             if(relative>=2400&&!gm2Initial){
-                crossed(fixture,merged,bindings,small);
-                for(const label of large){const id=bindings.get(label),order=row(merged,id),actor=fixture.actors.find(a=>a.label===label),unit=world(state).units.find(u=>u.unit_id===id);assert(order&&['Blocked','Pending'].includes(order.activity)&&same(order.current,original.get(label)),'Large actor lost truthful original blocked move: '+label);assert(unit.pos[0]+Math.fround(actor.profile.radius)<=30,'Large actor entered narrow passage');}
+                for(const label of small)check(()=>crossed(fixture,merged,bindings,[label]));
+                for(const label of large)check(()=>{const id=bindings.get(label),order=row(merged,id),actor=fixture.actors.find(a=>a.label===label),unit=world(state).units.find(u=>u.unit_id===id);assert(order&&['Blocked','Pending'].includes(order.activity)&&same(order.current,original.get(label)),'Large actor lost truthful original blocked move: '+label);assert(unit.pos[0]+Math.fround(actor.profile.radius)<=30,'Large actor entered narrow passage: '+label);});
                 gm2Initial=true;checks.small24_complete_before_widening=true;
             }
-            for(const label of large)if(original.has(label)&&!idle(merged,bindings.get(label)))assert(same(row(merged,bindings.get(label)).current,original.get(label)),'Widening replaced original large move');
+            for(const label of large)if(original.has(label)&&!idle(merged,bindings.get(label)))check(()=>assert(same(row(merged,bindings.get(label)).current,original.get(label)),'Widening replaced original large move: '+label));
             if(gm2Initial&&rectIs(fixture,state,[30,20],[34,28],0)&&openingTick===null)openingTick=tick;
         }
         if(fixture.scene_name==='GM4-edit-during-approach'){
             closed||=rectIs(fixture,state,[31,20],[32,28],4);
             if(closed&&relative>240)reopened||=rectIs(fixture,state,[31,20],[32,28],0);
             const id=bindings.get('large.2.3'),order=row(merged,id),unit=world(state).units.find(u=>u.unit_id===id);
-            distant.observe(relative,order?.current,unit.pos);
+            check(()=>distant.observe(relative,order?.current,unit.pos));
         }
-        if(settledBlocker&&relative>=initialDeadline-200){const positions=publicOutcomes(merged,fixture,bindings).map(r=>[r.label,r.position,r.current]);if(stable)assert(same(stable,positions),'Impossible traffic oscillates instead of waiting');else stable=positions;}
+        if(settledBlocker&&relative>=initialDeadline-200){const positions=publicOutcomes(merged,fixture,bindings).map(r=>[r.label,r.position,r.current]);if(stable)check(()=>assert(same(stable,positions),'Impossible traffic oscillates instead of waiting'));else stable=positions;}
         const surfaceChanges=[];for(const surface of world(state).terrain.surfaces){const key=surface.cell.x+","+surface.cell.y,encoded=JSON.stringify(surface);if(previousSurfaces.get(key)!==encoded){surfaceChanges.push(surface);previousSurfaces.set(key,encoded);}}
         const sample={tick,relative_tick:relative,surface_changes:surfaceChanges,peer_ticks:[...states].map(([slot,s])=>({slot,tick:world(s).tick})),outcomes:publicOutcomes(merged,fixture,bindings),closed,reopened,opening_tick:openingTick};
         record?.(sample);samples.push({tick,relative_tick:relative});
@@ -445,7 +481,7 @@ async function drive({pagesBySlot,fixture,capture,record,recordInput,onPoll}) {
             // scenarios.rs): nothing moves in the last 200 ticks (above); a move of either slot that ends, ends inside its
             // goal area; bodies of different owners never overlap (physical, each sample). On Hold: the blocker stays and
             // nobody passes, every other unit waits on its side. Idle: own units may push it; no wait-state check.
-            assert(stable,'No stable evidence in the last 200 ticks');
+            check(()=>assert(stable,'No stable evidence in the last 200 ticks'));
             const blocker=world(final).units.find(u=>u.unit_id===bindings.get('blocker'));
             // Each move order of both slots (Clara, 2026-11-24: slot 1 too, no F4 exception): a move that ends, ends
             // inside the goal area of its order.
@@ -454,36 +490,37 @@ async function drive({pagesBySlot,fixture,capture,record,recordInput,onPoll}) {
                 const area=Math.sqrt(members.reduce((sum,a)=>sum+a.profile.radius**2,0)/0.35);
                 for(const actor of members){
                     const at=world(final).units.find(u=>u.unit_id===bindings.get(actor.label)).pos;
-                    assert(!idle(final,bindings.get(actor.label))||Math.hypot(at[0]-goal[0],at[1]-goal[1])<=area,'A move ended outside its goal area: '+actor.label+' (slot '+actor.slot+') at '+JSON.stringify(at)+' (area '+area.toFixed(3)+' m)');
+                    check(()=>assert(!idle(final,bindings.get(actor.label))||Math.hypot(at[0]-goal[0],at[1]-goal[1])<=area,'A move ended outside its goal area: '+actor.label+' (slot '+actor.slot+') at '+JSON.stringify(at)+' (area '+area.toFixed(3)+' m)'));
                 }
             }
             if(blockerHold){
-                assert(Math.hypot(blocker.pos[0]-blockerSettledPoint[0],blocker.pos[1]-blockerSettledPoint[1])<1e-3,'A unit on Hold moved: '+JSON.stringify(blocker.pos));
-                for(const actor of fixture.actors.filter(a=>a.label!=='blocker')){
+                check(()=>assert(Math.hypot(blocker.pos[0]-blockerSettledPoint[0],blocker.pos[1]-blockerSettledPoint[1])<1e-3,'A unit on Hold moved: '+JSON.stringify(blocker.pos)));
+                for(const actor of fixture.actors.filter(a=>a.label!=='blocker'))check(()=>{
                     const id=bindings.get(actor.label),at=world(final).units.find(u=>u.unit_id===id).pos;
                     assert(!idle(final,id)&&['Blocked','Pending'].includes(row(final,id).activity),'Impossible crossing lacks truthful wait state: '+actor.label);
                     assert(actor.slot===0?at[0]+actor.profile.radius<=30:at[0]-actor.profile.radius>=34,'A unit left its side of a shut gap: '+actor.label);
-                }
+                });
                 checks.permanent_blocker_retained=true;
             }else{
-                assert(idle(final,bindings.get('blocker')),'The idle blocker did not end at rest');
+                check(()=>assert(idle(final,bindings.get('blocker')),'The idle blocker did not end at rest'));
                 checks.blocker_final_position=blocker.pos;
             }
             checks.stable_wait_ticks=200;checks.blocker_hold=blockerHold;
         }else if(fixture.scene_name==='GM2-narrow'){
-            crossed(fixture,final,bindings,large);checks.large12_original_move_completed=true;checks.opening_tick=openingTick;
+            for(const label of large)check(()=>crossed(fixture,final,bindings,[label]));checks.large12_original_move_completed=true;checks.opening_tick=openingTick;
         }else if(fixture.scene_name==='GM4-edit-during-approach'){
-            assert(closed&&reopened&&distant.moved,'Actual fill/reopen or distant motion missing');crossed(fixture,final,bindings,labels(a=>a.label!=='small.0.0'&&a.label!=='large.2.3'));checks.closed_reopened=true;checks.distant_order_unchanged_through_tick=340;
+            check(()=>assert(closed&&reopened&&distant.moved,'Actual fill/reopen or distant motion missing'));for(const label of labels(a=>a.label!=='small.0.0'&&a.label!=='large.2.3'))check(()=>crossed(fixture,final,bindings,[label]));checks.closed_reopened=true;checks.distant_order_unchanged_through_tick=340;
         }else{
-            for(const actor of fixture.actors){const id=bindings.get(actor.label);assert(idle(final,id),'Feasible cohort did not finish: '+actor.label);
-                if(actor.label==='blocker')continue;
-                if(actor.label==='rear.small.0'){const p=world(final).units.find(u=>u.unit_id===id).pos;assert(Math.hypot(p[0]-20,p[1]-6)<=actor.profile.radius,'Unique destination not reached');continue;}
+            for(const actor of fixture.actors)check(()=>{const id=bindings.get(actor.label);assert(idle(final,id),'Feasible cohort did not finish: '+actor.label);
+                if(actor.label==='blocker')return;
+                if(actor.label==='rear.small.0'){const p=world(final).units.find(u=>u.unit_id===id).pos;assert(Math.hypot(p[0]-20,p[1]-6)<=actor.profile.radius,'Unique destination not reached');return;}
                 crossed(fixture,final,bindings,[actor.label],fixture.scene_name==='GM3-shared-and-unique'||actor.slot===0);
-            }checks.feasible_all_completed=true;
+            });checks.feasible_all_completed=true;
         }
         await capture?.('final',final);
-        return{status:'PASS',scene:fixture.scene_name,package:fixture.package,base_tick:base,final_tick:world(final).tick,actions,checks,samples,
+        return{status:faults.length?'FAIL':'PASS',faults,return_records:settled.records,scene:fixture.scene_name,package:fixture.package,base_tick:base,final_tick:world(final).tick,actions,checks,samples,
             limits:['Browser checks observed complete bodies and permitted terrain. Native acceptance certifies every actual committed sweep; polling can skip ticks.','Real pointer acceptance ticks are recorded and may differ from native script ticks.','Internal order identity/route lease and same-seed trajectory proof remain native checks.'],skipped_observation_ticks:gaps};
-    }finally{clearInterval(timer);while(inPoll)await sleep(10);await pollTail;}
+    }catch(error){error.faults=faults;error.return_records=settled.records;throw error;}
+    finally{clearInterval(timer);while(inPoll)await sleep(10);await pollTail;}
 }
-module.exports={activatePage,project,read,actorBindings,permittedTop,selectActors,issue,publicOutcomes,physical,overlapFault,freePoint,reachableIntent,dragFor,drive};
+module.exports={activatePage,project,read,actorBindings,permittedTop,selectActors,issue,publicOutcomes,physical,overlapFault,freePoint,reachableIntent,dragFor,faultList,bodyAt,drive};

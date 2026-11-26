@@ -51,3 +51,10 @@ test('physical: a planted 5 % overlap of two moving units of different owners fa
     assert.throws(()=>physical(...flat(10.95,'Moving',1)),/different owners overlap: b\/a/);
     assert.doesNotThrow(()=>physical(...flat(10.95,'Moving',0)));
 });
+test('the record-all mode keeps each fault once and goes on; the normal mode throws at the first',()=>{
+    const {faultList}=require('./driver'),all=faultList(true),first=faultList(false);
+    all.at(5);all.check(()=>physical(...flat(10.95,'Idle'),all.check));all.at(6);all.check(()=>{throw Error('A move ended outside its goal area: a at [1.5,2] (area 3 m)');});
+    all.at(7);all.check(()=>{throw Error('A move ended outside its goal area: a at [1.7,2] (area 3 m)');});all.check(()=>{throw Error('A move ended outside its goal area: b at [1,2] (area 3 m)');});
+    assert.deepEqual(all.faults.map(f=>f.tick),[5,6,7]);assert.match(all.faults[0].fault,/Idle circles overlap/);
+    assert.throws(()=>physical(...flat(10.95,'Idle'),first.check),/Idle circles overlap/);assert.equal(first.faults.length,0);
+});

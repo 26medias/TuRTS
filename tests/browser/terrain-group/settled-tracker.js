@@ -10,16 +10,18 @@ const near = (list, at, bound) => list.some(p => Math.hypot(p[0] - at[0], p[1] -
 //     point, with no exception (arrive first). A crowd is one owner and one goal point: two orders to one point make one
 //     crowd. The other members of a crowd have no per-unit bound; the crowd checks judge them (Clara, 2026-11-24, after
 //     Kenji's rerun). Contact while units move is allowed (operator rule 4).
-// (2) The unit is back within one radius at most RETURN_TICKS after the latest of three events: the quiet time starts,
-//     the settle point becomes free (no other body within one diameter of it), or the unit goes one radius or more
-//     from it. A return deadline does not start before a return is possible and there is something to return from
-//     (Clara, 2026-11-26).
-// `context` is {tick, ownMovers: [[x, y]], bodies: [[x, y]]} (the other bodies only).
+// (2) RECORD ONLY (Iris, 2026-11-26; the requirement moved to T-59): the unit is back within one radius at most
+//     RETURN_TICKS after the latest of three events: the quiet time starts, the settle point becomes free, or the unit
+//     goes one radius or more from it. A point is free when no other body has its centre nearer to it than the sum of
+//     the two radii (Clara, 2026-11-26). A miss goes into `records` (one for each due stretch); it fails nothing.
+// `context` is {tick, ownMovers: [[x, y]], bodies: [[x, y, radius]]} (the other bodies only).
 class SettledTracker {
     constructor() {
         this.positions = new Map(); this.pending = new Set(); this.retired = new Set();
         this.quiet = new Map(); this.crowdOf = new Map(); this.firstOf = new Map();
         this.due = new Map(); // The first tick of the current stretch in which a return is due.
+        this.reported = new Map(); // The `due` tick of the stretch that is in `records` already.
+        this.records = [];
     }
     begin(labels) { for (const label of labels) this.pending.add(label); }
     // `crowd` names the crowd of a move order: its owner and its goal point.
@@ -47,15 +49,20 @@ class SettledTracker {
         if (!this.quiet.has(label)) this.quiet.set(label, tick);
         if (!home) return;
         const quietFor = tick - this.quiet.get(label), distance = Math.hypot(position[0] - home[0], position[1] - home[1]);
-        const occupied = near(bodies, home, 2 * radius), first = crowd !== null && this.firstOf.get(crowd) === label;
+        const occupied = bodies.some(body => {
+            if (!(body[2] > 0)) throw Error('Each body needs its radius: ' + label);
+            return Math.hypot(body[0] - home[0], body[1] - home[1]) < radius + body[2];
+        }), first = crowd !== null && this.firstOf.get(crowd) === label;
         const where = ' (' + distance.toFixed(3) + ' m from its settle point, quiet for ' + quietFor + ' ticks at tick ' + tick + ')';
         if (first && quietFor >= REST_TICKS && distance > 2 * radius)
             throw Error('First unit of its crowd at rest is more than one body diameter from its settle point: ' + label + where);
         if (distance < radius || occupied) { this.due.delete(label); return; }
         if (!this.due.has(label)) this.due.set(label, tick);
         const dueFor = tick - this.due.get(label);
-        if (dueFor > RETURN_TICKS)
-            throw Error('Pushed settled unit did not go back within ' + RETURN_TICKS + ' ticks after the movers left: ' + label + where + ', due for ' + dueFor + ' ticks, bound ' + radius.toFixed(3) + ' m');
+        if (dueFor > RETURN_TICKS && this.reported.get(label) !== this.due.get(label)) {
+            this.reported.set(label, this.due.get(label));
+            this.records.push({label, tick, due_since: this.due.get(label), quiet_for: quietFor, distance: +distance.toFixed(3), radius: +radius.toFixed(3)});
+        }
     }
 }
 class DistantOrderTracker {

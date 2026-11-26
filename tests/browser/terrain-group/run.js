@@ -6,10 +6,10 @@ const {spawn,spawnSync}=require('node:child_process'),{chromium}=require('playwr
 const {drive,read}=require('./driver');
 const root=path.resolve(__dirname,'../../..'),args=process.argv.slice(2),prepared=path.resolve(args.shift()||''),output=path.resolve(args.shift()||'');
 const scenes=['GM1-wide','GM2-narrow','GM3-opposing-large','GM3-settled-blocker','GM3-settled-blocker-hold','GM3-movable-blocker','GM3-shared-and-unique','GM4-edit-during-approach'];
-const options={packages:['quarry','terrain_stockyard'],scenes,allocation:false,members:false,connections:'both',chrome:'/usr/bin/google-chrome'};
-while(args.length){const flag=args.shift();if(flag==='--package')options.packages=[args.shift()];else if(flag==='--scene')options.scenes=[args.shift()];else if(flag==='--reverse-allocation')options.allocation=true;else if(flag==='--reverse-members')options.members=true;else if(flag==='--connections')options.connections=args.shift();else if(flag==='--chrome')options.chrome=args.shift();else throw Error('Unknown argument '+flag);}
+const options={packages:['quarry','terrain_stockyard'],scenes,allocation:false,members:false,recordAll:false,connections:'both',chrome:'/usr/bin/google-chrome'};
+while(args.length){const flag=args.shift();if(flag==='--record-all')options.recordAll=true;else if(flag==='--package')options.packages=[args.shift()];else if(flag==='--scene')options.scenes=[args.shift()];else if(flag==='--reverse-allocation')options.allocation=true;else if(flag==='--reverse-members')options.members=true;else if(flag==='--connections')options.connections=args.shift();else if(flag==='--chrome')options.chrome=args.shift();else throw Error('Unknown argument '+flag);}
 const assert=(ok,message)=>{if(!ok)throw Error(message);},sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
-assert(process.argv.length>=4,'run.js PREPARED FRESH_OUTPUT [--package quarry|terrain_stockyard] [--scene SCENE] [--connections both|normal|reversed] [--reverse-allocation] [--reverse-members] [--chrome PATH]');
+assert(process.argv.length>=4,'run.js PREPARED FRESH_OUTPUT [--record-all] [--package quarry|terrain_stockyard] [--scene SCENE] [--connections both|normal|reversed] [--reverse-allocation] [--reverse-members] [--chrome PATH]');
 assert(options.packages.every(p=>['quarry','terrain_stockyard'].includes(p))&&options.scenes.every(s=>scenes.includes(s)),'Unknown frozen package/scene');
 assert(['both','normal','reversed'].includes(options.connections),'Unknown connection variant');
 assert(!fs.existsSync(output),'Use fresh output; preserve existing evidence');fs.mkdirSync(output,{recursive:true});
@@ -79,9 +79,13 @@ async function ready(url,server){const deadline=Date.now()+30000;while(Date.now(
                 assert(pagesBySlot.has(0)&&(peers===1||pagesBySlot.has(1)),'Required owner peer absent');
                 stream=fs.createWriteStream(path.join(caseOut,'observed-public.jsonl'));
                 const capture=async(name,state)=>{fs.writeFileSync(path.join(caseOut,name+'.json'),JSON.stringify(state,null,2));for(const [slot,page]of pagesBySlot)await page.screenshot({path:path.join(caseOut,`${name}-slot${slot}.png`)});};
-                row.outcome=await drive({pagesBySlot,fixture,capture,record:sample=>stream.write(JSON.stringify(sample)+'\n'),recordInput:sample=>fs.appendFileSync(path.join(caseOut,'pointer-input-observations.jsonl'),JSON.stringify(sample)+'\n'),onPoll:()=>assert(row.errors.length===0,'Browser errors: '+row.errors.join('\n'))});
+                row.outcome=await drive({pagesBySlot,fixture,capture,record:sample=>stream.write(JSON.stringify(sample)+'\n'),recordInput:sample=>fs.appendFileSync(path.join(caseOut,'pointer-input-observations.jsonl'),JSON.stringify(sample)+'\n'),onPoll:()=>assert(row.errors.length===0,'Browser errors: '+row.errors.join('\n')),recordAll:options.recordAll});
+                row.faults=row.outcome.faults;row.return_records=row.outcome.return_records;
+                assert(!row.faults.length,row.faults.length+' recorded faults: '+row.faults.map(f=>'['+f.tick+'] '+f.fault).join(' | '));
                 row.status='PASS';
-            }catch(error){row.status='FAIL';row.error=String(error.stack||error);throw error;}
+            }catch(error){row.status='FAIL';row.error=String(error.stack||error);row.faults??=error.faults;row.return_records??=error.return_records;
+                // Record-all: one run lists every failing case; the run still ends FAIL.
+                if(!options.recordAll)throw error;}
             finally{
                 if(stream){stream.end();await new Promise(resolve=>stream.once('finish',resolve));}
                 for(const context of caseContexts)await context.close();for(const profile of caseProfiles)fs.rmSync(profile,{recursive:true,force:true});
@@ -90,6 +94,8 @@ async function ready(url,server){const deadline=Date.now()+30000;while(Date.now(
             }
         }
     }
+    const failed=result.cases.filter(row=>row.status!=='PASS').map(row=>row.name);
+    assert(!failed.length,'Failed cases: '+failed.join(', '));
     result.status='PASS';
  }catch(error){result.status='FAIL';result.error=String(error.stack||error);process.exitCode=1;console.error(error);}
  finally{
