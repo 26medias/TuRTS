@@ -9,6 +9,8 @@ const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const PRESS_MS=80;
 // Selection retry: a body that moved this far (world units) since the aim can have left the click point.
 const SELECT_ATTEMPTS=4,SELECT_SETTLE_MS=600,MOVED_UNDER_CLICK=.05;
+// A work order needs its named worker, which holds the fill cargo: the driver waits this long for a crowd to uncover it.
+const WORKER_WAIT_MS=60000;
 // Xvfb has one real pointer shared by the peer windows. Activate the target
 // before CDP input so Chrome delivers the native pointer position before down.
 async function activatePage(page){await page.bringToFront();await sleep(150);}
@@ -438,6 +440,8 @@ async function drive({pagesBySlot,fixture,capture,record,recordInput,onPoll,reco
             const bySlot=new Map();for(const intent of batch){if(!bySlot.has(intent.slot))bySlot.set(intent.slot,[]);bySlot.get(intent.slot).push(intent);}
             await Promise.all([...bySlot].map(async([slot,intents])=>{for(const planned of intents){
                 monitor();const page=pagesBySlot.get(slot);assert(page,'Missing real peer for slot '+slot);
+                if(prepared.get(slot)!==planned&&planned.action!=='move'&&planned.action!=='hold'&&planned.actors.length===1)
+                    await wait(page,s=>freePoint(fixture,s,bindings,bindings.get(planned.actors[0])),'The worker stays covered',WORKER_WAIT_MS).catch(()=>{});
                 const intent=prepared.get(slot)===planned?planned:reachableIntent(fixture,await read(page),bindings,planned,fact=>{(checks.covered_substitutions??=[]).push(fact);substitutes.add(fact.substitute);});
                 settled.begin(intent.actors);
                 const before=await read(page),lastSeq=Math.max(0,...(before.debug.command_results||[]).map(r=>r.seq));
