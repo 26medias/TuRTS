@@ -70,8 +70,6 @@ pub(crate) fn integrate_movement(world: &mut World) {
         pools: world.resource::<MovementPools>().0.clone(),
     };
     let (outputs, terrain_waiting) = crate::terrain::navigation::step(world, &frame, delta);
-    #[cfg(feature = "test-probes")]
-    super::probe::store_frame_flags(world, &outputs);
     for ((id, entity, _), output) in units.into_iter().zip(outputs) {
         let mut entity_mut = world.entity_mut(entity);
         if terrain_waiting.contains(&id) {

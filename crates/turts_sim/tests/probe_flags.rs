@@ -1,11 +1,10 @@
 //! The movement probe (feature `test-probes`, pre-MP1 task Q1b) on a crowd.
 //!
-//! The four packages of the frozen M2 stream never set `separated` or `was_projected` to true and
-//! never use a pool or a plain progress (the counts of `refreeze_classify.py --counts`), so
-//! the stream cannot show that the probe works. These cases do: each probe value that the
-//! trace emitter reads is made non-trivial here, on the authored `muster` package. The three
-//! movement branches expose pool and plain progress. Projection flags are only present
-//! when the legacy projection pass runs.
+//! The four packages of the frozen M2 stream never use a pool or a plain progress (the counts of
+//! `refreeze_classify.py --counts`), so the stream cannot show that the probe works. These cases
+//! do: each probe value that the trace emitter reads is made non-trivial here, on the authored
+//! `muster` package. The flags `separated` and `was_projected` of the old movement path's hard
+//! projection are gone with that path (1962b8d3); the flock has no such pass.
 #![cfg(feature = "test-probes")]
 
 use turts_mod_api::{ContentId, OrderDef, PackageId, SourceDef};
@@ -94,77 +93,9 @@ fn has_move_target(app: &mut bevy_app::App, unit: u32) -> bool {
         .any(|(id, _)| id.0 == unit)
 }
 
-/// Trooper 1 stands at (25, 18) with trooper 2 at (26.1, 18): a gap of 1.1, which is more than
-/// the separation limit 1.05, so the unit is not `separated` on its first step. The step of 0.15
-/// puts it at 0.95 from trooper 2, inside the footprint limit 1.0001, so the hard projection
-/// moves it back: `was_projected` (no-pool branch). A moved and projected unit gets a plain
-/// progress. The plain branch then runs its own projection loop: the unit is projected on each
-/// of the ticks 2 to 11 (the loop in `plain.rs` stores its real value) and no longer from tick
-/// 12 on, so a plain branch that stores a constant reads wrong on one of the two spans.
+/// A group order keeps one pool, and each member reads the pool state while it moves.
 #[test]
-fn a_unit_stepped_into_a_neighbour_reads_projected_then_plain_and_separated() {
-    let mut fixture = muster();
-    let app = &mut fixture.app;
-    queue(app, move_to(vec![1], Vec2::new(60.0, 18.0)));
-    app.update();
-    let world = app.world();
-    assert_eq!(
-        probe::was_projected(world, 1),
-        Some(true),
-        "tick 1: projected (no-pool branch)"
-    );
-    assert!(!probe::separated(world, 1), "tick 1: not separated");
-    assert_eq!(
-        probe::unit_state(world, 1),
-        "plain",
-        "tick 1: plain progress"
-    );
-    assert_eq!(
-        probe::activity(world, 1),
-        "none",
-        "a plain progress is no pool"
-    );
-    app.update();
-    let world = app.world();
-    assert!(
-        probe::separated(world, 1),
-        "tick 2: separated (plain branch)"
-    );
-    assert_eq!(
-        probe::was_projected(world, 1),
-        Some(true),
-        "tick 2: projected (plain branch)"
-    );
-    assert_eq!(
-        probe::unit_state(world, 1),
-        "plain",
-        "tick 2: plain progress"
-    );
-    for tick in 3..=11 {
-        app.update();
-        assert_eq!(
-            probe::was_projected(app.world(), 1),
-            Some(true),
-            "tick {tick}: projected (plain branch)"
-        );
-    }
-    app.update();
-    let world = app.world();
-    assert_eq!(
-        probe::unit_state(world, 1),
-        "plain",
-        "tick 12: still a plain progress"
-    );
-    assert_eq!(
-        probe::was_projected(world, 1),
-        Some(false),
-        "tick 12: the plain branch ran and the hard projection did not move the unit"
-    );
-}
-
-/// A certified route can move a pooled unit without running the legacy projection pass.
-#[test]
-fn a_routed_group_keeps_pool_progress_without_inventing_projection_flags() {
+fn a_routed_group_keeps_pool_progress() {
     let mut fixture = muster();
     let ids: Vec<u32> = (1..=8).collect();
     let command = group_move(&fixture.catalog, ids.clone(), Vec2::new(40.0, 30.0));
@@ -173,10 +104,8 @@ fn a_routed_group_keeps_pool_progress_without_inventing_projection_flags() {
         let entity = turts_sim::unit_entity(world, id).expect("Muster unit exists");
         world.get::<turts_sim::Position>(entity).unwrap().0
     };
-    let start: Vec<_> = ids.iter().map(|&id| position(app.world(), id)).collect();
     queue(app, command);
 
-    let mut moved_without_projection = false;
     for _ in 0..2 {
         app.update();
         let world = app.world();
@@ -185,22 +114,15 @@ fn a_routed_group_keeps_pool_progress_without_inventing_projection_flags() {
             let pose = position(world, id);
             assert_eq!(probe::unit_state(world, id), "pool", "unit {id}");
             assert_eq!(probe::activity(world, id), "Moving", "unit {id}");
-            moved_without_projection |=
-                pose != start[i] && probe::was_projected(world, id).is_none();
             for &other in &ids[i + 1..] {
                 assert!(pose.distance(position(world, other)) >= 1.0 - 1e-5);
             }
         }
         assert_eq!(probe::unit_state(world, 100), "none");
     }
-    assert!(
-        moved_without_projection,
-        "certified route must report no legacy projection"
-    );
 }
 
-/// A unit that does not step reads the defaults (`was_projected` is null: no projection loop
-/// ran for it), and a unit that does not exist reads `none`.
+/// A unit that does not step reads the defaults, and a unit that does not exist reads `none`.
 #[test]
 fn a_unit_that_does_not_step_reads_the_defaults() {
     let mut fixture = muster();
@@ -209,8 +131,6 @@ fn a_unit_that_does_not_step_reads_the_defaults() {
     let world = app.world();
     assert_eq!(probe::unit_state(world, 1), "none");
     assert_eq!(probe::activity(world, 1), "none");
-    assert!(!probe::separated(world, 1));
-    assert_eq!(probe::was_projected(world, 1), None);
     assert_eq!(probe::pool_count(world), 0);
     assert_eq!(probe::pending_movement_orders(world), 0);
     assert_eq!(probe::unit_state(world, 999_999), "none");

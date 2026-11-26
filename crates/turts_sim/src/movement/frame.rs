@@ -43,9 +43,6 @@ pub struct MovementFrameOutput {
     pub failed_blocked: bool,
     /// Explicit physical tie resolution from this solver step. Not serialized.
     pub(crate) arrival_slot: Option<Vec2>,
-    /// The flags of the last step of this unit. Tests read them through `probe`.
-    #[cfg(feature = "test-probes")]
-    pub probe: super::probe::FrameFlags,
     /// The blocked-recovery job after this tick.
     pub recovery: Option<Box<super::RecoverySearch>>,
 }
