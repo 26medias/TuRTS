@@ -1,7 +1,8 @@
 # M4b dense group movement: results and limits
 
 Recorded on 2026-11-26 for task T-45 on `codex/t7-flock-sim`. Final product code: c1dc1e60 (the E1 fix on
-a6d54cee). The browser rows name their commit. The native GM1 to GM7 rows were recorded before c1dc1e60. This page records results. It does not record an acceptance: a person accepts M4b.
+a6d54cee). The browser rows name their commit. The native GM1 to GM6 rows and the GM7 diagnostic are on c1dc1e60;
+the GM7 run under B3 is on a6d54cee (with the test layout of 854e01e8). This page records results. It does not record an acceptance: a person accepts M4b.
 
 ## What M4b delivers
 
@@ -21,6 +22,10 @@ a6d54cee). The browser rows name their commit. The native GM1 to GM7 rows were r
   then a lattice of poses in the tool's reach. A walk that ends short, or that makes no
   progress for 3 s, takes the next pose. With no pose left, the unit shows Blocked
   (a6d54cee).
+- **Queues at a passage.** Of two own units that come too near, only the one whose step goes
+  toward the other yields: the unit behind waits and the unit ahead goes on (c1dc1e60). Before
+  it, a fast unit that closed in on a slow one stopped both, and the stop spread through a
+  crowd at the mouth of a dug passage (FM2).
 - **Cost.** The flock costs about 12 ms of a GM7 tick, down from about 31 ms. A flat grid
   snapshot, active-set push passes, reused buffers and an exact flat-ground shortcut in the
   terrain check do it, and the traces are byte-identical (127fa4e5).
@@ -44,13 +49,15 @@ a6d54cee). The browser rows name their commit. The native GM1 to GM7 rows were r
 
 | Check | Evidence | Result on the candidate |
 | --- | --- | --- |
-| GM1 wide passage | `cargo test -p turts_server --release --locked --test terrain_group` (`gm1_wide_*`) | PASS |
-| GM2 narrow opening | the same suite, `gm2_*` (2 tests) | PASS |
-| GM3 shared, opposing, unique, blockers | the same suite, `gm3_*` (8 tests) | PASS |
-| GM4 edits during approach | the same suite, `gm4_*` | PASS |
-| GM5 memberships and replay | the same suite, `gm5_*` | PASS |
-| GM6 hidden terrain privacy | the same suite, `gm6_*` (2 tests); the server unit test driver | PASS |
-| GM7 frozen workload, B3 | `target/mc-evidence/t7-flocking/gm7-b3-candidate/runs/b3-2/` | PASS, all 4 rows (table below) |
+| GM1 wide passage | `cargo test -p turts_server --release --locked --test terrain_group` (`gm1_wide_*`) | PASS on c1dc1e60 |
+| GM2 narrow opening | the same suite, `gm2_*` (2 tests) | PASS on c1dc1e60 |
+| GM3 shared, opposing, unique, blockers | the same suite, `gm3_*` (8 tests) | PASS on c1dc1e60 |
+| GM4 edits during approach | the same suite, `gm4_*` | PASS on c1dc1e60 |
+| GM5 memberships and replay | the same suite, `gm5_*` | PASS on c1dc1e60 |
+| GM6 hidden terrain privacy | the same suite, `gm6_*` (2 tests); the server unit test driver | PASS on c1dc1e60 |
+| FM2 return, server path | the same suite, `fm2_return` (10 seeded cases, order points offset by up to 0.05 m) | PASS on c1dc1e60; red on its parent (up to 32 units not idle) |
+| GM7 frozen workload, B3 | `target/mc-evidence/t7-flocking/gm7-b3-candidate/runs/b3-2/` | PASS on a6d54cee, all 4 rows, 1000 intervals each (table below) |
+| GM7 pinned diagnostic, no sudo | `target/mc-evidence/t7-flocking/gm7-diag-c1dc1e60/runs/A1/` | PASS on c1dc1e60, all 4 rows, 200 intervals each: p99 27.95 to 28.40 ms, max 32.48 to 38.21 ms, debt 0 |
 | GM8 browser, 24 cases | `target/mc-evidence/t7-flocking/cand-c1dc1e60/`; known limits `.swarm/reports/T-42-known-limits-0582fda5.md` | c1dc1e60: GM4 (both maps) PASS to the end, no overlap. The other 22 cases did not run on c1dc1e60. Not M4b results (code a6d54cee): 7 of 24 PASS on 8fa203ab; after test repairs 11 of those 17 PASS on 0582fda5. |
 | FPS, 400 detailed models | `cand-c1dc1e60/fps/` | c1dc1e60: PASS. Normal 48.6, near 56.2, far 48.0 FPS (floor 30); p99 33.4 ms in each view; at least 7 units in motion in each interval. |
 | FM1 first motion | `cand-c1dc1e60/fm/` | c1dc1e60: PASS on both ridge packages (table below). |
