@@ -188,7 +188,7 @@ fn gm40_muster_forty_troopers_rest_disjoint_and_near_the_point() {
             .intersection(&ids)
             .collect::<Vec<_>>()
     );
-    mc::assert_rest_and_geometry_at(positions, &ids, target, 0.5, 4.58, 40, 420);
+    mc::assert_rest_and_geometry_at(positions, &ids, target, 0.5, mc::near_bound(40), 40, 420);
 }
 
 /// The economy-log replay runs the same frame solver with no private state. The claim
@@ -315,10 +315,16 @@ fn gma_crossing_and_second_group_while_first_moves_leave_no_rest_overlap() {
     let all = left.union(&right).copied().collect::<BTreeSet<_>>();
     mc::assert_full_tick_coverage(&positions, 400, &all);
     // Guard: the idle phase is the only part where "avoidance off" can go red (see above). A
-    // fixture change that removes it must fail here, not hide the red path.
+    // fixture change that removes it must fail here, not hide the red path. The second group
+    // gets no order before tick 20. The first group may push it aside as it passes (flock
+    // rule 1, 2026-11-23: a mover pushes an idle own unit), so the guard is on its orders, not
+    // on its motion.
     assert!(
-        mc::moving_units_between(&positions, &right, 1, 19).is_empty(),
-        "GMA crossing guard: the second group must stay idle in ticks 1 to 19"
+        orders
+            .iter()
+            .filter(|row| right.contains(&row.unit_id))
+            .all(|row| row.tick >= 20),
+        "GMA crossing guard: the second group must have no order in ticks 1 to 19"
     );
     let crossing_ticks = mc::by_tick(&positions);
     assert!(
@@ -440,13 +446,23 @@ fn gmu_clamps_finite_outside_target_to_the_inset_point() {
     let clamp_ticks = mc::by_tick(&clamp_positions);
     let clamp_rest = clamp_ticks.get(&600).unwrap();
     mc::assert_no_overlap(clamp_rest, &id_set(&TROOPERS), 0.5, 600);
-    assert_on_pool_lattice(clamp_rest, &TROOPERS, clamp_target, 1.1);
+    // The flock has no slot lattice (2026-11-23). The goal is clamped inside the map, inset by
+    // the radius and a clearance of 1/256 m (the bounds check below holds every unit there).
+    // The first unit to arrive rests within one diameter of the clamped point (the Game
+    // Director's crowd guard (i), 2026-11-24), and the crowd rests within its bound round it.
     assert!(
         TROOPERS
             .iter()
-            .any(|id| clamp_rest.get(id) == Some(&clamp_target)),
+            .any(|id| mc::distance(*clamp_rest.get(id).unwrap(), clamp_target) <= 1.0),
         "GMU finite outside target is clamped to the authored inset point before group spreading"
     );
+    for id in TROOPERS {
+        let distance = mc::distance(*clamp_rest.get(&id).unwrap(), clamp_target);
+        assert!(
+            distance <= mc::near_bound(40),
+            "GMU clamp: unit {id} rests {distance} from the clamped point, beyond the crowd bound"
+        );
+    }
     for id in TROOPERS {
         let position = clamp_rest.get(&id).unwrap();
         assert!(
@@ -463,7 +479,8 @@ fn gmu_clamps_finite_outside_target_to_the_inset_point() {
 /// Row GMU, same point (design revision 15, ruling O14). Troopers 21 to 40 move to (40, 30) and
 /// rest with 0 `Blocked`. Then troopers 1 to 20 get a move of another group to the same point.
 /// Gated: at rest no two footprint discs overlap; each unit of both orders, `Done` or `Blocked`,
-/// stands within R_near = 4.58 of the point; each unit rests or is `Blocked` within
+/// stands within the crowd bound `mc::near_bound(40)` of the point (flock rule 2, 2026-11-23; the
+/// old path's R_near was 4.58); each unit rests or is `Blocked` within
 /// 2 x (distance / speed) + 5 s. Recorded, not gated: the `Blocked` count of the second order and
 /// the rest position of each such unit (M4b owns this limit). The slot check of 6.3 step 2 is
 /// the native test `crates/turts_sim/tests/gmu_same_point.rs`.
@@ -503,8 +520,8 @@ fn gmu_second_order_to_the_same_point_rests_disjoint_within_r_near() {
     for id in &all {
         let distance = mc::distance(*rest.get(id).unwrap(), target);
         assert!(
-            distance <= 4.58,
-            "GMU same point: unit {id} rests {distance} from {target:?}, beyond R_near = 4.58"
+            distance <= mc::near_bound(40),
+            "GMU same point: unit {id} rests {distance} from {target:?}, beyond the crowd bound"
         );
     }
     record_blocked_units("open-ground", &orders, &right, rest, target, END_TICK);
@@ -617,26 +634,6 @@ fn gmu_post_target_ends_on_a_ring_round_the_post() {
         assert!(
             distance.is_finite(),
             "trooper {id} has a non-finite post-ring position"
-        );
-    }
-}
-
-/// Every slot of a pool is a point of the hex lattice round the pool origin (design 6.3 step 3),
-/// so units at rest on primary or spare slots lie on the lattice of the clamped point.
-fn assert_on_pool_lattice(
-    rest: &BTreeMap<u32, (f32, f32)>,
-    ids: &[u32],
-    origin: (f32, f32),
-    spacing: f32,
-) {
-    let pitch = spacing * 3.0_f32.sqrt() * 0.5;
-    for id in ids {
-        let (x, y) = *rest.get(id).unwrap();
-        let j = ((y - origin.1) / pitch).round();
-        let i = (x - origin.0) / spacing - 0.5 * j;
-        assert!(
-            (j * pitch - (y - origin.1)).abs() <= 0.001 && (i - i.round()).abs() * spacing <= 0.001,
-            "GMU unit {id} at ({x}, {y}) is not on the slot lattice of the clamped point {origin:?}"
         );
     }
 }
