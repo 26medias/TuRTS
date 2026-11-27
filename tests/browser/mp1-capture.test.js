@@ -203,6 +203,7 @@ test("a capture through the port of a real Chrome window returns the three recor
         chrome.kill();
         await new Promise((resolve) => { if (chrome.exitCode !== null) resolve(); else chrome.once("exit", resolve); });
         page.close();
-        fs.rmSync(profile, { recursive: true, force: true });
+        // Chrome's helper processes can write into the profile for a moment after the main process ends.
+        fs.rmSync(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
     }
 });

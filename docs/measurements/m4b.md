@@ -2,7 +2,10 @@
 
 Recorded on 2026-11-26 for task T-45 on `codex/t7-flock-sim`. Final product code: c1dc1e60 (the E1 fix on
 a6d54cee). The browser rows name their commit. The native GM1 to GM6 rows and the GM7 diagnostic are on c1dc1e60;
-the GM7 run under B3 is on a6d54cee (with the test layout of 854e01e8). This page records results. It does not record an acceptance: a person accepts M4b.
+the GM7 run under B3 is on a6d54cee (with the test layout of 854e01e8).
+
+**Accepted by the operator, 2026-11-26.** GM7 is accepted on the B3 run b3-2 plus the pinned run on c1dc1e60, and
+the known limits below are accepted. Record: `vault/Decisions/2026-11-26 M4b GM7 evidence.md`.
 
 ## What M4b delivers
 
@@ -58,7 +61,7 @@ the GM7 run under B3 is on a6d54cee (with the test layout of 854e01e8). This pag
 | FM2 return, server path | the same suite, `fm2_return` (10 seeded cases, order points offset by up to 0.05 m) | PASS on c1dc1e60; red on its parent (up to 32 units not idle) |
 | GM7 frozen workload, B3 | `target/mc-evidence/t7-flocking/gm7-b3-candidate/runs/b3-2/` | PASS on a6d54cee, all 4 rows, 1000 intervals each (table below) |
 | GM7 pinned diagnostic, no sudo | `target/mc-evidence/t7-flocking/gm7-diag-c1dc1e60/runs/A1/` | PASS on c1dc1e60, all 4 rows, 200 intervals each: p99 27.95 to 28.40 ms, max 32.48 to 38.21 ms, debt 0 |
-| GM8 browser, 24 cases | `target/mc-evidence/t7-flocking/cand-c1dc1e60/`; known limits `.swarm/reports/T-42-known-limits-c1dc1e60.md` | c1dc1e60: 16 of 24 PASS, 8 FAIL; no stall, crash, overlap or wall fault recorded. Red: 3 cases where the first arrival ends more than one body diameter from its place (0.81 to 0.92 m; new on c1dc1e60; against the GM3 first-arrival rule); 4 settled-blocker cases where a large unit gives up its move at a standing enemy (T-59); 1 test click on a covered unit. |
+| GM8 browser, 24 cases | `target/mc-evidence/t7-flocking/cand-c1dc1e60/`; known limits below | c1dc1e60: 16 of 24 PASS, 8 FAIL; no stall, crash, overlap or wall fault recorded. Red: 3 cases where the first arrival ends more than one body diameter from its place (0.81 to 0.92 m; new on c1dc1e60; known limit 2); 4 settled-blocker cases where a large unit gives up its move at a standing enemy (known limit 1); 1 test click on a covered unit (known limit 7). |
 | FPS, 400 detailed models | `cand-c1dc1e60/fps/` | c1dc1e60: PASS. Normal 48.6, near 56.2, far 48.0 FPS (floor 30); p99 33.4 ms in each view; at least 7 units in motion in each interval. |
 | FM1 first motion | `cand-c1dc1e60/fm/` | c1dc1e60: PASS on both ridge packages (table below). |
 | FM2 return crossing | `cand-c1dc1e60/fm/` | c1dc1e60: PASS. All 36 settle at 323 (quarry_ridge) and 324 (terrain_stockyard_ridge) ticks; 0 overlapping pairs at rest; no stall on the return. The earlier PASS line here was from d7ee8c72. With V6 before the E1 fix, FM2 failed (17 of 36 settle): cb031474 and 063bd531. |
@@ -99,11 +102,25 @@ first B3 run (b3-1) stopped in 0.6 s: the static enemies of each side stood on t
 scouting lane, and the flock does not walk round such a wall. The test layout now puts them
 beside the route (854e01e8, test code only).
 
-A person's sign-off of the milestone (spec section 14) is not recorded. The operator played the
-ridge loop and skirmish on 2026-11-26 ("Flocking looks good"; "movements look and behave well,
-the game is playable").
+The operator played the ridge loop and skirmish on 2026-11-26 ("Flocking looks good"; "movements look and
+behave well, the game is playable"), then accepted the milestone evidence and the known limits.
 
 ## Known limits
+
+Accepted by the operator, 2026-11-26:
+
+1. A move or a queued route can end after 2 s at a standing enemy or a standing crowd, up to 19-24 m before its
+   goal, with no reason shown (T-59).
+2. A pushed unit does not always go back exactly to its place: usually 0.5-0.9 m off, up to 3.7 m when a large own
+   unit takes the spot (T-59).
+3. Dig with Walkers and Crawlers together orders only the Walkers; the tooltip says so (merged Dig, first after M4b).
+4. A Dig or Fill drag that ends behind a wall can take the wall cell; the preview shows it.
+5. A refused building spot shows only a red circle, no reason text (F7).
+6. A right-click on ground under or behind own units gives no order.
+7. At far zoom in a packed crowd, a click can pick the unit in front.
+8. A 1,000-unit join fills the send window briefly at the join, ticks 8-16 (T-58).
+
+Technical detail of limits 1 and 2, and further notes:
 
 - **No local path round standing bodies.** A Move unit that a standing body stops ends its leg
   where it stands, also far from its goal, outside a passage. A player's queued legs can then
