@@ -163,12 +163,12 @@ target/release/turts_client --server http://127.0.0.1:7000 --ws ws://127.0.0.1:7
 
 The target is the full RTS engine in the [project specification](RTS-Engine-Project-Specifications.md).
 
-Accepted milestones of spec section 14 (20 in all): `███████░░░░░░░░░░░░░` 7 of 20.
+Accepted milestones of spec section 14 (20 in all): `████████░░░░░░░░░░░░` 8 of 20.
 
 | Milestones | State |
 | --- | --- |
 | M1, M2, M3, QA0, M4, MS, M6 | Accepted |
-| M4b (group movement on terrain) | Done and playable; a person's acceptance is not recorded. [Results and known limits](docs/measurements/m4b.md) |
+| M4b (group movement on terrain) | Done and accepted, with [known limits](docs/measurements/m4b.md#known-limits) |
 | MC, MP1, MP2 | Capabilities delivered; no recorded acceptance by a person |
 | **M5 (discovery, with unit fog of war)** | **Next** |
 | MB, M7, M8, M9, M10, M11, M12, M13 | Open |
