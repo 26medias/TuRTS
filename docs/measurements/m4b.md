@@ -1,7 +1,7 @@
 # M4b dense group movement: results and limits
 
-Recorded on 2026-11-26 for task T-45 on `codex/t7-flock-sim`. Product code: a6d54cee. Test code: up to
-854e01e8. This page records results. It does not record an acceptance: a person accepts M4b.
+Recorded on 2026-11-26 for task T-45 on `codex/t7-flock-sim`. Final product code: c1dc1e60 (the E1 fix on
+a6d54cee). The browser rows name their commit. The native GM1 to GM7 rows were recorded before c1dc1e60. This page records results. It does not record an acceptance: a person accepts M4b.
 
 ## What M4b delivers
 
@@ -51,25 +51,27 @@ Recorded on 2026-11-26 for task T-45 on `codex/t7-flock-sim`. Product code: a6d5
 | GM5 memberships and replay | the same suite, `gm5_*` | PASS |
 | GM6 hidden terrain privacy | the same suite, `gm6_*` (2 tests); the server unit test driver | PASS |
 | GM7 frozen workload, B3 | `target/mc-evidence/t7-flocking/gm7-b3-candidate/runs/b3-2/` | PASS, all 4 rows (table below) |
-| GM8 browser, 24 cases | `.swarm/reports/T-42-cand-8fa203ab.md`, `target/mc-evidence/t7-flocking/cand-8fa203ab/` | 7 of 24 PASS on 8fa203ab. The return-check and end-pose fails were check faults (repaired in test code, 0582fda5). Marco's rerun is open. |
-| FPS, 400 detailed models | the same report | normal view 56.0 FPS (floor 30). The row needs a rerun: no unit moved in its last interval. |
-| FM1 first motion | `.swarm/reports/T-49.md`, `.swarm/reports/T-42-d7ee8c72.md`, `target/mc-evidence/gm8-frame-codex/fm-probe/` | PASS on the flock builds 099feffc and d7ee8c72 (timings below). Not rerun on the candidate. |
-| FM2 return crossing | the same reports | PASS on d7ee8c72: settle at 332 to 336 ticks, 0 stall intervals, 0 overlapping pairs at rest. Not rerun on the candidate. |
-| FM3 overlap while moving | the same reports | PASS on d7ee8c72. Not rerun on the candidate. |
-| Wide units dig (quarry_ridge) | `crawlers_dig_the_ridge_from_the_edge_of_their_reach`; browser check in T-42-cand-8fa203ab | 40 of 40 cells natively; 32 of 32 cells in the browser |
+| GM8 browser, 24 cases | `target/mc-evidence/t7-flocking/cand-c1dc1e60/`; known limits `.swarm/reports/T-42-known-limits-0582fda5.md` | c1dc1e60: GM4 (both maps) PASS to the end, no overlap. The other 22 cases did not run on c1dc1e60. Not M4b results (code a6d54cee): 7 of 24 PASS on 8fa203ab; after test repairs 11 of those 17 PASS on 0582fda5. |
+| FPS, 400 detailed models | `cand-c1dc1e60/fps/` | c1dc1e60: PASS. Normal 48.6, near 56.2, far 48.0 FPS (floor 30); p99 33.4 ms in each view; at least 7 units in motion in each interval. |
+| FM1 first motion | `cand-c1dc1e60/fm/` | c1dc1e60: PASS on both ridge packages (table below). |
+| FM2 return crossing | `cand-c1dc1e60/fm/` | c1dc1e60: PASS. All 36 settle at 323 (quarry_ridge) and 324 (terrain_stockyard_ridge) ticks; 0 overlapping pairs at rest; no stall on the return. The earlier PASS line here was from d7ee8c72. With V6 before the E1 fix, FM2 failed (17 of 36 settle): cb031474 and 063bd531. |
+| FM3 overlap while moving | `cand-c1dc1e60/fm/*/fm3.json` | c1dc1e60: PASS. Sampled maximum overlap / smaller radius (bound 0.25): 0.200 outbound on both; return 0.182 and 0.200. Sampled overlap at rest at most 0.0098 m (positions are rounded to 0.01 m). |
+| Wide units dig (quarry_ridge) | `crawlers_dig_the_ridge_from_the_edge_of_their_reach`; browser check in T-42-cand-8fa203ab | 40 of 40 cells natively; 32 of 32 cells in the browser on 8fa203ab (code a6d54cee), not rerun on c1dc1e60. |
 
-### First motion (FM1, flock build 099feffc, 36 mixed units, both ridge packages)
+### First motion (FM1, c1dc1e60, 36 mixed units)
 
-All times are in ticks from the applied order, at 20 Hz.
+All times are in ticks from the applied order, at 20 Hz. Each value is quarry_ridge / terrain_stockyard_ridge.
+Terrain seeds: 3113004681313666839 / 11574917217546001924. Host: i9-14900K, RTX 3080, Chrome.
 
 | Row | Bound | Result |
 | --- | --- | --- |
-| First unit moves | 20 ticks (1 s) | 0 / 0 ticks |
-| Units that move within 20 ticks, outbound | all | 36 of 36 (last at 13 / 14 ticks) |
+| First unit moves, outbound and return | 20 ticks (1 s) | outbound 0 / 0; return 1 / 0 |
+| Units that move within 20 ticks, outbound | all | 36 of 36 (last at 11 / 12 ticks) |
 | Units that move within 20 ticks, return | all | 36 of 36 (last at 12 / 11 ticks) |
-| All 36 idle after the opening | (recorded) | 279 / 286 ticks |
+| All 36 idle after the opening | (recorded) | 304 / 304 ticks |
 
-On the old path, the first unit moved after 809 / 810 ticks (T-49).
+The free-space clause of FM1 is judged by the headless check, not in the browser. On the old path, the first unit moved
+after 809 / 810 ticks (T-49).
 
 ### GM7 under B3 (run b3-2)
 
