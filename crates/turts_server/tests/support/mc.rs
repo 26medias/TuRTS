@@ -444,6 +444,14 @@ pub fn assert_no_overlap(
     }
 }
 
+/// The crowd bound of a group of `count` units of radius 0.5 round its point (flock rule 2,
+/// 2026-11-23): the goal area at a packing share of 0.35, plus one metre. The same bound as
+/// `near_bound` of `crates/turts_sim/tests/group_movement.rs` (e8195ea1). It replaces the old
+/// path's R_near = 4.58 of the slot lattice.
+pub fn near_bound(count: usize) -> f32 {
+    (count as f32 * 0.25 / 0.35).sqrt() + 1.0
+}
+
 pub fn distance(a: (f32, f32), b: (f32, f32)) -> f32 {
     (a.0 - b.0).hypot(a.1 - b.1)
 }
