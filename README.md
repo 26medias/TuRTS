@@ -7,52 +7,176 @@
 [Social media kit](docs/assets/social/README.md) · [Download social images](docs/assets/social/turts-social-kit.zip)
 
 
-TuRTS is a mod-first real-time strategy engine built with Rust and Bevy. It has a browser WebAssembly client, a native client, and an authoritative headless server. Game content is delivered as packages through the public mod API.
+TuRTS is a mod-first real-time strategy engine built with Rust and Bevy. It has a browser WebAssembly client, a
+native client, and an authoritative headless server. Game content is delivered as packages through the public mod API.
+The browser client is the primary product.
 
-**Current playable demo: a medieval fantasy skirmish against the computer.** Build Barracks and Guard towers, harvest timber, train Villagers, Crossbowmen, Swordsmen, and Warriors, set rally points, fight, and reach Victory or Defeat. New skirmish starts another match. The browser build includes models, textures, team colours, graphics quality, pointer-centred zoom, walking and work animations, shot animation, construction rise, falling bodies, combat effects, attack warnings, a minimap, wider grass, a map boundary, distance haze, antialiasing, dirt clearings, and soft timber paths.
+[Install](#install) · [Build](#build) · [Play the demos](#play-the-demos) · [Status](#status) · [Check](#check)
 
-The local tested launcher is:
+## Install
+
+These steps are used on Linux (x86-64) with an NVIDIA GPU. macOS and Windows are not tested.
+
+1. System packages (Debian or Ubuntu):
+
+   ```sh
+   sudo apt-get update
+   sudo apt-get install -y pkg-config libx11-dev libasound2-dev libudev-dev libxkbcommon-x11-0 libwayland-dev libxkbcommon-dev brotli
+   ```
+
+2. [rustup](https://rustup.rs). `rust-toolchain.toml` selects the Rust version (1.99.1), clippy, rustfmt and the
+   `wasm32-unknown-unknown` target.
+3. Python 3, Node.js 20 or later, and Google Chrome or Chromium with WebGPU.
+4. The source and the build tools (Trunk, `wasm-bindgen-cli`, `wasm-opt`, and profiling tools), without `sudo`:
+
+   ```sh
+   git clone https://github.com/26medias/TuRTS.git
+   cd TuRTS
+   bash scripts/setup-dev.sh
+   ```
+
+   The script also runs `rustup update stable`.
+
+## Build
+
+Run these from the repository root. Build each Bevy binary with its own Cargo command.
 
 ```sh
-bash target/mc-evidence/play-skirmish.sh
+cargo build --release -p turts_server --locked          # headless server: target/release/turts_server
+cargo build --release -p turts_client --locked          # native client:   target/release/turts_client
+(cd crates/turts_client_web && trunk build --release)   # browser client:  crates/turts_client_web/dist
 ```
 
-The underground utility demo uses `bash target/mc-evidence/play-utilities.sh`.
-Press U, connect the Workshop to the generator, and check that its port turns green and shows Powered.
-The demo also supports excavation that exposes a line and fill that restores its cover.
+You do not need these commands to play a demo: the demo commands build what they need.
 
-[Rendering measurements](docs/measurements/models.md) record about 59 FPS for 400 fighting units on the local RTX 3080. The new three-type 2,000-unit stress battle reaches about 29 FPS High and 40 FPS Low. Hit sparks now appear above the armour. Selecting a unit shows its portrait, name, health, and own armour. A tooltip shows its weapon damage.
+## Play the demos
 
-That launcher uses prepared local artifacts. To build from source, use `bash scripts/skirmish-play.sh --prepare /absolute/path/to/prepared`, then `bash scripts/skirmish-play.sh --prepared /absolute/path/to/prepared --silent`. Test browsers must use a fresh profile and `--alsa-output-device=null`.
+Each demo uses two commands. The first builds the server, the package and the browser client into a folder that you
+choose. The first build in a fresh clone takes 10 to 20 minutes; the next ones take about a minute each. The second
+command starts a local server and opens the game in a separate Chrome window with a new, empty profile. Your own Chrome
+profile is not used. Click the game once to start. Close the window or press Ctrl+C to stop. Each start is a new
+match.
 
-The M6 underground utility fixture (`mods/utility_yard`) has its own tested launcher on its branch:
-`bash target/mc-evidence/play-utilities.sh`. Press U for the utility view; the package README lists the steps.
+```sh
+bash scripts/mp1-play.sh --prepare /tmp/turts/quarry_ridge --package mods/quarry_ridge
+bash scripts/mp1-play.sh --prepared /tmp/turts/quarry_ridge --package mods/quarry_ridge
+```
 
-Two local browsers can play one match through `bash target/mc-evidence/play-two-player.sh`.
-Run its printed `JOIN_COMMAND` in another terminal.
-For a temporary Internet game, use `bash target/mc-evidence/play-shared-skirmish.sh`.
-This command needs `cloudflared`. It prints a trusted HTTPS address for both players.
-Keep it running until the match ends. Anyone with the link can join.
-A fresh join browser can start with `bash scripts/mp1-play.sh --join HTTPS_GAME_ADDRESS --silent`.
-From a source-built prepared folder, use `python3 -I -B scripts/skirmish_share.py --prepared /absolute/path/to/prepared`.
+To play another package, replace `quarry_ridge` in both commands. After you change the source, run `--prepare` again:
+`--prepared` refuses a folder that does not match the source.
 
-Full local two-browser matches and public HTTPS/WSS orders pass scripted checks.
-Fast reload keeps the same army and slot. Human games wait in a ready lobby with colour choices and a cancellable three-second countdown.
-A full match played by two people and the full MP1 roster remain open.
-The computer now trains a paid mixed army of Crossbowmen, Swordsmen, and Warriors, and builds a Guard tower. It now runs through the public mod bot framework. Shared remembered sightings now use the same engine authority as human players. Creator-authorized lobby selection remains open.
-Authored map fog and bounded remembered sightings are now available to mods. Editable terrain now passes native and browser acceptance. Geological surveys, terrain occlusion, broader lifecycle features, and large-scale performance remain later work.
+**Linux and WebGPU.** Chrome on Linux does not offer a WebGPU adapter by default. The play script starts Chrome with
+`--enable-unsafe-webgpu --enable-features=Vulkan --use-angle=vulkan`. If you open the printed URL in a Chrome that you
+start yourself, use the same flags, or the game does not start.
 
-## Engine progress
+**Common controls.** Click a unit or drag a box to select. Right-click the ground to move. Move the camera with the
+arrow keys or the screen edge, and zoom with the mouse wheel.
+
+### Skirmish against the computer
+
+Build a base, harvest timber, train an army, and destroy the enemy castle.
+
+```sh
+bash scripts/skirmish-play.sh --prepare /tmp/turts/skirmish
+bash scripts/skirmish-play.sh --prepared /tmp/turts/skirmish
+```
+
+Select your castle, click **Build Barracks**, and click free ground near the castle. Send a villager to a timber stand
+with a right-click. Train Crossbowmen and Swordsmen in the Barracks, then right-click an enemy to attack. Click or drag
+on the minimap (lower right) to look around; right-click it to send the selected units. The first computer attack
+starts after 180 seconds. More controls, and two human players on one computer (`--human`):
+[package guide](mods/skirmish/README.md).
+
+### Quarry Ridge: dig a passage for a mixed army
+
+`mods/quarry_ridge`: 24 small Walkers, 12 large Crawlers, and a ridge with a narrow opening. Use the two commands at
+the start of this section.
+
+1. Drag a box round all your units and right-click the far side of the ridge. The Walkers go through the opening. The
+   Crawlers wait.
+2. Select the Walkers, click **Dig**, and drag an area. Start the drag on the low ground at the foot of the ridge, and
+   drag over the ridge round the opening. The area is lowered to the height where the drag started. Marked cells show
+   what changes. Right-click or Esc cancels.
+3. When the passage is wide enough, the waiting Crawlers go on with their first order.
+4. Select all units and send the group back through the passage.
+
+**Fill** raises ground up to the height where the drag starts. A tool button acts for the first selected unit type
+only: select the Crawlers alone to dig with them. Their tool is slower and also digs iron.
+
+### Terrain Stockyard Ridge
+
+`mods/terrain_stockyard_ridge`: the same exercise with Porters (small) and Carriers (large). The tools are **Scraper**
+(small units), **Borer** (large units) and **Leveler** (fill).
+
+```sh
+bash scripts/mp1-play.sh --prepare /tmp/turts/terrain_stockyard_ridge --package mods/terrain_stockyard_ridge
+bash scripts/mp1-play.sh --prepared /tmp/turts/terrain_stockyard_ridge --package mods/terrain_stockyard_ridge
+```
+
+### Other playable packages
+
+Use the two `mp1-play.sh` commands with the package name.
+
+| Package | What to try |
+| --- | --- |
+| `quarry` | Terrain work with cargo: dig, unload at the Material depot when the worker is full, and fill. [Guide](mods/quarry/README.md) |
+| `terrain_stockyard` | The same terrain work; dug material goes directly to your balance. [Guide](mods/terrain_stockyard/README.md) |
+| `utility_yard` | Underground power lines: press U, connect the generator to the workshop, then dig a line open and cover it again. [Guide](mods/utility_yard/README.md) |
+| `forge` | A factory: a drill, belts, arm loaders and a press make shells; research better shells in the Proving Lab for the turret |
+| `base` | Gather resources with a Harvester and produce units at the Command Center |
+| `stockyard` | An economy with timber as the only cost, made for the public bot interface. [Guide](mods/stockyard/README.md) |
+| `muster` | A larger development scene with troopers, workers and training targets, with an in-game guide (F1) |
+
+`acme`, `cedar`, `haul` and `visibility_probe` are test packages.
+
+### Run a server yourself
+
+```sh
+cargo build --release -p turts_server --locked
+(cd crates/turts_client_web && trunk build --release)
+RUN_DIR="$(mktemp -d)"
+cp -a mods/forge "$RUN_DIR/forge"
+cargo run --release -p turts_pack --bin turts-pack --locked -- "$RUN_DIR/forge"
+cat > "$RUN_DIR/server.ron" <<EOF
+(
+    game_package: "$RUN_DIR/forge.tar",
+    http_listen: "127.0.0.1:7000",
+    ws_listen: "127.0.0.1:7001",
+    public_url: "http://127.0.0.1:7000",
+    tick_hz: 20,
+    static_dir: "$PWD/crates/turts_client_web/dist",
+)
+EOF
+target/release/turts_server "$RUN_DIR/server.ron"
+```
+
+Open `http://127.0.0.1:7000/?server=http%3A%2F%2F127.0.0.1%3A7000&ws=ws%3A%2F%2F127.0.0.1%3A7001` in a Chrome with
+WebGPU, or join with the native client:
+
+```sh
+target/release/turts_client --server http://127.0.0.1:7000 --ws ws://127.0.0.1:7001 --player-id 1
+```
+
+`turts_server --help` lists the options and the configuration fields.
+
+## Status
 
 The target is the full RTS engine in the [project specification](RTS-Engine-Project-Specifications.md).
-The skirmish is its playable test bed. The table below tracks delivered capabilities.
 
 Accepted milestones of spec section 14 (20 in all): `███████░░░░░░░░░░░░░` 7 of 20.
-- Accepted: M1, M2, M3, QA0, M4, MS, M6.
-- Partial (capabilities delivered; no recorded acceptance by a person): MC, MP1, MP2.
-- Open: M4b and M5 (in progress), MB, M7, M8, M9, M10, M11, M12, M13.
+
+| Milestones | State |
+| --- | --- |
+| M1, M2, M3, QA0, M4, MS, M6 | Accepted |
+| M4b (group movement on terrain) | Done and playable; a person's acceptance is not recorded. [Results and known limits](docs/measurements/m4b.md) |
+| MC, MP1, MP2 | Capabilities delivered; no recorded acceptance by a person |
+| **M5 (discovery, with unit fog of war)** | **Next** |
+| MB, M7, M8, M9, M10, M11, M12, M13 | Open |
 
 The count is of milestones, not of work. Milestones differ in size, so it gives no date.
+
+M4b known limits, in short: a unit that a standing body stops can end its move far from its goal; a unit that is pushed
+does not always return to its place; a terrain tool button acts for the first selected unit type only.
 
 | Capability | Verified progress | Evidence and remaining work |
 | --- | --- | --- |
@@ -67,101 +191,27 @@ The count is of milestones, not of work. Milestones differ in size, so it gives 
 | Public mod bots | Portable profiles, public Rust controllers, bounded observations, exact account coordination, shared command admission, and headless recorded/regenerated replay are implemented. | [SDK15 report](docs/reports/2026-11-15-public-bot-foundation.md). Final Skirmish and Stockyard browser probes pass. BF8 passed at 4.906851 ms p99 before later financial/profile fixes; those fixes were not remeasured. Full human/reference readiness remains open. |
 | Shared visibility | Authored fog, team sharing, bounded stale sightings, hidden-target command rules, and atomic permitted human/bot state pass acceptance. | [SDK16 report](docs/reports/2026-11-15-shared-visibility.md). API 0.2.16; protocol 9. Independent code-running review, 2,924 native tests, full network acceptance, 60,000 measured server ticks, nine High camera cases, and scripted player probes pass. |
 | Editable terrain | Plateau heights, excavation/fill, private seeded geology, persistent depletion, physical cargo, explicit unloading, permitted surface memory, raised picking, and traversable passages pass acceptance. | [M4 evidence and limits](docs/reports/2026-11-15-terrain-work-orders.md). API 0.2.17; protocol 10. Both public terrain packages, independent code-running review, 80,000 final measured ticks, three High400 views and scripted cold-play probes pass. Fully exposed million-cell maps exceed the decoded-state guard. |
-| Dense group movement (M4b) | One flock movement path with the Game Director's movement rules (traffic waits, passage holder, slower unit first, idle units go back to their place, busy units stand firm), arrive-first points, and terrain work for wide units. GM1 to GM6 pass natively. GM7 passes under B3 at 27.73-29.51 ms server p99. | [M4b results and limits](docs/measurements/m4b.md). M4b is not accepted: the GM8 browser rerun and the FPS row remain open, and FM1-FM3 were last run on an earlier flock build. No local path round standing bodies yet (task T-59), so a queued leg can end short far from its goal. |
+| Dense group movement (M4b) | One flock movement path with movement rules (traffic waits, a passage holder, the slower unit first, pushed idle units go back to their place, busy units stand firm), arrive-first points, terrain work for large units, and a drag gesture for terrain work. FM1 to FM3 and the frame rate row (48.0 to 56.2 FPS, 400 detailed models) pass in the browser on game code c1dc1e60. The browser movement campaign passes 16 of 24 cases. | [M4b results and known limits](docs/measurements/m4b.md). No local path round standing bodies yet (task T-59). |
 | Scripting language (MS) | Rune 0.14.2 is selected from measured native and Chrome-wasm runs against budgets set before the runs. Rune adds 13.6 µs (native) and 60 µs (Chrome) script p99 for each tick at 1,000 units and 16 events, and 1,003,799 gzip bytes. | [MS report](docs/reports/2026-11-16-scripting-selection.md), [measurements](docs/measurements/scripting.md). Spike only: no production runtime and no engine change. The selection depends on one configuration decision (core Rune modules only; spec amendment 5). The CEO declined the MPL dependency, so Rune remains selected. Standard license notices still apply. |
 | Underground utilities (M6) | Mod-defined utility types, explicit junctions, surface ports, fixed line elevation, terrain-dependent burial with mod exposure policy, aggregate electrical supply per network, and a browser utility view with place, connect and inspect. | [M6 report](docs/reports/2026-11-16-underground-utilities.md). API 0.2.18; protocol 11. Two-viewer wire privacy, real paid terrain edits, independent code-running review, real-input browser case and three scripted cold-play probes pass. No water, sewage or heat model; bots do not use utilities. |
-| Remaining engine scope | Shared group routing, geological discovery and terrain occlusion, the production script runtime, rooms, durable identity/saves, statistics, and spectator/replay delivery remain open. | M4b routing is under integration and M5a surveys are under implementation. M5b obstruction has an approved spec and plan. The full project specification remains the target. |
+| Remaining engine scope | Geological discovery and unit discovery rules (M5), the production script runtime, rooms, durable identity and saves, statistics, and spectator and replay delivery remain open. | M5 is the next milestone. The full project specification remains the target. |
 
-Default skirmish prepared build: `target/mc-evidence/skirmish-terrain-route-final-prepared` (API 0.2.17; protocol 10), sealed from source `2073e15e`.
-All three skirmish launchers use the frozen `TuRTS-terrain-play` checkout and this prepared build.
-The actual normal launcher loads a populated world, models and minimap, with sound off and gzip WASM delivery.
-Both final terrain browser scenarios and all three scripted cold-play product probes pass. The final M4 service run passes at 36.52–38.37 ms server p99. Its three 400-unit High views reach 59.5–59.8 FPS. The actual launcher starts a populated world with a fresh silent browser.
-The checker reports PARTIAL-PASS with manual/reference checks open. The full fresh-agent and manual readiness procedure was not repeated.
-The two-human and Internet modes retain their tested launch flags. Their full matches and a new normal-stat victory were not repeated for SDK16.
-Default Skirmish uses its existing AllVisible map. Mods can opt into the new shared knowledge provider.
-Tested milestones are merged and pushed to main under the CEO's standing approval.
-Legacy browser fixtures now prove blocked output and real loss recovery with valid current exit rules.
-CI keeps native, WebAssembly, process, browser, and test-tool checks. Historical fault campaigns remain manual. The SDK15 browser oracle now checks owner work and repair data against audit history. The [CI repair report](docs/reports/2026-11-15-ci-product-checks.md) records local validation and limits. The terrain schema repair passes 51 helper tests, 159 captured CI snapshots, and one fresh browser selection case. It keeps the strict privacy checks. The [repair report](docs/reports/2026-11-16-browser-debug-schema.md) records the evidence. Native CI on the schema repair passes. The full hosted browser suite and CI on the utilities integration remain pending. Prior hosted browser runner losses remain unexplained.
-See [working rules](AGENTS.md) for parallel delivery, review, and milestone integration.
-
-The older Forge industrial demonstration remains available below. It proves extraction, conveyors, inserters, recipes, research, and ammunition combat through the public mod API. Its two-slot and restart restrictions describe that demonstration.
-
-See the [project map](docs/reports/2026-11-13-project-overview.html), the [P2 spec](docs/superpowers/specs/2026-11-13-p2-animation.md), and the [model and animation measurements](docs/measurements/models.md). The project map includes the latest verified deliveries.
-
-## Try Forge locally
-
-The following starts a local server that serves the browser build and the package advertisement, lockfile, and archive. It copies the package to a temporary directory so the packer writes its archive outside the repository.
-
-Requirements: Rust toolchain, `wasm32-unknown-unknown` target, Trunk 0.22, and a browser with WebGPU enabled. On Linux, the tested proof used headed Chrome under Xvfb with Vulkan/WebGPU flags; adapter availability depends on the host and browser.
-
-From the repository root, in the first terminal:
-
-```sh
-ROOT="$(pwd)"
-RUN_DIR="$(mktemp -d)"
-DEMO_PACKAGE=forge
-cp -a "$ROOT/mods/$DEMO_PACKAGE" "$RUN_DIR/$DEMO_PACKAGE"
-
-# Build each Bevy binary in a separate Cargo command.
-cargo build --release -p turts_server
-cargo build --release -p turts_client
-cargo run --release -p turts_pack --bin turts-pack -- "$RUN_DIR/$DEMO_PACKAGE"
-(cd "$ROOT/crates/turts_client_web" && trunk build --release)
-
-cat > "$RUN_DIR/server.ron" <<EOF
-(
-    game_package: "$RUN_DIR/$DEMO_PACKAGE.tar",
-    http_listen: "127.0.0.1:7000",
-    ws_listen: "127.0.0.1:7001",
-    public_url: "http://127.0.0.1:7000",
-    tick_hz: 20,
-    static_dir: "$ROOT/crates/turts_client_web/dist",
-)
-EOF
-
-"$ROOT/target/release/turts_server" "$RUN_DIR/server.ron"
-```
-
-Open this URL in the browser:
-
-```text
-http://127.0.0.1:7000/?server=http%3A%2F%2F127.0.0.1%3A7000&ws=ws%3A%2F%2F127.0.0.1%3A7001
-```
-
-To join with native clients instead, start one or two clients in separate terminals:
-
-```sh
-target/release/turts_client --server http://127.0.0.1:7000 --ws ws://127.0.0.1:7001 --player-id 1
-target/release/turts_client --server http://127.0.0.1:7000 --ws ws://127.0.0.1:7001 --player-id 2
-```
-
-The server assigns the match slots during join and serves the package from its advertisement and lockfile. No separate lockfile editing is needed. The browser address and server fields above match the configuration schema in `turts_server --help`.
-
-## The Forge demonstration
-
-The first joined client owns a factory laid out by the package. Extraction, belts, inserters and the press run automatically. Select units to inspect stock, Main/Output inventory ports and status. Select the Proving Lab and use **Research Hardened Shells** when ten unreserved shells are available. After completion, the turret’s damage rises from 10 to 20.
-
-The second joined client owns the two Target Drones. The nearby drone takes ten 10-damage hits. After the factory player confirms research completion, move the farther drone into turret range; it takes five 20-damage hits. Research is private to its owner. This is a factory/combat demonstration, with no victory condition or player construction.
-
-Visible **Disable/Enable** controls pause eligible units. **Remove** is available only where the package permits it; removal destroys the unit’s contents. The prototype uses simple shapes and text panels, rather than finished game artwork.
-
-Set `DEMO_PACKAGE=base` in the launch commands for the original gathering and unit-production demonstration. Start each test match with a fresh server; the two permanent slots are shared by browser tabs and native clients.
-
-For a guided first session, see the [M3 playtest guide](vault/M3%20Playtest%20Guide.md).
-
-## Build and check
+## Check
 
 ```sh
 cargo fmt --all --check
 cargo clippy --workspace --all-targets --locked -- -D warnings
 cargo check --workspace --exclude turts_server --target wasm32-unknown-unknown --locked
-cargo test --workspace --locked
+cargo test --workspace --exclude turts_server --locked
+CARGO_PROFILE_RELEASE_DEBUG_ASSERTIONS=true CARGO_PROFILE_RELEASE_OVERFLOW_CHECKS=true cargo test -p turts_server --release --locked
 bash scripts/boundary.sh
 bash scripts/acceptance.sh
-bash scripts/m3-refutations.sh
-bash scripts/m3-browser.sh
 ```
 
-The browser proof uses headed Chrome under private Xvfb with Vulkan/WebGPU launch settings from CI. `bash scripts/m2-browser.sh` runs all 15 registered browser cases; list them with `bash scripts/m2-browser.sh --list-cases`.
+Run the server tests in release: their debug build takes hours. The browser suites and their exact steps are in
+[the CI workflow](.github/workflows/ci.yml). A test browser must use a new profile and `--alsa-output-device=null`.
 
-Design and scope: [RTS Engine Project Specifications](RTS-Engine-Project-Specifications.md). Developer setup and crate commands: [CLAUDE.md](CLAUDE.md). Proof and measurements: [M3 measurement record](docs/measurements/m3.md) and [M2 measurement record](docs/measurements/m2.md).
+Design and scope: [RTS Engine Project Specifications](RTS-Engine-Project-Specifications.md). Developer setup and crate
+commands: [CLAUDE.md](CLAUDE.md). Working rules: [AGENTS.md](AGENTS.md). Measurements:
+[M2](docs/measurements/m2.md), [M3](docs/measurements/m3.md), [M4b](docs/measurements/m4b.md),
+[models](docs/measurements/models.md). Playtest guide: [M3](vault/M3%20Playtest%20Guide.md).
